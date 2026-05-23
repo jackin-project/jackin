@@ -31,7 +31,7 @@ So jackin' gets host-side cache reuse for building agent images, while still kee
 
 ## Design constraints
 
-jackin's architecture is shaped by a few explicit decisions:
+jackin' architecture is shaped by a few explicit decisions:
 
 1. **Local development first.** The first target is a developer machine that already knows how to run Docker.
 2. **Environment as source code.** Roles should be normal git repos reviewed like normal software.
@@ -49,7 +49,7 @@ That means a role defines the tools and conventions, while jackin' injects the a
 
 ## Role repository tooling
 
-Role repositories are normal source repositories, so jackin keeps role maintenance split between two surfaces. The main operator CLI owns desktop ergonomics: its role-authoring dispatch validates checked-out role repositories, applies manifest migrations to local copies, and writes small starter repositories for authors. That path lives in <RepoFile path="src/role_authoring.rs" /> and reuses the same manifest migration registry and repository contract checks used by runtime launch.
+Role repositories are normal source repositories, so jackin' keeps role maintenance split between two surfaces. The main operator CLI owns desktop ergonomics: its role-authoring dispatch validates checked-out role repositories, applies manifest migrations to local copies, and writes small starter repositories for authors. That path lives in <RepoFile path="src/role_authoring.rs" /> and reuses the same manifest migration registry and repository contract checks used by runtime launch.
 
 Automation stays on the small role-focused binary in <RepoFile path="src/bin/role.rs" />. CI workflows and future Renovate-style migration jobs should not depend on the full operator CLI just to validate a role repo or restamp a manifest; they call the standalone validator, which shares <RepoFile path="src/repo.rs" /> and <RepoFile path="src/manifest/migrations.rs" /> with the desktop path.
 
@@ -64,10 +64,11 @@ Automation stays on the small role-focused binary in <RepoFile path="src/bin/rol
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
-8. **Start the agent container detached** (`docker run -d`) with `supervisor.sh` as the entrypoint override — a bash wait loop that becomes PID 1 and keeps the container alive while agent sessions run via `docker exec`
-9. **Start the first agent session** via `docker exec -e TMUX= -it <container> tmux new-session -e JACKIN_AGENT=<agent> -s jackin-<agent>-<id> -- /jackin/runtime/entrypoint.sh [model-flags]`. `TMUX=` prevents nested-session warnings when the operator's terminal is itself inside tmux. `JACKIN_AGENT` is passed via `tmux new-session -e` rather than as a container-level env var so each session can specify its own agent runtime independently.
+8. **Write Capsule launch config** — serialize the role key, workspace workdir, ordered supported-agent list, and manifest model overrides to `~/.jackin/sockets/<container>/agent.toml`, which is bind-mounted at `/jackin/run/agent.toml`.
+9. **Start the agent container detached** (`docker run -d ... <image> <agent>`) with `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the initial tab; it is not a container-level environment variable.
+10. **Attach the operator terminal** via `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and renders the in-container multiplexer.
 
-The detached-start + exec split decouples the container's lifetime from the foreground session: closing the terminal tab detaches from the tmux session inside the container, but the supervisor (PID 1) and the tmux server keep running. `jackin hardline` reattaches to the most recently used session or creates a new one when no sessions are running. Cleanup distinguishes three post-session states:
+The detached-start + exec split decouples the container's lifetime from the foreground attach: closing the operator's terminal detaches from the client, while the PID 1 daemon and live PTYs keep running. `jackin hardline` reconnects to the daemon or asks it to spawn a new session. Cleanup distinguishes three post-session states:
 
 - **running** → terminal was closed; preserve the container for `jackin hardline` to reconnect
 - **stopped with exit 0** → the user exited cleanly; tear down container, DinD, network, and certs volume
@@ -77,26 +78,28 @@ Every fresh launch gets a unique DNS-safe instance identity. Existing running or
 
 ### Reconnecting
 
-`jackin hardline` inspects the target container. If it's running, it attaches to the most recently used tmux session via `docker exec ... tmux attach-session`, or creates a fresh `jackin-<agent>-<id>` session when none are running. If it's stopped with a non-zero exit (crash / OOM), it restores the required DinD sidecar/network/certs when needed, restarts the role container, and attaches. If the role container itself is missing but indexed recoverable state exists, hardline can rebuild the runtime around jackin-managed local state. Clean exits (exit code 0) are treated as completed sessions — use `jackin load` to start a fresh instance.
+`jackin hardline` inspects the target container. If it's running, it attaches with `docker exec ... /jackin/runtime/jackin-capsule`; `hardline --new --agent <agent>` uses `jackin-capsule new <agent>` so agent selection travels as argv. If it's stopped with a non-zero exit (crash / OOM), it restores the required DinD sidecar/network/certs when needed, restarts the role container, and attaches. If the role container itself is missing but indexed recoverable state exists, hardline can rebuild the runtime around jackin-managed local state. Clean exits (exit code 0) are treated as completed sessions — use `jackin load` to start a fresh instance.
 
-### Container supervisor and session model
+### Capsule supervisor and session model
 
-Every role container runs <RepoFile path="docker/runtime/supervisor.sh" /> as PID 1. The supervisor is a bash wait loop (`while true; do sleep 3600 & wait $! || true; done`) that traps SIGTERM/SIGINT and exits cleanly on `docker stop`. Its sole job is to keep the container alive while agent sessions run via `docker exec`.
+Every role container runs the jackin' Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs" />) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin' Capsule](/reference/jackin-capsule/).
 
-Sessions are tmux sessions inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction.
+Sessions are daemon-owned PTYs inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction.
 
-| Session type | tmux name | Created by | Reconnectable |
+| Session type | Identity | Created by | Reconnectable |
 |---|---|---|---|
-| Agent session | `jackin-<agent>-<id>` | `jackin load`, `jackin hardline`, or console `a`/`A` | Yes — `jackin hardline` attaches to the most recent session or creates a new one |
-| Shell | (no session) | `hardline --shell` or console `x`/`X` | No — ephemeral `docker exec /bin/zsh` |
+| Agent session | daemon session id plus agent slug | `jackin load`, `jackin hardline`, or console `a`/`A` | Yes — `jackin hardline` attaches to the daemon or creates a new session |
+| Shell | daemon session id with no agent slug | `hardline --shell` or console `x`/`X` | No — intended as an ephemeral zsh pane |
 
-When an agent session exits cleanly (the operator types `/exit` or the agent finishes), the tmux session is removed but the container and supervisor keep running. The container only stops when the operator explicitly stops it, or when `jackin load` teardown runs after the foreground session ends cleanly (exit code 0).
+When an agent session exits cleanly (the operator types `/exit` or the agent finishes), the daemon removes that pane. If no live sessions remain, PID 1 exits and the host cleanup path tears down the role container, DinD sidecar, certs volume, and network.
 
-Agent model flags (`--model`) are passed as arguments to the tmux session exec, not as CMD args to `docker run`. This means model overrides from `jackin load --model` apply to the initial session only. Additional sessions started via `hardline --new` use the role's default agent configuration unless the operator selects a different runtime.
+`JACKIN_AGENT` is set per agent PTY by <RepoFile path="crates/jackin-capsule/src/session.rs" />, immediately before `/jackin/runtime/entrypoint.sh` runs. The daemon's own process does not carry `JACKIN_AGENT`, so shell panes and future mixed-agent sessions do not inherit a misleading container-wide agent value.
+
+Role identity, workspace workdir, supported-agent order, and model overrides are not duplicated into container-wide environment variables. The daemon reads those values from `/jackin/run/agent.toml`, keeping all jackin-owned in-container runtime state under `/jackin/`.
 
 Session state is not yet reconciled against the live container on console refresh — Phase 4 of the [Console agent session control](/reference/roadmap/console-agent-session-control/) roadmap covers this work. The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
 
-Implementation: <RepoFile path="docker/runtime/supervisor.sh" />, <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
+Implementation: <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 
 ### Stopping
 
@@ -138,19 +141,20 @@ This means terminal-specific features (such as Ghostty's Kitty keyboard protocol
 
 If the export fails (e.g. `infocmp` is not installed or the terminfo entry is missing), jackin' falls back to `xterm-256color`.
 
-## In-session tmux configuration
+## Capsule terminal capability model
 
-Beyond `$TERM` forwarding, the entrypoint applies five tmux session options immediately before exec-ing the agent. The construct image ships Debian trixie tmux (3.5+), so all options are applied unconditionally — no version guard or error suppression.
+The container no longer runs tmux for agent sessions. The Capsule owns the PTYs directly, so terminal behavior that used to come from tmux options is implemented at the Capsule/client boundary:
 
-| Option | Why |
+| Former tmux concern | Capsule behavior |
 |---|---|
-| `extended-keys always` | Agents don't emit the per-app activation escape that `on` waits for, so `on` silently fails to forward Shift+Enter. `always` bypasses the opt-in. |
-| `terminal-features 'xterm*:extkeys'` | Paired with `extended-keys`: advertises `modifyOtherKeys` capability to panes so their terminfo queries confirm support. |
-| `focus-events on` | Emits `FocusIn`/`FocusOut` sequences so editors (Neovim, Helix, etc.) reload agent-written files on pane focus return. |
-| `allow-passthrough on` | Container panes cannot reach the outer terminal's OSC surface without this. tmux-aware tools (Claude Code, etc.) wrap their OSC sequences in DCS passthrough when `$TMUX` is set; this option forwards them to the outer terminal. Tools that emit raw OSC without wrapping need `allow-passthrough all` (tmux 3.4+). |
-| `escape-time 0` | Removes the Escape disambiguation delay that misfires in agent TUI vi-mode navigation. |
+| Modified keys | Client-side input parsing preserves xterm/Kitty/CSI-u key sequences and forwards pane input unmodified unless it is a jackin'-owned palette or prefix command. |
+| Terminal feature advertisement | Pane PTYs run with `TERM=xterm-256color`; host-specific terminfo is mounted separately when the outer terminal needs it. |
+| Focus events | The attach client enables focus reporting on the outer terminal and forwards focus-in/focus-out only to panes that requested it. |
+| OSC passthrough | Focused-pane OSC 0/1/2 titles, OSC 8 hyperlinks, OSC 9 notifications, and OSC 52 clipboard writes are forwarded with per-family opt-outs. OSC 7 is captured for pane titles and not forwarded to the host. |
+| Escape timing | The input parser treats Escape as data for the pane except when a jackin' dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |
+| Mouse | The client keeps the outer terminal in SGR any-event mode. The daemon handles clicks on jackin' chrome and forwards pane mouse events only when the pane's program opted into mouse reporting. |
 
-Implementation: <RepoFile path="docker/runtime/entrypoint.sh" /> (lines at the bottom of the script, before `exec`).
+Implementation: <RepoFile path="crates/jackin-capsule/src/client.rs" />, <RepoFile path="crates/jackin-capsule/src/input.rs" />, <RepoFile path="crates/jackin-capsule/src/session.rs" />, and <RepoFile path="crates/jackin-capsule/src/daemon.rs" />.
 
 Operators running `jackin console` from inside their own tmux session need matching host-side configuration so that modified keys are forwarded through the host tmux before they reach the container. See the [Running inside tmux](/guides/tmux/) operator guide.
 
@@ -195,7 +199,7 @@ Successful cleanup removes the corresponding record rather than keeping a histor
 
 ### Foreground session finalization
 
-Every command that opens or reopens an agent foreground session — `jackin load`, `jackin hardline`, the operator console — funnels through the same post-session finalizer. After the `docker exec tmux new-session` call returns, jackin' inspects the container and decides:
+Every command that opens or reopens an agent foreground session — `jackin load`, `jackin hardline`, the operator console — funnels through the same post-session finalizer. After the foreground `docker exec ... jackin-capsule` attach returns, jackin' inspects the container and decides:
 
 - **Container is still running** → preserve everything for `jackin hardline` to reconnect later. No isolated-checkout action.
 - **Stopped, non-zero exit or OOM** → preserve the container, DinD, and isolated checkouts so `jackin hardline` can restart in place.
@@ -259,7 +263,7 @@ This is what does **not** persist:
 
 That means jackin' restores only host-backed state: workspace mounts, isolated worktrees/clones, and the per-instance agent home under `~/.jackin/data/<container>/home/`. Anything installed or edited only in the container writable layer is intentionally disposable and will not be restored after Docker deletes the container.
 
-Jackin' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
+jackin'' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
 
 If a tool should always exist, put it in the role repo Dockerfile instead of installing it ad hoc during a session.
 

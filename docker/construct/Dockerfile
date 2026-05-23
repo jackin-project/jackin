@@ -17,13 +17,17 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG UID=1000
 ARG GID=1000
 
-# Install core system packages
+# Install core system packages. zsh is the default login shell for
+# the `agent` user; fish is installed alongside as an opt-in
+# alternative (`fish` from zsh, or `chsh -s /usr/bin/fish agent`).
+# Both shells get Starship prompt + auto-title configs baked below.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
     curl \
     fd-find \
+    fish \
     fzf \
     git \
     git-lfs \
@@ -32,7 +36,6 @@ RUN apt-get update && \
     procps \
     ripgrep \
     sudo \
-    tmux \
     tree \
     yq \
     zsh && \
@@ -127,3 +130,9 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 COPY --chown=agent:agent zshrc /home/agent/.zshrc
+
+# Fish config — opt-in alternative shell. Same Starship prompt and
+# auto-title behaviour as zsh so the operator's pane border title
+# does not regress when switching shells.
+RUN mkdir -p /home/agent/.config/fish
+COPY --chown=agent:agent fish-config.fish /home/agent/.config/fish/config.fish

@@ -24,6 +24,30 @@ pub(super) fn handle_list_key(
     _cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
+    // Preview-pane navigation mode: the operator dropped focus into
+    // the right-hand snapshot tree via Tab / →. Keys are reinterpreted
+    // for preview navigation; nothing falls through to the workspace
+    // tree until they Esc / ← / BackTab out.
+    if state.preview_focused {
+        return Ok(handle_preview_focused_key(state, key));
+    }
+    // Tab / → on a running-instance row drops focus INTO the preview
+    // pane. Tab takes precedence over the existing right-arrow
+    // tree-expand because instance rows have no expand semantics; →
+    // on a non-instance row continues to the existing handler below.
+    let selected_row = state.selected_row();
+    if matches!(key.code, KeyCode::Tab | KeyCode::Right)
+        && matches!(
+            selected_row,
+            ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_)
+        )
+        && let Some(container) =
+            selected_instance_container(state, ConsoleInstanceAction::Reconnect)
+        && !state.flattened_preview_panes(&container).is_empty()
+    {
+        state.preview_focused = true;
+        return Ok(InputOutcome::Continue);
+    }
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
         // Left/Right arrows: tree expand/collapse.
@@ -93,7 +117,8 @@ pub(super) fn handle_list_key(
                 .map_or(InputOutcome::Continue, |summary| {
                     InputOutcome::LaunchNamed(summary.name.clone())
                 })),
-            ManagerListRow::WorkspaceInstance(_, _) => Ok(instance_action_outcome(
+            ManagerListRow::WorkspaceInstance(_, _)
+            | ManagerListRow::CurrentDirectoryInstance(_) => Ok(instance_action_outcome(
                 state,
                 ConsoleInstanceAction::Reconnect,
                 "No recoverable instance selected.",
@@ -102,6 +127,7 @@ pub(super) fn handle_list_key(
         KeyCode::Char('e' | 'E') => {
             match state.selected_row() {
                 ManagerListRow::CurrentDirectory
+                | ManagerListRow::CurrentDirectoryInstance(_)
                 | ManagerListRow::NewWorkspace
                 | ManagerListRow::WorkspaceInstance(_, _) => {}
                 ManagerListRow::SavedWorkspace(i) => {
@@ -147,6 +173,7 @@ pub(super) fn handle_list_key(
         KeyCode::Char('d' | 'D') => {
             match state.selected_row() {
                 ManagerListRow::CurrentDirectory
+                | ManagerListRow::CurrentDirectoryInstance(_)
                 | ManagerListRow::NewWorkspace
                 | ManagerListRow::WorkspaceInstance(_, _) => {}
                 ManagerListRow::SavedWorkspace(i) => {
@@ -185,15 +212,17 @@ pub(super) fn handle_list_key(
             ConsoleInstanceAction::Inspect,
             "No instance state for this workspace.",
         )),
-        KeyCode::Char('p' | 'P') => Ok(instance_action_outcome(
+        KeyCode::Char('p' | 'P') => Ok(confirm_purge_outcome(state)),
+        KeyCode::Char('t' | 'T') => Ok(instance_action_outcome(
             state,
-            ConsoleInstanceAction::Purge,
-            "No purgeable instance for this workspace.",
+            ConsoleInstanceAction::Stop,
+            "No running instance to stop.",
         )),
         KeyCode::Char('s' | 'S') => {
             if !matches!(
                 state.selected_row(),
                 ManagerListRow::WorkspaceInstance(_, _)
+                    | ManagerListRow::CurrentDirectoryInstance(_)
             ) {
                 state.stage = ManagerStage::Settings(SettingsState::from_config(config));
             }
@@ -204,12 +233,14 @@ pub(super) fn handle_list_key(
 }
 
 fn handle_tree_right(state: &mut ManagerState<'_>) {
-    if let ManagerListRow::SavedWorkspace(i) = state.selected_row() {
-        state.expand_workspace(i);
+    match state.selected_row() {
+        ManagerListRow::SavedWorkspace(i) => state.expand_workspace(i),
+        ManagerListRow::CurrentDirectory => state.expand_current_dir(),
+        _ => {}
     }
 }
 
-/// `←`: collapse expanded workspace, or jump to parent workspace from an
+/// `←`: collapse expanded workspace / cwd, or jump to parent row from an
 /// instance row.
 fn handle_tree_left(state: &mut ManagerState<'_>) {
     match state.selected_row() {
@@ -219,7 +250,10 @@ fn handle_tree_left(state: &mut ManagerState<'_>) {
         ManagerListRow::WorkspaceInstance(ws_idx, _) => {
             state.collapse_workspace(ws_idx);
         }
-        _ => {}
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+            state.collapse_current_dir();
+        }
+        ManagerListRow::NewWorkspace => {}
     }
 }
 
@@ -240,12 +274,112 @@ fn instance_action_outcome(
     InputOutcome::InstanceAction { container, action }
 }
 
+/// Resolve the container for Purge, then stage a Y/N confirmation
+/// modal. Purge now also calls `eject_role` before deleting preserved
+/// state (so a mis-keyed `P` on a running instance destroys role +
+/// `DinD` + volume + network plus on-disk state in one stroke), so the
+/// confirmation step is non-optional. Mirrors the workspace-delete
+/// pattern at `handle_list_key` line 158.
+fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
+    let Some(container) = selected_instance_container(state, ConsoleInstanceAction::Purge) else {
+        state.list_modal = Some(Modal::ErrorPopup {
+            state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                "No instance",
+                "No purgeable instance for this workspace.",
+            ),
+        });
+        return InputOutcome::Continue;
+    };
+    let label = state
+        .instances
+        .iter()
+        .find(|entry| entry.container_base == container)
+        .map_or_else(
+            || container.clone(),
+            |entry| format!("{} ({})", entry.container_base, entry.role_key),
+        );
+    let prompt = format!(
+        "Purge \"{label}\"?\nThis removes the role container, DinD sidecar, volume, network, AND local recovery state. Cannot be undone."
+    );
+    state.stage = ManagerStage::ConfirmInstancePurge {
+        container,
+        label,
+        state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+    };
+    InputOutcome::Continue
+}
+
+/// Preview-pane navigation: the operator pressed a key while
+/// `state.preview_focused` is `true`.
+///
+/// ↑/↓ cycles the selected pane inside the snapshot, Esc / ← /
+/// `BackTab` pops focus back to the tree, Enter reattaches with
+/// `--focus <session_id>`. Any other key is a no-op so a stray Tab
+/// or text key cannot dump the operator back to the workspace tree
+/// mid-pick.
+fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
+    let Some(container) = selected_instance_container(state, ConsoleInstanceAction::Reconnect)
+    else {
+        // Selection slid off an instance row while preview was open
+        // (refresh purged the entry). Clear focus and let the next
+        // input fall through to the workspace tree.
+        state.preview_focused = false;
+        return InputOutcome::Continue;
+    };
+    let panes = state.flattened_preview_panes(&container);
+    if panes.is_empty() {
+        state.preview_focused = false;
+        return InputOutcome::Continue;
+    }
+    let len = panes.len();
+    let mut cursor = state
+        .preview_pane_cursor
+        .get(&container)
+        .copied()
+        .unwrap_or(0)
+        .min(len - 1);
+    match key.code {
+        KeyCode::Esc | KeyCode::BackTab | KeyCode::Left => {
+            state.preview_focused = false;
+            InputOutcome::Continue
+        }
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            cursor = cursor.saturating_sub(1);
+            state.preview_pane_cursor.insert(container, cursor);
+            InputOutcome::Continue
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            cursor = (cursor + 1).min(len - 1);
+            state.preview_pane_cursor.insert(container, cursor);
+            InputOutcome::Continue
+        }
+        KeyCode::Enter => {
+            let (_, session_id) = panes[cursor];
+            state.preview_focused = false;
+            InputOutcome::InstanceAction {
+                container,
+                action: ConsoleInstanceAction::ReconnectFocus(session_id),
+            }
+        }
+        _ => InputOutcome::Continue,
+    }
+}
+
 fn selected_instance_container(
     state: &ManagerState<'_>,
     action: ConsoleInstanceAction,
 ) -> Option<String> {
     if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
         let instances = state.workspace_active_instances(ws_idx);
+        let entry = instances.get(inst_idx)?;
+        return if instance_action_accepts_status(action, entry.status) {
+            Some(entry.container_base.clone())
+        } else {
+            None
+        };
+    }
+    if let ManagerListRow::CurrentDirectoryInstance(inst_idx) = state.selected_row() {
+        let instances = state.current_dir_active_instances();
         let entry = instances.get(inst_idx)?;
         return if instance_action_accepts_status(action, entry.status) {
             Some(entry.container_base.clone())
@@ -271,7 +405,7 @@ fn selected_instance_scope<'a>(
     state: &'a ManagerState<'_>,
 ) -> Option<(Option<&'a str>, &'a str, &'a str)> {
     match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
             let current_dir = state.current_dir.as_str();
             Some((None, current_dir, current_dir))
         }
@@ -293,26 +427,71 @@ fn selected_instance_scope<'a>(
     }
 }
 
+/// Action × status acceptance grid. Each arm enumerates the exact set
+/// of statuses the action runs against. Negative `!matches!` idioms
+/// were intentionally avoided: a future `InstanceStatus` variant
+/// (e.g. `Stopping`) would silently flip every action that used a
+/// negative match to "accept this new state too", which is almost
+/// never what the operator wants. The positive form forces the
+/// developer adding a variant to consider each action explicitly.
 const fn instance_action_accepts_status(
     action: ConsoleInstanceAction,
     status: crate::instance::InstanceStatus,
 ) -> bool {
-    match action {
-        ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::Inspect => {
-            !matches!(status, crate::instance::InstanceStatus::Purged)
-        }
-        ConsoleInstanceAction::NewSession
-        | ConsoleInstanceAction::NewSessionWithAgent(_)
-        | ConsoleInstanceAction::Shell => matches!(
+    use crate::instance::InstanceStatus as S;
+    match (action, status) {
+        // Reconnect / ReconnectFocus / Inspect: anything that still has on-disk state to read.
+        (
+            ConsoleInstanceAction::Reconnect
+            | ConsoleInstanceAction::ReconnectFocus(_)
+            | ConsoleInstanceAction::Inspect,
             status,
-            crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
-        ),
-        ConsoleInstanceAction::Purge => !matches!(
+        ) => match status {
+            S::Active
+            | S::Running
+            | S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::FailedSetup => true,
+            S::Purged => false,
+        },
+        // NewSession / Shell / Stop: live container required.
+        (
+            ConsoleInstanceAction::NewSession
+            | ConsoleInstanceAction::NewSessionWithAgent(_)
+            | ConsoleInstanceAction::Shell
+            | ConsoleInstanceAction::Stop,
             status,
-            crate::instance::InstanceStatus::Active
-                | crate::instance::InstanceStatus::Running
-                | crate::instance::InstanceStatus::Purged
-        ),
+        ) => match status {
+            S::Active | S::Running => true,
+            S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::Purged
+            | S::FailedSetup => false,
+        },
+        // Purge: anything that hasn't already been purged. Crashed /
+        // CleanExited / Preserved* rows have local state worth deleting
+        // even though their containers are gone — Purge cleans both
+        // halves of the leftover.
+        (ConsoleInstanceAction::Purge, status) => match status {
+            S::Active
+            | S::Running
+            | S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::FailedSetup => true,
+            S::Purged => false,
+        },
     }
 }
 
@@ -514,7 +693,7 @@ mod tests {
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
     use super::super::super::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use super::super::test_support::{key, mount};
-    use super::InputOutcome;
+    use super::{InputOutcome, instance_action_accepts_status};
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
@@ -569,6 +748,78 @@ mod tests {
             status,
             updated_at: "2026-05-11T00:00:00Z".into(),
         }
+    }
+
+    fn current_dir_instance_entry(
+        container: &str,
+        status: InstanceStatus,
+        workdir: &str,
+    ) -> InstanceIndexEntry {
+        InstanceIndexEntry {
+            instance_id: format!("{container}-id"),
+            container_base: container.into(),
+            workspace_name: None,
+            workspace_label: workdir.into(),
+            workdir: workdir.into(),
+            role_key: "the-architect".into(),
+            agent_runtime: "codex".into(),
+            status,
+            updated_at: "2026-05-11T00:00:00Z".into(),
+        }
+    }
+
+    fn live_snapshot() -> crate::runtime::snapshot::InstanceSnapshot {
+        crate::runtime::snapshot::InstanceSnapshot {
+            tabs: vec![jackin_protocol::control::TabSnapshot {
+                label: "Codex".into(),
+                focused_pane: 1,
+                panes: vec![jackin_protocol::control::PaneSnapshot {
+                    session_id: 1,
+                    label: "Codex".into(),
+                    agent: Some("codex".into()),
+                    state: jackin_protocol::control::AgentState::Idle,
+                }],
+            }],
+            active_tab: 0,
+        }
+    }
+
+    #[test]
+    fn right_on_current_directory_parent_expands_even_with_live_snapshot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let cwd = tmp.path();
+        let workdir = cwd.display().to_string();
+        let container = "jackin-current-dir-the-architect-live";
+
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.instances = vec![current_dir_instance_entry(
+            container,
+            InstanceStatus::Running,
+            &workdir,
+        )];
+        state
+            .instance_snapshots
+            .insert(container.into(), live_snapshot());
+
+        let outcome =
+            handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right)).unwrap();
+
+        assert!(matches!(outcome, InputOutcome::Continue));
+        assert!(
+            state.current_dir_expanded,
+            "→ on the Current directory parent must expand the tree"
+        );
+        assert!(
+            !state.preview_focused,
+            "preview focus is only reachable from instance child rows"
+        );
+        assert!(matches!(
+            state.row_at(1),
+            Some(crate::console::manager::state::ManagerListRow::CurrentDirectoryInstance(0))
+        ));
     }
 
     /// `e` and `d` on the current-directory row must be silent no-ops —
@@ -729,6 +980,10 @@ mod tests {
             other => panic!("expected inspect instance action; got {other:?}"),
         }
 
+        // P now stages a confirm modal instead of dispatching Purge
+        // directly — the action destroys role + DinD + volume + network
+        // + local state in one stroke, so an unconditional confirmation
+        // step keeps mis-keyed `P` from destroying running work.
         let outcome = handle_key(
             &mut state,
             &mut config,
@@ -737,13 +992,199 @@ mod tests {
             key(KeyCode::Char('p')),
         )
         .unwrap();
+        assert!(
+            matches!(outcome, InputOutcome::Continue),
+            "P should stage the confirm modal and return Continue; got {outcome:?}"
+        );
+        assert!(
+            matches!(
+                state.stage,
+                crate::console::manager::state::ManagerStage::ConfirmInstancePurge { .. }
+            ),
+            "P should have set ConfirmInstancePurge stage"
+        );
+
+        // Confirm via Y → the staged action fires.
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('y')),
+        )
+        .unwrap();
         match outcome {
             InputOutcome::InstanceAction { container, action } => {
                 assert_eq!(container, "jackin-demo-architect-123456");
                 assert_eq!(action, crate::console::ConsoleInstanceAction::Purge);
             }
-            other => panic!("expected purge instance action; got {other:?}"),
+            other => panic!("expected purge instance action after Y; got {other:?}"),
         }
+    }
+
+    #[test]
+    fn confirm_instance_purge_n_dismisses_without_dispatch() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-cancel",
+            InstanceStatus::Running,
+            workdir,
+        )];
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('p')),
+        )
+        .unwrap();
+        assert!(matches!(
+            state.stage,
+            crate::console::manager::state::ManagerStage::ConfirmInstancePurge { .. }
+        ));
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('n')),
+        )
+        .unwrap();
+        assert!(
+            matches!(outcome, InputOutcome::Continue),
+            "N must return Continue (no dispatch); got {outcome:?}"
+        );
+        assert!(
+            matches!(
+                state.stage,
+                crate::console::manager::state::ManagerStage::List
+            ),
+            "N must reset stage to List"
+        );
+    }
+
+    #[test]
+    fn confirm_instance_purge_esc_dismisses_without_dispatch() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-esc",
+            InstanceStatus::Running,
+            workdir,
+        )];
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('p')),
+        )
+        .unwrap();
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Esc),
+        )
+        .unwrap();
+        assert!(matches!(outcome, InputOutcome::Continue));
+        assert!(matches!(
+            state.stage,
+            crate::console::manager::state::ManagerStage::List
+        ));
+    }
+
+    #[test]
+    fn t_key_dispatches_stop_for_running_instance() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-stop",
+            InstanceStatus::Running,
+            workdir,
+        )];
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('t')),
+        )
+        .unwrap();
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect-stop");
+                assert_eq!(action, crate::console::ConsoleInstanceAction::Stop);
+            }
+            other => panic!("expected stop instance action; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn t_key_shows_no_instance_popup_when_no_running_instance() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        // Only a CleanExited entry — Stop must not accept it.
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-stale",
+            InstanceStatus::CleanExited,
+            workdir,
+        )];
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('t')),
+        )
+        .unwrap();
+        assert!(
+            matches!(outcome, InputOutcome::Continue),
+            "T on non-Running must yield Continue (with the no-instance modal); got {outcome:?}"
+        );
+        assert!(
+            matches!(state.list_modal, Some(Modal::ErrorPopup { .. })),
+            "expected ErrorPopup modal explaining no running instance"
+        );
+    }
+
+    #[test]
+    fn instance_action_accepts_status_grid_smoke() {
+        use crate::console::ConsoleInstanceAction as A;
+        use crate::instance::InstanceStatus as S;
+        // Smoke test the grid: a couple of cells per action so a
+        // future refactor that flips the action × status matrix has to
+        // touch this test.
+        assert!(instance_action_accepts_status(A::Stop, S::Running));
+        assert!(!instance_action_accepts_status(A::Stop, S::CleanExited));
+        assert!(!instance_action_accepts_status(A::Stop, S::Purged));
+        assert!(instance_action_accepts_status(A::Purge, S::Running));
+        assert!(instance_action_accepts_status(A::Purge, S::PreservedDirty));
+        assert!(!instance_action_accepts_status(A::Purge, S::Purged));
+        assert!(instance_action_accepts_status(A::Reconnect, S::Crashed));
+        assert!(!instance_action_accepts_status(A::Reconnect, S::Purged));
     }
 
     #[test]

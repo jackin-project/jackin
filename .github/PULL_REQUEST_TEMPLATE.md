@@ -1,6 +1,17 @@
 <!--
-PR body template. The shape and rules below are documented in
-PULL_REQUESTS.md at the repo root — read that before authoring.
+PR body template. Two surfaces describe how to use it:
+
+  - PULL_REQUESTS.md at the repo root — shared PR flow + body-shape
+    spec + Verify-locally template + isolation env vars + review and
+    roadmap-retirement rules. Both humans and agents start here.
+  - .github/AGENTS.md (next to this template) — agent-only extras:
+    merge authorization, body-construction shell quoting, force-push
+    policy, jackin-capsule smoke-test mandate, squash-commit format.
+    Claude Code auto-loads it via .github/CLAUDE.md when working
+    under .github/.
+
+Read both before authoring the body if you are an agent; the shared
+file alone if you are a human contributor.
 
 Rules in one line each:
 - One paragraph per section, no hard-wrap (GitHub flows the text).
@@ -72,6 +83,7 @@ cd jackin
 mise trust
 git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
+mise install
 ```
 
 ### Isolation
@@ -108,6 +120,34 @@ cargo nextest run --all-features
 paths, etc. Skip this paragraph when the test set is small enough that the
 filter speaks for itself.>
 
+### Build jackin-capsule
+
+<Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
+Include it whenever daemon.rs, client.rs, session.rs, layout.rs,
+dialog.rs, statusbar.rs, input.rs, pid1.rs, or any other file under
+`crates/jackin-capsule/src/` is changed. THIS BLOCK MUST COME BEFORE
+`### User smoke` AND `### jackin-capsule smoke`: every `jackin console` and
+`jackin load` invocation below consumes whichever binary `ensure_available`
+resolves first. Without the eval below, the launches use the cached or
+preview-release binary and silently do not exercise the PR's container-side
+changes.>
+
+```sh
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
+```
+
+`build-jackin-capsule` invokes `cargo zigbuild`, writes the cross-compiled
+Linux artifact to the host cache, and `--export` prints
+`export JACKIN_CAPSULE_BIN=<path>` for `eval` to consume. The eval form is
+required (not optional): hand-rolled `target/<triple>/release/jackin-capsule`
+exports silently break when the operator switches architectures. First build
+takes ~2-3 min via cargo-zigbuild; subsequent builds are incremental. Editing
+any file under `crates/jackin-capsule/src/` does NOT auto-invalidate the
+binary on disk — re-run the eval to rebuild. To purge the cache entirely:
+`rm -rf ~/.jackin/cache/jackin-capsule/`. If the build prints a
+`cargo zigbuild` error, install the toolchain via
+`mise install zig cargo:cargo-zigbuild`.
+
 ### User smoke
 
 ```sh
@@ -117,7 +157,37 @@ cargo run --bin jackin -- console --debug
 <List the in-container commands or UI steps the operator should walk, with
 expected output where it disambiguates a pass/fail. Replace this block with the
 narrower path when the PR has one (e.g. `cargo run --bin jackin -- load
-<role> <target> --debug`).>
+<role> <target> --debug`). For PRs touching `crates/jackin-capsule/`, the
+`### Build jackin-capsule` block above MUST run first — otherwise the
+console launches with a stale binary.>
+
+### jackin-capsule smoke
+
+<Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
+Include it whenever any file under `crates/jackin-capsule/src/` is changed.
+This block assumes the `### Build jackin-capsule` block above has already
+run — do not repeat the eval here.>
+
+```sh
+cargo run --bin jackin -- load the-architect . --debug
+```
+
+Inside the container, verify:
+
+- Row 0 status bar is visible: `jackin'  [<agent-name>]`
+- Agent TUI starts and renders correctly below the status bar
+- `Ctrl+\` opens the command palette (override with `JACKIN_PALETTE_KEY`)
+- Mouse clicks, arrow keys, and paste reach the agent unmodified
+- <One sentence specific to what this PR changed — e.g. "Split pane rendered
+  after `Ctrl+\ → Split pane │`" or "Session switch preserved agent output">
+
+<For PRs touching the tmux-style prefix surface (`Ctrl+B Space` palette,
+`Ctrl+B "` / `Ctrl+B %` splits, `Ctrl+B d` detach), opt in before launching
+and call it out in the verify list:>
+
+```sh
+export JACKIN_PREFIX=C-b
+```
 
 ### Documentation
 

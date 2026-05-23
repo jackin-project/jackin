@@ -415,10 +415,10 @@ mod tests {
     #[test]
     fn list_records_for_workspace_ignores_non_jackin_dirs() {
         let data = TempDir::new().unwrap();
-        let other = data.path().join("not-a-jackin-container");
+        let other = data.path().join("not-a-jackin-capsule");
         std::fs::create_dir_all(&other).unwrap();
         let mut rec = sample_record();
-        rec.container_name = "not-a-jackin-container".into();
+        rec.container_name = "not-a-jackin-capsule".into();
         write_records(&other, &[rec]).unwrap();
         let result = list_records_for_workspace(data.path(), "jackin").unwrap();
         assert!(result.is_empty());

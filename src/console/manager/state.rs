@@ -24,6 +24,10 @@ use crate::console::widgets::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManagerListRow {
     CurrentDirectory,
+    /// An active instance under the synthetic "Current directory" row.
+    /// `instance_idx` is the position within
+    /// `ManagerState::current_dir_active_instances`.
+    CurrentDirectoryInstance(usize),
     SavedWorkspace(usize),
     /// An active instance under a saved workspace. `(workspace_idx,
     /// instance_idx)` where `instance_idx` is the position within
@@ -43,7 +47,7 @@ impl ManagerListRow {
             Self::CurrentDirectory => Some(0),
             Self::SavedWorkspace(i) => Some(i + 1),
             Self::NewWorkspace => Some(saved_count + 1),
-            Self::WorkspaceInstance(_, _) => None,
+            Self::WorkspaceInstance(_, _) | Self::CurrentDirectoryInstance(_) => None,
         }
     }
 
@@ -62,12 +66,13 @@ impl ManagerListRow {
                     Some(saved_count + 1)
                 }
             }
-            Self::WorkspaceInstance(_, _) => None,
+            Self::WorkspaceInstance(_, _) | Self::CurrentDirectoryInstance(_) => None,
         }
     }
 }
 
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
@@ -127,12 +132,34 @@ pub struct ManagerState<'a> {
     /// the lifetime of this `ManagerState` instance — workspace changes
     /// always fully rebuild state, clearing this set.
     pub expanded_workspaces: BTreeSet<usize>,
+    /// Whether the synthetic "Current directory" row is expanded to
+    /// show its active instances. Mirrors `expanded_workspaces` for
+    /// the one-off cwd row, which has no index into `workspaces`.
+    pub current_dir_expanded: bool,
     /// Cached sessions per active instance keyed by `container_base`.
     /// Populated from manifests during `refresh_instances`.
     pub instance_sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
     /// Containers whose manifests could not be read during the last
     /// `refresh_instances` pass. Cleared on every successful index load.
     instance_session_errors: HashSet<String>,
+    /// Live tab/pane snapshot per running instance keyed by
+    /// `container_base`. Populated each `refresh_instances` tick by
+    /// fetching from the daemon's bind-mounted socket at
+    /// `~/.jackin/sockets/<container>/jackin.sock`. Missing keys mean
+    /// the snapshot is unavailable (container not running, socket
+    /// pre-dates the bind-mount, or the fetch failed).
+    pub instance_snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
+    /// `true` when the operator has dropped cursor focus into the
+    /// snapshot preview pane via Tab / →. While set, ↑/↓ navigates
+    /// `preview_pane_cursor` through the flattened pane list and
+    /// Enter attaches with the selected pane's focus id. Esc / ← /
+    /// `BackTab` pops focus back to the workspace tree.
+    pub preview_focused: bool,
+    /// Operator-selected pane index within the flattened pane list
+    /// of the focused instance, keyed by `container_base`. Persists
+    /// across re-entries to the preview pane so the operator's last
+    /// selection survives a `Esc → ↑/↓ → Tab` round-trip.
+    pub preview_pane_cursor: HashMap<String, usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,7 +198,21 @@ pub enum ManagerStage<'a> {
     Editor(EditorState<'a>),
     Settings(SettingsState<'a>),
     CreatePrelude(CreatePreludeState<'a>),
-    ConfirmDelete { name: String, state: ConfirmState },
+    ConfirmDelete {
+        name: String,
+        state: ConfirmState,
+    },
+    /// Y/N gate on a destructive instance action. Currently used only
+    /// by Purge (which now ejects + deletes preserved state in a single
+    /// keystroke, so a confirm step keeps a mis-keyed `P` from
+    /// destroying running work). Holds the resolved container plus
+    /// human-readable label so the modal can name what is about to be
+    /// destroyed.
+    ConfirmInstancePurge {
+        container: String,
+        label: String,
+        state: ConfirmState,
+    },
 }
 
 #[derive(Debug)]
@@ -180,6 +221,7 @@ pub struct GlobalMountsState<'a> {
     pub pending: Vec<crate::config::GlobalMountRow>,
     pub original: Vec<crate::config::GlobalMountRow>,
     pub modal: Option<GlobalMountModal<'a>>,
+    pub modal_parents: Vec<GlobalMountModal<'a>>,
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
     pub scroll_x: u16,
@@ -292,6 +334,7 @@ pub struct SettingsEnvState<'a> {
     pub pending: SettingsEnvConfig,
     pub original: SettingsEnvConfig,
     pub modal: Option<SettingsEnvModal<'a>>,
+    pub modal_parents: Vec<SettingsEnvModal<'a>>,
     pub pending_env_key: Option<(SettingsEnvScope, String)>,
     pub pending_picker_target: Option<(SettingsEnvScope, Option<String>)>,
     pub pending_picker_value: Option<crate::operator_env::EnvValue>,
@@ -492,6 +535,16 @@ pub struct EditorState<'a> {
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
     pub modal: Option<Modal<'a>>,
+    /// Parent chain backing the Esc-back rule from
+    /// `docs/.../tui-design-decisions.mdx` — modals that opened a
+    /// sub-modal (`open_sub_modal`) stash themselves here so cancel
+    /// on the child can pop back rather than dumping to the
+    /// underlying tab. Top of the vec = parent immediately under
+    /// the currently-visible `modal`. Empty = the visible modal has
+    /// no parent in the chain (Esc closes back to the tab as
+    /// before). `clear_modal_chain` empties both this and `modal` on
+    /// terminal commits where the chain has finished its job.
+    pub modal_parents: Vec<Modal<'a>>,
     /// Create-mode only; Edit mode reads name from `EditorMode::Edit`.
     pub pending_name: Option<String>,
     /// Signals the outer `handle_key` to save and/or pop to List.
@@ -624,6 +677,7 @@ impl GlobalMountsState<'_> {
             pending: rows.clone(),
             original: rows,
             modal: None,
+            modal_parents: Vec::new(),
             add_draft: None,
             error: None,
             scroll_x: 0,
@@ -642,6 +696,8 @@ impl GlobalMountsState<'_> {
         self.pending = self.original.clone();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
+        self.modal = None;
+        self.modal_parents.clear();
         self.error = None;
     }
 
@@ -660,6 +716,24 @@ impl GlobalMountsState<'_> {
         let config = editor.save()?;
         self.original = self.pending.clone();
         Ok(config)
+    }
+}
+
+impl<'a> GlobalMountsState<'a> {
+    pub fn open_sub_modal(&mut self, child: GlobalMountModal<'a>) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+    }
+
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
     }
 }
 
@@ -825,6 +899,7 @@ impl SettingsEnvState<'_> {
             original: pending.clone(),
             pending,
             modal: None,
+            modal_parents: Vec::new(),
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -847,6 +922,7 @@ impl SettingsEnvState<'_> {
             .selected
             .min(settings_env_flat_row_count(self).saturating_sub(1));
         self.modal = None;
+        self.modal_parents.clear();
         self.pending_env_key = None;
         self.pending_picker_target = None;
         self.pending_picker_value = None;
@@ -872,6 +948,36 @@ impl SettingsEnvState<'_> {
                     env_change_count(original, pending)
                 })
                 .sum::<usize>()
+    }
+}
+
+impl<'a> SettingsEnvState<'a> {
+    pub fn open_sub_modal(&mut self, child: SettingsEnvModal<'a>) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+        if self.modal.is_none() {
+            self.drop_modal_scratch();
+        }
+    }
+
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
+        self.drop_modal_scratch();
+    }
+
+    /// See [`EditorState::drop_modal_scratch`]: when the modal chain
+    /// fully unwinds, clear the env-key + picker-value scratch slots
+    /// so a later commit cannot accidentally target a stale (scope, key).
+    fn drop_modal_scratch(&mut self) {
+        self.pending_env_key = None;
+        self.pending_picker_value = None;
     }
 }
 
@@ -1430,8 +1536,12 @@ impl ManagerState<'_> {
             instances_last_refresh: None,
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
+            current_dir_expanded: false,
             instance_sessions: HashMap::new(),
             instance_session_errors: HashSet::new(),
+            instance_snapshots: HashMap::new(),
+            preview_focused: false,
+            preview_pane_cursor: HashMap::new(),
         }
     }
 
@@ -1507,6 +1617,12 @@ impl ManagerState<'_> {
     /// Instance rows appear immediately after their parent workspace row.
     fn selectable_rows_vec(&self) -> Vec<ManagerListRow> {
         let mut rows = vec![ManagerListRow::CurrentDirectory];
+        if self.current_dir_expanded {
+            let count = self.current_dir_active_instances().len();
+            for j in 0..count {
+                rows.push(ManagerListRow::CurrentDirectoryInstance(j));
+            }
+        }
         for (i, _) in self.workspaces.iter().enumerate() {
             rows.push(ManagerListRow::SavedWorkspace(i));
             if self.expanded_workspaces.contains(&i) {
@@ -1524,6 +1640,12 @@ impl ManagerState<'_> {
     /// `None` spacer before `NewWorkspace` when saved workspaces exist.
     pub fn visual_rows_vec(&self) -> Vec<Option<ManagerListRow>> {
         let mut rows: Vec<Option<ManagerListRow>> = vec![Some(ManagerListRow::CurrentDirectory)];
+        if self.current_dir_expanded {
+            let count = self.current_dir_active_instances().len();
+            for j in 0..count {
+                rows.push(Some(ManagerListRow::CurrentDirectoryInstance(j)));
+            }
+        }
         for (i, _) in self.workspaces.iter().enumerate() {
             rows.push(Some(ManagerListRow::SavedWorkspace(i)));
             if self.expanded_workspaces.contains(&i) {
@@ -1637,6 +1759,54 @@ impl ManagerState<'_> {
         self.instance_session_errors.contains(container_base)
     }
 
+    /// Live tab/pane snapshot the daemon reported in the last
+    /// `refresh_instances` tick, or `None` when the bind-mounted socket
+    /// is absent or the fetch failed. `render_instance_details_pane`
+    /// prefers this over the on-disk manifest sessions when present.
+    #[must_use]
+    pub fn snapshot_for_instance(
+        &self,
+        container_base: &str,
+    ) -> Option<&crate::runtime::snapshot::InstanceSnapshot> {
+        self.instance_snapshots.get(container_base)
+    }
+
+    /// Flatten the per-instance snapshot's tab/pane tree into a
+    /// linear list the preview's ↑/↓ navigation can index into.
+    /// Each entry is `(tab_idx, session_id)`. Empty when no
+    /// snapshot exists for the container.
+    #[must_use]
+    pub fn flattened_preview_panes(&self, container_base: &str) -> Vec<(usize, u64)> {
+        let Some(snapshot) = self.instance_snapshots.get(container_base) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (tab_idx, tab) in snapshot.tabs.iter().enumerate() {
+            for pane in &tab.panes {
+                out.push((tab_idx, pane.session_id));
+            }
+        }
+        out
+    }
+
+    /// Currently-selected pane in the preview, clamped against the
+    /// flattened list. Returns `None` when the snapshot is missing
+    /// or the list is empty.
+    #[must_use]
+    pub fn preview_selected_pane(&self, container_base: &str) -> Option<(usize, u64)> {
+        let panes = self.flattened_preview_panes(container_base);
+        if panes.is_empty() {
+            return None;
+        }
+        let cursor = self
+            .preview_pane_cursor
+            .get(container_base)
+            .copied()
+            .unwrap_or(0)
+            .min(panes.len() - 1);
+        panes.get(cursor).copied()
+    }
+
     /// The [`WorkspaceSummary`] currently highlighted, or `None` when the
     /// selection is on Current Directory, New Workspace, or a `WorkspaceInstance`.
     #[must_use]
@@ -1655,6 +1825,31 @@ impl ManagerState<'_> {
     pub fn expand_workspace(&mut self, ws_idx: usize) {
         if !self.workspace_active_instances(ws_idx).is_empty() {
             self.expanded_workspaces.insert(ws_idx);
+        }
+    }
+
+    /// Expand the synthetic "Current directory" row. No-op when
+    /// already expanded or when no instances point at the cwd.
+    pub fn expand_current_dir(&mut self) {
+        if self.has_current_dir_active_instances() {
+            self.current_dir_expanded = true;
+        }
+    }
+
+    /// Collapse the synthetic "Current directory" row. When the
+    /// cursor is on one of its instance children, jumps the cursor
+    /// up to the parent row first.
+    pub fn collapse_current_dir(&mut self) {
+        if !self.current_dir_expanded {
+            return;
+        }
+        let was_on_child = matches!(
+            self.selected_row(),
+            ManagerListRow::CurrentDirectoryInstance(_)
+        );
+        self.current_dir_expanded = false;
+        if was_on_child {
+            self.selected = 0; // CurrentDirectory is always row 0
         }
     }
 
@@ -1704,9 +1899,11 @@ impl ManagerState<'_> {
                 self.instances_last_error = None;
                 // Load recorded sessions for each active/running instance.
                 // These come from persisted manifests and may not reflect live
-                // tmux state, but provide useful context without Docker exec.
+                // multiplexer state, but provide useful context without Docker exec.
                 self.instance_sessions.clear();
                 self.instance_session_errors.clear();
+                self.instance_snapshots.clear();
+                let mut snapshot_targets: Vec<String> = Vec::new();
                 for entry in &self.instances {
                     if matches!(
                         entry.status,
@@ -1730,8 +1927,29 @@ impl ManagerState<'_> {
                                     .insert(entry.container_base.clone());
                             }
                         }
+                        snapshot_targets.push(entry.container_base.clone());
                     }
                 }
+                let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
+                for (container, result) in snapshot_results {
+                    match result {
+                        Ok(Some(snapshot)) => {
+                            self.instance_snapshots.insert(container, snapshot);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            crate::debug_log!(
+                                "console",
+                                "snapshot fetch failed for {container}: {e:#}"
+                            );
+                        }
+                    }
+                }
+                // Evict preview cursors keyed on containers that no
+                // longer have a live snapshot — otherwise the map
+                // accumulates indefinitely across container churn.
+                self.preview_pane_cursor
+                    .retain(|key, _| self.instance_snapshots.contains_key(key));
                 // Clamp `selected` after a refresh in case an instance row
                 // that was selected has disappeared.
                 let max = self.row_count().saturating_sub(1);
@@ -1742,6 +1960,15 @@ impl ManagerState<'_> {
                 self.instance_sessions.clear();
                 self.instance_session_errors.clear();
                 self.expanded_workspaces.clear();
+                // Mirror the Ok-branch cleanup of the snapshot-derived
+                // surfaces — without this they accumulate stale entries
+                // keyed by container_base that no longer appears in
+                // the index, and `current_dir_expanded` latched against
+                // an empty instance list drifts the row count.
+                self.instance_snapshots.clear();
+                self.preview_pane_cursor.clear();
+                self.current_dir_expanded = false;
+                self.preview_focused = false;
                 let message = format!("instance index error: {error}");
                 if self.instances_last_error.as_deref() != Some(&message) {
                     self.list_modal = Some(Modal::ErrorPopup {
@@ -1754,6 +1981,14 @@ impl ManagerState<'_> {
                 }
             }
         }
+    }
+
+    /// Force the next `refresh_instances` call to re-read disk regardless of
+    /// the throttle interval. Use after an action mutates the on-disk
+    /// instance index (Stop/Purge) so the next list draw reflects the new
+    /// state immediately instead of waiting up to `REFRESH_INTERVAL`.
+    pub const fn force_refresh_instances(&mut self) {
+        self.instances_last_refresh = None;
     }
 
     /// Test helper: force the next `refresh_instances` call to hit disk
@@ -1788,6 +2023,113 @@ impl ManagerState<'_> {
     }
 }
 
+/// Fan-out snapshot fetches in parallel so the render thread's
+/// wall-clock cost stays bounded by the per-fetch `SOCKET_TIMEOUT`
+/// (2 s) regardless of how many active instances exist. A serial loop
+/// would stall the TUI for `N × SOCKET_TIMEOUT` on a host with several
+/// wedged containers. Chunks cap thread-creation churn so a host with
+/// dozens of active containers does not spawn dozens of OS threads
+/// per 500 ms refresh tick; each chunk's wall-clock cost is still
+/// bounded by the slowest fetch in that chunk.
+fn fetch_snapshots_parallel(
+    paths: &crate::paths::JackinPaths,
+    targets: &[String],
+) -> Vec<(
+    String,
+    anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>,
+)> {
+    const SNAPSHOT_FANOUT_CHUNK: usize = 8;
+    let mut results = Vec::with_capacity(targets.len());
+    for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
+        let chunk_results = std::thread::scope(|s| {
+            // Collect all `spawn` handles first so every thread starts
+            // before any join blocks; folding collect+join into one
+            // chain would serialise the work.
+            #[allow(clippy::needless_collect)]
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|container| {
+                    let container = container.clone();
+                    s.spawn(move || {
+                        let result = crate::runtime::snapshot::fetch_snapshot(paths, &container);
+                        (container, result)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| match h.join() {
+                    Ok(pair) => pair,
+                    Err(panic_payload) => {
+                        // Name the panic payload so the caller's
+                        // debug_log routes it through the existing
+                        // failure-logging path instead of silently
+                        // dropping the slot.
+                        let detail = panic_payload
+                            .downcast_ref::<&'static str>()
+                            .map(|s| (*s).to_string())
+                            .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "<non-string panic payload>".to_string());
+                        (
+                            "<unknown-container>".to_string(),
+                            Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
+                        )
+                    }
+                })
+                .collect::<Vec<_>>()
+        });
+        results.extend(chunk_results);
+    }
+    results
+}
+
+impl<'a> EditorState<'a> {
+    /// Open `child` as a sub-modal of the currently-visible modal. If
+    /// a modal is already open it is stashed into `modal_parents`
+    /// (top of vec = nearest parent); Esc on `child` will then call
+    /// `pop_modal_chain` and restore the stashed parent. Use this for
+    /// every modal→modal transition unless the parent's commit is
+    /// terminal (in which case use `set_modal_terminal`).
+    pub fn open_sub_modal(&mut self, child: Modal<'a>) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    /// Pop one frame from the modal chain. If `modal_parents` is
+    /// non-empty the previous parent becomes visible; otherwise the
+    /// chain finishes and `modal` is cleared. Mirrors
+    /// `crates/jackin-capsule/src/dialog.rs::dialog_pop_one` and is
+    /// the canonical "Esc went back" arm for child modals.
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+        if self.modal.is_none() {
+            self.drop_modal_scratch();
+        }
+    }
+
+    /// Terminal commit: clear `modal` and the entire `modal_parents`
+    /// chain so the operator lands on the underlying tab in one step.
+    /// Use on the final action of a multi-step flow (env key + value
+    /// both committed, role + auth form saved, etc.).
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
+        self.drop_modal_scratch();
+    }
+
+    /// Scratch slots used to thread env-key + source-picker context
+    /// across child modals (e.g. `EnvKey` → `SourcePicker` → `OpPicker`).
+    /// Whenever the chain unwinds to no modal, these must clear so a
+    /// later unrelated commit cannot pick up stale (scope, key) and
+    /// write a secret to the wrong target.
+    fn drop_modal_scratch(&mut self) {
+        self.pending_env_key = None;
+        self.pending_picker_value = None;
+    }
+}
+
 impl EditorState<'_> {
     pub fn new_edit(name: String, ws: WorkspaceConfig) -> Self {
         Self {
@@ -1798,6 +2140,7 @@ impl EditorState<'_> {
             original: ws.clone(),
             pending: ws,
             modal: None,
+            modal_parents: Vec::new(),
             pending_name: None,
             exit_after_save: None,
             save_flow: EditorSaveFlow::Idle,
@@ -1829,6 +2172,7 @@ impl EditorState<'_> {
             original: empty.clone(),
             pending: empty,
             modal: None,
+            modal_parents: Vec::new(),
             pending_name: None,
             exit_after_save: None,
             save_flow: EditorSaveFlow::Idle,

@@ -30,19 +30,26 @@ pub const JACKIN_ENV_VALUE: &str = "1";
 pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
 pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVERRIDE";
 
-/// Env var that carries the AI agent slug (`claude` / `codex` / `amp`) into
-/// the role container so the entrypoint and in-container tooling can
-/// dispatch on which agent is running.
+/// Env var that carries the AI agent slug into each agent session.
+///
+/// The entrypoint and in-container tooling use this to dispatch on which
+/// agent is running. The host launcher does not set this on the container
+/// itself; the initial agent is passed to PID 1 as argv.
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 
-/// Env var that carries the role's selector key (e.g. `agent-smith` or
-/// `chainargos/agent-brown`) into the role container so in-container
-/// scripts can identify which role they are running as.
+/// Reserved runtime name for role identity. Capsule receives the actual role
+/// key through `/jackin/run/agent.toml`.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 
-/// Env var that signals the entrypoint to install a `prepare-commit-msg`
-/// hook via `core.hooksPath` so the running agent's `Co-authored-by`
-/// trailer is appended automatically to every non-amend commit.
+/// Reserved runtime name for the in-container workspace workdir. Capsule
+/// receives the actual workdir through `/jackin/run/agent.toml`.
+pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
+
+/// Env var that enables the in-container git trailer hook.
+///
+/// The entrypoint installs the `prepare-commit-msg` hook via `core.hooksPath`
+/// so the running agent's `Co-authored-by` trailer is appended whenever Git
+/// prepares a commit message.
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 
 /// Env var that signals the entrypoint to append a `Signed-off-by` DCO trailer.
@@ -96,6 +103,7 @@ pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
     (JACKIN_AGENT_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),
+    (JACKIN_WORKDIR_ENV_NAME, None),
     (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, None),
     (JACKIN_GIT_DCO_ENV_NAME, None),
     // Docker TLS vars injected by jackin — must not be overridden by manifests.
@@ -224,8 +232,8 @@ mod tests {
         for sentinel in &[
             "JACKIN",               // in-container sentinel (was JACKIN)
             "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
-            "JACKIN_AGENT",         // injected by runtime — agent slug (claude/codex/amp)
-            "JACKIN_ROLE",          // injected by runtime — role selector key
+            "JACKIN_AGENT",         // injected per agent session — agent slug (claude/codex/amp)
+            "JACKIN_ROLE",          // runtime-owned role selector key
             "JACKIN_GIT_COAUTHOR_TRAILER",
             "JACKIN_GIT_DCO",
             "DOCKER_HOST",

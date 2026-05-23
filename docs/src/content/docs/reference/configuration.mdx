@@ -6,7 +6,7 @@ import { Aside } from '@astrojs/starlight/components'
 
 <Aside type="note">
 This page is an **internals reference** for contributors and operators
-who want to read, audit, or hand-edit jackin's config file directly —
+who want to read, audit, or hand-edit jackin' config file directly —
 typically while debugging or shipping a fix. Day-to-day operator work
 goes through `jackin workspace …`, `jackin config …`, and the
 operator console, none of which require touching this file. Start
@@ -30,7 +30,7 @@ Three environment variables redirect these default storage roots without touchin
 | Variable | Default | Overrides |
 |---|---|---|
 | `JACKIN_CONFIG_DIR` | `~/.config/jackin` | Config root — `config.toml`, `workspaces/` |
-| `JACKIN_HOME_DIR` | `~/.jackin` | Jackin home root — `data/`, `roles/`, `cache/` |
+| `JACKIN_HOME_DIR` | `~/.jackin` | jackin' home root — `data/`, `roles/`, `cache/` |
 | `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | Override the construct base image used at derived-build time. Role Dockerfiles always reference the canonical name; this substitutes it during `docker build`. Set to `jackin-local/construct:trixie` after `just construct-build-local` to test against a local construct build. See [The Construct Image](/developing/construct-image/) for the full workflow. |
 
 Setting `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` to fresh directories before running jackin means every command reads and writes only those directories, leaving the live operator state completely untouched. Unset behavior is identical to not setting the variables — jackin falls back to the defaults above.
@@ -302,9 +302,9 @@ Global mounts are stored by name. Unscoped mounts live directly under `[docker.m
 
 ### Git co-author trailer
 
-When `coauthor_trailer` is `true`, jackin installs a `prepare-commit-msg` hook inside every role container on launch. The hook reads which agent is running and appends the correct `Co-authored-by` trailer to every new commit message automatically. Amend operations are skipped so the trailer is not added twice.
+When `coauthor_trailer` is `true`, jackin installs a shared `prepare-commit-msg` hook inside the role container the first time a session needs it. The hook is a symlink to `jackin-capsule`, so trailer normalization runs through the same Rust binary that owns deterministic runtime setup. It reads which agent is running and appends that agent's `Co-authored-by` trailer whenever Git asks the hook to prepare a commit message, including amended, reused, squash, and merge messages. Existing agent trailers are preserved, so a commit touched by multiple agents keeps each involved agent in the final trailer block.
 
-When `dco` is `true`, the same hook also appends a `Signed-off-by` DCO trailer read from `git config user.name` and `git config user.email` inside the container. The two fields are independent: enable either or both.
+When `dco` is `true`, the same hook also appends a `Signed-off-by` DCO trailer read from `git config user.name` and `git config user.email` inside the container. Matching existing trailer lines are normalized into Git's final trailer block before commit creation. The two fields are independent: enable either or both.
 
 ```toml
 [git]
@@ -336,7 +336,7 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `state/` | jackin runtime state mounted at `/jackin/state`, including the `setup_once` marker |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
 
-Host→container auth handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent home directories are bind-mounted from jackin-managed per-instance state, not from the operator's host home. The runtime entrypoint seeds image-baked defaults into that durable home on first launch, then copies the current auth handoff files from `/jackin/` into the durable home before starting the agent. This keeps conversation history and runtime-local plugins recoverable when Docker containers disappear while still letting the current auth mode override stale forwarded credentials.
+Host→container auth handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent home directories are bind-mounted from jackin-managed per-instance state, not from the operator's host home. `jackin-capsule runtime-setup` seeds image-baked defaults into that durable home on first launch, then copies the current auth handoff files from `/jackin/` into the durable home before starting the agent. This keeps conversation history and runtime-local plugins recoverable when Docker containers disappear while still letting the current auth mode override stale forwarded credentials.
 
 For roles that list multiple supported agents in their manifest, jackin provisions `claude/`, `codex/`, `amp/`, `kimi/`, and `opencode/` auth handoff directories and their corresponding `home/.claude/`, `home/.codex/`, `home/.local/share/amp/`, `home/.kimi/`, and `home/.local/share/opencode/` durable home directories for every agent the role supports — not just the agent selected for the initial launch. This means starting a second agent via `jackin hardline --new` does not require re-authentication: the credentials and durable home were already placed in the container when it first launched.
 

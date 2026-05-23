@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod app;
+pub mod capsule_binary;
 pub mod cli;
 pub mod config;
 pub mod console;

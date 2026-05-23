@@ -29,6 +29,13 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 
 ### External dependencies
 
+#### `vt100-rust-fork` — replace `donbeave/vt100-rust` git fork with crates.io `vt100` once OSC/CSI callbacks land upstream
+
+- **What:** in [`crates/jackin-capsule/Cargo.toml`](crates/jackin-capsule/Cargo.toml), the `vt100` dependency points at a personal git fork at `donbeave/vt100-rust@527f0715` rather than the canonical crates.io publish. The fork carries patches that extend the crate's `Callbacks` trait with the surface the multiplexer's OSC + unhandled-CSI passthrough layer relies on (`set_window_title`, `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`). Replace with the canonical crate the moment those patches land upstream.
+- **Why:** upstream `vt100` (`doy/vt100-rust`) is the canonical maintained Rust terminal-emulator crate, but its `Callbacks` trait predates the OSC/unhandled-CSI surface jackin'-capsule needs. Pinning a single-author fork at a specific sha violates the "popular, maintained, canonical" preference in [`AGENTS.md`](AGENTS.md) "Prefer libraries over hand-rolled parsers / serializers / format handlers": the fork has no public releases, no second maintainer, and silently misses upstream bugfixes between rebase points. Operators reading `Cargo.lock` cannot tell what the fork's diff is without checking out two repos.
+- **Tracking:** open upstream PRs / issues against `doy/vt100-rust` for the four callback hooks the fork adds. Until those merge, this dependency is the riskiest single line in `Cargo.toml`.
+- **Done when:** every callback the multiplexer uses is reachable from a crates.io-published `vt100 = "<ver>"` line, the git dependency is removed from `Cargo.toml`, and `cargo update -p vt100` is the only step required to pick up future upstream fixes. Remove the explanatory comment above the `vt100 = { git = ... }` line and the matching `TODO(vt100-rust-fork)` markers.
+
 #### `shellfirm-aarch64-linux-binary` — switch to prebuilt download once upstream ships aarch64-linux artifact
 
 - **What:** in [`docker/construct/Dockerfile`](docker/construct/Dockerfile), drop the `cargo install shellfirm` step (and the multi-stage `rust:1.95.0-trixie` `security-tools` builder it lives in) in favor of downloading a prebuilt `shellfirm-vX.Y.Z-aarch64-linux.tar.xz` artifact, mirroring the tirith install pattern already in place.

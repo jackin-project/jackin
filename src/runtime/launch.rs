@@ -12,9 +12,12 @@ use anyhow::Context;
 use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
+use super::attach::wait_for_dind;
 use super::attach::{
-    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions, wait_for_dind,
+    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
+    reconnect_or_create_session_with_focus, start_or_reconnect_capsule_client,
 };
 use super::cleanup::gc_orphaned_resources;
 use super::discovery::list_running_agent_display_names;
@@ -389,18 +392,19 @@ fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String
 
     // Exotic terminal — try to export and compile the terminfo entry.
     // Errors here are recoverable: fall back to xterm-256color so the
-    // session still launches, but log the cause so an operator running
-    // with `--debug` can see why their host's TERM didn't make it in.
+    // session still launches. A single-line warning surfaces the
+    // degradation without breaking up the StepCounter-driven launch
+    // sequence; the verbose cause stays under `--debug`.
     match export_host_terminfo(&host_term, cache_dir) {
         Ok(terminfo_dir) => {
             let mount = format!("{}:/home/agent/.terminfo:ro", terminfo_dir.display());
             (host_term, Some(mount))
         }
         Err(e) => {
-            crate::debug_log!(
-                "terminfo",
-                "export failed for TERM={host_term}: {e:#}; falling back to xterm-256color (container loses {host_term}-specific capabilities)",
+            eprintln!(
+                "jackin: warning: TERM={host_term} terminfo unavailable, falling back to xterm-256color"
             );
+            crate::debug_log!("terminfo", "export failed for TERM={host_term}: {e:#}");
             ("xterm-256color".to_string(), None)
         }
     }
@@ -561,9 +565,8 @@ fn copy_to_linux_layout(
 
 // ── Role source trust ───────────────────────────────────────────────────
 
-/// Display an untrusted-role warning and ask the operator to confirm.
-/// Aborts when stdin is not a terminal or the operator declines.
-/// Branch-specific trust confirmation.
+/// Branch-specific trust confirmation. Aborts when stdin is not a terminal
+/// or the operator declines.
 ///
 /// Even when a role is already trusted, an unmerged branch contains unreviewed
 /// code. The operator trusted the *default* branch, not this PR. A malicious
@@ -699,6 +702,7 @@ struct LaunchContext<'a> {
     git_coauthor_trailer: bool,
     git_dco: bool,
     agent: crate::agent::Agent,
+    capsule_config: &'a jackin_protocol::CapsuleConfig,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     /// Resolved `[…github.env]` map (post `op://` + `$NAME`
     /// resolution). `GH_TOKEN` carries the token in the launcher's
@@ -715,6 +719,44 @@ struct LaunchContext<'a> {
     /// returns, by which time the container has stopped and the
     /// `keep_awake` count is back to zero.
     paths: &'a JackinPaths,
+}
+
+fn capsule_config(
+    selector: &RoleSelector,
+    workdir: &str,
+    manifest: &crate::manifest::RoleManifest,
+) -> jackin_protocol::CapsuleConfig {
+    let mut agents = Vec::new();
+    let mut models = std::collections::BTreeMap::new();
+    for agent in manifest.supported_agents() {
+        agents.push(agent.slug().to_string());
+        let model = match agent {
+            crate::agent::Agent::Claude => manifest
+                .claude
+                .as_ref()
+                .and_then(|cfg| cfg.model.as_deref()),
+            crate::agent::Agent::Codex => {
+                manifest.codex.as_ref().and_then(|cfg| cfg.model.as_deref())
+            }
+            crate::agent::Agent::Amp => None,
+            crate::agent::Agent::Kimi => {
+                manifest.kimi.as_ref().and_then(|cfg| cfg.model.as_deref())
+            }
+            crate::agent::Agent::Opencode => manifest
+                .opencode
+                .as_ref()
+                .and_then(|cfg| cfg.model.as_deref()),
+        };
+        if let Some(model) = model {
+            models.insert(agent.slug().to_string(), model.to_string());
+        }
+    }
+    jackin_protocol::CapsuleConfig {
+        role: selector.key(),
+        workdir: workdir.to_string(),
+        agents,
+        models,
+    }
 }
 
 /// Create the Docker network, start `DinD`, and launch the role container.
@@ -739,6 +781,7 @@ async fn launch_role_runtime(
         git_coauthor_trailer,
         git_dco,
         agent,
+        capsule_config,
         resolved_env,
         github_env,
         cache_dir,
@@ -825,16 +868,6 @@ async fn launch_role_runtime(
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
-    let jackin_agent_env = format!(
-        "{}={}",
-        crate::env_model::JACKIN_AGENT_ENV_NAME,
-        agent.slug()
-    );
-    let jackin_role_env = format!(
-        "{}={}",
-        crate::env_model::JACKIN_ROLE_ENV_NAME,
-        selector.key()
-    );
 
     // Forward the host TERM so the container's terminal type matches what the
     // terminal emulator actually supports.  Docker defaults to TERM=xterm which
@@ -1022,14 +1055,7 @@ async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
-    run_args.extend_from_slice(&[
-        "-e",
-        &jackin_role_env,
-        "-v",
-        &certs_agent_mount,
-        "-v",
-        &gh_config_mount,
-    ]);
+    run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
@@ -1044,97 +1070,142 @@ async fn launch_role_runtime(
         run_args.push("-v");
         run_args.push(ms);
     }
-    // Use the supervisor as PID 1 so the container outlives individual agent
-    // sessions. The primary agent session starts immediately below via
-    // `docker exec tmux new-session`, and model/CLI flags are passed there
-    // rather than as CMD args to the image.
     let image_label = format!("jackin.image={image}");
     run_args.extend_from_slice(&["--label", &image_label]);
-    run_args.extend_from_slice(&["--entrypoint", "/jackin/runtime/supervisor.sh"]);
+    // Host-side bind-mount of the daemon's socket directory. Pre-create
+    // host-side so Docker does not materialise the target itself as
+    // root:root 0755 — that would block the in-container `agent` user
+    // (whose UID matches the host user post-`usermod` in the derived
+    // image) from creating and chmod'ing `jackin.sock`. The same
+    // directory carries Capsule's normalized launch config.
+    let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
+    let capsule_config_contents = toml::to_string(capsule_config)
+        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
+    // Run the filesystem syscalls on the blocking pool — the tokio
+    // runtime is built without the `fs` feature here, and blocking on
+    // a slow / NFS host parks the worker driving the docker-run RPC
+    // for every other future scheduled on it.
+    let socket_dir_for_mkdir = socket_dir.clone();
+    let capsule_config_contents_for_write = capsule_config_contents.clone();
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        std::fs::create_dir_all(&socket_dir_for_mkdir)?;
+        std::fs::write(
+            socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+            capsule_config_contents_for_write,
+        )?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                &socket_dir_for_mkdir,
+                std::fs::Permissions::from_mode(0o700),
+            )?;
+        }
+        Ok(())
+    })
+    .await
+    .context("socket dir mkdir worker join")?
+    .with_context(|| {
+        format!(
+            "creating host-side socket dir {} for container {container_name}",
+            socket_dir.display(),
+        )
+    })?;
+    // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
+    // different host dir than the one we just created. Bail rather than
+    // smuggle U+FFFD into a `-v` argument.
+    let socket_dir_str = socket_dir.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "socket dir {} contains non-UTF-8 bytes; cannot pass to docker -v",
+            socket_dir.display(),
+        )
+    })?;
+    let socket_mount = format!("{socket_dir_str}:/jackin/run");
+    run_args.extend_from_slice(&["-v", &socket_mount]);
+    crate::debug_log!(
+        "launch",
+        "prepared host socket dir {socket_dir_str} (0o700) and Capsule config for bind-mount at /jackin/run",
+    );
     run_args.push(image);
+    // Pass the initial agent as the container command argument. The
+    // daemon uses it only to choose the first tab; per-session
+    // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
+    run_args.push(agent.slug());
     runner
         .run("docker", &run_args, None, &docker_run_opts)
         .await?;
-
-    // Collect entrypoint args to forward model overrides into the tmux session.
-    let mut session_arg_strings: Vec<String> = Vec::new();
-    if let Some(model) = state.claude_model() {
-        session_arg_strings.push("--model".to_string());
-        session_arg_strings.push(model.to_string());
-    }
-    if let Some(model) = state.codex_model() {
-        session_arg_strings.push("-m".to_string());
-        session_arg_strings.push(model.to_string());
-    }
-    if let Some(model) = state.kimi_model() {
-        session_arg_strings.push("--model".to_string());
-        session_arg_strings.push(model.to_string());
-    }
-    if let Some(model) = state.opencode_model() {
-        session_arg_strings.push("-m".to_string());
-        session_arg_strings.push(model.to_string());
-    }
 
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
     // which an interactive `jackin load` can spawn caffeinate.
     super::caffeinate::reconcile(paths, docker, runner).await;
 
-    // Pre-session safety check: if the supervisor exited immediately (missing
-    // or broken supervisor script), surface the container logs rather than
+    // Pre-session safety check: if jackin-capsule exited immediately
+    // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
-    if let Some(err) = diagnose_premature_exit(docker, runner, container_name).await {
-        return Err(err);
-    }
-
-    // Start the first agent session inside the running container. Named
-    // jackin-<agent>-<id> using the same convention as secondary sessions —
-    // there is no primary/secondary distinction; all sessions are equal.
-    // TMUX= prevents nested-session warnings when the operator's host
-    // terminal is itself inside a tmux session.
-    let first_session_name = format!(
-        "jackin-{}-{}",
-        agent.slug(),
-        super::attach::short_session_id()
-    );
-    let mut exec_args: Vec<&str> = vec![
-        "exec",
-        "-e",
-        "TMUX=",
-        "-it",
-        container_name,
-        "tmux",
-        "new-session",
-        "-e",
-        &jackin_agent_env,
-        "-s",
-        &first_session_name,
-        "--",
-        "/jackin/runtime/entrypoint.sh",
-    ];
-    for s in &session_arg_strings {
-        exec_args.push(s.as_str());
-    }
-    let session_result = runner
-        .run("docker", &exec_args, None, &RunOptions::default())
-        .await;
-    // Ensure cleanup debug logs start on a fresh line after the interactive session
-    eprintln!();
-    if session_result.is_err()
-        && let Some(err) = diagnose_premature_exit(docker, runner, container_name).await
+    if let Some(err) =
+        diagnose_premature_exit(docker, runner, container_name, ExitPhase::PreAttach).await
     {
         return Err(err);
     }
-    session_result?;
+
+    // Connect the operator's terminal to the running jackin-capsule multiplexer.
+    // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
+    // to answer `status`; jackin-capsule detects PID != 1 and then runs in
+    // client mode, connecting to that daemon socket inside the container.
+    let session_result =
+        reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await;
+    // Ensure cleanup debug logs start on a fresh line after the interactive session
+    eprintln!();
+    if let Err(err) = session_result {
+        // Single inspect — the previous two-call shape opened a TOCTOU
+        // window where the container could transition Running→Stopped(0)
+        // between the diagnose and swallow checks. `diagnose_premature_exit`
+        // returns a synthesized error for surfaceable exits; otherwise
+        // the post-attach happy path is `Stopped(exit 0, !oom)` from a
+        // clean multiplexer shutdown — swallow `docker exec`'s broken
+        // pipe in that case. External `docker rm` (NotFound) is rare
+        // and must propagate the real exec error so the operator sees
+        // why the container vanished mid-session.
+        let inspect = docker.inspect_container_state(container_name).await;
+        if let Some(diag) =
+            diagnose_with_state(runner, container_name, &inspect, ExitPhase::PostAttach).await
+        {
+            return Err(diag);
+        }
+        if matches!(
+            inspect,
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            }
+        ) {
+            return Ok(());
+        }
+        return Err(err);
+    }
 
     Ok(())
+}
+
+/// Whether `diagnose_premature_exit` is firing before the operator's
+/// terminal was attached or after. The treatment of `exit 0` differs
+/// between the two: pre-attach it's PID 1 exiting before the client
+/// attaches (still worth surfacing — most likely a bad image or
+/// missing binary), post-attach it's the multiplexer shutting the
+/// container down because no live sessions remain (the
+/// container-lifecycle-policy happy path — swallow it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExitPhase {
+    PreAttach,
+    PostAttach,
 }
 
 /// Detect a container that exited before (or during) the foreground session
 /// and return an actionable error including the captured `docker logs`.
 ///
 /// `docker exec` against a stopped container returns "container is not
-/// running" with no hint at the underlying supervisor failure (bad
+/// running" with no hint at the underlying PID 1 failure (bad
 /// entrypoint script, auth crash, missing mount, …). This wraps the
 /// inspect + log fetch so the surfaced error names the exit code, OOM
 /// flag, and the last lines of the container's combined stdout/stderr.
@@ -1145,8 +1216,23 @@ async fn diagnose_premature_exit(
     docker: &impl DockerApi,
     runner: &mut impl crate::docker::CommandRunner,
     container_name: &str,
+    phase: ExitPhase,
 ) -> Option<anyhow::Error> {
-    match docker.inspect_container_state(container_name).await {
+    let state = docker.inspect_container_state(container_name).await;
+    diagnose_with_state(runner, container_name, &state, phase).await
+}
+
+/// Same diagnostic logic as `diagnose_premature_exit` but with the
+/// inspected state passed in — callers that already inspected the
+/// container can avoid a second `docker inspect` round-trip (and the
+/// TOCTOU window between the two).
+async fn diagnose_with_state(
+    runner: &mut impl crate::docker::CommandRunner,
+    container_name: &str,
+    state: &ContainerState,
+    phase: ExitPhase,
+) -> Option<anyhow::Error> {
+    match state {
         // Default to letting the `docker exec` attempt proceed when state is
         // ambiguous: the daemon's own error from a true `NotFound`
         // (`No such container`) is just as actionable as anything we
@@ -1164,26 +1250,55 @@ async fn diagnose_premature_exit(
             exit_code,
             oom_killed,
         } => {
-            let logs = runner
+            // Post-attach clean exit (exit 0, no OOM) is the normal
+            // shutdown path: the operator typed `/exit` in the agent,
+            // the multiplexer drained the last live session, and the
+            // container shut itself down. The container-lifecycle
+            // policy treats this as the happy path — return None so
+            // the caller does not synthesize a misleading "exited
+            // before attach" error. Pre-attach exit 0 is still
+            // surfaced because PID 1 died before the
+            // client connected indicates a bad image / missing binary
+            // even when the exit code looks clean.
+            if phase == ExitPhase::PostAttach && *exit_code == 0 && !oom_killed {
+                return None;
+            }
+            // Distinguish "docker logs succeeded but was empty" from
+            // "docker logs CLI failed" — the latter is a post-mortem
+            // signal the operator needs (daemon down, container gone)
+            // rather than the empty body the prose body falls back to.
+            let logs = match runner
                 .capture("docker", &["logs", "--tail", "40", container_name], None)
                 .await
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-            let reason = if oom_killed {
+            {
+                Ok(text) => {
+                    let trimmed = text.trim().to_string();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed)
+                    }
+                }
+                Err(e) => Some(format!("(docker logs failed: {e:#})")),
+            };
+            let reason = if *oom_killed {
                 "OOM killed".to_string()
             } else {
                 format!("exit {exit_code}")
             };
+            let phase_label = match phase {
+                ExitPhase::PreAttach => "exited before attach",
+                ExitPhase::PostAttach => "exited during session",
+            };
             let body = logs.map_or_else(
                 || {
                     format!(
-                        "container {container_name} exited before attach ({reason}) and produced no log output"
+                        "container {container_name} {phase_label} ({reason}) and produced no log output"
                     )
                 },
                 |text| {
                     format!(
-                        "container {container_name} exited before attach ({reason}); last 40 log lines:\n{text}"
+                        "container {container_name} {phase_label} ({reason}); last 40 log lines:\n{text}"
                     )
                 },
             );
@@ -1911,6 +2026,7 @@ async fn load_role_with(
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
 
+        let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest);
         let ctx = LaunchContext {
             container_name: &container_name,
             image: &image,
@@ -1925,35 +2041,45 @@ async fn load_role_with(
             git_coauthor_trailer: config.git.coauthor_trailer,
             git_dco: config.git.dco,
             agent,
+            capsule_config: &launch_config,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
             cache_dir: &paths.cache_dir,
             paths,
         };
+        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
         let mut cleanup = LoadCleanup::new(
             container_name.clone(),
             dind.clone(),
             certs_volume,
             network.clone(),
+            socket_dir,
         );
         let launch_result = launch_role_runtime(&ctx, &mut steps, docker, runner).await;
         if launch_result.is_err() {
-            // FailedSetup write error must not abort cleanup; surface via debug.
+            // FailedSetup write error must not abort cleanup; surface to stderr
+            // so the operator sees the on-disk status is stale (Active) and
+            // that `jackin inspect` / `hardline` may report misleading state.
             if let Err(status_err) = write_instance_status(
                 paths,
                 &container_state,
                 &mut instance_manifest,
                 InstanceStatus::FailedSetup,
             ) {
-                crate::debug_log!(
-                    "instance",
-                    "failed to mark FailedSetup for {} after launch error: {status_err}",
-                    container_name,
+                eprintln!(
+                    "jackin: warning: failed to mark FailedSetup for {container_name} \
+                     after launch error: {status_err:#}; on-disk status may be stale",
                 );
             }
             cleanup.run(docker).await;
         }
         launch_result?;
+        // Launch succeeded. From here on the cleanup struct is reused
+        // to tear down docker resources at session end (clean exit,
+        // crash, NotFound, etc.); the host-side socket dir + Capsule
+        // launch config stay behind for operator inspection and get
+        // swept by the next explicit `jackin eject` / Purge.
+        cleanup.keep_socket_dir();
         write_instance_status(
             paths,
             &container_state,
@@ -1971,7 +2097,7 @@ async fn load_role_with(
         let mut prompt = crate::isolation::finalize::StdinPrompt;
         let outcome = inspect_attach_outcome(docker, &container_name).await?;
         write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
-        let decision = crate::isolation::finalize::finalize_foreground_session(
+        let mut decision = crate::isolation::finalize::finalize_foreground_session(
             &container_name,
             &paths.data_dir.join(&container_name),
             outcome,
@@ -1980,35 +2106,23 @@ async fn load_role_with(
             docker,
             runner,
         ).await?;
-        if matches!(
+        write_preserved_status_if_applicable(
             decision,
-            crate::isolation::finalize::FinalizeDecision::Preserved
-        ) {
-            let status = preserved_instance_status(&container_state)?;
-            write_instance_status(paths, &container_state, &mut instance_manifest, status)?;
-        }
+            paths,
+            &container_state,
+            &mut instance_manifest,
+        )?;
         if matches!(
             decision,
             crate::isolation::finalize::FinalizeDecision::ReturnToAgent
         ) {
-            // Restart and re-attach the container in one command, then retry
-            // the safe cleanup pass once. We do not loop further: if the
-            // operator still leaves dirty state, the second pass will fall
-            // back to Preserved and exit normally.
-            //
-            // Reconcile keep_awake BEFORE the restart re-attach, mirroring the
-            // mid-flight reconcile in `launch_role_runtime`: between the
-            // original exit and this restart, a parallel jackin invocation
-            // could observe `docker ps --filter ...` = 0 and kill caffeinate,
-            // leaving the restart session unprotected. The lock inside
-            // `reconcile` serializes against that race.
-            super::caffeinate::reconcile(paths, docker, runner).await;
-            runner.run(
-                "docker",
-                &["start", "-ai", &container_name],
-                None,
-                &RunOptions::default(),
-            ).await?;
+            // Restart detached, then attach through the jackin-capsule client
+            // socket. Attaching `docker start -ai` to PID 1 would only show
+            // daemon logs, not the multiplexer UI the operator needs to fix
+            // the preserved worktree. We do not loop further: if the operator
+            // still leaves dirty state, the second pass will fall back to
+            // Preserved and exit normally.
+            start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
             let outcome2 = inspect_attach_outcome(docker, &container_name).await?;
             write_instance_attach_outcome(
                 paths,
@@ -2016,7 +2130,7 @@ async fn load_role_with(
                 &mut instance_manifest,
                 outcome2,
             )?;
-            let _ = crate::isolation::finalize::finalize_foreground_session(
+            decision = crate::isolation::finalize::finalize_foreground_session(
                 &container_name,
                 &paths.data_dir.join(&container_name),
                 outcome2,
@@ -2025,13 +2139,19 @@ async fn load_role_with(
                 docker,
                 runner,
             ).await?;
+            write_preserved_status_if_applicable(
+                decision,
+                paths,
+                &container_state,
+                &mut instance_manifest,
+            )?;
         }
 
         // Classify how the interactive session ended and tear down DinD/network
         // unless the container is still running with active sessions (detach):
         //  - Running + active sessions → user detached (Ctrl-B D). Keep DinD so
         //                               `jackin hardline` can reconnect.
-        //  - Running + no sessions → agent exited; supervisor lag or stale socket.
+        //  - Running + no sessions → agent exited; Capsule cleanup lag or stale socket.
         //                            Tear down same as Stopped/0 regardless of
         //                            preserved isolation state — worktrees live on
         //                            the host and are accessible without DinD.
@@ -2075,7 +2195,7 @@ async fn load_role_with(
                         cleanup.disarm();
                     }
                 } else {
-                    // Finalize already confirmed no sessions (supervisor lag after
+                    // Finalize already confirmed no sessions (Capsule still running after
                     // clean exit). Skip the redundant re-query and tear down.
                     write_instance_status(
                         paths,
@@ -2565,7 +2685,7 @@ fn matching_instance_manifests(
     )
 }
 
-fn write_instance_status(
+pub(super) fn write_instance_status(
     paths: &JackinPaths,
     state_dir: &std::path::Path,
     manifest: &mut InstanceManifest,
@@ -2615,7 +2735,30 @@ fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> 
     }
 }
 
-fn preserved_instance_status(state_dir: &std::path::Path) -> anyhow::Result<InstanceStatus> {
+/// Persist `Preserved`-tier status when `finalize_foreground_session`
+/// decides to keep the isolation state. No-op for any other decision;
+/// both the first finalize pass and the post-restart retry pass call
+/// this so a future field added under the `Preserved` arm cannot drift
+/// between them.
+fn write_preserved_status_if_applicable(
+    decision: crate::isolation::finalize::FinalizeDecision,
+    paths: &JackinPaths,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+) -> anyhow::Result<()> {
+    if !matches!(
+        decision,
+        crate::isolation::finalize::FinalizeDecision::Preserved
+    ) {
+        return Ok(());
+    }
+    let status = preserved_instance_status(state_dir)?;
+    write_instance_status(paths, state_dir, manifest, status)
+}
+
+pub(super) fn preserved_instance_status(
+    state_dir: &std::path::Path,
+) -> anyhow::Result<InstanceStatus> {
     use crate::isolation::state::CleanupStatus;
 
     let records = crate::isolation::state::read_records(state_dir)?;
@@ -3326,6 +3469,17 @@ struct LoadCleanup {
     dind: String,
     certs_volume: String,
     network: String,
+    /// Host-side bind-mount dir (`~/.jackin/sockets/<container>/`).
+    /// Removed only when `armed` is true AND the cleanup fires on the
+    /// launch-failure path — `clean_socket_dir` distinguishes that from
+    /// post-session teardown where the operator may still want to
+    /// inspect the just-written Capsule launch config. Post-session
+    /// teardown paths flip `clean_socket_dir = false` before
+    /// `cleanup.run()` (or call `disarm`); explicit cleanup commands
+    /// (`jackin eject`, Purge from the console) sweep the directory via
+    /// `cleanup::eject_role` / `purge_container_filesystem`.
+    socket_dir: PathBuf,
+    clean_socket_dir: bool,
     armed: bool,
 }
 
@@ -3335,18 +3489,30 @@ impl LoadCleanup {
         dind: String,
         certs_volume: String,
         network: String,
+        socket_dir: PathBuf,
     ) -> Self {
         Self {
             container_name,
             dind,
             certs_volume,
             network,
+            socket_dir,
+            clean_socket_dir: true,
             armed: true,
         }
     }
 
     const fn disarm(&mut self) {
         self.armed = false;
+    }
+
+    /// Switch off socket-dir cleanup for post-session teardown.
+    /// docker-resource removal still runs (`cleanup.run` is reused for
+    /// "session ended cleanly, tear down DinD/network/volume"); the
+    /// host-side bind-mount dir is left for the operator to inspect
+    /// and gets reaped by the next explicit eject / purge.
+    const fn keep_socket_dir(&mut self) {
+        self.clean_socket_dir = false;
     }
 
     async fn run(&self, docker: &impl DockerApi) {
@@ -3365,6 +3531,16 @@ impl LoadCleanup {
         }
         if let Err(e) = docker.remove_network(&self.network).await {
             tui::step_fail(&format!("cleanup failed (network): {e}"));
+        }
+        if self.clean_socket_dir {
+            match std::fs::remove_dir_all(&self.socket_dir) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => tui::step_fail(&format!(
+                    "cleanup failed (socket dir {}): {error}",
+                    self.socket_dir.display()
+                )),
+            }
         }
     }
 }
@@ -3496,6 +3672,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn capsule_config_serializes_manifest_models() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
+
+[claude]
+model = "sonnet"
+
+[codex]
+model = "gpt-5"
+
+[amp]
+
+[kimi]
+model = "kimi-k2"
+
+[opencode]
+model = "zai/glm"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+
+        let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
+        let config = capsule_config(&selector, "/workspace", &manifest);
+
+        assert_eq!(config.role, "chainargos/the-architect");
+        assert_eq!(config.workdir, "/workspace");
+        assert_eq!(
+            config.agents,
+            vec!["claude", "codex", "amp", "kimi", "opencode"]
+        );
+        assert_eq!(config.models.get("claude").unwrap(), "sonnet");
+        assert_eq!(config.models.get("codex").unwrap(), "gpt-5");
+        assert_eq!(config.models.get("kimi").unwrap(), "kimi-k2");
+        assert_eq!(config.models.get("opencode").unwrap(), "zai/glm");
+        assert!(!config.models.contains_key("amp"));
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn normalize_terminfo_entry_path_resolves_alias_symlink_in_hex_dir() {
@@ -3599,7 +3823,13 @@ mod tests {
             ..Default::default()
         };
         let mut runner = FakeRunner::default();
-        let result = super::diagnose_premature_exit(&docker, &mut runner, "jk-the-architect").await;
+        let result = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PreAttach,
+        )
+        .await;
         assert!(
             result.is_none(),
             "running container must not be diagnosed as a failure"
@@ -3622,9 +3852,14 @@ mod tests {
         let mut runner = FakeRunner::with_capture_queue([
             "/jackin/runtime/entrypoint.sh: line 85: exec: codex: not found".to_string(),
         ]);
-        let err = super::diagnose_premature_exit(&docker, &mut runner, "jk-the-architect")
-            .await
-            .expect("stopped container must produce a diagnostic error");
+        let err = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PreAttach,
+        )
+        .await
+        .expect("stopped container must produce a diagnostic error");
         let msg = err.to_string();
         assert!(
             msg.contains("exit 127"),
@@ -3657,9 +3892,14 @@ mod tests {
             ..Default::default()
         };
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
-        let err = super::diagnose_premature_exit(&docker, &mut runner, "jackin-x")
-            .await
-            .expect("OOM-killed container is a premature exit");
+        let err = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jackin-x",
+            super::ExitPhase::PreAttach,
+        )
+        .await
+        .expect("OOM-killed container is a premature exit");
         let msg = err.to_string();
         assert!(msg.contains("OOM killed"), "expected OOM marker in: {msg}");
         assert!(
@@ -3674,11 +3914,119 @@ mod tests {
         let docker = FakeDockerClient::default(); // empty queue → NotFound
         let mut runner = FakeRunner::default();
         assert!(
-            super::diagnose_premature_exit(&docker, &mut runner, "jackin-x")
-                .await
-                .is_none(),
+            super::diagnose_premature_exit(
+                &docker,
+                &mut runner,
+                "jackin-x",
+                super::ExitPhase::PreAttach,
+            )
+            .await
+            .is_none(),
             "NotFound must not abort launch before exec attempt"
         );
+    }
+
+    #[tokio::test]
+    async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
+        // Operator typed `/exit` in the agent → multiplexer drained
+        // the last live session → container shut itself down with
+        // exit 0. The container-lifecycle policy treats this as the
+        // happy path; the host CLI must not surface it as an error.
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let result = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PostAttach,
+        )
+        .await;
+        assert!(
+            result.is_none(),
+            "post-attach exit 0 is the lifecycle-policy clean-shutdown path, not an error"
+        );
+        assert!(
+            runner.recorded.is_empty(),
+            "no `docker logs` fetch when the post-attach exit is clean"
+        );
+    }
+
+    #[tokio::test]
+    async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
+        // Post-attach exit with a non-zero code still indicates a
+        // problem inside the multiplexer / agent — operator wants the
+        // logs surfaced even though the container is gone now.
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 137,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::with_capture_queue(["panic: VT screen overflow".to_string()]);
+        let err = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PostAttach,
+        )
+        .await
+        .expect("post-attach non-zero exit must produce a diagnostic error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exited during session"),
+            "phase label missing in: {msg}"
+        );
+        assert!(msg.contains("exit 137"), "exit code missing in: {msg}");
+        assert!(
+            msg.contains("panic: VT screen overflow"),
+            "logs missing in: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
+        // Pre-attach exit 0 is still suspicious — PID 1 exited
+        // without doing anything, most likely a bad image or missing
+        // entrypoint. Operator wants the heads-up even though the
+        // exit code looks clean.
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        let err = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PreAttach,
+        )
+        .await
+        .expect("pre-attach exit 0 must still flag a missing Capsule");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exited before attach"),
+            "phase label missing in: {msg}"
+        );
+        assert!(msg.contains("exit 0"), "exit code missing in: {msg}");
     }
 
     #[tokio::test]
@@ -4480,6 +4828,18 @@ echo "pulled $2"
         }
     }
 
+    fn fake_docker_for_clean_attached_exit() -> crate::docker_client::FakeDockerClient {
+        crate::docker_client::FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+                String::new(),
+                String::new(),
+                "Sessions: 1\n".to_string(),
+                "Sessions: 0\n".to_string(),
+            ])),
+            ..Default::default()
+        }
+    }
+
     fn arg_after(command: &str, flag: &str) -> String {
         let mut args = command.split_whitespace();
         while let Some(arg) = args.next() {
@@ -4494,7 +4854,9 @@ echo "pulled $2"
         let command = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d --name ") && call.contains("supervisor.sh"))
+            .find(|call| {
+                call.contains("docker run -d --name ") && call.contains("jackin.kind=role")
+            })
             .expect("expected role docker run command");
         arg_after(command, "--name")
     }
@@ -4503,7 +4865,9 @@ echo "pulled $2"
         let command = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d --name ") && !call.contains("supervisor.sh"))
+            .find(|call| {
+                call.contains("docker run -d --name ") && call.contains("jackin.kind=dind")
+            })
             .expect("expected DinD docker run command");
         arg_after(command, "--name")
     }
@@ -4679,21 +5043,27 @@ plugins = ["code-review@claude-plugins-official"]
             .find(|call| {
                 call.contains("docker run -d --name jk-")
                     && call.contains("thearchitect")
-                    && call.contains("supervisor.sh")
+                    && call.contains("jackin.kind=role")
             })
             .unwrap();
-        // Model flag is forwarded to the tmux session, not the docker run CMD.
-        let session_cmd = runner
-            .recorded
-            .iter()
-            .find(|call| call.contains("tmux new-session") && call.contains("entrypoint.sh"))
-            .unwrap();
-        assert!(session_cmd.contains(" --model sonnet"));
         let container_name = launched_role_container_name(&runner);
         assert!(crate::instance::naming::is_dns_label(&container_name));
         assert!(!container_name.contains("__"));
         assert!(!container_name.contains("clone"));
         assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
+        assert!(!run_cmd.contains("JACKIN_AGENT_MODEL_OVERRIDES"));
+        assert!(!run_cmd.contains("-e JACKIN_ROLE="));
+        let capsule_config_path = paths
+            .jackin_home
+            .join("sockets")
+            .join(&container_name)
+            .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+        let capsule_config: jackin_protocol::CapsuleConfig =
+            toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+        assert_eq!(capsule_config.role, "chainargos/the-architect");
+        assert_eq!(capsule_config.workdir, workspace.workdir);
+        assert_eq!(capsule_config.agents, vec!["claude"]);
+        assert_eq!(capsule_config.models.get("claude").unwrap(), "sonnet");
         assert!(
             !runner
                 .recorded
@@ -4847,7 +5217,7 @@ trusted = true
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains(&format!("{}:/test-data:ro", mount_src.display())));
     }
@@ -4884,7 +5254,7 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
+        let docker = fake_docker_for_clean_attached_exit();
         load_role(
             &paths,
             &mut config,
@@ -5003,28 +5373,23 @@ model = "gpt-5"
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
-            !run_cmd.contains("JACKIN_AGENT"),
-            "JACKIN_AGENT must not be in docker run"
+            !run_cmd.contains("JACKIN_AGENT="),
+            "JACKIN_AGENT must not be a container env var"
         );
-        assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
-        // Model flag and JACKIN_AGENT are forwarded to the tmux session, not the docker run CMD.
-        let session_cmd = runner
-            .recorded
-            .iter()
-            .find(|call| call.contains("tmux new-session") && call.contains("entrypoint.sh"))
-            .unwrap();
-        assert!(session_cmd.contains("JACKIN_AGENT=codex"));
-        assert!(session_cmd.contains(" -m gpt-5"));
+        assert!(
+            run_cmd.ends_with(" codex"),
+            "initial agent must be passed as container argv"
+        );
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
         assert!(!run_cmd.contains("/jackin/codex/config.toml"));
         // Multi-agent role `agents = ["claude", "codex"]` provisions
         // every supported agent's home state so `hardline --new --agent
         // claude` can switch agents without re-authentication. The
-        // selected-agent runtime is still Codex (`JACKIN_AGENT=codex` /
-        // `-m gpt-5`), but Claude's mounts must be present.
+        // selected-agent runtime is still Codex (the docker-run argv ends in `codex`),
+        // but Claude's mounts must be present.
         assert!(run_cmd.contains("/home/agent/.claude"));
         assert!(run_cmd.contains("/home/agent/.codex"));
         assert!(
@@ -5092,11 +5457,15 @@ agents = ["codex"]
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .expect("role docker run should fire even without OPENAI_API_KEY");
         assert!(
-            !run_cmd.contains("JACKIN_AGENT"),
-            "JACKIN_AGENT must not be in docker run"
+            !run_cmd.contains("JACKIN_AGENT="),
+            "JACKIN_AGENT must not be a container env var"
+        );
+        assert!(
+            run_cmd.ends_with(" codex"),
+            "initial agent must be passed as container argv"
         );
         assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
     }
@@ -5165,7 +5534,7 @@ plugins = []
         let run_call = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_call.contains(&format!("--workdir {}", workspace.workdir)));
         assert!(run_call.contains(&format!(
@@ -5654,7 +6023,7 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
-            fail_on: vec!["supervisor.sh".to_string()],
+            fail_on: vec!["jackin.kind=role".to_string()],
             capture_queue: VecDeque::from(vec![
                 String::new(),
                 String::new(),
@@ -5766,7 +6135,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
+        let docker = fake_docker_for_clean_attached_exit();
         load_role(
             &paths,
             &mut config,
@@ -5894,7 +6263,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains(&format!("DOCKER_HOST=tcp://{dind}:2376")),
@@ -5975,7 +6344,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("HTTPS_PROXY=http://proxy.internal:8305"));
@@ -6091,7 +6460,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap()
             .clone();
         (run_cmd, temp)
@@ -6161,7 +6530,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
     }
@@ -6219,7 +6588,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("--label jackin.keep_awake=true"),
@@ -6281,7 +6650,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             !run_cmd.contains("jackin.keep_awake"),
@@ -6340,7 +6709,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("-e JACKIN=1"));
@@ -6383,7 +6752,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
+        let docker = fake_docker_for_clean_attached_exit();
         load_role(
             &paths,
             &mut config,
@@ -6465,7 +6834,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
     }
@@ -6514,7 +6883,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1"),
@@ -6565,7 +6934,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             !run_cmd.contains("JACKIN_GIT_COAUTHOR_TRAILER"),
@@ -6617,7 +6986,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_GIT_DCO=1"), "{run_cmd}");
     }
@@ -6720,7 +7089,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=smoke-literal"),
@@ -6816,7 +7185,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains(
@@ -6904,7 +7273,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=operator-wins"),
@@ -6995,7 +7364,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e FROM_HOST=from-host-env"),
@@ -7097,7 +7466,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_TOKEN=resolved-op-token"),

@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components'
 If you run `jackin console` inside a tmux session, a few host-side tmux settings are required for agents to receive the full keyboard and terminal experience they expect. Without them, Shift+Enter collapses to plain Enter, focus events are lost, and desktop notifications never reach your terminal.
 
 <Aside type="note">
-These settings apply to the **host tmux** — the session you start `jackin console` inside. The container's internal tmux is configured automatically by jackin; you do not need to touch it.
+These settings apply to the **host tmux** — the session you start `jackin console` inside. jackin' does not run tmux inside the container — agent sessions live inside an in-container multiplexer that jackin' manages directly — so there is no container-side tmux configuration to touch.
 </Aside>
 
 ## Required configuration

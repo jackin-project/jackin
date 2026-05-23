@@ -1,5 +1,5 @@
 ---
-title: "Jackin Desktop Agent Hub goal prompt"
+title: "jackin' Desktop Agent Hub goal prompt"
 ---
 
 This page is an execution prompt, not the product proposal. Copy the prompt
@@ -7,7 +7,7 @@ below when starting the implementation program.
 
 Source of truth:
 
-- [Jackin Desktop Agent Hub roadmap](/reference/roadmap/jackin-desktop-agent-hub/)
+- [jackin' Desktop Agent Hub roadmap](/reference/roadmap/jackin-desktop-agent-hub/)
 - [Roadmap overview](/reference/roadmap/)
 - [jackin daemon](/reference/roadmap/jackin-daemon/)
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/)
@@ -21,7 +21,7 @@ Source of truth:
 ## Goal prompt
 
 ```text
-/goal Implement the Jackin Desktop Agent Hub end to end as a long-running staged program.
+/goal Implement the jackin' Desktop Agent Hub end to end as a long-running staged program.
 
 Context:
 - Build the full desktop experience described in the roadmap: daemon APIs,
@@ -57,7 +57,7 @@ Context:
 Product goal:
 Build the complete native macOS desktop companion while keeping the agent TUI as
 the primary agent UI. Desktop must be an operator control surface with
-daemon-backed state, native status bar, native desktop window, active Jackin
+daemon-backed state, native status bar, native desktop window, active jackin'
 workspaces, simple Ghostty launches, recently active GitHub projects, workspace
 repositories, running isolated agents, PR jump links, newest-first open PRs
 authored by the operator, org/project-filtered PR inbox views, account/quota
@@ -67,12 +67,12 @@ attention/ready-for-review events.
 Constraints:
 - Native macOS only for the app: SwiftUI/AppKit, MenuBarExtra or NSStatusItem,
   standard macOS controls, Liquid Glass where system components provide it.
-- Jackin CLI/TUI remains usable without the app.
+- `jackin` CLI/TUI remains usable without the app.
 - The app requires a compatible jackin CLI/daemon and talks through a versioned
   daemon protocol.
 - Do not build a replacement UI for Claude Code, Codex, or Amp.
 - Do not implement generic provider support beyond Claude, Codex, Amp.
-- Do not make Desktop parse Jackin TOML directly. Prefer daemon endpoints for
+- Do not make Desktop parse jackin' TOML directly. Prefer daemon endpoints for
   data and status. Use CLI/library calls only for fallback, install/bootstrap,
   or one-shot actions where daemon communication would hurt the user
   experience.
@@ -124,7 +124,7 @@ Start with this implementation slice:
 2. Add the smallest endpoint scaffolding needed to prove versioned requests and
    responses without implementing the whole Desktop backend in one PR.
 3. Add focused tests for protocol compatibility and failure cases.
-4. Open a small PR with the standard Jackin PR body and keep the next planned PR
+4. Open a small PR with the standard jackin' PR body and keep the next planned PR
    listed in the description.
 
 Later daemon slices:
@@ -141,7 +141,7 @@ Later daemon slices:
    workspace, role, agent, branch, and primary repo.
 - Add a cache-first PR lookup path that can list open PRs authored by the
    operator, sorted by created date descending, scoped initially to recently
-   active Jackin projects and workspaces.
+   active jackin' projects and workspaces.
 - Add a simple workspace launch action that opens Ghostty and runs the selected
    saved workspace.
 - Add tests for protocol compatibility, session discovery, PR sorting, and

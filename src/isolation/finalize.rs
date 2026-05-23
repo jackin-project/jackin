@@ -13,12 +13,12 @@ use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
-use crate::runtime::attach::TMUX_LIST_SESSIONS_CMD;
+use crate::runtime::attach::JACKIN_STATUS_CMD;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachOutcome {
-    /// Container is still running — exec returned but supervisor poll may lag.
+    /// Container is still running after the foreground attach returned.
     StillRunning,
     /// Container exited with the given code.
     Stopped(i32),
@@ -118,17 +118,17 @@ pub async fn finalize_foreground_session(
     );
     if !matches!(outcome, AttachOutcome::Stopped(0)) {
         // Non-zero exit, OOM-kill, or still-running → preserve by default.
-        // Exception: StillRunning with no active tmux sessions means the
-        // supervisor lag case — the docker exec returned while the container is
-        // still up but the agent already exited cleanly. Fall through to
-        // finalize_clean_exit so isolation worktrees are swept normally.
+        // Exception: StillRunning with no active jackin sessions means the
+        // Capsule has not exited yet after the foreground client returned.
+        // Fall through to finalize_clean_exit so isolation worktrees are
+        // swept normally.
         if matches!(outcome, AttachOutcome::StillRunning)
-            && !has_tmux_sessions(docker, container_name).await
+            && !has_jackin_sessions(docker, container_name).await
         {
             debug_log!(
                 "isolation",
-                "finalize: container={c} still running but no tmux sessions; \
-                 supervisor lag after clean exit — proceeding to isolation cleanup",
+                "finalize: container={c} still running but no jackin sessions; \
+                 capsule still running after clean exit — proceeding to isolation cleanup",
                 c = container_name,
             );
             return finalize_clean_exit(
@@ -157,25 +157,39 @@ pub async fn finalize_foreground_session(
     .await
 }
 
-async fn has_tmux_sessions(
+async fn has_jackin_sessions(
     docker: &impl crate::docker_client::DockerApi,
     container_name: &str,
 ) -> bool {
-    // Run via sh to suppress the "no server running" error tmux emits when the
-    // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
-    // empty stdout so the caller only sees a non-empty result when sessions exist.
+    // Only an explicit `Sessions: 0` header proves the capsule is
+    // idle. Empty/malformed stdout still routes to "unknown/present"
+    // — a torn write or a daemon restart mid-call must not auto-clean.
+    // Header parser is shared with `runtime::attach::inspect_agent_sessions`
+    // so a future drift in the header shape touches one definition,
+    // not two parsers that can silently disagree on edge cases.
     match docker
-        .exec_capture(container_name, &["sh", "-c", TMUX_LIST_SESSIONS_CMD])
+        .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
-        Ok(output) => !output.trim().is_empty(),
+        Ok(output) => match crate::runtime::attach::parse_session_count(&output) {
+            Some(0) => false,
+            Some(_) => true,
+            None => {
+                eprintln!(
+                    "[jackin] warning: could not parse jackin session status in {container_name}; \
+                     treating as sessions-present — run `jackin purge {container_name}` to clean \
+                     up isolation worktrees if this was a clean exit"
+                );
+                true
+            }
+        },
         Err(e) => {
             // Docker unreachable or container stopped between the exit-code check
             // and this exec. Treat conservatively as sessions-present — the
             // finalize path must not auto-clean records for a container that may
             // still have active sessions.
             eprintln!(
-                "[jackin] warning: could not check tmux sessions in {container_name} ({e}); \
+                "[jackin] warning: could not check jackin sessions in {container_name} ({e}); \
                  treating as sessions-present — run `jackin purge {container_name}` to clean \
                  up isolation worktrees if this was a clean exit"
             );
@@ -607,7 +621,32 @@ mod tests {
     use crate::runtime::test_support::FakeRunner;
 
     #[tokio::test]
-    async fn still_running_preserves_records() {
+    async fn still_running_with_zero_sessions_cleans() {
+        let dir = TempDir::new().unwrap();
+        let mut p = NoPrompt;
+        let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "Sessions: 0\n".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::still_running(),
+            false,
+            &mut p,
+            &docker,
+            &mut r,
+        )
+        .await
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+    }
+
+    #[tokio::test]
+    async fn still_running_with_unparseable_status_preserves_records() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
@@ -628,7 +667,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert_eq!(dec, FinalizeDecision::Preserved);
     }
 
     #[tokio::test]
@@ -638,7 +677,7 @@ mod tests {
         let mut r = FakeRunner::default();
         let docker = crate::docker_client::FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "jackin-claude-abc".to_string(),
+                "Sessions: 1\n  [3] work (claude) state=working active=true\n".to_string(),
             ])),
             ..Default::default()
         };
@@ -1992,7 +2031,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn has_tmux_sessions_error_treated_as_sessions_present() {
+    async fn has_jackin_sessions_error_treated_as_sessions_present() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();

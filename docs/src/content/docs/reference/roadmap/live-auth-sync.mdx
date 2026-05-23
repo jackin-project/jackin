@@ -9,7 +9,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-jackin's `sync` auth mode (today) reads the host login **once per
+jackin' `sync` auth mode (today) reads the host login **once per
 container launch**, copies the token into the role-state directory,
 and bind-mounts it. That covers the first-launch convenience case
 but not three operationally important scenarios:
@@ -34,7 +34,7 @@ but not three operationally important scenarios:
 
 This roadmap item covers the long-term answer: **a single source of
 truth for each auth axis, kept in sync across the host and every
-running jackin container in real time, by an opt-in jackin daemon.**
+running Capsule-managed role container in real time, by an opt-in jackin daemon.**
 
 The item is deliberately scoped beyond a single auth axis. It must
 cover, with one architecture:
@@ -83,7 +83,7 @@ Per auth axis, when the live mode is active:
 
 1. **Host change → all running containers, near real time.** Within
    a few seconds of a host-side `gh auth login` / `claude /login`
-   / `codex login`, every running jackin container that opted in
+   / `codex login`, every opted-in Capsule-managed role container
    sees the new token. No restart required.
 2. **In-container change → host AND other running containers.**
    When an agent inside a container refreshes the token, that new
@@ -108,7 +108,7 @@ Per auth axis, when the live mode is active:
    a status line or `jackin auth status` subcommand (proposed —
    does not exist today) showing which containers are subscribed,
    when each axis last reconciled, any pending conflicts. The
-   Jackin Desktop Agent Hub consumes the same daemon state for
+   jackin' Desktop Agent Hub consumes the same daemon state for
    Claude/Codex/Amp account cards instead of scraping provider
    files directly from the macOS app.
 6. **Revocable and contained.** Same opt-in / opt-out semantics
@@ -257,6 +257,6 @@ series should land docs updates in lockstep with the daemon.
   — future unified credential resolver. The daemon's per-axis
   adapter trait should be expressible inside the credential
   source pattern.
-- [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
+- [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
   — native account/status surface that reads live auth and quota
   state from the daemon first.

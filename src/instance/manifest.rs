@@ -266,16 +266,18 @@ impl InstanceManifest {
     /// Collapses [`Self::read_optional`]'s three outcomes into the two
     /// the discovery surfaces care about — `Some` (use the manifest)
     /// vs `None` (skip the candidate). Logs parse/IO failures via
-    /// `debug_log!` so an unreadable manifest still surfaces under
-    /// `--debug` rather than silently disappearing from `--inspect`,
-    /// hardline candidate scans, or attach-outcome recording.
+    /// `debug_log!` so unreadable manifests surface under `--debug`
+    /// without polluting normal output: callers run inside discovery
+    /// loops that iterate every entry in the instance index, so an
+    /// always-on warning would emit N lines per command for any
+    /// operator carrying a few stale state dirs.
     pub fn read_or_log(state_dir: &Path, site: &str) -> Option<Self> {
         match Self::read_optional(state_dir) {
             Ok(value) => value,
             Err(error) => {
                 crate::debug_log!(
                     "instance",
-                    "{site}: skipping {} due to unreadable manifest: {error}",
+                    "{site}: skipping {} due to unreadable manifest: {error:#}",
                     state_dir.display(),
                 );
                 None

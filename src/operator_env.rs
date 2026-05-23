@@ -246,6 +246,8 @@ fn is_valid_env_name(s: &str) -> bool {
 const OP_DEFAULT_BIN: &str = "op";
 const OP_DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const OP_STDERR_MAX: usize = 4 * 1024;
+const OP_SPAWN_RETRIES: usize = 5;
+const TEXT_FILE_BUSY_OS_ERROR: i32 = 26;
 
 /// Production `OpRunner` that shells out to the 1Password CLI.
 ///
@@ -395,59 +397,53 @@ fn spawn_wait_thread(
     });
 }
 
+fn is_text_file_busy(error: &std::io::Error) -> bool {
+    error.raw_os_error() == Some(TEXT_FILE_BUSY_OS_ERROR)
+}
+
+fn spawn_op_with_retry<F>(mut build: F) -> std::io::Result<std::process::Child>
+where
+    F: FnMut() -> std::process::Command,
+{
+    for attempt in 0..OP_SPAWN_RETRIES {
+        let mut command = build();
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(error) if is_text_file_busy(&error) && attempt + 1 < OP_SPAWN_RETRIES => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!("OP_SPAWN_RETRIES is nonzero");
+}
+
+fn op_spawn_error(binary: &str, error: &std::io::Error) -> anyhow::Error {
+    anyhow::anyhow!(
+        "failed to spawn 1Password CLI {binary:?}: {error} \
+         (is `op` installed and on your PATH? see \
+         https://developer.1password.com/docs/cli/)"
+    )
+}
+
 impl OpRunner for OpCli {
     fn read(&self, reference: &str) -> anyhow::Result<String> {
         use std::io::Read;
         use std::process::{Command, Stdio};
 
-        let mut child = {
-            let mut child = None;
-            let mut last_err = None;
-            for _ in 0..5 {
-                let mut cmd = Command::new(&self.binary);
-                if let Some(account) = self.account.as_deref() {
-                    cmd.args(["--account", account]);
-                }
-                match cmd
-                    .args(["read", reference])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                {
-                    Ok(spawned) => {
-                        child = Some(spawned);
-                        break;
-                    }
-                    Err(e) if e.raw_os_error() == Some(26) => {
-                        last_err = Some(e);
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                    }
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "failed to spawn 1Password CLI {:?}: {e} \
-                             (is `op` installed and on your PATH? see \
-                             https://developer.1password.com/docs/cli/)",
-                            self.binary
-                        ));
-                    }
-                }
+        let mut child = spawn_op_with_retry(|| {
+            let mut cmd = Command::new(&self.binary);
+            if let Some(account) = self.account.as_deref() {
+                cmd.args(["--account", account]);
             }
-            child.map_or_else(
-                || {
-                    Err(anyhow::anyhow!(
-                        "failed to spawn 1Password CLI {:?}: {} \
-                         (is `op` installed and on your PATH? see \
-                         https://developer.1password.com/docs/cli/)",
-                        self.binary,
-                        last_err
-                            .as_ref()
-                            .map_or_else(|| "unknown error".to_string(), ToString::to_string)
-                    ))
-                },
-                Ok,
-            )?
-        };
+            cmd.args(["read", reference])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            cmd
+        })
+        .map_err(|error| op_spawn_error(&self.binary, &error))?;
 
         // Channel-and-thread wait pattern so we avoid a new async dep,
         // and the wait thread never holds the mutex across a blocking
@@ -703,19 +699,16 @@ fn run_op_with_timeout(
     use std::io::Read;
     use std::process::{Command, Stdio};
 
-    let mut child = Command::new(binary)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "failed to spawn 1Password CLI {binary:?}: {e} \
-                 (is `op` installed and on your PATH? see \
-                 https://developer.1password.com/docs/cli/)"
-            )
-        })?;
+    let mut child = spawn_op_with_retry(|| {
+        let mut command = Command::new(binary);
+        command
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    })
+    .map_err(|error| op_spawn_error(binary, &error))?;
 
     let (tx, rx) = std::sync::mpsc::channel();
     let mut stdout = child.stdout.take().expect("piped stdout");
@@ -978,32 +971,27 @@ impl OpWriteRunner for OpCli {
         let body = serde_json::to_vec(&template)
             .map_err(|e| anyhow::anyhow!("failed to encode op item template: {e}"))?;
 
-        let mut cmd = Command::new(&self.binary);
-        if let Some(account) = self.account.as_deref() {
-            cmd.args(["--account", account]);
-        }
-        cmd.args([
-            "item",
-            "create",
-            "--vault",
-            params.vault_id,
-            "--format",
-            "json",
-        ]);
-        cmd.arg("-");
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to spawn 1Password CLI {:?}: {e} \
-                     (is `op` installed and on your PATH? see \
-                     https://developer.1password.com/docs/cli/)",
-                    self.binary
-                )
-            })?;
+        let mut child = spawn_op_with_retry(|| {
+            let mut command = Command::new(&self.binary);
+            if let Some(account) = self.account.as_deref() {
+                command.args(["--account", account]);
+            }
+            command.args([
+                "item",
+                "create",
+                "--vault",
+                params.vault_id,
+                "--format",
+                "json",
+            ]);
+            command.arg("-");
+            command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            command
+        })
+        .map_err(|error| op_spawn_error(&self.binary, &error))?;
 
         // Write the template body to the child's stdin and drop the
         // handle so `op` sees EOF and proceeds. Scoping the stdin
@@ -1928,12 +1916,10 @@ mod tests {
     fn op_cli_nonzero_exit_propagates_stderr_bounded() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-fail");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\n>&2 echo 'item not found: op://Foo/bar'\nexit 1\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let err = runner.read("op://Foo/bar").unwrap_err();
@@ -1949,12 +1935,10 @@ mod tests {
     fn op_cli_large_stderr_is_truncated() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-big-stderr");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\npython3 -c \"import sys; sys.stderr.write('X' * 16384)\" 2>&1 1>&2\nexit 1\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let err = runner.read("op://Foo/bar").unwrap_err();
@@ -1970,8 +1954,7 @@ mod tests {
     fn op_cli_hanging_binary_times_out() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-hang");
-        std::fs::write(&bin_path, "#!/bin/sh\nsleep 60\n").unwrap();
-        make_executable(&bin_path);
+        write_fake_op(&bin_path, "#!/bin/sh\nsleep 60\n");
 
         let runner = OpCli::with_binary_and_timeout(
             bin_path.to_string_lossy().to_string(),
@@ -1995,8 +1978,7 @@ mod tests {
     fn op_cli_probe_succeeds_when_binary_exists_and_exits_zero() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-version");
-        std::fs::write(&bin_path, "#!/bin/sh\necho '2.30.0'\nexit 0\n").unwrap();
-        make_executable(&bin_path);
+        write_fake_op(&bin_path, "#!/bin/sh\necho '2.30.0'\nexit 0\n");
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         runner.probe().unwrap();
@@ -2007,8 +1989,7 @@ mod tests {
     fn op_cli_probe_times_out_when_binary_hangs() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-version-hang");
-        std::fs::write(&bin_path, "#!/bin/sh\nsleep 60\n").unwrap();
-        make_executable(&bin_path);
+        write_fake_op(&bin_path, "#!/bin/sh\nsleep 60\n");
 
         let runner = OpCli::with_binary_and_timeout(
             bin_path.to_string_lossy().to_string(),
@@ -2686,13 +2667,11 @@ mod tests {
     fn op_struct_runner_vault_list_parses_json() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-vault-list");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\nif [ \"$1\" = \"vault\" ] && [ \"$2\" = \"list\" ]; then \
              printf '%s' '[{\"id\":\"v1\",\"name\":\"Personal\"}]'; exit 0; fi\nexit 99\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let vaults = runner.vault_list(None).unwrap();
@@ -2715,14 +2694,12 @@ mod tests {
         // empty string via `#[serde(default)]`.
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-item-list");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"list\" ]; then \
              printf '%s' '[{\"id\":\"i1\",\"title\":\"Google\",\"additional_information\":\"alexey@zhokhov.com\"},\
 {\"id\":\"i2\",\"title\":\"API Keys\"}]'; exit 0; fi\nexit 99\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let items = runner.item_list("v1", None).unwrap();
@@ -2751,13 +2728,11 @@ mod tests {
         // coverage for the `#[serde(default)]` on `RawOpItem`.
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-item-list-no-subtitle");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"list\" ]; then \
              printf '%s' '[{\"id\":\"i1\",\"title\":\"Recovery codes\"}]'; exit 0; fi\nexit 99\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let items = runner.item_list("v1", None).unwrap();
@@ -2784,8 +2759,7 @@ mod tests {
             "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"get\" ]; then \
              cat <<'JSON'\n{json}\nJSON\nexit 0; fi\nexit 99\n"
         );
-        std::fs::write(&bin_path, script).unwrap();
-        make_executable(&bin_path);
+        write_fake_op(&bin_path, &script);
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let fields = runner.item_get("i1", "v1", None).unwrap();
@@ -2831,8 +2805,7 @@ mod tests {
             "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"get\" ]; then \
              cat <<'JSON'\n{json}\nJSON\nexit 0; fi\nexit 99\n"
         );
-        std::fs::write(&bin_path, script).unwrap();
-        make_executable(&bin_path);
+        write_fake_op(&bin_path, &script);
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let fields = runner.item_get("i1", "v1", None).unwrap();
@@ -2852,12 +2825,10 @@ mod tests {
         // alias makes both shapes parse.
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-accounts");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\ncat <<'EOF'\n[\n  {\n    \"url\": \"example.1password.com\",\n    \"email\": \"someone@example.com\",\n    \"user_uuid\": \"USERUUIDXXXX\",\n    \"account_uuid\": \"ACCTUUIDYYYY\"\n  }\n]\nEOF\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let accounts = runner
@@ -2880,12 +2851,10 @@ mod tests {
         // is the empty array so deserialization succeeds.
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-account-flag");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\necho \"$@\" >&2\nprintf '%s' '[]'\nexit 0\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         // With Some(_) → must include `--account <id>` in argv.
@@ -2903,12 +2872,10 @@ mod tests {
     fn op_struct_runner_signed_out_detection() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-signed-out");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\n>&2 echo 'You are not currently signed in. Run `op signin`.'\nexit 1\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let err = runner.vault_list(None).unwrap_err();

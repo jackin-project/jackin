@@ -53,6 +53,7 @@ jobs:
               - 'rust-toolchain.toml'
               - 'build.rs'
               - 'src/**'
+              - 'crates/**'
               - 'tests/**'
               - 'docker/runtime/**'
             construct:
@@ -122,6 +123,18 @@ jobs:
       # running nextest both with and without it would re-execute every
       # non-feature-gated test for no extra coverage.
       - run: cargo check --all-targets
+      # `dind_e2e` invokes `jackin load` end-to-end. `jackin load` calls
+      # `capsule_binary::ensure_available`, which downloads the
+      # `jackin-capsule` artifact from the rolling `preview` GitHub
+      # Release. CI runs before the preview workflow uploads that
+      # asset for this commit, so the download 404s. Build the binary
+      # in-place and point `ensure_available` at it via
+      # `JACKIN_CAPSULE_BIN`; the env var is inherited by every
+      # subprocess `dind_e2e` spawns.
+      - name: Build jackin-capsule for nextest
+        run: |
+          cargo build --release -p jackin-capsule
+          echo "JACKIN_CAPSULE_BIN=$PWD/target/release/jackin-capsule" >> "$GITHUB_ENV"
       - run: cargo nextest run --all-features --color=always
 
   msrv:

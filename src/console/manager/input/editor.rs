@@ -721,7 +721,7 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
     if eligible.is_empty() {
         return;
     }
-    editor.modal = Some(Modal::RoleOverridePicker {
+    editor.open_sub_modal(Modal::RoleOverridePicker {
         state: RolePickerState::with_confirm_label(eligible, "select"),
     });
 }
@@ -896,8 +896,8 @@ pub(super) fn handle_editor_modal(
             match state.handle_key(key) {
                 ModalOutcome::Commit(value) => {
                     let target = target.clone();
-                    editor.modal = None;
                     if target == TextInputTarget::Role {
+                        editor.clear_modal_chain();
                         apply_role_input(editor, config, paths, &value);
                     } else {
                         apply_text_input_to_pending(&target, editor, &value, op_available);
@@ -905,16 +905,10 @@ pub(super) fn handle_editor_modal(
                 }
                 ModalOutcome::Cancel => {
                     let target = target.clone();
-                    // Cancel of EnvKey/EnvValue must drop both the
-                    // stashed key and any picker value — otherwise a
-                    // later sentinel-picker commit silently applies
-                    // the path to an unrelated key.
-                    if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } =
-                        &target
-                    {
-                        editor.pending_env_key = None;
-                        editor.pending_picker_value = None;
-                    }
+                    let was_env_textinput = matches!(
+                        &target,
+                        TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. }
+                    );
                     if matches!(target, TextInputTarget::AuthCredential) {
                         // Plain-text leg of the source-picker round trip
                         // recovers identically to the OpPicker leg.
@@ -922,7 +916,15 @@ pub(super) fn handle_editor_modal(
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return;
                     }
-                    editor.modal = None;
+                    editor.pop_modal_chain();
+                    // Scratch slots only get dropped when the pop
+                    // unwinds the whole chain — a parent modal (e.g.
+                    // SourcePicker) still reading `pending_env_key`
+                    // must see it intact.
+                    if was_env_textinput && editor.modal.is_none() {
+                        editor.pending_env_key = None;
+                        editor.pending_picker_value = None;
+                    }
                 }
                 ModalOutcome::Continue => {}
             }
@@ -930,28 +932,27 @@ pub(super) fn handle_editor_modal(
         Modal::FileBrowser { target, state } => match state.handle_key(key) {
             ModalOutcome::Commit(path) => {
                 let target = *target;
-                editor.modal = None;
                 apply_file_browser_to_editor(target, editor, path);
             }
             ModalOutcome::Cancel => {
-                editor.modal = None;
+                editor.pop_modal_chain();
             }
             ModalOutcome::Continue => {}
         },
         Modal::WorkdirPick { state } => match state.handle_key(key) {
             ModalOutcome::Commit(workdir) => {
                 editor.pending.workdir = workdir;
-                editor.modal = None;
+                editor.clear_modal_chain();
             }
             ModalOutcome::Cancel => {
-                editor.modal = None;
+                editor.pop_modal_chain();
             }
             ModalOutcome::Continue => {}
         },
         Modal::Confirm { target, state } => match state.handle_key(key) {
             ModalOutcome::Commit(yes) => {
                 let target = target.clone();
-                editor.modal = None;
+                editor.clear_modal_chain();
                 if yes {
                     // Source-drift acknowledgement consumes `plan` and
                     // re-stashes it as a `PendingCommit` for the outer
@@ -983,7 +984,7 @@ pub(super) fn handle_editor_modal(
                     target,
                     super::super::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
                 );
-                editor.modal = None;
+                editor.clear_modal_chain();
                 if was_drift {
                     editor.save_flow = EditorSaveFlow::Idle;
                 }
@@ -1003,22 +1004,22 @@ pub(super) fn handle_editor_modal(
             use crate::console::widgets::save_discard::SaveDiscardChoice;
             match modal_state.handle_key(key) {
                 ModalOutcome::Commit(SaveDiscardChoice::Save) => {
-                    editor.modal = None;
+                    editor.clear_modal_chain();
                     editor.exit_after_save = Some(ExitIntent::Save);
                 }
                 ModalOutcome::Commit(SaveDiscardChoice::Discard) => {
-                    editor.modal = None;
+                    editor.clear_modal_chain();
                     editor.exit_after_save = Some(ExitIntent::Discard);
                 }
                 ModalOutcome::Cancel => {
-                    editor.modal = None;
+                    editor.clear_modal_chain();
                 }
                 ModalOutcome::Continue => {}
             }
         }
         // List-view modals; defensive cancel if one lands here.
         Modal::GithubPicker { .. } | Modal::RolePicker { .. } => {
-            editor.modal = None;
+            editor.clear_modal_chain();
         }
         Modal::RoleOverridePicker { state: picker } => {
             match picker.handle_key(key) {
@@ -1031,13 +1032,13 @@ pub(super) fn handle_editor_modal(
                     let scope = SecretsScopeTag::Role(role_name.clone());
                     let label = format!("New {role_name} environment key");
                     let state = env_key_input_state(editor, &scope, label, "");
-                    editor.modal = Some(Modal::TextInput {
+                    editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvKey { scope },
                         state,
                     });
                 }
                 ModalOutcome::Cancel => {
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                 }
                 ModalOutcome::Continue => {}
             }
@@ -1065,14 +1066,14 @@ pub(super) fn handle_editor_modal(
                             exit_on_success: true
                         }
                     );
-                    editor.modal = None;
+                    editor.clear_modal_chain();
                     editor.save_flow = EditorSaveFlow::PendingCommit {
                         plan,
                         exit_on_success,
                     };
                 }
                 ModalOutcome::Cancel => {
-                    editor.modal = None;
+                    editor.clear_modal_chain();
                     editor.save_flow = EditorSaveFlow::Idle;
                 }
                 ModalOutcome::Continue => {}
@@ -1080,7 +1081,7 @@ pub(super) fn handle_editor_modal(
         }
         Modal::ErrorPopup { state: popup_state } => match popup_state.handle_key(key) {
             ModalOutcome::Cancel | ModalOutcome::Commit(()) => {
-                editor.modal = None;
+                editor.clear_modal_chain();
                 editor.save_flow = EditorSaveFlow::Idle;
                 // If the popup was raised by a failed OpPicker commit
                 // for the auth form, the form's state was re-stashed
@@ -1105,7 +1106,7 @@ pub(super) fn handle_editor_modal(
                         "New workspace environment key",
                         String::new(),
                     );
-                    editor.modal = Some(Modal::TextInput {
+                    editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvKey { scope },
                         state,
                     });
@@ -1115,11 +1116,11 @@ pub(super) fn handle_editor_modal(
                     // is a no-op; we close the modal then.
                     open_agent_override_picker(editor, config);
                     if !matches!(editor.modal, Some(Modal::RoleOverridePicker { .. })) {
-                        editor.modal = None;
+                        editor.clear_modal_chain();
                     }
                 }
                 ModalOutcome::Cancel => {
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                 }
                 ModalOutcome::Continue => {}
             }
@@ -1130,10 +1131,10 @@ pub(super) fn handle_editor_modal(
             match source.handle_key(key) {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
                     let Some((scope, key)) = editor.pending_env_key.clone() else {
-                        editor.modal = None;
+                        editor.clear_modal_chain();
                         return;
                     };
-                    editor.modal = Some(Modal::TextInput {
+                    editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvValue {
                             scope,
                             key: key.clone(),
@@ -1146,7 +1147,7 @@ pub(super) fn handle_editor_modal(
                 }
                 ModalOutcome::Commit(SourceChoice::Op) => {
                     let Some((scope, key)) = editor.pending_env_key.clone() else {
-                        editor.modal = None;
+                        editor.clear_modal_chain();
                         return;
                     };
                     editor.pending_picker_target = Some((scope, Some(key)));
@@ -1155,7 +1156,7 @@ pub(super) fn handle_editor_modal(
                     // pending_env_key would confuse a later
                     // sentinel-add commit.
                     editor.pending_env_key = None;
-                    editor.modal = Some(Modal::OpPicker {
+                    editor.open_sub_modal(Modal::OpPicker {
                         state: Box::new(OpPickerState::new_with_cache(op_cache)),
                     });
                 }
@@ -1163,7 +1164,7 @@ pub(super) fn handle_editor_modal(
                     // Cancel: drop the in-flight key name and close
                     // the modal. Operator returns to the Secrets tab
                     // with no env entry added.
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                     editor.pending_env_key = None;
                     editor.pending_picker_value = None;
                 }
@@ -1196,18 +1197,18 @@ pub(super) fn handle_editor_modal(
                         kind,
                     };
                     let form = crate::console::widgets::auth_panel::AuthForm::new(kind);
-                    editor.modal = Some(Modal::AuthForm {
+                    editor.open_sub_modal(Modal::AuthForm {
                         target,
                         state: Box::new(form),
                         focus: crate::console::manager::state::AuthFormFocus::Mode,
                         literal_buffer: String::new(),
                     });
                 } else {
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                 }
             }
             ModalOutcome::Cancel => {
-                editor.modal = None;
+                editor.pop_modal_chain();
             }
             ModalOutcome::Continue => {}
         },
@@ -1230,20 +1231,20 @@ pub(super) fn handle_editor_modal(
                     match target {
                         Some((scope, Some(key))) => {
                             set_pending_env_op_ref(editor, &scope, &key, op_ref);
-                            editor.modal = None;
+                            editor.clear_modal_chain();
                         }
                         Some((scope, None)) => {
                             editor.pending_picker_value =
                                 Some(crate::operator_env::EnvValue::OpRef(op_ref));
                             let label = format!("New environment key for {}", scope_label(&scope));
                             let state = env_key_input_state(editor, &scope, label, "");
-                            editor.modal = Some(Modal::TextInput {
+                            editor.open_sub_modal(Modal::TextInput {
                                 target: TextInputTarget::EnvKey { scope },
                                 state,
                             });
                         }
                         None => {
-                            editor.modal = None;
+                            editor.clear_modal_chain();
                         }
                     }
                 }
@@ -1258,7 +1259,7 @@ pub(super) fn handle_editor_modal(
                     }
                     // Clear both scratch fields so a stale path/target
                     // can't carry into a later interaction.
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                     editor.pending_picker_target = None;
                     editor.pending_picker_value = None;
                 }
@@ -1423,14 +1424,19 @@ pub(super) fn apply_text_input_to_pending(
     match target {
         TextInputTarget::Name => {
             editor.pending_name = Some(value.to_string());
+            editor.clear_modal_chain();
         }
-        TextInputTarget::Workdir => editor.pending.workdir = value.to_string(),
+        TextInputTarget::Workdir => {
+            editor.pending.workdir = value.to_string();
+            editor.clear_modal_chain();
+        }
         TextInputTarget::MountDst => {
             // Provisional mount with src==dst was inserted at FileBrowser
             // commit; update its dst now.
             if let Some(last) = editor.pending.mounts.last_mut() {
                 last.dst = value.to_string();
             }
+            editor.clear_modal_chain();
         }
         TextInputTarget::Role => {
             // Role text-input is dispatched via apply_role_input before
@@ -1462,10 +1468,11 @@ pub(super) fn apply_text_input_to_pending(
             if let Some(stashed) = editor.pending_picker_value.take() {
                 set_pending_env_value_typed(editor, scope, &key, stashed);
                 editor.pending_env_key = None;
+                editor.clear_modal_chain();
                 return;
             }
             editor.pending_env_key = Some((scope.clone(), key.clone()));
-            editor.modal = Some(Modal::SourcePicker {
+            editor.open_sub_modal(Modal::SourcePicker {
                 state: crate::console::widgets::source_picker::SourcePickerState::new(
                     key,
                     op_available,
@@ -1475,6 +1482,7 @@ pub(super) fn apply_text_input_to_pending(
         TextInputTarget::EnvValue { scope, key } => {
             set_pending_env_value(editor, scope, key, value);
             editor.pending_env_key = None;
+            editor.clear_modal_chain();
         }
         TextInputTarget::AuthCredential => {
             super::auth::apply_plain_text_to_auth_form(editor, value);
@@ -1788,7 +1796,7 @@ fn dispatch_editor_mount_dst_choice(
                     isolation: crate::isolation::MountIsolation::Shared,
                 });
             }
-            editor.modal = None;
+            editor.clear_modal_chain();
         }
         ModalOutcome::Commit(MountDstChoice::Edit) => {
             if target == FileBrowserTarget::EditAddMountSrc {
@@ -1798,7 +1806,7 @@ fn dispatch_editor_mount_dst_choice(
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 });
-                editor.modal = Some(Modal::TextInput {
+                editor.open_sub_modal(Modal::TextInput {
                     target: super::super::state::TextInputTarget::MountDst,
                     state: crate::console::widgets::text_input::TextInputState::new(
                         "Destination",
@@ -1806,11 +1814,11 @@ fn dispatch_editor_mount_dst_choice(
                     ),
                 });
             } else {
-                editor.modal = None;
+                editor.clear_modal_chain();
             }
         }
         ModalOutcome::Cancel => {
-            editor.modal = None;
+            editor.pop_modal_chain();
         }
         ModalOutcome::Continue => {}
     }
@@ -1828,7 +1836,7 @@ pub(super) fn apply_file_browser_to_editor(
             // the operator will take "Mount at same path" (dst = src) and we skip the
             // TextInput entirely. Only the `Edit destination` branch pushes
             // a provisional mount and opens the TextInput.
-            editor.modal = Some(Modal::MountDstChoice {
+            editor.open_sub_modal(Modal::MountDstChoice {
                 target,
                 state: MountDstChoiceState::new(path.display().to_string()),
             });
@@ -1853,7 +1861,7 @@ mod tests {
     use super::super::test_support::{key, mount};
     use super::{
         apply_file_browser_to_editor, apply_role_input_with_runner, apply_text_input_to_pending,
-        handle_editor_modal,
+        env_key_input_state, handle_editor_modal,
     };
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
@@ -2024,6 +2032,24 @@ plugins = []
         editor
     }
 
+    fn editor_with_file_browser_parent_committed(src: &str) -> EditorState<'static> {
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Mounts;
+        editor.tab_bar_focused = false;
+        editor.active_field = FieldFocus::Row(0);
+        editor.modal = Some(Modal::FileBrowser {
+            target: FileBrowserTarget::EditAddMountSrc,
+            state: crate::console::widgets::file_browser::FileBrowserState::new_from_home()
+                .unwrap(),
+        });
+        apply_file_browser_to_editor(
+            FileBrowserTarget::EditAddMountSrc,
+            &mut editor,
+            std::path::PathBuf::from(src),
+        );
+        editor
+    }
+
     /// Build a minimal `(ManagerState, AppConfig, JackinPaths, TempDir)` with
     /// the state stage parked in an Editor on the given `start_tab`. Used
     /// to drive `handle_key` through `handle_editor_key`'s tab-cycle branch.
@@ -2159,6 +2185,22 @@ plugins = []
     }
 
     #[test]
+    fn filebrowser_child_esc_restores_filebrowser_parent() {
+        let mut editor = editor_with_file_browser_parent_committed("/host/path");
+        assert!(matches!(editor.modal, Some(Modal::MountDstChoice { .. })));
+        assert_eq!(editor.modal_parents.len(), 1);
+
+        handle_modal(&mut editor, key(KeyCode::Esc));
+
+        assert!(
+            matches!(editor.modal, Some(Modal::FileBrowser { .. })),
+            "Esc from MountDstChoice should restore FileBrowser; got {:?}",
+            editor.modal
+        );
+        assert!(editor.modal_parents.is_empty());
+    }
+
+    #[test]
     fn mounts_add_opens_file_browser_directly() {
         let ws = WorkspaceConfig::default();
         let mut state = editor_on_mounts_tab(ws, 0);
@@ -2265,6 +2307,67 @@ plugins = []
         let m = &editor.pending.mounts[0];
         assert_eq!(m.src, "/host/path");
         assert_eq!(m.dst, "/host/path", "provisional dst mirrors src");
+    }
+
+    #[test]
+    fn editor_mount_destination_esc_walks_back_one_step() {
+        let mut editor = editor_with_file_browser_parent_committed("/host/path");
+
+        handle_modal(&mut editor, key(KeyCode::Char('e')));
+        assert!(matches!(
+            editor.modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::MountDst,
+                ..
+            })
+        ));
+        assert_eq!(editor.modal_parents.len(), 2);
+
+        handle_modal(&mut editor, key(KeyCode::Esc));
+        assert!(
+            matches!(editor.modal, Some(Modal::MountDstChoice { .. })),
+            "Esc from destination input should restore MountDstChoice; got {:?}",
+            editor.modal
+        );
+
+        handle_modal(&mut editor, key(KeyCode::Esc));
+        assert!(
+            matches!(editor.modal, Some(Modal::FileBrowser { .. })),
+            "second Esc should restore FileBrowser; got {:?}",
+            editor.modal
+        );
+    }
+
+    #[test]
+    fn editor_env_source_picker_esc_restores_key_input() {
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        let scope = SecretsScopeTag::Workspace;
+        let target = TextInputTarget::EnvKey {
+            scope: scope.clone(),
+        };
+        editor.modal = Some(Modal::TextInput {
+            target: target.clone(),
+            state: env_key_input_state(&editor, &scope, "New workspace environment key", "API_KEY"),
+        });
+
+        apply_text_input_to_pending(&target, &mut editor, "API_KEY", false);
+        assert!(matches!(editor.modal, Some(Modal::SourcePicker { .. })));
+        assert_eq!(editor.modal_parents.len(), 1);
+
+        handle_modal(&mut editor, key(KeyCode::Esc));
+
+        assert!(
+            matches!(
+                editor.modal,
+                Some(Modal::TextInput {
+                    target: TextInputTarget::EnvKey { .. },
+                    ..
+                })
+            ),
+            "Esc from SourcePicker should restore EnvKey input; got {:?}",
+            editor.modal
+        );
+        assert!(editor.modal_parents.is_empty());
     }
 
     #[test]

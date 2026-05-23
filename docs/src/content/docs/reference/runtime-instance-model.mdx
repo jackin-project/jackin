@@ -61,7 +61,7 @@ Implementation lives in <RepoFile path="src/instance/naming.rs" /> and <RepoFile
 
 ## State Layout
 
-The important instance state lives under jackin's data directory:
+The important instance state lives under jackin' data directory:
 
 ```text
 data/
@@ -135,9 +135,9 @@ Implementation lives in <RepoFile path="src/runtime/launch.rs" /> (`resolve_rest
 | Missing with indexed state | Rebuild the runtime around jackin-managed local state when the workspace or ad-hoc directory can be resolved. |
 | Missing without indexed state | Fail with a clear "nothing to reconnect to" path. |
 
-`hardline --inspect` is read-only and should report manifest state even when Docker is unavailable. When Docker can inspect a running role container, it also reports live agent-session inventory from `tmux list-sessions` inside the running container.
+`hardline --inspect` is read-only and should report manifest state even when Docker is unavailable. When Docker can inspect a running role container, it also reports live agent-session inventory from `jackin-capsule status` inside the running container.
 
-`hardline --new` creates a named tmux session (`jackin-<agent>-<id>`) inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction; each is independently reconnectable. A subsequent `jackin hardline --new` or console `a` from the same instance reattaches to any live session or creates a fresh one. `hardline --shell` opens an ephemeral one-shot zsh session without a tmux session.
+`hardline --new` asks the Capsule daemon to create another agent session inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction; each lives as a daemon-owned PTY. A subsequent `jackin hardline --new` or console `a` from the same instance attaches to the running Capsule and creates a fresh tab. `hardline --shell` asks the same daemon to create a zsh session without an agent slug.
 
 Implementation lives in <RepoFile path="src/runtime/attach.rs" /> and the hardline dispatch paths in <RepoFile path="src/app/mod.rs" />.
 
@@ -146,8 +146,8 @@ Implementation lives in <RepoFile path="src/runtime/attach.rs" /> and the hardli
 The console reads the instance index and shows active/recoverable instances for the selected workspace or current directory. Instance rows expose:
 
 - reconnect/recover (`r`)
-- new agent session (`a`/`A`) — starts an additional tmux session inside the running container
-- ephemeral shell (`x`/`X`) — opens a one-shot zsh session without a tmux session
+- new agent session (`a`/`A`) — asks the Capsule daemon to start an additional agent tab inside the running container
+- shell session (`x`/`X`) — asks the Capsule daemon to start a zsh tab without an agent slug
 - read-only inspect (`i`)
 - guarded purge (`p`)
 
@@ -176,7 +176,7 @@ This boundary is deliberate. Durable tools belong in the role Dockerfile. Durabl
 
 ## Cleanup And Purge
 
-`eject` stops/removes Docker resources for an instance while preserving local recovery state unless purge is requested. `purge` deletes local recovery state and is guarded when matching Docker resources still exist. `exile` stops all running jackin-managed role containers.
+`eject` stops/removes Docker resources for an instance while preserving local recovery state unless purge is requested. `purge` deletes local recovery state and is guarded when matching Docker resources still exist. `exile` stops all running managed role containers.
 
 Plain purge must refuse while the role container or DinD sidecar still exists, whether running or stopped. This prevents deleting local state that an existing Docker resource may still depend on. `eject --purge` is the combined path when the operator wants Docker resources and local recovery state removed together.
 

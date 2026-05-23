@@ -262,6 +262,7 @@ pub fn handle_key(
         Settings,
         CreatePrelude,
         ConfirmDelete,
+        ConfirmInstancePurge,
     }
     let dis = match &state.stage {
         ManagerStage::List => StageDis::List,
@@ -269,6 +270,7 @@ pub fn handle_key(
         ManagerStage::Settings(_) => StageDis::Settings,
         ManagerStage::CreatePrelude(_) => StageDis::CreatePrelude,
         ManagerStage::ConfirmDelete { .. } => StageDis::ConfirmDelete,
+        ManagerStage::ConfirmInstancePurge { .. } => StageDis::ConfirmInstancePurge,
     };
 
     match dis {
@@ -281,6 +283,34 @@ pub fn handle_key(
         }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
         StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),
+        StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
+    }
+}
+
+fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
+    let ManagerStage::ConfirmInstancePurge {
+        container,
+        state: confirm_state,
+        ..
+    } = &mut state.stage
+    else {
+        return InputOutcome::Continue;
+    };
+    let outcome = confirm_state.handle_key(key);
+    let container_name = container.clone();
+    match outcome {
+        ModalOutcome::Commit(true) => {
+            state.stage = ManagerStage::List;
+            InputOutcome::InstanceAction {
+                container: container_name,
+                action: crate::console::ConsoleInstanceAction::Purge,
+            }
+        }
+        ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+            state.stage = ManagerStage::List;
+            InputOutcome::Continue
+        }
+        ModalOutcome::Continue => InputOutcome::Continue,
     }
 }
 

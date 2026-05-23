@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 const ENTRYPOINT_SH: &str = include_str!("../docker/runtime/entrypoint.sh");
-const SUPERVISOR_SH: &str = include_str!("../docker/runtime/supervisor.sh");
 
 #[derive(Debug)]
 pub struct DerivedBuildContext {
@@ -16,59 +15,73 @@ pub struct DerivedBuildContext {
 /// Caller must pass a `HooksConfig` whose paths have already passed
 /// `validate_role_repo` — paths are interpolated directly into Dockerfile
 /// `COPY` instructions with no further sanitization here.
-pub fn render_derived_dockerfile(
-    base_dockerfile: &str,
-    hooks: Option<&HooksConfig>,
-    supported: &[crate::agent::Agent],
-    claude_config: Option<&crate::manifest::ClaudeConfig>,
-) -> String {
+fn render_hook_section(hooks: Option<&HooksConfig>) -> String {
     use std::fmt::Write as _;
 
-    let mut hook_section = String::new();
     let source_hook_declared = hooks.is_some_and(|h| h.source.is_some());
     let mut entries = hooks.into_iter().flat_map(HooksConfig::entries).peekable();
-    if entries.peek().is_some() {
-        // chown only /jackin/state — agent writes the marker here.
-        // /jackin/runtime/hooks gets per-file ownership from
-        // `COPY --chown=agent:agent` below; the dir itself stays root.
-        hook_section.push_str(
-            "\
+    if entries.peek().is_none() {
+        return String::new();
+    }
+
+    let mut section = String::new();
+    // chown only /jackin/state — agent writes the marker here.
+    // /jackin/runtime/hooks gets per-file ownership from
+    // `COPY --chown=agent:agent` below; the dir itself stays root.
+    section.push_str(
+        "\
 USER root
 RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\
     && chown -R agent:agent /jackin/state
 USER agent
 ",
-        );
-        for entry in entries {
-            write!(
-                hook_section,
-                "\
+    );
+    for entry in entries {
+        write!(
+            section,
+            "\
 COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
 RUN chmod +x /jackin/runtime/hooks/{dst}
 ",
-                src = entry.path,
-                dst = entry.filename,
-            )
-            .expect("writing to String is infallible");
-        }
-        if source_hook_declared {
-            // `docker exec zsh` inherits the image ENV but none of PID 1's
-            // runtime exports, so operator shells miss the source-hook
-            // exports the entrypoint applied to the agent. The marker is
-            // namespaced and exported only after a successful source so a
-            // failed hook does not leave a sticky guard that hides
-            // re-source attempts from nested subshells (mirrors the rc
-            // capture + `trap - ERR` clear the entrypoint does at
-            // docker/runtime/entrypoint.sh:172-181). The outer
-            // `grep -q ... ||` keeps the file single-shimmed across
-            // derived-from-derived builds via `base_image_override`.
-            #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
-            const ZSHENV_SOURCE_SHIM: &str = "\
+            src = entry.path,
+            dst = entry.filename,
+        )
+        .expect("writing to String is infallible");
+    }
+    if source_hook_declared {
+        // `docker exec zsh` inherits the image ENV but none of PID 1's
+        // runtime exports, so operator shells miss the source-hook
+        // exports the entrypoint applied to the agent. The marker is
+        // namespaced and exported only after a successful source so a
+        // failed hook does not leave a sticky guard that hides
+        // re-source attempts from nested subshells (mirrors the rc
+        // capture + `trap - ERR` clear the entrypoint does at
+        // docker/runtime/entrypoint.sh:172-181). The outer
+        // `grep -q ... ||` keeps the file single-shimmed across
+        // derived-from-derived builds via `base_image_override`.
+        //
+        // The `source` runs inside an anonymous zsh function with
+        // `setopt local_options local_traps`: role hooks routinely
+        // ship `set -euo pipefail` (POSIX-sh idiom), which in zsh maps
+        // to `nounset`/`errexit`/`pipefail`. Without the local scope
+        // those flags leak into the same zsh that then loads
+        // `.zshrc` — `oh-my-zsh/lib/termsupport.zsh` and tirith's
+        // `zsh-hook.zsh` both read variables without `:-` defaults and
+        // error out under `nounset`, breaking every interactive Shell
+        // pane. The anonymous fn keeps option/trap changes scoped to
+        // the source call while still letting `export VAR=...` inside
+        // `source.sh` leak into the caller's env (which is the whole
+        // point of the shim).
+        #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+        const ZSHENV_SOURCE_SHIM: &str = "\
 RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     || printf '%s\\n' \\
     'if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then' \\
     '  __jackin_rc=0' \\
-    '  source /jackin/runtime/hooks/source.sh || __jackin_rc=$?' \\
+    '  () {' \\
+    '    setopt local_options local_traps' \\
+    '    source /jackin/runtime/hooks/source.sh' \\
+    '  } || __jackin_rc=$?' \\
     '  trap - ERR' \\
     '  if [ \"$__jackin_rc\" -ne 0 ]; then' \\
     '    print -u2 \"[zshenv] jackin source hook returned non-zero (exit $__jackin_rc); environment may be incomplete\"' \\
@@ -78,19 +91,26 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     '  unset __jackin_rc' \\
     'fi' >> /home/agent/.zshenv
 ";
-            hook_section.push_str(ZSHENV_SOURCE_SHIM);
-        }
+        section.push_str(ZSHENV_SOURCE_SHIM);
     }
+    section
+}
+
+pub fn render_derived_dockerfile(
+    base_dockerfile: &str,
+    hooks: Option<&HooksConfig>,
+    supported: &[crate::agent::Agent],
+    claude_config: Option<&crate::manifest::ClaudeConfig>,
+    jackin_capsule_bin: Option<&str>,
+) -> String {
+    let hook_section = render_hook_section(hooks);
 
     // Concatenate per-agent install blocks in a stable order (Claude
     // first when present, Codex second, Amp third, Kimi fourth,
-    // OpenCode fifth). Each block declares
-    // its own `ARG JACKIN_CACHE_BUST=0` (see the per-agent blocks returned
-    // by `Agent::install_block`), so layer cache keys advance
-    // independently when `--build-arg JACKIN_CACHE_BUST=<ts>` is
-    // passed. The stable ordering is for deterministic Dockerfile
-    // output (helps `docker build` cache reuse and keeps diffs
-    // reviewable).
+    // OpenCode fifth). Each block declares its own `ARG JACKIN_CACHE_BUST=0`
+    // (see the per-agent blocks returned by `Agent::install_block`), so layer
+    // cache keys advance independently when `--build-arg JACKIN_CACHE_BUST=<ts>`
+    // is passed. Stable ordering keeps diffs reviewable.
     let mut install_blocks = String::new();
     let mut sorted: Vec<crate::agent::Agent> = supported.to_vec();
     sorted.sort_by_key(|h| match h {
@@ -106,6 +126,45 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
             install_blocks.push_str(&render_claude_plugin_install_block(claude_config));
         }
     }
+
+    // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
+    let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
+        format!(
+            "\
+COPY {src} /jackin/runtime/jackin-capsule
+RUN chmod +x /jackin/runtime/jackin-capsule
+"
+        )
+    });
+
+    // Append an oh-my-zsh title-hook source to /home/agent/.zshrc when
+    // the construct image's zshrc did not already do so. The hook emits
+    // OSC 0/2 (`user@host:cwd`) and OSC 7 on every prompt — the
+    // jackin-capsule multiplexer reads both and renders the pane
+    // border title from them (matches zellij convention).
+    //
+    // Idempotent via the `__JACKIN_AUTO_TITLE_LOADED` marker: new
+    // construct images source oh-my-zsh natively and export the
+    // marker, so this fallback no-ops once the operator rebuilds
+    // construct. Derived-from-derived builds (`base_image_override`)
+    // also skip the second append because the first build added the
+    // marker line to /home/agent/.zshrc.
+    #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+    #[allow(clippy::items_after_statements)]
+    const SHELL_TITLE_HOOK_SECTION: &str = "\
+RUN grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
+    || printf '%s\\n' \\
+    '' \\
+    '# jackin: source oh-my-zsh title hook when the active .zshrc did' \\
+    '# not already do so. Brings OSC 0/2 (window title) and OSC 7 (cwd)' \\
+    '# emit on every prompt for the multiplexer pane title.' \\
+    'if [ -z \"${__JACKIN_AUTO_TITLE_LOADED:-}\" ] && [ -f \"$HOME/.oh-my-zsh/lib/termsupport.zsh\" ]; then' \\
+    '    [ -f \"$HOME/.oh-my-zsh/lib/functions.zsh\" ] && source \"$HOME/.oh-my-zsh/lib/functions.zsh\"' \\
+    '    source \"$HOME/.oh-my-zsh/lib/termsupport.zsh\"' \\
+    '    export __JACKIN_AUTO_TITLE_LOADED=1' \\
+    'fi' >> /home/agent/.zshrc
+";
+    let shell_title_hook_section = SHELL_TITLE_HOOK_SECTION;
 
     format!(
         "\
@@ -133,10 +192,9 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
-COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh
-RUN chmod +x /jackin/runtime/supervisor.sh
+{shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /jackin/run /jackin/state && chown agent:agent /jackin/run /jackin/state
 USER agent
-ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]
+ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
 "
     )
 }
@@ -200,6 +258,26 @@ pub fn shell_quote(value: &str) -> String {
     quoted
 }
 
+/// Validate that `value` looks like a Docker image reference and not
+/// arbitrary text. Operator-set `JACKIN_CONSTRUCT_IMAGE` flows through
+/// here before being interpolated into a `FROM` line; without this
+/// check a newline-containing value (e.g. from a poisoned `.envrc`)
+/// would inject arbitrary RUN instructions executed at image-build
+/// time. The accepted alphabet is the conservative subset that Docker
+/// itself accepts in references plus colons, slashes, `@`, and dots —
+/// everything else is rejected.
+fn looks_like_valid_image_ref(value: &str) -> bool {
+    if value.is_empty() || value.len() > 256 {
+        return false;
+    }
+    value.chars().all(|c| {
+        matches!(
+            c,
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '_' | '-' | '/' | ':' | '@' | '+'
+        )
+    })
+}
+
 /// Replace `FROM projectjackin/construct:<tag>[@<digest>] [AS alias]` lines in
 /// `contents` with `FROM <override_image> [AS alias]`. Digest pins are dropped
 /// because a local override image has no matching digest.
@@ -233,6 +311,10 @@ pub fn create_derived_build_context(
     // When Some, the DerivedDockerfile starts with `FROM <image>` rather than
     // the workspace Dockerfile contents (pre-built image fast path).
     base_image_override: Option<&str>,
+    // Path to the pre-downloaded jackin-capsule binary on the host.
+    // When Some, the binary is copied into the build context and baked into
+    // the derived image at /jackin/runtime/jackin-capsule.
+    jackin_capsule_host_path: Option<&str>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -241,26 +323,58 @@ pub fn create_derived_build_context(
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
-    std::fs::write(runtime_dir.join("supervisor.sh"), SUPERVISOR_SH)?;
+
+    // Copy jackin-capsule binary into the build context so the Dockerfile
+    // can COPY it into the image without a network fetch at build time.
+    let jackin_capsule_ctx_path = if let Some(host_path) = jackin_capsule_host_path {
+        let dst = runtime_dir.join("jackin-capsule");
+        std::fs::copy(host_path, &dst).map_err(|e| {
+            anyhow::anyhow!("failed to copy jackin-capsule binary into build context: {e}")
+        })?;
+        Some(".jackin-runtime/jackin-capsule".to_string())
+    } else {
+        None
+    };
 
     let hooks = validated.manifest.hooks.as_ref();
 
-    let base_dockerfile = base_image_override.map_or_else(
-        || {
-            // When JACKIN_CONSTRUCT_IMAGE is not set or empty, leave the
-            // Dockerfile untouched so Docker uses whatever versioned tag the
-            // role pins.
-            let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
-            if override_image.trim().is_empty() {
-                return validated.dockerfile.dockerfile_contents.clone();
-            }
+    // Validation policy by ingress channel — intentionally asymmetric:
+    //
+    // - `base_image_override` argument: hard error on invalid input.
+    //   The caller is jackin's own runtime code (or a future CLI flag
+    //   the operator typed explicitly). A typo / programmer bug is
+    //   worth failing the build loudly.
+    //
+    // - `JACKIN_CONSTRUCT_IMAGE` env var: warn to stderr and fall
+    //   back to the role's pinned image. The env var is operator-side
+    //   UX (often set in a shell rc / direnv); failing the build for
+    //   a stale value would surprise. Both paths share the same
+    //   `looks_like_valid_image_ref` allowlist so the bytes that
+    //   reach the Dockerfile FROM line are character-set-bounded
+    //   regardless of ingress.
+    let base_dockerfile = if let Some(image) = base_image_override {
+        anyhow::ensure!(
+            looks_like_valid_image_ref(image),
+            "base_image_override {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
+        );
+        format!("FROM {image}\n")
+    } else {
+        let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
+        let override_trimmed = override_image.trim();
+        if override_trimmed.is_empty() {
+            validated.dockerfile.dockerfile_contents.clone()
+        } else if looks_like_valid_image_ref(override_trimmed) {
             apply_construct_image_override(
                 &validated.dockerfile.dockerfile_contents,
-                &override_image,
+                override_trimmed,
             )
-        },
-        |image| format!("FROM {image}\n"),
-    );
+        } else {
+            eprintln!(
+                "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
+            );
+            validated.dockerfile.dockerfile_contents.clone()
+        }
+    };
 
     let supported = validated.manifest.supported_agents();
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
@@ -271,6 +385,7 @@ pub fn create_derived_build_context(
             hooks,
             &supported,
             validated.manifest.claude.as_ref(),
+            jackin_capsule_ctx_path.as_deref(),
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;
@@ -296,7 +411,7 @@ fn ensure_runtime_assets_are_included(
     let mut rules = vec![
         "!.jackin-runtime/".to_string(),
         "!.jackin-runtime/entrypoint.sh".to_string(),
-        "!.jackin-runtime/supervisor.sh".to_string(),
+        "!.jackin-runtime/jackin-capsule".to_string(),
         "!.jackin-runtime/DerivedDockerfile".to_string(),
     ];
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
@@ -354,6 +469,7 @@ mod tests {
             None,
             &[Agent::Claude],
             None,
+            None,
         );
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
@@ -361,10 +477,8 @@ mod tests {
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
-        assert!(
-            dockerfile.contains("COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh")
-        );
-        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
+        assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
     }
 
     #[test]
@@ -373,6 +487,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
+            None,
             None,
         );
 
@@ -383,9 +498,7 @@ mod tests {
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
-        assert!(
-            dockerfile.contains("COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh")
-        );
+        assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
     }
 
     #[test]
@@ -394,6 +507,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
+            None,
             None,
         );
 
@@ -414,6 +528,7 @@ mod tests {
                 preflight: Some("hooks/preflight.sh".to_string()),
             }),
             &[Agent::Claude],
+            None,
             None,
         );
 
@@ -440,17 +555,24 @@ mod tests {
             .find("if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\"")
             .unwrap();
         let source_pos = dockerfile
-            .find("source /jackin/runtime/hooks/source.sh || __jackin_rc=$?")
+            .find("source /jackin/runtime/hooks/source.sh")
             .unwrap();
+        let close_fn_pos = dockerfile.find("} || __jackin_rc=$?").unwrap();
         let export_pos = dockerfile
             .find("export __JACKIN_ZSHENV_SOURCE_LOADED=1")
             .unwrap();
         let append_pos = dockerfile.find(">> /home/agent/.zshenv").unwrap();
         assert!(copy_pos < guard_pos);
         assert!(guard_pos < source_pos);
-        assert!(source_pos < export_pos);
+        assert!(source_pos < close_fn_pos);
+        assert!(close_fn_pos < export_pos);
         assert!(export_pos < append_pos);
         assert!(dockerfile.contains("trap - ERR"));
+        // Role hooks that `set -euo pipefail` must not leak nounset /
+        // errexit / pipefail into the zsh that loads `.zshrc` next —
+        // the source call runs in an anonymous fn with localized
+        // options + traps.
+        assert!(dockerfile.contains("setopt local_options local_traps"));
         // Single emission — derived-from-derived rebuilds must not stack
         // duplicate shim blocks in /home/agent/.zshenv.
         assert_eq!(dockerfile.matches(">> /home/agent/.zshenv").count(), 1);
@@ -462,6 +584,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
+            None,
             None,
         );
 
@@ -479,6 +602,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Amp, Agent::Claude, Agent::Codex],
+            None,
             None,
         );
 
@@ -500,6 +624,7 @@ mod tests {
             None,
             &[Agent::Amp],
             None,
+            None,
         );
 
         let amp_block_pos = dockerfile.find("ampcode.com/install.sh").unwrap();
@@ -516,6 +641,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Codex],
+            None,
             None,
         );
 
@@ -537,6 +663,7 @@ mod tests {
             None,
             &[Agent::Codex],
             None,
+            None,
         );
         let last_user = dockerfile
             .lines()
@@ -552,6 +679,7 @@ mod tests {
             None,
             &[Agent::Codex],
             None,
+            None,
         );
 
         assert!(!dockerfile.contains("https://claude.ai/install.sh"));
@@ -565,11 +693,14 @@ mod tests {
             None,
             &[Agent::Claude],
             None,
+            None,
         );
 
         assert!(dockerfile.contains("/home/agent"));
         assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
-        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
+        assert!(dockerfile.contains("mkdir -p /jackin/run /jackin/state"));
+        assert!(dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
     }
 
     #[test]
@@ -578,6 +709,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude, Agent::Codex],
+            None,
             None,
         );
 
@@ -595,6 +727,7 @@ mod tests {
         assert!(ENTRYPOINT_SH.contains("  claude)"));
         assert!(ENTRYPOINT_SH.contains("  codex)"));
         assert!(ENTRYPOINT_SH.contains("  amp)"));
+        assert!(ENTRYPOINT_SH.contains("  kimi)"));
         assert!(ENTRYPOINT_SH.contains("  opencode)"));
     }
 
@@ -633,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_amp_branch_copies_secrets_and_launches_amp() {
+    fn entrypoint_amp_branch_launches_amp() {
         let amp_section = ENTRYPOINT_SH
             .split_once("\n  amp)")
             .unwrap()
@@ -641,26 +774,31 @@ mod tests {
             .split(";;")
             .next()
             .unwrap();
-        assert!(amp_section.contains("/home/agent/.local/share/amp"));
-        assert!(amp_section.contains("/jackin/amp/secrets.json"));
         assert!(amp_section.contains("LAUNCH=(amp --dangerously-allow-all)"));
+        assert!(!amp_section.contains("/jackin/amp/secrets.json"));
     }
 
     #[test]
-    fn entrypoint_seeds_durable_agent_home_from_image_defaults() {
-        assert!(
-            ENTRYPOINT_SH
-                .contains("seed_home_dir /jackin/default-home/.claude /home/agent/.claude")
-        );
-        assert!(
-            ENTRYPOINT_SH.contains("seed_home_dir /jackin/default-home/.codex /home/agent/.codex")
-        );
-        assert!(ENTRYPOINT_SH.contains(
-            "seed_home_dir /jackin/default-home/.local/share/amp /home/agent/.local/share/amp"
-        ));
-        assert!(ENTRYPOINT_SH.contains(
-            "seed_home_dir /jackin/default-home/.local/share/opencode /home/agent/.local/share/opencode"
-        ));
+    fn entrypoint_kimi_branch_forwards_model_args() {
+        let kimi_section = ENTRYPOINT_SH
+            .split_once("\n  kimi)")
+            .unwrap()
+            .1
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(kimi_section.contains("LAUNCH=(kimi --yolo)"));
+        assert!(kimi_section.contains("LAUNCH+=(\"$@\")"));
+    }
+
+    #[test]
+    fn entrypoint_delegates_agent_home_setup_to_jackin_capsule() {
+        assert!(ENTRYPOINT_SH.contains("/jackin/runtime/jackin-capsule runtime-setup"));
+        assert!(!ENTRYPOINT_SH.contains("seed_home_dir"));
+        assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.claude"));
+        assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.codex"));
+        assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.local/share/amp"));
+        assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.local/share/opencode"));
     }
 
     #[test]
@@ -669,6 +807,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode],
+            None,
             None,
         );
 
@@ -697,6 +836,7 @@ mod tests {
             None,
             &[Agent::Claude],
             Some(&config),
+            None,
         );
 
         let version_pos = dockerfile.find("RUN claude --version").unwrap();
@@ -717,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_registers_security_tool_mcp_servers() {
+    fn entrypoint_delegates_security_tool_mcp_registration_to_jackin_capsule() {
         let claude_section = ENTRYPOINT_SH
             .split("claude)")
             .nth(1)
@@ -726,14 +866,7 @@ mod tests {
             .next()
             .unwrap();
         assert!(claude_section.contains("LAUNCH+=(\"$@\")"));
-        assert!(claude_section.contains("claude mcp add tirith -- tirith mcp-server"));
-        assert!(claude_section.contains("claude mcp add shellfirm -- shellfirm mcp"));
-    }
-
-    #[test]
-    fn entrypoint_mcp_registration_respects_disable_guards() {
-        assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_TIRITH"));
-        assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_SHELLFIRM"));
+        assert!(!claude_section.contains("claude mcp add"));
     }
 
     #[test]
@@ -752,6 +885,14 @@ mod tests {
     fn entrypoint_runs_setup_once_with_writable_marker() {
         assert!(ENTRYPOINT_SH.contains("/jackin/state/hooks/setup-once.done"));
         assert!(ENTRYPOINT_SH.contains("touch \"$setup_once_marker\""));
+    }
+
+    #[test]
+    fn entrypoint_delegates_deterministic_setup_to_jackin_capsule() {
+        assert!(ENTRYPOINT_SH.contains("/jackin/runtime/jackin-capsule runtime-setup"));
+        assert!(!ENTRYPOINT_SH.contains("git config --global user.name"));
+        assert!(!ENTRYPOINT_SH.contains("gh auth setup-git"));
+        assert!(!ENTRYPOINT_SH.contains("prepare-commit-msg"));
     }
 
     fn extract_block<'a>(haystack: &'a str, start: &str, end: &str) -> &'a str {
@@ -830,6 +971,7 @@ mod tests {
             }),
             &[Agent::Claude],
             None,
+            None,
         );
 
         assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
@@ -860,6 +1002,7 @@ mod tests {
                 preflight: Some("hooks/preflight.sh".to_string()),
             }),
             &[Agent::Claude],
+            None,
             None,
         );
 
@@ -898,7 +1041,7 @@ source = "hooks/source.sh"
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
         let dockerignore =
             std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
@@ -927,7 +1070,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
 
         assert!(build.context_dir.join("Dockerfile").is_file());
         assert!(
@@ -966,7 +1109,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
         let dockerignore =
             std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
@@ -999,6 +1142,7 @@ plugins = []
             repo.path(),
             &validated,
             Some("docker.io/myorg/my-role:latest"),
+            None,
         )
         .unwrap();
 
@@ -1064,7 +1208,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let error = create_derived_build_context(repo.path(), &validated, None)
+        let error = create_derived_build_context(repo.path(), &validated, None, None)
             .expect_err("symlinks should be rejected");
 
         assert!(error.to_string().contains("symlink"));
@@ -1072,21 +1216,27 @@ plugins = []
     }
 
     #[test]
-    fn entrypoint_coauthor_hook_uses_canonical_agent_emails() {
-        // Guards against the shell trailer mapping drifting from AGENTS.md.
-        assert!(ENTRYPOINT_SH.contains("noreply@anthropic.com"));
-        assert!(ENTRYPOINT_SH.contains("codex@openai.com"));
-        assert!(ENTRYPOINT_SH.contains("amp@ampcode.com"));
-        assert!(ENTRYPOINT_SH.contains("opencode-agent[bot]@users.noreply.github.com"));
+    fn image_ref_validator_accepts_canonical_forms() {
+        assert!(looks_like_valid_image_ref("ubuntu"));
+        assert!(looks_like_valid_image_ref("ubuntu:24.04"));
+        assert!(looks_like_valid_image_ref("ghcr.io/owner/img:1.2.3"));
+        assert!(looks_like_valid_image_ref(
+            "ghcr.io/owner/img:tag@sha256:abc123"
+        ));
+        assert!(looks_like_valid_image_ref("localhost:5000/foo/bar"));
     }
 
     #[test]
-    fn entrypoint_hook_injects_dco_signed_off_by() {
-        // Guards that the DCO path is conditional on JACKIN_GIT_DCO and reads
-        // from git identity.
-        assert!(ENTRYPOINT_SH.contains("JACKIN_GIT_DCO"));
-        assert!(ENTRYPOINT_SH.contains("Signed-off-by:"));
-        assert!(ENTRYPOINT_SH.contains("git config user.name"));
-        assert!(ENTRYPOINT_SH.contains("git config user.email"));
+    fn image_ref_validator_rejects_injection_vectors() {
+        // The threats the allowlist guards against — a poisoned env
+        // var must not inject extra Dockerfile instructions.
+        assert!(!looks_like_valid_image_ref(""));
+        assert!(!looks_like_valid_image_ref("foo bar"));
+        assert!(!looks_like_valid_image_ref("foo\nFROM evil"));
+        assert!(!looks_like_valid_image_ref("foo;rm -rf /"));
+        assert!(!looks_like_valid_image_ref("foo$(whoami)"));
+        assert!(!looks_like_valid_image_ref("foo`id`"));
+        assert!(!looks_like_valid_image_ref("foo|sh"));
+        assert!(!looks_like_valid_image_ref(&"x".repeat(257)));
     }
 }

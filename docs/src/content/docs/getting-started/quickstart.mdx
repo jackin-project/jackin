@@ -3,7 +3,9 @@ title: Quick Start
 description: Load your first agent in under a minute
 ---
 import { Aside, Steps, TabItem, Tabs } from '@astrojs/starlight/components'
+import EarlyDevelopmentNotice from '../../../components/EarlyDevelopmentNotice.astro'
 
+<EarlyDevelopmentNotice />
 
 ## Two ways to drive jackin'
 
@@ -14,7 +16,7 @@ jackin' has **two surfaces** and you'll use both — but very differently:
 
 The expectation is **most people use the TUI, and reach for the CLI only when they need it.**
 
-The walkthrough below starts with `jackin load` because it is the **shortest one-shot demonstration of jackin's isolation model** — install, load, see for yourself that the agent is now running in an isolated world it can't escape. Once that shape clicks, the operator console is where you stay for daily work.
+The walkthrough below starts with `jackin load` because it is the **shortest one-shot demonstration of jackin' isolation model** — install, load, see for yourself that the agent is now running in an isolated world it can't escape. Once that shape clicks, the operator console is where you stay for daily work.
 
 ## Load your first agent (CLI)
 
@@ -170,7 +172,7 @@ jackin load agent-smith ~/Projects/my-app \
 </Tabs>
 ## Next steps
 
-- Learn the [Core Concepts](/getting-started/concepts/) behind jackin's architecture
+- Learn the [Core Concepts](/getting-started/concepts/) behind jackin' architecture
 - Try the [`jackin console`](/commands/console/) reference — the daily-driver TUI
 - Set up [Workspaces](/guides/workspaces/) for your projects
 - Understand the [Security Model](/guides/security-model/)

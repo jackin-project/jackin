@@ -27,8 +27,8 @@ the same problem:
 - Docker Sandboxes is the strongest commercial benchmark for **microVM
   sandboxing**: per-sandbox VM boundary, private Docker daemon, scoped
   workspace sharing, host-side network policy, and credential proxying.
-- [Herdr](https://github.com/ogulcancelik/herdr) is the strongest reference for **terminal-multiplexer UX for multi-agent workflows**: four-state agent status (Blocked / Working / Done / Idle) detected with zero configuration via PTY heuristics, workspace-level status roll-up, notification suppression when the operator is already looking, sound escalation as opt-in, and blocking `wait` semantics on a Unix socket API. Its architecture (bare host processes, AGPL-3.0) rules out embedding, but its UX decisions directly inform [agent runtime status](/reference/roadmap/agent-runtime-status/), [agent attention prompts](/reference/roadmap/agent-attention-prompts/), and the daemon socket design. See [jackin-container: in-container multiplexer server](/reference/roadmap/jackin-container-binary/) for the full evaluation and the implementation plan that applies these concepts to Jackin's container model.
-- [Orca](https://github.com/stablyai/orca) is the strongest reference for **desktop-native UX for multi-agent workflows**: worktree-per-task visual orchestration, WebGL multi-pane terminals, diff-annotation-to-agent feedback loops, embedded Chromium per worktree for live UI inspection, and 30+ pre-configured agent runtimes at zero config. Its isolation model (host-native worktrees, agents run as host user) is the opposite of jackin's, making it a useful UX benchmark without being a viable architecture borrow. See [Orca ADE research](/reference/roadmap/orca-research/) for the full evaluation.
+- [Herdr](https://github.com/ogulcancelik/herdr) is the strongest reference for **terminal-multiplexer UX for multi-agent workflows**: agent status (Blocked / Working / Done / Idle), foreground-process ownership, screen heuristics, semantic integration reports, workspace-level status roll-up, notification suppression when the operator is already looking, sound escalation as opt-in, and blocking `wait` semantics on a Unix socket API. Its architecture (bare host processes, AGPL-3.0) rules out embedding, but its UX decisions directly inform the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), [agent attention prompts](/reference/roadmap/agent-attention-prompts/), and the daemon socket design. See [jackin' Capsule control plane](/reference/roadmap/jackin-capsule/) for the in-container multiplexer plan that applies these concepts to the Capsule model.
+- [Orca](https://github.com/stablyai/orca) is the strongest reference for **desktop-native UX for multi-agent workflows**: worktree-per-task visual orchestration, WebGL multi-pane terminals, diff-annotation-to-agent feedback loops, embedded Chromium per worktree for live UI inspection, and 30+ pre-configured agent runtimes at zero config. Its isolation model (host-native worktrees, agents run as host user) is the opposite of the jackin' model, making it a useful UX benchmark without being a viable architecture borrow. See [Orca ADE research](/reference/roadmap/orca-research/) for the full evaluation.
 - Conductor, Claude devcontainers, Trail of Bits' devcontainer, and private
   internal tools remain useful comparison points, but they are not the center
   of this program.
@@ -43,7 +43,7 @@ The program keeps two ideas separate:
 That wider scope is why this page lives at `agent-orchestrator-research`,
 not under a multicode-specific route.
 
-## Jackin values used for evaluation
+## jackin' values used for evaluation
 
 Every borrowed idea has to survive these filters:
 
@@ -63,7 +63,7 @@ Every borrowed idea has to survive these filters:
 | [`graemerocher/multicode`](https://github.com/graemerocher/multicode) | Parallel workspace table, GitHub status links, `multicode-remote`, skill-driven tags, Codex provider support, editor launcher, autonomous queue config, Apple-container experiments | Linux-first `bwrap`/`systemd-run` core; isolation is convenience, not a strong boundary; some Apple-container workflows still mount the host Docker socket |
 | [`dredozubov/hazmat`](https://github.com/dredozubov/hazmat) | Session contract, tier decision flow, native macOS containment, strict integration rules, rollback/proof discipline | macOS-only; one hardcoded `agent` user; no smooth multi-agent fleet surface |
 | [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/security/) | MicroVM plus private Docker daemon, host-side network proxy, credential injection outside the VM, branch worktrees under `.sbx/` | Product is tied to Docker Desktop; not an extensible jackin role ecosystem; credentials/network proxy are not available primitives in plain Docker |
-| [`ogulcancelik/herdr`](https://github.com/ogulcancelik/herdr) | Two-stage done state (Done vs Idle), workspace-level status roll-up, notification suppression when tab is focused, sound-escalation opt-in, PTY inference heuristic for zero-config status detection, blocking `wait` semantics on the socket API | AGPL-3.0 (embedding conflicts with Jackin's Apache 2.0 license); PTY heuristics degrade when the observed terminal is `docker attach` rather than the agent process; no container isolation, mount model, or auth forwarding | See [Herdr research](/reference/roadmap/herdr-research/) |
+| [`ogulcancelik/herdr`](https://github.com/ogulcancelik/herdr) | Two-stage done state (Done vs Idle), foreground-process ownership, semantic integration reports, visible-screen arbitration, workspace-level status roll-up, notification suppression when tab is focused, sound-escalation opt-in, and blocking `wait` semantics on the socket API | AGPL-3.0 (embedding conflicts with jackin' Apache 2.0 license); heuristics degrade when the observed terminal is `docker attach` rather than the agent process; no container isolation, mount model, or auth forwarding | See [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) |
 | [`stablyai/orca`](https://github.com/stablyai/orca) | Worktree-per-task visual orchestration, diff-annotation-to-agent feedback loop, embedded Chromium per worktree (Design Mode), 30+ zero-config runtimes, WebGL multi-pane terminals, mobile companion | Host-native agents run as host user; no container boundary; isolated UX ideas are the borrow target, not the isolation model. See [Orca ADE research](/reference/roadmap/orca-research/) |
 | Claude/devcontainer patterns | Default-deny firewall and reproducible container setup | Devcontainers are workspace setup, not a multi-agent orchestrator or full operator platform |
 | Conductor-style native worktrees | Low-friction host-native worktrees | No meaningful sandbox boundary; useful only as a UX comparison |
@@ -74,31 +74,31 @@ This table is the "why would an operator care?" pass. A feature only belongs
 on the roadmap when it improves an engineer's day-to-day control loop, not
 just because another tool has it.
 
-| User-visible benefit | Seen in | Jackin direction |
+| User-visible benefit | Seen in | jackin' direction |
 |---|---|---|
 | Know the exact boundary before launch | Hazmat session contract; Docker Sandboxes security model | [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) becomes the common preflight for mounts, auth, Docker, network, ports, persistence, and recovery |
 | Pick the right containment tier for the job | Hazmat tier decision flow; Docker Sandboxes private-daemon path | Add a tier recommendation to `jackin explain` rather than forcing users to infer whether `dind`, rootless DinD, microVM, SSH remote, or Kubernetes is appropriate |
 | Run Docker/Compose without trusting the host daemon | Docker Sandboxes private Docker Engine; Hazmat Tier 3 | Keep host socket mounting out of scope; make private-daemon backends the Docker-capable path under [selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) |
 | See and govern outbound network behavior | Docker Sandboxes dashboard network panel; Hazmat deny-mode routing | [Network egress policy](/reference/roadmap/network-egress-policy/) should include connection logs and rule-editing UX, not only static allowlist config |
 | Open services started by the agent | Docker Sandboxes `sbx ports`; multicode host-localhost notes | Track service exposure as a first-class session-contract section with explicit host-side effects and non-persistent port mappings |
-| Work in parallel without clobbering the main checkout | Docker Sandboxes `--branch`; multicode short-lived workspaces | Jackin already has per-mount worktree/clone isolation; improve the operator surface around branch naming, preserved worktrees, and post-session review |
-| Resume a configured environment without rebuilding everything | Docker Sandboxes named/persistent VMs; multicode workspaces | Preserve jackin's explicit state model, but add disk/resource visibility and cleanup policy so persistence does not become invisible bloat |
-| See which agents are idle, busy, waiting, or expensive | multicode live TUI; Docker Sandboxes dashboard cards | [Agent runtime status](/reference/roadmap/agent-runtime-status/), [console resource panel](/reference/roadmap/console-resource-panel/), and [token telemetry](/reference/roadmap/token-cost-telemetry/) should converge into one operator overview |
+| Work in parallel without clobbering the main checkout | Docker Sandboxes `--branch`; multicode short-lived workspaces | jackin' already has per-mount worktree/clone isolation; improve the operator surface around branch naming, preserved worktrees, and post-session review |
+| Resume a configured environment without rebuilding everything | Docker Sandboxes named/persistent VMs; multicode workspaces | Preserve jackin' explicit state model, but add disk/resource visibility and cleanup policy so persistence does not become invisible bloat |
+| See which agents are idle, busy, waiting, done, stuck, or expensive | Herdr state roll-ups; CCManager and ccmux live status; Docker Sandboxes dashboard cards | [Agent runtime status authority](/reference/roadmap/agent-runtime-status/), [console resource panel](/reference/roadmap/console-resource-panel/), and [token telemetry](/reference/roadmap/token-cost-telemetry/) should converge into one operator overview |
 | Jump from agent output to issue/PR/repo state | multicode `<multicode:*>` tags | Keep the tag protocol vendor-neutral and optional, then use it to drive GitHub link tracking and custom operator actions |
 | Reuse stack setup safely | Hazmat integrations; Docker Sandboxes kits/templates | Keep roles as the environment unit, but allow non-executable stack hints and future reviewed setup kits where they cannot widen trust |
 | Roll back after a bad unattended run | Hazmat snapshots/restore; Docker Sandboxes disposable VM cleanup | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) should separate metadata recovery, project snapshots, and sandbox-state deletion |
-| Run the same operator model over SSH/server/Kubernetes | multicode-remote; Jackin roadmap vision | [jackin-remote](/reference/roadmap/jackin-remote/) and Kubernetes support should reuse the same contract/status/policy vocabulary instead of becoming separate products |
+| Run the same operator model over SSH/server/Kubernetes | multicode-remote; jackin' roadmap vision | [jackin-remote](/reference/roadmap/jackin-remote/) and Kubernetes support should reuse the same contract/status/policy vocabulary instead of becoming separate products |
 
 ## Ideas to decline or postpone
 
-Some adjacent-tool features are attractive but would cut against jackin's
+Some adjacent-tool features are attractive but would cut against jackin'
 values if copied directly.
 
 | Idea | Why not copy directly | Safer jackin alternative |
 |---|---|---|
 | Host Docker socket passthrough | Any agent with daemon access can create privileged containers or host bind mounts; this collapses the sandbox boundary | Private daemon only: DinD, rootless DinD, microVM-owned Docker, or Kubernetes-controlled pods |
-| Same-absolute-path workspace passthrough everywhere | Elegant in microVMs, but it would break jackin's explicit `dst` mount model in Docker/container backends | Keep `dst` explicit; only use same-path passthrough inside a backend that natively needs and explains it |
-| TUI-only orchestration | Fast for one product, but jackin's core users automate from terminals, SSH, and scripts | CLI-first contracts and commands, with `jackin console` as the common day-to-day overview |
+| Same-absolute-path workspace passthrough everywhere | Elegant in microVMs, but it would break jackin' explicit `dst` mount model in Docker/container backends | Keep `dst` explicit; only use same-path passthrough inside a backend that natively needs and explains it |
+| TUI-only orchestration | Fast for one product, but jackin' core users automate from terminals, SSH, and scripts | CLI-first contracts and commands, with `jackin console` as the common day-to-day overview |
 | Repo-controlled integration manifests with arbitrary paths/hooks | Turns untrusted project files into policy authority | Repo may recommend known integration names; operator approval and jackin-owned manifests decide what activates |
 | Broad environment inheritance for convenience | Secret-shaped env vars and auth sockets are easy to leak into agents | Named credential sources, safe env selectors, and bridge/proxy-mediated capabilities |
 | "Sandbox equals safe" messaging | Docker Sandboxes and Hazmat both document residual workspace, hooks, network, and persistence risk | Print backend-specific risk posture and recovery limits in the session contract |
@@ -107,7 +107,7 @@ values if copied directly.
 
 Hazmat is not a jackin replacement. It is a containment-first launcher that
 treats "what can the agent reach?" as the product question. That makes it a
-high-signal reference for jackin's security and trust surface.
+high-signal reference for jackin' security and trust surface.
 
 ### What Hazmat gets right
 
@@ -129,14 +129,14 @@ high-signal reference for jackin's security and trust surface.
 5. **Recovery and proof boundaries are honest.** The TLA+ verification page
    names exactly which setup, seatbelt, backup/restore, and launch invariants
    are governed. The proof found ordering bugs, which is exactly the kind of
-   failure mode jackin should care about.
+   failure mode jackin' should care about.
 
 ### Where Hazmat does not match jackin
 
-- It is **macOS-native and intentionally platform-specific**. Jackin needs the
+- It is **macOS-native and intentionally platform-specific**. jackin' needs the
   same operator concepts across macOS, Linux, WSL, servers, and eventually
   Kubernetes.
-- It is **single-operator/single-agent-user shaped**. Jackin's product value is
+- It is **single-operator/single-agent-user shaped**. jackin' product value is
   many roles, many agents, many concurrent instances, and per-instance state.
 - It does not provide a **fleet operations plane** comparable to multicode's
   live table, task queue, GitHub polling, or remote bridge.
@@ -145,7 +145,7 @@ high-signal reference for jackin's security and trust surface.
 
 ### Hazmat ideas worth turning into jackin roadmap items
 
-| Candidate | Jackin-shaped version | Roadmap item |
+| Candidate | jackin'-shaped version | Roadmap item |
 |---|---|---|
 | Session contract / `explain` | Preview a fully resolved launch boundary before side effects; print the same contract at launch | [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) |
 | Stack integrations | Optional, non-executable workspace hints for read-only toolchain/cache mounts, safe env selectors, warnings, and excludes | [Stack integration contracts](/reference/roadmap/stack-integration-contracts/) |
@@ -157,7 +157,7 @@ high-signal reference for jackin's security and trust surface.
 
 Docker Sandboxes is the benchmark because it solves several hard problems at
 the same time: VM boundary, private Docker daemon, scoped workspace, network
-policy, and credential injection. Jackin should use it as a comparison bar,
+policy, and credential injection. jackin' should use it as a comparison bar,
 not as an assumption that every backend can match immediately.
 
 ### What Docker Sandboxes gets right
@@ -177,23 +177,23 @@ not as an assumption that every backend can match immediately.
    policy, and cleanup.
 6. **Ports and host services are explicit.** Host-to-sandbox services require
    published port mappings, and sandbox-to-host service access goes through a
-   named host alias plus policy. Jackin needs equivalent explicitness for
+   named host alias plus policy. jackin' needs equivalent explicitness for
    dev servers, databases, and local model runners.
 7. **The security docs are blunt about remaining risk.** Workspace changes are
    live on the host in direct mode; hooks and generated files still matter.
 
-### Where jackin should differ
+### Where jackin' should differ
 
-- Jackin should keep **role repositories** as the unit of runtime
+- jackin' should keep **role repositories** as the unit of runtime
   distribution. Docker Sandboxes templates are useful, but they are not a
   replacement for jackin roles.
-- Jackin should preserve **mount destination control**. Docker Sandboxes'
-  same-absolute-path passthrough is elegant for worktrees, but jackin's
+- jackin' should preserve **mount destination control**. Docker Sandboxes'
+  same-absolute-path passthrough is elegant for worktrees, but jackin'
   `dst`-based workspace model is more explicit and portable.
-- Jackin should treat Docker Sandboxes' credential proxy as a **long-term
+- jackin' should treat Docker Sandboxes' credential proxy as a **long-term
   target**, not a first-phase promise. The current container credential work
   already documents why env injection is weaker.
-- Jackin should make **backend differences visible**. A `dind` session, an
+- jackin' should make **backend differences visible**. A `dind` session, an
   OrbStack isolated-machine session, and a future Docker Sandboxes-style
   microVM session should not pretend to have identical risk.
 
@@ -245,7 +245,7 @@ present in jackin' today; **planned** means a roadmap item already exists;
 5. **Operator extension points.** Editor launchers, review tools, and custom
    hotkeys make the TUI an operator surface rather than a fixed dashboard.
 
-### Where jackin is materially ahead — and should stay ahead
+### Where jackin' is materially ahead — and should stay ahead
 
 - **Cross-platform Docker substrate** instead of Linux-only `bwrap`.
 - **Per-instance multi-runtime** instead of one provider assumption.
@@ -255,7 +255,7 @@ present in jackin' today; **planned** means a roadmap item already exists;
 - **Toolchain-neutral orchestration** instead of Micronaut/Java defaults baked
   into the orchestrator.
 - **Security boundary honesty.** multicode's README is explicit that its
-  isolation is for safety and convenience, not security. Jackin's docs should
+  isolation is for safety and convenience, not security. jackin' docs should
   preserve that kind of bluntness for every backend: `dind` is useful, but it
   is not a microVM; microVM is stronger, but still has workspace and credential
   policy caveats.
@@ -374,7 +374,7 @@ This is a guide, not a constraint. The tracks are intentionally separable.
    resource limits, ephemeral mounts, and the lightweight parts of service
    visibility can land as independent PRs.
 2. **Session contract first for containment work**: do not build network,
-   snapshot, port-forwarding, or integration behavior until jackin can preview
+   snapshot, port-forwarding, or integration behavior until jackin' can preview
    the fully resolved launch boundary and host-side effects.
 3. **Persistent storage before deep observability**: per-instance SQLite should
    land before GitHub link tracking, token telemetry, snapshot metadata, and
@@ -385,11 +385,11 @@ This is a guide, not a constraint. The tracks are intentionally separable.
 5. **Network and credential proxy work belongs with backends**: `dind`,
    microVM, SSH remote, and Kubernetes will not have identical enforcement
    points. The session contract must say which one is active.
-6. **Do not claim Docker Sandboxes parity early**: jackin can improve DinD and
+6. **Do not claim Docker Sandboxes parity early**: jackin' can improve DinD and
    add microVMs before it has host-side network proxying and credential
    injection. The docs must keep that distinction visible.
 7. **Add tier recommendations before adding more backends**: Hazmat's decision
-   flow is useful because it tells users when not to use a mode. Jackin should
+   flow is useful because it tells users when not to use a mode. jackin' should
    make `dind`/microVM/remote/Kubernetes recommendations visible before the
    backend matrix grows.
 
@@ -449,7 +449,7 @@ This is a guide, not a constraint. The tracks are intentionally separable.
 ## Out of scope for this program
 
 - Shipping a macOS-only clone of Hazmat. Native macOS containment can inform a
-  future backend, but jackin's baseline must stay cross-platform.
+  future backend, but jackin' baseline must stay cross-platform.
 - Replacing role repos with integration manifests. Integrations are narrow
   ergonomics overlays; roles remain the runtime distribution model.
 - Claiming Docker Sandboxes-equivalent security for `dind`, rootless DinD, or
@@ -473,7 +473,7 @@ This is a guide, not a constraint. The tracks are intentionally separable.
 
 ## Source materials
 
-Research snapshot: May 9, 2026.
+Research snapshots: May 9, 2026; agent-status addendum May 22, 2026.
 
 ### multicode
 
@@ -482,6 +482,11 @@ Research snapshot: May 9, 2026.
   isolation, GitHub tag/status integration, authentication,
   `multicode-remote`, Codex provider support, editor-tool selection,
   autonomous queue / PR actions, and Apple-container experiments.
+
+### Agent status and attention systems
+
+- [Herdr](https://herdr.dev/docs/agents/) — best current public baseline for foreground-process ownership, visible-screen heuristics, integration reports, state roll-ups, `done` until viewed, and socket waits.
+- [Agent Runtime Status Authority](/reference/roadmap/agent-runtime-status/) — jackin' comparison matrix for Herdr, multicode, CCManager, Agent Session Manager, WezTerm Agent Deck, ccmux, TUICommander, Codemux, tmux-agent-status, agent-deck, claudeye, and Codeman.
 
 ### Hazmat
 

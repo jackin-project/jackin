@@ -3,14 +3,48 @@ use std::io::Write as _;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
+use anyhow::Context as _;
 
-// `tmux list-sessions` exits 1 when no sessions exist; `|| true` maps that to
-// exit 0 so only a real infrastructure failure reaches `Err`.
-pub const TMUX_LIST_SESSIONS_CMD: &str =
-    "tmux list-sessions -F '#{session_name}' 2>/dev/null || true";
+/// Shell command for querying the in-container daemon's session
+/// inventory.
+///
+/// Gated on the daemon's socket file (`/jackin/run/jackin.sock`) so
+/// the early-bring-up window — between container start and
+/// `setup-once` finishing + the daemon binding its socket — does not
+/// emit a wave of operator-visible stderr from a binary that exists
+/// but cannot serve yet. `test -S` exits silently with status 1 if
+/// the socket is absent, which `exec_capture` surfaces as `Err` and
+/// callers route through `AgentSessionInventory::Unavailable`. Once
+/// the socket is bound, every real failure mode of the status call
+/// (daemon crashed mid-request, oversize reply, garbled JSON)
+/// propagates loudly because `||` short-circuits at the first failure
+/// only — there is no `|| true` suppression of the second command's
+/// errors.
+pub const JACKIN_STATUS_CMD: &str =
+    "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
 
-// Re-exported so callers that already imported from `attach` keep working
-// after ContainerState moved to `docker_client`.
+pub(super) async fn wait_for_capsule_daemon(
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    const MAX_ATTEMPTS: u32 = 60;
+    const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+    crate::tui::prompt::spin_wait(
+        "Waiting for jackin-capsule daemon",
+        MAX_ATTEMPTS,
+        INTERVAL,
+        || async {
+            docker
+                .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
+                .await
+                .map(|_| ())
+        },
+    )
+    .await
+    .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"))
+}
+
 pub use crate::docker_client::ContainerState;
 #[cfg(test)]
 use crate::instance::{InstanceIndex, InstanceStatus};
@@ -45,27 +79,86 @@ pub async fn inspect_agent_sessions(
     }
 
     match docker
-        .exec_capture(container_name, &["sh", "-c", TMUX_LIST_SESSIONS_CMD])
+        .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
-        Ok(output) => AgentSessionInventory::Sessions(parse_tmux_sessions(&output)),
+        Ok(output) => match parse_jackin_sessions(&output) {
+            Ok(sessions) => AgentSessionInventory::Sessions(sessions),
+            Err(reason) => AgentSessionInventory::Unavailable(reason),
+        },
         Err(error) => AgentSessionInventory::Unavailable(error.to_string()),
     }
 }
 
-fn parse_tmux_sessions(output: &str) -> Vec<AgentSession> {
-    output
+/// Parse the `Sessions: <N>` header from `jackin-capsule status`
+/// output. Returns `None` if no parsable header line is present —
+/// daemon unreachable, torn write, or post-format-drift. Shared
+/// between `inspect_agent_sessions` here and
+/// `isolation::finalize::has_jackin_sessions` so a future change to
+/// the header shape touches one place, not two.
+pub fn parse_session_count(output: &str) -> Option<usize> {
+    output.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("Sessions:")
+            .and_then(|value| value.trim().parse().ok())
+    })
+}
+
+/// Parse session list from `jackin-capsule status` output.
+///
+/// The output starts with `Sessions: <N>` followed by N lines shaped
+/// `  [<id>] <label> (<agent>) state=<state> active=<bool>`. The
+/// header is required: without it, the function returns `Err` so
+/// callers can route to `Unavailable` instead of silently treating
+/// "no `[` lines" as "zero sessions". A cosmetic change to the
+/// capsule's status print therefore surfaces immediately as an
+/// operator-visible "sessions unavailable" rather than a wrong
+/// auto-cleanup.
+///
+/// `take(expected)` consumes only the first N `[`-prefixed lines
+/// after the header so a future trailing footer (totals row, debug
+/// summary) or a label whose `Display` impl emits a non-`[` second
+/// line does not flip the parse to `Unavailable`. Pre-header
+/// `[`-prefixed lines are dropped by the `skip_while` synchronisation
+/// on the header — that matches the capsule's print order, where the
+/// header is always the first non-blank line.
+fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
+    let expected = parse_session_count(output).ok_or_else(|| {
+        "jackin-capsule status emitted no parsable `Sessions: N` header — daemon may be unreachable"
+            .to_string()
+    })?;
+
+    let sessions: Vec<AgentSession> = output
         .lines()
+        .skip_while(|line| !line.trim_start().starts_with("Sessions:"))
+        .skip(1)
         .filter_map(|line| {
-            let name = line.trim();
-            if name.is_empty() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || !trimmed.starts_with('[') {
                 return None;
             }
+            // Strip from ` state=` onward, then strip the last
+            // ` (<agent>)` block — what remains is the label. `rfind`
+            // tolerates labels that themselves contain `(`.
+            let after_id = trimmed.split(']').nth(1)?.trim_start();
+            let head = after_id
+                .rfind(" state=")
+                .map_or(after_id, |idx| &after_id[..idx]);
+            let name = head.rfind(" (").map_or(head, |idx| &head[..idx]);
             Some(AgentSession {
                 name: name.to_string(),
             })
         })
-        .collect()
+        .take(expected)
+        .collect();
+
+    if sessions.len() < expected {
+        return Err(format!(
+            "jackin-capsule status header claims {expected} sessions but only {} `[`-prefixed lines parsed",
+            sessions.len()
+        ));
+    }
+    Ok(sessions)
 }
 
 /// Builder for `docker inspect`-failure operator messages. `clause`
@@ -83,96 +176,86 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
 }
 
 fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
-    let title = InstanceManifest::read(&paths.data_dir.join(container_name))
-        .map_or_else(|_| container_name.to_string(), |m| m.role_display_name);
+    let title = match InstanceManifest::read(&paths.data_dir.join(container_name)) {
+        Ok(m) => m.role_display_name,
+        Err(e) => {
+            crate::debug_log!(
+                "attach",
+                "set_role_terminal_title: manifest read failed for {container_name}: {e:#}; \
+                 using container name as title",
+            );
+            container_name.to_string()
+        }
+    };
     crate::tui::set_terminal_title(&title);
 }
 
-/// 6-hex-digit session ID from nanoseconds — ~16M distinct values per ms.
-pub(super) fn short_session_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.subsec_nanos());
-    format!("{:06x}", ts & 0x00ff_ffff)
+/// Re-attach the operator's terminal to a running container's
+/// daemon. When `focus_session` is `Some(id)`, the resulting
+/// `docker exec` adds `--focus <id>` so the daemon honors the
+/// host-supplied pane focus on its first Hello frame; `None` falls
+/// through to "attach at whatever the daemon thinks is focused"
+/// (the default reattach contract).
+pub(super) async fn reconnect_or_create_session_with_focus(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    set_role_terminal_title(paths, container_name);
+    wait_for_capsule_daemon(container_name, docker).await?;
+    let focus_arg = focus_session.map(|id| id.to_string());
+    let mut args: Vec<&str> = vec![
+        "exec",
+        "-it",
+        container_name,
+        "/jackin/runtime/jackin-capsule",
+    ];
+    if let Some(ref id) = focus_arg {
+        args.push("--focus");
+        args.push(id);
+    }
+    runner
+        .run("docker", &args, None, &RunOptions::default())
+        .await
 }
 
-/// `TMUX=` prevents nested-session warnings when the operator's host terminal
-/// is itself inside tmux.
-pub(super) async fn reconnect_or_create_session(
+pub(super) async fn start_or_reconnect_capsule_client(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    set_role_terminal_title(paths, container_name);
-    let sessions = inspect_agent_sessions(docker, container_name, &ContainerState::Running).await;
-    let has_sessions = matches!(&sessions, AgentSessionInventory::Sessions(v) if !v.is_empty());
-
-    if has_sessions {
-        runner
-            .run(
-                "docker",
-                &[
-                    "exec",
-                    "-e",
-                    "TMUX=",
-                    "-it",
-                    container_name,
-                    "tmux",
-                    "attach-session",
-                ],
-                None,
-                &RunOptions::default(),
-            )
-            .await
-    } else {
-        let agent_slug = match crate::instance::InstanceManifest::read(
-            &paths.data_dir.join(container_name),
-        ) {
-            Ok(m) => match m.agent() {
-                Ok(a) => a.slug().to_string(),
-                Err(e) => {
-                    crate::debug_log!(
-                        "instance",
-                        "reconnect_or_create_session: unrecognized agent for {container_name}: {e}"
-                    );
-                    "agent".to_string()
-                }
-            },
-            Err(e) => {
-                crate::debug_log!(
-                    "instance",
-                    "reconnect_or_create_session: manifest read failed for {container_name}: {e}"
-                );
-                "agent".to_string()
+    match docker.inspect_container_state(container_name).await {
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
+        ContainerState::Stopped { .. } | ContainerState::Created => {
+            docker
+                .start_container(container_name)
+                .await
+                .with_context(|| format!("starting role container {container_name}"))?;
+        }
+        ContainerState::NotFound => {
+            if let Some(message) = missing_restore_message(paths, container_name)? {
+                anyhow::bail!("{message}");
             }
-        };
-        let agent_env = format!("{}={agent_slug}", crate::env_model::JACKIN_AGENT_ENV_NAME);
-        let session_name = format!("jackin-{agent_slug}-{}", short_session_id());
-        runner
-            .run(
-                "docker",
-                &[
-                    "exec",
-                    "-e",
-                    "TMUX=",
-                    "-it",
-                    container_name,
-                    "tmux",
-                    "new-session",
-                    "-e",
-                    &agent_env,
-                    "-s",
-                    &session_name,
-                    "--",
-                    "/jackin/runtime/entrypoint.sh",
-                ],
-                None,
-                &RunOptions::default(),
-            )
-            .await
+            anyhow::bail!(
+                "container '{container_name}' not found; use `jackin load` to start a new session"
+            );
+        }
+        ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason));
+        }
+        state @ (ContainerState::Removing | ContainerState::Dead) => {
+            anyhow::bail!(
+                "container '{container_name}' is not startable (state: {}); \
+                 use `jackin load` to start a new session",
+                state.short_label()
+            );
+        }
     }
+    super::caffeinate::reconcile(paths, docker, runner).await;
+    reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await
 }
 
 /// Verify the container is reachable (running/paused/restarting).
@@ -210,8 +293,8 @@ async fn require_container_reachable(
 
 /// Open a one-shot interactive zsh shell in a running container.
 ///
-/// Intentionally ephemeral — no tmux session, no reconnect. Used by
-/// `jackin hardline --shell` and the console Shell action.
+/// Ephemeral one-shot — no persistent session, no reconnect on detach. Used
+/// by `jackin hardline --shell` and the console Shell action.
 pub async fn spawn_shell_session(
     paths: &JackinPaths,
     container_name: &str,
@@ -231,13 +314,20 @@ pub async fn spawn_shell_session(
     let result = runner
         .run(
             "docker",
-            &["exec", "-e", "TMUX=", "-it", container_name, "/bin/zsh"],
+            &[
+                "exec",
+                "-it",
+                container_name,
+                "/jackin/runtime/jackin-capsule",
+                "new",
+            ],
             None,
             &RunOptions::default(),
         )
         .await;
     eprintln!();
-    result
+    result?;
+    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -260,50 +350,46 @@ pub async fn spawn_agent_session(
     .await?;
 
     let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
-    let agent_env = format!(
-        "{}={}",
-        crate::env_model::JACKIN_AGENT_ENV_NAME,
-        agent.slug()
-    );
-    let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
+
+    // Agent selection travels as `jackin-capsule new <agent>` argv; these
+    // env values are session policy toggles consumed by the spawned entrypoint.
+    let coauthor_env = git_coauthor_trailer.then(|| {
         format!(
             "{}=1",
             crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
         )
     });
-    let git_dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
-    let session_name = format!("jackin-{}-{}", agent.slug(), short_session_id());
+    let dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
+
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
-    let mut tmux_args = vec![
+
+    let mut exec_args = vec![
         "exec",
-        "-e",
-        "TMUX=",
         "--workdir",
         workdir,
         "-it",
         container_name,
-        "tmux",
-        "new-session",
-        "-e",
-        &agent_env,
+        "/jackin/runtime/jackin-capsule",
+        "new",
+        agent.slug(),
     ];
-    if let Some(ref env) = git_coauthor_trailer_env {
-        tmux_args.extend_from_slice(&["-e", env.as_str()]);
+    let coauthor_env_flag;
+    let dco_env_flag;
+    if let Some(ref env) = coauthor_env {
+        coauthor_env_flag = format!("-e={env}");
+        exec_args.insert(1, coauthor_env_flag.as_str());
     }
-    if let Some(ref env) = git_dco_env {
-        tmux_args.extend_from_slice(&["-e", env.as_str()]);
+    if let Some(ref env) = dco_env {
+        dco_env_flag = format!("-e={env}");
+        exec_args.insert(1, dco_env_flag.as_str());
     }
-    tmux_args.extend_from_slice(&["-s", &session_name, "--", "/jackin/runtime/entrypoint.sh"]);
     let result = runner
-        .run("docker", &tmux_args, None, &RunOptions::default())
+        .run("docker", &exec_args, None, &RunOptions::default())
         .await;
     eprintln!();
     result?;
-
-    let outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
-    super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
-    Ok(())
+    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
 pub async fn hardline_agent(
@@ -312,15 +398,36 @@ pub async fn hardline_agent(
     docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    // Reconcile keep_awake right before each `reconnect_or_create_session` call.
-    // `reconnect_or_create_session` blocks on the tmux exec until the session ends,
+    hardline_agent_with_focus(paths, container_name, None, docker, runner).await
+}
+
+/// Same as `hardline_agent` but threads a host-supplied pane focus id.
+///
+/// The console preview navigation calls this with the
+/// operator-selected pane so the reconnect lands inside that pane.
+pub async fn hardline_agent_with_focus(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+    docker: &impl crate::docker_client::DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    // Reconcile keep_awake right before each `reconnect_or_create_session_with_focus`
+    // call. The attach blocks on the jackin-capsule exec until the session ends,
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
     // too late. Firing here, while the container is observably running, ensures
     // caffeinate spawns for the duration of the re-attached session.
     let attach_outcome = match docker.inspect_container_state(container_name).await {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             super::caffeinate::reconcile(paths, docker, runner).await;
-            reconnect_or_create_session(paths, container_name, docker, runner).await
+            reconnect_or_create_session_with_focus(
+                paths,
+                container_name,
+                focus_session,
+                docker,
+                runner,
+            )
+            .await
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -366,14 +473,21 @@ pub async fn hardline_agent(
     };
     attach_outcome?;
 
-    // Finalize per-mount isolation worktrees after re-attach. We do not honor
-    // a `ReturnToAgent` decision here — `hardline` is itself a re-attach, and
-    // the operator can simply re-invoke `jackin hardline` to come back.
-    let outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
+}
+
+async fn finalize_reconnected_foreground_session(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl crate::docker_client::DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    let mut outcome =
+        crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
     let mut prompt = crate::isolation::finalize::StdinPrompt;
-    let _ = crate::isolation::finalize::finalize_foreground_session(
+    let mut decision = crate::isolation::finalize::finalize_foreground_session(
         container_name,
         &paths.data_dir.join(container_name),
         outcome,
@@ -383,7 +497,60 @@ pub async fn hardline_agent(
         runner,
     )
     .await?;
-    Ok(())
+
+    if matches!(
+        decision,
+        crate::isolation::finalize::FinalizeDecision::ReturnToAgent
+    ) {
+        start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
+        outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+        super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
+        decision = crate::isolation::finalize::finalize_foreground_session(
+            container_name,
+            &paths.data_dir.join(container_name),
+            outcome,
+            interactive,
+            &mut prompt,
+            docker,
+            runner,
+        )
+        .await?;
+    }
+
+    finalize_reconnected_resources(paths, container_name, outcome, decision, docker).await
+}
+
+async fn finalize_reconnected_resources(
+    paths: &JackinPaths,
+    container_name: &str,
+    outcome: crate::isolation::finalize::AttachOutcome,
+    decision: crate::isolation::finalize::FinalizeDecision,
+    docker: &impl crate::docker_client::DockerApi,
+) -> anyhow::Result<()> {
+    use crate::isolation::finalize::{AttachOutcome, FinalizeDecision};
+
+    let should_teardown = match (outcome, decision) {
+        (_, FinalizeDecision::ReturnToAgent) => false,
+        (AttachOutcome::Stopped(0), _)
+        | (AttachOutcome::StillRunning, FinalizeDecision::Cleaned) => true,
+        _ => false,
+    };
+    if !should_teardown {
+        return Ok(());
+    }
+
+    let state_dir = paths.data_dir.join(container_name);
+    let status = if matches!(decision, FinalizeDecision::Preserved) {
+        super::launch::preserved_instance_status(&state_dir)?
+    } else {
+        crate::instance::InstanceStatus::CleanExited
+    };
+    if let Some(mut manifest) =
+        crate::instance::InstanceManifest::read_or_log(&state_dir, "finalize_reconnected_resources")
+    {
+        super::launch::write_instance_status(paths, &state_dir, &mut manifest, status)?;
+    }
+    super::cleanup::eject_role(paths, container_name, docker).await
 }
 
 pub async fn inspect_hardline_instance(
@@ -600,7 +767,7 @@ pub(super) async fn wait_for_dind(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, VecDeque};
 
     use super::super::test_support::FakeRunner;
     use super::*;
@@ -611,6 +778,79 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let paths = JackinPaths::for_tests(dir.path());
         (dir, paths)
+    }
+
+    #[tokio::test]
+    async fn wait_for_capsule_daemon_polls_socket_status_command() {
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+                "Sessions: 1\n".to_string()
+            ])),
+            ..Default::default()
+        };
+
+        wait_for_capsule_daemon("jk-agent-smith", &docker)
+            .await
+            .unwrap();
+
+        let recorded = docker.recorded.borrow();
+        assert!(
+            recorded
+                .iter()
+                .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
+            "expected socket/status wait command; recorded: {recorded:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            }])),
+            exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+                "Sessions: 1\n".to_string()
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        start_or_reconnect_capsule_client(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap();
+
+        let docker_recorded = docker.recorded.borrow();
+        assert!(
+            docker_recorded
+                .iter()
+                .any(|call| call == "start_container:jk-agent-smith"),
+            "expected detached Docker API start; recorded: {docker_recorded:?}"
+        );
+        assert!(
+            docker_recorded
+                .iter()
+                .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
+            "expected socket/status wait before client exec; recorded: {docker_recorded:?}"
+        );
+        assert!(
+            runner.recorded.iter().any(|call| {
+                call.contains("docker exec -it")
+                    && call.contains("jk-agent-smith")
+                    && call.contains("/jackin/runtime/jackin-capsule")
+            }),
+            "expected capsule client exec; recorded: {:?}",
+            runner.recorded
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker start -ai")),
+            "restart path must not attach to PID 1; recorded: {:?}",
+            runner.recorded
+        );
     }
 
     #[tokio::test]
@@ -631,13 +871,87 @@ mod tests {
         assert!(
             runner.recorded.iter().any(|c| {
                 c.contains("docker exec")
-                    && c.contains("TMUX=")
                     && c.contains("jk-agent-smith")
-                    && c.contains("tmux new-session")
-                    && c.contains("jackin-")
+                    && c.contains("jackin-capsule")
             }),
-            "expected tmux new-session exec in recorded commands; got: {:?}",
+            "expected jackin-capsule exec in recorded commands; got: {:?}",
             runner.recorded
+        );
+    }
+
+    #[tokio::test]
+    async fn hardline_clean_exit_ejects_runtime_resources() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap();
+
+        let recorded = docker.recorded.borrow();
+        assert!(
+            recorded
+                .iter()
+                .any(|op| op == "docker rm -f jk-agent-smith"),
+            "clean exit should remove role container; recorded: {recorded:?}"
+        );
+        assert!(
+            recorded
+                .iter()
+                .any(|op| op == "docker rm -f jk-agent-smith-dind"),
+            "clean exit should remove DinD sidecar; recorded: {recorded:?}"
+        );
+        assert!(
+            recorded
+                .iter()
+                .any(|op| op == "docker volume rm jk-agent-smith-dind-certs"),
+            "clean exit should remove cert volume; recorded: {recorded:?}"
+        );
+        assert!(
+            recorded
+                .iter()
+                .any(|op| op == "docker network rm jk-agent-smith-net"),
+            "clean exit should remove role network; recorded: {recorded:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hardline_detach_with_live_sessions_preserves_runtime_resources() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+                ContainerState::Running,
+            ])),
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "Sessions: 1\n  [1] Claude (claude) state=working active=true".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap();
+
+        assert!(
+            !docker
+                .recorded
+                .borrow()
+                .iter()
+                .any(|op| op.starts_with("docker rm -f")),
+            "detach with live sessions must not eject resources; recorded: {:?}",
+            docker.recorded.borrow()
         );
     }
 
@@ -690,15 +1004,14 @@ mod tests {
         assert!(
             runner.recorded.iter().any(|call| {
                 call.contains("docker exec")
-                    && call.contains("TMUX=")
-                    && call.contains("JACKIN_AGENT=codex")
+                    && !call.contains("JACKIN_AGENT=")
                     && call.contains("--workdir /workspace/project")
                     && call.contains("jk-k7p9m2xq-workspace-agentsmith")
-                    && call.contains("tmux new-session")
-                    && call.contains("jackin-codex-")
-                    && call.contains("/jackin/runtime/entrypoint.sh")
+                    && call.contains("jackin-capsule")
+                    && call.contains("new")
+                    && call.contains("codex")
             }),
-            "expected tmux new-session for codex; got: {:?}",
+            "expected jackin-capsule new for codex; got: {:?}",
             runner.recorded
         );
     }
@@ -753,7 +1066,7 @@ mod tests {
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1")),
+                .any(|call| call.contains("-e=JACKIN_GIT_COAUTHOR_TRAILER=1")),
             "coauthor trailer env must be present when enabled; recorded: {:?}",
             runner.recorded
         );
@@ -809,7 +1122,7 @@ mod tests {
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("-e JACKIN_GIT_DCO=1")),
+                .any(|call| call.contains("-e=JACKIN_GIT_DCO=1")),
             "DCO env must be present when enabled; recorded: {:?}",
             runner.recorded
         );
@@ -860,7 +1173,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_shell_session_execs_zsh_in_running_container() {
+    async fn spawn_shell_session_execs_jackin_capsule_new_in_running_container() {
         let (_tmp, paths) = test_paths();
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -877,17 +1190,17 @@ mod tests {
         assert!(
             runner.recorded.iter().any(|c| {
                 c.contains("docker exec")
-                    && c.contains("TMUX=")
                     && c.contains("jk-agent-smith")
-                    && c.contains("/bin/zsh")
+                    && c.contains("jackin-capsule")
+                    && c.contains("new")
             }),
-            "expected docker exec with /bin/zsh; got: {:?}",
+            "expected docker exec with jackin-capsule new; got: {:?}",
             runner.recorded
         );
     }
 
     #[tokio::test]
-    async fn spawn_shell_session_sets_tmux_env_to_empty() {
+    async fn spawn_shell_session_does_not_set_tmux_env() {
         let (_tmp, paths) = test_paths();
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -901,14 +1214,9 @@ mod tests {
             .await
             .unwrap();
 
-        let exec_call = runner
-            .recorded
-            .iter()
-            .find(|c| c.contains("docker exec") && c.contains("/bin/zsh"))
-            .expect("expected exec call");
         assert!(
-            exec_call.contains("TMUX="),
-            "TMUX= must clear nested-session env"
+            !runner.recorded.iter().any(|c| c.contains("TMUX=")),
+            "TMUX= must not be set in jackin-capsule shell sessions"
         );
     }
 
@@ -966,7 +1274,7 @@ mod tests {
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("tmux new-session"))
+                .any(|c| c.contains("docker start") || c.contains("jackin-capsule new"))
         );
     }
 
@@ -991,7 +1299,7 @@ mod tests {
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("tmux new-session"))
+                .any(|c| c.contains("docker start") || c.contains("jackin-capsule new"))
         );
     }
 
@@ -1065,7 +1373,7 @@ mod tests {
             .write(&paths.data_dir.join(container_name))
             .unwrap();
         // inspect: role container running, dind stopped
-        // exec_capture: tmux list-sessions returns two sessions
+        // exec_capture: jackin-capsule status returns two sessions
         // inspect_network: network present
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -1076,7 +1384,7 @@ mod tests {
                 },
             ])),
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "jackin-claude-abc123\njackin-codex-abc".to_string(),
+                "Sessions: 2\n  [1] jackin-claude-abc123 (claude) state=working active=true\n  [2] jackin-codex-abc (codex) state=idle active=false".to_string(),
             ])),
             inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 Some(crate::docker_client::NetworkRow {
@@ -1110,10 +1418,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inspect_agent_sessions_lists_tmux_sessions() {
+    async fn inspect_agent_sessions_lists_jackin_sessions() {
         let docker = FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "jackin-claude-abc123\njackin-codex-abc".to_string(),
+                "Sessions: 2\n  [1] Claude (claude) state=working active=true\n  [2] Codex (codex) state=idle active=false".to_string(),
             ])),
             ..Default::default()
         };
@@ -1125,12 +1433,29 @@ mod tests {
             panic!("expected sessions");
         };
         assert_eq!(sessions.len(), 2);
-        assert_eq!(sessions[0].name, "jackin-claude-abc123");
-        assert_eq!(sessions[1].name, "jackin-codex-abc");
+        assert_eq!(sessions[0].name, "Claude");
+        assert_eq!(sessions[1].name, "Codex");
     }
 
     #[tokio::test]
     async fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "Sessions: 0".to_string(),
+            ])),
+            ..Default::default()
+        };
+
+        let sessions =
+            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
+
+        assert_eq!(sessions, AgentSessionInventory::Sessions(vec![]));
+    }
+
+    #[tokio::test]
+    async fn inspect_agent_sessions_returns_unavailable_on_missing_header() {
+        // A daemon that crashed mid-call or a cosmetic change to the
+        // status print must surface as Unavailable, not as "zero sessions".
         let docker = FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 String::new(),
@@ -1141,7 +1466,28 @@ mod tests {
         let sessions =
             inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
 
-        assert_eq!(sessions, AgentSessionInventory::Sessions(vec![]));
+        assert!(
+            matches!(sessions, AgentSessionInventory::Unavailable(_)),
+            "expected Unavailable on missing header; got {sessions:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inspect_agent_sessions_returns_unavailable_on_count_mismatch() {
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "Sessions: 5\n  [1] Claude (claude) state=working active=true".to_string(),
+            ])),
+            ..Default::default()
+        };
+
+        let sessions =
+            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
+
+        assert!(
+            matches!(sessions, AgentSessionInventory::Unavailable(_)),
+            "expected Unavailable on count mismatch; got {sessions:?}"
+        );
     }
 
     #[tokio::test]
@@ -1226,7 +1572,7 @@ mod tests {
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("tmux new-session"))
+                .any(|c| c.contains("docker start") || c.contains("jackin-capsule new"))
         );
     }
 
@@ -1342,9 +1688,11 @@ mod tests {
                 .unwrap();
             assert!(
                 runner.recorded.iter().any(|c| {
-                    c.contains("docker exec") && c.contains("TMUX=") && c.contains("jk-agent-smith")
+                    c.contains("docker exec")
+                        && c.contains("jk-agent-smith")
+                        && c.contains("jackin-capsule")
                 }),
-                "state={state:?}: expected docker exec with TMUX=; got: {:?}",
+                "state={state:?}: expected docker exec with jackin-capsule; got: {:?}",
                 runner.recorded
             );
         }

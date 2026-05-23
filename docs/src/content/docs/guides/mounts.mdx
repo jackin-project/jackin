@@ -9,7 +9,7 @@ import { Aside } from '@astrojs/starlight/components'
 
 Mounts are the primary mechanism for giving agents access to your files. When you mount a directory, it appears inside the agent's container at the path you specify. Without a mount, the agent simply can't see that directory.
 
-This is the core of jackin's security model: **agents can only access what you explicitly mount.**
+This is the core of jackin' security model: **agents can only access what you explicitly mount.**
 
 <Aside type="tip">
 Workspace mounts are managed through `jackin workspace …` flags or
@@ -124,7 +124,7 @@ jackin config mount remove gradle-cache
 
 In the console, press `G` from the workspace list to open **Global config → Global mounts**. That screen lists every global mount with its name, source, destination, mode, scope, and source type. It supports adding mounts, editing source and destination, toggling read-only mode, changing scope, renaming, and removing mounts. Changes stay pending until you explicitly save the global config; workspace screens never write global mounts.
 
-Workspace views show global mounts separately from workspace mounts. When jackin can determine the selected role for a workspace, role-scoped global mounts are included in the global section. When multiple roles are possible, workspace views explain that the selected role affects global mount visibility.
+Workspace views show global mounts separately from workspace mounts. When jackin' can determine the selected role for a workspace, role-scoped global mounts are included in the global section. When multiple roles are possible, workspace views explain that the selected role affects global mount visibility.
 
 ## Mount precedence
 

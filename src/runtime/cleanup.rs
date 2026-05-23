@@ -78,13 +78,24 @@ async fn purge_container_filesystem(
     .await?;
     let state_dir = paths.data_dir.join(container_name);
     match std::fs::remove_dir_all(state_dir) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
+    // Remove the host-side bind-mount dir (~/.jackin/sockets/<container>/)
+    // that holds the daemon socket and Capsule launch config. Skipping it
+    // here leaks stale `agent.toml` across load/purge cycles; a future
+    // launch with the same container basename would bind-mount the old
+    // contents before the host's mkdir + write overwrites them.
+    remove_socket_dir(paths, container_name);
+    Ok(())
 }
 
-pub async fn eject_role(container_name: &str, docker: &impl DockerApi) -> anyhow::Result<()> {
+pub async fn eject_role(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
     let dind = dind_container_name(container_name);
     let certs_volume = dind_certs_volume(container_name);
     let network = role_network_name(container_name);
@@ -105,7 +116,33 @@ pub async fn eject_role(container_name: &str, docker: &impl DockerApi) -> anyhow
     r3?;
     r4?;
 
+    // Best-effort host-side socket dir cleanup. Same reason as
+    // purge_container_filesystem above: the daemon socket and the
+    // bind-mounted Capsule launch config live under
+    // ~/.jackin/sockets/<container>/ and must be removed alongside the
+    // docker-side teardown so re-launching the same container basename
+    // does not inherit stale state.
+    remove_socket_dir(paths, container_name);
+
     Ok(())
+}
+
+/// Remove the host-side bind-mount directory used to expose the daemon
+/// socket and Capsule launch config into the container. Best-effort:
+/// any failure is logged to stderr but does not abort the surrounding
+/// teardown — the docker-side resources are already gone, and a
+/// half-removed `~/.jackin/sockets/<container>/` is no worse than the
+/// pre-fix steady state.
+fn remove_socket_dir(paths: &JackinPaths, container_name: &str) {
+    let dir = paths.jackin_home.join("sockets").join(container_name);
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => eprintln!(
+            "jackin: warning: failed to remove socket dir {}: {error}",
+            dir.display()
+        ),
+    }
 }
 
 // ── Orphaned resource garbage collection ─────────────────────────────────
@@ -278,9 +315,10 @@ async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]
     }
 }
 
-pub async fn exile_all(docker: &impl DockerApi) -> anyhow::Result<()> {
+pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::Result<()> {
     let names = list_managed_role_names(docker).await?;
-    futures_util::future::try_join_all(names.iter().map(|name| eject_role(name, docker))).await?;
+    futures_util::future::try_join_all(names.iter().map(|name| eject_role(paths, name, docker)))
+        .await?;
     Ok(())
 }
 
@@ -322,7 +360,7 @@ pub fn prune_jackin_home(paths: &JackinPaths) {
     }
 }
 
-/// Remove jk_* Docker images that have no jackin-managed role containers (running or stopped).
+/// Remove jk_* Docker images that have no managed role containers (running or stopped).
 ///
 /// Per-image `rmi` failures are printed to stderr and counted in the summary but do not
 /// propagate. The initial `docker images` and `docker ps` enumeration calls do propagate.
@@ -481,7 +519,7 @@ pub async fn prune_all_instances(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    exile_all(docker).await?;
+    exile_all(paths, docker).await?;
 
     super::caffeinate::reconcile(paths, docker, runner).await;
 
@@ -760,8 +798,10 @@ mod tests {
     #[tokio::test]
     async fn eject_agent_removes_container_dind_and_network() {
         let docker = FakeDockerClient::default();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
 
-        eject_role("jk-agent-smith", &docker).await.unwrap();
+        eject_role(&paths, "jk-agent-smith", &docker).await.unwrap();
 
         assert_eq!(
             docker.recorded.borrow().clone(),
@@ -777,8 +817,10 @@ mod tests {
     #[tokio::test]
     async fn eject_agent_ignores_missing_runtime_resources() {
         let docker = FakeDockerClient::default();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
 
-        eject_role("jk-agent-smith", &docker).await.unwrap();
+        eject_role(&paths, "jk-agent-smith", &docker).await.unwrap();
 
         assert_eq!(
             docker.recorded.borrow().clone(),
@@ -802,7 +844,11 @@ mod tests {
             ..Default::default()
         };
 
-        let err = eject_role("jk-agent-smith", &docker).await.unwrap_err();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let err = eject_role(&paths, "jk-agent-smith", &docker)
+            .await
+            .unwrap_err();
 
         assert!(err.to_string().contains("permission denied"), "got: {err}");
         assert!(
@@ -841,7 +887,9 @@ mod tests {
             ..Default::default()
         };
 
-        exile_all(&docker).await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        exile_all(&paths, &docker).await.unwrap();
 
         assert!(
             docker
@@ -889,7 +937,9 @@ mod tests {
             ..Default::default()
         };
 
-        exile_all(&docker).await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        exile_all(&paths, &docker).await.unwrap();
 
         assert_eq!(
             docker.recorded.borrow().clone(),

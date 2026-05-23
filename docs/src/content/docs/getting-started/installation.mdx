@@ -3,7 +3,9 @@ title: Installation
 description: How to install jackin' on your system
 ---
 import { Aside, TabItem, Tabs } from '@astrojs/starlight/components'
+import EarlyDevelopmentNotice from '../../../components/EarlyDevelopmentNotice.astro'
 
+<EarlyDevelopmentNotice />
 
 ## Prerequisites
 
@@ -20,10 +22,7 @@ The easiest way to install on macOS or Linux is via Homebrew. The Homebrew formu
 ```bash
 brew tap jackin-project/tap
 
-# Stable
-brew install jackin
-
-# Or install the rolling preview channel
+# Active early-development channel
 brew install jackin@preview
 ```
 
@@ -62,7 +61,9 @@ On macOS, [OrbStack](https://orbstack.dev/) is a lightweight alternative to Dock
 </Aside>
 ## What gets installed
 
-jackin' itself is a single binary. When you first load an agent, jackin' will:
+jackin' installs the host CLI plus the matching in-container runtime. Homebrew installs the `jackin-capsule` Linux binary beside the CLI so the first agent load does not need an extra GitHub download. Source installs can still fetch or build that runtime on first use.
+
+When you first load an agent, jackin' will:
 
 1. **Pull the `construct` image** — the shared Debian-based base image every agent extends
 2. **Fetch the role repository** — cached locally so subsequent loads of the same role do not re-clone

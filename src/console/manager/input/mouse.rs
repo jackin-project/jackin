@@ -6,11 +6,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::render::global_mounts::trust_content_width;
-use super::super::render::list::{
-    COMPACT_INSTANCES_HEIGHT, agents_block_agent_count, env_block_height,
-    global_mounts_block_height, global_mounts_content_width, mount_block_height,
-    workspace_active_count, workspace_has_any_env, workspace_mounts_content_width,
-};
+use super::super::render::list::{global_mounts_content_width, workspace_mounts_content_width};
 #[cfg(test)]
 use super::super::render::max_scroll_offset;
 use super::super::render::{
@@ -448,7 +444,9 @@ fn try_drag_horizontal_scrollbar(
                 global_mount_rows_content_width(&settings.mounts.pending),
             )
         }
-        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => false,
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => false,
     }
 }
 
@@ -529,7 +527,9 @@ fn update_scroll_focus(
             settings.auth.scroll_focused = settings.active_tab == SettingsTab::Auth && in_content;
             settings.trust.scroll_focused = settings.active_tab == SettingsTab::Trust && in_content;
         }
-        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
 }
 
@@ -669,7 +669,9 @@ fn scroll_active_panel(
                 _ => {}
             }
         }
-        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
 }
 
@@ -734,7 +736,9 @@ fn scroll_active_panel_vertical(
                 None => {}
             }
         }
-        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
 }
 
@@ -749,24 +753,6 @@ struct ListScrollAreas {
     roles: Option<ScrollArea>,
 }
 
-fn selected_picker_role(state: &ManagerState<'_>) -> Option<crate::selector::RoleSelector> {
-    state
-        .inline_role_picker
-        .as_ref()
-        .and_then(|picker| {
-            picker
-                .list_state
-                .selected
-                .and_then(|idx| picker.filtered.get(idx).cloned())
-        })
-        .or_else(|| {
-            state
-                .inline_agent_picker
-                .as_ref()
-                .map(|(role, _)| role.clone())
-        })
-}
-
 fn list_scroll_areas(
     state: &ManagerState<'_>,
     term_size: Rect,
@@ -775,142 +761,62 @@ fn list_scroll_areas(
     let config = config?;
     let (right_x, right_w) = right_pane_dims(state.list_split_pct, term_size.width);
     let body_y = LIST_HEADER_HEIGHT;
-    if state.is_current_dir_selected() {
-        return Some(current_dir_scroll_areas(
-            state, config, right_x, right_w, body_y,
-        ));
-    }
-    let summary = state.selected_workspace_summary()?;
-    let workspace = config.workspaces.get(&summary.name)?;
-    let mounts_h = mount_block_height(workspace.mounts.as_slice());
-    let picker_role = selected_picker_role(state);
-    let global_rows = super::super::render::global_rows_for(config, picker_role.as_ref());
-    let (global_mounts, role_global_mounts) =
-        super::super::render::partition_mounts_by_scope(&global_rows);
-    let global_h = if global_mounts.is_empty() {
-        0
-    } else {
-        global_mounts_block_height(global_mounts.as_slice())
+    let pane_area = Rect {
+        x: right_x,
+        y: body_y,
+        width: right_w,
+        height: term_size
+            .height
+            .saturating_sub(LIST_HEADER_HEIGHT + LIST_FOOTER_HEIGHT),
     };
-    let role_global_h = if role_global_mounts.is_empty() {
-        0
+
+    let cwd_mounts;
+    let inputs: super::super::render::list::SidebarInputs<'_> = if state.is_current_dir_selected() {
+        cwd_mounts = [current_dir_mount(state)];
+        super::super::render::list::sidebar_inputs_for_current_dir(
+            &state.current_dir,
+            &cwd_mounts,
+            config,
+            state,
+        )
     } else {
-        global_mounts_block_height(role_global_mounts.as_slice())
+        let summary = state.selected_workspace_summary()?;
+        // Ensure the workspace is still present in config — old summaries can
+        // outlive a `jackin config workspace remove`.
+        config.workspaces.get(&summary.name)?;
+        super::super::render::list::sidebar_inputs_for_workspace(summary, config, state)
     };
-    let env_h = if workspace_has_any_env(workspace) {
-        env_block_height(Some(workspace))
-    } else {
-        0
-    };
-    let instance_count = workspace_active_count(
-        &state.instances,
-        Some(summary.name.as_str()),
-        summary.name.as_str(),
-        summary.workdir.as_str(),
-    );
-    let instances_h = if instance_count > 0 {
-        COMPACT_INSTANCES_HEIGHT
-    } else {
-        0
-    };
-    let inline_picker_active =
-        state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
-    let agent_count = agents_block_agent_count(Some(workspace), config);
-    let roles_h = super::super::render::list::agents_block_height(agent_count);
-    let top_h = instances_h;
-    let roles_y = body_y + top_h + 3 + mounts_h + global_h + role_global_h + env_h;
-    let roles_content_w =
-        super::super::render::list::agents_block_content_width(Some(workspace), config);
+
+    let layout = super::super::render::list::compute_sidebar_layout(pane_area, &inputs);
+    let (global_rows, role_global_rows) =
+        super::super::render::list::split_global_mount_rows_pub(&inputs.global_rows);
+
     Some(ListScrollAreas {
         workspace: ScrollArea {
-            area: Rect {
-                x: right_x,
-                y: body_y + top_h + 3,
-                width: right_w,
-                height: mounts_h,
-            },
-            content_width: workspace_mounts_content_width(workspace.mounts.as_slice()),
+            area: layout.mounts,
+            content_width: workspace_mounts_content_width(inputs.mounts),
         },
         global: ScrollArea {
-            area: Rect {
-                x: right_x,
-                y: body_y + top_h + 3 + mounts_h,
-                width: right_w,
-                height: global_h,
-            },
-            content_width: global_mounts_content_width(global_mounts.as_slice()),
+            area: layout.global.unwrap_or(Rect {
+                x: pane_area.x,
+                y: pane_area.y,
+                width: pane_area.width,
+                height: 0,
+            }),
+            content_width: global_mounts_content_width_from_rows(&global_rows),
         },
-        role_global: (role_global_h > 0).then(|| ScrollArea {
-            area: Rect {
-                x: right_x,
-                y: body_y + top_h + 3 + mounts_h + global_h,
-                width: right_w,
-                height: role_global_h,
-            },
-            content_width: global_mounts_content_width(role_global_mounts.as_slice()),
+        role_global: layout.role_global.map(|area| ScrollArea {
+            area,
+            content_width: global_mounts_content_width_from_rows(&role_global_rows),
         }),
-        roles: (!inline_picker_active && roles_h > 0).then_some(ScrollArea {
-            area: Rect {
-                x: right_x,
-                y: roles_y,
-                width: right_w,
-                height: roles_h,
-            },
-            content_width: roles_content_w,
+        roles: layout.roles.map(|area| ScrollArea {
+            area,
+            content_width: super::super::render::list::agents_block_content_width(
+                inputs.ws_config,
+                config,
+            ),
         }),
     })
-}
-
-fn current_dir_scroll_areas(
-    state: &ManagerState<'_>,
-    config: &crate::config::AppConfig,
-    right_x: u16,
-    right_w: u16,
-    body_y: u16,
-) -> ListScrollAreas {
-    let mounts = [current_dir_mount(state)];
-    let mounts_h = mount_block_height(&mounts);
-    let cwd_str = &state.current_dir;
-    let instance_count = workspace_active_count(&state.instances, None, cwd_str, cwd_str);
-    let instances_h = if instance_count > 0 {
-        COMPACT_INSTANCES_HEIGHT
-    } else {
-        0
-    };
-    let agent_count = super::super::render::list::agents_block_agent_count(None, config);
-    let roles_h = super::super::render::list::agents_block_height(agent_count);
-    let roles_y = body_y + 3 + mounts_h + instances_h;
-    let roles_content_w = super::super::render::list::agents_block_content_width(None, config);
-    ListScrollAreas {
-        workspace: ScrollArea {
-            area: Rect {
-                x: right_x,
-                y: body_y + 3,
-                width: right_w,
-                height: mounts_h,
-            },
-            content_width: workspace_mounts_content_width(&mounts),
-        },
-        global: ScrollArea {
-            area: Rect {
-                x: right_x,
-                y: roles_y,
-                width: right_w,
-                height: 0,
-            },
-            content_width: 0,
-        },
-        role_global: None,
-        roles: (roles_h > 0).then_some(ScrollArea {
-            area: Rect {
-                x: right_x,
-                y: roles_y,
-                width: right_w,
-                height: roles_h,
-            },
-            content_width: roles_content_w,
-        }),
-    }
 }
 
 fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig {
@@ -920,6 +826,12 @@ fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig 
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }
+}
+
+fn global_mounts_content_width_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
+    let mounts: Vec<crate::workspace::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    global_mounts_content_width(&mounts)
 }
 
 const fn editor_content_area(term_size: Rect) -> Rect {

@@ -1,5 +1,5 @@
 ---
-title: "Jackin Desktop Agent Hub"
+title: "jackin' Desktop Agent Hub"
 ---
 import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../../components/RepoFile.astro'
@@ -9,7 +9,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-jackin is already becoming the control plane for isolated developer agents:
+jackin' is already becoming the control plane for isolated developer agents:
 workspaces define project boundaries, roles define runtime shape, and the daemon
 PR introduces the host-side process needed for reactive features. The missing
 piece is a native macOS operator surface that shows what is running, what needs
@@ -17,7 +17,7 @@ review, and what agent accounts are close to exhaustion without forcing the
 operator to keep every terminal tab in view.
 
 The desired experience is not a replacement for Claude Code, Codex, or Amp. The
-agent UI remains the agent's own TUI. Jackin Desktop should be the Mac-native
+agent UI remains the agent's own TUI. jackin' Desktop should be the Mac-native
 control surface around those agents: start workspaces, see active containers,
 jump to pull requests, monitor token/account state, and receive attention
 prompts when an agent is blocked or finished.
@@ -58,8 +58,8 @@ routing. The phased plan below is the review strategy, not a reduced scope.
 
 ## Prototype research
 
-These apps are references, not implementation templates. Jackin should borrow
-specific native macOS interaction patterns from them while keeping Jackin's own
+These apps are references, not implementation templates. jackin' should borrow
+specific native macOS interaction patterns from them while keeping the jackin'
 daemon, workspace, isolation, and agent-runtime model.
 
 ### CodexBar
@@ -92,17 +92,17 @@ Implementation details worth borrowing selectively:
   `https://ampcode.com/settings` using browser cookies and expects a `session`
   cookie. The recurring "please re-login to Amp" state can be caused by browser
   cookie import drift, expired web cookies, or Amp changing its embedded
-  `freeTierUsage` payload. Jackin should not make Amp status depend solely on
+  `freeTierUsage` payload. jackin' should not make Amp status depend solely on
   browser cookies if the Amp CLI/account state is already available inside a
-  Jackin runtime.
+  jackin' runtime.
 
 What not to copy:
 
-- CodexBar's provider catalog is intentionally broad. Jackin should not inherit
+- CodexBar's provider catalog is intentionally broad. jackin' should not inherit
   a generic "29 providers" architecture for a three-agent product.
 - Hidden web scraping and cookie import should be optional diagnostics, not the
-  primary path for Jackin-owned account state.
-- Token monitoring should be scoped to accounts Jackin launches, not every
+  primary path for jackin'-owned account state.
+- Token monitoring should be scoped to accounts jackin' launches, not every
   provider installed on the host.
 
 ### RepoBar
@@ -127,19 +127,19 @@ Implementation details worth borrowing selectively:
   reference for bounded local git status collection, dirty-file summaries, and
   ahead/behind detection.
 - `Sources/RepoBar/Support/LocalRepoManager.swift` adds TTL caches and security
-  scoped folder access. Jackin Desktop can avoid broad project scanning by using
-  Jackin's saved workspaces and mounted paths, but the cache approach is still
+  scoped folder access. jackin' Desktop can avoid broad project scanning by using
+  jackin' saved workspaces and mounted paths, but the cache approach is still
   useful.
 - RepoBar's PR/issues/actions submenus are close to the desired "jump straight
   to pull request" workflow.
 
 What not to copy:
 
-- RepoBar is centered on GitHub account/repository management. Jackin Desktop is
-  centered on active Jackin workspaces and agent sessions; GitHub is a secondary
+- RepoBar is centered on GitHub account/repository management. jackin' Desktop is
+  centered on active jackin' workspaces and agent sessions; GitHub is a secondary
   integration for PR links and status.
-- RepoBar scans a configured projects folder. Jackin should default to the
-  workspaces Jackin already knows about and the containers Jackin is currently
+- RepoBar scans a configured projects folder. jackin' should default to the
+  workspaces jackin' already knows about and the containers jackin' is currently
   running.
 
 ## Product shape
@@ -147,18 +147,18 @@ What not to copy:
 ### Menu bar item
 
 The menu bar item should answer one question at a glance: "Do I need to look at
-Jackin right now?"
+jackin' right now?"
 
 Proposed states:
 
-- Idle: no running Jackin roles.
+- Idle: no running jackin' roles.
 - Running: one or more active workspaces, with a compact count.
 - Waiting: at least one agent has called `attention.waiting` or inferred idle
   waiting. This should visually dominate running state.
 - Ready for review: an agent has pushed or reported a PR as ready.
 - Auth/account warning: Claude, Codex, Amp, Kimi, or OpenCode account status requires operator
   action.
-- Daemon disconnected: Desktop cannot reach the Jackin daemon.
+- Daemon disconnected: Desktop cannot reach the jackin' daemon.
 
 The menu bar label should be conservative:
 
@@ -169,15 +169,15 @@ The menu bar label should be conservative:
 
 ### Main menu
 
-The main menu should be PR-first, then workspace-aware. The fastest path should be: open the status item, pick the PR, land in GitHub. Workspaces matter because they explain which local Jackin sessions and repositories are currently active, but the operator's day-to-day decision is usually "which pull request do I need to open now?"
+The main menu should be PR-first, then workspace-aware. The fastest path should be: open the status item, pick the PR, land in GitHub. Workspaces matter because they explain which local jackin' sessions and repositories are currently active, but the operator's day-to-day decision is usually "which pull request do I need to open now?"
 
 1. Header: daemon status, active session count, last refresh time.
 2. My open pull requests: PRs created by the operator, sorted newest first, with direct browser actions.
-3. Active projects: repositories recently touched by Jackin work, grouped by owner/org and filterable later in the app window.
+3. Active projects: repositories recently touched by jackin' work, grouped by owner/org and filterable later in the app window.
 4. Active workspaces: each row shows workspace name, repo/branch, role, agent, container state, last event, and primary action.
 5. Ready for review: PR rows promoted to the top when an agent explicitly reports a PR as ready.
 6. Accounts: Claude Enterprise, Claude Personal, Codex Personal, Amp Personal.
-7. Recent / saved workspaces: launch shortcuts for Jackin workspaces not
+7. Recent / saved workspaces: launch shortcuts for jackin' workspaces not
    currently running.
 8. Footer: Open Desktop, Refresh, Open Console, Settings, Quit.
 
@@ -185,7 +185,7 @@ The menu should be usable without opening the full Desktop window. A first-pass
 shape:
 
 ```text
-Jackin
+jackin'
   Running: 3 workspaces                         Last refresh 10s ago
 
   My open PRs
@@ -226,7 +226,7 @@ Jackin
 
 This is closer to a compact operations menu than a dashboard. The default click target for a PR row opens the PR in the browser. Holding Option or opening the submenu can expose secondary actions like copy URL, open checks, copy branch, or reveal the workspace that produced the PR.
 
-The **My open PRs** section is intentionally inspired by GitHub's authenticated pull-request inbox (`https://github.com/pulls/inbox`): a compact, always-available view of active pull requests. Jackin should not clone GitHub's full UI or attempt to show every GitHub detail. It should take the useful idea — a focused inbox for the work the operator is actively responsible for — and scope it to recently active Jackin projects plus optional org/project filters.
+The **My open PRs** section is intentionally inspired by GitHub's authenticated pull-request inbox (`https://github.com/pulls/inbox`): a compact, always-available view of active pull requests. jackin' should not clone GitHub's full UI or attempt to show every GitHub detail. It should take the useful idea — a focused inbox for the work the operator is actively responsible for — and scope it to recently active jackin' projects plus optional org/project filters.
 
 ### Workspace drill-down
 
@@ -244,7 +244,7 @@ Every workspace row should be a small hierarchy:
    - Copy remote URL / branch name.
 
 This solves the "I cannot currently see those repositories" pain directly:
-Jackin Desktop should only show repositories that belong to Jackin workspaces
+jackin' Desktop should only show repositories that belong to jackin' workspaces
 or running sessions, not the entire disk and not every GitHub repository the
 account can access.
 
@@ -266,8 +266,8 @@ Recommended layout:
 - `NavigationSplitView`.
 - Sidebar: Pull Requests, Projects, Workspaces, Running Agents, Accounts, Settings.
 - Pull Requests: an inbox-style list of open PRs authored by the operator, newest first, with filters for organization, project/repository, workspace-linked only, draft/open, and ready-for-review.
-- Projects: GitHub repositories Jackin has seen recently through saved workspaces, running sessions, mounted repos, branch activity, or PR tracking. This is not "all GitHub repositories"; it is the operator's current working set.
-- Workspaces: saved Jackin workspaces with a launch button, active/running badge, number of running agents, primary repositories, and last activity. No create/edit form in v1.
+- Projects: GitHub repositories jackin' has seen recently through saved workspaces, running sessions, mounted repos, branch activity, or PR tracking. This is not "all GitHub repositories"; it is the operator's current working set.
+- Workspaces: saved jackin' workspaces with a launch button, active/running badge, number of running agents, primary repositories, and last activity. No create/edit form in v1.
 - Running Agents: current role containers grouped by workspace/project, with agent runtime, role, branch, PR, attention state, and stop/hardline/open actions.
 - Accounts: Claude/Codex/Amp account cards with source, plan/quota, reset time, and repair/login actions.
 
@@ -309,7 +309,7 @@ Add request/response shapes:
 
 - `daemon/hello`: protocol version, daemon version, capabilities, socket paths.
 - `workspace/list`: saved workspaces from `AppConfig`.
-- `session/list`: running Jackin containers with labels, workspace, role, agent,
+- `session/list`: running Capsule-backed instances with labels, workspace, role, agent,
   branch, PR candidate URLs, state, started time, last activity.
 - `workspace/launch`: launch an existing saved workspace/role/agent through the daemon/app action path.
 - `session/action`: hardline/open-in-ghostty/stop/eject/mute.
@@ -317,7 +317,7 @@ Add request/response shapes:
   daemon health events.
 - `account/list`: configured Claude/Codex/Amp accounts and latest status.
 - `account/refresh`: explicit account status refresh.
-- `github/project_inbox`: open PRs for recently active Jackin projects, with org/project filters.
+- `github/project_inbox`: open PRs for recently active jackin' projects, with org/project filters.
 - `github/my_open_prs`: open PRs authored by the operator, sorted by created date descending.
 - `github/repository_prs`: PRs for a workspace/repo/branch, cache-first.
 - `desktop/open`: daemon-assisted actions for browser open, Ghostty launch/focus, and native notification click handling.
@@ -347,15 +347,15 @@ Session discovery can start from Docker labels already present in
 - plus new labels for workspace name, agent, branch, and primary repo.
 
 The Desktop app should not shell out to `docker` directly. It asks the daemon,
-and the daemon reuses Jackin runtime discovery code.
+and the daemon reuses jackin' runtime discovery code.
 
 ### Account monitoring
 
-Support only the current Jackin agents:
+Support only the current jackin' agents:
 
 - Claude:
   - support at least two operator accounts: Enterprise/company and personal.
-  - prefer Claude OAuth/API/file/Keychain state already used by Jackin live auth
+  - prefer Claude OAuth/API/file/Keychain state already used by jackin' live auth
     sync; CLI PTY only as diagnostic fallback.
 - Codex:
   - support personal account from `~/.codex/auth.json` / `CODEX_HOME`.
@@ -363,7 +363,7 @@ Support only the current Jackin agents:
 - Amp:
   - treat CodexBar's browser-cookie scraping as a last resort.
   - first research whether Amp CLI has a local auth/config/session file or a
-    noninteractive status endpoint that Jackin can read.
+    noninteractive status endpoint that jackin' can read.
   - if Amp only exposes web state, surface that as "web-cookie source" so the
     operator understands why relogin is needed.
 
@@ -380,10 +380,10 @@ There are three related but distinct surfaces:
    These appear inside the workspace drill-down and should answer: "What can I
    review for this running agent?"
 2. **My open PRs.** Every open PR authored by the operator across repositories
-   Jackin knows about, sorted by creation date descending. These appear near the
+   jackin' knows about, sorted by creation date descending. These appear near the
    top of the status menu so the operator can immediately jump to the newest
    PR Jack created.
-3. **Project inbox.** A GitHub pull-request inbox scoped to recently active Jackin projects. This is the main desktop-window view and should support filters by organization, repository/project, workspace-linked status, draft/open status, and eventually "ready for my review" vs "authored by me".
+3. **Project inbox.** A GitHub pull-request inbox scoped to recently active jackin' projects. This is the main desktop-window view and should support filters by organization, repository/project, workspace-linked status, draft/open status, and eventually "ready for my review" vs "authored by me".
 
 Data sources in order:
 
@@ -405,19 +405,19 @@ background:
   if the installed `gh` supports it, or equivalent `gh api` calls.
 - Fallback: GitHub GraphQL search:
   `type:pr is:open author:@me archived:false`, sorted by `created-desc`.
-- Scope: start with repositories present in Jackin saved/running workspaces and repositories with recent Jackin-observed activity. Add an optional "all accessible repositories" mode later only if the current-focus model proves too narrow.
+- Scope: start with repositories present in jackin' saved/running workspaces and repositories with recent jackin'-observed activity. Add an optional "all accessible repositories" mode later only if the current-focus model proves too narrow.
 - Sorting: newest `createdAt` first, oldest at the bottom. Do not sort by
   updated time for the default view because the user's mental model is "what
   did Jack just create?"
 - Row content: repository name, PR number, title, draft/open marker, created
-  relative time, and optional workspace badge if a Jackin workspace matches.
-- Empty state: "No open PRs authored by you in Jackin workspaces."
+  relative time, and optional workspace badge if a jackin' workspace matches.
+- Empty state: "No open PRs authored by you in jackin' workspaces."
 
 The daemon should expose this as a specific endpoint rather than asking the app
 to run `gh`:
 
 - `github/my_open_prs`: returns authored open PRs sorted newest first.
-- `github/project_inbox`: returns open PRs for recently active Jackin projects with org/project filters.
+- `github/project_inbox`: returns open PRs for recently active jackin' projects with org/project filters.
 - `github/repository_prs`: returns open PRs for a workspace repository.
 - `github/open`: opens a repository, repository PR page, or PR URL through the
   host browser action path.
@@ -493,8 +493,8 @@ Delivery rules:
 - Follow the repo's existing PR and commit standards for every PR in the chain:
   <RepoFile path="AGENTS.md" />, <RepoFile path="PULL_REQUESTS.md" />, and
   <RepoFile path="COMMITS.md" />. This includes the expected PR body shape,
-  verification notes, Conventional Commit subjects, DCO signoff, and exactly
-  one agent co-author trailer when an agent contributes.
+  verification notes, Conventional Commit subjects, DCO signoff, and the
+  required agent co-author trailers when agents contribute.
 - Every PR must include focused tests or an explicit reason tests are not
   meaningful for that slice. UI PRs should include the strongest practical
   local verification for the current repo shape.
@@ -532,7 +532,7 @@ Delivery rules:
 - PR 1: Add the simple native window shell with `NavigationSplitView`.
 - PR 2: Add the inbox-style Pull Requests view with organization/project
   filters.
-- PR 3: Add the Projects view for recently active Jackin repositories.
+- PR 3: Add the Projects view for recently active jackin' repositories.
 - PR 4: Add the Workspaces view for saved workspace visibility and launch-only
   actions.
 - PR 5: Add the Running Agents view with per-workspace agent counts and Ghostty
@@ -561,7 +561,7 @@ Delivery rules:
 - What is the real Amp local auth/status surface? This needs dedicated research
   before copying CodexBar's browser-cookie strategy.
 - What is the exact Ghostty launch/focus contract for v1: new tab by default, new window by preference, or always new window for isolation?
-- Should PR lookup use `gh` as the first implementation, or should Jackin build
+- Should PR lookup use `gh` as the first implementation, or should jackin' build
   a small GitHub client in the daemon immediately?
 
 ## Related work
@@ -581,12 +581,12 @@ Delivery rules:
   busy/idle/waiting status vocabulary that the menu bar should eventually use.
 - [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) — broader
   token/cost tracking work; Desktop's first cut should stay narrower and only
-  cover Claude, Codex, and Amp accounts Jackin launches.
+  cover Claude, Codex, and Amp accounts jackin' launches.
 - [CodexBar](https://github.com/steipete/CodexBar) — native menu bar reference
   for provider/account quota display, refresh loops, and status-item UI. Borrow
   selectively; avoid its broad provider catalog and browser-cookie-first Amp
-  model as Jackin defaults.
+  model as jackin' defaults.
 - [RepoBar](https://github.com/steipete/RepoBar) — native menu bar reference
   for repository/PR menus, cache-first GitHub state, and local checkout status.
-  Borrow the active-workflow ideas; keep Jackin centered on workspaces and
+  Borrow the active-workflow ideas; keep jackin' centered on workspaces and
   running agents rather than all accessible GitHub repositories.

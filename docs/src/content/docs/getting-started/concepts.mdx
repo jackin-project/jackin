@@ -3,7 +3,9 @@ title: Core Concepts
 description: The mental model behind jackin' — operators, agents, roles, constructs, and workspaces
 ---
 import { Aside } from '@astrojs/starlight/components'
+import EarlyDevelopmentNotice from '../../../components/EarlyDevelopmentNotice.astro'
 
+<EarlyDevelopmentNotice />
 
 ## The operator
 
@@ -58,6 +60,31 @@ One project may intentionally use several roles. That is not redundancy. It is h
 A single role can have multiple running **instances**. Each instance is a separate container with its own state. This lets you run the same agent type against the same workspace or against different workspaces simultaneously.
 
 An instance can also contain more than one **agent session** when the role supports multiple runtimes. For example, you can start `Claude Code` to implement a change, then start `Codex` inside the same running instance to review the same branch and run tests. For day-to-day workflows, see [Parallel Agents](/guides/parallel-agents/).
+
+### The jackin' Capsule
+
+Every running instance has a **jackin' Capsule** inside it. The Capsule is the small control process that starts first in the container and stays there while the instance is alive.
+
+From an operator's point of view, the Capsule is what makes a running instance feel like a persistent agent workspace instead of a one-shot `docker run`:
+
+- It owns the in-container multiplexer: tabs, split panes, the status bar, the command palette, and the identity strip at the top of the terminal.
+- It keeps agent sessions running after your terminal disconnects, so closing a terminal tab detaches from the instance instead of killing the agent.
+- It lets you reconnect with `jackin hardline`, start another agent tab with `jackin hardline --new`, or open a shell tab with `jackin hardline --shell`.
+- It reports live session inventory back to `jackin console` and `jackin hardline --inspect`, including which agent tabs exist and which one is focused.
+- It performs container-local setup before an agent starts, such as preparing the durable agent home and applying the auth handoff that jackin' already decided at launch.
+
+The visible result is the two-line jackin' chrome at the top of an attached terminal. The first line identifies the session and tabs; the second line shows the running instance identity and opens **Container info** when clicked. The rest of the terminal belongs to the focused agent or shell pane. Agent shortcuts, editors, full-screen TUIs, bracketed paste, mouse reporting, and normal terminal output still go to the agent unless the Capsule UI is explicitly active.
+
+That means one running instance can hold a small working room:
+
+- one tab running `Claude Code` to implement a change
+- another tab running `Codex` to review it
+- a shell tab for inspection or one-off commands
+- split panes when you want multiple views visible at once
+
+All of those tabs share the same mounted files, branch, role tooling, forwarded credentials, and private Docker-in-Docker sidecar. They do **not** share conversation context: each agent runtime still owns its own prompt history and state.
+
+The Capsule is not another agent and it is not a separate container. It is jackin'-owned runtime plumbing inside the role container. You normally interact with it through `jackin load`, `jackin console`, and `jackin hardline`, not by running `jackin-capsule` yourself.
 
 ## The construct
 

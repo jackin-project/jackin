@@ -150,7 +150,11 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Console(ConsoleArgs {}) => {
             let cwd = std::env::current_dir()?;
-            let Some(outcome) = console::run_console(config, &paths, &cwd)? else {
+            let mut in_place = ConsoleInPlaceHandler {
+                paths: paths.clone(),
+                debug,
+            };
+            let Some(outcome) = console::run_console(config, &paths, &cwd, &mut in_place)? else {
                 return Ok(());
             };
 
@@ -321,7 +325,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     println!("No matching roles found.");
                 } else {
                     for container in &containers {
-                        runtime::eject_role(container, &docker)
+                        runtime::eject_role(&paths, container, &docker)
                             .await
                             .with_context(|| format!("ejecting {container}"))?;
                         if purge {
@@ -348,7 +352,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     println!("No roles running.");
                 } else {
                     for name in &names {
-                        runtime::eject_role(name, &docker)
+                        runtime::eject_role(&paths, name, &docker)
                             .await
                             .with_context(|| format!("ejecting {name}"))?;
                         println!("Ejected {name}.");
@@ -360,6 +364,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
+        Command::Logs(args) => runtime::logs::run(&paths, args),
         Command::Config(config_cmd) => match config_cmd {
             cli::ConfigCommand::Mount(mount_cmd) => match mount_cmd {
                 cli::MountCommand::Add {
@@ -1671,6 +1676,119 @@ fn resolve_new_session_agent(
     )
 }
 
+/// Bridge from the sync TUI loop to async docker work for Stop/Purge.
+/// Spawns an OS thread per call and builds a fresh current-thread runtime
+/// there so we don't have to nest tokio runtimes on the TUI thread.
+struct ConsoleInPlaceHandler {
+    paths: JackinPaths,
+    debug: bool,
+}
+
+impl console::InstanceActionHandler for ConsoleInPlaceHandler {
+    fn run_in_place(
+        &mut self,
+        container: &str,
+        action: console::ConsoleInstanceAction,
+    ) -> anyhow::Result<()> {
+        let paths = self.paths.clone();
+        let debug = self.debug;
+        let container = container.to_string();
+        std::thread::scope(|s| {
+            let handle = s.spawn(move || -> anyhow::Result<()> {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .context("building tokio runtime for in-place docker work")?;
+                rt.block_on(async move {
+                    let docker = BollardDockerClient::connect()?;
+                    let mut runner = ShellRunner { debug };
+                    // Wrap the eject + post-condition work in an async
+                    // block so a partial failure still hits the
+                    // trailing reconcile + manifest-status update.
+                    // Without this, an eject that errored after
+                    // removing the last keep-awake container would
+                    // leave caffeinate asserted on the host and the
+                    // on-disk manifest stuck at Active/Running while
+                    // the container is half-gone.
+                    let result: anyhow::Result<()> = async {
+                        match action {
+                            console::ConsoleInstanceAction::Stop => {
+                                runtime::eject_role(&paths, &container, &docker).await
+                            }
+                            console::ConsoleInstanceAction::Purge => {
+                                runtime::eject_role(&paths, &container, &docker).await?;
+                                runtime::purge_container_state(
+                                    &paths,
+                                    &container,
+                                    &docker,
+                                    &mut runner,
+                                )
+                                .await
+                            }
+                            _ => Ok(()),
+                        }
+                    }
+                    .await;
+                    if matches!(action, console::ConsoleInstanceAction::Stop) {
+                        mark_instance_restore_available_after_stop(
+                            &paths,
+                            &container,
+                            &docker,
+                            result.is_ok(),
+                        )
+                        .await;
+                    }
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    result
+                })
+            });
+            handle
+                .join()
+                .map_err(|panic| anyhow::anyhow!("in-place action panicked: {panic:?}"))?
+        })
+    }
+}
+
+/// Promote the manifest for `container` to `RestoreAvailable` so the
+/// console list reflects "stopped, recoverable on demand" instead of the
+/// stale `Active` / `Running` that `eject_role` would otherwise leave
+/// behind (eject removes Docker resources but writes nothing to the
+/// on-disk index). Logs and proceeds on error — the eject itself
+/// succeeded and a stale row is recoverable on next interaction with
+/// the container.
+fn mark_instance_restore_available(paths: &JackinPaths, container: &str) {
+    let state_dir = paths.data_dir.join(container);
+    match instance::InstanceManifest::read(&state_dir) {
+        Ok(mut manifest) => {
+            if let Err(e) = manifest.mark_restore_available(paths) {
+                eprintln!("[jackin] failed to mark instance {container} as RestoreAvailable: {e}");
+            }
+        }
+        Err(e) => {
+            eprintln!("[jackin] cannot update instance manifest for {container} after stop: {e}");
+        }
+    }
+}
+
+async fn mark_instance_restore_available_after_stop(
+    paths: &JackinPaths,
+    container: &str,
+    docker: &impl DockerApi,
+    stop_succeeded: bool,
+) {
+    if stop_succeeded {
+        mark_instance_restore_available(paths, container);
+        return;
+    }
+
+    if matches!(
+        docker.inspect_container_state(container).await,
+        runtime::ContainerState::NotFound
+    ) {
+        mark_instance_restore_available(paths, container);
+    }
+}
+
 async fn handle_console_instance_action(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -1691,6 +1809,25 @@ async fn handle_console_instance_action(
             } else {
                 runtime::hardline_agent(paths, &container, docker, runner).await
             };
+            runtime::reconcile_keep_awake(paths, docker, runner).await;
+            result
+        }
+        console::ConsoleInstanceAction::ReconnectFocus(session_id) => {
+            // Same as `Reconnect` but forwards a pane-focus id to the
+            // daemon. Only fires for running instances reachable via
+            // the bind-mounted socket — `restore_hardline_instance`
+            // (cold-restore path) does not surface the snapshot
+            // preview that produces a focus id, so we route directly
+            // through the focused hardline.
+            runtime::reconcile_keep_awake(paths, docker, runner).await;
+            let result = runtime::hardline_agent_with_focus(
+                paths,
+                &container,
+                Some(session_id),
+                docker,
+                runner,
+            )
+            .await;
             runtime::reconcile_keep_awake(paths, docker, runner).await;
             result
         }
@@ -1733,10 +1870,17 @@ async fn handle_console_instance_action(
             );
             Ok(())
         }
-        console::ConsoleInstanceAction::Purge => {
-            runtime::purge_container_state(paths, &container, docker, runner).await?;
-            println!("Purged state for {container}.");
-            Ok(())
+        // Stop and Purge are dispatched via `ConsoleInPlaceHandler::run_in_place`
+        // (see `console::ConsoleInstanceAction::runs_in_place`), so
+        // the console event loop never returns
+        // `ConsoleOutcome::InstanceAction` for them. Bail with a
+        // diagnostic — `unreachable!` would panic in a future caller
+        // that bypasses the runs_in_place gate; bail surfaces the
+        // dispatch bug without taking the process down.
+        console::ConsoleInstanceAction::Stop | console::ConsoleInstanceAction::Purge => {
+            anyhow::bail!(
+                "{action:?} must run via ConsoleInPlaceHandler::run_in_place; reached handle_console_instance_action by mistake"
+            )
         }
     }
 }
@@ -2579,6 +2723,59 @@ mod auth_set_tests {
                 certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
             },
         })
+    }
+
+    fn write_stop_test_manifest(
+        paths: &JackinPaths,
+        workdir: &std::path::Path,
+        status: instance::InstanceStatus,
+    ) -> String {
+        let mut manifest = ad_hoc_manifest_for_workdir(workdir);
+        manifest.mark_status(status);
+        let container = manifest.container_base.clone();
+        manifest.write(&paths.data_dir.join(&container)).unwrap();
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        container
+    }
+
+    #[tokio::test]
+    async fn stop_failure_leaves_running_manifest_when_container_still_exists() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container =
+            write_stop_test_manifest(&paths, temp.path(), instance::InstanceStatus::Running);
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                runtime::ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
+
+        mark_instance_restore_available_after_stop(&paths, &container, &docker, false).await;
+
+        let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container)).unwrap();
+        assert_eq!(manifest.status, instance::InstanceStatus::Running);
+        let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(index.instances[0].status, instance::InstanceStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn stop_failure_marks_restore_available_when_container_is_gone() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container =
+            write_stop_test_manifest(&paths, temp.path(), instance::InstanceStatus::Running);
+        let docker = crate::docker_client::FakeDockerClient::default();
+
+        mark_instance_restore_available_after_stop(&paths, &container, &docker, false).await;
+
+        let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container)).unwrap();
+        assert_eq!(manifest.status, instance::InstanceStatus::RestoreAvailable);
+        let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(
+            index.instances[0].status,
+            instance::InstanceStatus::RestoreAvailable
+        );
     }
 
     #[tokio::test]

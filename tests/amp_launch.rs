@@ -1,6 +1,6 @@
 mod common;
 
-use common::{FakeRunner, NoOpDocker};
+use common::{FakeRunner, NoOpDocker, install_capsule_binary_stub};
 use jackin::agent::Agent;
 use jackin::config::AppConfig;
 use jackin::isolation::MountIsolation;
@@ -10,11 +10,19 @@ use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use tempfile::tempdir;
 
+fn recorded_role_container_name(run_cmd: &str) -> &str {
+    run_cmd
+        .split_once(" --name ")
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+        .expect("role docker run should include --name")
+}
+
 #[tokio::test]
 async fn amp_launch_invokes_docker_run_with_amp_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
+    install_capsule_binary_stub(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]
@@ -51,7 +59,8 @@ agents = ["amp"]
 
     let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
     let build =
-        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None).unwrap();
+        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
+            .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
     assert!(dockerfile.contains("ampcode.com/install.sh"));
     assert!(dockerfile.contains("RUN amp --version"));
@@ -90,20 +99,32 @@ agents = ["amp"]
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
-        !run_cmd.contains("JACKIN_AGENT"),
-        "JACKIN_AGENT must not be in docker run; got: {run_cmd}"
+        !run_cmd.contains("JACKIN_AGENT="),
+        "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
     );
     assert!(
-        run_cmd.contains("-e JACKIN_ROLE=the-architect"),
-        "{run_cmd}"
+        run_cmd.ends_with(" amp"),
+        "initial agent must be passed as container argv; got: {run_cmd}"
     );
+    assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
     assert!(run_cmd.contains("-e AMP_API_KEY=test-amp-key"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/claude/"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/amp/secrets.json"), "{run_cmd}");
+    let capsule_config_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(recorded_role_container_name(run_cmd))
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    let capsule_config: jackin_protocol::CapsuleConfig =
+        toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+    assert_eq!(capsule_config.role, "the-architect");
+    assert_eq!(capsule_config.workdir, "/workspace");
+    assert_eq!(capsule_config.agents, vec!["amp"]);
+    assert!(capsule_config.models.is_empty());
 }
 
 #[tokio::test]
@@ -111,6 +132,7 @@ async fn amp_launch_under_sync_mounts_secrets_json_in_docker_run() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
+    install_capsule_binary_stub(&paths);
 
     // Stage host ~/.local/share/amp/secrets.json under the test's fake
     // home (paths.home_dir, which load_role consults for host-side
@@ -189,7 +211,7 @@ agents = ["amp"]
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
         run_cmd.contains(":/jackin/amp/secrets.json"),

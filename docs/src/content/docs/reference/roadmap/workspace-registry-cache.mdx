@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-Each Jackin role instance runs its own DinD sidecar. DinD storage (`/var/lib/docker` inside the sidecar) is ephemeral — destroyed when the container stops. Every new session must pull base images from upstream registries from scratch.
+Each jackin' role instance runs its own DinD sidecar. DinD storage (`/var/lib/docker` inside the sidecar) is ephemeral — destroyed when the container stops. Every new session must pull base images from upstream registries from scratch.
 
 When multiple role instances share a workspace, or when the same workspace is used across sessions, the same layers are pulled repeatedly: `ubuntu:22.04`, `node:20`, `rust:1.78`, and any other base images the role's build process depends on. On a metered connection or with Docker Hub rate limits in play, this is both slow and wasteful.
 
@@ -43,7 +43,7 @@ Harbor and Nexus satisfy the requirements but are multi-container deployments wi
 ## Architecture
 
 ```
-Outer Docker daemon (Jackin host)
+Outer Docker daemon (jackin' host)
 ├── jackin-{ws}-registry         ← zot, on workspace-shared-net + persistent volume
 ├── dind-{ws}-{roleA}            ← workspace-shared-net + role-A-net
 │                                   CMD: --registry-mirror http://jackin-{ws}-registry:5000
@@ -90,7 +90,7 @@ On every role launch (if `container_registry.enabled = true`), `ensure_workspace
 
 **Volume lifecycle:** `jackin-{ws}-registry-data` is a named Docker volume that persists independently of the container. It survives container stop and `docker rm`. The cache accumulates across sessions; explicit operator deletion is required to clear it.
 
-**No manual start/stop commands.** The registry is fully automatic. The operator enables it in the workspace file and Jackin manages the rest.
+**No manual start/stop commands.** The registry is fully automatic. The operator enables it in the workspace file and jackin' manages the rest.
 
 ## Implementation
 

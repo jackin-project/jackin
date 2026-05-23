@@ -22,7 +22,7 @@ host-side state to make a container work.**
 Container containment cuts both ways. Agents can't escape the
 container — and jackin' itself doesn't reach back out. Every piece
 of "make this work" plumbing happens **inside the container**, in
-jackin's own state directory, or in the container's process env.
+jackin' state directory, or in the container's process env.
 Your host repos, dotfiles, git remotes, shell rc files, and CLI
 configs (`gh`, `claude`, `codex`, `git`) are read but never
 written.
@@ -55,7 +55,7 @@ Concrete examples of what this rule blocks:
 ### When jackin' does need to act on the host
 
 A few jackin' commands legitimately operate against the host —
-for example, `jackin load` clones role repos into jackin's own
+for example, `jackin load` clones role repos into jackin' own
 data directory, and `git_pull_on_entry` (when you enable it)
 runs `git pull` on the workspace's mounted repos before the
 agent starts. Whenever an action like this happens, jackin'

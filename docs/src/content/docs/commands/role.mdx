@@ -5,7 +5,7 @@ description: Validate, migrate, and scaffold role repositories
 
 `jackin role` is the local role-authoring command family. Use it when you are building or maintaining a role repository from your desktop.
 
-These commands are for desktop/operator workflows. CI, validation workflows, and future Renovate-style migration automation should keep using the small standalone `jackin-role` binary so role repositories do not need the full Jackin operator CLI just to validate or migrate their manifest.
+These commands are for desktop/operator workflows. CI, validation workflows, and future Renovate-style migration automation should keep using the small standalone `jackin-role` binary so role repositories do not need the full `jackin` operator CLI just to validate or migrate their manifest.
 
 ## Commands
 
@@ -27,7 +27,7 @@ cd "$HOME/Projects/chainargos/jackin-backend-engineer"
 jackin role validate .
 ```
 
-Jackin lowercases the role selector before it creates directories or writes scaffold references. For example, `ChainArgos/Backend-Engineer` becomes `chainargos/backend-engineer`, and the repository directory is `$HOME/Projects/chainargos/jackin-backend-engineer`.
+jackin' lowercases the role selector before it creates directories or writes scaffold references. For example, `ChainArgos/Backend-Engineer` becomes `chainargos/backend-engineer`, and the repository directory is `$HOME/Projects/chainargos/jackin-backend-engineer`.
 
 The scaffold is intentionally small. You still own the Dockerfile, manifest, README, and Git history. After reviewing the generated files, initialize the repository and publish it where the selector points:
 

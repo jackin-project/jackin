@@ -109,7 +109,7 @@ An role is a normal git repo with a Dockerfile and manifest. That gives you:
 - reproducibility from source
 - role-specific environments instead of one mutable universal box
 
-This is one of jackin's biggest advantages.
+This is one of jackin' biggest advantages.
 
 ### 3. Workspaces are first-class
 
@@ -132,7 +132,7 @@ jackin' is especially good when you want:
 - several agents against different branches
 - reattachable long-lived local sessions
 
-Docker Sandboxes can run multiple sandboxes, but jackin's role and workspace model makes this style of work more explicit.
+Docker Sandboxes can run multiple sandboxes, but jackin' role and workspace model makes this style of work more explicit.
 
 ### 5. Host-side cache reuse for agent builds
 
@@ -153,7 +153,7 @@ Still, the structural reason for higher overhead is clear:
 - each sandbox has its own private Docker state
 - Docker documents that installed packages and Docker state persist per sandbox
 
-So the baseline cost per sandbox will usually be materially higher than jackin's model of:
+So the baseline cost per sandbox will usually be materially higher than jackin' model of:
 
 - one host Docker engine
 - one agent container
@@ -245,7 +245,7 @@ Products like Daytona or E2B move the sandbox to managed remote infrastructure.
 - More operational overhead
 - Better as a later-stage platform move than as the first local-development experience
 
-That last point matters for jackin's roadmap. Starting with local Docker is reasonable. The same operator and workspace model can later grow into Kubernetes-backed debug workflows.
+That last point matters for jackin' roadmap. Starting with local Docker is reasonable. The same operator and workspace model can later grow into Kubernetes-backed debug workflows.
 
 ## Recommendation
 

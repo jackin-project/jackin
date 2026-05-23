@@ -1,0 +1,24 @@
+[package]
+name = "jackin-tui"
+version = "0.6.0-dev"
+edition = "2024"
+rust-version = "1.94"
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Shared phosphor palette and tab-strip helpers used by jackin's console TUI and the in-container multiplexer."
+license = "Apache-2.0"
+readme = "README.md"
+publish = false
+
+[lib]
+name = "jackin_tui"
+path = "src/lib.rs"
+
+[dependencies]
+unicode-width = "0.2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }

@@ -1,4 +1,28 @@
 export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
+
+# oh-my-zsh framework. Brings:
+#   - auto-title (OSC 0/2 `user@host:cwd` + OSC 7 cwd hint) via
+#     `lib/termsupport.zsh`; the jackin-capsule multiplexer reads
+#     these and renders them as the pane border title.
+#   - `git` plugin (aliases + branch info for whatever prompt is active).
+#   - `zsh-autosuggestions` plugin (cloned into the oh-my-zsh custom
+#     plugins dir by the construct Dockerfile).
+#
+# `ZSH_THEME=""` deliberately disables oh-my-zsh's prompt theme so
+# Starship below can own the prompt without robbyrussell fighting it.
+# `DISABLE_AUTO_UPDATE=true` keeps oh-my-zsh from prompting for self-
+# update inside a containerised non-interactive-friendly environment.
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME=""
+DISABLE_AUTO_UPDATE=true
+plugins=(git zsh-autosuggestions)
+[ -f "$ZSH/oh-my-zsh.sh" ] && source "$ZSH/oh-my-zsh.sh"
+# Marker for the derived-image fallback in `src/derived_image.rs`:
+# when present, the per-derived-build append step is a no-op. New
+# construct images export this directly; old construct images get an
+# equivalent appended at derived-build time.
+export __JACKIN_AUTO_TITLE_LOADED=1
+
 eval "$(starship init zsh)"
 
 # Security tools (disable with JACKIN_DISABLE_TIRITH=1 / JACKIN_DISABLE_SHELLFIRM=1)

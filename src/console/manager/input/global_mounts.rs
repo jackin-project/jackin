@@ -732,35 +732,52 @@ pub(super) fn handle_settings_confirm_modal(
     paths: &JackinPaths,
     key: KeyEvent,
 ) {
-    let Some(mut modal) = settings.mounts.modal.take() else {
+    let Some(modal) = settings.mounts.modal.take() else {
         return;
     };
-    match &mut modal {
-        GlobalMountModal::Text { target, state } => match state.handle_key(key) {
-            ModalOutcome::Commit(value) => commit_text(&mut settings.mounts, target, &value),
+    match modal {
+        GlobalMountModal::Text { target, mut state } => match state.handle_key(key) {
+            ModalOutcome::Commit(value) => {
+                let committed_target = target.clone();
+                settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
+                commit_text(&mut settings.mounts, &committed_target, &value);
+            }
             ModalOutcome::Cancel => {
-                if settings.mounts.add_draft.take().is_some() {
+                settings.mounts.pop_modal_chain();
+                if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
                     settings.mounts.error = Some("Add mount cancelled.".to_string());
                 }
             }
-            ModalOutcome::Continue => settings.mounts.modal = Some(modal),
+            ModalOutcome::Continue => {
+                settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
+            }
         },
-        GlobalMountModal::FileBrowser { state } => match state.handle_key(key) {
+        GlobalMountModal::FileBrowser { mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(path) => {
                 let src = path.display().to_string();
                 if let Some(draft) = settings.mounts.add_draft.as_mut() {
                     draft.src.clone_from(&src);
                 }
-                settings.mounts.modal = Some(GlobalMountModal::MountDstChoice {
-                    state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(src),
-                });
+                settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+                settings
+                    .mounts
+                    .open_sub_modal(GlobalMountModal::MountDstChoice {
+                        state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
+                            src,
+                        ),
+                    });
             }
             ModalOutcome::Cancel => {
-                settings.mounts.add_draft = None;
+                settings.mounts.pop_modal_chain();
+                if settings.mounts.modal.is_none() {
+                    settings.mounts.add_draft = None;
+                }
             }
-            ModalOutcome::Continue => settings.mounts.modal = Some(modal),
+            ModalOutcome::Continue => {
+                settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+            }
         },
-        GlobalMountModal::MountDstChoice { state } => {
+        GlobalMountModal::MountDstChoice { mut state } => {
             use crate::console::widgets::mount_dst_choice::MountDstChoice;
             let src = state.src.clone();
             match state.handle_key(key) {
@@ -774,57 +791,83 @@ pub(super) fn handle_settings_confirm_modal(
                     if let Some(draft) = settings.mounts.add_draft.as_mut() {
                         draft.dst.clone_from(&src);
                     }
-                    settings.mounts.modal = Some(text_modal(
+                    settings.mounts.modal = Some(GlobalMountModal::MountDstChoice { state });
+                    settings.mounts.open_sub_modal(text_modal(
                         GlobalMountTextTarget::AddDestination,
                         "Destination",
                         &src,
                     ));
                 }
                 ModalOutcome::Cancel => {
-                    settings.mounts.add_draft = None;
+                    settings.mounts.pop_modal_chain();
+                    if settings.mounts.modal.is_none() {
+                        settings.mounts.add_draft = None;
+                    }
                 }
-                ModalOutcome::Continue => settings.mounts.modal = Some(modal),
+                ModalOutcome::Continue => {
+                    settings.mounts.modal = Some(GlobalMountModal::MountDstChoice { state });
+                }
             }
         }
-        GlobalMountModal::ScopePicker { state } => match state.handle_key(key) {
-            ModalOutcome::Commit(choice) => commit_add_scope_choice(settings, choice),
+        GlobalMountModal::ScopePicker { mut state } => match state.handle_key(key) {
+            ModalOutcome::Commit(choice) => {
+                // Drop the picker before dispatching: commit_text
+                // (AllAgents path) calls clear_modal_chain anyway, and
+                // open_sub_modal (SpecificAgent → RolePicker) would
+                // otherwise stash this already-committed picker as
+                // the RolePicker's parent — Esc on RolePicker would
+                // then resurrect a consumed ScopePicker.
+                commit_add_scope_choice(settings, choice);
+            }
             ModalOutcome::Cancel => {
-                if settings.mounts.add_draft.take().is_some() {
+                settings.mounts.pop_modal_chain();
+                if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
                     settings.mounts.error = Some("Add mount cancelled.".to_string());
                 }
             }
-            ModalOutcome::Continue => settings.mounts.modal = Some(modal),
+            ModalOutcome::Continue => {
+                settings.mounts.modal = Some(GlobalMountModal::ScopePicker { state });
+            }
         },
-        GlobalMountModal::RolePicker { state: picker } => match picker.handle_key(key) {
+        GlobalMountModal::RolePicker { state: mut picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
                 if let Some(draft) = settings.mounts.add_draft.as_mut() {
                     draft.scope = Some(role.key());
+                    settings.mounts.modal = Some(GlobalMountModal::RolePicker { state: picker });
                     open_global_mount_file_browser(&mut settings.mounts);
                 } else {
                     settings.mounts.error = Some(ADD_DRAFT_LOST.into());
                 }
             }
             ModalOutcome::Cancel => {
-                if settings.mounts.add_draft.take().is_some() {
+                settings.mounts.pop_modal_chain();
+                if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
                     settings.mounts.error = Some("Add mount cancelled.".to_string());
                 }
             }
-            ModalOutcome::Continue => settings.mounts.modal = Some(modal),
+            ModalOutcome::Continue => {
+                settings.mounts.modal = Some(GlobalMountModal::RolePicker { state: picker });
+            }
         },
-        GlobalMountModal::Confirm { action, state } => match state.handle_key(key) {
-            ModalOutcome::Commit(true) => commit_settings_confirm(settings, *action, config, paths),
+        GlobalMountModal::Confirm { action, mut state } => match state.handle_key(key) {
+            ModalOutcome::Commit(true) => commit_settings_confirm(settings, action, config, paths),
             ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
                 if matches!(action, GlobalMountConfirm::Sensitive) {
                     settings.mounts.error =
                         Some("Save aborted: sensitive paths not confirmed.".into());
                 }
+                settings.mounts.clear_modal_chain();
             }
-            ModalOutcome::Continue => settings.mounts.modal = Some(modal),
+            ModalOutcome::Continue => {
+                settings.mounts.modal = Some(GlobalMountModal::Confirm { action, state });
+            }
         },
-        GlobalMountModal::PreviewSave { state } => match state.handle_key(key) {
+        GlobalMountModal::PreviewSave { mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(_) => commit_settings_save(settings, config, paths),
-            ModalOutcome::Cancel => {} // modal already taken; don't put back
-            ModalOutcome::Continue => settings.mounts.modal = Some(modal),
+            ModalOutcome::Cancel => settings.mounts.clear_modal_chain(),
+            ModalOutcome::Continue => {
+                settings.mounts.modal = Some(GlobalMountModal::PreviewSave { state });
+            }
         },
     }
 }
@@ -835,28 +878,38 @@ pub(super) fn handle_settings_env_modal(
     key: KeyEvent,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
 ) {
-    let Some(mut modal) = env.modal.take() else {
+    let Some(modal) = env.modal.take() else {
         return;
     };
-    match &mut modal {
-        SettingsEnvModal::Text { target, state } => match state.handle_key(key) {
-            ModalOutcome::Commit(value) => commit_env_text(env, target, &value),
-            ModalOutcome::Cancel => {
-                env.pending_env_key = None;
-                env.pending_picker_value = None;
-                env.error = Some("Env edit cancelled.".to_string());
+    match modal {
+        SettingsEnvModal::Text { target, mut state } => match state.handle_key(key) {
+            ModalOutcome::Commit(value) => {
+                let committed_target = target.clone();
+                env.modal = Some(SettingsEnvModal::Text { target, state });
+                commit_env_text(env, &committed_target, &value);
             }
-            ModalOutcome::Continue => env.modal = Some(modal),
+            ModalOutcome::Cancel => {
+                env.pop_modal_chain();
+                if env.modal.is_none() {
+                    env.pending_env_key = None;
+                    env.pending_picker_value = None;
+                    env.error = Some("Env edit cancelled.".to_string());
+                }
+            }
+            ModalOutcome::Continue => {
+                env.modal = Some(SettingsEnvModal::Text { target, state });
+            }
         },
-        SettingsEnvModal::SourcePicker { state: source } => {
+        SettingsEnvModal::SourcePicker { state: mut source } => {
             use crate::console::widgets::source_picker::SourceChoice;
             match source.handle_key(key) {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
                     let Some((scope, key)) = env.pending_env_key.clone() else {
-                        env.modal = None;
+                        env.clear_modal_chain();
                         return;
                     };
-                    env.modal = Some(env_text_modal(
+                    env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
+                    env.open_sub_modal(env_text_modal(
                         SettingsEnvTextTarget::EnvValue {
                             scope,
                             key: key.clone(),
@@ -867,12 +920,13 @@ pub(super) fn handle_settings_env_modal(
                 }
                 ModalOutcome::Commit(SourceChoice::Op) => {
                     let Some((scope, key)) = env.pending_env_key.clone() else {
-                        env.modal = None;
+                        env.clear_modal_chain();
                         return;
                     };
                     env.pending_picker_target = Some((scope, Some(key)));
                     env.pending_env_key = None;
-                    env.modal = Some(SettingsEnvModal::OpPicker {
+                    env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
+                    env.open_sub_modal(SettingsEnvModal::OpPicker {
                         state: Box::new(
                             crate::console::widgets::op_picker::OpPickerState::new_with_cache(
                                 op_cache,
@@ -881,14 +935,16 @@ pub(super) fn handle_settings_env_modal(
                     });
                 }
                 ModalOutcome::Cancel => {
-                    env.modal = None;
+                    env.pop_modal_chain();
                     env.pending_env_key = None;
                     env.pending_picker_value = None;
                 }
-                ModalOutcome::Continue => env.modal = Some(modal),
+                ModalOutcome::Continue => {
+                    env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
+                }
             }
         }
-        SettingsEnvModal::OpPicker { state: picker } => match picker.handle_key(key) {
+        SettingsEnvModal::OpPicker { state: mut picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(op_ref) => {
                 let target = env.pending_picker_target.take();
                 match target {
@@ -899,7 +955,7 @@ pub(super) fn handle_settings_env_modal(
                             &key,
                             crate::operator_env::EnvValue::OpRef(op_ref),
                         );
-                        env.modal = None;
+                        env.clear_modal_chain();
                     }
                     Some((scope, None)) => {
                         env.pending_picker_value =
@@ -909,22 +965,25 @@ pub(super) fn handle_settings_env_modal(
                             settings_env_scope_label(&scope)
                         );
                         let state = settings_env_key_input_state(env, &scope, label, "");
-                        env.modal = Some(SettingsEnvModal::Text {
+                        env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
+                        env.open_sub_modal(SettingsEnvModal::Text {
                             target: SettingsEnvTextTarget::EnvKey { scope },
                             state: Box::new(state),
                         });
                     }
-                    None => env.modal = None,
+                    None => env.clear_modal_chain(),
                 }
             }
             ModalOutcome::Cancel => {
-                env.modal = None;
+                env.pop_modal_chain();
                 env.pending_picker_target = None;
                 env.pending_picker_value = None;
             }
-            ModalOutcome::Continue => env.modal = Some(modal),
+            ModalOutcome::Continue => {
+                env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
+            }
         },
-        SettingsEnvModal::RolePicker { state: picker } => match picker.handle_key(key) {
+        SettingsEnvModal::RolePicker { state: mut picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
                 let role_key = role.key();
                 let scope = SettingsEnvScope::Role(role_key.clone());
@@ -934,25 +993,35 @@ pub(super) fn handle_settings_env_modal(
                     format!("New {role_key} environment key"),
                     "",
                 );
-                env.modal = Some(SettingsEnvModal::Text {
+                env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
+                env.open_sub_modal(SettingsEnvModal::Text {
                     target: SettingsEnvTextTarget::EnvKey { scope },
                     state: Box::new(state),
                 });
             }
             ModalOutcome::Cancel => {
-                env.error = Some("Add env cancelled.".to_string());
+                env.pop_modal_chain();
+                if env.modal.is_none() {
+                    env.error = Some("Add env cancelled.".to_string());
+                }
             }
-            ModalOutcome::Continue => env.modal = Some(modal),
+            ModalOutcome::Continue => {
+                env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
+            }
         },
-        SettingsEnvModal::ScopePicker { state } => match state.handle_key(key) {
+        SettingsEnvModal::ScopePicker { mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(choice) => match choice {
                 crate::console::widgets::scope_picker::ScopeChoice::AllAgents => {
                     let scope = SettingsEnvScope::Global;
-                    let state =
+                    let input_state =
                         settings_env_key_input_state(env, &scope, "New global environment key", "");
-                    env.modal = Some(SettingsEnvModal::Text {
+                    // Don't stash the just-committed ScopePicker as
+                    // the Text modal's parent — Esc on Text would
+                    // pop back into a consumed picker. Start the
+                    // child modal with an empty parent chain.
+                    env.open_sub_modal(SettingsEnvModal::Text {
                         target: SettingsEnvTextTarget::EnvKey { scope },
-                        state: Box::new(state),
+                        state: Box::new(input_state),
                     });
                 }
                 crate::console::widgets::scope_picker::ScopeChoice::SpecificAgent => {
@@ -960,18 +1029,26 @@ pub(super) fn handle_settings_env_modal(
                 }
             },
             ModalOutcome::Cancel => {
-                env.error = Some("Add env cancelled.".to_string());
+                env.pop_modal_chain();
+                if env.modal.is_none() {
+                    env.error = Some("Add env cancelled.".to_string());
+                }
             }
-            ModalOutcome::Continue => env.modal = Some(modal),
+            ModalOutcome::Continue => {
+                env.modal = Some(SettingsEnvModal::ScopePicker { state });
+            }
         },
-        SettingsEnvModal::Confirm { action, state } => match state.handle_key(key) {
+        SettingsEnvModal::Confirm { action, mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(true) => match action {
                 SettingsEnvConfirm::Delete => {
                     delete_selected_settings_env(env);
+                    env.clear_modal_chain();
                 }
             },
-            ModalOutcome::Commit(false) | ModalOutcome::Cancel => {}
-            ModalOutcome::Continue => env.modal = Some(modal),
+            ModalOutcome::Commit(false) | ModalOutcome::Cancel => env.clear_modal_chain(),
+            ModalOutcome::Continue => {
+                env.modal = Some(SettingsEnvModal::Confirm { action, state });
+            }
         },
     }
 }
@@ -1047,6 +1124,7 @@ fn commit_text(
                 return;
             };
             row.mount.src = resolve_path(trimmed);
+            global.clear_modal_chain();
         }
         GlobalMountTextTarget::Destination => {
             let Some(row) = global.pending.get_mut(global.selected) else {
@@ -1054,6 +1132,7 @@ fn commit_text(
                 return;
             };
             row.mount.dst = trimmed.to_string();
+            global.clear_modal_chain();
         }
         GlobalMountTextTarget::Scope => {
             let Some(row) = global.pending.get_mut(global.selected) else {
@@ -1061,6 +1140,7 @@ fn commit_text(
                 return;
             };
             row.scope = scope_value(trimmed);
+            global.clear_modal_chain();
         }
         GlobalMountTextTarget::Rename => {
             if trimmed.is_empty() {
@@ -1072,6 +1152,7 @@ fn commit_text(
                 return;
             };
             row.name = trimmed.to_string();
+            global.clear_modal_chain();
         }
     }
 }
@@ -1099,10 +1180,11 @@ fn commit_env_text(
             if let Some(stashed) = env.pending_picker_value.take() {
                 set_settings_env_value_typed(env, scope, &key, stashed);
                 env.pending_env_key = None;
+                env.clear_modal_chain();
                 return;
             }
             env.pending_env_key = Some((scope.clone(), key.clone()));
-            env.modal = Some(SettingsEnvModal::SourcePicker {
+            env.open_sub_modal(SettingsEnvModal::SourcePicker {
                 state: crate::console::widgets::source_picker::SourcePickerState::new(key, true),
             });
         }
@@ -1114,6 +1196,7 @@ fn commit_env_text(
                 crate::operator_env::EnvValue::Plain(value.to_string()),
             );
             env.pending_env_key = None;
+            env.clear_modal_chain();
         }
     }
 }
@@ -1132,7 +1215,7 @@ fn open_settings_env_role_picker(env: &mut super::super::state::SettingsEnvState
         env.error = Some("No registered roles available.".into());
         return;
     }
-    env.modal = Some(SettingsEnvModal::RolePicker {
+    env.open_sub_modal(SettingsEnvModal::RolePicker {
         state: RolePickerState::with_confirm_label(roles, "select"),
     });
 }
@@ -1157,7 +1240,7 @@ fn commit_add_name_text(global: &mut super::super::state::GlobalMountsState<'_>,
         return;
     };
     draft.name = value.to_string();
-    global.modal = Some(text_modal(GlobalMountTextTarget::AddSource, "Source", ""));
+    global.open_sub_modal(text_modal(GlobalMountTextTarget::AddSource, "Source", ""));
 }
 
 fn commit_add_source_text(global: &mut super::super::state::GlobalMountsState<'_>, value: &str) {
@@ -1166,7 +1249,7 @@ fn commit_add_source_text(global: &mut super::super::state::GlobalMountsState<'_
         return;
     };
     draft.src = resolve_path(value);
-    global.modal = Some(text_modal(
+    global.open_sub_modal(text_modal(
         GlobalMountTextTarget::AddDestination,
         "Destination",
         "",
@@ -1187,13 +1270,14 @@ fn commit_add_destination_text(
 
 fn open_global_mount_scope_picker(global: &mut super::super::state::GlobalMountsState<'_>) {
     global.add_draft = Some(GlobalMountDraft::default());
+    global.modal_parents.clear();
     global.modal = Some(scope_picker_modal());
 }
 
 fn open_global_mount_file_browser(global: &mut super::super::state::GlobalMountsState<'_>) {
     match FileBrowserState::new_from_home() {
         Ok(state) => {
-            global.modal = Some(GlobalMountModal::FileBrowser {
+            global.open_sub_modal(GlobalMountModal::FileBrowser {
                 state: Box::new(state),
             });
         }
@@ -1226,6 +1310,7 @@ fn finalize_global_mount_add(global: &mut super::super::state::GlobalMountsState
         },
     });
     global.selected = global.pending.len().saturating_sub(1);
+    global.clear_modal_chain();
 }
 
 fn unique_global_mount_name(
@@ -1633,9 +1718,11 @@ fn open_global_mount_role_picker(settings: &mut super::super::state::SettingsSta
         settings.mounts.error = Some("No registered roles available.".into());
         return;
     }
-    settings.mounts.modal = Some(GlobalMountModal::RolePicker {
-        state: RolePickerState::with_confirm_label(roles, "select"),
-    });
+    settings
+        .mounts
+        .open_sub_modal(GlobalMountModal::RolePicker {
+            state: RolePickerState::with_confirm_label(roles, "select"),
+        });
 }
 
 fn text_modal(
@@ -1733,6 +1820,39 @@ mod tests {
     }
 
     #[test]
+    fn global_mount_add_filebrowser_esc_closes_chain() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Mounts;
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_settings_key(&mut state, key(KeyCode::Char('a')));
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            panic!("expected settings stage");
+        };
+        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
+        assert!(matches!(
+            settings.mounts.modal,
+            Some(GlobalMountModal::FileBrowser { .. })
+        ));
+
+        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
+
+        // The ScopePicker was committed when AllAgents was picked, so Esc
+        // on the FileBrowser must close the modal chain entirely rather
+        // than resurrect a consumed picker.
+        assert!(
+            settings.mounts.modal.is_none(),
+            "Esc from add-mount FileBrowser should close the chain; got {:?}",
+            settings.mounts.modal
+        );
+    }
+
+    #[test]
     fn add_flow_specific_scope_uses_shared_role_picker() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
@@ -1778,6 +1898,49 @@ mod tests {
                 .as_ref()
                 .and_then(|draft| draft.scope.as_deref()),
             Some("agent-smith")
+        );
+    }
+
+    #[test]
+    fn global_mount_role_picker_esc_returns_scope_picker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "agent-smith".into(),
+            RoleSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".into(),
+                trusted: true,
+                env: BTreeMap::new(),
+            },
+        );
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Mounts;
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_settings_key(&mut state, key(KeyCode::Char('a')));
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            panic!("expected settings stage");
+        };
+        let Some(GlobalMountModal::ScopePicker { state: picker }) = settings.mounts.modal.as_mut()
+        else {
+            panic!("expected scope picker");
+        };
+        picker.focused = crate::console::widgets::scope_picker::ScopeChoice::SpecificAgent;
+        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
+        assert!(matches!(
+            settings.mounts.modal,
+            Some(GlobalMountModal::RolePicker { .. })
+        ));
+
+        handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
+
+        assert!(
+            settings.mounts.modal.is_none(),
+            "Esc from global-mount RolePicker should close the chain; got {:?}",
+            settings.mounts.modal
         );
     }
 
@@ -1977,6 +2140,88 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn env_tab_key_input_esc_closes_chain() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Environments;
+        settings.tab_bar_focused = false;
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_settings_key(&mut state, key(KeyCode::Enter));
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            panic!("expected settings stage");
+        };
+        handle_settings_env_modal(
+            &mut settings.env,
+            key(KeyCode::Enter),
+            state.op_cache.clone(),
+        );
+        assert!(matches!(
+            settings.env.modal,
+            Some(SettingsEnvModal::Text {
+                target: SettingsEnvTextTarget::EnvKey { .. },
+                ..
+            })
+        ));
+
+        handle_settings_env_modal(&mut settings.env, key(KeyCode::Esc), state.op_cache.clone());
+
+        // The ScopePicker was committed before the EnvKey input opened,
+        // so Esc on the input must close the chain instead of restoring
+        // a consumed picker.
+        assert!(
+            settings.env.modal.is_none(),
+            "Esc from settings env key input should close the chain; got {:?}",
+            settings.env.modal
+        );
+    }
+
+    #[test]
+    fn env_tab_source_picker_esc_returns_key_input() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Environments;
+        settings.tab_bar_focused = false;
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_settings_key(&mut state, key(KeyCode::Enter));
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            panic!("expected settings stage");
+        };
+        handle_settings_env_modal(
+            &mut settings.env,
+            key(KeyCode::Enter),
+            state.op_cache.clone(),
+        );
+        let target = SettingsEnvTextTarget::EnvKey {
+            scope: super::super::super::state::SettingsEnvScope::Global,
+        };
+        commit_env_text(&mut settings.env, &target, "API_KEY");
+        assert!(matches!(
+            settings.env.modal,
+            Some(SettingsEnvModal::SourcePicker { .. })
+        ));
+
+        handle_settings_env_modal(&mut settings.env, key(KeyCode::Esc), state.op_cache.clone());
+
+        assert!(
+            matches!(
+                settings.env.modal,
+                Some(SettingsEnvModal::Text {
+                    target: SettingsEnvTextTarget::EnvKey { .. },
+                    ..
+                })
+            ),
+            "Esc from settings env SourcePicker should restore key input; got {:?}",
+            settings.env.modal
+        );
     }
 
     #[test]

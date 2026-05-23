@@ -2,9 +2,13 @@
 
 This repository uses `main` as its primary branch. This file is the canonical home for rules and restrictions that apply only to AI agents. Rules that apply equally to human contributors and agents live in topic-specific files linked under **Shared conventions** below.
 
+## Brand spelling (agent-only)
+
+In prose, the product and project are always spelled `jackin'`: lowercase with the trailing apostrophe. Do not write `Jackin`, `Jackin'`, or bare `jackin` when referring to the brand, the product, or the project in normal text. Use the no-apostrophe spelling only for literal commands, binaries, crates, packages, environment variables, config keys, file paths, labels, selectors, URLs, and code identifiers, such as `jackin`, `jackin-capsule`, `JACKIN_DEBUG`, `~/.jackin/`, and `jackin.role.toml`. If the apostrophe makes a possessive or sentence awkward, rewrite the sentence instead of dropping it.
+
 ## Project staffing: solo maintainer (agent-only)
 
-Jackin has exactly one human contributor — the operator. There is no second reviewer available, and GitHub does not let a PR author approve their own pull request. This shapes several rules and tooling choices that an agent might otherwise expect to default differently:
+jackin' has exactly one human contributor — the operator. There is no second reviewer available, and GitHub does not let a PR author approve their own pull request. This shapes several rules and tooling choices that an agent might otherwise expect to default differently:
 
 - Branch protection on `main` does **not** require an approving review (`required_approving_review_count = 0` in `jackin-github-terraform`). Do not propose raising it without a concrete plan for how a second human will review every PR.
 - "Get a second pair of eyes" is not an available pre-merge step. Pre-merge confidence comes from CI, the path-aware aggregator status checks, the strict up-to-date branch policy, and the agent following the rules in `PULL_REQUESTS.md` — not from a human reviewer the operator does not have.
@@ -15,7 +19,7 @@ This rule retires when the project gains additional human reviewers.
 
 ## Project status: pre-release (agent-only)
 
-Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (on-disk state layout, CLI flags, role/agent shapes outside the three versioned files listed below), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale data fail with the standard parser error.
+jackin' has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (on-disk state layout, CLI flags, role/agent shapes outside the three versioned files listed below), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale data fail with the standard parser error.
 
 `config.toml`, per-workspace files at `~/.config/jackin/workspaces/<name>.toml`, and `jackin.role.toml` are exceptions: all three are versioned schemas (`CURRENT_CONFIG_VERSION`, `CURRENT_WORKSPACE_VERSION`, `CURRENT_MANIFEST_VERSION` in `src/config/migrations.rs` and `src/manifest/migrations.rs`). Any PR that touches `AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`, or any other type whose serde representation lives in one of those three files must ship with five artifacts:
 
@@ -31,25 +35,50 @@ Do not memorialize old shapes in code comments ("formerly named X", "old locatio
 
 **One schema version bump per PR, targeting the next version after `main`.** A PR that touches versioned schemas must introduce exactly one version bump — the version immediately following the current `CURRENT_*_VERSION` on `main` at the time the PR is opened. A single PR may add multiple fields, rename multiple fields, and affect multiple file kinds (config, workspace, manifest), but all of those changes land under that one version bump. Adding a second bump inside the same PR is a sign the changes should be in separate PRs, not stacked versions. If `main` advances while the PR is in flight and claims the PR's target version, the PR must rebase to use the new next version — never introduce a gap or a skip. This rule prevents the pattern where a PR introduces `v1alpha5` (with partial changes) and `v1alpha6` (with the remainder): that forces operators through two sequential migrations for what is logically one PR's worth of work and creates a stale intermediate version that no one ever ships at.
 
-This rule retires when jackin ships its first tagged release.
+This rule retires when jackin' ships its first tagged release.
 
 ## Never mutate the host machine silently (hard rule)
 
-**The operator's host machine is their property. Jackin must never write to host-side state — files, git config, repo `.git/config`, `.git/refs`, `~/.gitconfig`, `~/.config/gh/`, `~/.claude/`, `~/.codex/`, the host's git remotes, or any user repository — without an explicit, opt-in, surfaced-in-the-launch-summary action. All "smoothing" jackin does to make a container work belongs *inside the container*.**
+**The operator's host machine is their property. jackin' must never write to host-side state — files, git config, repo `.git/config`, `.git/refs`, `~/.gitconfig`, `~/.config/gh/`, `~/.claude/`, `~/.codex/`, the host's git remotes, or any user repository — without an explicit, opt-in, surfaced-in-the-launch-summary action. All "smoothing" jackin' does to make a container work belongs *inside the container*.**
 
 This is non-negotiable across schemas, design proposals, roadmap items, runtime behavior, and PR descriptions. Examples of what this rule blocks:
 
 - Rewriting a host repository's `origin` remote from SSH to HTTPS because "the container can't push via SSH." The fix belongs in the container's `--global` git config and credential helper, not the host repo's `.git/config`.
 - Running `gh auth setup-git` on the host as part of a `jackin` command. The container can run it; the host stays untouched.
 - Editing `~/.gitconfig`, `~/.ssh/config`, or any user dotfile during a launch, refresh, or "fix it for me" path. Suggest the change in the launch summary; do not apply it.
-- Force-pushing, fetching, pulling, or pruning on the host's git repo as a side effect of provisioning. The only host-side git commands jackin runs today are the ones the operator explicitly opted into (`git_pull_on_entry`, `worktree add` under `isolation = "worktree"`), and those stay scoped to the workspace's mounted repos.
+- Force-pushing, fetching, pulling, or pruning on the host's git repo as a side effect of provisioning. The only host-side git commands the CLI runs today are the ones the operator explicitly opted into (`git_pull_on_entry`, `worktree add` under `isolation = "worktree"`), and those stay scoped to the workspace's mounted repos.
 - Writing the host's `~/.config/gh/hosts.yml` from the container's in-session `gh auth login`. In-container token rotation must not flow back to the host without an explicit operator-controlled bidirectional-sync opt-in (tracked under the [GitHub CLI auth strategy](docs/src/content/docs/reference/roadmap/github-cli-auth-strategy.mdx) follow-ups).
 
-**Read paths against the host are fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up the host's git user.email — all read-only. The forbidden direction is host-side *writes* triggered by jackin without explicit operator opt-in.
+**Read paths against the host are fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up the host's git user.email — all read-only. The forbidden direction is host-side *writes* triggered by jackin' without explicit operator opt-in.
 
 When a design proposal or roadmap item mentions doing anything to the host, the proposal must call it out under a "Host-side effects" section, the implementing PR must surface the action in the launch summary, and the change must be opt-in (config flag, CLI flag, or operator confirmation prompt). PRs that touch the host silently must be rejected at review.
 
-The reason: the host machine is where the operator works. Surprise mutations break their flow, surface as inexplicable bugs in their non-jackin terminals, and erode trust in the orchestrator. The whole point of jackin is to absorb the messiness inside containers so the host stays clean.
+The reason: the host machine is where the operator works. Surprise mutations break their flow, surface as inexplicable bugs in terminals outside jackin', and erode trust in the orchestrator. The whole point of jackin' is to absorb the messiness inside containers so the host stays clean.
+
+## Container path convention: everything jackin' owns lives under `/jackin/` (hard rule)
+
+**Every path jackin' creates, mounts, or owns inside a role container must live under `/jackin/`.** No FHS-borrowed top-level directories (`/run/jackin/`, `/var/lib/jackin/`, `/opt/jackin/`, `/etc/jackin/`), no scattered locations the operator has to discover one-by-one. An operator who runs `ls /jackin/` inside any role container must see the complete map of jackin-owned state in one place.
+
+Concrete layout (current and going forward):
+
+- `/jackin/runtime/` — entrypoint script, hooks, agent-launch scaffolding (read-only image content).
+- `/jackin/state/` — runtime markers (`hooks/setup-once.done`, etc.) written during first-boot.
+- `/jackin/default-home/` — image-baked default home contents copied into `/home/agent/` on first boot.
+- `/jackin/run/` — runtime sockets, pidfiles, and other ephemeral runtime state. The jackin-capsule daemon socket lives at `/jackin/run/jackin.sock`.
+- `/jackin/{claude,codex,amp,kimi,opencode}/` — agent credential mounts.
+- `/jackin/host/` — read-only views of host paths exposed into the container.
+
+This rule is non-negotiable across runtime code, Dockerfile templates, design proposals, roadmap items, and PR descriptions. Examples of what this rule blocks:
+
+- New container paths under `/run/`, `/var/`, `/opt/`, `/srv/`, `/etc/`, or any other FHS root — even when they "feel natural" for the asset type (a Unix socket under `/run/` is the most common drift). The container is a single-purpose jackin runtime; the FHS layout is not what makes the in-container experience legible.
+- Per-container scratch paths under `/tmp/jackin*` or `/var/run/jackin*`. If it's jackin-owned and ephemeral, it goes under `/jackin/run/`.
+- Hard-coded paths in role-specific scripts that bypass the convention because "this is just for one role." Roles author their own files under `/home/agent/` or in the workspace; jackin-owned content stays under `/jackin/`.
+
+**Host-side state is a separate convention.** The host root for jackin-owned paths is `~/.jackin/` (per the Never-mutate-host-silently rule above), with its own subdirectory layout (`~/.jackin/{data,cache,sockets,roles,run}/`). The container and host conventions are deliberately parallel but not identical — the host follows operator-home dotfile customs (`~/.<tool>/`), the container follows the single-root `/jackin/` convention. A bind-mount that maps `~/.jackin/sockets/<container>/` to `/jackin/run/` is the canonical shape.
+
+When you find yourself wanting to introduce a new container-side path, place it under `/jackin/` first, then justify in the PR description if a real constraint forces an exception (e.g. a third-party tool that hard-codes `/run/<thing>` and cannot be relocated). PRs that introduce a top-level jackin-owned path outside `/jackin/` without an exception note must be rejected at review and the path moved.
+
+The reason: a flat, single-root convention makes the in-container surface debuggable. An operator who wants to know "what does jackin do to my container?" can `ls /jackin/` and see the answer; without the rule the answer is "grep through every Dockerfile, every entrypoint, every roadmap doc." The rule also makes future cleanup straightforward — `rm -rf /jackin` removes every jackin-owned artifact, leaving the base image intact for whatever rebuild the operator wants next.
 
 ## Prefer libraries over hand-rolled parsers / serializers / format handlers
 
@@ -80,6 +109,47 @@ Rationale: Rust's ecosystem is one of the project's leverage points. The communi
 
 When you do hand-roll something this rule covers, leave a comment explaining why (crate unavailable, scope tiny, dependency cost specifically rejected) so a later maintainer can replace it without re-debating the decision.
 
+## Telemetry must be debuggable on demand without becoming noisy by default (hard rule)
+
+**The standard log output (no debug flag) must be compact: lifecycle events, action breadcrumbs, and error paths only. The debug-flag log output must be a firehose detailed enough to reconstruct every operator keystroke, every protocol frame, every dispatch decision, and every render boundary. Both surfaces live in the same code, gated on the same flag — no `// TODO: remove debug logging` smell and no "rebuild with extra logging" round trip when an operator reports an issue.**
+
+The shape is two-tier:
+
+- **`clog!` (compact, always on).** Daemon start, session spawn/exit, child reap, PTY mutex poison, attach handshake outcomes, dialog dispatch arms that act (`Command`, `SpawnAgent`, `RenameTab`, `Dismiss`), pane/tab close, focus swap, error paths with the underlying errno. Quiet enough that a multi-hour session produces a log a human can scroll. Operators pasting these into bug reports get the timeline of *what happened*.
+- **`cdebug!` (verbose, gated on `JACKIN_DEBUG=1`).** Every byte arriving from the client, every parser event with its dispatch state (dialog open / focused pane / prefix awaiting), every PTY write with the bytes and the destination session, every render frame size and reason, every dialog redraw, every per-tick state ticker. The macro skips the format + write entirely when the flag is off, so production runs pay nothing. With the flag on, the trace is detailed enough to localize "key X produced no visible effect" from the log alone — chunk line proves the byte reached the daemon, parser line proves it classified, dispatch line proves the routing decision, PTY-write line proves the byte hit the slave fd.
+
+The flag is the same `JACKIN_DEBUG` the host's `--debug` flag sets — it flows into the container via `env_passthrough` in `daemon.rs` and is captured once at `logging::init()` time. New verbose telemetry sites should branch on `cdebug!`, not `clog!`. New compact telemetry sites should branch on `clog!`. Anything that fires more than ~10 times per minute under normal operation belongs on `cdebug!`.
+
+When you find yourself adding "TEMPORARY logging to triage a regression", stop and convert it to `cdebug!` instead — the next bug report needs the same telemetry, and removing-and-readding-it on every regression cycle is exactly the loop this rule exists to break. The same applies to any other surface that grows a telemetry / tracing layer (the host CLI's `tui::tprintln`, the docs site's render warnings, the `runtime::launch` path): two tiers, debug-gated firehose, default compact.
+
+The reason: operators can rarely reproduce on demand. When they hit something weird, they need to be able to paste a log that already has the answer — without rebuilding, without enabling extra instrumentation we forgot to ship, and without an extra round of "now please run it again with this added line". The host's `--debug` flag is the single switch that turns the firehose on; everything downstream honours it.
+
+## Reuse before writing — DRY (hard rule)
+
+**Before writing new code, check whether something close enough already exists. If yes, extend, parameterise, or wrap it instead of writing a parallel copy. If no, write the new thing in a shape future callers can reuse.**
+
+This applies to *every* layer of the codebase: render helpers, state-derivation functions, parsing/validation, CLI argument structs, docker mount-list builders, TUI block layout, dialog dispatch, OS abstraction, hook scripts, build scripts. Whenever you are about to write a function whose behaviour is "mostly the same as `<other_function>` but with one branch flipped" — stop, refactor the existing one to accept the difference, and use it.
+
+Concrete checks before adding new code:
+
+1. **`grep` for the verb, the noun, and the surrounding nouns.** "I need to render global mounts" → `rg 'global_mount' src/`. "I need to derive cwd from a manifest" → `rg 'fn .*cwd|manifest.*cwd' src/`. Multi-noun phrases catch helpers named for adjacent concepts. If the search returns one match, read it before writing a new function; if it returns multiple, the duplication this rule prevents has already started — flag it in the PR even if your change is narrow.
+2. **Walk the call sites of the closest match.** If the existing function has two or three callers that pass different arguments, the right move is usually to add a parameter (or a small enum) and route every caller through the same function. If existing call sites would have to grow ugly to share, *say so in a comment* on the new function and keep the duplication explicit so the next reader can decide.
+3. **Look one directory up.** Helpers often live in `<feature>/mod.rs`, `console/manager/render/mod.rs`, `runtime/mod.rs`, `instance/mod.rs`. If `<feature>/sub.rs` is about to grow a private helper that doesn't depend on `sub.rs`-only state, the helper belongs in the parent `mod.rs` (or in a sibling `helpers.rs`) where the next feature in the same family can use it.
+4. **Symmetric variants demand symmetric implementations.** When two functions handle "current dir" vs "saved workspace" — or "agent" vs "shell" — or "Linux" vs "macOS" — the per-variant deltas should be data, not control flow. If both paths run `f()` + `g()` + `h()` but in slightly different order or with one missing call, the missing call is almost always a bug waiting to surface (one of the variants got extended, the other didn't). Pull the shared sequence into a single function and pass the variant-specific bits as arguments.
+5. **Constraints / extension points beat copies.** If a new caller needs *slightly* different behaviour, prefer (in order): (a) a new parameter on the existing function with a sensible default; (b) a small `enum` whose match lives inside the existing function; (c) a trait the existing function takes by reference. Forking the function into `do_foo_for_x` and `do_foo_for_y` is the last resort, and only when the divergence is structural enough that a shared body would be more confusing than two siblings.
+
+Why this rule exists: every parallel implementation is a future bug. When the operator (or an agent) extends one of the two paths and forgets the other, the divergence shows up later as "feature works on workspace screen but not current-directory screen" — exactly the class of bug this project has hit before. The two functions look so close that the missing call site reads as obviously correct in isolation, and only a side-by-side diff or an end-to-end test catches it. Adding a parameter to one function makes both paths advance together; adding a second function makes them drift.
+
+Examples of the kind of pattern this rule blocks (drawn from real findings):
+
+- `sidebar_inputs_for_workspace` and `sidebar_inputs_for_current_dir` build the same `SidebarInputs` struct with overlapping body. Extending one to surface a new field while leaving the other untouched is the bug. The fix is to factor the divergent piece (picker-role resolution, role-binding presence) into helpers both functions call, not to add another sibling function for a third selection kind.
+- `focused_block_still_scrollable` matching only `ManagerListRow::SavedWorkspace` for the global-mounts focus while the corresponding render path also accepts `ManagerListRow::CurrentDirectory`. The render and scrollability checks must read from the same selection-to-rows helper, otherwise the focus calculation lags behind the visible content.
+- Adding a per-agent `LAUNCH=` block to `docker/runtime/entrypoint.sh` when an existing block already handles "agent X with optional credential mount" via a `case`. The new agent should extend the `case`, not duplicate the surrounding `seed_home_dir` / chmod / exec scaffolding.
+
+When you do choose to duplicate (because the deltas are too structural for a shared body, or the shared body would defer the divergent decision to a runtime branch that hurts readability), leave a one-line comment on each copy naming the sibling and the *reason* divergence is preserved. That way the next reader sees the trade-off up front and does not "fix" the duplication by sweeping both copies into a confusing common path.
+
+This rule applies equally to Rust source, Dockerfile snippets in `docker/`, shell scripts under `docker/runtime/`, `.zshrc` / `config.fish` / hook scripts under `docker/construct/`, `justfile` recipes, CI workflow steps under `.github/workflows/`, and TypeScript helpers under `docs/scripts/`. The cost of one good helper is much smaller than the cost of three slightly-different copies and the bugs that follow from extending only one of them.
+
 ## Changelog (agent-only)
 
 **Do not add entries to `CHANGELOG.md` until the first tagged release.**
@@ -102,10 +172,10 @@ Roadmap pages are for planned, researched, designed, deferred, or remaining work
 
 ## Documentation as the source of truth (agent-only)
 
-**The published docs site is the spec.** Every feature jackin ships must be described from two angles, and both must be kept current in the same PR that lands the change:
+**The published docs site is the spec.** Every feature jackin' ships must be described from two angles, and both must be kept current in the same PR that lands the change:
 
-- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths the operator never edits, internal Rust types, or implementation steps. A reader following only the user-facing docs must be able to use the feature successfully.
-- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui-design-decisions.mdx`, plus active items under `reference/roadmap/`) describe **how jackin is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, and links into the source tree all live here. This surface is what an agent or contributor reads before changing code, and it is what they update when their change makes the description stale.
+- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin' does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths the operator never edits, internal Rust types, or implementation steps. A reader following only the user-facing docs must be able to use the feature successfully.
+- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui-design-decisions.mdx`, plus active items under `reference/roadmap/`) describe **how jackin' is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, and links into the source tree all live here. This surface is what an agent or contributor reads before changing code, and it is what they update when their change makes the description stale.
 
 Both surfaces are load-bearing. If an operator-visible behaviour ships without an update to the user-facing docs, the feature is not actually shipped — operators have no way to learn it exists or how to invoke it. If an internal change ships without an update to the contributor-facing docs, the next agent reading the internals page is debugging against a stale spec.
 
@@ -120,7 +190,7 @@ Do not split a feature PR from its docs PR by default. The docs land with the co
 
 **Audience-correct placement is not optional.** When you find yourself wanting to put a TOML schema fragment, on-disk path, or struct name on a user-facing page, the placement is wrong — that detail goes on the matching internals page, and the user-facing page links to it. When you find yourself wanting to write `jackin foo --bar` operator instructions on an internals page, that block belongs in the `commands/` page, and the internals page links out. The split is what lets each audience trust their surface; mixing them weakens both.
 
-This rule does not retire when jackin ships its first release; the audience split is permanent. The roadmap-retirement portion of this rule and the **Roadmap freshness** rule retire only when there are no roadmap items left to maintain.
+This rule does not retire when jackin' ships its first release; the audience split is permanent. The roadmap-retirement portion of this rule and the **Roadmap freshness** rule retire only when there are no roadmap items left to maintain.
 
 ## Push every commit immediately (hard rule)
 
@@ -130,30 +200,24 @@ The single exception is a chain of rapid fixup commits made in one turn — push
 
 This rule applies even when the operator did not explicitly ask to push — finishing the work includes making it visible.
 
-## Pull requests (agent-only) — see `PULL_REQUESTS.md`
+## Pull requests — two reading surfaces
 
-All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:
+All pull-request rules live in two places, split by audience:
 
-- Per-PR merge authorization (agents never merge without explicit "merge it" confirmation).
-- Required base branch (agent-created PRs target `main` unless the operator explicitly names a different target branch in the same request).
-- Force-push authorization (agents never rewrite an existing remote branch without explicit operator approval).
-- Required PR body shape (Summary / hard-rule callout / What's deferred / Verify locally / Migration notes).
-- "Verify locally" templates, including the `export TIRITH=0` line that lets multi-line pastes survive the `tirith` paste scanner.
-- PR-body authoring rules — no hard-wrap, no verbosity / duplication, no deployed-docs links, no mechanical CI-shaped checks.
-- PR-body refresh policy: refresh **on operator request** or at merge-readiness, not after every iteration commit.
-- Documentation-only PR requirements (run the docs site locally + bold-URL-per-page format).
-- CI-must-be-green-before-merge, title/description reconciliation, squash-merge messages with PR-number + trailers.
-- Workflow / CI changes — third-party-CLI env vars must be scoped to the consuming job (workflow-level `env:` leaks into every job and breaks tools that read those vars as default-selection); changes to push-only / main-only / `workflow_run`-gated jobs must be smoke-tested via `gh workflow run --ref <feature-branch>` before merge because PR-time CI never exercises them; registry / production publish steps must hard-gate on `main` so PRs and feature-branch dispatches verify-build but never publish.
+- [`PULL_REQUESTS.md`](PULL_REQUESTS.md) — shared PR flow, body-shape spec, Verify-locally template, docs-only PR requirements, roadmap-retirement procedure. Both humans and agents read this. Start here.
+- [`.github/AGENTS.md`](.github/AGENTS.md) — agent-only extras: per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration vs merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format with PR-number + trailers, and the `jackin-capsule` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, job-level env scope, publish gating, smoke-testing push-only jobs).
+
+Discovery flow Claude Code uses: `.github/CLAUDE.md` is `@AGENTS.md`, so the file auto-loads whenever the working directory is under `.github/` — including when reading the PR template.
 
 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) is the canonical body shape with inline guidance. Copy it as the starting point and fill in the placeholders.
 
 ## Commit Attribution (agent-only)
 
-Every commit created by an AI agent in this repository must include **exactly one** `Co-authored-by` trailer identifying the agent that made the commit. The trailer identifies the **agent tool**, not the underlying model — **never stack multiple agent trailers on one commit** (for example, an Amp-generated commit must not also carry `Co-authored-by: Claude` or `Co-authored-by: Codex` just because Amp used one of those vendors' models under the hood).
+Every commit created or edited by an AI agent in this repository must include one `Co-authored-by` trailer for each AI agent involved in that commit. A commit touched by one agent has one agent trailer; a commit created by one agent and later amended, reused, or repaired by another agent preserves the original trailer and adds the later agent's trailer. The trailer identifies the **agent tool**, not the underlying model — do not add `Co-authored-by: Claude` or `Co-authored-by: Codex` merely because another agent used one of those vendors' models under the hood.
 
-Exception: a squash merge commit may include multiple `Co-authored-by` trailers when multiple AI agents materially contributed to the PR. In that case, include one trailer per contributing agent as described in "PR squash merge messages".
+Squash merge commits follow the same attribution model at PR scope: include one `Co-authored-by` trailer for each AI agent listed on the pull request's commits, as described in "PR squash merge messages".
 
-Until the listed agents emit their trailers automatically, the trailer must be added by hand when creating or amending the commit.
+Until the listed agents emit their trailers automatically, trailers must be added by hand when creating or amending the commit.
 
 **Trailers by agent:**
 
@@ -220,12 +284,12 @@ This rule applies to inline `//` comments, multi-line `/// `/// `//!` doc commen
 
 ## Walking the operator through local validation (agent-only)
 
-When walking the operator through manual validation of a jackin feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
+When walking the operator through manual validation of a jackin' feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
 
-The `--debug` flag prints every external command jackin issues (`docker`, `git`, `id`, etc.) along with their captured output, plus jackin's own `[jackin debug ...]` instrumentation. This makes the operator's terminal output triage-able by the agent: when something doesn't behave as expected, the operator can paste the full debug log and the agent can localize the issue without guessing.
+The `--debug` flag prints every external command the CLI issues (`docker`, `git`, `id`, etc.) along with their captured output, plus the `[jackin debug ...]` instrumentation. This makes the operator's terminal output triage-able by the agent: when something doesn't behave as expected, the operator can paste the full debug log and the agent can localize the issue without guessing.
 
 Do not list `git diff --check` as PR verification. It is not a meaningful
-acceptance check for jackin PRs; prefer targeted commands that exercise the
+acceptance check for jackin' PRs; prefer targeted commands that exercise the
 changed behavior plus CI.
 
 For user smoke tests, suggest `jackin console` first, and prefer the
@@ -250,8 +314,12 @@ If the operator reports unexpected behavior from a clean (non-debug) run, the FI
 
 This does not apply to:
 
-- Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
+- Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't `jackin` invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
+
+## Testing `jackin-capsule` changes locally (agent-only) — see `.github/AGENTS.md`
+
+All rules for the `jackin-capsule` smoke-test mandate — the eval one-shot build invocation, the `ensure_available` resolution order, the required PR Verify-locally block — live in [`.github/AGENTS.md`](.github/AGENTS.md) under the `## jackin-capsule PRs (hard rule)` section. Read that file before opening or reviewing a PR that touches `crates/jackin-capsule/`.
 
 ## TUI design decisions (agent-only)
 

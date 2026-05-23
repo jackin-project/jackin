@@ -120,7 +120,7 @@ jobs:
             # src/, docker/runtime/) MUST drift together with ci.yml
             # — when adding a new build input there, add it here too.
             case "$path" in
-              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**)
+              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
                 source=true
                 ;;
             esac
@@ -199,20 +199,77 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          archive="jackin-preview-${TARGET}.tar.gz"
+          archive="jackin-${TARGET}.tar.gz"
           tar -czf "$archive" \
             -C "target/${TARGET}/release" \
             jackin jackin-role
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: jackin-preview-${{ matrix.target }}
+          name: jackin-${{ matrix.target }}
           path: |
-            jackin-preview-${{ matrix.target }}.tar.gz
-            jackin-preview-${{ matrix.target }}.tar.gz.sha256
+            jackin-${{ matrix.target }}.tar.gz
+            jackin-${{ matrix.target }}.tar.gz.sha256
+
+
+  build-jackin-capsule:
+    needs: source-changed
+    if: needs.source-changed.outputs.source == 'true'
+    runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.17
+            arch: arm64
+          - target: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.17
+            arch: amd64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.source-changed.outputs.sha }}
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          install_args: "rust zig cargo:cargo-zigbuild"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - run: rustup target add ${{ matrix.target }}
+      - name: Build
+        env:
+          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+        run: |
+          # Compute version string in the same format as build.rs:
+          # "{CARGO_PKG_VERSION}+{7-char-sha}" so jackin-capsule --version
+          # matches what the host jackin CLI reports.
+          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
+          export JACKIN_VERSION_OVERRIDE="${base_version}+${short_sha}"
+          cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
+      - name: Publish binary as release asset
+        env:
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          archive="jackin-capsule-${TARGET}.tar.gz"
+          tar -czf "$archive" \
+            -C "target/${TARGET}/release" \
+            jackin-capsule
+          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-capsule-${{ matrix.target }}
+          path: |
+            jackin-capsule-${{ matrix.target }}.tar.gz
+            jackin-capsule-${{ matrix.target }}.tar.gz.sha256
 
   publish-preview:
-    needs: [source-changed, build-preview]
+    needs: [source-changed, build-preview, build-jackin-capsule]
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -294,22 +351,43 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
-          # Delete existing preview release and its tag so the new release
-          # can claim the `preview` tag at the current SHA.
-          gh release delete preview --yes --cleanup-tag 2>/dev/null || true
+          set -euo pipefail
+          # Delete the existing preview release + tag so the new release
+          # can claim the `preview` tag at the current SHA. Distinguish
+          # "release not found" (legit on a fresh repo) from real
+          # failures (auth, rate-limit) — the previous blanket `|| true`
+          # masked both, and the create step that followed then failed
+          # with a confusing "tag already exists" message.
+          if delete_output=$(gh release delete preview --yes --cleanup-tag 2>&1); then
+            echo "preview release deleted (output: $delete_output)"
+          else
+            status=$?
+            if echo "$delete_output" | grep -qiE 'release not found|not found|release does not exist'; then
+              echo "no existing preview release to delete (status=$status); continuing"
+            else
+              echo "::error::gh release delete failed: $delete_output"
+              exit "$status"
+            fi
+          fi
           gh release create preview \
             --prerelease \
             --target "$SHA" \
             --title "Preview ${VERSION}" \
             --notes "Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})." \
-            artifacts/jackin-preview-*.tar.gz \
-            artifacts/jackin-preview-*.tar.gz.sha256
+            artifacts/jackin-[ax]*.tar.gz \
+            artifacts/jackin-[ax]*.tar.gz.sha256 \
+            artifacts/jackin-capsule-*.tar.gz \
+            artifacts/jackin-capsule-*.tar.gz.sha256
 
       - name: Read platform SHA256s
         id: shas
         run: |
-          echo "arm64_macos=$(cat artifacts/jackin-preview-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "x86_macos=$(cat artifacts/jackin-preview-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -338,6 +416,10 @@ jobs:
           FULL_SHA: ${{ steps.meta.outputs.full_sha }}
           ARM64_SHA256: ${{ steps.shas.outputs.arm64_macos }}
           X86_SHA256: ${{ steps.shas.outputs.x86_macos }}
+          LINUX_ARM64_SHA256: ${{ steps.shas.outputs.arm64_linux }}
+          LINUX_X86_SHA256: ${{ steps.shas.outputs.x86_linux }}
+          CAPSULE_ARM64_SHA256: ${{ steps.shas.outputs.capsule_arm64_linux }}
+          CAPSULE_X86_SHA256: ${{ steps.shas.outputs.capsule_x86_linux }}
         run: |
           cat > homebrew-tap/Formula/jackin-preview.rb <<EOF
           # source-sha: ${FULL_SHA}
@@ -349,13 +431,34 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-preview-aarch64-apple-darwin.tar.gz"
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-aarch64-apple-darwin.tar.gz"
                 sha256 "${ARM64_SHA256}"
               end
               on_intel do
-                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-preview-x86_64-apple-darwin.tar.gz"
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-x86_64-apple-darwin.tar.gz"
                 sha256 "${X86_SHA256}"
               end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_ARM64_SHA256}"
+              end
+              on_intel do
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_X86_SHA256}"
+              end
+            end
+
+            resource "jackin-capsule-aarch64-unknown-linux-gnu" do
+              url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz"
+              sha256 "${CAPSULE_ARM64_SHA256}"
+            end
+
+            resource "jackin-capsule-x86_64-unknown-linux-gnu" do
+              url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${CAPSULE_X86_SHA256}"
             end
 
             conflicts_with "jackin-project/tap/jackin", because: "preview and stable install the same binary"
@@ -363,6 +466,14 @@ jobs:
             def install
               bin.install "jackin"
               bin.install "jackin-role"
+
+              capsule_target = Hardware::CPU.arm? ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"
+              capsule_arch = Hardware::CPU.arm? ? "arm64" : "amd64"
+              resource("jackin-capsule-#{capsule_target}").stage do
+                capsule_dir = libexec/"jackin-capsule/linux-#{capsule_arch}"
+                capsule_dir.install "jackin-capsule"
+                chmod 0755, capsule_dir/"jackin-capsule"
+              end
             end
 
             test do

@@ -115,6 +115,7 @@ export default defineConfig({
             { label: 'workspace', slug: 'commands/workspace' },
             { label: 'config', slug: 'commands/config' },
             { label: 'role', slug: 'commands/role' },
+            { label: 'logs', slug: 'commands/logs' },
           ],
         },
         {
@@ -140,18 +141,20 @@ export default defineConfig({
           label: "Behind jackin' — Internals",
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
-            { label: 'Container Session Lifecycle', slug: 'reference/container-session-lifecycle' },
+            { label: 'Capsule Session Lifecycle', slug: 'reference/capsule-session-lifecycle' },
             { label: 'Runtime Instance Model', slug: 'reference/runtime-instance-model' },
             { label: 'Instance and Resource Naming', slug: 'reference/instance-resource-naming' },
             { label: 'Configuration File', slug: 'reference/configuration' },
             { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
             { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
+            { label: "jackin' Capsule", slug: 'reference/jackin-capsule' },
+            { label: 'Multiplexer Design Rules', slug: 'reference/multiplexer-design-rules' },
             {
               label: 'Goal prompts',
               collapsed: true,
               items: [
-                { label: 'Jackin Desktop Agent Hub', slug: 'reference/goals/jackin-desktop-agent-hub' },
+                { label: "jackin' Desktop Agent Hub", slug: 'reference/goals/jackin-desktop-agent-hub' },
               ],
             },
             {
@@ -188,7 +191,7 @@ export default defineConfig({
                       label: 'Fleet phase 2 — Live operator surface',
                       collapsed: true,
                       items: [
-                        { label: 'Agent runtime status', slug: 'reference/roadmap/agent-runtime-status' },
+                        { label: 'Agent runtime status authority', slug: 'reference/roadmap/agent-runtime-status' },
                         { label: 'Console agent session control', slug: 'reference/roadmap/console-agent-session-control' },
                         { label: 'Console resource panel', slug: 'reference/roadmap/console-resource-panel' },
                         { label: 'Agent tag protocol', slug: 'reference/roadmap/agent-tag-protocol' },
@@ -288,8 +291,8 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/jackin-daemon' },
-                    { label: 'jackin-container: in-container multiplexer server', slug: 'reference/roadmap/jackin-container-binary' },
-                    { label: 'Jackin Desktop Agent Hub', slug: 'reference/roadmap/jackin-desktop-agent-hub' },
+                    { label: "jackin' Capsule control plane", slug: 'reference/roadmap/jackin-capsule' },
+                    { label: "jackin' Desktop Agent Hub", slug: 'reference/roadmap/jackin-desktop-agent-hub' },
                     {
                       label: 'Phase 2 — First reactive adapters',
                       collapsed: false,

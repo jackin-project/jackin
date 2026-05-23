@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-jackin's [per-mount isolation](/guides/workspaces/#per-mount-isolation)
+jackin' [per-mount isolation](/guides/workspaces/#per-mount-isolation)
 vocabulary is `shared | worktree | clone`. These modes describe **git
 semantics** for the mounted path. They don't
 cover a different axis the operator also cares about: **storage kind**.
@@ -43,7 +43,7 @@ each other's caches and to keeping host state clean.
   fleet runs hundreds of builds a day. Each one should start with a
   clean per-instance scratch space; today, they don't.
 - **`/tmp` should default to tmpfs.** Many roles bake
-  configuration assuming `/tmp` is fast and ephemeral. jackin's default
+  configuration assuming `/tmp` is fast and ephemeral. jackin' default
   `/tmp` is the container's own filesystem — fine for correctness, but
   larger and slower than necessary.
 - This is the **only mount-mode gap** found in the verification pass

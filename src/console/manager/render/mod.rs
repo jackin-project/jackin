@@ -368,31 +368,79 @@ pub fn render(
                     let is_instance_row = matches!(
                         state.selected_row(),
                         ManagerListRow::WorkspaceInstance(_, _)
+                            | ManagerListRow::CurrentDirectoryInstance(_)
                     );
 
                     if is_instance_row {
-                        // Instance-row footer: reconnect / new session / shell / purge.
-                        vec![
-                            FooterItem::Key("\u{2191}\u{2193}"),
-                            FooterItem::Sep,
-                            FooterItem::Key("Enter"),
-                            FooterItem::Text("reconnect"),
-                            FooterItem::Sep,
-                            FooterItem::Key("N"),
-                            FooterItem::Text("new session"),
-                            FooterItem::Sep,
-                            FooterItem::Key("X"),
-                            FooterItem::Text("shell"),
-                            FooterItem::Sep,
-                            FooterItem::Key("P"),
-                            FooterItem::Text("purge"),
-                            FooterItem::GroupSep,
-                            FooterItem::Key("\u{2190}"),
-                            FooterItem::Text("back"),
-                            FooterItem::GroupSep,
-                            FooterItem::Key("Q"),
-                            FooterItem::Text("quit"),
-                        ]
+                        if state.preview_focused {
+                            // Inside the preview pane: arrow navigation
+                            // walks the snapshot's pane tree; Enter
+                            // attaches the focused pane; Esc returns
+                            // the focus to the instance row itself.
+                            vec![
+                                FooterItem::Key("\u{2191}\u{2193}"),
+                                FooterItem::Text("navigate panes"),
+                                FooterItem::Sep,
+                                FooterItem::Key("Enter"),
+                                FooterItem::Text("attach focused pane"),
+                                FooterItem::GroupSep,
+                                FooterItem::Key("Esc"),
+                                FooterItem::Text("back"),
+                                FooterItem::GroupSep,
+                                FooterItem::Key("Q"),
+                                FooterItem::Text("quit"),
+                            ]
+                        } else {
+                            let has_snapshot = match state.selected_row() {
+                                ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
+                                    .workspace_active_instances(ws_idx)
+                                    .get(inst_idx)
+                                    .copied()
+                                    .is_some_and(|e| {
+                                        state.instance_snapshots.contains_key(&e.container_base)
+                                    }),
+                                ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
+                                    .current_dir_active_instances()
+                                    .get(inst_idx)
+                                    .copied()
+                                    .is_some_and(|e| {
+                                        state.instance_snapshots.contains_key(&e.container_base)
+                                    }),
+                                _ => false,
+                            };
+                            let mut items = vec![
+                                FooterItem::Key("\u{2191}\u{2193}"),
+                                FooterItem::Sep,
+                                FooterItem::Key("Enter"),
+                                FooterItem::Text("reconnect"),
+                                FooterItem::Sep,
+                                FooterItem::Key("N"),
+                                FooterItem::Text("new session"),
+                                FooterItem::Sep,
+                                FooterItem::Key("X"),
+                                FooterItem::Text("shell"),
+                                FooterItem::Sep,
+                                FooterItem::Key("T"),
+                                FooterItem::Text("stop"),
+                                FooterItem::Sep,
+                                FooterItem::Key("P"),
+                                FooterItem::Text("purge"),
+                            ];
+                            if has_snapshot {
+                                items.push(FooterItem::Sep);
+                                items.push(FooterItem::Key("Tab"));
+                                items.push(FooterItem::Text("into preview"));
+                            }
+                            items.extend([
+                                FooterItem::GroupSep,
+                                FooterItem::Key("\u{2190}"),
+                                FooterItem::Text("back"),
+                                FooterItem::GroupSep,
+                                FooterItem::Key("Q"),
+                                FooterItem::Text("quit"),
+                            ]);
+                            items
+                        }
                     } else {
                         let show_open_hint =
                             matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
@@ -484,16 +532,18 @@ pub fn render(
                 FooterItem::Key("Esc"),
                 FooterItem::Text("cancel"),
             ],
-            ManagerStage::ConfirmDelete { .. } => vec![
-                FooterItem::Key("Y"),
-                FooterItem::Text("yes"),
-                FooterItem::Sep,
-                FooterItem::Key("N"),
-                FooterItem::Text("no"),
-                FooterItem::GroupSep,
-                FooterItem::Key("Esc"),
-                FooterItem::Text("cancel"),
-            ],
+            ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => {
+                vec![
+                    FooterItem::Key("Y"),
+                    FooterItem::Text("yes"),
+                    FooterItem::Sep,
+                    FooterItem::Key("N"),
+                    FooterItem::Text("no"),
+                    FooterItem::GroupSep,
+                    FooterItem::Key("Esc"),
+                    FooterItem::Text("cancel"),
+                ]
+            }
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
             ManagerStage::Settings(_) => unreachable!("Settings has its own render path"),
         };
@@ -527,6 +577,15 @@ pub fn render(
                 // ConfirmState is a top-level field on the variant, not wrapped
                 // in Modal::Confirm, so render it directly.
                 let modal_area = centered_rect_fixed(area, 60, 7);
+                super::super::widgets::confirm::render(frame, modal_area, confirm_state);
+            }
+            ManagerStage::ConfirmInstancePurge {
+                state: confirm_state,
+                ..
+            } => {
+                // The two-line prompt is taller than ConfirmDelete's
+                // single line, so allocate more rows for the modal.
+                let modal_area = centered_rect_fixed(area, 70, 9);
                 super::super::widgets::confirm::render(frame, modal_area, confirm_state);
             }
             ManagerStage::List => {
@@ -612,8 +671,12 @@ fn clamp_list_scroll_for_area(
         .split(area);
     let viewport = scroll_viewport_width(columns[1]);
 
+    // Workspace mounts clamp — variant-specific because the source rows
+    // differ (synthetic single-mount for CurrentDirectory, persisted
+    // list for SavedWorkspace, no block at all for NewWorkspace /
+    // WorkspaceInstance).
     match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
             let cwd = cwd.display().to_string();
             let mounts = [crate::workspace::MountConfig {
                 src: cwd.clone(),
@@ -626,8 +689,6 @@ fn clamp_list_scroll_for_area(
                 viewport,
                 &mut state.list_mounts_scroll_x,
             );
-            state.list_global_mounts_scroll_x = 0;
-            state.list_role_global_mounts_scroll_x = 0;
         }
         ManagerListRow::SavedWorkspace(i) => {
             let Some(summary) = state.workspaces.get(i) else {
@@ -641,39 +702,32 @@ fn clamp_list_scroll_for_area(
                 viewport,
                 &mut state.list_mounts_scroll_x,
             );
-            let picker_role = state
-                .inline_role_picker
-                .as_ref()
-                .and_then(|picker| {
-                    picker
-                        .list_state
-                        .selected
-                        .and_then(|idx| picker.filtered.get(idx).cloned())
-                })
-                .or_else(|| {
-                    state
-                        .inline_agent_picker
-                        .as_ref()
-                        .map(|(role, _)| role.clone())
-                });
-            let global_rows = global_rows_for(config, picker_role.as_ref());
-            let (global, scoped) = partition_mounts_by_scope(&global_rows);
-            clamp_scroll_x(
-                list::global_mounts_content_width(&global),
-                viewport,
-                &mut state.list_global_mounts_scroll_x,
-            );
-            clamp_scroll_x(
-                list::global_mounts_content_width(&scoped),
-                viewport,
-                &mut state.list_role_global_mounts_scroll_x,
-            );
         }
         ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => {
             state.list_mounts_scroll_x = 0;
-            state.list_global_mounts_scroll_x = 0;
-            state.list_role_global_mounts_scroll_x = 0;
         }
+    }
+
+    // CurrentDirectory and SavedWorkspace must agree via
+    // `global_rows_for_selected_row` on whether the global-mounts block
+    // is present and what it contains, so horizontal scroll state
+    // survives row switches between them.
+    let global_rows = global_rows_for_selected_row(state, config);
+    if global_rows.is_empty() {
+        state.list_global_mounts_scroll_x = 0;
+        state.list_role_global_mounts_scroll_x = 0;
+    } else {
+        let (global, scoped) = partition_mounts_by_scope(&global_rows);
+        clamp_scroll_x(
+            list::global_mounts_content_width(&global),
+            viewport,
+            &mut state.list_global_mounts_scroll_x,
+        );
+        clamp_scroll_x(
+            list::global_mounts_content_width(&scoped),
+            viewport,
+            &mut state.list_role_global_mounts_scroll_x,
+        );
     }
 
     // Fix 1: Clear stale scroll focus when the focused block no longer
@@ -754,34 +808,19 @@ fn focused_block_still_scrollable(
                 };
                 workspace_mounts_scrollable(ws.mounts.as_slice(), viewport_w)
             }
-            ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => false,
+            ManagerListRow::NewWorkspace
+            | ManagerListRow::WorkspaceInstance(_, _)
+            | ManagerListRow::CurrentDirectoryInstance(_) => false,
         },
         MountScrollFocus::Global | MountScrollFocus::RoleGlobal => {
-            let ManagerListRow::SavedWorkspace(i) = state.selected_row() else {
-                return false;
-            };
-            let Some(summary) = state.workspaces.get(i) else {
-                return false;
-            };
-            if !config.workspaces.contains_key(&summary.name) {
+            // Any row the render path populates must be scrollability-
+            // evaluated here, otherwise `list_scroll_focus` clears on
+            // every resize tick. Shared source of truth with
+            // `clamp_list_scroll_for_area` and `sidebar_inputs_for_*`.
+            let global_rows = global_rows_for_selected_row(state, config);
+            if global_rows.is_empty() {
                 return false;
             }
-            let picker_role = state
-                .inline_role_picker
-                .as_ref()
-                .and_then(|picker| {
-                    picker
-                        .list_state
-                        .selected
-                        .and_then(|idx| picker.filtered.get(idx).cloned())
-                })
-                .or_else(|| {
-                    state
-                        .inline_agent_picker
-                        .as_ref()
-                        .map(|(role, _)| role.clone())
-                });
-            let global_rows = global_rows_for(config, picker_role.as_ref());
             let (global, scoped) = partition_mounts_by_scope(&global_rows);
             let mounts = match focus {
                 MountScrollFocus::Global => global,
@@ -809,6 +848,7 @@ fn focused_block_still_scrollable(
                     .get(i)
                     .and_then(|s| config.workspaces.get(&s.name)),
                 ManagerListRow::CurrentDirectory
+                | ManagerListRow::CurrentDirectoryInstance(_)
                 | ManagerListRow::NewWorkspace
                 | ManagerListRow::WorkspaceInstance(_, _) => None,
             };
@@ -824,6 +864,66 @@ fn focused_block_still_scrollable(
             });
             is_scrollable(roles_w, viewport_w) || is_scrollable(roles_h, viewport_h)
         }
+    }
+}
+
+/// Picker-role resolution shared by every render path that builds
+/// global-mount rows. Both the inline role picker (operator currently
+/// scrolling a role list) and the inline agent picker (operator
+/// drilling into a role's agents) advertise a role; either gives the
+/// per-role overlay for the global-mounts block. Returning `None` is
+/// the unscoped baseline — the case both "no picker active" and "current
+/// directory selected (no saved role binding)" reduce to.
+pub(super) fn picker_role_from_state(
+    state: &ManagerState<'_>,
+) -> Option<crate::selector::RoleSelector> {
+    state
+        .inline_role_picker
+        .as_ref()
+        .and_then(|picker| {
+            picker
+                .list_state
+                .selected
+                .and_then(|idx| picker.filtered.get(idx).cloned())
+        })
+        .or_else(|| {
+            state
+                .inline_agent_picker
+                .as_ref()
+                .map(|(role, _)| role.clone())
+        })
+}
+
+/// Global mount rows for whatever row the operator currently has
+/// selected on the workspace list. Single source of truth so the render
+/// side, the scroll-clamp, and the focused-block-scrollable check
+/// always agree on what the rendered block is showing. Returning an
+/// empty `Vec` matches "no global-mount block visible right now."
+///
+/// `CurrentDirectory` and `CurrentDirectoryInstance` reduce to the
+/// unscoped baseline because the synthetic current-dir workspace has
+/// no role binding — same rule `sidebar_inputs_for_current_dir`
+/// applies. `SavedWorkspace` adds the role-scoped overlay when a picker
+/// is active. `NewWorkspace` and `WorkspaceInstance` have no global block.
+pub(super) fn global_rows_for_selected_row(
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+) -> Vec<crate::config::GlobalMountRow> {
+    use super::state::ManagerListRow;
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+            global_rows_for(config, None)
+        }
+        ManagerListRow::SavedWorkspace(i) => {
+            let Some(summary) = state.workspaces.get(i) else {
+                return Vec::new();
+            };
+            if !config.workspaces.contains_key(&summary.name) {
+                return Vec::new();
+            }
+            global_rows_for(config, picker_role_from_state(state).as_ref())
+        }
+        ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => Vec::new(),
     }
 }
 

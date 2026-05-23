@@ -100,7 +100,7 @@ pub struct HardlineArgs {
     /// Agent runtime for `--new` (claude, codex, amp, kimi, or opencode). Defaults to the instance manifest.
     #[arg(long, value_parser = parse_agent, requires = "new")]
     pub agent: Option<crate::agent::Agent>,
-    /// Open a one-shot zsh shell in the selected running instance without a named tmux session.
+    /// Open a zsh shell in the selected running instance without an agent slug.
     #[arg(long, conflicts_with_all = ["inspect", "new"])]
     pub shell: bool,
 }

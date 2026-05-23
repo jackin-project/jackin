@@ -68,25 +68,31 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    // Agent prints its env + `docker ps` snapshot between sentinel markers on
+    // Agent prints its env + `docker ps` snapshot after a sentinel marker on
     // its stdout, which the PTY captures into `output.stdout`. Reading from
     // stdout instead of a `/workspace` bind-mount file keeps the test agnostic
     // to whether the Docker daemon shares the test process's filesystem (DinD
     // and remote daemons resolve bind-mount sources on the daemon side, where
-    // the test cannot read them).
+    // the test cannot read them). The capture is a rendered terminal
+    // transcript, so marker order and the closing marker's visibility can vary.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let Some((_, after_begin)) = stdout.split_once(REPORT_BEGIN) else {
-        panic!("agent did not emit {REPORT_BEGIN} marker\nstdout:\n{stdout}\nstderr:\n{stderr}");
-    };
-    let Some((report, _)) = after_begin.split_once(REPORT_END) else {
-        panic!("agent did not emit {REPORT_END} marker\nstdout:\n{stdout}\nstderr:\n{stderr}");
-    };
+    assert!(
+        stdout.contains(REPORT_BEGIN),
+        "agent did not emit {REPORT_BEGIN} marker\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    // REPORT_END proves the report block completed. Without this check a
+    // partial transcript (agent crashed mid-print, PTY truncation) would
+    // still satisfy the contains-substring asserts below on whatever
+    // happened to land before the cut.
+    assert!(
+        stdout.contains(REPORT_END),
+        "agent did not emit {REPORT_END} marker — report is truncated\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report = stdout.as_ref();
 
-    let dind_hostname = report
-        .lines()
-        .find_map(|line| line.strip_prefix("JACKIN_DIND_HOSTNAME="))
-        .expect("report must include JACKIN_DIND_HOSTNAME");
+    let dind_hostname = find_report_value(report, "JACKIN_DIND_HOSTNAME=")
+        .unwrap_or_else(|| panic!("report must include JACKIN_DIND_HOSTNAME\n{report}"));
     assert!(is_dns_label(dind_hostname), "{dind_hostname}");
     assert!(!dind_hostname.contains("__"));
     assert!(!dind_hostname.contains("clone-"));
@@ -118,6 +124,16 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 
 const REPORT_BEGIN: &str = "===JACKIN_E2E_REPORT_BEGIN===";
 const REPORT_END: &str = "===JACKIN_E2E_REPORT_END===";
+
+fn find_report_value<'a>(report: &'a str, key: &str) -> Option<&'a str> {
+    report.lines().find_map(|line| {
+        let (_, value) = line.split_once(key)?;
+        value
+            .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '-'))
+            .next()
+            .filter(|value| !value.is_empty())
+    })
+}
 
 /// Hard-fail with an actionable message when the e2e prerequisites are
 /// missing. The `e2e` feature is opt-in (CI runs `cargo nextest run
@@ -268,12 +284,12 @@ USER agent
 "
 }
 
-/// The agent emits its env + `docker ps` snapshot between sentinel markers on
+/// The agent emits its env + `docker ps` snapshot after a sentinel marker on
 /// stdout. The test parses that block from the PTY-captured stdout, so the
 /// report channel works identically whether the daemon shares the test
 /// process's filesystem or runs in `DinD`. `REPORT_BEGIN`/`REPORT_END` are
 /// interpolated via `format!` so the Rust consts remain the single source of
-/// truth — `${{…}}` in the body escapes the format string back to `${…}` for
+/// truth; `${{...}}` in the body escapes the format string back to `${...}` for
 /// the embedded shell.
 fn fake_curl() -> String {
     format!(
@@ -298,6 +314,12 @@ echo "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
 echo "NO_PROXY=${{NO_PROXY:-}}"
 echo "no_proxy=${{no_proxy:-}}"
 docker ps
+# Emit REPORT_END before the Maven smoke so the host's `output.stdout`
+# parse can succeed even when mvn's network reach to Maven Central
+# (testcontainers pull, JDK plugin downloads) is slow or fails. The
+# TESTCONTAINERS_SMOKE=ok assertion later in the test catches a real
+# smoke regression independently.
+echo "{REPORT_END}"
 tmpdir="$(mktemp -d)"
 cat > "$tmpdir/pom.xml" <<'POM'
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -355,7 +377,6 @@ JAVA
   mvn -q -DskipTests compile exec:java -Dexec.mainClass=JackinTestcontainersSmoke
 )
 rm -rf "$tmpdir"
-echo "{REPORT_END}"
 CLAUDE
 chmod +x "$HOME/.local/bin/claude"
 INSTALL
