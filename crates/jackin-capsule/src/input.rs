@@ -480,6 +480,30 @@ fn parse_csi_u_key(rest: &[u8]) -> Option<(u32, Option<u32>, Option<u32>)> {
     Some((codepoint, Some(modifier), event))
 }
 
+fn parse_xterm_modify_other_keys(seq: &[u8]) -> Option<(u32, u32)> {
+    let body = seq.strip_prefix(b"\x1b[")?.strip_suffix(b"~")?;
+    let mut parts = body.split(|&b| b == b';');
+    let prefix = std::str::from_utf8(parts.next()?)
+        .ok()?
+        .parse::<u32>()
+        .ok()?;
+    if prefix != 27 {
+        return None;
+    }
+    let modifier = std::str::from_utf8(parts.next()?)
+        .ok()?
+        .parse::<u32>()
+        .ok()?;
+    let codepoint = std::str::from_utf8(parts.next()?)
+        .ok()?
+        .parse::<u32>()
+        .ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((codepoint, modifier))
+}
+
 /// Decode a complete CSI sequence into a higher-level event when we
 /// recognise it. Returns `None` to forward the bytes verbatim.
 /// Outer return shape:
@@ -523,6 +547,15 @@ fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
     // passthrough suppression in `session::OscCapture::unhandled_csi`.
     if matches!(seq.last(), Some(b't')) {
         return Some(None);
+    }
+    // Ghostty may emit xterm modifyOtherKeys for Shift+Enter as
+    // `CSI 27 ; 2 ; 13 ~` before the focused agent has negotiated
+    // CSI-u/kitty mode on the outer terminal. Codex treats CSI-u
+    // `CSI 13 ; 2 u` as the multiline-entry key but ignores the
+    // xterm form, so normalize this one editor-critical key while
+    // leaving the rest of modifyOtherKeys byte-for-byte.
+    if let Some((13, 2)) = parse_xterm_modify_other_keys(seq) {
+        return Some(Some(InputEvent::Data(b"\x1b[13;2u".to_vec())));
     }
     // Arrow keys.
     //
@@ -765,6 +798,21 @@ mod tests {
             [InputEvent::Data(b)] => assert_eq!(b, b"\x1b[13;2u"),
             other => panic!("Shift+Enter must round-trip: {other:?}"),
         }
+    }
+
+    #[test]
+    fn shift_enter_xterm_modify_other_keys_normalises_to_csi_u() {
+        // Ghostty emits xterm modifyOtherKeys before CSI-u/kitty mode
+        // is active: `CSI 27 ; 2 ; 13 ~` = Shift+Enter. Codex expects
+        // the CSI-u form for multiline input.
+        let events = parse_all_default(b"\x1b[27;2;13~");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[13;2u".to_vec())]);
+    }
+
+    #[test]
+    fn non_enter_xterm_modify_other_keys_round_trips() {
+        let events = parse_all_default(b"\x1b[27;2;65~");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[27;2;65~".to_vec())]);
     }
 
     #[test]
