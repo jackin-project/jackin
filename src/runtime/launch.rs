@@ -1062,20 +1062,41 @@ async fn launch_role_runtime(
     // to materialise the target itself (which it does as root:root
     // 0755).
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
-    std::fs::create_dir_all(&socket_dir).with_context(|| {
+    // Run the filesystem syscalls on the blocking pool — the tokio
+    // runtime is built without the `fs` feature here, and blocking on
+    // a slow / NFS host parks the worker driving the docker-run RPC
+    // for every other future scheduled on it.
+    let socket_dir_for_mkdir = socket_dir.clone();
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        std::fs::create_dir_all(&socket_dir_for_mkdir)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                &socket_dir_for_mkdir,
+                std::fs::Permissions::from_mode(0o700),
+            )?;
+        }
+        Ok(())
+    })
+    .await
+    .context("socket dir mkdir worker join")?
+    .with_context(|| {
         format!(
             "creating host-side socket dir {} for container {container_name}",
             socket_dir.display(),
         )
     })?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o700);
-        std::fs::set_permissions(&socket_dir, perms)
-            .with_context(|| format!("locking socket dir {} to 0o700", socket_dir.display()))?;
-    }
-    let socket_mount = format!("{}:/run/jackin", socket_dir.display());
+    // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
+    // different host dir than the one we just created. Bail rather than
+    // smuggle U+FFFD into a `-v` argument.
+    let socket_dir_str = socket_dir.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "socket dir {} contains non-UTF-8 bytes; cannot pass to docker -v",
+            socket_dir.display(),
+        )
+    })?;
+    let socket_mount = format!("{socket_dir_str}:/run/jackin");
     run_args.extend_from_slice(&["-v", &socket_mount]);
     // Forward JACKIN_WORKDIR so the daemon spawns every PTY in the
     // workspace workdir (portable_pty defaults to $HOME otherwise).
@@ -1121,26 +1142,28 @@ async fn launch_role_runtime(
         .await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
-    if session_result.is_err()
-        && let Some(err) =
-            diagnose_premature_exit(docker, runner, container_name, ExitPhase::PostAttach).await
-    {
-        return Err(err);
-    }
-    // Post-attach `docker exec` failures with no diagnostic surface
-    // (e.g. operator typed `/exit` in the agent → multiplexer shut the
-    // container down → `docker exec` lost its target). The container-
-    // lifecycle policy treats this as the happy path, so swallow the
-    // `docker exec` Err in that case rather than propagate "command
-    // failed: docker exec -it …" up to the operator.
     if let Err(err) = session_result {
+        // Single inspect — the previous two-call shape opened a TOCTOU
+        // window where the container could transition Running→Stopped(0)
+        // between the diagnose and swallow checks. `diagnose_premature_exit`
+        // returns a synthesized error for surfaceable exits; otherwise
+        // the post-attach happy path is `Stopped(exit 0, !oom)` from a
+        // clean multiplexer shutdown — swallow `docker exec`'s broken
+        // pipe in that case. External `docker rm` (NotFound) is rare
+        // and must propagate the real exec error so the operator sees
+        // why the container vanished mid-session.
         let inspect = docker.inspect_container_state(container_name).await;
+        if let Some(diag) =
+            diagnose_with_state(runner, container_name, &inspect, ExitPhase::PostAttach).await
+        {
+            return Err(diag);
+        }
         if matches!(
             inspect,
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
-            } | ContainerState::NotFound
+            }
         ) {
             return Ok(());
         }
@@ -1180,7 +1203,21 @@ async fn diagnose_premature_exit(
     container_name: &str,
     phase: ExitPhase,
 ) -> Option<anyhow::Error> {
-    match docker.inspect_container_state(container_name).await {
+    let state = docker.inspect_container_state(container_name).await;
+    diagnose_with_state(runner, container_name, &state, phase).await
+}
+
+/// Same diagnostic logic as `diagnose_premature_exit` but with the
+/// inspected state passed in — callers that already inspected the
+/// container can avoid a second `docker inspect` round-trip (and the
+/// TOCTOU window between the two).
+async fn diagnose_with_state(
+    runner: &mut impl crate::docker::CommandRunner,
+    container_name: &str,
+    state: &ContainerState,
+    phase: ExitPhase,
+) -> Option<anyhow::Error> {
+    match state {
         // Default to letting the `docker exec` attempt proceed when state is
         // ambiguous: the daemon's own error from a true `NotFound`
         // (`No such container`) is just as actionable as anything we
@@ -1208,7 +1245,7 @@ async fn diagnose_premature_exit(
             // surfaced because PID 1 died before the
             // client connected indicates a bad image / missing binary
             // even when the exit code looks clean.
-            if phase == ExitPhase::PostAttach && exit_code == 0 && !oom_killed {
+            if phase == ExitPhase::PostAttach && *exit_code == 0 && !oom_killed {
                 return None;
             }
             let logs = runner
@@ -1217,7 +1254,7 @@ async fn diagnose_premature_exit(
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
-            let reason = if oom_killed {
+            let reason = if *oom_killed {
                 "OOM killed".to_string()
             } else {
                 format!("exit {exit_code}")

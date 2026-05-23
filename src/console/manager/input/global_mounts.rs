@@ -811,7 +811,12 @@ pub(super) fn handle_settings_confirm_modal(
         }
         GlobalMountModal::ScopePicker { mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(choice) => {
-                settings.mounts.modal = Some(GlobalMountModal::ScopePicker { state });
+                // Drop the picker before dispatching: commit_text
+                // (AllAgents path) calls clear_modal_chain anyway, and
+                // open_sub_modal (SpecificAgent → RolePicker) would
+                // otherwise stash this already-committed picker as
+                // the RolePicker's parent — Esc on RolePicker would
+                // then resurrect a consumed ScopePicker.
                 commit_add_scope_choice(settings, choice);
             }
             ModalOutcome::Cancel => {
@@ -1010,14 +1015,16 @@ pub(super) fn handle_settings_env_modal(
                     let scope = SettingsEnvScope::Global;
                     let input_state =
                         settings_env_key_input_state(env, &scope, "New global environment key", "");
-                    env.modal = Some(SettingsEnvModal::ScopePicker { state });
+                    // Don't stash the just-committed ScopePicker as
+                    // the Text modal's parent — Esc on Text would
+                    // pop back into a consumed picker. Start the
+                    // child modal with an empty parent chain.
                     env.open_sub_modal(SettingsEnvModal::Text {
                         target: SettingsEnvTextTarget::EnvKey { scope },
                         state: Box::new(input_state),
                     });
                 }
                 crate::console::widgets::scope_picker::ScopeChoice::SpecificAgent => {
-                    env.modal = Some(SettingsEnvModal::ScopePicker { state });
                     open_settings_env_role_picker(env);
                 }
             },
@@ -1813,7 +1820,7 @@ mod tests {
     }
 
     #[test]
-    fn global_mount_add_filebrowser_esc_returns_scope_picker() {
+    fn global_mount_add_filebrowser_esc_closes_chain() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -1835,15 +1842,14 @@ mod tests {
 
         handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
 
+        // The ScopePicker was committed when AllAgents was picked, so Esc
+        // on the FileBrowser must close the modal chain entirely rather
+        // than resurrect a consumed picker.
         assert!(
-            matches!(
-                settings.mounts.modal,
-                Some(GlobalMountModal::ScopePicker { .. })
-            ),
-            "Esc from add-mount FileBrowser should restore ScopePicker; got {:?}",
+            settings.mounts.modal.is_none(),
+            "Esc from add-mount FileBrowser should close the chain; got {:?}",
             settings.mounts.modal
         );
-        assert!(settings.mounts.add_draft.is_some());
     }
 
     #[test]
@@ -1932,11 +1938,8 @@ mod tests {
         handle_settings_confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
 
         assert!(
-            matches!(
-                settings.mounts.modal,
-                Some(GlobalMountModal::ScopePicker { .. })
-            ),
-            "Esc from global-mount RolePicker should restore ScopePicker; got {:?}",
+            settings.mounts.modal.is_none(),
+            "Esc from global-mount RolePicker should close the chain; got {:?}",
             settings.mounts.modal
         );
     }
@@ -2140,7 +2143,7 @@ mod tests {
     }
 
     #[test]
-    fn env_tab_key_input_esc_returns_scope_picker() {
+    fn env_tab_key_input_esc_closes_chain() {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -2168,12 +2171,12 @@ mod tests {
 
         handle_settings_env_modal(&mut settings.env, key(KeyCode::Esc), state.op_cache.clone());
 
+        // The ScopePicker was committed before the EnvKey input opened,
+        // so Esc on the input must close the chain instead of restoring
+        // a consumed picker.
         assert!(
-            matches!(
-                settings.env.modal,
-                Some(SettingsEnvModal::ScopePicker { .. })
-            ),
-            "Esc from settings env key input should restore ScopePicker; got {:?}",
+            settings.env.modal.is_none(),
+            "Esc from settings env key input should close the chain; got {:?}",
             settings.env.modal
         );
     }

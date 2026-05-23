@@ -961,11 +961,23 @@ impl<'a> SettingsEnvState<'a> {
 
     pub fn pop_modal_chain(&mut self) {
         self.modal = self.modal_parents.pop();
+        if self.modal.is_none() {
+            self.drop_modal_scratch();
+        }
     }
 
     pub fn clear_modal_chain(&mut self) {
         self.modal = None;
         self.modal_parents.clear();
+        self.drop_modal_scratch();
+    }
+
+    /// See [`EditorState::drop_modal_scratch`]: when the modal chain
+    /// fully unwinds, clear the env-key + picker-value scratch slots
+    /// so a later commit cannot accidentally target a stale (scope, key).
+    fn drop_modal_scratch(&mut self) {
+        self.pending_env_key = None;
+        self.pending_picker_value = None;
     }
 }
 
@@ -1936,6 +1948,11 @@ impl ManagerState<'_> {
                         }
                     }
                 }
+                // Evict preview cursors keyed on containers that no
+                // longer have a live snapshot — otherwise the map
+                // accumulates indefinitely across container churn.
+                self.preview_pane_cursor
+                    .retain(|key, _| self.instance_snapshots.contains_key(key));
                 // Clamp `selected` after a refresh in case an instance row
                 // that was selected has disappeared.
                 let max = self.row_count().saturating_sub(1);
@@ -1946,6 +1963,15 @@ impl ManagerState<'_> {
                 self.instance_sessions.clear();
                 self.instance_session_errors.clear();
                 self.expanded_workspaces.clear();
+                // Mirror the Ok-branch cleanup of the snapshot-derived
+                // surfaces — without this they accumulate stale entries
+                // keyed by container_base that no longer appears in
+                // the index, and `current_dir_expanded` latched against
+                // an empty instance list drifts the row count.
+                self.instance_snapshots.clear();
+                self.preview_pane_cursor.clear();
+                self.current_dir_expanded = false;
+                self.preview_focused = false;
                 let message = format!("instance index error: {error}");
                 if self.instances_last_error.as_deref() != Some(&message) {
                     self.list_modal = Some(Modal::ErrorPopup {
@@ -2021,6 +2047,9 @@ impl<'a> EditorState<'a> {
     /// the canonical "Esc went back" arm for child modals.
     pub fn pop_modal_chain(&mut self) {
         self.modal = self.modal_parents.pop();
+        if self.modal.is_none() {
+            self.drop_modal_scratch();
+        }
     }
 
     /// Terminal commit: clear `modal` and the entire `modal_parents`
@@ -2030,6 +2059,17 @@ impl<'a> EditorState<'a> {
     pub fn clear_modal_chain(&mut self) {
         self.modal = None;
         self.modal_parents.clear();
+        self.drop_modal_scratch();
+    }
+
+    /// Scratch slots used to thread env-key + source-picker context
+    /// across child modals (e.g. `EnvKey` → `SourcePicker` → `OpPicker`).
+    /// Whenever the chain unwinds to no modal, these must clear so a
+    /// later unrelated commit cannot pick up stale (scope, key) and
+    /// write a secret to the wrong target.
+    fn drop_modal_scratch(&mut self) {
+        self.pending_env_key = None;
+        self.pending_picker_value = None;
     }
 }
 

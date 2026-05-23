@@ -81,6 +81,14 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         stdout.contains(REPORT_BEGIN),
         "agent did not emit {REPORT_BEGIN} marker\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
+    // REPORT_END proves the report block completed. Without this check a
+    // partial transcript (agent crashed mid-print, PTY truncation) would
+    // still satisfy the contains-substring asserts below on whatever
+    // happened to land before the cut.
+    assert!(
+        stdout.contains(REPORT_END),
+        "agent did not emit {REPORT_END} marker — report is truncated\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
     let report = stdout.as_ref();
 
     let dind_hostname = find_report_value(report, "JACKIN_DIND_HOSTNAME=")

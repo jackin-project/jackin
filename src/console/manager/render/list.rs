@@ -1104,18 +1104,10 @@ fn render_instance_details_pane(
         }
     }
 
-    lines.push(Line::from(""));
-    let footer = if preview_focused {
-        "  ↑/↓ navigate panes  ·  Enter attach focused pane  ·  Esc back"
-    } else if snapshot.is_some() {
-        "  Tab into preview  ·  Enter reconnect  ·  N new session  ·  X shell  ·  T stop  ·  P purge"
-    } else {
-        "  Enter reconnect  ·  N new session  ·  X shell  ·  T stop  ·  P purge"
-    };
-    lines.push(Line::from(Span::styled(
-        footer,
-        Style::default().fg(PHOSPHOR_DIM),
-    )));
+    // Inline footer hints inside a pane body violate the TUI design
+    // rule "keyboard hints live in the footer bar only" (see
+    // reference/tui-design-decisions.mdx); these keys are surfaced
+    // by the list-stage footer items in render/mod.rs.
 
     frame.render_widget(
         Paragraph::new(lines)

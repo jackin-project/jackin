@@ -125,24 +125,33 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
                 Some(SpawnRequest::Shell) => (1u8, b"".as_slice()),
                 Some(SpawnRequest::Agent(agent)) => (2u8, agent.as_bytes()),
             };
-            let agent_len = u16::try_from(agent_bytes.len()).unwrap_or(u16::MAX);
-            let env_count = u16::try_from(env.len()).unwrap_or(u16::MAX);
+            // Programmer-error if any of these clamp: an agent slug,
+            // env key, or env value larger than the wire field would
+            // silently corrupt the frame. Panic loudly rather than
+            // truncate; callers control these inputs and should keep
+            // them under the configured wire limits.
+            let agent_len = u16::try_from(agent_bytes.len())
+                .expect("agent slug exceeds u16::MAX bytes on the wire");
+            let env_count = u16::try_from(env.len())
+                .expect("hello env count exceeds u16::MAX entries on the wire");
             let mut payload = Vec::with_capacity(10 + agent_bytes.len());
             payload.extend_from_slice(&rows.to_be_bytes());
             payload.extend_from_slice(&cols.to_be_bytes());
             payload.push(spawn_kind);
             payload.extend_from_slice(&agent_len.to_be_bytes());
-            payload.extend_from_slice(&agent_bytes[..agent_len as usize]);
+            payload.extend_from_slice(agent_bytes);
             payload.extend_from_slice(&env_count.to_be_bytes());
-            for (key, value) in env.into_iter().take(env_count as usize) {
+            for (key, value) in env {
                 let key_bytes = key.as_bytes();
                 let value_bytes = value.as_bytes();
-                let key_len = u16::try_from(key_bytes.len()).unwrap_or(u16::MAX);
-                let value_len = u32::try_from(value_bytes.len()).unwrap_or(u32::MAX);
+                let key_len = u16::try_from(key_bytes.len())
+                    .expect("hello env key exceeds u16::MAX bytes on the wire");
+                let value_len = u32::try_from(value_bytes.len())
+                    .expect("hello env value exceeds u32::MAX bytes on the wire");
                 payload.extend_from_slice(&key_len.to_be_bytes());
                 payload.extend_from_slice(&value_len.to_be_bytes());
-                payload.extend_from_slice(&key_bytes[..key_len as usize]);
-                payload.extend_from_slice(&value_bytes[..value_len as usize]);
+                payload.extend_from_slice(key_bytes);
+                payload.extend_from_slice(value_bytes);
             }
             match focus_session {
                 None => payload.push(0u8),

@@ -173,6 +173,18 @@ fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
+            // SIGKILL is async — bound the post-kill drain so an
+            // unresponsive docker daemon does not leave us blocked
+            // in `wait_with_output` while the pipe stays open. The
+            // 500 ms ceiling caps how fast docker-exec children can
+            // accumulate when the daemon is consistently wedged.
+            let drain_deadline = Instant::now() + Duration::from_millis(500);
+            while Instant::now() < drain_deadline {
+                if child.try_wait().ok().flatten().is_some() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
             let output = child.wait_with_output().ok();
             let stderr = output
                 .as_ref()

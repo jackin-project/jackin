@@ -161,14 +161,17 @@ async fn has_jackin_sessions(
     docker: &impl crate::docker_client::DockerApi,
     container_name: &str,
 ) -> bool {
-    // Run via sh — jackin-capsule exits non-zero if no daemon is running;
-    // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
-    // empty stdout so the caller only sees a non-empty result when sessions exist.
+    // `jackin-capsule status` always prints a `Sessions: N` header,
+    // so empty-vs-non-empty stdout no longer answers the question.
+    // Count session rows (each starts with `[`); zero rows means the
+    // daemon is up but idle, non-zero means sessions are live.
     match docker
         .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
-        Ok(output) => !output.trim().is_empty(),
+        Ok(output) => output
+            .lines()
+            .any(|line| line.trim_start().starts_with('[')),
         Err(e) => {
             // Docker unreachable or container stopped between the exit-code check
             // and this exec. Treat conservatively as sessions-present — the
@@ -638,7 +641,7 @@ mod tests {
         let mut r = FakeRunner::default();
         let docker = crate::docker_client::FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "jackin-claude-abc".to_string(),
+                "Sessions: 1\n  [3] work (claude) state=working active=true\n".to_string(),
             ])),
             ..Default::default()
         };

@@ -183,14 +183,29 @@ async fn second_attach_takes_over_first() {
         .await
         .unwrap();
 
-    // Client A should receive a Shutdown frame.
+    // Client A should receive a Shutdown frame. Cap the wait so a
+    // scheduler-ordering deadlock fails the test deterministically
+    // instead of hanging CI.
     let mut tag = [0u8; 1];
-    client_a.read_exact(&mut tag).await.unwrap();
-    let f = read_server_frame(&mut client_a, tag[0])
-        .await
-        .unwrap()
-        .unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client_a.read_exact(&mut tag),
+    )
+    .await
+    .expect("client A did not receive Shutdown within 5s")
+    .unwrap();
+    let f = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        read_server_frame(&mut client_a, tag[0]),
+    )
+    .await
+    .expect("decoding Shutdown frame timed out")
+    .unwrap()
+    .unwrap();
     assert_eq!(f, ServerFrame::Shutdown);
 
-    server.await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), server)
+        .await
+        .expect("server task did not complete within 5s")
+        .unwrap();
 }

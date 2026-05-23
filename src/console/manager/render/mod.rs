@@ -372,31 +372,75 @@ pub fn render(
                     );
 
                     if is_instance_row {
-                        // Instance-row footer: reconnect / new session / shell / stop / purge.
-                        vec![
-                            FooterItem::Key("\u{2191}\u{2193}"),
-                            FooterItem::Sep,
-                            FooterItem::Key("Enter"),
-                            FooterItem::Text("reconnect"),
-                            FooterItem::Sep,
-                            FooterItem::Key("N"),
-                            FooterItem::Text("new session"),
-                            FooterItem::Sep,
-                            FooterItem::Key("X"),
-                            FooterItem::Text("shell"),
-                            FooterItem::Sep,
-                            FooterItem::Key("T"),
-                            FooterItem::Text("stop"),
-                            FooterItem::Sep,
-                            FooterItem::Key("P"),
-                            FooterItem::Text("purge"),
-                            FooterItem::GroupSep,
-                            FooterItem::Key("\u{2190}"),
-                            FooterItem::Text("back"),
-                            FooterItem::GroupSep,
-                            FooterItem::Key("Q"),
-                            FooterItem::Text("quit"),
-                        ]
+                        if state.preview_focused {
+                            // Inside the preview pane: arrow navigation
+                            // walks the snapshot's pane tree; Enter
+                            // attaches the focused pane; Esc returns
+                            // the focus to the instance row itself.
+                            vec![
+                                FooterItem::Key("\u{2191}\u{2193}"),
+                                FooterItem::Text("navigate panes"),
+                                FooterItem::Sep,
+                                FooterItem::Key("Enter"),
+                                FooterItem::Text("attach focused pane"),
+                                FooterItem::GroupSep,
+                                FooterItem::Key("Esc"),
+                                FooterItem::Text("back"),
+                                FooterItem::GroupSep,
+                                FooterItem::Key("Q"),
+                                FooterItem::Text("quit"),
+                            ]
+                        } else {
+                            let has_snapshot = match state.selected_row() {
+                                ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
+                                    .workspace_active_instances(ws_idx)
+                                    .get(inst_idx)
+                                    .copied()
+                                    .is_some_and(|e| {
+                                        state.instance_snapshots.contains_key(&e.container_base)
+                                    }),
+                                ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
+                                    .current_dir_active_instances()
+                                    .get(inst_idx)
+                                    .copied()
+                                    .is_some_and(|e| {
+                                        state.instance_snapshots.contains_key(&e.container_base)
+                                    }),
+                                _ => false,
+                            };
+                            let mut items = vec![
+                                FooterItem::Key("\u{2191}\u{2193}"),
+                                FooterItem::Sep,
+                                FooterItem::Key("Enter"),
+                                FooterItem::Text("reconnect"),
+                                FooterItem::Sep,
+                                FooterItem::Key("N"),
+                                FooterItem::Text("new session"),
+                                FooterItem::Sep,
+                                FooterItem::Key("X"),
+                                FooterItem::Text("shell"),
+                                FooterItem::Sep,
+                                FooterItem::Key("T"),
+                                FooterItem::Text("stop"),
+                                FooterItem::Sep,
+                                FooterItem::Key("P"),
+                                FooterItem::Text("purge"),
+                            ];
+                            if has_snapshot {
+                                items.push(FooterItem::Sep);
+                                items.push(FooterItem::Key("Tab"));
+                                items.push(FooterItem::Text("into preview"));
+                            }
+                            items.extend([
+                                FooterItem::GroupSep,
+                                FooterItem::Key("\u{2190}"),
+                                FooterItem::Text("back"),
+                                FooterItem::GroupSep,
+                                FooterItem::Key("Q"),
+                                FooterItem::Text("quit"),
+                            ]);
+                            items
+                        }
                     } else {
                         let show_open_hint =
                             matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))

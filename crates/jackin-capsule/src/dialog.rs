@@ -603,12 +603,35 @@ impl Dialog {
             *copied = true;
             return DialogAction::CopyToClipboard(payload);
         }
-        // ConfirmAction: inside-box click is treated as Yes (operator's
-        // click landed inside the destructive-action confirmation box,
-        // they're acting). Outside-click already dismissed via the
-        // early return above.
+        // ConfirmAction: only the visible Yes/No button cells confirm
+        // or dismiss; other inside-box clicks (title, explanation,
+        // padding) are swallowed. Mirrors the layout in
+        // `render_confirm_action`.
         if let Self::ConfirmAction { kind, .. } = self {
-            return DialogAction::ConfirmedAction(*kind);
+            const YES_LABEL: &str = "  Yes  ";
+            const GAP: &str = "    ";
+            const NO_LABEL: &str = "  No  ";
+            let interior_left = box_col + 1;
+            let interior_cols = width.saturating_sub(2) as usize;
+            let buttons_w =
+                YES_LABEL.chars().count() + GAP.chars().count() + NO_LABEL.chars().count();
+            let button_col = interior_left
+                + u16::try_from(interior_cols.saturating_sub(buttons_w) / 2).unwrap_or(0);
+            let button_row = box_row + height.saturating_sub(2);
+            if row != button_row {
+                return DialogAction::Consume;
+            }
+            let yes_start = button_col;
+            let yes_end = yes_start + YES_LABEL.chars().count() as u16;
+            let no_start = yes_end + GAP.chars().count() as u16;
+            let no_end = no_start + NO_LABEL.chars().count() as u16;
+            if col >= yes_start && col < yes_end {
+                return DialogAction::ConfirmedAction(*kind);
+            }
+            if col >= no_start && col < no_end {
+                return DialogAction::Dismiss;
+            }
+            return DialogAction::Consume;
         }
         // Row layout inside the box for filterable dialogs:
         //   box_row + 0:  top border (decorative)

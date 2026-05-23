@@ -159,7 +159,12 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     let expected_sha = fetch_remote_sha256(&sha_url)
         .await
         .with_context(|| format!("fetching jackin-capsule SHA-256 manifest at {sha_url}"))?;
-    let actual_sha = hash_file_sha256(&tmp)
+    // Hashing a multi-MB binary parks the tokio worker; run it on the
+    // blocking pool so concurrent launch / TUI tasks keep progressing.
+    let tmp_for_hash = tmp.clone();
+    let actual_sha = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
+        .await
+        .context("hash worker join")?
         .with_context(|| format!("hashing downloaded jackin-capsule at {}", tmp.display()))?;
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
         let _ = std::fs::remove_file(&tmp);
@@ -189,7 +194,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // itself drifted.
     #[cfg(target_os = "linux")]
     {
-        if let Err(e) = verify_version_exec(&tmp, version) {
+        if let Err(e) = verify_version_exec(&tmp, version).await {
             let _ = std::fs::remove_file(&tmp);
             return Err(e);
         }
@@ -327,10 +332,11 @@ pub fn chmod_executable(path: &Path) -> Result<()> {
 
 /// Verify the binary version by executing it. Linux only — macOS cannot exec Linux ELF.
 #[cfg(target_os = "linux")]
-fn verify_version_exec(binary: &Path, expected: &str) -> Result<()> {
-    let output = std::process::Command::new(binary)
+async fn verify_version_exec(binary: &Path, expected: &str) -> Result<()> {
+    let output = tokio::process::Command::new(binary)
         .arg("--version")
         .output()
+        .await
         .context("failed to run jackin-capsule --version")?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);

@@ -94,6 +94,12 @@ pub(crate) fn reap_zombies() {
 #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
 fn reap_zombies_linux() {
     let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
+    // WNOWAIT leaves a peeked child waitable, so waitid(Id::All) keeps
+    // returning the same managed pid head-of-queue. Track skipped pids
+    // and break only when the kernel re-presents one we already saw —
+    // that means every remaining zombie is managed and orphans behind
+    // them (if any) cannot be reached via Id::All peek.
+    let mut skipped: HashSet<i32> = HashSet::new();
     loop {
         match waitid(Id::All, flags) {
             Ok(WaitStatus::StillAlive) | Err(nix::errno::Errno::ECHILD) => break,
@@ -102,7 +108,10 @@ fn reap_zombies_linux() {
                     break;
                 };
                 if is_managed_child(pid) {
-                    break;
+                    if !skipped.insert(pid.as_raw()) {
+                        break;
+                    }
+                    continue;
                 }
                 match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
                     Ok(WaitStatus::StillAlive) | Err(_) => break,

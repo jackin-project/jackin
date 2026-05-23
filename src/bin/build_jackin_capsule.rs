@@ -43,8 +43,11 @@ fn main() -> Result<()> {
     build_via_zigbuild(&workspace, &arch, &cached)?;
 
     if export {
-        // Print only the export line — intended for `eval "$(...)"`
-        println!("export JACKIN_CAPSULE_BIN={}", cached.display());
+        // POSIX single-quote wrap so `eval "$(...)"` survives paths with
+        // spaces or shell metacharacters. Embedded `'` is closed,
+        // backslash-escaped, then re-opened.
+        let escaped = cached.display().to_string().replace('\'', "'\\''");
+        println!("export JACKIN_CAPSULE_BIN='{escaped}'");
     } else {
         eprintln!(
             "[build] cached at: {}\n\

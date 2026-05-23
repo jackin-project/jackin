@@ -51,6 +51,7 @@ pub async fn inspect_agent_sessions(
 
 /// Parse session list from `jackin-capsule status` output.
 /// Each line is: `  [<id>] <label> (<agent>) state=<state> active=<bool>`.
+/// `<label>` originates from the rename dialog and may contain spaces.
 fn parse_jackin_sessions(output: &str) -> Vec<AgentSession> {
     output
         .lines()
@@ -59,14 +60,17 @@ fn parse_jackin_sessions(output: &str) -> Vec<AgentSession> {
             if trimmed.is_empty() || !trimmed.starts_with('[') {
                 return None;
             }
-            // Extract label (second word-group after the [id]).
-            let name = trimmed
-                .split(']')
-                .nth(1)
-                .and_then(|rest| rest.split_whitespace().next())
-                .unwrap_or(trimmed)
-                .to_string();
-            Some(AgentSession { name })
+            // Strip from ` state=` onward, then strip the last
+            // ` (<agent>)` block — what remains is the label. `rfind`
+            // tolerates labels that themselves contain `(`.
+            let after_id = trimmed.split(']').nth(1)?.trim_start();
+            let head = after_id
+                .rfind(" state=")
+                .map_or(after_id, |idx| &after_id[..idx]);
+            let name = head.rfind(" (").map_or(head, |idx| &head[..idx]);
+            Some(AgentSession {
+                name: name.to_string(),
+            })
         })
         .collect()
 }

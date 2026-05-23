@@ -1007,19 +1007,24 @@ impl Multiplexer {
         )?;
         self.sessions.insert(new_id, session);
         let tab = &mut self.tabs[self.active_tab];
-        match direction {
-            SplitDirection::Left => {
-                tab.tree.split_h(from_id, new_id, SplitPosition::Before);
+        let placed = match direction {
+            SplitDirection::Left => tab.tree.split_h(from_id, new_id, SplitPosition::Before),
+            SplitDirection::Right => tab.tree.split_h(from_id, new_id, SplitPosition::After),
+            SplitDirection::Above => tab.tree.split_v(from_id, new_id, SplitPosition::Before),
+            SplitDirection::Below => tab.tree.split_v(from_id, new_id, SplitPosition::After),
+        };
+        if !placed {
+            // from_id vanished between split intent and dispatch
+            // (e.g. the source pane exited mid-action). Undo the
+            // session insert so the spawned PTY + child + tasks do
+            // not leak as an orphan that no tab tree references.
+            if let Some(orphan) = self.sessions.remove(&new_id) {
+                orphan.terminate();
             }
-            SplitDirection::Right => {
-                tab.tree.split_h(from_id, new_id, SplitPosition::After);
-            }
-            SplitDirection::Above => {
-                tab.tree.split_v(from_id, new_id, SplitPosition::Before);
-            }
-            SplitDirection::Below => {
-                tab.tree.split_v(from_id, new_id, SplitPosition::After);
-            }
+            crate::clog!(
+                "action: split aborted — from_id={from_id} no longer in tab tree; reaped orphan id={new_id}",
+            );
+            return Ok(());
         }
         tab.focused_id = new_id;
         self.resize_panes();
@@ -1852,7 +1857,12 @@ impl Multiplexer {
     /// real clipboard write), and clear the highlight.
     fn finalize_selection(&mut self) -> Option<Vec<u8>> {
         let sel = self.selection.take()?;
-        if let Some(session) = self.sessions.get(&sel.session_id) {
+        // Suppress single-cell selections: a click-to-focus with no
+        // drag motion lands anchor==end and would otherwise OSC 52
+        // whatever character sat under the cursor — a silent host-
+        // clipboard overwrite on every focus click.
+        let dragged = sel.anchor_row != sel.end_row || sel.anchor_col != sel.end_col;
+        if dragged && let Some(session) = self.sessions.get(&sel.session_id) {
             let text = selection_text(session.screen(), &sel);
             if !text.is_empty()
                 && let Some(tx) = &self.attached_out
@@ -2620,7 +2630,12 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 if let Some(tx) = mux.attached_out.take() {
                     let _ = tx.send(encode_server(ServerFrame::Shutdown));
                 }
-                tokio::task::yield_now().await;
+                // A single `yield_now()` does not guarantee the writer
+                // task drained `out_rx` and finished `write_all` to the
+                // socket before `abort()` cancels it. Sleep briefly so
+                // the buffered Shutdown bytes reach the kernel and the
+                // old client's terminal sees a clean detach signal.
+                tokio::time::sleep(Duration::from_millis(50)).await;
                 if let Some(handle) = mux.attached_task.take() {
                     handle.abort();
                 }
@@ -3077,7 +3092,7 @@ async fn handle_attach_client(
                 };
                 if cmd_tx.send(frame).is_err() {
                     crate::clog!("attach client: cmd_tx closed; daemon shutting down");
-                    break;
+                    return;
                 }
             }
             Some(bytes) = out_rx.recv() => {
@@ -3088,6 +3103,11 @@ async fn handle_attach_client(
             }
         }
     }
+    // Signal the main loop that this client is gone so it can clear
+    // `attached_out` / `attached_task` — without this, subsequent
+    // `send_to_client` calls silently drop into the closed channel
+    // and the daemon keeps treating the dead socket as live.
+    let _ = cmd_tx.send(ClientFrame::Detach);
 }
 
 /// Extract the text inside `sel` from the source pane's `vt100`
@@ -3267,6 +3287,10 @@ fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration)
         if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
+            // Joining the reader is bounded: kill() closed the pipe,
+            // so read_to_end returns quickly. Without the join the
+            // OS-thread is leaked across every timeout firing.
+            let _ = stdout_reader.join();
             return None;
         }
         std::thread::sleep(Duration::from_millis(25));

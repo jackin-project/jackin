@@ -118,8 +118,9 @@ pub fn write_line(message: &str) {
     let Some(file) = guard.as_mut() else {
         return;
     };
+    // `File::write` is unbuffered, so `flush` is a no-op here; per-line
+    // append plus the OS page cache is enough for tail-style log reading.
     let _ = writeln!(file, "{stamped}");
-    let _ = file.flush();
 }
 
 /// Convenience macro: format + tag + emit. Replaces the existing

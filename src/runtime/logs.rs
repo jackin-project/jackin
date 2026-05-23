@@ -183,6 +183,9 @@ fn print_tail(path: &Path, n: usize) -> Result<()> {
 /// size in memory for a long-lived log; a `tail`-style ring keeps
 /// memory proportional to `n` regardless of file size.
 fn read_tail(path: &Path, n: usize) -> Result<Vec<String>> {
+    if n == 0 {
+        return Ok(Vec::new());
+    }
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let reader = BufReader::new(file);
     let mut ring: VecDeque<String> = VecDeque::with_capacity(n.min(8192));
@@ -254,10 +257,11 @@ fn follow_file(path: &Path) -> Result<()> {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        let mut t = s[..max.saturating_sub(1)].to_string();
+        let take = max.saturating_sub(1);
+        let mut t: String = s.chars().take(take).collect();
         t.push('…');
         t
     }
