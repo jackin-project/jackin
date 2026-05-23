@@ -602,7 +602,10 @@ mod tests {
             a.write_all(&oversize_len.to_be_bytes()).await.unwrap();
             a.shutdown().await.unwrap();
             let result = read_client_frame(&mut b, TAG_INPUT).await;
-            assert!(result.is_err(), "expected oversize rejection, got {result:?}");
+            assert!(
+                result.is_err(),
+                "expected oversize rejection, got {result:?}"
+            );
         });
     }
 
