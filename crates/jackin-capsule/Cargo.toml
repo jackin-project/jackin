@@ -47,7 +47,7 @@ jackin-tui = { path = "../jackin-tui" }
 jackin-build-meta = { path = "../jackin-build-meta" }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = "=3.27.0"
 
 [lints.rust]
 unsafe_code = "forbid"
