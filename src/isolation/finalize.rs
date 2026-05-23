@@ -163,13 +163,15 @@ async fn has_jackin_sessions(
 ) -> bool {
     // Only an explicit `Sessions: 0` header proves the capsule is
     // idle. Empty/malformed stdout still routes to "unknown/present"
-    // even though the shared status command no longer masks failures;
-    // a torn write or a daemon restart mid-call must not auto-clean.
+    // — a torn write or a daemon restart mid-call must not auto-clean.
+    // Header parser is shared with `runtime::attach::inspect_agent_sessions`
+    // so a future drift in the header shape touches one definition,
+    // not two parsers that can silently disagree on edge cases.
     match docker
         .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
-        Ok(output) => match parse_session_count(&output) {
+        Ok(output) => match crate::runtime::attach::parse_session_count(&output) {
             Some(0) => false,
             Some(_) => true,
             None => {
@@ -194,14 +196,6 @@ async fn has_jackin_sessions(
             true
         }
     }
-}
-
-fn parse_session_count(output: &str) -> Option<usize> {
-    output.lines().find_map(|line| {
-        line.trim()
-            .strip_prefix("Sessions:")
-            .and_then(|value| value.trim().parse().ok())
-    })
 }
 
 async fn finalize_clean_exit(

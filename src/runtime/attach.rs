@@ -5,12 +5,22 @@ use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
 
 /// Shell command for querying the in-container daemon's session
-/// inventory. Failures propagate (no `|| true` suppression): every
-/// distinct failure mode — binary missing, socket unbound, daemon
-/// crashed, exec exited non-zero — must surface as
-/// `AgentSessionInventory::Unavailable` rather than collapsing into
-/// "no sessions".
-pub const JACKIN_STATUS_CMD: &str = "/jackin/runtime/jackin-capsule status";
+/// inventory.
+///
+/// Gated on the daemon's socket file (`/jackin/run/jackin.sock`) so
+/// the early-bring-up window — between container start and
+/// `setup-once` finishing + the daemon binding its socket — does not
+/// emit a wave of operator-visible stderr from a binary that exists
+/// but cannot serve yet. `test -S` exits silently with status 1 if
+/// the socket is absent, which `exec_capture` surfaces as `Err` and
+/// callers route through `AgentSessionInventory::Unavailable`. Once
+/// the socket is bound, every real failure mode of the status call
+/// (daemon crashed mid-request, oversize reply, garbled JSON)
+/// propagates loudly because `||` short-circuits at the first failure
+/// only — there is no `|| true` suppression of the second command's
+/// errors.
+pub const JACKIN_STATUS_CMD: &str =
+    "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
 
 pub use crate::docker_client::ContainerState;
 #[cfg(test)]
@@ -57,6 +67,20 @@ pub async fn inspect_agent_sessions(
     }
 }
 
+/// Parse the `Sessions: <N>` header from `jackin-capsule status`
+/// output. Returns `None` if no parsable header line is present —
+/// daemon unreachable, torn write, or post-format-drift. Shared
+/// between `inspect_agent_sessions` here and
+/// `isolation::finalize::has_jackin_sessions` so a future change to
+/// the header shape touches one place, not two.
+pub fn parse_session_count(output: &str) -> Option<usize> {
+    output.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("Sessions:")
+            .and_then(|value| value.trim().parse().ok())
+    })
+}
+
 /// Parse session list from `jackin-capsule status` output.
 ///
 /// The output starts with `Sessions: <N>` followed by N lines shaped
@@ -67,24 +91,24 @@ pub async fn inspect_agent_sessions(
 /// capsule's status print therefore surfaces immediately as an
 /// operator-visible "sessions unavailable" rather than a wrong
 /// auto-cleanup.
+///
+/// `take(expected)` consumes only the first N `[`-prefixed lines
+/// after the header so a future trailing footer (totals row, debug
+/// summary) or a label whose `Display` impl emits a non-`[` second
+/// line does not flip the parse to `Unavailable`. Pre-header
+/// `[`-prefixed lines are dropped by the `skip_while` synchronisation
+/// on the header — that matches the capsule's print order, where the
+/// header is always the first non-blank line.
 fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
-    let mut lines = output.lines();
-    let header = loop {
-        let Some(line) = lines.next() else {
-            return Err(
-                "jackin-capsule status emitted no `Sessions: N` header — daemon may be unreachable"
-                    .to_string(),
-            );
-        };
-        if let Some(rest) = line.trim().strip_prefix("Sessions:") {
-            break rest.trim();
-        }
-    };
-    let expected: usize = header.parse().map_err(|e| {
-        format!("jackin-capsule status header `Sessions: {header}` not a usize: {e}")
+    let expected = parse_session_count(output).ok_or_else(|| {
+        "jackin-capsule status emitted no parsable `Sessions: N` header — daemon may be unreachable"
+            .to_string()
     })?;
 
-    let sessions: Vec<AgentSession> = lines
+    let sessions: Vec<AgentSession> = output
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("Sessions:"))
+        .skip(1)
         .filter_map(|line| {
             let trimmed = line.trim();
             if trimmed.is_empty() || !trimmed.starts_with('[') {
@@ -102,11 +126,12 @@ fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
                 name: name.to_string(),
             })
         })
+        .take(expected)
         .collect();
 
-    if sessions.len() != expected {
+    if sessions.len() < expected {
         return Err(format!(
-            "jackin-capsule status header claims {expected} sessions but {} were parsed",
+            "jackin-capsule status header claims {expected} sessions but only {} `[`-prefixed lines parsed",
             sessions.len()
         ));
     }

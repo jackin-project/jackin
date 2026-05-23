@@ -696,6 +696,39 @@ mod tests {
     }
 
     #[test]
+    fn hello_env_count_over_cap_is_rejected_by_decoder_with_full_payload() {
+        // Partner for `hello_env_count_over_cap_is_rejected_by_decoder`:
+        // that test crafts ONLY the env_count and stops, so the
+        // front-of-loop guard fires before the per-entry read runs. A
+        // refactor that moved the cap check below the per-entry loop
+        // (computing it from accumulated reads) would still pass that
+        // test. This variant supplies a fully-populated payload of
+        // `MAX_HELLO_ENV + 1` real entries so the boundary is verified
+        // after the per-entry read, not just at the count declaration.
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&24u16.to_be_bytes()); // rows
+        payload.extend_from_slice(&80u16.to_be_bytes()); // cols
+        payload.push(0u8); // spawn_kind = None
+        payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
+        let bogus_count = u16::try_from(MAX_HELLO_ENV + 1).expect("fits u16");
+        payload.extend_from_slice(&bogus_count.to_be_bytes());
+        for i in 0..=MAX_HELLO_ENV {
+            let key = format!("K{i}");
+            let value = "v";
+            payload.extend_from_slice(&(key.len() as u16).to_be_bytes());
+            payload.extend_from_slice(&(value.len() as u32).to_be_bytes());
+            payload.extend_from_slice(key.as_bytes());
+            payload.extend_from_slice(value.as_bytes());
+        }
+        payload.push(0u8); // focus_kind = None
+        let err = decode_client(TAG_HELLO, payload)
+            .expect_err("fully-populated over-cap env_count must be rejected");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("env_count"), "got: {msg}");
+        assert!(msg.contains(&MAX_HELLO_ENV.to_string()), "got: {msg}");
+    }
+
+    #[test]
     fn hello_env_count_at_cap_round_trips() {
         // Partner for `hello_env_count_over_cap_is_rejected_by_encoder`:
         // a refactor that swaps `>` to `>=` in the encoder OR decoder

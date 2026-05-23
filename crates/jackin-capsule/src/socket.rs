@@ -56,6 +56,40 @@ pub fn start_listener()
 pub(crate) fn start_listener_at(
     path: &Path,
 ) -> Result<mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>> {
+    start_listener_at_with_limiter(path).map(|(rx, _limiter)| rx)
+}
+
+/// Same as `start_listener_at` but also returns the `Semaphore` Arc
+/// the accept loop holds. Tests use the returned handle to assert on
+/// `available_permits()` directly instead of relying on real-wall-
+/// clock timeouts against `rx.recv()` for negative-delivery
+/// assertions.
+#[cfg(test)]
+pub(crate) fn start_listener_at_with_limiter(
+    path: &Path,
+) -> Result<(
+    mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>,
+    Arc<Semaphore>,
+)> {
+    start_listener_at_inner(path)
+}
+
+#[cfg(not(test))]
+fn start_listener_at_with_limiter(
+    path: &Path,
+) -> Result<(
+    mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>,
+    Arc<Semaphore>,
+)> {
+    start_listener_at_inner(path)
+}
+
+fn start_listener_at_inner(
+    path: &Path,
+) -> Result<(
+    mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>,
+    Arc<Semaphore>,
+)> {
     match std::fs::remove_file(path) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -88,9 +122,18 @@ pub(crate) fn start_listener_at(
         .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();
     let limiter = Arc::new(Semaphore::new(MAX_CONCURRENT_CLIENTS));
+    let limiter_for_task = Arc::clone(&limiter);
 
     tokio::spawn(async move {
+        let limiter = limiter_for_task;
         let mut consecutive_failures = 0u32;
+        // `true` while the semaphore is fully acquired. Used to log
+        // the saturation transition exactly once instead of once per
+        // dropped over-cap connection — a flood attacker (the exact
+        // threat the cap defends against) would otherwise drown the
+        // compact log tier in repeated drop lines, masking other
+        // lifecycle events.
+        let mut at_cap_logged = false;
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
@@ -102,11 +145,26 @@ pub(crate) fn start_listener_at(
                     // attach. Once a task finishes, its OwnedSemaphorePermit
                     // drops and a fresh accept proceeds.
                     let permit = match limiter.clone().try_acquire_owned() {
-                        Ok(p) => p,
+                        Ok(p) => {
+                            if at_cap_logged {
+                                crate::clog!(
+                                    "socket: capacity recovered below cap {MAX_CONCURRENT_CLIENTS}"
+                                );
+                                at_cap_logged = false;
+                            }
+                            p
+                        }
                         Err(_) => {
-                            crate::clog!(
-                                "socket: at concurrent-client cap {MAX_CONCURRENT_CLIENTS}; dropping new connection"
-                            );
+                            if !at_cap_logged {
+                                crate::clog!(
+                                    "socket: at concurrent-client cap {MAX_CONCURRENT_CLIENTS}; over-cap connections will be dropped silently until capacity recovers"
+                                );
+                                at_cap_logged = true;
+                            } else {
+                                crate::cdebug!(
+                                    "socket: dropping over-cap connection (cap={MAX_CONCURRENT_CLIENTS})"
+                                );
+                            }
                             drop(stream);
                             continue;
                         }
@@ -139,14 +197,18 @@ pub(crate) fn start_listener_at(
                     // ladder and tripping the `1u64 << N` UB shift.
                     let shift = consecutive_failures.saturating_sub(1).min(16);
                     let backoff_ms = 50u64.saturating_mul(1u64 << shift).min(5_000);
-                    crate::clog!("socket: backing off {backoff_ms}ms before next accept");
+                    // Backoff timing is mechanical detail — the
+                    // accept-error clog above already names the
+                    // failure. Keep this on the debug tier so the
+                    // 1-line-per-failure compact-log invariant holds.
+                    crate::cdebug!("socket: backing off {backoff_ms}ms before next accept");
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
             }
         }
     });
 
-    Ok(rx)
+    Ok((rx, limiter))
 }
 
 /// Read a length-prefixed JSON control message whose 4-byte length
@@ -269,16 +331,28 @@ mod tests {
     async fn start_listener_caps_concurrent_clients_at_max() {
         // Hard regression guard for `MAX_CONCURRENT_CLIENTS`. Without
         // the cap, any in-uid process can flood the attach channel
-        // and starve the legitimate operator. The 17th connection
-        // must be silently dropped server-side (no delivery on `rx`).
+        // and starve the legitimate operator. The over-cap connection
+        // must drop on the server side without ever landing in `rx`.
+        //
+        // Negative-delivery assertions go through `limiter`
+        // directly (`available_permits == 0` after saturation) rather
+        // than real-wall-clock `timeout()` checks against `rx.recv()`
+        // — the wall-clock approach passed on loaded CI runners
+        // simply because the daemon hadn't been scheduled within the
+        // timeout window, masking real cap regressions. Reading the
+        // semaphore is cap-sensitive instead of timing-sensitive.
         let tmp = tempfile::tempdir().expect("tempdir");
         let parent = tmp.path().join("run");
         let socket_path = parent.join("jackin.sock");
-        let mut rx = start_listener_at(&socket_path).expect("bind");
+        let (mut rx, limiter) = start_listener_at_with_limiter(&socket_path).expect("bind");
 
         // Hold every accepted stream + permit so the semaphore stays
         // saturated. Dropping the permit would let the next accept
         // proceed and invalidate the assertion.
+        //
+        // Per-iteration `connect().await` then `rx.recv()` assumes
+        // the unbounded mpsc preserves FIFO order of accepts — held
+        // today and contract-stable across tokio versions.
         let mut held: Vec<(UnixStream, tokio::sync::OwnedSemaphorePermit)> = Vec::new();
         let mut client_streams: Vec<UnixStream> = Vec::new();
         for i in 0..MAX_CONCURRENT_CLIENTS {
@@ -286,25 +360,41 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| panic!("connect {i}: {e}"));
             client_streams.push(client);
-            let pair = tokio::time::timeout(Duration::from_millis(500), rx.recv())
+            let pair = tokio::time::timeout(Duration::from_secs(2), rx.recv())
                 .await
                 .unwrap_or_else(|_| panic!("rx did not deliver connection {i}"))
                 .expect("rx closed");
             held.push(pair);
         }
+        assert_eq!(
+            limiter.available_permits(),
+            0,
+            "after saturating the cap, no permits should remain"
+        );
 
         // Cap is now at MAX. The next connect should be accepted by
-        // the kernel but dropped on the server side without ever
-        // landing in `rx`.
+        // the kernel but dropped on the server side. Yield to the
+        // tokio scheduler so the accept loop processes the over-cap
+        // connect, then check the semaphore: it must still report 0
+        // (no permit acquired) because `try_acquire_owned` failed and
+        // the loop continued without delivering to `rx`.
         let over_cap_client = UnixStream::connect(&socket_path)
             .await
             .expect("kernel-side connect");
         client_streams.push(over_cap_client);
-        let extra = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await;
-        assert!(
-            extra.is_err(),
-            "rx must not deliver beyond MAX_CONCURRENT_CLIENTS; got: {extra:?}"
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            limiter.available_permits(),
+            0,
+            "over-cap connect must not consume a permit"
         );
+        match rx.try_recv() {
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+            other => panic!("rx must not deliver beyond MAX_CONCURRENT_CLIENTS; got: {other:?}"),
+        }
 
         // Releasing one permit must let a fresh attach through.
         drop(held.pop().expect("drop one held permit"));
@@ -312,11 +402,16 @@ mod tests {
             .await
             .expect("post-release connect");
         client_streams.push(new_client);
-        let resumed = tokio::time::timeout(Duration::from_millis(500), rx.recv())
+        let resumed = tokio::time::timeout(Duration::from_secs(2), rx.recv())
             .await
             .expect("rx did not resume after permit release")
             .expect("rx closed");
         held.push(resumed);
+        assert_eq!(
+            limiter.available_permits(),
+            0,
+            "after re-saturation the cap should hold permits at 0"
+        );
     }
 
     #[tokio::test]

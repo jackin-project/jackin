@@ -1930,33 +1930,7 @@ impl ManagerState<'_> {
                         snapshot_targets.push(entry.container_base.clone());
                     }
                 }
-                // Fan-out snapshot fetches in parallel so the render
-                // thread's wall-clock cost stays bounded by the
-                // per-fetch SOCKET_TIMEOUT (2 s) regardless of how
-                // many active instances exist. A serial loop would
-                // stall the TUI for N × 2 s on a host with several
-                // wedged containers.
-                let snapshot_results: Vec<(
-                    String,
-                    anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>,
-                )> = std::thread::scope(|s| {
-                    // Collect all `spawn` handles first so every
-                    // thread starts before any join blocks; folding
-                    // collect+join into one chain would serialise
-                    // the work.
-                    #[allow(clippy::needless_collect)]
-                    let handles: Vec<_> = snapshot_targets
-                        .into_iter()
-                        .map(|container| {
-                            s.spawn(move || {
-                                let result =
-                                    crate::runtime::snapshot::fetch_snapshot(paths, &container);
-                                (container, result)
-                            })
-                        })
-                        .collect();
-                    handles.into_iter().filter_map(|h| h.join().ok()).collect()
-                });
+                let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
                 for (container, result) in snapshot_results {
                     match result {
                         Ok(Some(snapshot)) => {
@@ -2047,6 +2021,69 @@ impl ManagerState<'_> {
             state.poll_load();
         }
     }
+}
+
+/// Fan-out snapshot fetches in parallel so the render thread's
+/// wall-clock cost stays bounded by the per-fetch `SOCKET_TIMEOUT`
+/// (2 s) regardless of how many active instances exist. A serial loop
+/// would stall the TUI for `N × SOCKET_TIMEOUT` on a host with several
+/// wedged containers. Chunks cap thread-creation churn so a host with
+/// dozens of active containers does not spawn dozens of OS threads
+/// per 500 ms refresh tick; each chunk's wall-clock cost is still
+/// bounded by the slowest fetch in that chunk.
+fn fetch_snapshots_parallel(
+    paths: &crate::paths::JackinPaths,
+    targets: &[String],
+) -> Vec<(
+    String,
+    anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>,
+)> {
+    const SNAPSHOT_FANOUT_CHUNK: usize = 8;
+    let mut results = Vec::with_capacity(targets.len());
+    for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
+        let chunk_results = std::thread::scope(|s| {
+            // Collect all `spawn` handles first so every thread starts
+            // before any join blocks; folding collect+join into one
+            // chain would serialise the work.
+            #[allow(clippy::needless_collect)]
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|container| {
+                    let container = container.clone();
+                    s.spawn(move || {
+                        let result =
+                            crate::runtime::snapshot::fetch_snapshot(paths, &container);
+                        (container, result)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| match h.join() {
+                    Ok(pair) => pair,
+                    Err(panic_payload) => {
+                        // Name the panic payload so the caller's
+                        // debug_log routes it through the existing
+                        // failure-logging path instead of silently
+                        // dropping the slot.
+                        let detail = panic_payload
+                            .downcast_ref::<&'static str>()
+                            .map(|s| (*s).to_string())
+                            .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "<non-string panic payload>".to_string());
+                        (
+                            "<unknown-container>".to_string(),
+                            Err(anyhow::anyhow!(
+                                "snapshot worker thread panicked: {detail}"
+                            )),
+                        )
+                    }
+                })
+                .collect::<Vec<_>>()
+        });
+        results.extend(chunk_results);
+    }
+    results
 }
 
 impl<'a> EditorState<'a> {
