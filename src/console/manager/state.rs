@@ -2531,6 +2531,7 @@ mod tests {
             .unwrap();
         crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
+        state.instances_last_refresh = Some(std::time::Instant::now());
         state.refresh_instances(&paths);
         assert_eq!(
             state.instances[0].status,
