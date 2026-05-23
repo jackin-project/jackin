@@ -314,6 +314,12 @@ echo "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
 echo "NO_PROXY=${{NO_PROXY:-}}"
 echo "no_proxy=${{no_proxy:-}}"
 docker ps
+# Emit REPORT_END before the Maven smoke so the host's `output.stdout`
+# parse can succeed even when mvn's network reach to Maven Central
+# (testcontainers pull, JDK plugin downloads) is slow or fails. The
+# TESTCONTAINERS_SMOKE=ok assertion later in the test catches a real
+# smoke regression independently.
+echo "{REPORT_END}"
 tmpdir="$(mktemp -d)"
 cat > "$tmpdir/pom.xml" <<'POM'
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -371,7 +377,6 @@ JAVA
   mvn -q -DskipTests compile exec:java -Dexec.mainClass=JackinTestcontainersSmoke
 )
 rm -rf "$tmpdir"
-echo "{REPORT_END}"
 CLAUDE
 chmod +x "$HOME/.local/bin/claude"
 INSTALL

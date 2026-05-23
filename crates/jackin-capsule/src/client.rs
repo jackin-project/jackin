@@ -280,13 +280,24 @@ struct RawModeGuard;
 
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
-        let _ = crossterm::terminal::disable_raw_mode();
+        // Failures here leave the operator's host terminal in raw mode
+        // + alt-screen + mouse tracking on, which they would only
+        // discover when keystrokes stop echoing. Surface each failure
+        // on stderr so they have a fighting chance to `reset` manually.
+        if let Err(e) = crossterm::terminal::disable_raw_mode() {
+            eprintln!("[jackin-capsule] failed to disable raw mode on detach: {e}");
+        }
         // Reset every outer-terminal mode the client or focused pane
         // may have enabled before returning the operator to their
         // host terminal.
-        let _ = std::io::stdout().write_all(
+        let mut stdout = std::io::stdout();
+        if let Err(e) = stdout.write_all(
             b"\x1b]22;default\x1b\\\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h\x1b[?1049l",
-        );
-        let _ = std::io::stdout().flush();
+        ) {
+            eprintln!("[jackin-capsule] failed to write outer-terminal reset on detach: {e}");
+        }
+        if let Err(e) = stdout.flush() {
+            eprintln!("[jackin-capsule] failed to flush stdout on detach: {e}");
+        }
     }
 }

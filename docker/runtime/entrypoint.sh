@@ -109,8 +109,8 @@ if [ -x /jackin/runtime/hooks/source.sh ]; then
     [ "${source_xtrace:-0}" = "1" ] && set -x
     trap - ERR
     if ! cd "$source_pwd"; then
-        echo "[entrypoint] saved PWD ($source_pwd) vanished after source hook; falling back to /" >&2
-        cd /
+        echo "[entrypoint] saved PWD ($source_pwd) vanished after source hook; cannot launch agent" >&2
+        exit 1
     fi
 fi
 
@@ -118,8 +118,10 @@ if [ -x /jackin/runtime/hooks/preflight.sh ]; then
     run_hook preflight /jackin/runtime/hooks/preflight.sh
 fi
 
-# In debug mode, pause so the operator can review logs before the agent clears the screen
-if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
+# In debug mode, pause so the operator can review logs before the agent clears the screen.
+# Guard with `[ -t 0 ]` so a non-tty caller (test harness, CI smoke) does not
+# trip `set -e` when `read` returns non-zero on a closed stdin.
+if [ "${JACKIN_DEBUG:-0}" = "1" ] && [ -t 0 ]; then
     set +x
     echo ""
     echo "[entrypoint] Setup complete. Press Enter to launch ${JACKIN_AGENT}..."

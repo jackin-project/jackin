@@ -908,6 +908,18 @@ impl Multiplexer {
         };
         if let Err(err) = result {
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
+            // Surface to the attach client too. Without this the dialog
+            // closes successfully and the operator sees no new pane and
+            // no explanation; the attach-handshake path already uses
+            // the same banner for handshake-time spawn failures.
+            let banner = spawn_failure_banner(&format!("{agent_label}: {err:#}"));
+            if let Some(tx) = &self.attached_out
+                && tx.send(encode_server(ServerFrame::Output(banner))).is_err()
+                && !self.attached_out_dead_logged
+            {
+                crate::clog!("attach: spawn-failure banner dropped (receiver closed)");
+                self.attached_out_dead_logged = true;
+            }
         }
     }
 
