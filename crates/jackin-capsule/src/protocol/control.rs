@@ -1,11 +1,6 @@
-//! Re-export of `jackin_protocol::control` so existing in-crate
-//! `crate::protocol::control::...` import paths keep resolving.
-//!
-//! The authoritative copy of the control-channel wire types lives in
-//! the shared `jackin-protocol` crate so the host (`jackin`) and the
-//! in-container binary (`jackin-capsule`) can talk to each other
-//! without `jackin` pulling in `jackin-capsule`'s tokio + PTY +
-//! VT-parser stack. Anything added to the control channel goes there;
-//! this module exists only as a path alias.
+//! Path alias for `jackin_protocol::control` so in-crate imports
+//! resolve. The authoritative copy lives in the shared crate to keep
+//! the host off jackin-capsule's tokio + PTY + vt100 dependency tree;
+//! anything added to the control channel goes there.
 
 pub use jackin_protocol::control::*;

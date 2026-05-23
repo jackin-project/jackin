@@ -1,8 +1,6 @@
-/// In-container Capsule library used by the `jackin-capsule`
-/// binary. Splitting the modules into a library target lets the
-/// `tests/` directory write integration tests against the protocol,
-/// the prefix-key parser, the VT round-trips, and the status bar
-/// without spawning a real PTY.
+/// Library target so integration tests under `tests/` can exercise
+/// the protocol, prefix-key parser, VT round-trips, and status bar
+/// without spawning a PTY.
 pub mod client;
 pub mod daemon;
 pub mod dialog;

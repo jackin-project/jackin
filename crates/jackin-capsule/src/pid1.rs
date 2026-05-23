@@ -117,11 +117,28 @@ fn reap_zombies_linux() {
                     continue;
                 }
                 match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
-                    Ok(WaitStatus::StillAlive) | Err(_) => break,
+                    Ok(WaitStatus::StillAlive) => break,
                     Ok(_) => continue,
+                    Err(nix::errno::Errno::ECHILD) => break,
+                    Err(e) => {
+                        crate::clog!(
+                            "pid1: waitpid({pid}) failed unexpectedly: {e} (errno={:?})",
+                            e as i32
+                        );
+                        break;
+                    }
                 }
             }
-            Err(_) => break,
+            // ECHILD already matched above. Any other errno indicates a
+            // kernel/libc bug (EINVAL, EFAULT) we cannot recover from —
+            // log so triage isn't blind, then break to avoid spinning.
+            Err(e) => {
+                crate::clog!(
+                    "pid1: waitid(Id::All) failed unexpectedly: {e} (errno={:?})",
+                    e as i32
+                );
+                break;
+            }
         }
     }
 }
@@ -130,8 +147,16 @@ fn reap_zombies_linux() {
 fn reap_zombies_unfiltered() {
     loop {
         match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
-            Ok(WaitStatus::StillAlive) | Err(_) => break,
+            Ok(WaitStatus::StillAlive) => break,
             Ok(_) => continue,
+            Err(nix::errno::Errno::ECHILD) => break,
+            Err(e) => {
+                crate::clog!(
+                    "pid1: waitpid(-1) failed unexpectedly: {e} (errno={:?})",
+                    e as i32
+                );
+                break;
+            }
         }
     }
 }

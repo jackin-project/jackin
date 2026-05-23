@@ -10,7 +10,7 @@
 /// 4-byte big-endian length, which is always `0x00` for the message
 /// sizes the host CLI sends. Reading the first byte tells the daemon
 /// which protocol the client is speaking.
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
 
@@ -210,16 +210,28 @@ async fn read_framed_payload(
     first_byte: u8,
 ) -> Result<Option<(u8, Vec<u8>)>> {
     let mut len_buf = [0u8; 4];
-    if stream.read_exact(&mut len_buf).await.is_err() {
-        return Ok(None);
+    if let Err(e) = stream.read_exact(&mut len_buf).await {
+        // Clean EOF (peer closed before sending any length byte) is
+        // the expected end-of-stream signal. Anything else — connection
+        // reset, EPIPE, timeout — gets bubbled so the daemon clog
+        // attributes the cause instead of silently treating it as EOF.
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            return Ok(None);
+        }
+        return Err(e).context("attach frame: reading length prefix");
     }
     let len = u32::from_be_bytes(len_buf) as usize;
     if len > MAX_FRAME_PAYLOAD {
         bail!("attach frame payload {len} exceeds limit {MAX_FRAME_PAYLOAD}");
     }
     let mut payload = vec![0u8; len];
-    if !payload.is_empty() && stream.read_exact(&mut payload).await.is_err() {
-        return Ok(None);
+    if !payload.is_empty() {
+        if let Err(e) = stream.read_exact(&mut payload).await {
+            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Ok(None);
+            }
+            return Err(e).context("attach frame: reading payload");
+        }
     }
     Ok(Some((first_byte, payload)))
 }

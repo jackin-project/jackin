@@ -3315,7 +3315,7 @@ fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration)
         Ok(bytes)
     });
     let started = Instant::now();
-    let mut status_success = None;
+    let status_success: Option<bool>;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -3323,10 +3323,25 @@ fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration)
                 break;
             }
             Ok(None) => {}
-            // PID 1's zombie reaper can win the wait race for very
-            // short-lived git/gh children. The stdout pipe still
-            // carries the useful data, so treat ECHILD as "exited".
-            Err(_) => break,
+            // The kernel reaped the child out from under us — either
+            // PID 1's zombie reaper inside the daemon or a sibling
+            // thread's waitpid. The exit status is lost; trust the
+            // stdout pipe (callers like the Container info dialog
+            // would otherwise show empty fields for healthy git/gh
+            // commands). Non-ECHILD errnos are surfaced.
+            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+                status_success = None;
+                break;
+            }
+            Err(e) => {
+                crate::clog!(
+                    "command try_wait failed ({:?}): {e} (errno={:?})",
+                    command.get_program(),
+                    e.raw_os_error()
+                );
+                let _ = stdout_reader.join();
+                return None;
+            }
         }
         if started.elapsed() >= timeout {
             if let Err(e) = child.kill() {
@@ -3952,8 +3967,14 @@ mod tests {
 
     #[test]
     fn command_stdout_trimmed_rejects_known_failure_status() {
+        // `sleep 0.05` keeps the child alive long enough for the
+        // try_wait poll loop to observe `Ok(None)` first and then the
+        // failing `Ok(Some(1))` exit on the next tick. Without the
+        // sleep the child can vanish between spawn and the first
+        // try_wait, which collapses the Err(ECHILD) "status lost"
+        // arm and the Ok(Some(false)) "failed" arm into one path.
         let mut command = Command::new("sh");
-        command.args(["-c", "printf branch-name; exit 1"]);
+        command.args(["-c", "printf branch-name; sleep 0.05; exit 1"]);
 
         assert_eq!(command_stdout_trimmed(&mut command), None);
     }
