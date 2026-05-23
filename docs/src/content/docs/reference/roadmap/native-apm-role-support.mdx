@@ -29,10 +29,10 @@ That overlap should be intentionally reduced. APM should own role-declared agent
 
 `apm.yml` stays APM's dependency contract. It owns APM-native dependencies, MCP server declarations, plugin marketplaces, APM targets for standalone use, and any APM-native settings.
 
-The first version should not add an `[apm]` section to `jackin.role.toml`. Native support should be purely convention-based:
+The first version should not add an `[apm]` section to `jackin.role.toml`. Native support should be purely convention-based at the root of each standalone role repository:
 
 ```text
-roles/rust-backend/
+rust-backend-role/
   jackin.role.toml
   apm.yml
   apm.lock.yaml
