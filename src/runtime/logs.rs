@@ -245,16 +245,33 @@ fn follow_file(path: &Path) -> Result<()> {
     // tradeoff is a ~250ms latency between writer flush and operator
     // visibility, which is below the threshold for "feels live" in a
     // human-tail use case.
-    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    file.seek(SeekFrom::End(0))?;
-    let mut reader = BufReader::new(file);
+    //
+    // Rotation / truncation handling: the daemon may rotate
+    // multiplexer.log (mv + recreate) or restart with a fresh truncated
+    // file. Without explicit detection, a follower wedged on the
+    // original inode (or the original offset past the new length) would
+    // sit at Ok(0) forever and quietly miss every subsequent log line.
+    // Two heuristics, checked on every idle tick:
+    //   * inode change at `path` → file was rotated; reopen.
+    //   * `metadata.len() < cursor` at the current path → file was
+    //     truncated in place; reopen and tail from start.
+    let (mut reader, mut watched_inode) = open_for_follow(path, /*from_end=*/ true)?;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut buf = String::new();
     loop {
         buf.clear();
         match reader.read_line(&mut buf) {
-            Ok(0) => std::thread::sleep(Duration::from_millis(250)),
+            Ok(0) => {
+                if let Some((new_reader, new_inode)) =
+                    detect_rotation(path, &mut reader, watched_inode)?
+                {
+                    reader = new_reader;
+                    watched_inode = new_inode;
+                    continue;
+                }
+                std::thread::sleep(Duration::from_millis(250));
+            }
             Ok(_) => {
                 out.write_all(buf.as_bytes())?;
                 out.flush()?;
@@ -262,6 +279,68 @@ fn follow_file(path: &Path) -> Result<()> {
             Err(e) => bail!("tail read failed: {e}"),
         }
     }
+}
+
+/// Open `path` for follow, optionally seeking to EOF (initial open) or
+/// to the start (after a detected rotation). Returns the buffered
+/// reader and the file's inode at open time so the follow loop can
+/// notice an inode swap underneath the same path.
+fn open_for_follow(path: &Path, from_end: bool) -> Result<(BufReader<File>, u64)> {
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    if from_end {
+        file.seek(SeekFrom::End(0))?;
+    }
+    let inode = inode_of_file(&file)?;
+    Ok((BufReader::new(file), inode))
+}
+
+#[cfg(unix)]
+fn inode_of_file(file: &File) -> Result<u64> {
+    use std::os::unix::fs::MetadataExt as _;
+    Ok(file.metadata()?.ino())
+}
+#[cfg(not(unix))]
+fn inode_of_file(_file: &File) -> Result<u64> {
+    // Non-unix hosts do not have stable inodes; fall back to "never
+    // rotates" so the file-length check (still active) catches in-place
+    // truncation. Rotation via mv + recreate is undetectable on these
+    // platforms without a heavier file-watching dependency.
+    Ok(0)
+}
+
+/// Detect whether `path` was rotated (inode change) or truncated
+/// (length shrank below the reader's cursor). Returns `Some` with a
+/// freshly-opened reader to swap in, or `None` if nothing changed.
+fn detect_rotation(
+    path: &Path,
+    reader: &mut BufReader<File>,
+    watched_inode: u64,
+) -> Result<Option<(BufReader<File>, u64)>> {
+    let path_meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    #[cfg(unix)]
+    let current_inode = {
+        use std::os::unix::fs::MetadataExt as _;
+        path_meta.ino()
+    };
+    #[cfg(not(unix))]
+    let current_inode = 0u64;
+    let cursor = reader.get_mut().stream_position().unwrap_or(0);
+    let rotated = current_inode != watched_inode;
+    let truncated = path_meta.len() < cursor;
+    if rotated || truncated {
+        eprintln!(
+            "jackin: log {} {}; reopening",
+            path.display(),
+            if rotated { "rotated" } else { "truncated" }
+        );
+        let (new_reader, new_inode) = open_for_follow(path, /*from_end=*/ false)?;
+        return Ok(Some((new_reader, new_inode)));
+    }
+    Ok(None)
 }
 
 fn truncate(s: &str, max: usize) -> String {

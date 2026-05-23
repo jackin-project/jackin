@@ -76,8 +76,31 @@ async fn main() -> Result<()> {
 /// parsed as `u64`. A malformed value emits a stderr warning so the
 /// operator sees the rejection instead of silently attaching to the
 /// daemon-picked default pane.
+///
+/// Scope: scans from the first arg AFTER the subcommand consumes its
+/// positional. Without this, `jackin-capsule new --focus 5` (the user
+/// typo'd `new` in front of an intended `--focus 5`) would silently
+/// match `--focus` as if `--focus` were a global flag, attach to
+/// session 5, AND spawn an extra Shell because `new` with no agent
+/// defaults to Shell. The fix is to start the scan at the index where
+/// the subcommand's own arguments end.
 fn parse_focus_flag(args: &[String]) -> Option<u64> {
-    let mut iter = args.iter().skip(1);
+    let scan_start = match args.get(1).map(String::as_str) {
+        // `new [<agent>]` consumes index 2 as its positional. The
+        // global --focus only applies when it appears past the
+        // subcommand's own positional — otherwise `new --focus 5`
+        // (the typo the original report names) would silently
+        // succeed as "spawn shell + jump to session 5".
+        Some("new") => 3,
+        // Subcommands that take no positional and never accept
+        // --focus. Scan past the end of args so a stray --focus is
+        // ignored instead of silently consumed.
+        Some("status" | "snapshot" | "runtime-setup" | "--version" | "-V") => args.len(),
+        // `jackin-capsule --focus 5` (no subcommand) or no args at
+        // all — scan from index 1.
+        _ => 1,
+    };
+    let mut iter = args.iter().skip(scan_start);
     while let Some(arg) = iter.next() {
         if let Some(value) = arg.strip_prefix("--focus=") {
             return match value.parse::<u64>() {
@@ -112,4 +135,65 @@ fn resolve_initial_agent(args: &[String], supported_agents: &[String]) -> Result
     let validated = validate_agent_slug(raw, supported_agents)
         .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))?;
     Ok(validated.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn parse_focus_flag_no_subcommand_finds_global_flag() {
+        // Bare client mode: `jackin-capsule --focus 5` must resolve to
+        // session 5 — the original use case the flag was added for.
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "--focus", "5"])),
+            Some(5)
+        );
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "--focus=7"])),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn parse_focus_flag_new_with_agent_finds_trailing_focus() {
+        // `new <agent> --focus N` is a legitimate combination — spawn
+        // the agent AND switch focus to N once the daemon answers.
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "new", "claude", "--focus", "9"])),
+            Some(9)
+        );
+    }
+
+    #[test]
+    fn parse_focus_flag_new_without_agent_ignores_focus() {
+        // `new --focus 5` is the typo this regression guards against.
+        // Without scoping, --focus at index 2 (where the agent slug
+        // would belong) would silently route the operator to session 5
+        // AND spawn a default Shell because validate_agent_slug rejects
+        // "--focus" as an agent. After the scope fix, --focus at index
+        // 2 is treated as a malformed agent argument; focus stays None.
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "new", "--focus", "5"])),
+            None
+        );
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "new", "--focus=5"])),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_focus_flag_other_subcommands_ignore_focus_positional() {
+        // status/snapshot/runtime-setup take no arguments at all; any
+        // --focus after them is residual.
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "status", "--focus", "5"])),
+            None
+        );
+    }
 }
