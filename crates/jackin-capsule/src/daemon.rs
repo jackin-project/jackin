@@ -2543,11 +2543,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             biased;
 
             _ = sigterm.recv() => {
-                detach_client(&mut mux);
+                detach_client(&mut mux).await;
                 return Ok(());
             }
             _ = sigint.recv() => {
-                detach_client(&mut mux);
+                detach_client(&mut mux).await;
                 return Ok(());
             }
 
@@ -2641,30 +2641,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     }
                     None => {}
                 }
-                // Take over from any existing attach client. Send the
-                // Shutdown frame BEFORE aborting the reader task —
-                // `abort()` drops the task's `out_rx` receiver, which
-                // makes the subsequent `tx.send(Shutdown)` return Err
-                // and the bytes never leave the socket. Yield once
-                // afterwards so the writer side has a chance to drain
-                // before the task is cancelled. Then `detach_client`
-                // takes care of the abort + per-field bookkeeping.
-                if let Some(tx) = mux.attached_out.take()
-                    && tx.send(encode_server(ServerFrame::Shutdown)).is_err()
-                {
-                    crate::clog!(
-                        "takeover: prior client receiver already dropped; Shutdown frame not delivered"
-                    );
-                }
-                // A single `yield_now()` does not guarantee the writer
-                // task drained `out_rx` and finished `write_all` to the
-                // socket before `abort()` cancels it. Sleep briefly so
-                // the buffered Shutdown bytes reach the kernel and the
-                // old client's terminal sees a clean detach signal.
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                if let Some(handle) = mux.attached_task.take() {
-                    handle.abort();
-                }
+                // Take over from any existing attach client. The shared
+                // helper sends Shutdown, gives the writer side a brief
+                // drain window, then aborts the old reader task.
+                detach_attached_task(&mut mux, "takeover").await;
                 // Drain any stale frames the old client task pushed
                 // into cmd_tx before its abort actually took effect —
                 // without this drain, the next `cmd_rx.recv()` after
@@ -2758,7 +2738,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 handle_client_frame(&mut mux, frame).await;
                 if mux.detach_requested {
                     mux.detach_requested = false;
-                    detach_client(&mut mux);
+                    detach_client(&mut mux).await;
                 }
                 if mux.no_live_sessions() {
                     drain_and_exit(&mut mux).await;
@@ -3131,34 +3111,48 @@ async fn perform_handshake(
 }
 
 async fn drain_and_exit(mux: &mut Multiplexer) {
-    detach_client(mux);
+    detach_client(mux).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
+const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
+
+fn send_attached_shutdown(mux: &mut Multiplexer, context: &str) -> bool {
+    let Some(tx) = mux.attached_out.take() else {
+        return false;
+    };
+    if tx.send(encode_server(ServerFrame::Shutdown)).is_err() {
+        crate::clog!("{context}: client receiver already dropped; Shutdown frame not delivered");
+    }
+    true
+}
+
 /// Centralised detach for the currently-attached client. Take-then-
-/// send-then-abort, in that order, so a takeover/cancel race never
+/// send-then-wait-then-abort, in that order, so a takeover/cancel race never
 /// leaves `attached_task = Some` with a dead `attached_out`: take the
 /// out-channel sender first (so the next frame queue allocation does
-/// not race with the old receiver), send Shutdown best-effort, then
+/// not race with the old receiver), send Shutdown best-effort, give
+/// the attach task a brief writer-side drain window, then
 /// abort the attach task so its reader stops pushing into the shared
 /// `cmd_tx`. Used by SIGTERM / SIGINT shutdown, explicit detach, and
 /// `drain_and_exit`.
-fn detach_client(mux: &mut Multiplexer) {
-    if let Some(tx) = mux.attached_out.take()
-        && tx.send(encode_server(ServerFrame::Shutdown)).is_err()
-    {
-        crate::clog!(
-            "detach_client: client receiver already dropped; Shutdown frame not delivered"
-        );
-    }
+async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
+    let had_sender = send_attached_shutdown(mux, context);
     // The latch is paired with the sender's lifetime: clearing
     // `attached_out` invalidates the previous attach, so the next
     // assignment (in the takeover branch of `run_daemon`) starts from
     // a clean state regardless of which code path reassigns it.
     mux.attached_out_dead_logged = false;
+    if had_sender {
+        tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
+    }
     if let Some(handle) = mux.attached_task.take() {
         handle.abort();
     }
+}
+
+async fn detach_client(mux: &mut Multiplexer) {
+    detach_attached_task(mux, "detach_client").await;
 }
 
 /// Per-client connection handler: bidirectional bridge between the

@@ -3,6 +3,7 @@ use std::io::Write as _;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
+use anyhow::Context as _;
 
 /// Shell command for querying the in-container daemon's session
 /// inventory.
@@ -21,6 +22,28 @@ use crate::instance::InstanceManifest;
 /// errors.
 pub const JACKIN_STATUS_CMD: &str =
     "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
+
+pub(super) async fn wait_for_capsule_daemon(
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    const MAX_ATTEMPTS: u32 = 60;
+    const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+    crate::tui::prompt::spin_wait(
+        "Waiting for jackin-capsule daemon",
+        MAX_ATTEMPTS,
+        INTERVAL,
+        || async {
+            docker
+                .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
+                .await
+                .map(|_| ())
+        },
+    )
+    .await
+    .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"))
+}
 
 pub use crate::docker_client::ContainerState;
 #[cfg(test)]
@@ -181,7 +204,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    let _ = docker;
+    wait_for_capsule_daemon(container_name, docker).await?;
     let focus_arg = focus_session.map(|id| id.to_string());
     let mut args: Vec<&str> = vec![
         "exec",
@@ -196,6 +219,43 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     runner
         .run("docker", &args, None, &RunOptions::default())
         .await
+}
+
+pub(super) async fn start_or_reconnect_capsule_client(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    match docker.inspect_container_state(container_name).await {
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
+        ContainerState::Stopped { .. } | ContainerState::Created => {
+            docker
+                .start_container(container_name)
+                .await
+                .with_context(|| format!("starting role container {container_name}"))?;
+        }
+        ContainerState::NotFound => {
+            if let Some(message) = missing_restore_message(paths, container_name)? {
+                anyhow::bail!("{message}");
+            }
+            anyhow::bail!(
+                "container '{container_name}' not found; use `jackin load` to start a new session"
+            );
+        }
+        ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason));
+        }
+        state @ (ContainerState::Removing | ContainerState::Dead) => {
+            anyhow::bail!(
+                "container '{container_name}' is not startable (state: {}); \
+                 use `jackin load` to start a new session",
+                state.short_label()
+            );
+        }
+    }
+    super::caffeinate::reconcile(paths, docker, runner).await;
+    reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await
 }
 
 /// Verify the container is reachable (running/paused/restarting).
@@ -442,15 +502,7 @@ async fn finalize_reconnected_foreground_session(
         decision,
         crate::isolation::finalize::FinalizeDecision::ReturnToAgent
     ) {
-        super::caffeinate::reconcile(paths, docker, runner).await;
-        runner
-            .run(
-                "docker",
-                &["start", "-ai", container_name],
-                None,
-                &RunOptions::default(),
-            )
-            .await?;
+        start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
         outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
         super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
         decision = crate::isolation::finalize::finalize_foreground_session(
@@ -498,7 +550,7 @@ async fn finalize_reconnected_resources(
     {
         super::launch::write_instance_status(paths, &state_dir, &mut manifest, status)?;
     }
-    super::cleanup::eject_role(container_name, docker).await
+    super::cleanup::eject_role(paths, container_name, docker).await
 }
 
 pub async fn inspect_hardline_instance(
@@ -715,7 +767,7 @@ pub(super) async fn wait_for_dind(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, VecDeque};
 
     use super::super::test_support::FakeRunner;
     use super::*;
@@ -726,6 +778,79 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let paths = JackinPaths::for_tests(dir.path());
         (dir, paths)
+    }
+
+    #[tokio::test]
+    async fn wait_for_capsule_daemon_polls_socket_status_command() {
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+                "Sessions: 1\n".to_string()
+            ])),
+            ..Default::default()
+        };
+
+        wait_for_capsule_daemon("jk-agent-smith", &docker)
+            .await
+            .unwrap();
+
+        let recorded = docker.recorded.borrow();
+        assert!(
+            recorded
+                .iter()
+                .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
+            "expected socket/status wait command; recorded: {recorded:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            }])),
+            exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+                "Sessions: 1\n".to_string()
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        start_or_reconnect_capsule_client(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap();
+
+        let docker_recorded = docker.recorded.borrow();
+        assert!(
+            docker_recorded
+                .iter()
+                .any(|call| call == "start_container:jk-agent-smith"),
+            "expected detached Docker API start; recorded: {docker_recorded:?}"
+        );
+        assert!(
+            docker_recorded
+                .iter()
+                .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
+            "expected socket/status wait before client exec; recorded: {docker_recorded:?}"
+        );
+        assert!(
+            runner.recorded.iter().any(|call| {
+                call.contains("docker exec -it")
+                    && call.contains("jk-agent-smith")
+                    && call.contains("/jackin/runtime/jackin-capsule")
+            }),
+            "expected capsule client exec; recorded: {:?}",
+            runner.recorded
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker start -ai")),
+            "restart path must not attach to PID 1; recorded: {:?}",
+            runner.recorded
+        );
     }
 
     #[tokio::test]

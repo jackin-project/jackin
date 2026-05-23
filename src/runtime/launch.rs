@@ -13,8 +13,10 @@ use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
+use super::attach::wait_for_dind;
 use super::attach::{
-    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions, wait_for_dind,
+    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
+    reconnect_or_create_session_with_focus, start_or_reconnect_capsule_client,
 };
 use super::cleanup::gc_orphaned_resources;
 use super::discovery::list_running_agent_display_names;
@@ -1147,21 +1149,11 @@ async fn launch_role_runtime(
     }
 
     // Connect the operator's terminal to the running jackin-capsule multiplexer.
-    // jackin-capsule detects PID != 1 and runs in client mode, connecting to
-    // the daemon via /jackin/run/jackin.sock inside the container.
-    let session_result = runner
-        .run(
-            "docker",
-            &[
-                "exec",
-                "-it",
-                container_name,
-                "/jackin/runtime/jackin-capsule",
-            ],
-            None,
-            &RunOptions::default(),
-        )
-        .await;
+    // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
+    // to answer `status`; jackin-capsule detects PID != 1 and then runs in
+    // client mode, connecting to that daemon socket inside the container.
+    let session_result =
+        reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
     if let Err(err) = session_result {
@@ -2115,24 +2107,13 @@ async fn load_role_with(
             decision,
             crate::isolation::finalize::FinalizeDecision::ReturnToAgent
         ) {
-            // Restart and re-attach the container in one command, then retry
-            // the safe cleanup pass once. We do not loop further: if the
-            // operator still leaves dirty state, the second pass will fall
-            // back to Preserved and exit normally.
-            //
-            // Reconcile keep_awake BEFORE the restart re-attach, mirroring the
-            // mid-flight reconcile in `launch_role_runtime`: between the
-            // original exit and this restart, a parallel jackin invocation
-            // could observe `docker ps --filter ...` = 0 and kill caffeinate,
-            // leaving the restart session unprotected. The lock inside
-            // `reconcile` serializes against that race.
-            super::caffeinate::reconcile(paths, docker, runner).await;
-            runner.run(
-                "docker",
-                &["start", "-ai", &container_name],
-                None,
-                &RunOptions::default(),
-            ).await?;
+            // Restart detached, then attach through the jackin-capsule client
+            // socket. Attaching `docker start -ai` to PID 1 would only show
+            // daemon logs, not the multiplexer UI the operator needs to fix
+            // the preserved worktree. We do not loop further: if the operator
+            // still leaves dirty state, the second pass will fall back to
+            // Preserved and exit normally.
+            start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
             let outcome2 = inspect_attach_outcome(docker, &container_name).await?;
             write_instance_attach_outcome(
                 paths,
@@ -4810,6 +4791,7 @@ echo "pulled $2"
             exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
                 String::new(),
                 String::new(),
+                "Sessions: 1\n".to_string(),
                 "Sessions: 0\n".to_string(),
             ])),
             ..Default::default()

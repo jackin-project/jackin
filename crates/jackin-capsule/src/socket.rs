@@ -26,6 +26,10 @@ use tokio::sync::{Semaphore, mpsc};
 
 use crate::protocol::control::{ClientMsg, ServerMsg, SessionInfo, frame};
 
+type ClientPermit = tokio::sync::OwnedSemaphorePermit;
+type ListenerReceiver = mpsc::UnboundedReceiver<(UnixStream, ClientPermit)>;
+type ListenerWithLimiter = (ListenerReceiver, Arc<Semaphore>);
+
 /// Bail out of the accept loop after this many consecutive errors. The
 /// dominant cause of repeating `accept` failures is fd exhaustion
 /// (EMFILE) — busy-looping at 100% CPU and flooding the docker-logs
@@ -45,17 +49,14 @@ const MAX_CONCURRENT_CLIENTS: usize = 16;
 /// clients paired with the concurrency-cap permit. The caller (daemon)
 /// must hold the permit alive for the lifetime of the spawned attach
 /// task so the per-process cap correctly tracks live connections.
-pub fn start_listener()
--> Result<mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>> {
+pub fn start_listener() -> Result<ListenerReceiver> {
     start_listener_at(Path::new(SOCKET_PATH))
 }
 
 /// Bind a `UnixListener` at `path` with the parent dir locked to 0o700
 /// and the socket file to 0o600. Test-visible variant: production
 /// callers go through `start_listener`.
-pub(crate) fn start_listener_at(
-    path: &Path,
-) -> Result<mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>> {
+pub(crate) fn start_listener_at(path: &Path) -> Result<ListenerReceiver> {
     start_listener_at_with_limiter(path).map(|(rx, _limiter)| rx)
 }
 
@@ -65,31 +66,16 @@ pub(crate) fn start_listener_at(
 /// clock timeouts against `rx.recv()` for negative-delivery
 /// assertions.
 #[cfg(test)]
-pub(crate) fn start_listener_at_with_limiter(
-    path: &Path,
-) -> Result<(
-    mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>,
-    Arc<Semaphore>,
-)> {
+pub(crate) fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
     start_listener_at_inner(path)
 }
 
 #[cfg(not(test))]
-fn start_listener_at_with_limiter(
-    path: &Path,
-) -> Result<(
-    mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>,
-    Arc<Semaphore>,
-)> {
+fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
     start_listener_at_inner(path)
 }
 
-fn start_listener_at_inner(
-    path: &Path,
-) -> Result<(
-    mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>,
-    Arc<Semaphore>,
-)> {
+fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     match std::fs::remove_file(path) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

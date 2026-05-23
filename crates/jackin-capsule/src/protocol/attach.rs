@@ -225,13 +225,13 @@ async fn read_framed_payload(
         bail!("attach frame payload {len} exceeds limit {MAX_FRAME_PAYLOAD}");
     }
     let mut payload = vec![0u8; len];
-    if !payload.is_empty() {
-        if let Err(e) = stream.read_exact(&mut payload).await {
-            if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                return Ok(None);
-            }
-            return Err(e).context("attach frame: reading payload");
+    if !payload.is_empty()
+        && let Err(e) = stream.read_exact(&mut payload).await
+    {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            return Ok(None);
         }
+        return Err(e).context("attach frame: reading payload");
     }
     Ok(Some((first_byte, payload)))
 }

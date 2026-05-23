@@ -53,6 +53,7 @@ jobs:
               - 'rust-toolchain.toml'
               - 'build.rs'
               - 'src/**'
+              - 'crates/**'
               - 'tests/**'
               - 'docker/runtime/**'
             construct:
