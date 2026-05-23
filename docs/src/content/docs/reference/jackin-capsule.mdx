@@ -53,7 +53,7 @@ does not imply that every pane is the same agent.
 
 **Attach client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-capsule`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and forwards attach frames between the terminal and daemon.
 
-**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The container init marker lives under `/jackin/state`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
+**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The hook at `/jackin/state/git-hooks/prepare-commit-msg` is a symlink back to `/jackin/runtime/jackin-capsule`, so Git invokes Rust code directly for `Co-authored-by` and `Signed-off-by` normalization instead of a shell script. The container init marker lives under `/jackin/state`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
 
 Those modes deliberately keep ownership narrow:
 

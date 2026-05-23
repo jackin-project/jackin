@@ -3,6 +3,7 @@ use jackin_capsule::{
     client, config, daemon, protocol::attach::SpawnRequest, runtime_setup,
     session::validate_agent_slug,
 };
+use std::path::Path;
 
 const DEFAULT_AGENT: &str = "claude";
 
@@ -14,6 +15,10 @@ const DEFAULT_AGENT: &str = "claude";
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if invoked_as_prepare_commit_msg_hook(&args) {
+        return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
+    }
+
     let is_pid1 = std::process::id() == 1;
 
     if is_pid1 {
@@ -33,6 +38,7 @@ async fn main() -> Result<()> {
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
             Some("runtime-setup") => runtime_setup::run(),
+            Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
                 let supported_agents = config::load_optional()
                     .map(|config| config.supported_agents())
@@ -64,11 +70,17 @@ async fn main() -> Result<()> {
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, runtime-setup, new <agent>, --focus <session_id>, --version"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
                 )
             }
         }
     }
+}
+
+fn invoked_as_prepare_commit_msg_hook(args: &[String]) -> bool {
+    args.first()
+        .and_then(|arg0| Path::new(arg0).file_name())
+        .is_some_and(|file_name| file_name == "prepare-commit-msg")
 }
 
 /// Parse `--focus <id>` / `--focus=<id>` out of the client argv.
@@ -95,7 +107,9 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // Subcommands that take no positional and never accept
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
-        Some("status" | "snapshot" | "runtime-setup" | "--version" | "-V") => args.len(),
+        Some(
+            "status" | "snapshot" | "runtime-setup" | "prepare-commit-msg" | "--version" | "-V",
+        ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.
         _ => 1,
@@ -195,5 +209,18 @@ mod tests {
             parse_focus_flag(&args(&["jackin-capsule", "status", "--focus", "5"])),
             None
         );
+    }
+
+    #[test]
+    fn hook_invocation_detects_symlink_name() {
+        assert!(invoked_as_prepare_commit_msg_hook(&args(&[
+            "/jackin/state/git-hooks/prepare-commit-msg",
+            ".git/COMMIT_EDITMSG",
+        ])));
+        assert!(!invoked_as_prepare_commit_msg_hook(&args(&[
+            "/jackin/runtime/jackin-capsule",
+            "prepare-commit-msg",
+            ".git/COMMIT_EDITMSG",
+        ])));
     }
 }

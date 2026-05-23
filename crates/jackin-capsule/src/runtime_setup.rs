@@ -4,17 +4,17 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
+const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
 const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
-const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v2.done";
-
-const PREPARE_COMMIT_MSG_HOOK: &str = include_str!("../../../docker/runtime/prepare-commit-msg.sh");
+const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v3.done";
 
 pub fn run() -> Result<()> {
     run_container_init_once()?;
@@ -89,19 +89,17 @@ fn install_git_trailer_hook_if_requested() -> Result<()> {
 
     fs::create_dir_all(GIT_HOOKS_DIR)
         .with_context(|| format!("failed to create git hooks dir {GIT_HOOKS_DIR}"))?;
-    fs::write(GIT_HOOK_PATH, PREPARE_COMMIT_MSG_HOOK)
-        .with_context(|| format!("failed to write {GIT_HOOK_PATH}"))?;
-    let mut permissions = fs::metadata(GIT_HOOK_PATH)
-        .with_context(|| format!("failed to stat {GIT_HOOK_PATH}"))?
-        .permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(GIT_HOOK_PATH, permissions)
-        .with_context(|| format!("failed to chmod +x {GIT_HOOK_PATH}"))?;
+    if !is_executable(CAPSULE_RUNTIME_BIN) {
+        bail!("git trailer hook target {CAPSULE_RUNTIME_BIN} is not executable");
+    }
+    remove_file_if_exists(GIT_HOOK_PATH)?;
+    symlink(CAPSULE_RUNTIME_BIN, GIT_HOOK_PATH)
+        .with_context(|| format!("failed to symlink {GIT_HOOK_PATH} to {CAPSULE_RUNTIME_BIN}"))?;
     run_command(
         "git",
         &["config", "--global", "core.hooksPath", GIT_HOOKS_DIR],
     )?;
-    fs::write(GIT_HOOK_MARKER, b"v2\n")
+    fs::write(GIT_HOOK_MARKER, b"v3\n")
         .with_context(|| format!("failed to write {GIT_HOOK_MARKER}"))?;
 
     let mut active = Vec::new();
@@ -116,6 +114,45 @@ fn install_git_trailer_hook_if_requested() -> Result<()> {
         "[entrypoint] git trailer hook installed (agent: {agent}, active: {})",
         active.join(" ")
     );
+    Ok(())
+}
+
+pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
+    let message_path = args
+        .first()
+        .map(Path::new)
+        .context("prepare-commit-msg hook requires a commit message path")?;
+    if let Some("commit" | "squash") = args.get(1).map(String::as_str) {
+        return Ok(());
+    }
+
+    if env_is_one("JACKIN_GIT_COAUTHOR_TRAILER") {
+        let agent = std::env::var("JACKIN_AGENT").unwrap_or_default();
+        if let Some(trailer) = coauthor_trailer_for_agent(&agent) {
+            ensure_message_trailer(message_path, trailer, "Co-authored-by")?;
+        } else {
+            eprintln!(
+                "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_COAUTHOR_TRAILER=1 but JACKIN_AGENT='{agent}' is not a recognized agent slug; no Co-authored-by trailer written"
+            );
+        }
+    }
+
+    if env_is_one("JACKIN_GIT_DCO") {
+        let dco_name = git_config_value("user.name").unwrap_or_default();
+        let dco_email = git_config_value("user.email").unwrap_or_default();
+        if dco_name.is_empty() || dco_email.is_empty() {
+            eprintln!(
+                "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_DCO=1 but git identity is not configured (user.name='{dco_name}' user.email='{dco_email}'); no Signed-off-by trailer written"
+            );
+        } else {
+            ensure_message_trailer(
+                message_path,
+                &format!("Signed-off-by: {dco_name} <{dco_email}>"),
+                "Signed-off-by",
+            )?;
+        }
+    }
+
     Ok(())
 }
 
@@ -334,7 +371,10 @@ fn dir_nonempty(path: &Path) -> Result<bool> {
 }
 
 fn git_trailer_hook_ready() -> bool {
-    if !is_executable(GIT_HOOK_PATH) || !Path::new(GIT_HOOK_MARKER).exists() {
+    if !is_executable(GIT_HOOK_PATH)
+        || !hook_points_to_capsule()
+        || !Path::new(GIT_HOOK_MARKER).exists()
+    {
         return false;
     }
     let Ok(output) = Command::new("git")
@@ -344,6 +384,85 @@ fn git_trailer_hook_ready() -> bool {
         return false;
     };
     output.status.success() && String::from_utf8_lossy(&output.stdout).trim_end() == GIT_HOOKS_DIR
+}
+
+fn hook_points_to_capsule() -> bool {
+    fs::read_link(GIT_HOOK_PATH)
+        .map(|target| target == Path::new(CAPSULE_RUNTIME_BIN))
+        .unwrap_or(false)
+}
+
+fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
+    match agent {
+        "claude" => Some("Co-authored-by: Claude <noreply@anthropic.com>"),
+        "codex" => Some("Co-authored-by: Codex <codex@openai.com>"),
+        "amp" => Some("Co-authored-by: Amp <amp@ampcode.com>"),
+        "opencode" => Some(
+            "Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>",
+        ),
+        _ => None,
+    }
+}
+
+fn git_config_value(key: &str) -> Option<String> {
+    let output = Command::new("git").args(["config", key]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_string(),
+    )
+    .filter(|value| !value.is_empty())
+}
+
+fn ensure_message_trailer(message_path: &Path, trailer: &str, label: &str) -> Result<()> {
+    remove_exact_trailer_lines(message_path, trailer, label)?;
+    let output = Command::new("git")
+        .args([
+            "interpret-trailers",
+            "--in-place",
+            "--if-exists=addIfDifferent",
+            "--trailer",
+            trailer,
+        ])
+        .arg(message_path)
+        .output()
+        .with_context(|| format!("failed to run git interpret-trailers for {label}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    bail!(
+        "failed to append {label} trailer to {}: {}",
+        message_path.display(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+}
+
+fn remove_exact_trailer_lines(message_path: &Path, trailer: &str, label: &str) -> Result<()> {
+    let input = fs::read(message_path)
+        .with_context(|| format!("failed to read commit message {}", message_path.display()))?;
+    let trailer = trailer.as_bytes();
+    let mut output = Vec::with_capacity(input.len());
+    for segment in input.split_inclusive(|byte| *byte == b'\n') {
+        let mut line = segment;
+        if let Some(stripped) = line.strip_suffix(b"\n") {
+            line = stripped;
+        }
+        if let Some(stripped) = line.strip_suffix(b"\r") {
+            line = stripped;
+        }
+        if line != trailer {
+            output.extend_from_slice(segment);
+        }
+    }
+    fs::write(message_path, output).with_context(|| {
+        format!(
+            "failed to normalize existing {label} trailer in {}",
+            message_path.display()
+        )
+    })
 }
 
 fn ensure_git_config_multivalue(key: &str, value: &str) -> Result<()> {
@@ -444,71 +563,6 @@ fn is_executable(path: impl AsRef<Path>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
-
-    const CODEX_TRAILER: &str = "Co-authored-by: Codex <codex@openai.com>";
-    const SIGNOFF_TRAILER: &str = "Signed-off-by: Test User <test@example.com>";
-
-    fn run_prepare_commit_msg_hook(input: &str, source: Option<&str>) -> String {
-        let temp = tempfile::tempdir().unwrap();
-        let message_path = temp.path().join("COMMIT_EDITMSG");
-        let hook_path = temp.path().join("prepare-commit-msg");
-        let git_config_path = temp.path().join("gitconfig");
-        fs::write(&message_path, input).unwrap();
-        fs::write(&hook_path, PREPARE_COMMIT_MSG_HOOK).unwrap();
-        fs::write(
-            &git_config_path,
-            "[user]\n\tname = Test User\n\temail = test@example.com\n",
-        )
-        .unwrap();
-
-        let mut command = Command::new("bash");
-        command
-            .arg(&hook_path)
-            .arg(&message_path)
-            .env("GIT_CONFIG_GLOBAL", &git_config_path)
-            .env("JACKIN_AGENT", "codex")
-            .env("JACKIN_GIT_COAUTHOR_TRAILER", "1")
-            .env("JACKIN_GIT_DCO", "1");
-        if let Some(source) = source {
-            command.arg(source);
-        }
-        let output = command.output().unwrap();
-        assert!(
-            output.status.success(),
-            "stdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        fs::read_to_string(message_path).unwrap()
-    }
-
-    fn parse_trailers(message: &str) -> String {
-        let mut child = Command::new("git")
-            .args(["interpret-trailers", "--parse"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut stdin = child.stdin.take().unwrap();
-        stdin.write_all(message.as_bytes()).unwrap();
-        drop(stdin);
-        let output = child.wait_with_output().unwrap();
-        assert!(
-            output.status.success(),
-            "stderr:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8(output.stdout).unwrap()
-    }
-
-    fn assert_parseable_test_trailers(message: &str) {
-        assert_eq!(
-            parse_trailers(message),
-            format!("{CODEX_TRAILER}\n{SIGNOFF_TRAILER}\n")
-        );
-    }
 
     #[test]
     fn container_init_marker_is_container_local() {
@@ -519,57 +573,35 @@ mod tests {
     fn git_hook_marker_is_versioned() {
         assert_eq!(
             GIT_HOOK_MARKER,
-            "/jackin/state/git-hooks/prepare-commit-msg.v2.done"
+            "/jackin/state/git-hooks/prepare-commit-msg.v3.done"
         );
     }
 
     #[test]
-    fn hook_uses_canonical_agent_emails() {
-        assert!(PREPARE_COMMIT_MSG_HOOK.contains("noreply@anthropic.com"));
-        assert!(PREPARE_COMMIT_MSG_HOOK.contains("codex@openai.com"));
-        assert!(PREPARE_COMMIT_MSG_HOOK.contains("amp@ampcode.com"));
-        assert!(PREPARE_COMMIT_MSG_HOOK.contains("opencode-agent[bot]@users.noreply.github.com"));
-    }
-
-    #[test]
-    fn hook_injects_dco_signed_off_by() {
-        assert!(PREPARE_COMMIT_MSG_HOOK.contains("JACKIN_GIT_DCO"));
-        assert!(PREPARE_COMMIT_MSG_HOOK.contains("Signed-off-by:"));
-        assert!(PREPARE_COMMIT_MSG_HOOK.contains("git config user.name"));
-        assert!(PREPARE_COMMIT_MSG_HOOK.contains("git config user.email"));
-    }
-
-    #[test]
-    fn hook_normalizes_separated_manual_trailers() {
-        let message = run_prepare_commit_msg_hook(
-            &format!("subject\n\n{CODEX_TRAILER}\n\n{SIGNOFF_TRAILER}\n"),
-            None,
+    fn hook_uses_canonical_agent_trailers() {
+        assert_eq!(
+            coauthor_trailer_for_agent("claude"),
+            Some("Co-authored-by: Claude <noreply@anthropic.com>")
         );
-
-        assert_parseable_test_trailers(&message);
-        assert_eq!(message.matches(CODEX_TRAILER).count(), 1);
-        assert_eq!(message.matches(SIGNOFF_TRAILER).count(), 1);
+        assert_eq!(
+            coauthor_trailer_for_agent("codex"),
+            Some("Co-authored-by: Codex <codex@openai.com>")
+        );
+        assert_eq!(
+            coauthor_trailer_for_agent("amp"),
+            Some("Co-authored-by: Amp <amp@ampcode.com>")
+        );
+        assert_eq!(
+            coauthor_trailer_for_agent("opencode"),
+            Some(
+                "Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>"
+            )
+        );
+        assert_eq!(coauthor_trailer_for_agent("kimi"), None);
     }
 
     #[test]
-    fn hook_normalizes_trailers_without_subject_separator() {
-        let message = run_prepare_commit_msg_hook(
-            &format!("subject\n{CODEX_TRAILER}\n{SIGNOFF_TRAILER}\n"),
-            None,
-        );
-
-        assert_parseable_test_trailers(&message);
-        assert_eq!(message.matches(CODEX_TRAILER).count(), 1);
-        assert_eq!(message.matches(SIGNOFF_TRAILER).count(), 1);
-    }
-
-    #[test]
-    fn hook_injects_trailers_for_merge_messages() {
-        let message = run_prepare_commit_msg_hook(
-            "Merge remote-tracking branch 'origin/main' into feature\n",
-            Some("merge"),
-        );
-
-        assert_parseable_test_trailers(&message);
+    fn hook_marker_points_at_capsule_runtime_binary() {
+        assert_eq!(CAPSULE_RUNTIME_BIN, "/jackin/runtime/jackin-capsule");
     }
 }

@@ -15,7 +15,7 @@ For full details — including what's installed, how it is built, the image laye
 | `fish-config.fish` | fish configuration — opt-in alternative shell. Initialises Starship and replicates zsh's OSC 0/2 + OSC 7 title hooks so pane border titles work identically. |
 | `versions.env` | Pinned versions for security tools (tirith, shellfirm) used as Docker build-args |
 
-The runtime entrypoint source that launches the selected agent is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh). jackin copies it into derived images at `/jackin/runtime/entrypoint.sh`, where it configures git identity, authenticates with GitHub, runs agent-specific setup, and starts Claude or Codex.
+The runtime entrypoint source that launches the selected agent is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh). jackin copies it into derived images at `/jackin/runtime/entrypoint.sh`; it delegates deterministic setup to `jackin-capsule runtime-setup`, then keeps the shell-native work of sourcing role hooks and `exec`-ing the selected agent.
 
 ## Image Layer Architecture
 

@@ -892,7 +892,7 @@ mod tests {
         assert!(ENTRYPOINT_SH.contains("/jackin/runtime/jackin-capsule runtime-setup"));
         assert!(!ENTRYPOINT_SH.contains("git config --global user.name"));
         assert!(!ENTRYPOINT_SH.contains("gh auth setup-git"));
-        assert!(!ENTRYPOINT_SH.contains("prepare-commit-msg.v1.done"));
+        assert!(!ENTRYPOINT_SH.contains("prepare-commit-msg"));
     }
 
     fn extract_block<'a>(haystack: &'a str, start: &str, end: &str) -> &'a str {
