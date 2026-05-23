@@ -35,7 +35,12 @@ pub(super) fn handle_list_key(
     // pane. Tab takes precedence over the existing right-arrow
     // tree-expand because instance rows have no expand semantics; →
     // on a non-instance row continues to the existing handler below.
+    let selected_row = state.selected_row();
     if matches!(key.code, KeyCode::Tab | KeyCode::Right)
+        && matches!(
+            selected_row,
+            ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_)
+        )
         && let Some(container) =
             selected_instance_container(state, ConsoleInstanceAction::Reconnect)
         && !state.flattened_preview_panes(&container).is_empty()
@@ -743,6 +748,78 @@ mod tests {
             status,
             updated_at: "2026-05-11T00:00:00Z".into(),
         }
+    }
+
+    fn current_dir_instance_entry(
+        container: &str,
+        status: InstanceStatus,
+        workdir: &str,
+    ) -> InstanceIndexEntry {
+        InstanceIndexEntry {
+            instance_id: format!("{container}-id"),
+            container_base: container.into(),
+            workspace_name: None,
+            workspace_label: workdir.into(),
+            workdir: workdir.into(),
+            role_key: "the-architect".into(),
+            agent_runtime: "codex".into(),
+            status,
+            updated_at: "2026-05-11T00:00:00Z".into(),
+        }
+    }
+
+    fn live_snapshot() -> crate::runtime::snapshot::InstanceSnapshot {
+        crate::runtime::snapshot::InstanceSnapshot {
+            tabs: vec![jackin_protocol::control::TabSnapshot {
+                label: "Codex".into(),
+                focused_pane: 1,
+                panes: vec![jackin_protocol::control::PaneSnapshot {
+                    session_id: 1,
+                    label: "Codex".into(),
+                    agent: Some("codex".into()),
+                    state: jackin_protocol::control::AgentState::Idle,
+                }],
+            }],
+            active_tab: 0,
+        }
+    }
+
+    #[test]
+    fn right_on_current_directory_parent_expands_even_with_live_snapshot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let cwd = tmp.path();
+        let workdir = cwd.display().to_string();
+        let container = "jackin-current-dir-the-architect-live";
+
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.instances = vec![current_dir_instance_entry(
+            container,
+            InstanceStatus::Running,
+            &workdir,
+        )];
+        state
+            .instance_snapshots
+            .insert(container.into(), live_snapshot());
+
+        let outcome =
+            handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right)).unwrap();
+
+        assert!(matches!(outcome, InputOutcome::Continue));
+        assert!(
+            state.current_dir_expanded,
+            "→ on the Current directory parent must expand the tree"
+        );
+        assert!(
+            !state.preview_focused,
+            "preview focus is only reachable from instance child rows"
+        );
+        assert!(matches!(
+            state.row_at(1),
+            Some(crate::console::manager::state::ManagerListRow::CurrentDirectoryInstance(0))
+        ));
     }
 
     /// `e` and `d` on the current-directory row must be silent no-ops —
