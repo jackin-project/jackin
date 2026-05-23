@@ -1786,10 +1786,9 @@ impl Multiplexer {
         let Some(session) = self.sessions.get(&focused) else {
             return false;
         };
-        let mouse_mode = session.mouse_protocol_mode();
-        if !mouse_event_allowed_for_mode(mouse_mode, button, press) {
+        let Some(encoding) = mouse_event_encoding_for_session(session, button, press) else {
             return false;
-        }
+        };
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let outer = if let Some(zoom_id) = self.active_zoomed_id() {
             if zoom_id == focused {
@@ -1820,13 +1819,9 @@ impl Multiplexer {
         }
         let local_row = row - inner.row;
         let local_col = col - inner.col;
-        let Some(buf) = encode_mouse_for_protocol(
-            button,
-            local_col + 1,
-            local_row + 1,
-            press,
-            session.mouse_protocol_encoding(),
-        ) else {
+        let Some(buf) =
+            encode_mouse_for_protocol(button, local_col + 1, local_row + 1, press, encoding)
+        else {
             return false;
         };
         session.send_input(&buf);
@@ -3539,6 +3534,26 @@ fn mouse_event_allowed_for_mode(mode: vt100::MouseProtocolMode, button: u8, pres
     }
 }
 
+fn mouse_event_encoding_for_session(
+    session: &Session,
+    button: u8,
+    press: bool,
+) -> Option<vt100::MouseProtocolEncoding> {
+    if mouse_event_allowed_for_mode(session.mouse_protocol_mode(), button, press) {
+        return Some(session.mouse_protocol_encoding());
+    }
+    if press && is_wheel_button(button) && session.screen().alternate_screen() {
+        // Full-screen TUIs own their viewport. Some agents do not
+        // leave a standard DEC mouse mode in vt100's tracked state,
+        // but the attach client still receives SGR wheel events from
+        // the outer terminal. Forward wheel-only fallback events as
+        // SGR so alternate-screen panes can scroll internally, while
+        // primary-screen shells continue to use jackin' scrollback.
+        return Some(vt100::MouseProtocolEncoding::Sgr);
+    }
+    None
+}
+
 fn encode_mouse_for_protocol(
     button: u8,
     col: u16,
@@ -3956,6 +3971,30 @@ mod tests {
             "mouse-disabled panes must not receive raw wheel bytes"
         );
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+    }
+
+    #[test]
+    fn wheel_forwards_to_mouse_disabled_alt_screen_tui() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_session(20, 78);
+        session.feed_pty(b"\x1b[?1049h");
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "alternate-screen TUI wheel should be agent-owned"
+        );
+        assert_eq!(
+            input_rx.try_recv().expect("wheel should reach PTY"),
+            b"\x1b[<64;1;1M"
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
     }
 
     #[test]
