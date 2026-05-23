@@ -641,8 +641,8 @@ mod tests {
 
     #[test]
     fn lone_lf_passes_through_with_default_palette_key() {
-        // Ctrl+J = `\n` is no longer the palette key, so multi-line
-        // input continuation reaches the PTY unchanged.
+        // Bracketed paste / multi-line input continuation must reach
+        // the PTY as `\n` under the default palette binding.
         let events = parse_all_default(b"\n");
         assert_eq!(events, vec![InputEvent::Data(b"\n".to_vec())]);
     }

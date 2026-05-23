@@ -51,7 +51,7 @@ pub fn start_listener()
 }
 
 /// Bind a `UnixListener` at `path` with the parent dir locked to 0o700
-/// and the socket file to 0o600. Pulled out for tests; production
+/// and the socket file to 0o600. Test-visible variant: production
 /// callers go through `start_listener`.
 pub(crate) fn start_listener_at(
     path: &Path,
@@ -152,10 +152,9 @@ pub(crate) fn start_listener_at(
 /// Read a length-prefixed JSON control message whose 4-byte length
 /// prefix begins with `first_byte = 0x00` (already consumed by the
 /// dispatcher). Returns `Err` with context on every failure mode so
-/// callers can clog the underlying cause; the previous Option shape
-/// collapsed read / oversize-len / decode errors into a silent None
-/// and the host's `jackin status` then hung on its `read_exact`
-/// waiting for a reply that was never coming.
+/// callers can clog the underlying cause; a silently-collapsed None
+/// would let the host's `jackin status` block on `read_exact` for a
+/// reply that never comes.
 pub async fn read_control_msg(stream: &mut UnixStream, first_byte: u8) -> Result<ClientMsg> {
     let mut rest = [0u8; 3];
     stream
@@ -264,6 +263,60 @@ mod tests {
         a.shutdown().await.unwrap();
         let msg = read_control_msg(&mut b, len_buf[0]).await.unwrap();
         assert!(matches!(msg, ClientMsg::Unknown));
+    }
+
+    #[tokio::test]
+    async fn start_listener_caps_concurrent_clients_at_max() {
+        // Hard regression guard for `MAX_CONCURRENT_CLIENTS`. Without
+        // the cap, any in-uid process can flood the attach channel
+        // and starve the legitimate operator. The 17th connection
+        // must be silently dropped server-side (no delivery on `rx`).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let parent = tmp.path().join("run");
+        let socket_path = parent.join("jackin.sock");
+        let mut rx = start_listener_at(&socket_path).expect("bind");
+
+        // Hold every accepted stream + permit so the semaphore stays
+        // saturated. Dropping the permit would let the next accept
+        // proceed and invalidate the assertion.
+        let mut held: Vec<(UnixStream, tokio::sync::OwnedSemaphorePermit)> = Vec::new();
+        let mut client_streams: Vec<UnixStream> = Vec::new();
+        for i in 0..MAX_CONCURRENT_CLIENTS {
+            let client = UnixStream::connect(&socket_path)
+                .await
+                .unwrap_or_else(|e| panic!("connect {i}: {e}"));
+            client_streams.push(client);
+            let pair = tokio::time::timeout(Duration::from_millis(500), rx.recv())
+                .await
+                .unwrap_or_else(|_| panic!("rx did not deliver connection {i}"))
+                .expect("rx closed");
+            held.push(pair);
+        }
+
+        // Cap is now at MAX. The next connect should be accepted by
+        // the kernel but dropped on the server side without ever
+        // landing in `rx`.
+        let over_cap_client = UnixStream::connect(&socket_path)
+            .await
+            .expect("kernel-side connect");
+        client_streams.push(over_cap_client);
+        let extra = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await;
+        assert!(
+            extra.is_err(),
+            "rx must not deliver beyond MAX_CONCURRENT_CLIENTS; got: {extra:?}"
+        );
+
+        // Releasing one permit must let a fresh attach through.
+        drop(held.pop().expect("drop one held permit"));
+        let new_client = UnixStream::connect(&socket_path)
+            .await
+            .expect("post-release connect");
+        client_streams.push(new_client);
+        let resumed = tokio::time::timeout(Duration::from_millis(500), rx.recv())
+            .await
+            .expect("rx did not resume after permit release")
+            .expect("rx closed");
+        held.push(resumed);
     }
 
     #[tokio::test]

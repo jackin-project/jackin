@@ -654,6 +654,48 @@ mod tests {
     }
 
     #[test]
+    fn hello_env_count_over_cap_is_rejected_by_encoder() {
+        // Encoder gate must reject `MAX_HELLO_ENV + 1`. Without this the
+        // wire could carry an env list a future decoder gladly accepts,
+        // bypassing the documented cap.
+        let env: Vec<(String, String)> = (0..=MAX_HELLO_ENV)
+            .map(|i| (format!("K{i}"), "v".into()))
+            .collect();
+        let err = encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn: None,
+            env,
+            focus_session: None,
+        })
+        .expect_err("over-cap env must be rejected at encode");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("env count"), "got: {msg}");
+        assert!(msg.contains(&MAX_HELLO_ENV.to_string()), "got: {msg}");
+    }
+
+    #[test]
+    fn hello_env_count_over_cap_is_rejected_by_decoder() {
+        // Decoder must refuse a hand-crafted payload claiming
+        // `env_count = MAX_HELLO_ENV + 1`. This is the wire-level
+        // counterpart of the encoder guard: a buggy or hostile peer
+        // could otherwise force the daemon to pre-allocate an
+        // arbitrarily large env table.
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&24u16.to_be_bytes()); // rows
+        payload.extend_from_slice(&80u16.to_be_bytes()); // cols
+        payload.push(0u8); // spawn_kind = None
+        payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
+        let bogus_count = u16::try_from(MAX_HELLO_ENV + 1).expect("fits u16");
+        payload.extend_from_slice(&bogus_count.to_be_bytes());
+        let err = decode_client(TAG_HELLO, payload)
+            .expect_err("over-cap env_count must be rejected at decode");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("env_count"), "got: {msg}");
+        assert!(msg.contains(&MAX_HELLO_ENV.to_string()), "got: {msg}");
+    }
+
+    #[test]
     fn hello_env_count_at_cap_round_trips() {
         // Partner for `hello_env_count_over_cap_is_rejected_by_encoder`:
         // a refactor that swaps `>` to `>=` in the encoder OR decoder

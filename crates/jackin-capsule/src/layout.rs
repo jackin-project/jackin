@@ -154,8 +154,6 @@ impl PaneTree {
         }
     }
 
-    /// Remove a leaf and collapse the parent. Returns true if removed.
-    ///
     /// When the removed leaf is a direct child of the **root** split,
     /// `remove_inner` returns `Some(sibling)` because there is no
     /// parent to splice the surviving subtree into. Apply that
@@ -357,8 +355,7 @@ pub enum Direction {
 
 /// Where the new pane lands relative to the existing pane when a
 /// split fires. `Before` puts it left (for `split_h`) or above (for
-/// `split_v`); `After` puts it right or below — the legacy implicit
-/// behaviour before placement became operator-controllable.
+/// `split_v`); `After` puts it right or below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitPosition {
     Before,

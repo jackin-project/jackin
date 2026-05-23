@@ -202,9 +202,7 @@ mod tests {
         // WNOHANG. The child is reaped by `Child::wait`, so WNOHANG
         // returns ECHILD ("no such process"). This pins the kernel
         // contract the reaper loop relies on: after a reap, WNOHANG
-        // sees no zombie and the inner `match` short-circuits. The
-        // sleep-and-poll form this test replaced was flake-prone
-        // under parallel cargo nextest.
+        // sees no zombie and the inner `match` short-circuits.
         let mut child = Command::new("true")
             .stdin(Stdio::null())
             .stdout(Stdio::null())

@@ -129,8 +129,7 @@ pub fn write_line(message: &str) {
     let _ = writeln!(file, "{stamped}");
 }
 
-/// Convenience macro: format + tag + emit. Replaces the existing
-/// `eprintln!("[jackin-capsule] …")` pattern. Always emits regardless
+/// Convenience macro: format + tag + emit. Always emits regardless
 /// of debug mode — reserved for compact production telemetry
 /// (lifecycle events, action breadcrumbs, error paths).
 #[macro_export]

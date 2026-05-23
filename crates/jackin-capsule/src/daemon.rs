@@ -720,8 +720,7 @@ impl Multiplexer {
         // are about to reflow). Drop both gestures so the next motion
         // event does not paint stale geometry. `cancel_drag` clears
         // selection + drag together; calling it unconditionally is
-        // cheaper than per-field re-validation and matches the
-        // close_focused_pane / split path that already does the same.
+        // cheaper than per-field re-validation.
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let owning_tab = self
@@ -1107,11 +1106,9 @@ impl Multiplexer {
             session.terminate();
         }
         self.pane_body_caches.remove(&id);
-        // Mirror remove_exited_session: drop the zoomed reference when
-        // the killed pane was the zoom target. Otherwise the next
-        // compose_frame's `if let Some(zoom_id) = self.zoomed` branch
-        // calls sessions.get_mut(&zoom_id) → None and the operator
-        // sees a blank zoom area until they manually unzoom.
+        // Drop the zoomed reference when the killed pane was the zoom
+        // target so the next `compose_frame` does not paint a stale
+        // zoom area until the operator manually unzooms.
         self.zoomed = self.zoomed.filter(|&zid| zid != id);
         if let Some(nf) = next_focus {
             tab.focused_id = nf;
@@ -1811,9 +1808,8 @@ impl Multiplexer {
         session.send_input(&buf);
     }
 
-    /// Test whether the click at `(row, col)` lands on a shared pane
-    /// border in the active tab. Returns a populated `DragState` to
-    /// start a mouse-drag resize.
+    /// Zoomed tabs never produce a drag — there are no shared
+    /// borders to grab on a single visible pane.
     fn detect_drag_start(&self, row: u16, col: u16) -> Option<DragState> {
         if row < STATUS_BAR_ROWS || self.active_zoomed_id().is_some() {
             return None;
@@ -2514,12 +2510,11 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     // applies the take-over + spawns the persistent attach task.
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
 
-    // Resolve the operator's escape-time once at startup. Reading
-    // the env var inside the event loop was a per-iteration syscall
-    // for a value that never changes for the lifetime of the daemon.
-    // A present-but-unparseable env var emits a debug line so the
-    // operator can see their config was rejected rather than
-    // silently falling back to the default.
+    // Resolve the operator's escape-time once at startup; the value
+    // cannot change after daemon launch, so per-iteration env reads
+    // would be wasted syscalls. A present-but-unparseable env var
+    // emits a debug line so the operator sees their config rejected
+    // rather than silently falling back to the default.
     let escape_time = match std::env::var(ENV_ESCAPE_TIME) {
         Ok(raw) => match raw.parse::<u64>() {
             Ok(ms) => Duration::from_millis(ms),
@@ -2543,8 +2538,6 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     // wrong: a chatty PTY (a TUI agent with a spinner) wakes the
     // select loop dozens of times per second, and a fresh deadline
     // each wake-up never lapses before the next PTY output resets it.
-    // Symptom was "press Esc, dialog never dismisses while an agent
-    // is producing output."
     let mut esc_deadline: Option<tokio::time::Instant> = None;
     loop {
         if mux.input_parser.esc_pending() {
@@ -3147,15 +3140,14 @@ async fn drain_and_exit(mux: &mut Multiplexer) {
     tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
-/// Centralised detach for the currently-attached client. Mirrors the
-/// pairing the takeover path uses: take the out-channel sender (so
-/// the next frame queue allocation does not race with the old
-/// receiver), send Shutdown best-effort, yield once so any buffered
-/// writer cycle drains, then abort the attach task so its reader
-/// stops pushing into the shared `cmd_tx`. Used by SIGTERM / SIGINT
-/// shutdown, explicit detach, and `drain_and_exit` so the
-/// `attached_task` field cannot drift Some(handle) without a
-/// corresponding live attach.
+/// Centralised detach for the currently-attached client. Take-then-
+/// send-then-abort, in that order, so a takeover/cancel race never
+/// leaves `attached_task = Some` with a dead `attached_out`: take the
+/// out-channel sender first (so the next frame queue allocation does
+/// not race with the old receiver), send Shutdown best-effort, then
+/// abort the attach task so its reader stops pushing into the shared
+/// `cmd_tx`. Used by SIGTERM / SIGINT shutdown, explicit detach, and
+/// `drain_and_exit`.
 fn detach_client(mux: &mut Multiplexer) {
     if let Some(tx) = mux.attached_out.take()
         && tx.send(encode_server(ServerFrame::Shutdown)).is_err()

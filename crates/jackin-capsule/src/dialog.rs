@@ -104,10 +104,9 @@ pub enum Dialog {
         input: jackin_tui::TextField,
     },
     /// Read-only modal opened when the operator clicks the status-bar
-    /// container-name label. Surfaces the bits that used to clutter
-    /// the bar (role key, focused-agent runtime) plus the full
-    /// container ID, workspace path, and best-effort git context with
-    /// a one-key "copy to clipboard" shortcut.
+    /// container-name label. Surfaces role key, focused-agent runtime,
+    /// full container ID, workspace path, and best-effort git context
+    /// with a one-key "copy to clipboard" shortcut.
     /// Enter or a click on the Container ID row emits OSC 52 with
     /// the container name AND keeps the dialog open — `copied` flips
     /// to `true` so the renderer shows a visible "Copied!" indicator
@@ -246,10 +245,9 @@ pub enum PaletteCommand {
     PrevTab,
     /// Open the SplitDirectionPicker. The operator picks Left /
     /// Right / Above / Below in the sub-dialog, then the agent
-    /// picker for the new pane. Replaces the previous two-item
-    /// `SplitHorizontal` + `SplitVertical` shape so the menu reads
-    /// "Split pane" once and the directional detail lives in the
-    /// sub-dialog where it does not clutter the top-level list.
+    /// picker for the new pane. Top-level entry is one item; the
+    /// directional detail lives in the sub-dialog so the palette
+    /// stays scannable.
     Split,
     ZoomPane,
     /// Close the active tab or open the CloseTargetPicker when the
@@ -1225,9 +1223,8 @@ fn step_selectable(rows: &[PickerRow], from: usize, forward: bool) -> usize {
     }
 }
 
-/// One footer-hint span. Mirrors the console TUI's `FooterItem` model
-/// (see `src/console/manager/render/mod.rs`).
-#[allow(dead_code)] // `Sep` reserved for future hints; mirrors console FooterItem
+/// One footer-hint span.
+#[allow(dead_code)] // `Sep` reserved for future hints
 enum HintSpan<'a> {
     /// Hotkey glyph(s) — white + bold.
     Key(&'a str),
@@ -1239,10 +1236,8 @@ enum HintSpan<'a> {
     GroupSep,
 }
 
-// Bottom-hint contract mirrors the host console `Select Role` picker
-// (`↑↓ navigate · type filter · Enter select · Esc cancel`) so the
-// operator's footer reading carries from the host to the in-container
-// dialog without learning a second vocabulary. `type filter` is a
+// Footer vocabulary stays identical to the host picker so the
+// operator reads the same hints in either dialog. `type filter` is a
 // textual hint (no key glyph) because the action is "any printable
 // keystroke," not a specific key.
 const PALETTE_HINT: &[HintSpan<'static>] = &[
@@ -1301,12 +1296,8 @@ const CONFIRM_HINT: &[HintSpan<'static>] = &[
 ];
 
 /// Render the tab-rename modal. One text-input row showing the current
-/// buffer plus a blinking-style trailing `▌` caret. Width matches the
-/// other dialogs so the operator's eye does not have to re-anchor.
+/// buffer plus a blinking-style trailing `▌` caret.
 fn render_rename_tab(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, input: &str) {
-    // Single source of truth for the dialog visual recipe lives in
-    // `jackin_tui::ansi` so this dialog matches the host TUI's
-    // `text_input` widget (used by the workspace-environments editor).
     let cursor_byte = input.len();
     jackin_tui::ansi::render_text_input_dialog(
         buf,
@@ -1624,14 +1615,10 @@ fn render_separator(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &s
     buf.extend_from_slice(RESET.as_bytes());
 }
 
-/// Filter input row. Visual contract mirrors the host console's
-/// `Select Role` picker (`src/console/widgets/role_picker.rs::render`)
-/// so the operator sees the same `Filter: …` shape in every dialog
-/// jackin renders. Empty filter shows a 20-character `░` placeholder
-/// (`U+2591 LIGHT SHADE`) in `PHOSPHOR_DARK` — same glyph + colour as
-/// the host picker; populated filter shows the typed text in white
-/// followed by a `█` (`U+2588 FULL BLOCK`) caret. Both halves stay
-/// inside `Filter: ` (label in `PHOSPHOR_DIM`).
+/// Filter input row. Empty filter shows a 20-character `░` placeholder
+/// (`U+2591 LIGHT SHADE`) in `PHOSPHOR_DARK`; populated filter shows
+/// the typed text in white followed by a `█` (`U+2588 FULL BLOCK`)
+/// caret. Both halves stay inside `Filter: ` (label in `PHOSPHOR_DIM`).
 fn render_filter_input(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, filter: &str) {
     move_to(buf, row, col);
     buf.extend_from_slice(BG_DARK.as_bytes());
