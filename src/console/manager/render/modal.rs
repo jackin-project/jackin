@@ -6,7 +6,8 @@ use ratatui::{Frame, layout::Rect};
 
 use super::super::super::widgets::{
     auth_panel, confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice,
-    op_picker, role_picker, save_discard, scope_picker, source_picker, text_input, workdir_pick,
+    op_picker, role_picker, save_discard, scope_picker, source_picker, status_popup, text_input,
+    workdir_pick,
 };
 use super::super::state::{GlobalMountModal, Modal, SettingsAuthModal, SettingsEnvModal};
 use super::FooterItem;
@@ -105,6 +106,7 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
                 error_popup::required_height(state, inner_width, max_rows),
             )
         }
+        Modal::StatusPopup { .. } => (50, 8),
         Modal::OpPicker { .. } => return op_picker_rect(outer),
         Modal::RolePicker { state }
         | Modal::RoleOverridePicker { state }
@@ -138,6 +140,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
         Modal::GithubPicker { state } => github_picker::render(frame, modal_area, state),
         Modal::ConfirmSave { state } => confirm_save::render(frame, modal_area, state),
         Modal::ErrorPopup { state } => error_popup::render(frame, modal_area, state),
+        Modal::StatusPopup { state } => status_popup::render(frame, modal_area, state),
         Modal::OpPicker { state } => {
             // Advance the spinner and drain pending loads — picker
             // has no other clock.
@@ -250,6 +253,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<FooterItem> {
             FooterItem::Text("cancel"),
         ],
         Modal::ErrorPopup { .. } => vec![FooterItem::Key("Enter/Esc"), FooterItem::Text("dismiss")],
+        Modal::StatusPopup { .. } => vec![FooterItem::Text("working")],
         Modal::OpPicker { .. }
         | Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }

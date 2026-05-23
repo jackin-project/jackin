@@ -1463,7 +1463,7 @@ pub(super) async fn resolve_supported_agents_for_console(
     config: &AppConfig,
     selector: &RoleSelector,
     runner: &mut impl CommandRunner,
-    debug: bool,
+    _debug: bool,
 ) -> anyhow::Result<Vec<crate::agent::Agent>> {
     let mut config = config.clone();
     let (source, _, _) = resolve_launch_role_source(&mut config, selector, None)?;
@@ -1472,7 +1472,7 @@ pub(super) async fn resolve_supported_agents_for_console(
         selector,
         &source.git,
         runner,
-        debug,
+        false,
         None,
         || Ok(false),
     )
@@ -5608,6 +5608,13 @@ plugins = []
         assert!(
             !agents.contains(&crate::agent::Agent::Amp),
             "console choices must not fall back to every built-in agent"
+        );
+        assert!(
+            runner
+                .run_options
+                .iter()
+                .all(|opts| opts.quiet && !opts.capture_stderr),
+            "console role resolution must not stream git clone/fetch output over the TUI"
         );
     }
 

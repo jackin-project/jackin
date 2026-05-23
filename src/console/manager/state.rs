@@ -1217,6 +1217,9 @@ pub enum Modal<'a> {
     ErrorPopup {
         state: ErrorPopupState,
     },
+    StatusPopup {
+        state: crate::console::widgets::status_popup::StatusPopupState,
+    },
     /// Boxed because the picker's `Vec`s + runner + channel are
     /// substantially larger than other variants.
     OpPicker {

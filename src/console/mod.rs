@@ -219,6 +219,7 @@ const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> 
         Modal::GithubPicker { .. } => "GithubPicker",
         Modal::ConfirmSave { .. } => "ConfirmSave",
         Modal::ErrorPopup { .. } => "ErrorPopup",
+        Modal::StatusPopup { .. } => "StatusPopup",
         Modal::OpPicker { .. } => "OpPicker",
         Modal::RolePicker { .. } => "RolePicker",
         Modal::RoleOverridePicker { .. } => "RoleOverridePicker",
@@ -424,6 +425,87 @@ async fn maybe_open_inline_agent_picker(
     Ok(true)
 }
 
+enum AgentPickerResolution {
+    Opened,
+    NotNeeded,
+    ErrorShown,
+}
+
+fn draw_role_resolution_dialog<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    role: &RoleSelector,
+) -> anyhow::Result<()>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    ms.list_modal = Some(manager::state::Modal::StatusPopup {
+        state: widgets::status_popup::StatusPopupState::new(
+            "Resolving agent role",
+            format!("Loading and resolving {}", role.key()),
+        ),
+    });
+    terminal.draw(|frame| {
+        manager::render(frame, ms, config, cwd);
+    })?;
+    ms.list_modal = None;
+    Ok(())
+}
+
+fn show_role_resolution_error(state: &mut ConsoleState, role: &RoleSelector, error: anyhow::Error) {
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    ms.list_modal = Some(manager::state::Modal::ErrorPopup {
+        state: widgets::error_popup::ErrorPopupState::new(
+            "Role resolution failed",
+            format!("Could not resolve {}.\n\n{error:#}", role.key()),
+        ),
+    });
+}
+
+async fn maybe_open_inline_agent_picker_with_dialog<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    paths: &JackinPaths,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    runner: &mut impl crate::docker::CommandRunner,
+    debug: bool,
+    role: RoleSelector,
+    workspace: &ResolvedWorkspace,
+) -> anyhow::Result<AgentPickerResolution>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    if workspace.default_agent.is_some() {
+        return Ok(AgentPickerResolution::NotNeeded);
+    }
+
+    draw_role_resolution_dialog(terminal, state, config, cwd, &role)?;
+    match maybe_open_inline_agent_picker(
+        state,
+        paths,
+        config,
+        runner,
+        debug,
+        role.clone(),
+        workspace,
+    )
+    .await
+    {
+        Ok(true) => Ok(AgentPickerResolution::Opened),
+        Ok(false) => Ok(AgentPickerResolution::NotNeeded),
+        Err(error) => {
+            show_role_resolution_error(state, &role, error);
+            Ok(AgentPickerResolution::ErrorShown)
+        }
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn run_console(
     mut config: AppConfig,
@@ -556,19 +638,30 @@ pub async fn run_console(
                             let input = LoadWorkspaceInput::Saved(name);
                             match state.dispatch_launch_for_workspace(&config, cwd, input.clone()) {
                                 Ok(Some((role, workspace, agent))) => {
-                                    if agent.is_none()
-                                        && maybe_open_inline_agent_picker(
+                                    if agent.is_none() {
+                                        match maybe_open_inline_agent_picker_with_dialog(
+                                            &mut terminal,
                                             &mut state,
                                             paths,
                                             &config,
+                                            cwd,
                                             runner,
                                             debug,
                                             role.clone(),
                                             &workspace,
                                         )
                                         .await?
-                                    {
-                                        state.pending_launch = Some(input);
+                                        {
+                                            AgentPickerResolution::Opened => {
+                                                state.pending_launch = Some(input);
+                                            }
+                                            AgentPickerResolution::NotNeeded => {
+                                                break 'main Ok(Some(ConsoleOutcome::Launch(
+                                                    role, workspace, agent,
+                                                )));
+                                            }
+                                            AgentPickerResolution::ErrorShown => {}
+                                        }
                                     } else {
                                         break 'main Ok(Some(ConsoleOutcome::Launch(
                                             role, workspace, agent,
@@ -583,19 +676,30 @@ pub async fn run_console(
                             let input = LoadWorkspaceInput::CurrentDir;
                             match state.dispatch_launch_for_workspace(&config, cwd, input.clone()) {
                                 Ok(Some((role, workspace, agent))) => {
-                                    if agent.is_none()
-                                        && maybe_open_inline_agent_picker(
+                                    if agent.is_none() {
+                                        match maybe_open_inline_agent_picker_with_dialog(
+                                            &mut terminal,
                                             &mut state,
                                             paths,
                                             &config,
+                                            cwd,
                                             runner,
                                             debug,
                                             role.clone(),
                                             &workspace,
                                         )
                                         .await?
-                                    {
-                                        state.pending_launch = Some(input);
+                                        {
+                                            AgentPickerResolution::Opened => {
+                                                state.pending_launch = Some(input);
+                                            }
+                                            AgentPickerResolution::NotNeeded => {
+                                                break 'main Ok(Some(ConsoleOutcome::Launch(
+                                                    role, workspace, agent,
+                                                )));
+                                            }
+                                            AgentPickerResolution::ErrorShown => {}
+                                        }
                                     } else {
                                         break 'main Ok(Some(ConsoleOutcome::Launch(
                                             role, workspace, agent,
@@ -617,10 +721,12 @@ pub async fn run_console(
                                     &config, cwd, &choice, &role,
                                 ) {
                                     Ok(workspace) => {
-                                        if maybe_open_inline_agent_picker(
+                                        match maybe_open_inline_agent_picker_with_dialog(
+                                            &mut terminal,
                                             &mut state,
                                             paths,
                                             &config,
+                                            cwd,
                                             runner,
                                             debug,
                                             role.clone(),
@@ -628,12 +734,16 @@ pub async fn run_console(
                                         )
                                         .await?
                                         {
-                                            state.pending_launch = Some(input);
-                                        } else {
-                                            state.pending_launch_role = None;
-                                            break 'main Ok(Some(ConsoleOutcome::Launch(
-                                                role, workspace, None,
-                                            )));
+                                            AgentPickerResolution::Opened => {
+                                                state.pending_launch = Some(input);
+                                            }
+                                            AgentPickerResolution::NotNeeded => {
+                                                state.pending_launch_role = None;
+                                                break 'main Ok(Some(ConsoleOutcome::Launch(
+                                                    role, workspace, None,
+                                                )));
+                                            }
+                                            AgentPickerResolution::ErrorShown => {}
                                         }
                                     }
                                     Err(e) => break 'main Err(e),
