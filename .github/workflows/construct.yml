@@ -132,10 +132,6 @@ jobs:
         env:
           CACHE_FROM: type=gha,scope=construct-pr-${{ matrix.platform }}
           CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},mode=max
-          # Construct PRs must prove the image builds from source today.
-          # Layer-cache hits can hide broken upstream pins, as happened when
-          # the mise apt repo dropped 2026.5.14 between PR validation and merge.
-          NO_CACHE: "1"
         run: just construct-build-platform ${{ matrix.platform }}
 
       - name: Push ${{ matrix.platform }} image by digest
@@ -143,7 +139,6 @@ jobs:
         env:
           CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }}
           CACHE_TO: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }},mode=max
-          NO_CACHE: "1"
         run: just construct-push-platform ${{ matrix.platform }}
 
       - name: Upload ${{ matrix.platform }} digest

@@ -68,14 +68,16 @@ RUN case "${TARGETARCH}" in \
     cd / && \
     rm -rf "${workdir}"
 
-# Install mise from the official apt repository. The repo is intentionally a
-# rolling package source, so construct PR/publish builds run this layer uncached.
+# Install mise from the official apt repository. MISE_APT_VERSION is resolved
+# before the build and used as the cache key for this rolling apt package.
+ARG MISE_APT_VERSION
 RUN install -m 0755 -d /etc/apt/keyrings && \
+    test -n "${MISE_APT_VERSION}" || { echo "MISE_APT_VERSION build arg is required" >&2; exit 1; } && \
     curl -fsSL https://mise.en.dev/gpg-key.pub -o /etc/apt/keyrings/mise-archive-keyring.asc && \
     chmod a+r /etc/apt/keyrings/mise-archive-keyring.asc && \
     echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.en.dev/deb stable main" > /etc/apt/sources.list.d/mise.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends mise && \
+    apt-get install -y --no-install-recommends "mise=${MISE_APT_VERSION}" && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \

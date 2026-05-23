@@ -26,10 +26,33 @@ VERSION_TAG := env_var_or_default("CONSTRUCT_VERSION_TAG", _default_version_tag)
 LOCAL_PLATFORM := env_var_or_default("LOCAL_PLATFORM", _default_local_platform)
 TIRITH_VERSION := env_var_or_default("TIRITH_VERSION", _default_tirith_version)
 SHELLFIRM_VERSION := env_var_or_default("SHELLFIRM_VERSION", _default_shellfirm_version)
+MISE_APT_VERSION := env_var_or_default("MISE_APT_VERSION", "")
 DIGEST_DIR := env_var_or_default("DIGEST_DIR", "/tmp/jackin-construct-digests")
 
 default:
     @just --list
+
+# Resolve the current official mise apt package version for a Debian architecture
+_construct-mise-apt-version arch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{arch}}" in
+      amd64|arm64) ;;
+      *)
+        printf "arch must be amd64 or arm64, got %s\n" "{{arch}}" >&2
+        exit 1
+        ;;
+    esac
+    url="https://mise.en.dev/deb/dists/stable/main/binary-{{arch}}/Packages"
+    if ! version="$(curl -fsSL --max-time 30 "${url}" | awk '
+      $1 == "Package:" { in_mise = ($2 == "mise"); next }
+      in_mise && $1 == "Version:" { print $2; found = 1; exit }
+      END { if (!found) exit 1 }
+    ')"; then
+      printf "Unable to resolve mise package version from %s\n" "${url}" >&2
+      exit 1
+    fi
+    printf '%s\n' "${version}"
 
 # Create and bootstrap the named Buildx builder
 construct-init-buildx:
@@ -59,6 +82,19 @@ construct-reset-buildx:
 
 # Build the construct image for the host platform and load it locally
 construct-build-local:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "${LOCAL_PLATFORM}" in
+      linux/amd64) mise_arch=amd64 ;;
+      linux/arm64) mise_arch=arm64 ;;
+      *)
+        printf "LOCAL_PLATFORM must be linux/amd64 or linux/arm64, got %s\n" "${LOCAL_PLATFORM}" >&2
+        exit 1
+        ;;
+    esac
+    if [ -z "${MISE_APT_VERSION:-}" ]; then
+      export MISE_APT_VERSION="$(just _construct-mise-apt-version "${mise_arch}")"
+    fi
     docker buildx bake \
       --builder "{{buildx_builder}}" \
       --file docker-bake.hcl \
@@ -70,22 +106,22 @@ construct-build-platform platform:
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{platform}}" in
-      amd64) export LOCAL_PLATFORM="linux/amd64" ;;
-      arm64) export LOCAL_PLATFORM="linux/arm64" ;;
+      amd64) export LOCAL_PLATFORM="linux/amd64"; mise_arch=amd64 ;;
+      arm64) export LOCAL_PLATFORM="linux/arm64"; mise_arch=arm64 ;;
       *)
         printf "platform must be amd64 or arm64, got %s\n" "{{platform}}" >&2
         exit 1
         ;;
     esac
+    if [ -z "${MISE_APT_VERSION:-}" ]; then
+      export MISE_APT_VERSION="$(just _construct-mise-apt-version "${mise_arch}")"
+    fi
     args=(
       docker buildx bake
       --builder "{{buildx_builder}}"
       --file docker-bake.hcl
       --load
     )
-    if [ "${NO_CACHE:-}" = "1" ]; then
-      args+=(--no-cache)
-    fi
     if [ -n "${CACHE_FROM:-}" ]; then
       args+=(--set "construct-local.cache-from=${CACHE_FROM}")
     fi
@@ -100,8 +136,8 @@ construct-push-platform platform:
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{platform}}" in
-      amd64) docker_platform="linux/amd64" ;;
-      arm64) docker_platform="linux/arm64" ;;
+      amd64) docker_platform="linux/amd64"; mise_arch=amd64 ;;
+      arm64) docker_platform="linux/arm64"; mise_arch=arm64 ;;
       *)
         printf "platform must be amd64 or arm64, got %s\n" "{{platform}}" >&2
         exit 1
@@ -110,6 +146,9 @@ construct-push-platform platform:
     if [ -z "${CI:-}" ] && [ "$REGISTRY_IMAGE" = "projectjackin/construct" ]; then
       printf "Set REGISTRY_IMAGE to your own namespace before using construct-push-platform locally.\n" >&2
       exit 1
+    fi
+    if [ -z "${MISE_APT_VERSION:-}" ]; then
+      export MISE_APT_VERSION="$(just _construct-mise-apt-version "${mise_arch}")"
     fi
     mkdir -p "${DIGEST_DIR}"
     metadata_file="$(mktemp "${TMPDIR:-/tmp}/jackin-construct-{{platform}}.XXXXXX.json")"
@@ -123,9 +162,6 @@ construct-push-platform platform:
       --metadata-file "${metadata_file}"
       --set "construct-publish.output=type=image,name=${REGISTRY_IMAGE},push-by-digest=true,name-canonical=true,push=true"
     )
-    if [ "${NO_CACHE:-}" = "1" ]; then
-      args+=(--no-cache)
-    fi
     if [ -n "${CACHE_FROM:-}" ]; then
       args+=(--set "construct-publish.cache-from=${CACHE_FROM}")
     fi

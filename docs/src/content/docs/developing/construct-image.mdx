@@ -76,7 +76,7 @@ The construct creates an `agent` user with:
 
 The construct source starts at <RepoFile path="docker/construct/Dockerfile" /> in the jackin' repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl" /> at the repo root, and the supported command wrapper is <RepoFile path="Justfile" /> at the repo root.
 
-<RepoFile path="docker/construct/versions.env" /> remains the source of truth for the pinned `tirith` and `shellfirm` build args used by <RepoFile path="docker/construct/Dockerfile" />. `mise` is installed from the official rolling apt repository during the Docker build.
+<RepoFile path="docker/construct/versions.env" /> remains the source of truth for the pinned `tirith` and `shellfirm` build args used by <RepoFile path="docker/construct/Dockerfile" />. `mise` is installed from the official rolling apt repository during the Docker build; the `just` recipes resolve the current apt package version and pass it as `MISE_APT_VERSION` so Buildx invalidates the mise install layer when upstream publishes a new package.
 
 ## Build workflow
 
@@ -135,9 +135,9 @@ REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-publish-manifest
 
 GitHub Actions reuses the same `just` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI triggers when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl" />, <RepoFile path="Justfile" />, or <RepoFile path=".github/workflows/construct.yml" />.
 
-Pull requests, plus manual workflow runs against non-`main` branches, build both architectures natively without pushing images. Those validation jobs run with Docker layer-cache reads disabled so apt package resolution is exercised during the PR check instead of being hidden by a stale cached layer. They still do not receive Docker Hub credentials.
+Pull requests, plus manual workflow runs against non-`main` branches, build both architectures natively without pushing images. Those validation jobs use the GitHub Actions cache backend; the cache key includes the resolved `MISE_APT_VERSION`, so a new upstream mise package invalidates the apt install layer while unrelated earlier layers can still be reused. They still do not receive Docker Hub credentials.
 
-Pushes to `main`, plus manual workflow runs against `main`, rebuild each platform with Docker layer-cache reads disabled, publish each platform by digest first, then assemble the final multi-platform manifest from those digests. That keeps the public tag surface limited to the canonical release tags instead of leaving permanent public `-amd64` and `-arm64` tags behind.
+Pushes to `main`, plus manual workflow runs against `main`, publish each platform by digest first, then assemble the final multi-platform manifest from those digests. The registry cache uses the same `MISE_APT_VERSION` keying behavior as PR builds. That keeps the public tag surface limited to the canonical release tags instead of leaving permanent public `-amd64` and `-arm64` tags behind.
 
 Published images also carry explicit BuildKit provenance and SBOM attestations.
 
