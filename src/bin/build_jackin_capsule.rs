@@ -28,7 +28,7 @@ use jackin::paths::JackinPaths;
 const WORKSPACE_ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
 fn main() -> Result<()> {
-    let Args { arch, export } = parse_args();
+    let Args { arch, export } = parse_args()?;
     let arch = arch.unwrap_or_else(|| container_arch().to_string());
 
     let paths = JackinPaths::detect()?;
@@ -64,7 +64,7 @@ struct Args {
     export: bool,
 }
 
-fn parse_args() -> Args {
+fn parse_args() -> Result<Args> {
     let mut arch = None;
     let mut export = false;
     let mut args = std::env::args().skip(1);
@@ -75,10 +75,17 @@ fn parse_args() -> Args {
             s if s.starts_with("--arch=") => {
                 arch = Some(s.trim_start_matches("--arch=").to_string());
             }
-            _ => {}
+            // Reject unknown tokens loudly. A silent catch-all here
+            // lets a typo like `--arc amd64` fall back to the host arch
+            // with no warning; the operator scp's the wrong-arch binary
+            // and only finds out later when `docker run` greets them
+            // with `exec format error`.
+            other => anyhow::bail!(
+                "unknown argument {other:?}; recognized flags: --arch <arm64|amd64>, --export"
+            ),
         }
     }
-    Args { arch, export }
+    Ok(Args { arch, export })
 }
 
 fn zigbuild_target(arch: &str) -> &'static str {

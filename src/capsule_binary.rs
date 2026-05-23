@@ -181,23 +181,27 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         )
     })?;
 
-    // Verify BEFORE rename so a verification failure leaves nothing
-    // in the final cache path. Promoting the tmp file to `dest`
-    // first and then bailing on verify failure would leave an
-    // executable-bit-set file at the cache location — the next
-    // `ensure_available` would see `is_valid_cached_binary == true`
-    // and reuse the wrong-version binary forever. Skip the exec
-    // check on non-Linux hosts: the binary is a Linux ELF and cannot
-    // be executed on macOS. The SHA-256 check above already proves
-    // the bytes match the published release, so a version mismatch
-    // at this point would indicate the release ↔ hash mapping
-    // itself drifted.
-    #[cfg(target_os = "linux")]
-    {
-        if let Err(e) = verify_version_exec(&tmp, version).await {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(e);
-        }
+    // Verify BEFORE rename so a verification failure leaves nothing in
+    // the final cache path. Promoting the tmp file to `dest` first and
+    // then bailing on verify failure would leave an executable-bit-set
+    // file at the cache location — the next `ensure_available` would
+    // see `is_valid_cached_binary == true` and reuse the wrong-version
+    // binary forever.
+    //
+    // Verification shape depends on host OS and version channel:
+    //   * Linux + stable: exec --version, require exact match.
+    //   * Linux + dev/preview: exec --version, require only the
+    //     ASSET_PREFIX identity marker (preview rolls forward
+    //     independently of the operator's HEAD; an exact match would
+    //     permanently reject every dev clone).
+    //   * Non-Linux: cannot exec a Linux ELF. Scan the file's bytes
+    //     for the same identity marker (and the version string, when
+    //     stable) since both are baked in via env! and appear as
+    //     contiguous ASCII runs.
+    let is_preview = version.contains("-dev") || version.contains("-preview.");
+    if let Err(e) = verify_version(&tmp, version, is_preview).await {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
     std::fs::rename(&tmp, dest)
         .with_context(|| format!("failed to move jackin-capsule to {}", dest.display()))?;
@@ -330,26 +334,80 @@ pub fn chmod_executable(path: &Path) -> Result<()> {
         .with_context(|| format!("chmod 0755 on {}", path.display()))
 }
 
-/// Verify the binary version by executing it. Linux only — macOS cannot exec Linux ELF.
-#[cfg(target_os = "linux")]
-async fn verify_version_exec(binary: &Path, expected: &str) -> Result<()> {
-    let output = tokio::process::Command::new(binary)
-        .arg("--version")
-        .output()
-        .await
-        .context("failed to run jackin-capsule --version")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if !stdout.contains(expected) {
-        anyhow::bail!(
-            "downloaded jackin-capsule reports {:?} but expected {expected}.\n\
-             Preview release binary may not match this commit yet.\n\
-             Delete and retry: rm -f {}",
-            stdout.trim(),
-            binary.display()
-        );
+/// Verify the downloaded binary is a jackin-capsule of the expected
+/// version. Strict matching is only meaningful for stable releases —
+/// dev/preview builds share a single rolling `preview` tag whose SHA
+/// drifts independently of any individual operator's HEAD, so a
+/// SHA-derived exact-version check would reject every dev clone.
+///
+/// Strategy:
+///   * Linux: exec `--version`, then either substring-match the
+///     full version (stable) or accept any output that names
+///     `jackin-capsule` (preview).
+///   * Non-Linux: scan the binary's bytes for the same markers since
+///     the Linux ELF cannot be executed on macOS/Windows.
+async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let output = tokio::process::Command::new(binary)
+            .arg("--version")
+            .output()
+            .await
+            .context("failed to run jackin-capsule --version")?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if is_preview {
+            if !stdout.contains(ASSET_PREFIX) {
+                anyhow::bail!(
+                    "downloaded binary does not identify as {ASSET_PREFIX} (got {stdout:?})"
+                );
+            }
+            return Ok(());
+        }
+        if !stdout.contains(expected) {
+            anyhow::bail!(
+                "downloaded jackin-capsule reports {:?} but expected {expected}.\n\
+                 Stable release ↔ asset mapping appears to have drifted.\n\
+                 Delete and retry: rm -f {}",
+                stdout.trim(),
+                binary.display()
+            );
+        }
+        Ok(())
     }
-    Ok(())
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Cannot exec a Linux ELF on macOS / Windows. Scan the file
+        // contents for the same identity markers the Linux exec check
+        // verifies; the version + asset prefix strings are baked in
+        // via env! and appear as contiguous ASCII runs.
+        let bytes = std::fs::read(binary)
+            .with_context(|| format!("reading {} for verification", binary.display()))?;
+        if !contains_subslice(&bytes, ASSET_PREFIX.as_bytes()) {
+            anyhow::bail!(
+                "downloaded binary at {} does not contain the {ASSET_PREFIX} identity marker",
+                binary.display()
+            );
+        }
+        if !is_preview && !contains_subslice(&bytes, expected.as_bytes()) {
+            anyhow::bail!(
+                "downloaded binary at {} does not contain expected version {expected}.\n\
+                 Stable release ↔ asset mapping appears to have drifted.\n\
+                 Delete and retry: rm -f {}",
+                binary.display(),
+                binary.display()
+            );
+        }
+        let _ = expected;
+        Ok(())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return false;
+    }
+    haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 #[cfg(test)]

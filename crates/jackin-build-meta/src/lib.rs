@@ -25,6 +25,13 @@ pub fn derive_version(git_dir_relative: &str) -> String {
     println!("cargo:rerun-if-env-changed=JACKIN_VERSION_OVERRIDE");
     println!("cargo:rerun-if-changed={git_dir_relative}/HEAD");
     println!("cargo:rerun-if-changed={git_dir_relative}/refs");
+    // `git gc` / `git pack-refs` consolidates loose refs into
+    // .git/packed-refs; after that, branch-tip moves (fast-forwards,
+    // fetches) update only packed-refs and never touch .git/refs/. Watch
+    // it explicitly so the embedded version SHA stays in sync with the
+    // working checkout regardless of which storage shape the local
+    // repository uses.
+    println!("cargo:rerun-if-changed={git_dir_relative}/packed-refs");
 
     if let Ok(override_version) = std::env::var("JACKIN_VERSION_OVERRIDE") {
         return override_version;
