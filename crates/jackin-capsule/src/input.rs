@@ -89,6 +89,17 @@ pub struct InputParser {
     in_paste: bool,
 }
 
+/// Cap on the in-progress CSI/OSC/SS3/OtherEsc sequence buffer. The
+/// parser is stateful across `parse()` calls — an attacker (or operator
+/// pasting malformed terminal output) could otherwise stream
+/// `\x1b[` followed by megabytes of parameter bytes across many input
+/// frames without ever sending the terminator byte, growing `self.seq`
+/// unboundedly. 16 KiB is well above the largest legitimate terminal
+/// escape (kitty graphics OSC payloads top out around 4 KiB chunks).
+/// When the cap is hit we drop the in-flight sequence and reset to
+/// Idle so a subsequent well-formed sequence resyncs cleanly.
+const MAX_ESC_SEQ_LEN: usize = 16 * 1024;
+
 #[derive(Debug, PartialEq, Eq)]
 enum State {
     Idle,
@@ -224,6 +235,11 @@ impl InputParser {
                     self.state = State::Idle;
                 }
                 State::Csi => {
+                    if self.seq.len() >= MAX_ESC_SEQ_LEN {
+                        self.seq.clear();
+                        self.state = State::Idle;
+                        continue;
+                    }
                     self.seq.push(b);
                     if matches!(b, 0x40..=0x7E) {
                         if self.seq.as_slice() == b"\x1b[M" {
@@ -264,6 +280,11 @@ impl InputParser {
                     }
                 }
                 State::Osc => {
+                    if self.seq.len() >= MAX_ESC_SEQ_LEN {
+                        self.seq.clear();
+                        self.state = State::Idle;
+                        continue;
+                    }
                     self.seq.push(b);
                     if b == 0x07
                         || (b == 0x5C
@@ -275,6 +296,11 @@ impl InputParser {
                     }
                 }
                 State::OtherEsc => {
+                    if self.seq.len() >= MAX_ESC_SEQ_LEN {
+                        self.seq.clear();
+                        self.state = State::Idle;
+                        continue;
+                    }
                     self.seq.push(b);
                     if b == 0x07
                         || (b == 0x5C
@@ -886,6 +912,35 @@ mod tests {
                 button: 0
             }]
         );
+    }
+
+    #[test]
+    fn unterminated_csi_does_not_grow_unbounded() {
+        // Stateful parser must drop an in-progress CSI/OSC/OtherEsc
+        // sequence when it exceeds MAX_ESC_SEQ_LEN — otherwise a
+        // peer streaming `\x1b[` followed by megabytes of parameter
+        // bytes across many parse() calls grows self.seq forever.
+        let mut parser = InputParser::default();
+        // Open the CSI parameter run.
+        parser.parse(b"\x1b[");
+        // Feed enough parameter bytes (no final 0x40..=0x7E) to overflow.
+        let junk = vec![b';'; MAX_ESC_SEQ_LEN + 256];
+        parser.parse(&junk);
+        // After the cap fires the parser resets; a well-formed
+        // sequence right after must classify cleanly.
+        let events = parser.parse(b"\x1b[A");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[A".to_vec())]);
+    }
+
+    #[test]
+    fn unterminated_osc_does_not_grow_unbounded() {
+        let mut parser = InputParser::default();
+        parser.parse(b"\x1b]52;c;");
+        let junk = vec![b'A'; MAX_ESC_SEQ_LEN + 256];
+        parser.parse(&junk);
+        // Cap fires; a fresh sequence resyncs.
+        let events = parser.parse(b"\x1b[A");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[A".to_vec())]);
     }
 
     #[test]

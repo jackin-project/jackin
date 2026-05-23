@@ -10,6 +10,8 @@
 /// 4-byte big-endian length, which is always `0x00` for the message
 /// sizes the host CLI sends. Reading the first byte tells the daemon
 /// which protocol the client is speaking.
+use std::time::Duration;
+
 use anyhow::{Context, Result, bail};
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
@@ -33,6 +35,23 @@ pub const TAG_BELL: u8 = 0x85;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 pub const MAX_HELLO_ENV: usize = 64;
+/// Per-entry cap on Hello env-value byte length. Operator-supplied env
+/// values in jackin' are short (slugs, booleans, file paths); cap at
+/// 8 KiB so a buggy or hostile client cannot smuggle a megabyte-sized
+/// env entry past MAX_HELLO_ENV (the count cap) into the spawned
+/// session's environment block.
+pub const MAX_HELLO_ENV_VALUE: usize = 8 * 1024;
+/// Per-entry cap on Hello env-key byte length. Same shape as
+/// MAX_HELLO_ENV_VALUE; env-var names should be even shorter than
+/// values, but the wire field is still u16-sized so we bound it.
+pub const MAX_HELLO_ENV_KEY: usize = 1024;
+
+/// Wall-clock cap for a single attach frame's read. Bounded so a peer
+/// that stalls between length prefix and payload — or trickles bytes
+/// slower than the bandwidth bound — cannot pin the per-connection
+/// task. 4 MiB across 10 s is ~409 KiB/s, well below any reasonable
+/// localhost rate.
+const FRAME_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpawnRequest {
@@ -163,6 +182,18 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             for (key, value) in env {
                 let key_bytes = key.as_bytes();
                 let value_bytes = value.as_bytes();
+                if key_bytes.len() > MAX_HELLO_ENV_KEY {
+                    bail!(
+                        "hello env key {key:?} length {} exceeds cap {MAX_HELLO_ENV_KEY}",
+                        key_bytes.len()
+                    );
+                }
+                if value_bytes.len() > MAX_HELLO_ENV_VALUE {
+                    bail!(
+                        "hello env value for {key:?} length {} exceeds cap {MAX_HELLO_ENV_VALUE}",
+                        value_bytes.len()
+                    );
+                }
                 let key_len = u16::try_from(key_bytes.len()).map_err(|_| {
                     anyhow::anyhow!("hello env key {key:?} exceeds u16::MAX bytes on the wire")
                 })?;
@@ -210,28 +241,46 @@ async fn read_framed_payload(
     first_byte: u8,
 ) -> Result<Option<(u8, Vec<u8>)>> {
     let mut len_buf = [0u8; 4];
-    if let Err(e) = stream.read_exact(&mut len_buf).await {
-        // Clean EOF (peer closed before sending any length byte) is
-        // the expected end-of-stream signal. Anything else — connection
-        // reset, EPIPE, timeout — gets bubbled so the daemon clog
-        // attributes the cause instead of silently treating it as EOF.
-        if e.kind() == std::io::ErrorKind::UnexpectedEof {
-            return Ok(None);
+    match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(&mut len_buf)).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            // Clean EOF (peer closed before sending any length byte) is
+            // the expected end-of-stream signal. Anything else — connection
+            // reset, EPIPE, timeout — gets bubbled so the daemon clog
+            // attributes the cause instead of silently treating it as EOF.
+            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Ok(None);
+            }
+            return Err(e).context("attach frame: reading length prefix");
         }
-        return Err(e).context("attach frame: reading length prefix");
+        Err(_) => bail!("attach frame: timed out reading length prefix"),
     }
     let len = u32::from_be_bytes(len_buf) as usize;
     if len > MAX_FRAME_PAYLOAD {
         bail!("attach frame payload {len} exceeds limit {MAX_FRAME_PAYLOAD}");
     }
-    let mut payload = vec![0u8; len];
-    if !payload.is_empty()
-        && let Err(e) = stream.read_exact(&mut payload).await
-    {
-        if e.kind() == std::io::ErrorKind::UnexpectedEof {
-            return Ok(None);
+    // Chunked-grow read avoids the eager `vec![0u8; len]` memset that
+    // would zero-touch up to 4 MiB on every frame regardless of whether
+    // the peer ever delivers the bytes. A stalled or trickle attacker
+    // would otherwise burn gigabytes of memset bandwidth per
+    // connection-second.
+    let mut payload: Vec<u8> = Vec::with_capacity(len.min(64 * 1024));
+    let mut remaining = len;
+    let mut chunk = [0u8; 16 * 1024];
+    while remaining > 0 {
+        let n = chunk.len().min(remaining);
+        match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(&mut chunk[..n])).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    return Ok(None);
+                }
+                return Err(e).context("attach frame: reading payload");
+            }
+            Err(_) => bail!("attach frame: timed out reading payload"),
         }
-        return Err(e).context("attach frame: reading payload");
+        payload.extend_from_slice(&chunk[..n]);
+        remaining -= n;
     }
     Ok(Some((first_byte, payload)))
 }
@@ -296,6 +345,12 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             for _ in 0..env_count {
                 let key_len = cursor.read_u16("env key length")? as usize;
                 let value_len = cursor.read_u32("env value length")? as usize;
+                if key_len > MAX_HELLO_ENV_KEY {
+                    bail!("hello env key length {key_len} exceeds cap {MAX_HELLO_ENV_KEY}");
+                }
+                if value_len > MAX_HELLO_ENV_VALUE {
+                    bail!("hello env value length {value_len} exceeds cap {MAX_HELLO_ENV_VALUE}");
+                }
                 let key = cursor.read_string(key_len, "env key")?;
                 let value = cursor.read_string(value_len, "env value")?;
                 env.push((key, value));
@@ -778,6 +833,67 @@ mod tests {
             }
             other => panic!("expected Hello, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn hello_env_value_over_cap_rejected_by_encoder() {
+        // Encoder gate must reject a single env value larger than
+        // MAX_HELLO_ENV_VALUE so a buggy producer cannot smuggle a
+        // megabyte-sized env entry past MAX_HELLO_ENV.
+        let big = "v".repeat(MAX_HELLO_ENV_VALUE + 1);
+        let err = encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn: None,
+            env: vec![("PWD".into(), big)],
+            focus_session: None,
+        })
+        .expect_err("over-cap env value must be rejected at encode");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("env value"), "got: {msg}");
+        assert!(msg.contains(&MAX_HELLO_ENV_VALUE.to_string()), "got: {msg}");
+    }
+
+    #[test]
+    fn hello_env_value_over_cap_rejected_by_decoder() {
+        // Wire-level counterpart: a hand-crafted payload claiming
+        // value_len > MAX_HELLO_ENV_VALUE must be rejected before
+        // any read_string allocates the actual bytes.
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&24u16.to_be_bytes()); // rows
+        payload.extend_from_slice(&80u16.to_be_bytes()); // cols
+        payload.push(0u8); // spawn_kind = None
+        payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
+        payload.extend_from_slice(&1u16.to_be_bytes()); // env_count = 1
+        payload.extend_from_slice(&3u16.to_be_bytes()); // key_len = 3
+        let bogus_value_len = u32::try_from(MAX_HELLO_ENV_VALUE + 1).expect("fits u32");
+        payload.extend_from_slice(&bogus_value_len.to_be_bytes());
+        payload.extend_from_slice(b"PWD");
+        // No need to supply the value bytes; the cap check fires before
+        // read_string reaches into the buffer.
+        let err = decode_client(TAG_HELLO, payload)
+            .expect_err("over-cap env value length must be rejected at decode");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("env value"), "got: {msg}");
+        assert!(msg.contains(&MAX_HELLO_ENV_VALUE.to_string()), "got: {msg}");
+    }
+
+    #[test]
+    fn hello_env_key_over_cap_rejected_by_decoder() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&24u16.to_be_bytes());
+        payload.extend_from_slice(&80u16.to_be_bytes());
+        payload.push(0u8);
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        let bogus_key_len = u16::try_from(MAX_HELLO_ENV_KEY + 1).expect("fits u16");
+        payload.extend_from_slice(&bogus_key_len.to_be_bytes());
+        payload.extend_from_slice(&1u32.to_be_bytes());
+        let err = decode_client(TAG_HELLO, payload)
+            .expect_err("over-cap env key length must be rejected at decode");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("env key"), "got: {msg}");
+        assert!(msg.contains(&MAX_HELLO_ENV_KEY.to_string()), "got: {msg}");
     }
 
     #[test]

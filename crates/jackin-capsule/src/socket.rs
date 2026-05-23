@@ -197,6 +197,13 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     Ok((rx, limiter))
 }
 
+/// Maximum wall-clock time for a single control-channel read. Capped
+/// so a peer that stalls between length prefix and body — or trickles
+/// bytes slower than the bandwidth bound — cannot pin a tokio task
+/// and its concurrency permit indefinitely. 4 MiB across 10 s is
+/// ~409 KiB/s, well below any reasonable localhost rate.
+const CONTROL_READ_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Read a length-prefixed JSON control message whose 4-byte length
 /// prefix begins with `first_byte = 0x00` (already consumed by the
 /// dispatcher). Returns `Err` with context on every failure mode so
@@ -205,9 +212,9 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
 /// reply that never comes.
 pub async fn read_control_msg(stream: &mut UnixStream, first_byte: u8) -> Result<ClientMsg> {
     let mut rest = [0u8; 3];
-    stream
-        .read_exact(&mut rest)
+    tokio::time::timeout(CONTROL_READ_TIMEOUT, stream.read_exact(&mut rest))
         .await
+        .context("control msg: timed out reading length suffix")?
         .context("control msg: reading length suffix")?;
     let len_buf = [first_byte, rest[0], rest[1], rest[2]];
     let len = u32::from_be_bytes(len_buf) as usize;
@@ -215,12 +222,43 @@ pub async fn read_control_msg(stream: &mut UnixStream, first_byte: u8) -> Result
     if len > MAX_CONTROL_MSG {
         anyhow::bail!("control msg length {len} exceeds limit {MAX_CONTROL_MSG}");
     }
-    let mut body = vec![0u8; len];
-    stream
-        .read_exact(&mut body)
+    let body = read_payload_lazy(stream, len, CONTROL_READ_TIMEOUT)
         .await
         .context("control msg: reading body")?;
     serde_json::from_slice(&body).context("control msg: parsing JSON body")
+}
+
+/// Read exactly `len` bytes from `stream` into a freshly-allocated
+/// `Vec<u8>` that grows lazily as chunks arrive. Two reasons for the
+/// chunked shape over `read_exact(&mut vec![0u8; len])`:
+///
+/// 1. `vec![0u8; len]` calls `write_bytes(0)` over `len` bytes before
+///    any payload byte arrives. A peer that sends a 4 MiB length
+///    prefix then stalls forces 4 MiB of zero-touched RSS per
+///    connection. `Vec::with_capacity` only reserves and grows as
+///    `extend_from_slice` runs, so memset cost scales with bytes
+///    actually delivered.
+/// 2. Bounded `total_timeout` for the whole read prevents a
+///    trickle-bytes attacker from holding the connection (and the
+///    attach-concurrency permit) indefinitely.
+async fn read_payload_lazy(
+    stream: &mut UnixStream,
+    len: usize,
+    total_timeout: Duration,
+) -> Result<Vec<u8>> {
+    let mut buf: Vec<u8> = Vec::with_capacity(len.min(64 * 1024));
+    let mut remaining = len;
+    let mut chunk = [0u8; 16 * 1024];
+    while remaining > 0 {
+        let n = chunk.len().min(remaining);
+        tokio::time::timeout(total_timeout, stream.read_exact(&mut chunk[..n]))
+            .await
+            .context("read timed out")?
+            .context("short read")?;
+        buf.extend_from_slice(&chunk[..n]);
+        remaining -= n;
+    }
+    Ok(buf)
 }
 
 /// Handle a one-shot control request and close the connection.
