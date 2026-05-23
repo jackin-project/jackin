@@ -37,7 +37,7 @@ What the template deliberately omits:
 
 Every pull request must include a copy-pasteable "Verify locally" section in the PR body. Agents creating PRs must also repeat the same commands in their final response after sharing the PR URL (agent-specific rule — see [`.github/AGENTS.md`](.github/AGENTS.md)).
 
-Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
+Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a PR-specific test directory (`$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>`) so the operator can inspect multiple PRs at once without checkout collisions. Use the PR number instead of the branch name for this directory: PR numbers are unique and stable, while branch names can contain slashes, be reused, or change during iteration. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
 Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Rust tests only when there is a relevant `cargo` or `cargo nextest` command for the Rust project. Add Docs checks only when there is a relevant automated docs command, such as `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, or `bun test` from `docs/`. Keep Rust tests and Docs checks in separate blocks; docs tests validate the published documentation surface and docs tooling, not the Rust project itself. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command because it is the operator's most intuitive end-to-end validation path: `jackin console --debug`. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct commands such as `jackin load <role> <target> --debug` or narrower subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
@@ -89,8 +89,8 @@ export TIRITH=0
 Then paste the checkout block:
 
 ```sh
-mkdir -p "$HOME/Projects/jackin-project/test"
-cd "$HOME/Projects/jackin-project/test"
+mkdir -p "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+cd "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
 
 if [ ! -d jackin/.git ]; then
   git clone https://github.com/jackin-project/jackin.git

@@ -74,8 +74,8 @@ export TIRITH=0
 Then paste the checkout block:
 
 ```sh
-mkdir -p "$HOME/Projects/jackin-project/test"
-cd "$HOME/Projects/jackin-project/test"
+mkdir -p "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+cd "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
 
 if [ ! -d jackin/.git ]; then
   git clone https://github.com/jackin-project/jackin.git
