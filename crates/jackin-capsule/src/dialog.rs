@@ -800,10 +800,10 @@ impl Dialog {
                 .max(PALETTE_WIDTH),
             _ => PALETTE_WIDTH,
         };
-        // Filterable dialogs grow by 2 rows over the legacy layout to
-        // make room for the filter input + a blank separator above
-        // the items list. Item count tracks the *filtered* set so the
-        // box shrinks as the operator narrows the matches.
+        // Filterable dialogs reserve 2 extra rows: one for the filter
+        // input and one for the separator above the items list. Item
+        // count tracks the *filtered* set so the box shrinks as the
+        // operator narrows the matches.
         let natural_height = match self {
             Self::CommandPalette {
                 filter,
@@ -2140,10 +2140,8 @@ mod tests {
     fn palette_typing_filters_items_and_resets_selection() {
         let mut d = palette_with(3, String::new());
         // Type "split" — narrows to the single "Split pane" item +
-        // resets selection to 0. (The legacy `Split pane │ (side by
-        // side)` + `Split pane ─ (top / bottom)` pair collapsed into
-        // one menu entry; the directional choice now lives in the
-        // SplitDirectionPicker sub-dialog opened on confirm.)
+        // resets selection to 0. The directional choice lives in the
+        // SplitDirectionPicker sub-dialog opened on confirm.
         for &c in b"split" {
             d.handle_key(&[c]);
         }

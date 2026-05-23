@@ -1899,7 +1899,7 @@ impl ManagerState<'_> {
                 self.instances_last_error = None;
                 // Load recorded sessions for each active/running instance.
                 // These come from persisted manifests and may not reflect live
-                // tmux state, but provide useful context without Docker exec.
+                // multiplexer state, but provide useful context without Docker exec.
                 self.instance_sessions.clear();
                 self.instance_session_errors.clear();
                 self.instance_snapshots.clear();

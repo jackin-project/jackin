@@ -169,8 +169,8 @@ async fn require_container_reachable(
 
 /// Open a one-shot interactive zsh shell in a running container.
 ///
-/// Intentionally ephemeral — no tmux session, no reconnect. Used by
-/// `jackin hardline --shell` and the console Shell action.
+/// Ephemeral one-shot — no persistent session, no reconnect on detach. Used
+/// by `jackin hardline --shell` and the console Shell action.
 pub async fn spawn_shell_session(
     paths: &JackinPaths,
     container_name: &str,
@@ -288,8 +288,8 @@ pub async fn hardline_agent_with_focus(
     docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    // Reconcile keep_awake right before each `reconnect_or_create_session` call.
-    // `reconnect_or_create_session` blocks on the tmux exec until the session ends,
+    // Reconcile keep_awake right before each `reconnect_or_create_session_with_focus`
+    // call. The attach blocks on the jackin-capsule exec until the session ends,
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
     // too late. Firing here, while the container is observably running, ensures
     // caffeinate spawns for the duration of the re-attached session.

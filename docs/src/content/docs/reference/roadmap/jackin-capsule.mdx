@@ -17,7 +17,7 @@ The remainder of this page is the original Phase 1–3 design rationale, kept fo
 
 ## Problem
 
-The current container supervisor is a bash wait loop (<RepoFile path="docker/runtime/supervisor.sh" />) that keeps the container alive while agent sessions run via `docker exec`. It has two immediate limitations and one deeper architectural gap.
+Before the Capsule rewrite, the container supervisor was a bash wait loop (`docker/runtime/supervisor.sh`, deleted alongside this Phase) that kept the container alive while agent sessions ran via `docker exec`. It had two immediate limitations and one deeper architectural gap.
 
 **Last-session cleanup does not fire** *(resolved in Phase 1).* When a tmux session exits, the supervisor was keeping the container running. Because the container state is `Running` rather than `Stopped`, the host jackin cleanup path (`finalize_foreground_session`, container teardown, DinD/network/certs removal) would not fire automatically. The operator had to explicitly run `jackin eject` to clean up a container after all sessions end.
 
@@ -44,7 +44,7 @@ This makes `jackin-capsule` the data source for all future observability feature
 
 ### Binary name and location
 
-The binary is named `jackin-capsule` and lives at `/jackin/runtime/jackin-capsule` inside every Capsule-managed role container. It replaces <RepoFile path="docker/runtime/supervisor.sh" /> as PID 1.
+The binary is named `jackin-capsule` and lives at `/jackin/runtime/jackin-capsule` inside every Capsule-managed role container. It replaces the deleted `docker/runtime/supervisor.sh` bash wait loop as PID 1.
 
 ### Crate
 
@@ -453,7 +453,7 @@ The deeper architectural difference: Herdr wraps **bare host processes**. jackin
 
 **Historical pre-Capsule state:** containers used tmux as the session layer. That temporary arrangement used `docker exec tmux new-session` to create sessions, `docker exec tmux attach-session` to reconnect, and `docker exec tmux list-sessions` to query what was running. The bash supervisor wrapped tmux from the outside and had no understanding of what happened inside sessions. It worked as a minimal path, but gave jackin' no visibility into agent state, no structured event stream, and no way to manage sessions without shelling into the container.
 
-**What shipped in Phase 1:** <RepoFile path="docker/runtime/supervisor.sh" /> now polls `tmux list-sessions` every second rather than watching the socket file disappear. Using `tmux list-sessions` is robust to stale socket files left behind when tmux crashes or is killed without cleanup — a plain `[ -S socket ]` file-existence check would loop forever on a dead socket. When `tmux list-sessions` returns non-zero (server gone or no sessions), the supervisor exits 0. A 60-second startup grace period waits for the socket file to appear before entering the monitor loop, preventing a premature exit before the first `docker exec tmux new-session` creates it.
+**What shipped in Phase 1:** `docker/runtime/supervisor.sh` (since deleted) polled `tmux list-sessions` every second rather than watching the socket file disappear. Using `tmux list-sessions` was robust to stale socket files left behind when tmux crashed or was killed without cleanup — a plain `[ -S socket ]` file-existence check would loop forever on a dead socket. When `tmux list-sessions` returned non-zero (server gone or no sessions), the supervisor exited 0. A 60-second startup grace period waited for the socket file to appear before entering the monitor loop, preventing a premature exit before the first `docker exec tmux new-session` created it.
 
 Two companion fixes in the host-side Rust code were required to make the cleanup path actually fire. <RepoFile path="src/isolation/finalize.rs" /> (`finalize_foreground_session`) now calls `has_tmux_sessions` when the container is still `Running` after `docker exec` returns: an empty session list means supervisor lag, not a detach, so the code falls through to `finalize_clean_exit` and sweeps isolation worktrees normally instead of returning `Preserved`. <RepoFile path="src/runtime/launch.rs" /> now tears down the DinD sidecar and Docker network in every branch where the container has exited — including crashes (non-zero exit) — rather than preserving them for a `jackin hardline` reconnect that cannot work without a live DinD. When `docker exec` returns and the container is still `Running` with an empty session list, teardown fires immediately without a redundant re-query (the session check in `finalize_foreground_session` already confirmed no sessions are present). Only a genuinely live detach (container still `Running` AND sessions confirmed present) keeps the DinD alive for reconnect.
 
@@ -469,7 +469,7 @@ Two companion fixes in the host-side Rust code were required to make the cleanup
 - Add socket mount to `docker run` in <RepoFile path="src/runtime/launch.rs" />.
 - Update `inspect_agent_sessions` in <RepoFile path="src/runtime/attach.rs" /> to query socket instead of `docker exec tmux list-sessions`.
 - Update `hardline --inspect` and console session inventory to use socket path.
-- Remove <RepoFile path="docker/runtime/supervisor.sh" /> (pre-release; no migration shim needed).
+- Remove `docker/runtime/supervisor.sh` (pre-release; no migration shim needed).
 
 ### Phase 3 — In-container multiplexer *(replace tmux — rewrite in flight)*
 

@@ -562,9 +562,8 @@ fn copy_to_linux_layout(
 
 // ── Role source trust ───────────────────────────────────────────────────
 
-/// Display an untrusted-role warning and ask the operator to confirm.
-/// Aborts when stdin is not a terminal or the operator declines.
-/// Branch-specific trust confirmation.
+/// Branch-specific trust confirmation. Aborts when stdin is not a terminal
+/// or the operator declines.
 ///
 /// Even when a role is already trusted, an unmerged branch contains unreviewed
 /// code. The operator trusted the *default* branch, not this PR. A malicious

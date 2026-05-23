@@ -119,11 +119,13 @@ pub fn start_listener()
                         );
                         return;
                     }
-                    // Exponential backoff capped at 5s so an EMFILE
-                    // storm doesn't spin the runtime.
-                    let backoff_ms = 50u64
-                        .saturating_mul(1u64 << consecutive_failures.min(7))
-                        .min(5_000);
+                    // Exponential backoff capped at 5 s so an EMFILE
+                    // storm doesn't spin the runtime. `min(.min(5_000))`
+                    // is the load-bearing cap; the shift cap at 16 just
+                    // avoids u64 overflow if a future operator raises
+                    // `ACCEPT_FAILURE_BAIL` past the current ladder.
+                    let shift = consecutive_failures.saturating_sub(1).min(16);
+                    let backoff_ms = 50u64.saturating_mul(1u64 << shift).min(5_000);
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
             }

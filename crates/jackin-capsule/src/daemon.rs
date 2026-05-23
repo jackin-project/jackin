@@ -1051,8 +1051,9 @@ impl Multiplexer {
     }
 
     /// Split the focused pane and clone the source pane's agent into
-    /// the new pane. Kept for the tmux-style `Ctrl+B %` / `Ctrl+B "`
-    /// prefix bindings, which spawn-and-go without an agent picker.
+    /// the new pane. Used by the `Ctrl+B %` / `Ctrl+B "` prefix
+    /// bindings so split-and-spawn skips the agent picker and inherits
+    /// the source pane's runtime.
     fn split_focused(&mut self, direction: SplitDirection) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
         let Some(tab) = self.tabs.get(self.active_tab) else {
@@ -1158,12 +1159,11 @@ impl Multiplexer {
     /// all tabs), but render / input / scroll / mouse paths must
     /// behave as if zoom is per-tab — switching tabs has to surface
     /// the new tab's panes normally even when a different tab still
-    /// has a zoomed session pinned, or the operator opens a new tab
-    /// and only sees the previously-zoomed pane painted full-screen
-    /// (the regression operators reported as "I selected Shell but I
-    /// still see Claude"). Returning `None` from the active-tab check
-    /// routes every consumer of zoom state through the normal
-    /// multi-pane path for tabs that don't hold the zoom.
+    /// has a zoomed session pinned, otherwise opening a new tab paints
+    /// the previously-zoomed pane full-screen. Returning `None` from
+    /// the active-tab check routes every consumer of zoom state
+    /// through the normal multi-pane path for tabs that don't hold
+    /// the zoom.
     fn active_zoomed_id(&self) -> Option<u64> {
         let zoom_id = self.zoomed?;
         let tab = self.tabs.get(self.active_tab)?;
@@ -1454,10 +1454,7 @@ impl Multiplexer {
                 // Pass row+1 / col+1 here so `handle_click` compares
                 // apples to apples — otherwise a click on the
                 // dialog's top border or leftmost column reads as
-                // outside-the-box and immediately dismisses the
-                // dialog, which is exactly the regression operators
-                // reported as "the dialog disappears when I click on
-                // it."
+                // outside-the-box and dismisses the dialog.
                 let term_rows = self.term_rows;
                 let term_cols = self.term_cols;
                 let action = self
@@ -2963,10 +2960,6 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     }
 }
 
-/// Send `Shutdown` to the attached client and pause briefly so the
-/// frame actually leaves the socket before PID 1 exits. Called when
-/// the daemon decides to tear the container down (last session died,
-/// last pane killed, or SIGTERM arrived).
 /// A validated attach handshake produced by `perform_handshake`. The
 /// main loop applies these — `client_permit` is kept alive until the
 /// spawned persistent attach task drops it.

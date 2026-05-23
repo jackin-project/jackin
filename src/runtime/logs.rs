@@ -127,9 +127,17 @@ fn enumerate(paths: &JackinPaths) -> Result<Vec<LogEntry>> {
         };
         out.push(LogEntry::from_manifest(manifest, log_path));
     }
-    // Most recently updated first — matches the operator's mental model
-    // ("the container I was just in") for both list and selection.
-    out.sort_by(|a, b| b.container_base.cmp(&a.container_base));
+    // Most recently updated log first — matches the operator's mental
+    // model ("the container I was just in") for both list and selection.
+    // Sort by log-file mtime, falling back to UNIX_EPOCH when the OS does
+    // not expose mtime so the order stays deterministic instead of panicking.
+    out.sort_by_key(|e| {
+        std::cmp::Reverse(
+            std::fs::metadata(&e.log_path)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH),
+        )
+    });
     Ok(out)
 }
 

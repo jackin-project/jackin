@@ -27,8 +27,7 @@ pub struct LogsArgs {
     /// or --bundle.
     pub selector: Option<String>,
 
-    /// Print the resolved log path instead of its content. Implied when
-    /// no other action flag is set and a selector is given.
+    /// Print the resolved log path instead of its content.
     #[arg(long, conflicts_with_all = ["follow", "bundle"])]
     pub path: bool,
 

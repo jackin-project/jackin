@@ -34,9 +34,15 @@ async fn main() -> Result<()> {
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
                     Some(raw) => match validate_agent_slug(raw) {
-                        Ok(s) => Some(SpawnRequest::agent(s).expect(
-                            "validate_agent_slug rejects empty input; agent() guard is satisfied",
-                        )),
+                        Ok(s) => match SpawnRequest::agent(s) {
+                            Ok(req) => Some(req),
+                            Err(reason) => {
+                                eprintln!(
+                                    "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
+                                );
+                                None
+                            }
+                        },
                         Err(reason) => {
                             eprintln!(
                                 "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
@@ -48,8 +54,6 @@ async fn main() -> Result<()> {
                 client::run_client(spawn, focus_session).await
             }
             Some(other) if other.starts_with("--focus") => {
-                // Bare `jackin-capsule --focus <id>` → plain attach
-                // with focus.
                 client::run_client(None, focus_session).await
             }
             Some(other) => {

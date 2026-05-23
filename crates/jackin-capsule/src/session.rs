@@ -53,12 +53,6 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
 /// keymap-mode depth.
 const KITTY_KB_STACK_CAP: usize = 64;
 
-/// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
-/// canonically arrives as `file://<host>/<percent-encoded-path>`;
-/// `url::Url` does the percent-decoding and host-stripping in one
-/// pass. Returns `None` for any payload that does not parse as a
-/// `file://` URL — silently trusting arbitrary text would let an
-/// agent overwrite the pane title with whatever it pleased.
 /// True when an OSC 8 `URI` payload is safe to forward to the
 /// operator's host terminal. The empty URI is a terminator (closing
 /// a hyperlink range), so it always passes; otherwise the scheme
@@ -77,6 +71,12 @@ fn osc8_uri_is_safe(uri: &[u8]) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
 }
 
+/// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
+/// canonically arrives as `file://<host>/<percent-encoded-path>`;
+/// `url::Url` does the percent-decoding and host-stripping in one
+/// pass. Returns `None` for any payload that does not parse as a
+/// `file://` URL — silently trusting arbitrary text would let an
+/// agent overwrite the pane title with whatever it pleased.
 fn parse_osc7(payload: &str) -> Option<String> {
     let url = url::Url::parse(payload).ok()?;
     if url.scheme() != "file" {
@@ -146,13 +146,11 @@ impl OscPolicy {
 
     /// Test-only constructor with every passthrough gate closed.
     /// Production code must call `from_env()`; the `#[doc(hidden)]`
-    /// attribute hides this from rustdoc and the leading-underscore-
-    /// adjacent `for_test` prefix flags intent to readers. Cargo
-    /// limitations (a crate cannot list itself in `[dev-dependencies]`
-    /// with a feature flag) make a `#[cfg(feature = "test-helpers")]`
-    /// gate impractical without breaking the default `cargo test`
-    /// invocation that integration tests rely on — the documented
-    /// trade-off in commit f9903cbf.
+    /// attribute hides this from rustdoc and the `for_test_` prefix
+    /// flags intent to readers. Cargo cannot list a crate in its own
+    /// `[dev-dependencies]` with a feature flag, so a `#[cfg(feature
+    /// = "test-helpers")]` gate would break the default `cargo test`
+    /// invocation that integration tests rely on.
     #[doc(hidden)]
     pub fn for_test_deny_all() -> Self {
         Self {
@@ -673,12 +671,10 @@ impl Session {
     /// history); negative = scroll down (toward live tail).
     ///
     /// Up-scroll is clamped to the **actual filled scrollback** at
-    /// call time. Without this clamp, scrolling past the top would
-    /// silently inflate `scrollback_offset` while vt100 clamped
-    /// itself to the filled count — and subsequent down-scrolls
-    /// would have to chew through the phantom distance before the
-    /// visible view moved. Operator's symptom was "I scrolled too
-    /// far up, scrolling back down doesn't react for a while."
+    /// call time. Without this clamp, scrolling past the top inflates
+    /// `scrollback_offset` while vt100 clamps itself to the filled
+    /// count, so subsequent down-scrolls must chew through the
+    /// phantom distance before the visible view moves.
     pub fn scroll_by(&mut self, delta: i32) {
         let new = if delta > 0 {
             let filled = self.scrollback_filled();
