@@ -2,10 +2,10 @@ name: Renovate Validate
 
 # Verify the upstream sources the Renovate `customManagers` point at
 # still resolve and still list the expected package names. Renovate's
-# `deb` and `github-releases` datasources fail silently — they just
-# return "no updates available" — so a URL that 404s or a renamed
-# upstream package would silently re-introduce the version drift the
-# PR's customManagers were added to prevent.
+# `deb` and `github-releases` datasources can otherwise look like "no updates
+# available", so a renamed upstream package would silently re-introduce
+# version drift. The mise check also verifies the pinned version still exists
+# for both construct architectures.
 #
 # Schema validation is intentionally omitted here: the renovate
 # config-validator npm package's behavior across versions has been
@@ -33,18 +33,30 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      # No checkout: the only assertion runs `curl` against an
-      # external URL and reads no repo files.
-      - name: Verify mise apt source resolves and lists the mise package
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify mise apt source lists the pinned mise package
         shell: bash
         run: |
           set -euo pipefail
-          url="https://mise.jdx.dev/deb/dists/stable/main/binary-amd64/Packages"
-          if ! body=$(curl -fsSL --max-time 30 "$url" 2>&1); then
-            echo "::error::failed to fetch ${url}: ${body}"
+          source docker/construct/versions.env
+          if [ -z "${MISE_VERSION:-}" ]; then
+            echo "::error::MISE_VERSION is empty"
             exit 1
           fi
-          if ! printf '%s\n' "$body" | grep -q '^Package: mise$'; then
-            echo "::error::${url} did not list a 'Package: mise' entry — the MISE renovate manager will silently produce no updates"
-            exit 1
-          fi
+          for arch in amd64 arm64; do
+            url="https://mise.en.dev/deb/dists/stable/main/binary-${arch}/Packages"
+            if ! body=$(curl -fsSL --max-time 30 "$url" 2>&1); then
+              echo "::error::failed to fetch ${url}: ${body}"
+              exit 1
+            fi
+            if ! awk -v version="$MISE_VERSION" '
+              $1 == "Package:" { in_mise = ($2 == "mise"); next }
+              in_mise && $1 == "Version:" && $2 == version { found = 1 }
+              END { exit found ? 0 : 1 }
+            ' <<<"$body"; then
+              echo "::error::${url} did not list mise version ${MISE_VERSION}"
+              exit 1
+            fi
+          done

@@ -106,6 +106,7 @@ jobs:
       - name: Build construct image for E2E
         if: needs.changes.outputs.construct == 'true'
         run: |
+          set -euo pipefail
           set -a && source docker/construct/versions.env && set +a
           docker buildx build \
             --cache-from type=gha,scope=construct-ci-e2e \
