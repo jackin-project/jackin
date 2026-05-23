@@ -173,6 +173,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/agent-orchestrator-research' },
+                    { label: 'Orca ADE research', slug: 'reference/roadmap/orca-research' },
                     {
                       label: 'Fleet phase 1 — Foundation gaps',
                       collapsed: true,
