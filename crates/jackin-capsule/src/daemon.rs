@@ -2657,40 +2657,82 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 // into cmd_tx before its abort actually took effect —
                 // without this drain, the next `cmd_rx.recv()` after
                 // the new attach is wired processes Input / Resize /
-                // Detach against the NEW mux state. Inline drain via
-                // try_recv keeps the takeover path single-threaded.
-                // On a first-attach (no prior task) cmd_rx is already
-                // empty so the loop exits on the first iteration.
-                while cmd_rx.try_recv().is_ok() {}
+                // Detach against the NEW mux state. The abort + drain
+                // pair must stay single-threaded in this order: by the
+                // time `try_recv` runs the old task can no longer be
+                // scheduled, so the loop bound is exactly "everything
+                // the old task already enqueued." On a first-attach
+                // (no prior task) cmd_rx is already empty.
+                let mut drained = 0u32;
+                while cmd_rx.try_recv().is_ok() {
+                    drained = drained.saturating_add(1);
+                }
+                if drained > 0 {
+                    crate::clog!("takeover: drained {drained} stale frame(s) from prior client");
+                }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 mux.attached_out = Some(new_out_tx.clone());
                 mux.attached_out_dead_logged = false;
+                // The receiver was just constructed and stored above;
+                // a send failure here means the receiver was closed by
+                // a takeover/cancellation race in the same tick. Log
+                // the first such failure so a wedged first-frame queue
+                // is observable in the multiplexer log instead of
+                // silently leaving the operator's terminal blank.
+                let mut first_failure_label: Option<&'static str> = None;
+                let mut note_send = |label: &'static str, sent: bool| {
+                    if !sent && first_failure_label.is_none() {
+                        first_failure_label = Some(label);
+                    }
+                };
                 let welcome = encode_server(ServerFrame::Welcome {
                     session_count: mux.sessions.len() as u32,
                 });
-                let _ = new_out_tx.send(welcome);
+                note_send("Welcome", new_out_tx.send(welcome).is_ok());
                 // Initial mode-state restore: send the focused
                 // session's current modes (bracketed paste, etc.) after
                 // reasserting the attach-client-owned mouse/focus modes.
                 // Without this, a re-attach loses bracketed-paste
                 // and the operator's clipboard arrives unwrapped.
-                let _ = new_out_tx.send(encode_server(ServerFrame::Output(
-                    Session::client_owned_mode_state().to_vec(),
-                )));
+                note_send(
+                    "client-owned mode state",
+                    new_out_tx
+                        .send(encode_server(ServerFrame::Output(
+                            Session::client_owned_mode_state().to_vec(),
+                        )))
+                        .is_ok(),
+                );
                 if let Some(focused) = mux.active_focused_id()
                     && let Some(session) = mux.sessions.get(&focused)
                 {
                     for bytes in session.current_mode_state() {
-                        let _ = new_out_tx.send(encode_server(ServerFrame::Output(bytes)));
+                        note_send(
+                            "focused-pane mode state",
+                            new_out_tx.send(encode_server(ServerFrame::Output(bytes))).is_ok(),
+                        );
                     }
                 }
                 let mut initial = b"\x1b[2J".to_vec();
                 initial.extend(mux.compose_full_frame(FullRedrawReason::FirstAttach));
-                let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
+                note_send(
+                    "first-attach frame",
+                    new_out_tx.send(encode_server(ServerFrame::Output(initial))).is_ok(),
+                );
                 if let Some(reason) = spawn_failure {
-                    let _ = new_out_tx.send(encode_server(ServerFrame::Output(
-                        spawn_failure_banner(&reason),
-                    )));
+                    note_send(
+                        "spawn-failure banner",
+                        new_out_tx
+                            .send(encode_server(ServerFrame::Output(spawn_failure_banner(
+                                &reason,
+                            ))))
+                            .is_ok(),
+                    );
+                }
+                if let Some(label) = first_failure_label {
+                    crate::clog!(
+                        "attach: receiver closed before initial frame ({label}); operator's terminal will not paint"
+                    );
+                    mux.attached_out_dead_logged = true;
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.attached_task = Some(tokio::spawn(async move {
