@@ -5132,7 +5132,12 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        let docker = crate::docker_client::FakeDockerClient::default();
+        let docker = crate::docker_client::FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "Sessions: 0\n".to_string(),
+            ])),
+            ..Default::default()
+        };
         load_role(
             &paths,
             &mut config,

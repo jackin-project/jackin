@@ -901,25 +901,20 @@ impl Multiplexer {
     /// --debug` shows the cause; the dialog dismisses regardless so
     /// the operator can retry.
     fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
-        let agent_label = agent.as_deref().unwrap_or("shell").to_string();
         let result: anyhow::Result<()> = match intent {
-            PickerIntent::NewTab => self.spawn_session(agent, &[]).map(|_| ()),
-            PickerIntent::Split(direction) => self.split_focused_into(direction, agent, &[]),
+            PickerIntent::NewTab => self.spawn_session(agent.clone(), &[]).map(|_| ()),
+            PickerIntent::Split(direction) => {
+                self.split_focused_into(direction, agent.clone(), &[])
+            }
         };
         if let Err(err) = result {
+            let agent_label = agent.as_deref().unwrap_or("shell");
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
-            // Surface to the attach client too. Without this the dialog
+            // Surface to the attach client too — otherwise the dialog
             // closes successfully and the operator sees no new pane and
-            // no explanation; the attach-handshake path already uses
-            // the same banner for handshake-time spawn failures.
+            // no explanation.
             let banner = spawn_failure_banner(&format!("{agent_label}: {err:#}"));
-            if let Some(tx) = &self.attached_out
-                && tx.send(encode_server(ServerFrame::Output(banner))).is_err()
-                && !self.attached_out_dead_logged
-            {
-                crate::clog!("attach: spawn-failure banner dropped (receiver closed)");
-                self.attached_out_dead_logged = true;
-            }
+            self.send_output(banner);
         }
     }
 

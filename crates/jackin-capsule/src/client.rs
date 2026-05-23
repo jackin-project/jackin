@@ -284,20 +284,24 @@ impl Drop for RawModeGuard {
         // + alt-screen + mouse tracking on, which they would only
         // discover when keystrokes stop echoing. Surface each failure
         // on stderr so they have a fighting chance to `reset` manually.
-        if let Err(e) = crossterm::terminal::disable_raw_mode() {
-            eprintln!("[jackin-capsule] failed to disable raw mode on detach: {e}");
-        }
-        // Reset every outer-terminal mode the client or focused pane
-        // may have enabled before returning the operator to their
-        // host terminal.
-        let mut stdout = std::io::stdout();
-        if let Err(e) = stdout.write_all(
+        //
+        // Write the outer-terminal reset BEFORE disabling raw mode:
+        // if the write fails but disable succeeds, the operator at
+        // least gets cooked mode; if disable fails but the reset
+        // already shipped, the visible state matches the escape codes.
+        let mut stdout = std::io::stdout().lock();
+        let write_result = stdout.write_all(
             b"\x1b]22;default\x1b\\\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h\x1b[?1049l",
-        ) {
-            eprintln!("[jackin-capsule] failed to write outer-terminal reset on detach: {e}");
+        ).and_then(|_| stdout.flush());
+        drop(stdout);
+        let log = |label: &str, e: &dyn std::fmt::Display| {
+            eprintln!("[jackin-capsule] failed to {label} on detach: {e}");
+        };
+        if let Err(e) = write_result {
+            log("write outer-terminal reset", &e);
         }
-        if let Err(e) = stdout.flush() {
-            eprintln!("[jackin-capsule] failed to flush stdout on detach: {e}");
+        if let Err(e) = crossterm::terminal::disable_raw_mode() {
+            log("disable raw mode", &e);
         }
     }
 }

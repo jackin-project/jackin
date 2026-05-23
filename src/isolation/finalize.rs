@@ -161,17 +161,25 @@ async fn has_jackin_sessions(
     docker: &impl crate::docker_client::DockerApi,
     container_name: &str,
 ) -> bool {
-    // `jackin-capsule status` always prints a `Sessions: N` header,
-    // so empty-vs-non-empty stdout no longer answers the question.
-    // Count session rows (each starts with `[`); zero rows means the
-    // daemon is up but idle, non-zero means sessions are live.
+    // Only an explicit `Sessions: 0` header proves the capsule is
+    // idle. The shared status command masks failures with `|| true`,
+    // so empty or malformed stdout must be treated as unknown/present.
     match docker
         .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
-        Ok(output) => output
-            .lines()
-            .any(|line| line.trim_start().starts_with('[')),
+        Ok(output) => match parse_session_count(&output) {
+            Some(0) => false,
+            Some(_) => true,
+            None => {
+                eprintln!(
+                    "[jackin] warning: could not parse jackin session status in {container_name}; \
+                     treating as sessions-present — run `jackin purge {container_name}` to clean \
+                     up isolation worktrees if this was a clean exit"
+                );
+                true
+            }
+        },
         Err(e) => {
             // Docker unreachable or container stopped between the exit-code check
             // and this exec. Treat conservatively as sessions-present — the
@@ -185,6 +193,14 @@ async fn has_jackin_sessions(
             true
         }
     }
+}
+
+fn parse_session_count(output: &str) -> Option<usize> {
+    output.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("Sessions:")
+            .and_then(|value| value.trim().parse().ok())
+    })
 }
 
 async fn finalize_clean_exit(
@@ -610,7 +626,32 @@ mod tests {
     use crate::runtime::test_support::FakeRunner;
 
     #[tokio::test]
-    async fn still_running_preserves_records() {
+    async fn still_running_with_zero_sessions_cleans() {
+        let dir = TempDir::new().unwrap();
+        let mut p = NoPrompt;
+        let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "Sessions: 0\n".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::still_running(),
+            false,
+            &mut p,
+            &docker,
+            &mut r,
+        )
+        .await
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+    }
+
+    #[tokio::test]
+    async fn still_running_with_unparseable_status_preserves_records() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
@@ -631,7 +672,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert_eq!(dec, FinalizeDecision::Preserved);
     }
 
     #[tokio::test]

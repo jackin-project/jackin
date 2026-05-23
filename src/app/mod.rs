@@ -1730,17 +1730,13 @@ impl console::InstanceActionHandler for ConsoleInPlaceHandler {
                     }
                     .await;
                     if matches!(action, console::ConsoleInstanceAction::Stop) {
-                        // Promote the manifest to RestoreAvailable
-                        // even when eject failed midway — `eject_role`
-                        // removes resources in order (role container,
-                        // DinD, volume, network), so a partial failure
-                        // still leaves the operator's container in a
-                        // recoverable state and the list-row label
-                        // should reflect that rather than stay at
-                        // `Active`/`Running`. Eject-success caller
-                        // would have written the same status; the
-                        // helper is idempotent.
-                        mark_instance_restore_available(&paths, &container);
+                        mark_instance_restore_available_after_stop(
+                            &paths,
+                            &container,
+                            &docker,
+                            result.is_ok(),
+                        )
+                        .await;
                     }
                     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
                     result
@@ -1771,6 +1767,25 @@ fn mark_instance_restore_available(paths: &JackinPaths, container: &str) {
         Err(e) => {
             eprintln!("[jackin] cannot update instance manifest for {container} after stop: {e}");
         }
+    }
+}
+
+async fn mark_instance_restore_available_after_stop(
+    paths: &JackinPaths,
+    container: &str,
+    docker: &impl DockerApi,
+    stop_succeeded: bool,
+) {
+    if stop_succeeded {
+        mark_instance_restore_available(paths, container);
+        return;
+    }
+
+    if matches!(
+        docker.inspect_container_state(container).await,
+        runtime::ContainerState::NotFound
+    ) {
+        mark_instance_restore_available(paths, container);
     }
 }
 
@@ -2708,6 +2723,59 @@ mod auth_set_tests {
                 certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
             },
         })
+    }
+
+    fn write_stop_test_manifest(
+        paths: &JackinPaths,
+        workdir: &std::path::Path,
+        status: instance::InstanceStatus,
+    ) -> String {
+        let mut manifest = ad_hoc_manifest_for_workdir(workdir);
+        manifest.mark_status(status);
+        let container = manifest.container_base.clone();
+        manifest.write(&paths.data_dir.join(&container)).unwrap();
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        container
+    }
+
+    #[tokio::test]
+    async fn stop_failure_leaves_running_manifest_when_container_still_exists() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container =
+            write_stop_test_manifest(&paths, temp.path(), instance::InstanceStatus::Running);
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                runtime::ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
+
+        mark_instance_restore_available_after_stop(&paths, &container, &docker, false).await;
+
+        let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container)).unwrap();
+        assert_eq!(manifest.status, instance::InstanceStatus::Running);
+        let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(index.instances[0].status, instance::InstanceStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn stop_failure_marks_restore_available_when_container_is_gone() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container =
+            write_stop_test_manifest(&paths, temp.path(), instance::InstanceStatus::Running);
+        let docker = crate::docker_client::FakeDockerClient::default();
+
+        mark_instance_restore_available_after_stop(&paths, &container, &docker, false).await;
+
+        let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container)).unwrap();
+        assert_eq!(manifest.status, instance::InstanceStatus::RestoreAvailable);
+        let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(
+            index.instances[0].status,
+            instance::InstanceStatus::RestoreAvailable
+        );
     }
 
     #[tokio::test]
