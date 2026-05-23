@@ -188,6 +188,30 @@ impl FullRedrawReason {
     }
 }
 
+/// Stages of the takeover/first-attach burst. Each variant maps to a
+/// human-readable label used in the clog line when the send fails so a
+/// dropped initial frame is observable in the multiplexer log.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InitialFrameKind {
+    Welcome,
+    ClientOwnedModes,
+    FocusedPaneModes,
+    FirstAttach,
+    SpawnFailureBanner,
+}
+
+impl InitialFrameKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Welcome => "Welcome",
+            Self::ClientOwnedModes => "client-owned mode state",
+            Self::FocusedPaneModes => "focused-pane mode state",
+            Self::FirstAttach => "first-attach frame",
+            Self::SpawnFailureBanner => "spawn-failure banner",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PointerShape {
     Default,
@@ -2673,64 +2697,60 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 mux.attached_out = Some(new_out_tx.clone());
                 mux.attached_out_dead_logged = false;
-                // The receiver was just constructed and stored above;
-                // a send failure here means the receiver was closed by
-                // a takeover/cancellation race in the same tick. Log
-                // the first such failure so a wedged first-frame queue
-                // is observable in the multiplexer log instead of
-                // silently leaving the operator's terminal blank.
-                let mut first_failure_label: Option<&'static str> = None;
-                let mut note_send = |label: &'static str, sent: bool| {
-                    if !sent && first_failure_label.is_none() {
-                        first_failure_label = Some(label);
-                    }
-                };
-                let welcome = encode_server(ServerFrame::Welcome {
-                    session_count: mux.sessions.len() as u32,
-                });
-                note_send("Welcome", new_out_tx.send(welcome).is_ok());
-                // Initial mode-state restore: send the focused
-                // session's current modes (bracketed paste, etc.) after
-                // reasserting the attach-client-owned mouse/focus modes.
-                // Without this, a re-attach loses bracketed-paste
-                // and the operator's clipboard arrives unwrapped.
-                note_send(
-                    "client-owned mode state",
-                    new_out_tx
-                        .send(encode_server(ServerFrame::Output(
-                            Session::client_owned_mode_state().to_vec(),
-                        )))
-                        .is_ok(),
-                );
+                // Build the initial-attach burst as a typed list so a
+                // typo at one call site cannot disagree with the clog
+                // label. A send failure here means the receiver was
+                // closed by a takeover/cancellation race in the same
+                // tick; log the first failure so a wedged first-frame
+                // queue is observable in the multiplexer log instead
+                // of silently leaving the operator's terminal blank.
+                let mut initial_frames: Vec<(InitialFrameKind, Vec<u8>)> = Vec::with_capacity(5);
+                initial_frames.push((
+                    InitialFrameKind::Welcome,
+                    encode_server(ServerFrame::Welcome {
+                        session_count: mux.sessions.len() as u32,
+                    }),
+                ));
+                // Re-assert the attach-client-owned mouse/focus modes,
+                // then restore the focused session's modes (bracketed
+                // paste, etc.). Without this, a re-attach loses
+                // bracketed-paste and the operator's clipboard arrives
+                // unwrapped.
+                initial_frames.push((
+                    InitialFrameKind::ClientOwnedModes,
+                    encode_server(ServerFrame::Output(
+                        Session::client_owned_mode_state().to_vec(),
+                    )),
+                ));
                 if let Some(focused) = mux.active_focused_id()
                     && let Some(session) = mux.sessions.get(&focused)
                 {
                     for bytes in session.current_mode_state() {
-                        note_send(
-                            "focused-pane mode state",
-                            new_out_tx.send(encode_server(ServerFrame::Output(bytes))).is_ok(),
-                        );
+                        initial_frames.push((
+                            InitialFrameKind::FocusedPaneModes,
+                            encode_server(ServerFrame::Output(bytes)),
+                        ));
                     }
                 }
                 let mut initial = b"\x1b[2J".to_vec();
                 initial.extend(mux.compose_full_frame(FullRedrawReason::FirstAttach));
-                note_send(
-                    "first-attach frame",
-                    new_out_tx.send(encode_server(ServerFrame::Output(initial))).is_ok(),
-                );
+                initial_frames.push((
+                    InitialFrameKind::FirstAttach,
+                    encode_server(ServerFrame::Output(initial)),
+                ));
                 if let Some(reason) = spawn_failure {
-                    note_send(
-                        "spawn-failure banner",
-                        new_out_tx
-                            .send(encode_server(ServerFrame::Output(spawn_failure_banner(
-                                &reason,
-                            ))))
-                            .is_ok(),
-                    );
+                    initial_frames.push((
+                        InitialFrameKind::SpawnFailureBanner,
+                        encode_server(ServerFrame::Output(spawn_failure_banner(&reason))),
+                    ));
                 }
-                if let Some(label) = first_failure_label {
+                let first_failure = initial_frames
+                    .into_iter()
+                    .find_map(|(kind, bytes)| new_out_tx.send(bytes).err().map(|_| kind));
+                if let Some(kind) = first_failure {
                     crate::clog!(
-                        "attach: receiver closed before initial frame ({label}); operator's terminal will not paint"
+                        "attach: receiver closed before initial frame ({}); operator's terminal will not paint",
+                        kind.label()
                     );
                     mux.attached_out_dead_logged = true;
                 }

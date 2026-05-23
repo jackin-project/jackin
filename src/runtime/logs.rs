@@ -127,11 +127,11 @@ fn enumerate(paths: &JackinPaths) -> Result<Vec<LogEntry>> {
         };
         out.push(LogEntry::from_manifest(manifest, log_path));
     }
-    // Most recently updated log first — matches the operator's mental
-    // model ("the container I was just in") for both list and selection.
-    // Sort by log-file mtime, falling back to UNIX_EPOCH when the OS does
-    // not expose mtime so the order stays deterministic instead of panicking.
-    out.sort_by_key(|e| {
+    // Most recently updated log first. `sort_by_cached_key` evaluates
+    // the key once per element (vs `sort_by_key`'s once per
+    // comparison), so we don't burn O(N log N) `stat` syscalls;
+    // `UNIX_EPOCH` on mtime failure keeps the order deterministic.
+    out.sort_by_cached_key(|e| {
         std::cmp::Reverse(
             std::fs::metadata(&e.log_path)
                 .and_then(|m| m.modified())

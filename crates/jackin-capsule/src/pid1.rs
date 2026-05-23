@@ -102,7 +102,10 @@ fn reap_zombies_linux() {
     // and break only when the kernel re-presents one we already saw —
     // that means every remaining zombie is managed and orphans behind
     // them (if any) cannot be reached via Id::All peek.
-    let mut skipped: HashSet<i32> = HashSet::new();
+    // Lazy: most SIGCHLD wakes find no zombies (ECHILD on the first
+    // waitid). Skipping the HashSet allocation in that path keeps the
+    // per-signal cost flat.
+    let mut skipped: Option<HashSet<i32>> = None;
     loop {
         match waitid(Id::All, flags) {
             Ok(WaitStatus::StillAlive) | Err(nix::errno::Errno::ECHILD) => break,
@@ -111,7 +114,8 @@ fn reap_zombies_linux() {
                     break;
                 };
                 if is_managed_child(pid) {
-                    if !skipped.insert(pid.as_raw()) {
+                    let set = skipped.get_or_insert_with(HashSet::new);
+                    if !set.insert(pid.as_raw()) {
                         break;
                     }
                     continue;

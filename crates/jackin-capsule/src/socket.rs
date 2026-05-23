@@ -53,11 +53,15 @@ pub fn start_listener()
 /// Bind a `UnixListener` at `path` with the parent dir locked to 0o700
 /// and the socket file to 0o600. Pulled out for tests; production
 /// callers go through `start_listener`.
-pub fn start_listener_at(
+pub(crate) fn start_listener_at(
     path: &Path,
 ) -> Result<mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>> {
-    if path.exists() {
-        std::fs::remove_file(path)?;
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(e).with_context(|| format!("removing stale socket {}", path.display()));
+        }
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -128,10 +132,11 @@ pub fn start_listener_at(
                         return;
                     }
                     // Exponential backoff capped at 5 s so an EMFILE
-                    // storm doesn't spin the runtime. `min(.min(5_000))`
-                    // is the load-bearing cap; the shift cap at 16 just
-                    // avoids u64 overflow if a future operator raises
-                    // `ACCEPT_FAILURE_BAIL` past the current ladder.
+                    // storm doesn't spin the runtime. The 5 s `.min()`
+                    // is the load-bearing cap; the shift cap at 16 is
+                    // dead-code defence against a future operator
+                    // raising `ACCEPT_FAILURE_BAIL` past the current
+                    // ladder and tripping the `1u64 << N` UB shift.
                     let shift = consecutive_failures.saturating_sub(1).min(16);
                     let backoff_ms = 50u64.saturating_mul(1u64 << shift).min(5_000);
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
