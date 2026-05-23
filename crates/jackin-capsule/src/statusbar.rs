@@ -61,6 +61,7 @@ const RESET: &str = "\x1b[0m";
 
 const BRAND_TEXT: &str = " jackin' ";
 const BRAND_PAD_COLS: u16 = 1; // single space between brand pill and first tab
+const TAB_GLYPH_PLACEHOLDER: &str = " X";
 
 /// Rows the status bar occupies. Content rect starts at row 2.
 pub const STATUS_BAR_ROWS: u16 = 2;
@@ -202,14 +203,10 @@ impl StatusBar {
         let hint_cols = display_cols(&hint);
         let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
-        // Resolve names + glyphs first, then size every cell to the
-        // widest name so each tab gets identical interior layout:
-        //   ` <name centered>  <glyph> `
-        // The name is centred within the shared name-area; the glyph
-        // is always pinned to the right column; the left/right pads
-        // are always one column each. Result: tab cells are
-        // rectangular and visually balanced regardless of which
-        // tab the operator focuses or which state glyph it carries.
+        // Resolve names + glyphs first, then reserve a stable glyph
+        // slot per tab. The text starts after the same short one-cell
+        // pad in every tab; the cell width follows the label length
+        // instead of centring shorter labels inside the widest name.
         let resolved: Vec<(String, TabGlyph, bool)> = tabs
             .iter()
             .enumerate()
@@ -218,29 +215,9 @@ impl StatusBar {
                 (name, glyph, i == active_tab)
             })
             .collect();
-        let max_name_cols = resolved
-            .iter()
-            .map(|(n, _, _)| UnicodeWidthStr::width(n.as_str()))
-            .max()
-            .unwrap_or(0);
-        // Padded labels embed the centred name + sep + glyph slot;
-        // `lay_out_tabs` then wraps each in its own `1+pad+1` shell.
         let padded: Vec<(String, TabGlyph, bool)> = resolved
             .into_iter()
-            .map(|(name, glyph, active)| {
-                let name_cols = UnicodeWidthStr::width(name.as_str());
-                let pad_total = max_name_cols - name_cols;
-                let pad_left = pad_total / 2;
-                let pad_right = pad_total - pad_left;
-                let label = format!(
-                    "{}{}{}  X",
-                    " ".repeat(pad_left),
-                    name,
-                    " ".repeat(pad_right),
-                );
-                let _ = label.len(); // pad_left + name + pad_right + "  X"
-                (label, glyph, active)
-            })
+            .map(|(name, glyph, active)| (tab_display_label(&name), glyph, active))
             .collect();
         let label_refs: Vec<(&str, bool)> =
             padded.iter().map(|(l, _, a)| (l.as_str(), *a)).collect();
@@ -350,29 +327,24 @@ impl StatusBar {
             buf.extend_from_slice(TAB_BG_INACTIVE.as_bytes());
             buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
         }
-        // Cell layout: ` <centred name>  <glyph> `.
+        // Cell layout: ` <name> <glyph> `.
         //   - 1 col left pad
-        //   - centred name (max_name_cols across the tab strip)
-        //   - 2 col sep
+        //   - tab name
+        //   - 1 col sep
         //   - 1 col glyph slot (Blocked: bright red ●; Done: ○;
         //     None: space — slot is always allocated so glyph
         //     position never shifts left or right between states)
         //   - 1 col right pad
-        // `cell.label` was built upstream as
-        //   `{centred_name}  X`
-        // where the trailing `  X` reserves the sep + glyph cols. We
-        // strip the placeholder `X` (the last char) and the two
-        // spaces before it, then paint the actual glyph with its
-        // own colour while keeping the slot at the same column.
+        // `cell.label` was built upstream as `{name} X`, where the
+        // trailing `X` reserves the glyph column. We strip that
+        // placeholder, then paint the actual glyph with its own
+        // colour while keeping the slot at the same column.
         buf.push(b' '); // left pad
-        // The label is built as `pad_left + name + pad_right + "  X"`
-        // (statusbar `render`). The trailing `"  X"` is always 3
-        // ASCII bytes; strip it by byte index, not by `chars().take`,
-        // so CJK / emoji names with display width != codepoint count
-        // don't get their tail consumed by the slice.
-        let centred_name = cell.label.strip_suffix("  X").unwrap_or(cell.label);
-        buf.extend_from_slice(centred_name.as_bytes());
-        buf.push(b' '); // sep
+        let name = cell
+            .label
+            .strip_suffix(TAB_GLYPH_PLACEHOLDER)
+            .unwrap_or(cell.label);
+        buf.extend_from_slice(name.as_bytes());
         buf.push(b' '); // sep
         match glyph {
             TabGlyph::None => buf.push(b' '),
@@ -444,9 +416,9 @@ enum TabGlyph {
 }
 
 /// Resolve the base name + state glyph for a tab. The caller builds
-/// the full display label by centring the name and reserving the
-/// sep + glyph slots; the glyph is painted separately so its colour
-/// can differ from the surrounding tab foreground.
+/// the full display label by reserving the sep + glyph slots; the
+/// glyph is painted separately so its colour can differ from the
+/// surrounding tab foreground.
 fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
     let ids = tab.tree.all_ids();
     let has_blocked = ids.iter().any(|id| {
@@ -468,6 +440,10 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
         TabGlyph::None
     };
     (tab.label_owned(), glyph)
+}
+
+fn tab_display_label(name: &str) -> String {
+    format!("{name}{TAB_GLYPH_PLACEHOLDER}")
 }
 
 /// Active pane border uses jackin's brand highlight (phosphor-green) so
@@ -575,9 +551,9 @@ mod tests {
 
     #[test]
     fn tab_click_region_width_matches_layout() {
-        // Tab cell layout: ` <centred-name>  <glyph> ` = 1 pad + name +
-        // 2 sep + 1 glyph + 1 pad = name + 5. With name="Claude" the
-        // cell is 11 cols wide; the region is stable regardless of
+        // Tab cell layout: ` <name> <glyph> ` = 1 pad + name +
+        // 1 sep + 1 glyph + 1 pad = name + 4. With name="Claude" the
+        // cell is 10 cols wide; the region is stable regardless of
         // the agent state.
         let mut bar = StatusBar::new();
         let tab = Tab::new_single("Claude", 1);
@@ -586,13 +562,20 @@ mod tests {
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &tabs, 0, &states);
         let (start, end) = bar.tab_regions[0];
-        assert_eq!(end - start, 11);
+        assert_eq!(end - start, 10);
         // Re-rendering with no state must keep the same width.
         let mut buf2 = Vec::new();
         bar.render(&mut buf2, 80, &tabs, 0, &[]);
         let (s2, e2) = bar.tab_regions[0];
-        assert_eq!(e2 - s2, 11);
+        assert_eq!(e2 - s2, 10);
         assert_eq!((s2, e2), (start, end));
+    }
+
+    #[test]
+    fn tab_display_label_has_no_name_centering_padding() {
+        assert_eq!(tab_display_label("Kimi"), "Kimi X");
+        assert_eq!(tab_display_label("OpenCode"), "OpenCode X");
+        assert!(!tab_display_label("Kimi").starts_with(' '));
     }
 
     #[test]
