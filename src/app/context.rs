@@ -571,11 +571,18 @@ pub(crate) fn supported_agents_requiring_prompt(
     if workspace_default.is_some() {
         return None;
     }
-    let cached = crate::repo::CachedRepo::new(paths, selector);
-    let supported = crate::manifest::RoleManifest::load(&cached.repo_dir)
-        .ok()?
-        .supported_agents();
+    let supported = cached_supported_agents(paths, selector)?;
     (supported.len() >= 2).then_some(supported)
+}
+
+pub(crate) fn cached_supported_agents(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+) -> Option<Vec<crate::agent::Agent>> {
+    let cached = crate::repo::CachedRepo::new(paths, selector);
+    crate::manifest::RoleManifest::load(&cached.repo_dir)
+        .ok()
+        .map(|manifest| manifest.supported_agents())
 }
 
 pub(crate) fn remember_last_agent(

@@ -35,6 +35,16 @@ pub use self::launch::{LoadOptions, load_role};
 pub use self::naming::matching_family;
 pub(crate) use self::repo_cache::{RepoError, normalize_github_url};
 
+pub(crate) async fn resolve_supported_agents_for_console(
+    paths: &crate::paths::JackinPaths,
+    config: &crate::config::AppConfig,
+    selector: &crate::selector::RoleSelector,
+    runner: &mut impl crate::docker::CommandRunner,
+    debug: bool,
+) -> anyhow::Result<Vec<crate::agent::Agent>> {
+    self::launch::resolve_supported_agents_for_console(paths, config, selector, runner, debug).await
+}
+
 pub(crate) async fn register_agent_repo(
     paths: &crate::paths::JackinPaths,
     selector: &crate::selector::RoleSelector,

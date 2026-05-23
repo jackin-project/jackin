@@ -393,19 +393,26 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
     out.flush()
 }
 
-fn maybe_open_inline_agent_picker(
+async fn maybe_open_inline_agent_picker(
     state: &mut ConsoleState,
     paths: &JackinPaths,
+    config: &AppConfig,
+    runner: &mut impl crate::docker::CommandRunner,
+    debug: bool,
     role: RoleSelector,
     workspace: &ResolvedWorkspace,
-) -> bool {
-    let Some(agents) = crate::app::context::supported_agents_requiring_prompt(
-        paths,
-        &role,
-        workspace.default_agent,
-    ) else {
-        return false;
-    };
+) -> anyhow::Result<bool> {
+    if workspace.default_agent.is_some() {
+        return Ok(false);
+    }
+
+    let agents =
+        crate::runtime::resolve_supported_agents_for_console(paths, config, &role, runner, debug)
+            .await?;
+
+    if agents.len() < 2 {
+        return Ok(false);
+    }
 
     let ConsoleStage::Manager(ms) = &mut state.stage;
     ms.inline_agent_picker = Some((
@@ -414,15 +421,17 @@ fn maybe_open_inline_agent_picker(
     ));
     ms.inline_role_picker = None;
     state.pending_launch_role = Some(role);
-    true
+    Ok(true)
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn run_console(
+pub async fn run_console(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
     action_handler: &mut dyn InstanceActionHandler,
+    runner: &mut impl crate::docker::CommandRunner,
+    debug: bool,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
@@ -551,9 +560,13 @@ pub fn run_console(
                                         && maybe_open_inline_agent_picker(
                                             &mut state,
                                             paths,
+                                            &config,
+                                            runner,
+                                            debug,
                                             role.clone(),
                                             &workspace,
                                         )
+                                        .await?
                                     {
                                         state.pending_launch = Some(input);
                                     } else {
@@ -574,9 +587,13 @@ pub fn run_console(
                                         && maybe_open_inline_agent_picker(
                                             &mut state,
                                             paths,
+                                            &config,
+                                            runner,
+                                            debug,
                                             role.clone(),
                                             &workspace,
                                         )
+                                        .await?
                                     {
                                         state.pending_launch = Some(input);
                                     } else {
@@ -603,9 +620,14 @@ pub fn run_console(
                                         if maybe_open_inline_agent_picker(
                                             &mut state,
                                             paths,
+                                            &config,
+                                            runner,
+                                            debug,
                                             role.clone(),
                                             &workspace,
-                                        ) {
+                                        )
+                                        .await?
+                                        {
                                             state.pending_launch = Some(input);
                                         } else {
                                             state.pending_launch_role = None;

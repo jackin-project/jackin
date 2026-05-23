@@ -58,7 +58,7 @@ pub struct LoadOptions {
     pub host_env: Option<std::collections::BTreeMap<String, String>>,
 
     /// CLI override for the agent. `None` means "use the workspace's
-    /// `default_agent` field, falling back to `Agent::Claude` when unset".
+    /// `default_agent` field, then the role manifest's supported-agent list".
     pub agent: Option<crate::agent::Agent>,
 
     /// When set, resolve this branch of the role repo instead of the default
@@ -1458,6 +1458,28 @@ pub fn load_role<'a>(
     ))
 }
 
+pub(super) async fn resolve_supported_agents_for_console(
+    paths: &JackinPaths,
+    config: &AppConfig,
+    selector: &RoleSelector,
+    runner: &mut impl CommandRunner,
+    debug: bool,
+) -> anyhow::Result<Vec<crate::agent::Agent>> {
+    let mut config = config.clone();
+    let (source, _, _) = resolve_launch_role_source(&mut config, selector, None)?;
+    let (_, validated_repo, _repo_lock) = super::repo_cache::resolve_agent_repo_with(
+        paths,
+        selector,
+        &source.git,
+        runner,
+        debug,
+        None,
+        || Ok(false),
+    )
+    .await?;
+    Ok(validated_repo.manifest.supported_agents())
+}
+
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn load_role_with(
     paths: &JackinPaths,
@@ -1535,13 +1557,15 @@ async fn load_role_with(
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
 
+    let supported_agents = validated_repo.manifest.supported_agents();
     let agent = match opts.agent.or(workspace.default_agent) {
         Some(a) => a,
-        None if std::io::stdin().is_terminal()
-            && validated_repo.manifest.supported_agents().len() >= 2 =>
-        {
-            let supported = validated_repo.manifest.supported_agents();
-            let labels: Vec<String> = supported.iter().map(|a| a.slug().to_string()).collect();
+        None if supported_agents.len() == 1 => supported_agents[0],
+        None if std::io::stdin().is_terminal() && supported_agents.len() >= 2 => {
+            let labels: Vec<String> = supported_agents
+                .iter()
+                .map(|a| a.slug().to_string())
+                .collect();
             let selection = dialoguer::Select::new()
                 .with_prompt(format!(
                     "Role \"{}\" supports multiple agents. Choose one",
@@ -1550,7 +1574,7 @@ async fn load_role_with(
                 .items(&labels)
                 .default(0)
                 .interact()?;
-            supported[selection]
+            supported_agents[selection]
         }
         None => crate::agent::Agent::Claude,
     };
@@ -5468,6 +5492,123 @@ agents = ["codex"]
             "initial agent must be passed as container argv"
         );
         assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
+    }
+
+    #[tokio::test]
+    async fn load_agent_uses_single_supported_agent_without_workspace_default() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .await
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+            .expect("role docker run should fire for single-agent role");
+        assert!(
+            run_cmd.ends_with(" codex"),
+            "single supported agent must become the initial runtime"
+        );
+    }
+
+    #[tokio::test]
+    async fn console_agent_resolution_uses_validated_role_manifest_choices() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "agent-smith".to_string(),
+            crate::config::RoleSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+        let mut runner = FakeRunner::with_capture_queue([
+            "git@github.com:jackin-project/jackin-agent-smith.git".to_string(),
+            String::new(),
+            "main".to_string(),
+        ]);
+
+        let agents =
+            resolve_supported_agents_for_console(&paths, &config, &selector, &mut runner, false)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            agents,
+            vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+        );
+        assert!(
+            !agents.contains(&crate::agent::Agent::Amp),
+            "console choices must not fall back to every built-in agent"
+        );
     }
 
     #[tokio::test]
