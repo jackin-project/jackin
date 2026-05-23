@@ -68,16 +68,14 @@ RUN case "${TARGETARCH}" in \
     cd / && \
     rm -rf "${workdir}"
 
-# Install mise (version pinned via versions.env -> MISE_VERSION ARG; mise apt
-# repo only ships the latest release in `stable`, so this pin must be bumped
-# in versions.env when upstream rolls or apt-get install will fail to resolve).
-ARG MISE_VERSION
+# Install mise from the official apt repository. The repo is intentionally a
+# rolling package source, so construct PR/publish builds run this layer uncached.
 RUN install -m 0755 -d /etc/apt/keyrings && \
-    curl -fsSL https://mise.jdx.dev/gpg-key.pub -o /etc/apt/keyrings/mise.asc && \
-    chmod a+r /etc/apt/keyrings/mise.asc && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/mise.asc] https://mise.jdx.dev/deb stable main" > /etc/apt/sources.list.d/mise.list && \
+    curl -fsSL https://mise.en.dev/gpg-key.pub -o /etc/apt/keyrings/mise-archive-keyring.asc && \
+    chmod a+r /etc/apt/keyrings/mise-archive-keyring.asc && \
+    echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.en.dev/deb stable main" > /etc/apt/sources.list.d/mise.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends "mise=${MISE_VERSION}" && \
+    apt-get install -y --no-install-recommends mise && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \

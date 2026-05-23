@@ -12,7 +12,6 @@ _default_git_sha := `git rev-parse --short=12 HEAD 2>/dev/null || echo dev`
 _default_local_platform := `case "$(uname -m)" in x86_64|amd64) echo linux/amd64 ;; arm64|aarch64) echo linux/arm64 ;; *) printf "unsupported host architecture: %s\n" "$(uname -m)" >&2; exit 1 ;; esac`
 _default_tirith_version := `awk -F= '$1 == "TIRITH_VERSION" { print $2 }' docker/construct/versions.env 2>/dev/null || echo ""`
 _default_shellfirm_version := `awk -F= '$1 == "SHELLFIRM_VERSION" { print $2 }' docker/construct/versions.env 2>/dev/null || echo ""`
-_default_mise_version := `awk -F= '$1 == "MISE_VERSION" { print $2 }' docker/construct/versions.env 2>/dev/null || echo ""`
 
 # Resolved build variables — env-var overrides take priority
 REGISTRY_IMAGE := env_var_or_default("REGISTRY_IMAGE", "projectjackin/construct")
@@ -27,7 +26,6 @@ VERSION_TAG := env_var_or_default("CONSTRUCT_VERSION_TAG", _default_version_tag)
 LOCAL_PLATFORM := env_var_or_default("LOCAL_PLATFORM", _default_local_platform)
 TIRITH_VERSION := env_var_or_default("TIRITH_VERSION", _default_tirith_version)
 SHELLFIRM_VERSION := env_var_or_default("SHELLFIRM_VERSION", _default_shellfirm_version)
-MISE_VERSION := env_var_or_default("MISE_VERSION", _default_mise_version)
 DIGEST_DIR := env_var_or_default("DIGEST_DIR", "/tmp/jackin-construct-digests")
 
 default:
@@ -85,6 +83,9 @@ construct-build-platform platform:
       --file docker-bake.hcl
       --load
     )
+    if [ "${NO_CACHE:-}" = "1" ]; then
+      args+=(--no-cache)
+    fi
     if [ -n "${CACHE_FROM:-}" ]; then
       args+=(--set "construct-local.cache-from=${CACHE_FROM}")
     fi
@@ -122,6 +123,9 @@ construct-push-platform platform:
       --metadata-file "${metadata_file}"
       --set "construct-publish.output=type=image,name=${REGISTRY_IMAGE},push-by-digest=true,name-canonical=true,push=true"
     )
+    if [ "${NO_CACHE:-}" = "1" ]; then
+      args+=(--no-cache)
+    fi
     if [ -n "${CACHE_FROM:-}" ]; then
       args+=(--set "construct-publish.cache-from=${CACHE_FROM}")
     fi
