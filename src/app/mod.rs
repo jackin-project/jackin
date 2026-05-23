@@ -325,7 +325,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     println!("No matching roles found.");
                 } else {
                     for container in &containers {
-                        runtime::eject_role(container, &docker)
+                        runtime::eject_role(&paths, container, &docker)
                             .await
                             .with_context(|| format!("ejecting {container}"))?;
                         if purge {
@@ -352,7 +352,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     println!("No roles running.");
                 } else {
                     for name in &names {
-                        runtime::eject_role(name, &docker)
+                        runtime::eject_role(&paths, name, &docker)
                             .await
                             .with_context(|| format!("ejecting {name}"))?;
                         println!("Ejected {name}.");
@@ -1713,10 +1713,10 @@ impl console::InstanceActionHandler for ConsoleInPlaceHandler {
                     let result: anyhow::Result<()> = async {
                         match action {
                             console::ConsoleInstanceAction::Stop => {
-                                runtime::eject_role(&container, &docker).await
+                                runtime::eject_role(&paths, &container, &docker).await
                             }
                             console::ConsoleInstanceAction::Purge => {
-                                runtime::eject_role(&container, &docker).await?;
+                                runtime::eject_role(&paths, &container, &docker).await?;
                                 runtime::purge_container_state(
                                     &paths,
                                     &container,

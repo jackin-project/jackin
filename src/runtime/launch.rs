@@ -12,6 +12,7 @@ use anyhow::Context;
 use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
 use super::attach::wait_for_dind;
 use super::attach::{
@@ -2046,11 +2047,13 @@ async fn load_role_with(
             cache_dir: &paths.cache_dir,
             paths,
         };
+        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
         let mut cleanup = LoadCleanup::new(
             container_name.clone(),
             dind.clone(),
             certs_volume,
             network.clone(),
+            socket_dir,
         );
         let launch_result = launch_role_runtime(&ctx, &mut steps, docker, runner).await;
         if launch_result.is_err() {
@@ -2071,6 +2074,12 @@ async fn load_role_with(
             cleanup.run(docker).await;
         }
         launch_result?;
+        // Launch succeeded. From here on the cleanup struct is reused
+        // to tear down docker resources at session end (clean exit,
+        // crash, NotFound, etc.); the host-side socket dir + Capsule
+        // launch config stay behind for operator inspection and get
+        // swept by the next explicit `jackin eject` / Purge.
+        cleanup.keep_socket_dir();
         write_instance_status(
             paths,
             &container_state,
@@ -3460,6 +3469,17 @@ struct LoadCleanup {
     dind: String,
     certs_volume: String,
     network: String,
+    /// Host-side bind-mount dir (`~/.jackin/sockets/<container>/`).
+    /// Removed only when `armed` is true AND the cleanup fires on the
+    /// launch-failure path — `clean_socket_dir` distinguishes that from
+    /// post-session teardown where the operator may still want to
+    /// inspect the just-written Capsule launch config. Post-session
+    /// teardown paths flip `clean_socket_dir = false` before
+    /// `cleanup.run()` (or call `disarm`); explicit cleanup commands
+    /// (`jackin eject`, Purge from the console) sweep the directory via
+    /// `cleanup::eject_role` / `purge_container_filesystem`.
+    socket_dir: PathBuf,
+    clean_socket_dir: bool,
     armed: bool,
 }
 
@@ -3469,18 +3489,30 @@ impl LoadCleanup {
         dind: String,
         certs_volume: String,
         network: String,
+        socket_dir: PathBuf,
     ) -> Self {
         Self {
             container_name,
             dind,
             certs_volume,
             network,
+            socket_dir,
+            clean_socket_dir: true,
             armed: true,
         }
     }
 
     const fn disarm(&mut self) {
         self.armed = false;
+    }
+
+    /// Switch off socket-dir cleanup for post-session teardown.
+    /// docker-resource removal still runs (`cleanup.run` is reused for
+    /// "session ended cleanly, tear down DinD/network/volume"); the
+    /// host-side bind-mount dir is left for the operator to inspect
+    /// and gets reaped by the next explicit eject / purge.
+    const fn keep_socket_dir(&mut self) {
+        self.clean_socket_dir = false;
     }
 
     async fn run(&self, docker: &impl DockerApi) {
@@ -3499,6 +3531,16 @@ impl LoadCleanup {
         }
         if let Err(e) = docker.remove_network(&self.network).await {
             tui::step_fail(&format!("cleanup failed (network): {e}"));
+        }
+        if self.clean_socket_dir {
+            match std::fs::remove_dir_all(&self.socket_dir) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => tui::step_fail(&format!(
+                    "cleanup failed (socket dir {}): {error}",
+                    self.socket_dir.display()
+                )),
+            }
         }
     }
 }
