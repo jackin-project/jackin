@@ -1092,6 +1092,11 @@ async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/run/jackin");
     run_args.extend_from_slice(&["-v", &socket_mount]);
+    if crate::tui::is_debug_mode() {
+        eprintln!(
+            "[jackin debug] prepared host socket dir {socket_dir_str} (0o700) for bind-mount at /run/jackin",
+        );
+    }
     // Forward JACKIN_WORKDIR so the daemon spawns every PTY in the
     // workspace workdir (portable_pty defaults to $HOME otherwise).
     run_args.extend_from_slice(&["-e", &jackin_workdir_env]);

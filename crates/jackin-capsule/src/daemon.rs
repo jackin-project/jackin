@@ -2666,6 +2666,8 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 // the new attach is wired processes Input / Resize /
                 // Detach against the NEW mux state. Inline drain via
                 // try_recv keeps the takeover path single-threaded.
+                // On a first-attach (no prior task) cmd_rx is already
+                // empty so the loop exits on the first iteration.
                 while cmd_rx.try_recv().is_ok() {}
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 mux.attached_out = Some(new_out_tx.clone());
