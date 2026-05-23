@@ -2051,8 +2051,7 @@ fn fetch_snapshots_parallel(
                 .map(|container| {
                     let container = container.clone();
                     s.spawn(move || {
-                        let result =
-                            crate::runtime::snapshot::fetch_snapshot(paths, &container);
+                        let result = crate::runtime::snapshot::fetch_snapshot(paths, &container);
                         (container, result)
                     })
                 })
@@ -2073,9 +2072,7 @@ fn fetch_snapshots_parallel(
                             .unwrap_or_else(|| "<non-string panic payload>".to_string());
                         (
                             "<unknown-container>".to_string(),
-                            Err(anyhow::anyhow!(
-                                "snapshot worker thread panicked: {detail}"
-                            )),
+                            Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
                         )
                     }
                 })
