@@ -18,6 +18,12 @@ path = "src/lib.rs"
 name = "jackin-capsule"
 path = "src/main.rs"
 
+[features]
+# Internal helpers exposed only to in-workspace tests. Production binaries
+# never enable this; the integration-tests crates depend on jackin-capsule
+# with `features = ["test-helpers"]`.
+test-helpers = []
+
 [dependencies]
 anyhow = "1.0"
 jackin-protocol = { path = "../jackin-protocol" }

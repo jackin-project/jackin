@@ -10,7 +10,7 @@ use jackin_capsule::session::{OscCapture, OscPolicy};
 use vt100::Parser;
 
 fn drained(bytes: &[u8]) -> Vec<Vec<u8>> {
-    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
     p.process(bytes);
     p.callbacks_mut().drain()
 }
@@ -36,7 +36,7 @@ fn osc_52_clipboard_write_is_re_emitted() {
 
 #[test]
 fn osc_2_window_title_is_re_emitted_and_captured() {
-    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
     p.process(b"\x1b]2;Claude (working)\x07");
     assert_eq!(
         p.callbacks().title(),
@@ -71,7 +71,7 @@ fn osc_9_notification_is_re_emitted() {
 #[test]
 fn osc_7_cwd_is_captured_and_percent_decoded() {
     // Shell with starship: `\x1b]7;file://host/Users/alice/My%20Code\x07`
-    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
     p.process(b"\x1b]7;file://localhost/Users/alice/My%20Code\x07");
     assert_eq!(
         p.callbacks().cwd(),
@@ -85,14 +85,14 @@ fn osc_7_rejects_malformed_payload() {
     // Bare text without a `file://` scheme must not silently
     // overwrite the captured cwd — that surface is reserved for
     // valid URLs only.
-    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
     p.process(b"\x1b]7;random-text\x07");
     assert!(p.callbacks().cwd().is_none());
 }
 
 #[test]
 fn kitty_kb_stack_tracks_push_and_pop() {
-    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
     p.process(b"\x1b[>1u\x1b[>3u");
     assert_eq!(p.callbacks().kitty_kb_stack(), &[1u16, 3]);
     // vte's CSI state machine treats `<` as a private marker only
@@ -109,7 +109,7 @@ fn kitty_kb_stack_tracks_push_and_pop() {
 fn kitty_kb_stack_caps_pathological_push() {
     // A buggy or hostile agent loops `\x1b[>1u`. The stack must
     // not grow without bound; cap is documented as 64.
-    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
     for _ in 0..200 {
         p.process(b"\x1b[>1u");
     }
@@ -118,7 +118,7 @@ fn kitty_kb_stack_caps_pathological_push() {
 
 #[test]
 fn focus_events_flag_tracks_dec_1004() {
-    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
     p.process(b"\x1b[?1004h");
     assert!(p.callbacks().focus_events());
     p.process(b"\x1b[?1004l");
@@ -206,7 +206,7 @@ fn drain_returns_empty_when_no_passthrough_emitted() {
 fn osc_52_clipboard_dropped_when_policy_denies() {
     // Operator opt-out: `JACKIN_OSC52=deny` (cached at spawn) must
     // suppress every OSC 52 write the focused pane emits.
-    let drained = drained_with_policy(b"\x1b]52;c;SGVsbG8=\x07", OscPolicy::__test_deny_all());
+    let drained = drained_with_policy(b"\x1b]52;c;SGVsbG8=\x07", OscPolicy::deny_all());
     assert!(
         drained.is_empty(),
         "OSC 52 leaked under deny policy: {drained:?}"
@@ -217,7 +217,7 @@ fn osc_52_clipboard_dropped_when_policy_denies() {
 fn osc_9_notification_dropped_when_policy_denies() {
     // Same gate for OSC 9 (desktop notification) — a noisy untrusted
     // role must not page the operator's notification center.
-    let drained = drained_with_policy(b"\x1b]9;build finished\x07", OscPolicy::__test_deny_all());
+    let drained = drained_with_policy(b"\x1b]9;build finished\x07", OscPolicy::deny_all());
     assert!(
         drained.is_empty(),
         "OSC 9 leaked under deny policy: {drained:?}"
@@ -226,7 +226,7 @@ fn osc_9_notification_dropped_when_policy_denies() {
 
 #[test]
 fn osc_2_title_dropped_when_policy_denies() {
-    let drained = drained_with_policy(b"\x1b]2;rogue title\x07", OscPolicy::__test_deny_all());
+    let drained = drained_with_policy(b"\x1b]2;rogue title\x07", OscPolicy::deny_all());
     assert!(
         drained.is_empty(),
         "OSC 2 leaked under deny policy: {drained:?}"
@@ -237,7 +237,7 @@ fn osc_2_title_dropped_when_policy_denies() {
 fn osc_8_hyperlink_dropped_when_policy_denies() {
     let drained = drained_with_policy(
         b"\x1b]8;;https://example/\x07text\x1b]8;;\x07",
-        OscPolicy::__test_deny_all(),
+        OscPolicy::deny_all(),
     );
     assert!(
         drained.is_empty(),
@@ -247,7 +247,7 @@ fn osc_8_hyperlink_dropped_when_policy_denies() {
 
 #[test]
 fn drain_clears_pending_between_calls() {
-    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
     p.process(b"\x1b]52;c;AAAA\x07");
     let first = p.callbacks_mut().drain();
     assert_eq!(first.len(), 1);

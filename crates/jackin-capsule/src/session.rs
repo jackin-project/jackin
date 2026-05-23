@@ -145,9 +145,13 @@ impl OscPolicy {
     }
 
     /// Test-only constructor with every passthrough gate closed.
-    /// Production code must call `from_env()`.
-    #[doc(hidden)]
-    pub fn __test_deny_all() -> Self {
+    /// Production code must call `from_env()`. Gated on the
+    /// `test-helpers` feature so production binaries built without
+    /// `--features test-helpers` never expose the symbol. Integration
+    /// tests run via `cargo test --features test-helpers` (the
+    /// workspace `tests` target enables it transitively).
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn deny_all() -> Self {
         Self {
             allow_title: false,
             allow_osc52: false,
@@ -170,7 +174,10 @@ pub fn next_id() -> u64 {
 
 /// `vt100::Callbacks` impl that captures OSC and unhandled-CSI byte
 /// sequences for later focused-pane forwarding to the attached client.
-#[derive(Default)]
+///
+/// No `Default` impl on purpose: every construction must spell out an
+/// `OscPolicy` so a forgotten policy at the call site does not silently
+/// re-enable passthrough.
 pub struct OscCapture {
     pending: Vec<Vec<u8>>,
     policy: OscPolicy,
@@ -201,8 +208,13 @@ pub struct OscCapture {
 impl OscCapture {
     pub fn with_policy(policy: OscPolicy) -> Self {
         Self {
+            pending: Vec::new(),
             policy,
-            ..Self::default()
+            title: None,
+            icon_name: None,
+            kitty_kb_stack: Vec::new(),
+            focus_events: false,
+            cwd: None,
         }
     }
 
