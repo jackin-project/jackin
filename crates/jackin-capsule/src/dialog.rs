@@ -990,10 +990,8 @@ fn rename_tab_handle_key(
         }
         _ => {
             // Accept any valid UTF-8 chunk one char at a time so CJK /
-            // emoji / combining-mark labels reach `TextField`. The
-            // single-byte ASCII-printable form previously here dropped
-            // every non-ASCII keystroke silently, which mismatched the
-            // unicode-width measurement `lay_out_tabs` now uses for
+            // emoji / combining-mark labels reach `TextField` and match
+            // the unicode-width measurement `lay_out_tabs` uses for
             // tab-strip rendering. C0 controls (other than the explicit
             // Esc / Enter / Backspace arms above) and invalid UTF-8
             // chunks fall through as a Redraw no-op.

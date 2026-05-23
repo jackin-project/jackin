@@ -43,8 +43,11 @@ fn is_managed_child(pid: Pid) -> bool {
         .is_ok_and(|children| children.contains(&pid.as_raw()))
 }
 
-/// Install a SIGCHLD handler that reaps all available zombie children.
-/// Called once at startup from PID 1 mode.
+/// PID 1 zombie reaper. tokio's signal handler cannot cover this
+/// because grandchildren of the daemon (agent-spawned helpers) re-parent
+/// to PID 1 on parent death and only the init process can reap them.
+/// Call once at startup; intentionally never joined — the thread dies
+/// with PID 1.
 pub fn install_sigchld_reaper() {
     // Block SIGCHLD in the main thread; the dedicated reaper thread uses
     // sigwait so it wakes only on SIGCHLD without racing with tokio's signal

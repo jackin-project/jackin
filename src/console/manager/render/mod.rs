@@ -708,13 +708,10 @@ fn clamp_list_scroll_for_area(
         }
     }
 
-    // Global mounts clamp — routed through `global_rows_for_selected_row`
-    // so CurrentDirectory and SavedWorkspace agree on whether the block
-    // is present and what it contains. Previously CurrentDirectory zeroed
-    // the scroll unconditionally, which silently broke horizontal
-    // scrolling in the global-mounts panel whenever the operator was on
-    // that row even though the panel was rendered with content from
-    // `sidebar_inputs_for_current_dir`.
+    // CurrentDirectory and SavedWorkspace must agree via
+    // `global_rows_for_selected_row` on whether the global-mounts block
+    // is present and what it contains, so horizontal scroll state
+    // survives row switches between them.
     let global_rows = global_rows_for_selected_row(state, config);
     if global_rows.is_empty() {
         state.list_global_mounts_scroll_x = 0;
@@ -816,13 +813,10 @@ fn focused_block_still_scrollable(
             | ManagerListRow::CurrentDirectoryInstance(_) => false,
         },
         MountScrollFocus::Global | MountScrollFocus::RoleGlobal => {
-            // Single source of truth shared with `clamp_list_scroll_for_area`
-            // and `sidebar_inputs_for_*`: whatever rows the render path
-            // actually displays for the current selection are the rows
-            // whose scrollability we evaluate here. Previously this arm
-            // gated on `SavedWorkspace` only, so CurrentDirectory rows
-            // (which the render path does populate) silently cleared
-            // `list_scroll_focus` on every resize tick.
+            // Any row the render path populates must be scrollability-
+            // evaluated here, otherwise `list_scroll_focus` clears on
+            // every resize tick. Shared source of truth with
+            // `clamp_list_scroll_for_area` and `sidebar_inputs_for_*`.
             let global_rows = global_rows_for_selected_row(state, config);
             if global_rows.is_empty() {
                 return false;

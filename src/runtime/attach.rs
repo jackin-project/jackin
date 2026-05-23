@@ -4,7 +4,6 @@ use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
 
-// Query session list from the jackin-capsule daemon via its socket.
 pub const JACKIN_STATUS_CMD: &str = "/usr/local/bin/jackin-capsule status 2>/dev/null || true";
 
 pub use crate::docker_client::ContainerState;
@@ -179,7 +178,6 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
-    // Spawn a shell session via jackin-capsule's "new" subcommand with no agent slug.
     let result = runner
         .run(
             "docker",
@@ -220,7 +218,6 @@ pub async fn spawn_agent_session(
 
     let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
 
-    // Build extra env vars to forward to the new session via the daemon socket.
     // Agent selection travels as `jackin-capsule new <agent>` argv; these
     // env values are session policy toggles consumed by the spawned entrypoint.
     let coauthor_env = git_coauthor_trailer.then(|| {
@@ -234,7 +231,6 @@ pub async fn spawn_agent_session(
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
 
-    // Ask jackin-capsule to spawn a new session for this agent.
     let mut exec_args = vec![
         "exec",
         "--workdir",

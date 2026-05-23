@@ -33,7 +33,9 @@ use serde::Deserialize;
 
 use crate::paths::JackinPaths;
 
-/// Mirror of `socket::MAX_CONTROL_MSG` in the in-container crate.
+/// Cap on the JSON reply read from the daemon. Must be ≥ the daemon's
+/// frame cap so legitimate Status / Snapshot replies fit; oversized
+/// replies are rejected to bound host memory.
 const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
 
 /// Per-call socket timeout. The whole round-trip is "open socket,

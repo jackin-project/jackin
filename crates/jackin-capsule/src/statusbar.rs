@@ -80,20 +80,19 @@ pub struct StatusBar {
     pub hint_region: Option<(u16, u16)>,
     /// Click region (1-based, inclusive-exclusive) covering the
     /// right-side container-name label on row 1. A mouse press inside
-    /// it opens the `ContainerInfo` dialog so the operator can copy
-    /// the full container ID to their clipboard and see the role +
-    /// focused-agent details that used to live in the label itself.
+    /// opens the `ContainerInfo` dialog: full container ID copy +
+    /// role/focused-agent details kept off the status bar so the tab
+    /// strip can spend columns on tabs.
     pub identity_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
     pub prefix_label: String,
     pub palette_label: String,
     pub prefix_enabled: bool,
     /// Container name (`jk-<short>-<workspace>-<role>`) displayed on
-    /// the right side of row 1. The role used to be prepended here as
-    /// `role · container-name`, but the role is already inferable from
-    /// the suffix of the container name and the modal opened on click
-    /// surfaces it explicitly — duplicating it on the status bar just
-    /// burned columns the tab strip needs. Resolved from `HOSTNAME`.
+    /// the right side of row 1. Role is inferable from the suffix and
+    /// surfaced explicitly by the `ContainerInfo` modal, so the status
+    /// bar omits it to preserve tab-strip columns. Resolved from
+    /// `HOSTNAME`.
     pub identity_label: String,
     /// The role key the host CLI passed in via `JACKIN_ROLE`. Stored
     /// separately so the `ContainerInfo` modal can name it explicitly

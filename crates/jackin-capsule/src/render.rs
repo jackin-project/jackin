@@ -1,9 +1,7 @@
-/// Render a `vt100::Screen` into the host terminal at a pane rectangle.
-///
-/// Walks the screen cell-by-cell and emits ANSI escape sequences that
-/// reproduce the pane state when written to the attached client.
-/// Cursor positioning is offset by the pane's origin in the host
-/// terminal, so the agent's `(0, 0)` lands at `(dest_row, dest_col)`.
+//! Render a `vt100::Screen` into the host terminal at a pane rectangle.
+//! Cursor positioning is offset by the pane's origin so the agent's
+//! `(0, 0)` lands at `(dest_row, dest_col)`.
+
 use std::io::Write;
 
 use vt100::{Color, Screen};

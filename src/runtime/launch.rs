@@ -1048,19 +1048,13 @@ async fn launch_role_runtime(
         run_args.push("-v");
         run_args.push(ms);
     }
-    // jackin-capsule runs as PID 1 (daemon mode). It starts the multiplexer
-    // server, listens on the Unix socket, and keeps the container alive while
-    // agent sessions run. The operator connects via `docker exec -it jackin-capsule`.
     let image_label = format!("jackin.image={image}");
     run_args.extend_from_slice(&["--label", &image_label]);
-    // Host-side bind-mount of the daemon's socket directory. Owned by
-    // the host user (whose UID matches the container's `agent` user
-    // post-`usermod` in the derived image), so the daemon can create
-    // and chmod `jackin.sock` inside the mounted dir. Pre-creating the
-    // dir host-side is what unblocks the bind-mount: the EACCES that
-    // the previous comment warned about only happens when Docker has
-    // to materialise the target itself (which it does as root:root
-    // 0755).
+    // Host-side bind-mount of the daemon's socket directory. Pre-create
+    // host-side so Docker does not materialise the target itself as
+    // root:root 0755 — that would block the in-container `agent` user
+    // (whose UID matches the host user post-`usermod` in the derived
+    // image) from creating and chmod'ing `jackin.sock`.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     // Run the filesystem syscalls on the blocking pool — the tokio
     // runtime is built without the `fs` feature here, and blocking on

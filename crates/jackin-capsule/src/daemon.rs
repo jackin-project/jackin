@@ -550,19 +550,6 @@ impl Multiplexer {
         self.container_info_copy_deadline = None;
     }
 
-    /// Replace the current top of stack with `d`. Used by transitions
-    /// that swap one dialog for a sibling at the same depth
-    /// (e.g. NewTab inside the palette opens AgentPicker as a peer,
-    /// not as a nested child) — but for the standard back-navigation
-    /// flow `dialog_push` is the right call. Currently no consumers;
-    /// kept as the named operation so future refactors don't have to
-    /// invent a vocabulary.
-    #[allow(dead_code)]
-    fn dialog_replace_top(&mut self, d: Dialog) {
-        self.dialog_stack.pop();
-        self.dialog_stack.push(d);
-    }
-
     fn active_tab_pane_count(&self) -> usize {
         self.tabs
             .get(self.active_tab)
@@ -934,12 +921,11 @@ impl Multiplexer {
     /// the AgentPicker → Split flow so the operator picks the new
     /// pane's identity instead of cloning the source pane's agent.
     /// Bound the per-container surface for any path that allocates a
-    /// new PTY (top-level spawn, split, etc.). `add_tab=true` enforces
-    /// both `MAX_TABS` and `MAX_SESSIONS`; `add_tab=false` enforces
-    /// only `MAX_SESSIONS` because the caller is reusing an existing
-    /// tab. Split-driven creation was previously bypassing the cap —
-    /// the runaway-mis-click scenario the cap exists to defend
-    /// against.
+    /// new PTY (top-level spawn, split, etc.). All such paths must
+    /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced
+    /// uniformly — runaway-mis-click defence. `add_tab=true` enforces
+    /// both caps; `add_tab=false` enforces only `MAX_SESSIONS` because
+    /// the caller is reusing an existing tab.
     fn ensure_capacity_for_new_session(&self, add_tab: bool) -> Result<()> {
         if add_tab && self.tabs.len() >= MAX_TABS {
             anyhow::bail!("tab limit reached ({MAX_TABS}); close one before spawning another");
