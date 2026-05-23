@@ -84,7 +84,7 @@ data/
 
 `instances.json` is a global lookup index. It stores enough data to find candidate instances by workspace/directory/role/agent without walking every state directory. If the index is missing, jackin rebuilds it by scanning manifests. The manifest remains canonical.
 
-`isolation.json` is mount-specific. It records materialized isolated mount state such as original source, mount destination, worktree/clone path, scratch branch, base commit, selector key, container name, and preservation status. It is owned by the isolation subsystem, not the instance manifest.
+`isolation.json` is mount-specific. It records materialized isolated mount state such as original source, mount destination, worktree/clone path, worktree scratch branch when applicable, base commit, selector key, container name, and preservation status. It is owned by the isolation subsystem, not the instance manifest.
 
 Implementation lives in <RepoFile path="src/instance/manifest.rs" />, <RepoFile path="src/isolation/state.rs" />, and <RepoFile path="src/instance/mod.rs" />.
 

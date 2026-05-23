@@ -118,9 +118,9 @@ Setting a mount's isolation to `worktree` tells jackin' to create a per-containe
 |---|---|
 | `shared` (default) | Host path bind-mounted as-is. |
 | `worktree` | A per-container `git worktree` is created from the host repo. The container sees its own checkout on a scratch branch; refs are still shared with the host repo, so branches the agent creates are visible to you immediately. |
-| `clone` | A per-container `git clone --local` is created. The container has its own `.git/` and independent refs; branches appear on your host only after an explicit push. |
+| `clone` | A per-container `git clone --local` is created from the host repo's current branch. The container has its own `.git/` and independent refs; when the host repo has an `origin`, pushes from the container publish to that remote rather than creating local branches in your host checkout. |
 
-Use `worktree` when you want immediate host-side branch visibility and you trust the agent with the host repo's `.git/`. Use `clone` when ref isolation matters more than immediate host visibility.
+Use `worktree` when you want immediate host-side branch visibility and you trust the agent with the host repo's `.git/`. Use `clone` when you want the same starting branch as the host checkout, but with refs isolated until the agent explicitly pushes.
 
 ### Setting isolation from the CLI
 
@@ -162,9 +162,9 @@ For the exact safety policy (which branches count as safe, how the squash-merged
 If a precondition is not met, the command fails with a clear error pointing at the offending mount.
 
 <Aside type="caution">
-The worktree branches from your host repo's current `HEAD`. If your
-host tree has uncommitted changes, those edits stay on the host —
-they do not travel into the agent's worktree. Pass
+Isolated checkouts start from your host repo's current `HEAD`. If
+your host tree has uncommitted changes, those edits stay on the host —
+they do not travel into the agent's worktree or clone. Pass
 `jackin load --force` (non-interactive) or confirm in the TUI to
 acknowledge that work-in-progress stays behind.
 </Aside>
