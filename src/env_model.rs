@@ -47,7 +47,7 @@ pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 
 /// Env var that signals the entrypoint to install a `prepare-commit-msg`
 /// hook via `core.hooksPath` so the running agent's `Co-authored-by`
-/// trailer is appended automatically to every non-amend commit.
+/// trailer is appended automatically whenever Git prepares a commit message.
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 
 /// Env var that signals the entrypoint to append a `Signed-off-by` DCO trailer.

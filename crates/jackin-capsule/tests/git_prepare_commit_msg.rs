@@ -102,6 +102,13 @@ fn hook_injects_trailers_for_merge_messages() {
 }
 
 #[test]
+fn hook_injects_trailers_for_squash_messages() {
+    let message = run_hook("squash! fix(capsule): prior change\n", Some("squash"));
+
+    assert_parseable_test_trailers(&message);
+}
+
+#[test]
 fn hook_adds_current_agent_to_reused_messages() {
     let message = run_hook(&format!("subject\n\n{CLAUDE_TRAILER}\n"), Some("commit"));
     let trailers = parse_trailers(&message);

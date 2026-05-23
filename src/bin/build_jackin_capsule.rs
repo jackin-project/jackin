@@ -110,11 +110,8 @@ fn check_zigbuild_installed() -> Result<()> {
     // binary is reachable. Probe the parent `cargo-zigbuild` binary
     // instead — its `--version` flag is part of the cargo-plugin
     // contract.
-    const INSTALL_HINT: &str = "Install it with:\n  \
-                                mise install zig cargo:cargo-zigbuild\n\
-                                or, without mise:\n  \
-                                cargo install cargo-zigbuild\n  \
-                                brew install zig  (or equivalent)";
+    const INSTALL_HINT: &str = "Install the pinned toolchain from mise.toml with:\n  \
+                                mise install zig cargo:cargo-zigbuild";
     match process::Command::new("cargo-zigbuild")
         .arg("--version")
         .output()

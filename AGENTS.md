@@ -213,11 +213,11 @@ Discovery flow Claude Code uses: `.github/CLAUDE.md` is `@AGENTS.md`, so the fil
 
 ## Commit Attribution (agent-only)
 
-Every commit created by an AI agent in this repository must include **exactly one** `Co-authored-by` trailer identifying the agent that made the commit. The trailer identifies the **agent tool**, not the underlying model — **never stack multiple agent trailers on one commit** (for example, an Amp-generated commit must not also carry `Co-authored-by: Claude` or `Co-authored-by: Codex` just because Amp used one of those vendors' models under the hood).
+Every commit created or edited by an AI agent in this repository must include one `Co-authored-by` trailer for each AI agent involved in that commit. A commit touched by one agent has one agent trailer; a commit created by one agent and later amended, reused, or repaired by another agent preserves the original trailer and adds the later agent's trailer. The trailer identifies the **agent tool**, not the underlying model — do not add `Co-authored-by: Claude` or `Co-authored-by: Codex` merely because another agent used one of those vendors' models under the hood.
 
-Exception: a squash merge commit may include multiple `Co-authored-by` trailers when multiple AI agents materially contributed to the PR. In that case, include one trailer per contributing agent as described in "PR squash merge messages".
+Squash merge commits follow the same attribution model at PR scope: include one `Co-authored-by` trailer for each AI agent listed on the pull request's commits, as described in "PR squash merge messages".
 
-Until the listed agents emit their trailers automatically, the trailer must be added by hand when creating or amending the commit.
+Until the listed agents emit their trailers automatically, trailers must be added by hand when creating or amending the commit.
 
 **Trailers by agent:**
 

@@ -199,7 +199,7 @@ When an agent merges a pull request, the resulting squash commit must preserve t
 - Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only trailer footers just to influence GitHub's default squash message.
 - The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
 - The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
-- Extract trailers from the PR commits with `gh pr view <PR> --json commits` and carry them into the generated squash body. Include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent that materially contributed to the PR. Include multiple agent trailers when multiple agents contributed.
+- Extract trailers from the PR commits with `gh pr view <PR> --json commits` and carry them into the generated squash body. Include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent listed on the PR commits. Include multiple agent trailers when multiple agents touched the PR.
 - Keep trailers at the very end of the generated squash body so Git parses them as trailers. De-duplicate repeated trailers from multi-commit PRs.
 
 Good squash body:

@@ -47,7 +47,7 @@ pub enum CoauthorTrailerCommand {
     ///
     /// When enabled, jackin installs a prepare-commit-msg hook inside every
     /// launched container via core.hooksPath. The hook appends the correct
-    /// Co-authored-by trailer for the running agent on every non-amend commit.
+    /// Co-authored-by trailer whenever Git prepares a commit message.
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Enable,
     /// Disable automatic Co-authored-by trailer injection (default)

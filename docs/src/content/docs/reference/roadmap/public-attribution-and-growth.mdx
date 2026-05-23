@@ -23,7 +23,7 @@ Jackin should research the same class of growth tactics, but the design needs a 
 - Orca example: [`stablyai/orca@5ca6828`](https://github.com/stablyai/orca/commit/5ca68283715d74e5916a2f3b6dcd55b2702e2748) uses `Co-authored-by: Orca <help@stably.ai>` in a GitHub-visible commit trailer.
 - GitHub's supported multi-author mechanism is the [`Co-authored-by` commit trailer](https://docs.github.com/en/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/creating-a-commit-with-multiple-authors).
 - Git's native trailer tooling is [`git interpret-trailers`](https://git-scm.com/docs/git-interpret-trailers), which should be preferred over ad-hoc string manipulation if jackin' ever edits commit messages.
-- Jackin's current repository policy already requires exactly one agent `Co-authored-by` trailer for AI-authored commits in this repo; see <RepoFile path="AGENTS.md" />. Any jackin' attribution mechanism must respect local project rules like that instead of assuming the product can append a second `Co-authored-by` line.
+- The current jackin' repository policy requires one agent `Co-authored-by` trailer for each AI agent involved in a commit; see <RepoFile path="AGENTS.md" />. Any jackin' attribution mechanism must respect local project rules like that instead of assuming the product can append unrelated attribution lines.
 
 ## Recommended Research Shape
 
@@ -44,7 +44,7 @@ Treat "public attribution" as a small project-growth program with commit trailer
 ### Decision criteria
 
 - **Operator consent.** Attribution must be opt-in at the workspace, role, or explicit command level. No launch, commit helper, PR helper, hook, or future daemon path silently writes promotional metadata into a host repo.
-- **Repository policy compatibility.** Jackin must detect or let the operator configure per-repo rules. If a repo says "exactly one `Co-authored-by` agent trailer," jackin' must not add a second one.
+- **Repository policy compatibility.** jackin' must detect or let the operator configure per-repo rules. If a repo says "exactly one `Co-authored-by` agent trailer," jackin' must not add a second one.
 - **Authorship honesty.** Use `Co-authored-by` only if the claim is accurate in the repo's social contract. Prefer a custom trailer or PR-body footer when jackin' orchestrated the environment but did not author the patch.
 - **Tooling correctness.** Use structured trailer handling (`git interpret-trailers` or a maintained Rust crate if one is clearly better) instead of hand-rolled trailer parsing.
 - **Removeability.** Operators need a one-command way to preview, add, remove, or disable attribution before publishing.
