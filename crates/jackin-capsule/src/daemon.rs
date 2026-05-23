@@ -663,6 +663,13 @@ impl Multiplexer {
         if self.active_tab >= self.tabs.len() {
             return;
         }
+        // Drop any in-flight selection / drag-resize anchored to a
+        // pane in this tab — resize_panes below invalidates every
+        // remaining pane's rect and removing the active tab swaps the
+        // visible content entirely. Mirrors close_focused_pane and
+        // remove_exited_session, which both call cancel_drag for the
+        // same reason.
+        self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let tab_ids = self.tabs[self.active_tab].tree.all_ids();
         crate::clog!(
@@ -930,6 +937,12 @@ impl Multiplexer {
         // under typical limits, but well past the size any operator
         // can usefully navigate.
         self.ensure_capacity_for_new_session(true)?;
+        // Mirror split_focused_into: resize_panes below reflows every
+        // pane's interior rect, and the new tab swaps the visible
+        // content. Drop any in-flight gesture anchored to a now-stale
+        // pane rect so the next mouse-motion does not paint selection
+        // or splitter feedback against geometry that has moved.
+        self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
         let cwd = self.workdir.as_path();
@@ -1935,6 +1948,13 @@ impl Multiplexer {
     /// Switch focus to the pane the operator clicked on, if it differs
     /// from the current focus. Returns `true` when the focus actually
     /// changed so the caller can trigger a redraw.
+    ///
+    /// Honours the zoomed-pane state: when a pane is zoomed it fills
+    /// the entire content rect, so clicks inside that rect must
+    /// resolve to the zoomed pane even if a sibling pane's unzoomed
+    /// rect happens to cover the click point. Walking `tab.tree.leaves`
+    /// without this guard sends focus (and subsequent keystrokes) to
+    /// a hidden pane while the zoomed pane stays painted as focused.
     fn focus_pane_at(&mut self, row: u16, col: u16) -> bool {
         if row < STATUS_BAR_ROWS {
             return false;
@@ -1944,6 +1964,20 @@ impl Multiplexer {
             return false;
         };
         let prev = tab.focused_id;
+        if let Some(zoom_id) = self.active_zoomed_id() {
+            // Click outside the content rect (header chrome, status
+            // bar) cannot affect zoom focus; otherwise the only
+            // candidate is the zoomed pane itself.
+            if row < content_rect.row + content_rect.rows
+                && col < content_rect.col + content_rect.cols
+                && zoom_id != prev
+            {
+                self.tabs[self.active_tab].focused_id = zoom_id;
+                self.synthesise_focus_swap(Some(prev), Some(zoom_id));
+                return true;
+            }
+            return false;
+        }
         let leaves = tab.tree.leaves(content_rect);
         for (id, rect) in leaves {
             if row >= rect.row
