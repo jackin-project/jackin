@@ -123,17 +123,6 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
         .map(Path::new)
         .context("prepare-commit-msg hook requires a commit message path")?;
 
-    if env_is_one("JACKIN_GIT_COAUTHOR_TRAILER") {
-        let agent = std::env::var("JACKIN_AGENT").unwrap_or_default();
-        if let Some(trailer) = coauthor_trailer_for_agent(&agent) {
-            ensure_message_trailer(message_path, trailer, "Co-authored-by")?;
-        } else {
-            eprintln!(
-                "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_COAUTHOR_TRAILER=1 but JACKIN_AGENT='{agent}' is not a recognized agent slug; no Co-authored-by trailer written"
-            );
-        }
-    }
-
     if env_is_one("JACKIN_GIT_DCO") {
         let dco_name = git_config_value("user.name").unwrap_or_default();
         let dco_email = git_config_value("user.email").unwrap_or_default();
@@ -146,7 +135,19 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
                 message_path,
                 &format!("Signed-off-by: {dco_name} <{dco_email}>"),
                 "Signed-off-by",
+                Some("before"),
             )?;
+        }
+    }
+
+    if env_is_one("JACKIN_GIT_COAUTHOR_TRAILER") {
+        let agent = std::env::var("JACKIN_AGENT").unwrap_or_default();
+        if let Some(trailer) = coauthor_trailer_for_agent(&agent) {
+            ensure_message_trailer(message_path, trailer, "Co-authored-by", None)?;
+        } else {
+            eprintln!(
+                "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_COAUTHOR_TRAILER=1 but JACKIN_AGENT='{agent}' is not a recognized agent slug; no Co-authored-by trailer written"
+            );
         }
     }
 
@@ -414,16 +415,24 @@ fn git_config_value(key: &str) -> Option<String> {
     .filter(|value| !value.is_empty())
 }
 
-fn ensure_message_trailer(message_path: &Path, trailer: &str, label: &str) -> Result<()> {
+fn ensure_message_trailer(
+    message_path: &Path,
+    trailer: &str,
+    label: &str,
+    where_arg: Option<&str>,
+) -> Result<()> {
     remove_exact_trailer_lines(message_path, trailer, label)?;
-    let output = Command::new("git")
-        .args([
-            "interpret-trailers",
-            "--in-place",
-            "--if-exists=addIfDifferent",
-            "--trailer",
-            trailer,
-        ])
+    let mut command = Command::new("git");
+    command.args([
+        "interpret-trailers",
+        "--in-place",
+        "--if-exists=addIfDifferent",
+    ]);
+    if let Some(where_arg) = where_arg {
+        command.arg(format!("--where={where_arg}"));
+    }
+    let output = command
+        .args(["--trailer", trailer])
         .arg(message_path)
         .output()
         .with_context(|| format!("failed to run git interpret-trailers for {label}"))?;

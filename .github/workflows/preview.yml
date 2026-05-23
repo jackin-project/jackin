@@ -199,17 +199,17 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          archive="jackin-preview-${TARGET}.tar.gz"
+          archive="jackin-${TARGET}.tar.gz"
           tar -czf "$archive" \
             -C "target/${TARGET}/release" \
             jackin jackin-role
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: jackin-preview-${{ matrix.target }}
+          name: jackin-${{ matrix.target }}
           path: |
-            jackin-preview-${{ matrix.target }}.tar.gz
-            jackin-preview-${{ matrix.target }}.tar.gz.sha256
+            jackin-${{ matrix.target }}.tar.gz
+            jackin-${{ matrix.target }}.tar.gz.sha256
 
 
   build-jackin-capsule:
@@ -371,8 +371,8 @@ jobs:
             --target "$SHA" \
             --title "Preview ${VERSION}" \
             --notes "Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})." \
-            artifacts/jackin-preview-*.tar.gz \
-            artifacts/jackin-preview-*.tar.gz.sha256 \
+            artifacts/jackin-*.tar.gz \
+            artifacts/jackin-*.tar.gz.sha256 \
             artifacts/jackin-capsule-aarch64-unknown-linux-gnu \
             artifacts/jackin-capsule-x86_64-unknown-linux-gnu \
             artifacts/jackin-capsule-*.sha256
@@ -380,8 +380,8 @@ jobs:
       - name: Read platform SHA256s
         id: shas
         run: |
-          echo "arm64_macos=$(cat artifacts/jackin-preview-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "x86_macos=$(cat artifacts/jackin-preview-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -421,11 +421,11 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-preview-aarch64-apple-darwin.tar.gz"
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-aarch64-apple-darwin.tar.gz"
                 sha256 "${ARM64_SHA256}"
               end
               on_intel do
-                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-preview-x86_64-apple-darwin.tar.gz"
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-x86_64-apple-darwin.tar.gz"
                 sha256 "${X86_SHA256}"
               end
             end

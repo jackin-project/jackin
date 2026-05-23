@@ -63,7 +63,7 @@ fn parse_trailers(message: &str) -> String {
 fn assert_parseable_test_trailers(message: &str) {
     assert_eq!(
         parse_trailers(message),
-        format!("{CODEX_TRAILER}\n{SIGNOFF_TRAILER}\n")
+        format!("{SIGNOFF_TRAILER}\n{CODEX_TRAILER}\n")
     );
 }
 
@@ -113,9 +113,10 @@ fn hook_adds_current_agent_to_reused_messages() {
     let message = run_hook(&format!("subject\n\n{CLAUDE_TRAILER}\n"), Some("commit"));
     let trailers = parse_trailers(&message);
 
-    assert!(trailers.contains(CLAUDE_TRAILER));
-    assert!(trailers.contains(CODEX_TRAILER));
-    assert!(trailers.contains(SIGNOFF_TRAILER));
+    assert_eq!(
+        trailers,
+        format!("{SIGNOFF_TRAILER}\n{CLAUDE_TRAILER}\n{CODEX_TRAILER}\n")
+    );
     assert_eq!(message.matches(CLAUDE_TRAILER).count(), 1);
     assert_eq!(message.matches(CODEX_TRAILER).count(), 1);
     assert_eq!(message.matches(SIGNOFF_TRAILER).count(), 1);
