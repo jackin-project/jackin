@@ -37,7 +37,7 @@
       ],
       "depNameTemplate": "mise",
       "datasourceTemplate": "deb",
-      "registryUrlTemplate": "https://mise.jdx.dev/deb?suite=stable&components=main&binaryArch=amd64"
+      "registryUrlTemplate": "https://mise.en.dev/deb?suite=stable&components=main&binaryArch=amd64"
     }
   ],
   "prHourlyLimit": 0,
