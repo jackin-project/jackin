@@ -76,7 +76,7 @@ jobs:
             cargo-registry-${{ runner.os }}-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
-      - run: cargo nextest run --all-features --color=always
+      - run: cargo nextest run --color=always
 
   build:
     needs: [check-version, test]

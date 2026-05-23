@@ -549,7 +549,7 @@ mod tests {
             env: Vec::new(),
             focus_session: None,
         })
-        .unwrap();
+        .expect("encode_client for a valid Hello must succeed");
         bytes.push(0xFF);
         let payload = bytes[5..].to_vec();
         assert!(decode_client(TAG_HELLO, payload).is_err());

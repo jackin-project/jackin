@@ -1341,7 +1341,7 @@ impl Multiplexer {
     /// the now-visible agent wants. Each agent owns its own mode
     /// state and switching tabs must not leak the previous agent's
     /// setup to the new one.
-    fn synthesise_focus_swap(&self, old: Option<u64>, new: Option<u64>) {
+    fn synthesise_focus_swap(&mut self, old: Option<u64>, new: Option<u64>) {
         if old == new {
             return;
         }
@@ -1367,39 +1367,15 @@ impl Multiplexer {
             // Mouse/focus are reasserted as client-owned modes so a
             // pane cannot downgrade the multiplexer's input channel
             // to legacy X10 after a focus-changing close/split.
-            if let Some(tx) = &self.attached_out {
-                let mut stage = "focus_swap_reset";
-                let mut failed = false;
-                if tx
-                    .send(encode_server(ServerFrame::Output(
-                        crate::session::Session::focus_swap_reset().to_vec(),
-                    )))
-                    .is_err()
-                {
-                    failed = true;
-                } else {
-                    stage = "client_owned_mode_state";
-                    if tx
-                        .send(encode_server(ServerFrame::Output(
-                            crate::session::Session::client_owned_mode_state().to_vec(),
-                        )))
-                        .is_err()
-                    {
-                        failed = true;
-                    } else {
-                        for bytes in s.current_mode_state() {
-                            stage = "current_mode_state";
-                            if tx.send(encode_server(ServerFrame::Output(bytes))).is_err() {
-                                failed = true;
-                                break;
-                            }
-                        }
-                    }
+            if self.attached_out.is_some() {
+                let mut frames: Vec<Vec<u8>> = Vec::new();
+                frames.push(crate::session::Session::focus_swap_reset().to_vec());
+                frames.push(crate::session::Session::client_owned_mode_state().to_vec());
+                for bytes in s.current_mode_state() {
+                    frames.push(bytes);
                 }
-                if failed {
-                    crate::clog!(
-                        "focus swap: client receiver dropped during {stage}; outer terminal mode-state is partial"
-                    );
+                for bytes in frames {
+                    self.send_output(bytes);
                 }
             }
         }
@@ -1900,15 +1876,9 @@ impl Multiplexer {
         let dragged = sel.anchor_row != sel.end_row || sel.anchor_col != sel.end_col;
         if dragged && let Some(session) = self.sessions.get(&sel.session_id) {
             let text = selection_text(session.screen(), &sel);
-            if !text.is_empty()
-                && let Some(tx) = &self.attached_out
-            {
+            if !text.is_empty() && self.attached_out.is_some() {
                 let bytes = encode_osc52_clipboard_write(&text);
-                if tx.send(encode_server(ServerFrame::Output(bytes))).is_err() {
-                    crate::clog!(
-                        "OSC52 clipboard write: client receiver dropped; copy did not reach outer terminal"
-                    );
-                }
+                self.send_output(bytes);
             }
         }
         Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
@@ -2757,7 +2727,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         let is_focused = Some(session_id) == focused_id;
                         // Collect any focused-pane output into local
                         // vecs so the `&mut Session` borrow ends before
-                        // `mux.send_output` (which needs &Multiplexer).
+                        // `mux.send_output` (which takes `&mut Multiplexer`).
                         let mut to_emit: Vec<Vec<u8>> = Vec::new();
                         if let Some(session) = mux.sessions.get_mut(&session_id) {
                             session.feed_pty(&data);
@@ -3111,6 +3081,11 @@ fn detach_client(mux: &mut Multiplexer) {
             "detach_client: client receiver already dropped; Shutdown frame not delivered"
         );
     }
+    // The latch is paired with the sender's lifetime: clearing
+    // `attached_out` invalidates the previous attach, so the next
+    // assignment (in the takeover branch of `run_daemon`) starts from
+    // a clean state regardless of which code path reassigns it.
+    mux.attached_out_dead_logged = false;
     if let Some(handle) = mux.attached_task.take() {
         handle.abort();
     }

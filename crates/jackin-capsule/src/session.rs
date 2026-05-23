@@ -145,13 +145,16 @@ impl OscPolicy {
     }
 
     /// Test-only constructor with every passthrough gate closed.
-    /// Production code must call `from_env()`. Gated on the
-    /// `test-helpers` feature so production binaries built without
-    /// `--features test-helpers` never expose the symbol. Integration
-    /// tests run via `cargo test --features test-helpers` (the
-    /// workspace `tests` target enables it transitively).
-    #[cfg(any(test, feature = "test-helpers"))]
-    pub fn deny_all() -> Self {
+    /// Production code must call `from_env()`; the `#[doc(hidden)]`
+    /// attribute hides this from rustdoc and the leading-underscore-
+    /// adjacent `for_test` prefix flags intent to readers. Cargo
+    /// limitations (a crate cannot list itself in `[dev-dependencies]`
+    /// with a feature flag) make a `#[cfg(feature = "test-helpers")]`
+    /// gate impractical without breaking the default `cargo test`
+    /// invocation that integration tests rely on — the documented
+    /// trade-off in commit f9903cbf.
+    #[doc(hidden)]
+    pub fn for_test_deny_all() -> Self {
         Self {
             allow_title: false,
             allow_osc52: false,

@@ -389,8 +389,9 @@ fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String
 
     // Exotic terminal — try to export and compile the terminfo entry.
     // Errors here are recoverable: fall back to xterm-256color so the
-    // session still launches, but log the cause so an operator running
-    // with `--debug` can see why their host's TERM didn't make it in.
+    // session still launches. A single-line warning surfaces the
+    // degradation without breaking up the StepCounter-driven launch
+    // sequence; the verbose cause stays under `--debug`.
     match export_host_terminfo(&host_term, cache_dir) {
         Ok(terminfo_dir) => {
             let mount = format!("{}:/home/agent/.terminfo:ro", terminfo_dir.display());
@@ -398,10 +399,9 @@ fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String
         }
         Err(e) => {
             eprintln!(
-                "jackin: terminfo export failed for TERM={host_term}: {e:#}; \
-                 falling back to xterm-256color (container loses \
-                 {host_term}-specific capabilities)",
+                "jackin: warning: TERM={host_term} terminfo unavailable, falling back to xterm-256color"
             );
+            crate::debug_log!("terminfo", "export failed for TERM={host_term}: {e:#}");
             ("xterm-256color".to_string(), None)
         }
     }
@@ -2080,13 +2080,12 @@ async fn load_role_with(
             docker,
             runner,
         ).await?;
-        if matches!(
+        write_preserved_status_if_applicable(
             decision,
-            crate::isolation::finalize::FinalizeDecision::Preserved
-        ) {
-            let status = preserved_instance_status(&container_state)?;
-            write_instance_status(paths, &container_state, &mut instance_manifest, status)?;
-        }
+            paths,
+            &container_state,
+            &mut instance_manifest,
+        )?;
         if matches!(
             decision,
             crate::isolation::finalize::FinalizeDecision::ReturnToAgent
@@ -2125,13 +2124,12 @@ async fn load_role_with(
                 docker,
                 runner,
             ).await?;
-            if matches!(
+            write_preserved_status_if_applicable(
                 decision,
-                crate::isolation::finalize::FinalizeDecision::Preserved
-            ) {
-                let status = preserved_instance_status(&container_state)?;
-                write_instance_status(paths, &container_state, &mut instance_manifest, status)?;
-            }
+                paths,
+                &container_state,
+                &mut instance_manifest,
+            )?;
         }
 
         // Classify how the interactive session ended and tear down DinD/network
@@ -2720,6 +2718,27 @@ fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> 
         AttachOutcome::StillRunning => "running".to_string(),
         AttachOutcome::Stopped(code) => format!("exit:{code}"),
     }
+}
+
+/// Persist `Preserved`-tier status when `finalize_foreground_session`
+/// decides to keep the isolation state. No-op for any other decision;
+/// both the first finalize pass and the post-restart retry pass call
+/// this so a future field added under the `Preserved` arm cannot drift
+/// between them.
+fn write_preserved_status_if_applicable(
+    decision: crate::isolation::finalize::FinalizeDecision,
+    paths: &JackinPaths,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+) -> anyhow::Result<()> {
+    if !matches!(
+        decision,
+        crate::isolation::finalize::FinalizeDecision::Preserved
+    ) {
+        return Ok(());
+    }
+    let status = preserved_instance_status(state_dir)?;
+    write_instance_status(paths, state_dir, manifest, status)
 }
 
 pub(super) fn preserved_instance_status(

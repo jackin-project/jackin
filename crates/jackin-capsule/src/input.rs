@@ -340,7 +340,7 @@ fn default_prefix() -> Option<u8> {
     match parse_prefix(&s) {
         Some(byte) => Some(byte),
         None => {
-            eprintln!("[jackin-capsule] invalid JACKIN_PREFIX={s:?}; prefix mode disabled");
+            crate::clog!("invalid JACKIN_PREFIX={s:?}; prefix mode disabled");
             None
         }
     }
@@ -355,9 +355,8 @@ fn default_prefix() -> Option<u8> {
 ///
 /// Set `JACKIN_PALETTE_KEY` to override (e.g. `C-]`, `C-g`, `C-j`);
 /// set it to the literal string `none` to disable the direct-palette
-/// shortcut entirely. Parse failures log to stderr (visible under
-/// `jackin load --debug`) so an operator does not silently get the
-/// default after typo'ing the override.
+/// shortcut entirely. Parse failures log via `clog!` so they land in
+/// `multiplexer.log` next to the other input-parser init events.
 fn default_palette_key() -> Option<u8> {
     match std::env::var("JACKIN_PALETTE_KEY") {
         Err(_) => Some(0x1C),
@@ -365,9 +364,7 @@ fn default_palette_key() -> Option<u8> {
         Ok(s) => match parse_prefix(&s) {
             Some(byte) => Some(byte),
             None => {
-                eprintln!(
-                    "[jackin-capsule] invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\"
-                );
+                crate::clog!("invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\");
                 Some(0x1C)
             }
         },
