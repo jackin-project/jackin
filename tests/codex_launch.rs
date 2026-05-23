@@ -44,6 +44,15 @@ fn recorded_role_container_name(run_cmd: &str) -> &str {
         .expect("role docker run should include --name")
 }
 
+fn capsule_config_for_run(paths: &JackinPaths, run_cmd: &str) -> jackin_protocol::CapsuleConfig {
+    let capsule_config_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(recorded_role_container_name(run_cmd))
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap()
+}
+
 #[tokio::test]
 async fn codex_launch_invokes_docker_run_with_codex_agent() {
     let temp = tempdir().unwrap();
@@ -152,13 +161,7 @@ model = "gpt-5"
     let session_cmd = recorded_capsule_exec(&runner);
     assert!(session_cmd.contains("jackin-capsule"), "{session_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
-    let capsule_config_path = paths
-        .jackin_home
-        .join("sockets")
-        .join(recorded_role_container_name(run_cmd))
-        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
-    let capsule_config: jackin_protocol::CapsuleConfig =
-        toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+    let capsule_config = capsule_config_for_run(&paths, run_cmd);
     assert_eq!(capsule_config.role, "agent-smith");
     assert_eq!(capsule_config.workdir, "/workspace");
     assert_eq!(capsule_config.agents, vec!["claude", "codex"]);
