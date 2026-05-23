@@ -1545,11 +1545,15 @@ impl Multiplexer {
                 // low bits selecting direction (even = up, odd = down)
                 // and modifier flags possibly OR'd in (shift = +4, alt
                 // = +8, ctrl = +16). Buttons 64–95 cover every wheel
-                // variant. Full-screen TUIs own their wheel events
-                // (transcript scroll, list scroll, etc.); primary-screen
-                // panes without mouse reporting fall back to the
-                // scrollback owned by jackin' so raw SGR bytes never
-                // surface as prompt garbage.
+                // variant. Panes that requested mouse reporting own
+                // their wheel events (transcript scroll, list scroll,
+                // etc.). Agent panes and alternate-screen panes without
+                // mouse reporting get the same cursor-key fallback a
+                // terminal normally provides when the app owns the
+                // interaction but not the mouse. Plain shell panes
+                // without mouse reporting fall back to the scrollback
+                // owned by jackin' so raw SGR bytes never surface as
+                // prompt garbage.
                 // Dialog overlay swallows the wheel so background
                 // pane scrollback does not move while the operator is
                 // interacting with the modal.
@@ -1557,13 +1561,51 @@ impl Multiplexer {
                     return None;
                 }
                 if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {
+                    crate::cdebug!(
+                        "wheel dispatch: forwarded-to-pty row={} col={} button={}",
+                        row,
+                        col,
+                        button
+                    );
+                    return None;
+                }
+                if let Some(focused) = self.active_focused_id()
+                    && let Some(session) = self.sessions.get(&focused)
+                    && (session.agent.is_some() || session.screen().alternate_screen())
+                    && let Some(buf) = encode_wheel_cursor_fallback(session, button)
+                {
+                    crate::cdebug!(
+                        "wheel dispatch: cursor-fallback session={} agent={:?} alt_screen={} row={} col={} button={} bytes={:02x?}",
+                        focused,
+                        session.agent,
+                        session.screen().alternate_screen(),
+                        row,
+                        col,
+                        button,
+                        buf
+                    );
+                    session.send_input(&buf);
                     return None;
                 }
                 let delta = if (button & 1) == 0 { 3 } else { -3 };
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
                 {
+                    crate::cdebug!(
+                        "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={}",
+                        focused,
+                        row,
+                        col,
+                        button,
+                        delta,
+                        session.scrollback_offset
+                    );
                     session.scroll_by(delta);
+                    crate::cdebug!(
+                        "wheel dispatch: jackin-scrollback session={} after={}",
+                        focused,
+                        session.scrollback_offset
+                    );
                 }
                 Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
             }
@@ -3555,11 +3597,9 @@ fn alternate_screen_has_scroll_affordance(
 
 /// SGR mouse wheel events set bit 6 of the button byte. Every value in
 /// `64..=95` is a wheel event with some combination of modifier flags
-/// (shift = +4, alt = +8, ctrl = +16). Primary-screen panes that did
-/// not request mouse mode must not receive these bytes because they
-/// dump raw SGR at prompts; alternate-screen panes own their viewport
-/// and get wheel input even when the parser did not retain a standard
-/// DEC mouse mode.
+/// (shift = +4, alt = +8, ctrl = +16). Panes that did not request
+/// mouse mode must not receive these bytes because they dump raw SGR at
+/// prompts or disappear into TUIs that never subscribed to mouse input.
 fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
@@ -3593,15 +3633,6 @@ fn mouse_event_encoding_for_session(
     if mouse_event_allowed_for_mode(session.mouse_protocol_mode(), button, press) {
         return Some(session.mouse_protocol_encoding());
     }
-    if press && is_wheel_button(button) && session.screen().alternate_screen() {
-        // Full-screen TUIs own their viewport. Some programs do not
-        // leave a standard DEC mouse mode in vt100's tracked state,
-        // but the attach client still receives SGR wheel events from
-        // the outer terminal. Forward wheel-only fallback events as
-        // SGR so alternate-screen panes can scroll internally, while
-        // primary-screen panes continue to use jackin' scrollback.
-        return Some(vt100::MouseProtocolEncoding::Sgr);
-    }
     None
 }
 
@@ -3627,6 +3658,28 @@ fn encode_mouse_for_protocol(
             Some(out)
         }
     }
+}
+
+fn encode_wheel_cursor_fallback(session: &Session, button: u8) -> Option<Vec<u8>> {
+    if !is_wheel_button(button) || session.mouse_enabled() {
+        return None;
+    }
+    let seq = if session.screen().application_cursor() {
+        if (button & 1) == 0 {
+            b"\x1bOA".as_slice()
+        } else {
+            b"\x1bOB".as_slice()
+        }
+    } else if (button & 1) == 0 {
+        b"\x1b[A".as_slice()
+    } else {
+        b"\x1b[B".as_slice()
+    };
+    let mut out = Vec::with_capacity(seq.len() * 3);
+    for _ in 0..3 {
+        out.extend_from_slice(seq);
+    }
+    Some(out)
 }
 
 fn push_xterm_mouse_number(
@@ -3787,11 +3840,23 @@ mod tests {
     }
 
     fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        test_session_with_agent(rows, cols, Some("codex".to_string()))
+    }
+
+    fn test_shell_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        test_session_with_agent(rows, cols, None)
+    }
+
+    fn test_session_with_agent(
+        rows: u16,
+        cols: u16,
+        agent: Option<String>,
+    ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
         let (input_tx, input_rx) = mpsc::unbounded_channel();
         (
             Session::new_for_test(
                 "Test".to_string(),
-                Some("codex".to_string()),
+                agent,
                 (rows, cols),
                 100,
                 input_tx,
@@ -4003,7 +4068,7 @@ mod tests {
     #[test]
     fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
         let mut mux = single_pane_tab_mux();
-        let (mut session, mut input_rx) = test_session(20, 78);
+        let (mut session, mut input_rx) = test_shell_session(20, 78);
         for i in 0..40 {
             session.feed_pty(format!("line {i}\r\n").as_bytes());
         }
@@ -4025,9 +4090,38 @@ mod tests {
     }
 
     #[test]
-    fn wheel_forwards_to_mouse_disabled_alt_screen_tui() {
+    fn wheel_sends_cursor_fallback_to_mouse_disabled_agent() {
         let mut mux = single_pane_tab_mux();
-        let (mut session, mut input_rx) = test_session(20, 78);
+        let (session, mut input_rx) = test_session(20, 78);
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "agent-owned fallback should not redraw jackin'"
+        );
+        assert_eq!(
+            input_rx
+                .try_recv()
+                .expect("wheel fallback should reach PTY"),
+            b"\x1b[A\x1b[A\x1b[A"
+        );
+        assert!(
+            input_rx.try_recv().is_err(),
+            "wheel should not produce extra PTY input"
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
+    fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_shell_session(20, 78);
         session.feed_pty(b"\x1b[?1049h");
         mux.sessions.insert(1, session);
 
@@ -4039,13 +4133,48 @@ mod tests {
 
         assert!(
             redraw.is_none(),
-            "alternate-screen TUI wheel should be pane-owned"
+            "pane-owned fallback should not redraw jackin'"
         );
         assert_eq!(
-            input_rx.try_recv().expect("wheel should reach PTY"),
-            b"\x1b[<64;1;1M"
+            input_rx
+                .try_recv()
+                .expect("wheel fallback should reach PTY"),
+            b"\x1b[A\x1b[A\x1b[A"
+        );
+        assert!(
+            input_rx.try_recv().is_err(),
+            "wheel should not produce extra PTY input"
         );
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
+    fn wheel_cursor_fallback_respects_application_cursor_mode() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_session(20, 78);
+        session.feed_pty(b"\x1b[?1049h\x1b[?1h");
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 65,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "pane-owned fallback should not redraw jackin'"
+        );
+        assert_eq!(
+            input_rx
+                .try_recv()
+                .expect("wheel fallback should reach PTY"),
+            b"\x1bOB\x1bOB\x1bOB"
+        );
+        assert!(
+            input_rx.try_recv().is_err(),
+            "wheel should not produce extra PTY input"
+        );
     }
 
     #[test]
