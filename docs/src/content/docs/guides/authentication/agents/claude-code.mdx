@@ -21,6 +21,10 @@ Follow the browser-based OAuth flow. Once it completes, `claude` is ready on you
 To verify the host login is active, run `claude` briefly on the host — if it starts a session without prompting for credentials, you're good.
 </Aside>
 
+## Runtime trust prompts
+
+jackin' launches Claude Code with its bypass-permissions warning already accepted inside the container and marks the session as sandboxed, so workspace-backed launches do not stop on Claude Code's trust or bypass warning dialogs. This applies only inside the jackin' container runtime; jackin' does not mark host directories trusted or write to your host Claude Code settings.
+
 ## Subscription
 
 Claude Code is included with an Anthropic Max plan subscription, or you can use pay-as-you-go API credits.

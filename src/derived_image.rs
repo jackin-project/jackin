@@ -759,10 +759,26 @@ mod tests {
             .unwrap();
         assert!(
             codex_section
-                .contains("codex --enable goals --dangerously-bypass-approvals-and-sandbox")
+                .contains("codex --enable goals -c 'trust_level=\"trusted\"' --dangerously-bypass-approvals-and-sandbox")
         );
         assert!(codex_section.contains("LAUNCH+=(\"$@\")"));
         assert!(!codex_section.contains("config.toml"));
+    }
+
+    #[test]
+    fn entrypoint_claude_branch_marks_container_runtime_trusted() {
+        let claude_section = ENTRYPOINT_SH
+            .split("claude)")
+            .nth(1)
+            .unwrap()
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(claude_section.contains("export CLAUDE_CODE_SANDBOXED=1"));
+        assert!(
+            claude_section
+                .contains("claude --settings '{\"skipDangerousModePermissionPrompt\":true}' --dangerously-skip-permissions --verbose")
+        );
     }
 
     #[test]
@@ -789,6 +805,23 @@ mod tests {
             .unwrap();
         assert!(kimi_section.contains("LAUNCH=(kimi --yolo)"));
         assert!(kimi_section.contains("LAUNCH+=(\"$@\")"));
+    }
+
+    #[test]
+    fn entrypoint_opencode_branch_allows_permissions_with_inline_config() {
+        let opencode_section = ENTRYPOINT_SH
+            .split_once("\n  opencode)")
+            .unwrap()
+            .1
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(
+            opencode_section
+                .contains("export OPENCODE_CONFIG_CONTENT='{\"permission\":\"allow\"}'")
+        );
+        assert!(opencode_section.contains("LAUNCH=(opencode)"));
+        assert!(opencode_section.contains("LAUNCH+=(\"$@\")"));
     }
 
     #[test]
