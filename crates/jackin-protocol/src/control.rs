@@ -15,6 +15,12 @@ pub enum ClientMsg {
     Status,
     /// Request the tab/pane tree snapshot.
     Snapshot,
+    /// Forward-compat: any `{"type":"…"}` the peer adds in a future
+    /// release decodes as `Unknown` instead of failing the whole
+    /// response. The host CLI surfaces it as "ignored newer message"
+    /// rather than the parser bailing.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +37,12 @@ pub enum ServerMsg {
         tabs: Vec<TabSnapshot>,
         active_tab: u32,
     },
+    /// Forward-compat: any `{"type":"…"}` the peer adds in a future
+    /// release decodes as `Unknown` instead of failing the whole
+    /// response. Consumers should treat it as "ignore + retry on the
+    /// next call" rather than bailing.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

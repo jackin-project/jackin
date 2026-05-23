@@ -131,6 +131,7 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         ServerMsg::SessionList { .. } => {
             bail!("daemon replied with SessionList; expected Snapshot")
         }
+        ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
     }
 }
 

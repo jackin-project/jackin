@@ -172,6 +172,13 @@ pub async fn handle_control_request(
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
+        ClientMsg::Unknown => {
+            // Forward-compat: a peer running a newer host CLI sent a
+            // variant this capsule does not understand yet. Log and
+            // close the connection without a reply rather than guess.
+            crate::clog!("control: ignoring unknown ClientMsg variant from peer");
+            return;
+        }
     };
     if let Err(e) = stream.write_all(&frame(&reply)).await {
         crate::clog!("control reply write failed (msg={msg:?}): {e}");

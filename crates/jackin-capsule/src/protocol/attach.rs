@@ -40,6 +40,20 @@ pub enum SpawnRequest {
     Agent(String),
 }
 
+impl SpawnRequest {
+    /// Build an `Agent` variant rejecting empty slugs. Mirrors the
+    /// decode-side `decode_client` check so in-process callers cannot
+    /// construct a degenerate `Agent("")` that would only be caught
+    /// after a wire round-trip.
+    pub fn agent(slug: impl Into<String>) -> anyhow::Result<Self> {
+        let slug = slug.into();
+        if slug.is_empty() {
+            anyhow::bail!("SpawnRequest::Agent slug must be non-empty");
+        }
+        Ok(SpawnRequest::Agent(slug))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
@@ -130,6 +144,11 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
             // silently corrupt the frame. Panic loudly rather than
             // truncate; callers control these inputs and should keep
             // them under the configured wire limits.
+            assert!(
+                env.len() <= MAX_HELLO_ENV,
+                "hello env count {} exceeds wire cap {MAX_HELLO_ENV} (decoder will reject)",
+                env.len()
+            );
             let agent_len = u16::try_from(agent_bytes.len())
                 .expect("agent slug exceeds u16::MAX bytes on the wire");
             let env_count = u16::try_from(env.len())
