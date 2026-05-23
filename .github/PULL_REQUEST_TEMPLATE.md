@@ -154,12 +154,14 @@ binary on disk — re-run the eval to rebuild. To purge the cache entirely:
 cargo run --bin jackin -- console --debug
 ```
 
-<List the in-container commands or UI steps the operator should walk, with
-expected output where it disambiguates a pass/fail. Replace this block with the
-narrower path when the PR has one (e.g. `cargo run --bin jackin -- load
-<role> <target> --debug`). For PRs touching `crates/jackin-capsule/`, the
-`### Build jackin-capsule` block above MUST run first — otherwise the
-console launches with a stale binary.>
+<Keep the console command first whenever the changed behavior is reachable from
+jackin' console; it is the preferred operator smoke path. List the clicks, keys,
+workspace state, in-container commands, and expected output that disambiguate a
+pass/fail. Add narrower repeat checks after the console flow when helpful, e.g.
+`cargo run --bin jackin -- load <role> <target> --debug`. Replace the console
+command only when the changed behavior has no meaningful console route. For PRs
+touching `crates/jackin-capsule/`, the `### Build jackin-capsule` block above
+MUST run first — otherwise the console launches with a stale binary.>
 
 ### jackin-capsule smoke
 
