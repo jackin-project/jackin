@@ -352,32 +352,41 @@ jobs:
           SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
           set -euo pipefail
-          # Delete the existing preview release + tag so the new release
-          # can claim the `preview` tag at the current SHA. Distinguish
-          # "release not found" (legit on a fresh repo) from real
-          # failures (auth, rate-limit) — the previous blanket `|| true`
-          # masked both, and the create step that followed then failed
-          # with a confusing "tag already exists" message.
-          if delete_output=$(gh release delete preview --yes --cleanup-tag 2>&1); then
-            echo "preview release deleted (output: $delete_output)"
-          else
-            status=$?
-            if echo "$delete_output" | grep -qiE 'release not found|not found|release does not exist'; then
-              echo "no existing preview release to delete (status=$status); continuing"
-            else
-              echo "::error::gh release delete failed: $delete_output"
-              exit "$status"
-            fi
-          fi
-          gh release create preview \
-            --prerelease \
-            --target "$SHA" \
-            --title "Preview ${VERSION}" \
-            --notes "Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})." \
-            artifacts/jackin-[ax]*.tar.gz \
-            artifacts/jackin-[ax]*.tar.gz.sha256 \
-            artifacts/jackin-capsule-*.tar.gz \
+          notes="Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})."
+          assets=(
+            artifacts/jackin-[ax]*.tar.gz
+            artifacts/jackin-[ax]*.tar.gz.sha256
+            artifacts/jackin-capsule-*.tar.gz
             artifacts/jackin-capsule-*.tar.gz.sha256
+          )
+
+          # The repository protects tags from deletion and non-fast-forward
+          # updates, so the rolling preview channel must not delete and
+          # recreate the `preview` tag. Keep the release as a stable download
+          # alias and replace assets in place.
+          if view_output=$(gh release view preview --json tagName 2>&1); then
+            echo "preview release exists: $view_output"
+            gh release edit preview \
+              --prerelease \
+              --target "$SHA" \
+              --title "Preview ${VERSION}" \
+              --notes "$notes"
+            gh release upload preview "${assets[@]}" --clobber
+            exit 0
+          fi
+
+          status=$?
+          if echo "$view_output" | grep -qiE 'release not found|not found|release does not exist'; then
+            gh release create preview \
+              --prerelease \
+              --target "$SHA" \
+              --title "Preview ${VERSION}" \
+              --notes "$notes" \
+              "${assets[@]}"
+          else
+            echo "::error::gh release view failed: $view_output"
+            exit "$status"
+          fi
 
       - name: Read platform SHA256s
         id: shas
@@ -481,6 +490,17 @@ jobs:
             end
           end
           EOF
+
+      - name: Verify preview formula downloads
+        run: |
+          set -euo pipefail
+          while IFS= read -r url; do
+            echo "Verifying $url"
+            curl -fsIL --retry 3 --retry-all-errors --max-time 30 "$url" >/dev/null
+          done < <(
+            sed -n 's|^[[:space:]]*url "\(https://github.com/jackin-project/jackin/releases/download/preview/[^"]*\)".*$|\1|p' \
+              homebrew-tap/Formula/jackin-preview.rb
+          )
 
       - name: Build PR body
         id: pr_body
