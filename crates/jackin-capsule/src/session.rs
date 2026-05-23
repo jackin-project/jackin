@@ -101,10 +101,10 @@ const ENV_OSC_HYPERLINK: &str = "JACKIN_OSC_HYPERLINK";
 
 #[derive(Debug, Clone, Copy)]
 pub struct OscPolicy {
-    pub allow_title: bool,
-    pub allow_osc52: bool,
-    pub allow_notify: bool,
-    pub allow_hyperlink: bool,
+    allow_title: bool,
+    allow_osc52: bool,
+    allow_notify: bool,
+    allow_hyperlink: bool,
 }
 
 impl Default for OscPolicy {
@@ -130,6 +130,29 @@ impl OscPolicy {
             allow_hyperlink: !is_env_deny(ENV_OSC_HYPERLINK),
         }
     }
+
+    pub fn allow_title(self) -> bool {
+        self.allow_title
+    }
+    pub fn allow_osc52(self) -> bool {
+        self.allow_osc52
+    }
+    pub fn allow_notify(self) -> bool {
+        self.allow_notify
+    }
+    pub fn allow_hyperlink(self) -> bool {
+        self.allow_hyperlink
+    }
+
+    #[cfg(test)]
+    pub fn deny_all() -> Self {
+        Self {
+            allow_title: false,
+            allow_osc52: false,
+            allow_notify: false,
+            allow_hyperlink: false,
+        }
+    }
 }
 
 fn is_env_deny(name: &str) -> bool {
@@ -147,10 +170,10 @@ pub fn next_id() -> u64 {
 /// sequences for later focused-pane forwarding to the attached client.
 #[derive(Default)]
 pub struct OscCapture {
-    pub pending: Vec<Vec<u8>>,
-    pub policy: OscPolicy,
-    pub title: Option<String>,
-    pub icon_name: Option<String>,
+    pub(crate) pending: Vec<Vec<u8>>,
+    pub(crate) policy: OscPolicy,
+    pub(crate) title: Option<String>,
+    pub(crate) icon_name: Option<String>,
     /// Kitty keyboard protocol stack pushed by this session. Each
     /// `\x1b[>{n}u` from the PTY appends; `\x1b[<{n}u` pops. The
     /// daemon mirrors the *top* of this stack onto the outer
@@ -199,6 +222,18 @@ impl OscCapture {
     pub fn cwd(&self) -> Option<&str> {
         self.cwd.as_deref()
     }
+
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    pub fn icon_name(&self) -> Option<&str> {
+        self.icon_name.as_deref()
+    }
+
+    pub fn pending(&self) -> &[Vec<u8>] {
+        &self.pending
+    }
 }
 
 impl Callbacks for OscCapture {
@@ -206,7 +241,7 @@ impl Callbacks for OscCapture {
         if let Ok(s) = std::str::from_utf8(title) {
             self.title = Some(s.to_string());
         }
-        if self.policy.allow_title {
+        if self.policy.allow_title() {
             let mut osc = b"\x1b]2;".to_vec();
             osc.extend_from_slice(title);
             osc.extend_from_slice(b"\x07");
@@ -218,7 +253,7 @@ impl Callbacks for OscCapture {
         if let Ok(s) = std::str::from_utf8(icon_name) {
             self.icon_name = Some(s.to_string());
         }
-        if self.policy.allow_title {
+        if self.policy.allow_title() {
             let mut osc = b"\x1b]1;".to_vec();
             osc.extend_from_slice(icon_name);
             osc.extend_from_slice(b"\x07");
@@ -227,7 +262,7 @@ impl Callbacks for OscCapture {
     }
 
     fn copy_to_clipboard(&mut self, _: &mut Screen, ty: &[u8], data: &[u8]) {
-        if self.policy.allow_osc52 {
+        if self.policy.allow_osc52() {
             let mut osc = b"\x1b]52;".to_vec();
             osc.extend_from_slice(ty);
             osc.push(b';');
@@ -257,11 +292,11 @@ impl Callbacks for OscCapture {
             return;
         }
         // Operator-gated OSC families.
-        if ps == b"9" && !self.policy.allow_notify {
+        if ps == b"9" && !self.policy.allow_notify() {
             return;
         }
         if ps == b"8" {
-            if !self.policy.allow_hyperlink {
+            if !self.policy.allow_hyperlink() {
                 return;
             }
             // OSC 8 carries `<params>;<URI>` (`params` may be empty
@@ -277,7 +312,7 @@ impl Callbacks for OscCapture {
             }
         }
         // OSC 0 sets both title and icon. Route under the title knob.
-        if ps == b"0" && !self.policy.allow_title {
+        if ps == b"0" && !self.policy.allow_title() {
             return;
         }
         let mut osc = b"\x1b]".to_vec();

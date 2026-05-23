@@ -642,14 +642,14 @@ pub fn clamp_split_ratio(r: f32) -> f32 {
 }
 
 /// A named tab — each tab has a label and its own pane layout.
-/// `custom_label` is set when the operator double-clicks a tab and
-/// types a fixed name; while it is `Some`, `label` mirrors it and the
-/// daemon's auto-deriver leaves the tab alone. Clearing `custom_label`
-/// (rename to empty string) restores automatic naming.
+/// `custom_label` is the operator-typed override (set by the rename
+/// dialog); when present it is the single source of truth for the
+/// displayed label and the auto-deriver leaves the tab alone.
+/// Clearing it (rename to empty string) restores automatic naming.
 #[derive(Debug, Clone)]
 pub struct Tab {
-    pub label: String,
-    pub custom_label: Option<String>,
+    auto_label: String,
+    custom_label: Option<String>,
     pub tree: PaneTree,
     pub focused_id: u64,
 }
@@ -657,10 +657,37 @@ pub struct Tab {
 impl Tab {
     pub fn new_single(label: impl Into<String>, session_id: u64) -> Self {
         Self {
-            label: label.into(),
+            auto_label: label.into(),
             custom_label: None,
             tree: PaneTree::Leaf(session_id),
             focused_id: session_id,
         }
+    }
+
+    /// Display label: the operator's typed name wins; otherwise the
+    /// auto-derived one. Single source of truth for everything that
+    /// renders or serialises a tab name.
+    pub fn label(&self) -> &str {
+        self.custom_label.as_deref().unwrap_or(&self.auto_label)
+    }
+
+    pub fn label_owned(&self) -> String {
+        self.label().to_string()
+    }
+
+    /// `Some(_)` while the operator has set a fixed name.
+    pub fn custom_label(&self) -> Option<&str> {
+        self.custom_label.as_deref()
+    }
+
+    /// Set or clear the operator's override (empty input clears).
+    pub fn set_custom_label(&mut self, label: String) {
+        self.custom_label = if label.is_empty() { None } else { Some(label) };
+    }
+
+    /// Update the auto-derived label. The custom label, if set, still
+    /// shadows this when the display label is read.
+    pub fn set_auto_label(&mut self, label: String) {
+        self.auto_label = label;
     }
 }

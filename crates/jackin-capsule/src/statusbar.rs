@@ -463,7 +463,7 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
     } else {
         TabGlyph::None
     };
-    (tab.label.clone(), glyph)
+    (tab.label_owned(), glyph)
 }
 
 /// Active pane border uses jackin's brand highlight (phosphor-green) so

@@ -33,7 +33,7 @@ fn osc_2_window_title_is_re_emitted_and_captured() {
     let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
     p.process(b"\x1b]2;Claude (working)\x07");
     assert_eq!(
-        p.callbacks().title.as_deref(),
+        p.callbacks().title(),
         Some("Claude (working)"),
         "title not captured"
     );

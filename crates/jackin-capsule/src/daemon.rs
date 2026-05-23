@@ -780,7 +780,7 @@ impl Multiplexer {
             DialogAction::RenameTab { tab_idx, label } => {
                 self.dialog_clear();
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                    tab.custom_label = if label.is_empty() { None } else { Some(label) };
+                    tab.set_custom_label(label);
                 }
             }
             DialogAction::CopyToClipboard(payload) => {
@@ -1189,17 +1189,12 @@ impl Multiplexer {
     fn refresh_tab_labels(&mut self) {
         let mut new_labels = Vec::with_capacity(self.tabs.len());
         for tab in &self.tabs {
-            // Operator-set custom labels take priority — the deriver
-            // would otherwise overwrite the name the operator just
-            // typed every time a pane is added or removed.
-            new_labels.push(
-                tab.custom_label
-                    .clone()
-                    .unwrap_or_else(|| self.tab_display_label(tab)),
-            );
+            new_labels.push(self.tab_display_label(tab));
         }
+        // `set_custom_label` shadows `set_auto_label` at display time,
+        // so the operator's typed name is preserved automatically.
         for (tab, label) in self.tabs.iter_mut().zip(new_labels) {
-            tab.label = label;
+            tab.set_auto_label(label);
         }
     }
 
@@ -1540,7 +1535,10 @@ impl Multiplexer {
                         .is_some();
                     if is_double {
                         self.cancel_drag();
-                        let initial = self.tabs[idx].custom_label.clone().unwrap_or_default();
+                        let initial = self.tabs[idx]
+                            .custom_label()
+                            .map(str::to_owned)
+                            .unwrap_or_default();
                         let input = jackin_tui::TextField::new(initial)
                             .with_max_chars(crate::dialog::MAX_CUSTOM_LABEL_LEN);
                         self.dialog_push(Dialog::RenameTab {
@@ -2415,7 +2413,7 @@ impl Multiplexer {
                     })
                     .collect();
                 TabSnapshot {
-                    label: tab.label.clone(),
+                    label: tab.label_owned(),
                     focused_pane: tab.focused_id,
                     panes,
                 }
