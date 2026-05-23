@@ -699,6 +699,7 @@ struct LaunchContext<'a> {
     git_coauthor_trailer: bool,
     git_dco: bool,
     agent: crate::agent::Agent,
+    capsule_config: &'a jackin_protocol::CapsuleConfig,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     /// Resolved `[…github.env]` map (post `op://` + `$NAME`
     /// resolution). `GH_TOKEN` carries the token in the launcher's
@@ -715,6 +716,44 @@ struct LaunchContext<'a> {
     /// returns, by which time the container has stopped and the
     /// `keep_awake` count is back to zero.
     paths: &'a JackinPaths,
+}
+
+fn capsule_config(
+    selector: &RoleSelector,
+    workdir: &str,
+    manifest: &crate::manifest::RoleManifest,
+) -> jackin_protocol::CapsuleConfig {
+    let mut agents = Vec::new();
+    let mut models = std::collections::BTreeMap::new();
+    for agent in manifest.supported_agents() {
+        agents.push(agent.slug().to_string());
+        let model = match agent {
+            crate::agent::Agent::Claude => manifest
+                .claude
+                .as_ref()
+                .and_then(|cfg| cfg.model.as_deref()),
+            crate::agent::Agent::Codex => {
+                manifest.codex.as_ref().and_then(|cfg| cfg.model.as_deref())
+            }
+            crate::agent::Agent::Amp => None,
+            crate::agent::Agent::Kimi => {
+                manifest.kimi.as_ref().and_then(|cfg| cfg.model.as_deref())
+            }
+            crate::agent::Agent::Opencode => manifest
+                .opencode
+                .as_ref()
+                .and_then(|cfg| cfg.model.as_deref()),
+        };
+        if let Some(model) = model {
+            models.insert(agent.slug().to_string(), model.to_string());
+        }
+    }
+    jackin_protocol::CapsuleConfig {
+        role: selector.key().to_string(),
+        workdir: workdir.to_string(),
+        agents,
+        models,
+    }
 }
 
 /// Create the Docker network, start `DinD`, and launch the role container.
@@ -739,6 +778,7 @@ async fn launch_role_runtime(
         git_coauthor_trailer,
         git_dco,
         agent,
+        capsule_config,
         resolved_env,
         github_env,
         cache_dir,
@@ -825,20 +865,6 @@ async fn launch_role_runtime(
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
-    let jackin_role_env = format!(
-        "{}={}",
-        crate::env_model::JACKIN_ROLE_ENV_NAME,
-        selector.key()
-    );
-    // Explicit contract: the multiplexer daemon reads this env var and
-    // uses it as the `cwd` for every spawned PTY. Mirrors the value
-    // passed to `--workdir` below so the daemon does not have to
-    // re-derive it from PID 1's cwd.
-    let jackin_workdir_env = format!(
-        "{}={}",
-        crate::env_model::JACKIN_WORKDIR_ENV_NAME,
-        workspace.workdir
-    );
 
     // Forward the host TERM so the container's terminal type matches what the
     // terminal emulator actually supports.  Docker defaults to TERM=xterm which
@@ -1026,14 +1052,7 @@ async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
-    run_args.extend_from_slice(&[
-        "-e",
-        &jackin_role_env,
-        "-v",
-        &certs_agent_mount,
-        "-v",
-        &gh_config_mount,
-    ]);
+    run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
@@ -1054,15 +1073,23 @@ async fn launch_role_runtime(
     // host-side so Docker does not materialise the target itself as
     // root:root 0755 — that would block the in-container `agent` user
     // (whose UID matches the host user post-`usermod` in the derived
-    // image) from creating and chmod'ing `jackin.sock`.
+    // image) from creating and chmod'ing `jackin.sock`. The same
+    // directory carries Capsule's normalized launch config.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
+    let capsule_config_contents = toml::to_string(capsule_config)
+        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
     // Run the filesystem syscalls on the blocking pool — the tokio
     // runtime is built without the `fs` feature here, and blocking on
     // a slow / NFS host parks the worker driving the docker-run RPC
     // for every other future scheduled on it.
     let socket_dir_for_mkdir = socket_dir.clone();
+    let capsule_config_contents_for_write = capsule_config_contents.clone();
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         std::fs::create_dir_all(&socket_dir_for_mkdir)?;
+        std::fs::write(
+            socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+            capsule_config_contents_for_write,
+        )?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -1094,11 +1121,8 @@ async fn launch_role_runtime(
     run_args.extend_from_slice(&["-v", &socket_mount]);
     crate::debug_log!(
         "launch",
-        "prepared host socket dir {socket_dir_str} (0o700) for bind-mount at /jackin/run",
+        "prepared host socket dir {socket_dir_str} (0o700) and Capsule config for bind-mount at /jackin/run",
     );
-    // Forward JACKIN_WORKDIR so the daemon spawns every PTY in the
-    // workspace workdir (portable_pty defaults to $HOME otherwise).
-    run_args.extend_from_slice(&["-e", &jackin_workdir_env]);
     run_args.push(image);
     // Pass the initial agent as the container command argument. The
     // daemon uses it only to choose the first tab; per-session
@@ -2009,6 +2033,8 @@ async fn load_role_with(
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
 
+        let launch_config =
+            capsule_config(&selector, &workspace.workdir, &validated_repo.manifest);
         let ctx = LaunchContext {
             container_name: &container_name,
             image: &image,
@@ -2023,6 +2049,7 @@ async fn load_role_with(
             git_coauthor_trailer: config.git.coauthor_trailer,
             git_dco: config.git.dco,
             agent,
+            capsule_config: &launch_config,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
             cache_dir: &paths.cache_dir,
@@ -3623,6 +3650,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn capsule_config_serializes_manifest_models() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
+
+[claude]
+model = "sonnet"
+
+[codex]
+model = "gpt-5"
+
+[amp]
+
+[kimi]
+model = "kimi-k2"
+
+[opencode]
+model = "zai/glm"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+
+        let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
+        let config = capsule_config(&selector, "/workspace", &manifest);
+
+        assert_eq!(config.role, "chainargos/the-architect");
+        assert_eq!(config.workdir, "/workspace");
+        assert_eq!(
+            config.agents,
+            vec!["claude", "codex", "amp", "kimi", "opencode"]
+        );
+        assert_eq!(config.models.get("claude").unwrap(), "sonnet");
+        assert_eq!(config.models.get("codex").unwrap(), "gpt-5");
+        assert_eq!(config.models.get("kimi").unwrap(), "kimi-k2");
+        assert_eq!(config.models.get("opencode").unwrap(), "zai/glm");
+        assert!(!config.models.contains_key("amp"));
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn normalize_terminfo_entry_path_resolves_alias_symlink_in_hex_dir() {
@@ -4953,6 +5028,19 @@ plugins = ["code-review@claude-plugins-official"]
         assert!(!container_name.contains("__"));
         assert!(!container_name.contains("clone"));
         assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
+        assert!(!run_cmd.contains("JACKIN_AGENT_MODEL_OVERRIDES"));
+        assert!(!run_cmd.contains("-e JACKIN_ROLE="));
+        let capsule_config_path = paths
+            .jackin_home
+            .join("sockets")
+            .join(&container_name)
+            .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+        let capsule_config: jackin_protocol::CapsuleConfig =
+            toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+        assert_eq!(capsule_config.role, "chainargos/the-architect");
+        assert_eq!(capsule_config.workdir, workspace.workdir);
+        assert_eq!(capsule_config.agents, vec!["claude"]);
+        assert_eq!(capsule_config.models.get("claude").unwrap(), "sonnet");
         assert!(
             !runner
                 .recorded

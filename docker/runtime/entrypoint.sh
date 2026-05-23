@@ -56,6 +56,9 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     ;;
   kimi)
     LAUNCH=(kimi --yolo)
+    if [ "$#" -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
     ;;
   opencode)
     LAUNCH=(opencode)

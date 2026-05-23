@@ -1,6 +1,7 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, daemon, protocol::attach::SpawnRequest, runtime_setup, session::validate_agent_slug,
+    client, config, daemon, protocol::attach::SpawnRequest, runtime_setup,
+    session::validate_agent_slug,
 };
 
 const DEFAULT_AGENT: &str = "claude";
@@ -16,8 +17,10 @@ async fn main() -> Result<()> {
     let is_pid1 = std::process::id() == 1;
 
     if is_pid1 {
-        let agent = resolve_initial_agent(&args)?;
-        daemon::run_daemon(agent).await
+        let launch_config = config::load()?;
+        let supported_agents = launch_config.supported_agents();
+        let agent = resolve_initial_agent(&args, &supported_agents)?;
+        daemon::run_daemon(agent, launch_config).await
     } else {
         let subcommand = args.get(1).map(String::as_str);
         let focus_session = parse_focus_flag(&args);
@@ -31,9 +34,12 @@ async fn main() -> Result<()> {
             Some("snapshot") => client::run_snapshot().await,
             Some("runtime-setup") => runtime_setup::run(),
             Some("new") => {
+                let supported_agents = config::load_optional()
+                    .map(|config| config.supported_agents())
+                    .unwrap_or_default();
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
-                    Some(raw) => match validate_agent_slug(raw) {
+                    Some(raw) => match validate_agent_slug(raw, &supported_agents) {
                         Ok(s) => match SpawnRequest::agent(s) {
                             Ok(req) => Some(req),
                             Err(reason) => {
@@ -99,11 +105,11 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
 /// passes this as the container command argument after the image name so the
 /// container's global environment does not claim one agent for every session.
 /// `JACKIN_AGENT` is reserved for per-agent entrypoint processes.
-fn resolve_initial_agent(args: &[String]) -> Result<String> {
+fn resolve_initial_agent(args: &[String], supported_agents: &[String]) -> Result<String> {
     let Some(raw) = args.get(1) else {
         return Ok(DEFAULT_AGENT.to_string());
     };
-    let validated = validate_agent_slug(raw)
+    let validated = validate_agent_slug(raw, supported_agents)
         .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))?;
     Ok(validated.to_string())
 }

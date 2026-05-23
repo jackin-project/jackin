@@ -127,14 +127,6 @@ pub fn render_derived_dockerfile(
         }
     }
 
-    // JACKIN_SUPPORTED_AGENTS is read by jackin-capsule at startup to populate
-    // the agent picker. It lists only the agents installed in this derived image.
-    let agents_csv: String = supported
-        .iter()
-        .map(|a| a.slug())
-        .collect::<Vec<_>>()
-        .join(",");
-
     // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
     let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
         format!(
@@ -201,7 +193,6 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
 {shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /jackin/run /jackin/state && chown agent:agent /jackin/run /jackin/state
-ENV JACKIN_SUPPORTED_AGENTS={agents_csv}
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
 "
@@ -486,7 +477,7 @@ mod tests {
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
-        assert!(dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
+        assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
         assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
     }
 
@@ -507,7 +498,7 @@ mod tests {
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
-        assert!(dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
+        assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
     }
 
     #[test]
@@ -736,6 +727,7 @@ mod tests {
         assert!(ENTRYPOINT_SH.contains("  claude)"));
         assert!(ENTRYPOINT_SH.contains("  codex)"));
         assert!(ENTRYPOINT_SH.contains("  amp)"));
+        assert!(ENTRYPOINT_SH.contains("  kimi)"));
         assert!(ENTRYPOINT_SH.contains("  opencode)"));
     }
 
@@ -784,6 +776,19 @@ mod tests {
             .unwrap();
         assert!(amp_section.contains("LAUNCH=(amp --dangerously-allow-all)"));
         assert!(!amp_section.contains("/jackin/amp/secrets.json"));
+    }
+
+    #[test]
+    fn entrypoint_kimi_branch_forwards_model_args() {
+        let kimi_section = ENTRYPOINT_SH
+            .split_once("\n  kimi)")
+            .unwrap()
+            .1
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(kimi_section.contains("LAUNCH=(kimi --yolo)"));
+        assert!(kimi_section.contains("LAUNCH+=(\"$@\")"));
     }
 
     #[test]

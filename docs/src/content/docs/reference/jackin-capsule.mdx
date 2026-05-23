@@ -77,6 +77,8 @@ docker run ... -v ~/.jackin/sockets/<container-name>:/jackin/run ...
 
 That makes the host-side path `~/.jackin/sockets/<container-name>/jackin.sock`. One socket directory exists per running instance. The socket is a Unix domain socket, not TCP. Its parent directory is locked to `0700` and the socket file is locked to `0600`; the attach channel has no separate authentication layer beyond filesystem ownership, so widening those permissions would allow an in-container peer to inject input into the focused PTY.
 
+The same bind-mounted `/jackin/run` directory also carries `agent.toml`. The host writes `~/.jackin/sockets/<container-name>/agent.toml` before `docker run`; Capsule reads it as `/jackin/run/agent.toml` during startup. This keeps jackin-owned in-container runtime state under the single `/jackin/` root.
+
 Two protocols share the same socket. The first byte sent by a client selects which one the daemon dispatches:
 
 - **Control channel** — first byte `0x00`, interpreted as the first byte of a four-byte big-endian length prefix. The rest of the frame is a UTF-8 JSON request. The daemon reads one request, writes one length-prefixed JSON response, then closes the connection. This is used for one-shot status and snapshot queries.
@@ -122,6 +124,7 @@ The attach protocol is intentionally not a general RPC surface. It is optimized 
 
 The host and Capsule intentionally exchange only a small set of facts:
 
+- **Launch metadata** is written by the host into `/jackin/run/agent.toml` before `docker run` starts the role container. The file contains the role key, workspace workdir, ordered supported-agent list, and per-agent model overrides. Capsule reads it at startup and treats it as the source of truth for session spawning.
 - **Initial agent selection** crosses from host to container as argv on `docker run`, not as a container-wide `JACKIN_AGENT` environment variable. The daemon uses it only to spawn the first tab.
 - **Per-session agent identity** is set later by the daemon immediately before it spawns `/jackin/runtime/entrypoint.sh` for an agent pane. Shell panes get no `JACKIN_AGENT`.
 - **Terminal input** crosses through the attach channel as raw bytes in `Input` frames. The daemon either consumes bytes that target Capsule UI (palette, prefix commands, tab chrome, dialog controls) or writes them to the active PTY unchanged.
@@ -290,7 +293,7 @@ The agent's terminal experience is the highest-priority constraint. No multiplex
 
 ### Agent discovery
 
-Available runtimes are declared via the `JACKIN_SUPPORTED_AGENTS` environment variable baked into the derived image at build time. The variable is a comma-separated list of agent slugs matching the agents installed in the image (e.g. `claude,codex`). The daemon reads this at startup to populate the agent picker in the command palette.
+Available runtimes are declared in `/jackin/run/agent.toml`, which is generated from the validated role manifest at launch time. The daemon reads the ordered `agents` list at startup to populate the agent picker in the command palette and to validate `jackin-capsule new <agent>` requests; model overrides live in the same file's `[models]` table.
 
 ### OSC passthrough opt-outs
 

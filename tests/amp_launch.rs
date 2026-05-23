@@ -10,6 +10,13 @@ use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use tempfile::tempdir;
 
+fn recorded_role_container_name(run_cmd: &str) -> &str {
+    run_cmd
+        .split_once(" --name ")
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+        .expect("role docker run should include --name")
+}
+
 #[tokio::test]
 async fn amp_launch_invokes_docker_run_with_amp_agent() {
     let temp = tempdir().unwrap();
@@ -102,14 +109,22 @@ agents = ["amp"]
         run_cmd.ends_with(" amp"),
         "initial agent must be passed as container argv; got: {run_cmd}"
     );
-    assert!(
-        run_cmd.contains("-e JACKIN_ROLE=the-architect"),
-        "{run_cmd}"
-    );
+    assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
     assert!(run_cmd.contains("-e AMP_API_KEY=test-amp-key"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/claude/"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/amp/secrets.json"), "{run_cmd}");
+    let capsule_config_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(recorded_role_container_name(run_cmd))
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    let capsule_config: jackin_protocol::CapsuleConfig =
+        toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+    assert_eq!(capsule_config.role, "the-architect");
+    assert_eq!(capsule_config.workdir, "/workspace");
+    assert_eq!(capsule_config.agents, vec!["amp"]);
+    assert!(capsule_config.models.is_empty());
 }
 
 #[tokio::test]

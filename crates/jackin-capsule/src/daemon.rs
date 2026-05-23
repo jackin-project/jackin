@@ -19,6 +19,7 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use anyhow::Result;
+use jackin_protocol::CapsuleConfig;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
@@ -40,8 +41,7 @@ use crate::protocol::attach::{
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{PaneBodyCache, PaneBodyRenderMode, draw_scrollbar};
 use crate::session::{
-    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, available_agents, build_agent_command,
-    build_shell_command,
+    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
@@ -67,6 +67,7 @@ pub struct Multiplexer {
     dialog_stack: Vec<Dialog>,
     content_rows: u16,
     available_agents: Vec<String>,
+    launch_config: CapsuleConfig,
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
@@ -126,7 +127,7 @@ pub struct Multiplexer {
     /// Git / GitHub metadata lookup waiting until after the initial
     /// container-info frame has been queued to the attach writer.
     pending_container_info_lookup: Option<ContainerInfoLookupRequest>,
-    /// Workspace workdir read from `JACKIN_WORKDIR` at daemon startup.
+    /// Workspace workdir read from `/jackin/run/agent.toml` at daemon startup.
     /// Every spawned PTY (agent or shell) receives this as its `cwd`
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
@@ -301,11 +302,11 @@ const CONTAINER_INFO_COPY_FEEDBACK_DURATION: std::time::Duration =
     std::time::Duration::from_secs(2);
 
 impl Multiplexer {
-    pub fn new(rows: u16, cols: u16, workdir: PathBuf) -> Self {
+    pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> Self {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
-        let agents = available_agents();
+        let agents = launch_config.supported_agents();
 
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
@@ -313,7 +314,8 @@ impl Multiplexer {
             .collect();
 
         let input_parser = InputParser::default();
-        let mut status_bar = StatusBar::new();
+        let workdir = PathBuf::from(&launch_config.workdir);
+        let mut status_bar = StatusBar::new_with_role(launch_config.role.clone());
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
 
         Self {
@@ -326,6 +328,7 @@ impl Multiplexer {
             dialog_stack: Vec::new(),
             content_rows,
             available_agents: agents,
+            launch_config,
             env_passthrough,
             event_tx,
             event_rx,
@@ -779,6 +782,10 @@ impl Multiplexer {
         self.spawn_session(Some(agent.to_string()), &[])
     }
 
+    fn model_for_agent(&self, agent: &str) -> Option<&str> {
+        self.launch_config.model_for_agent(agent)
+    }
+
     /// Single dispatch point for a `DialogAction`. Both the
     /// mouse-click and key-event paths call `Dialog::handle_*`
     /// and route the result here, so adding a new variant means
@@ -929,7 +936,7 @@ impl Multiplexer {
         let (label, cmd) = match &agent {
             Some(slug) => (
                 capitalize(slug),
-                build_agent_command(slug, &env_passthrough, cwd),
+                build_agent_command(slug, self.model_for_agent(slug), &env_passthrough, cwd),
             ),
             None => (
                 "Shell".to_string(),
@@ -1027,7 +1034,7 @@ impl Multiplexer {
         let (label, cmd) = match &agent_slug {
             Some(slug) => (
                 capitalize(slug),
-                build_agent_command(slug, &env_passthrough, cwd),
+                build_agent_command(slug, self.model_for_agent(slug), &env_passthrough, cwd),
             ),
             None => (
                 "Shell".to_string(),
@@ -2437,7 +2444,7 @@ impl Multiplexer {
 }
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
-pub async fn run_daemon(initial_agent: String) -> Result<()> {
+pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
     crate::pid1::install_sigchld_reaper();
 
     let rows = std::env::var("JACKIN_ROWS")
@@ -2450,31 +2457,16 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
         .unwrap_or(DEFAULT_COLS);
     let (rows, cols) = normalize_size(rows, cols);
 
-    // JACKIN_WORKDIR is the explicit contract between the host launcher
-    // and the daemon for "where panes open". Missing/empty means the
-    // host code path forgot to forward it — a deployment bug, not a
-    // user error — so bail loudly instead of silently degrading to
-    // portable_pty's `$HOME` default.
-    let workdir = std::env::var("JACKIN_WORKDIR")
-        .map_err(|_| anyhow::anyhow!("JACKIN_WORKDIR is not set; the host launcher must export it"))
-        .and_then(|v| {
-            if v.trim().is_empty() {
-                Err(anyhow::anyhow!("JACKIN_WORKDIR is set but empty"))
-            } else {
-                Ok(PathBuf::from(v))
-            }
-        })?;
-
     // Initialise the file logger before anything else can emit a
     // diagnostic. Failures fall back to stderr-only, so this is safe
     // to call unconditionally.
     crate::logging::init();
     crate::clog!(
         "daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?} workdir={}",
-        workdir.display()
+        launch_config.workdir.as_str()
     );
 
-    let mut mux = Multiplexer::new(rows, cols, workdir);
+    let mut mux = Multiplexer::new(rows, cols, launch_config);
     // Spawn the first tab. Treat any spawn error as fatal at boot —
     // it usually means the entrypoint binary is missing from the
     // derived image, and silently degrading to an empty multiplexer
@@ -2616,7 +2608,10 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         // that wins the socket race could otherwise inject
                         // an unallowlisted agent name (or a control byte)
                         // straight into `build_agent_command`.
-                        match crate::session::validate_agent_slug(&agent_slug) {
+                        match crate::session::validate_agent_slug(
+                            &agent_slug,
+                            &mux.available_agents,
+                        ) {
                             Ok(_) => {
                                 if let Err(err) =
                                     mux.spawn_session(Some(agent_slug.clone()), &env)
@@ -3617,7 +3612,16 @@ mod tests {
     }
 
     fn test_mux(rows: u16, cols: u16) -> Multiplexer {
-        Multiplexer::new(rows, cols, PathBuf::from("/workspace"))
+        Multiplexer::new(
+            rows,
+            cols,
+            CapsuleConfig {
+                role: "test-role".to_string(),
+                workdir: "/workspace".to_string(),
+                agents: Vec::new(),
+                models: std::collections::BTreeMap::new(),
+            },
+        )
     }
 
     fn single_pane_tab_mux() -> Multiplexer {

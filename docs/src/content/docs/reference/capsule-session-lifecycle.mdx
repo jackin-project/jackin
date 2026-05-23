@@ -21,9 +21,10 @@ There are two session types:
 
 When `jackin load` provisions a new instance, the container launch happens in two steps:
 
-1. `docker run -d ... <image> <agent>` starts the container detached. The image entrypoint is `/jackin/runtime/jackin-capsule`; the trailing `<agent>` argv tells PID 1 which initial agent tab to spawn. It is not exported as a container environment variable.
-2. The launcher checks that PID 1 did not exit before attach. If it exited, the launcher captures the last 40 lines of container logs and surfaces an actionable error.
-3. The launcher runs `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the daemon socket and blocks the operator terminal for the duration of the attach.
+1. The launcher writes `~/.jackin/sockets/<container>/agent.toml`; Docker mounts that directory at `/jackin/run`, so PID 1 reads the same file as `/jackin/run/agent.toml`.
+2. `docker run -d ... <image> <agent>` starts the container detached. The image entrypoint is `/jackin/runtime/jackin-capsule`; the trailing `<agent>` argv tells PID 1 which initial agent tab to spawn. It is not exported as a container environment variable.
+3. The launcher checks that PID 1 did not exit before attach. If it exited, the launcher captures the last 40 lines of container logs and surfaces an actionable error.
+4. The launcher runs `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the daemon socket and blocks the operator terminal for the duration of the attach.
 
 Implementation: <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`, `diagnose_premature_exit`) and <RepoFile path="crates/jackin-capsule/src/main.rs" /> (`resolve_initial_agent`).
 

@@ -37,6 +37,13 @@ fn recorded_capsule_exec(runner: &FakeRunner) -> &str {
         .expect("jackin-capsule exec session should start")
 }
 
+fn recorded_role_container_name(run_cmd: &str) -> &str {
+    run_cmd
+        .split_once(" --name ")
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+        .expect("role docker run should include --name")
+}
+
 #[tokio::test]
 async fn codex_launch_invokes_docker_run_with_codex_agent() {
     let temp = tempdir().unwrap();
@@ -129,18 +136,34 @@ model = "gpt-5"
         run_cmd.ends_with(" codex"),
         "initial agent must be passed as container argv; got: {run_cmd}"
     );
-    assert!(run_cmd.contains("-e JACKIN_ROLE=agent-smith"), "{run_cmd}");
+    assert!(
+        !run_cmd.contains("JACKIN_AGENT_MODEL_OVERRIDES"),
+        "{run_cmd}"
+    );
+    assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
+    assert!(!run_cmd.contains("-e JACKIN_WORKDIR="), "{run_cmd}");
     assert!(
         run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"),
         "{run_cmd}"
     );
     assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
-    // The initial agent is passed as container argv; model flag goes to the
-    // exec session when wired through a future protocol extension. For now
-    // assert the exec command targets jackin-capsule.
+    // Model overrides are handed to Capsule PID 1 and applied when it spawns
+    // each PTY. The foreground exec still only attaches to the Capsule client.
     let session_cmd = recorded_capsule_exec(&runner);
     assert!(session_cmd.contains("jackin-capsule"), "{session_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
+    let capsule_config_path = paths
+        .jackin_home
+        .join("sockets")
+        .join(recorded_role_container_name(run_cmd))
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    let capsule_config: jackin_protocol::CapsuleConfig =
+        toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
+    assert_eq!(capsule_config.role, "agent-smith");
+    assert_eq!(capsule_config.workdir, "/workspace");
+    assert_eq!(capsule_config.agents, vec!["claude", "codex"]);
+    assert_eq!(capsule_config.models.get("codex").unwrap(), "gpt-5");
+    assert!(!capsule_config.models.contains_key("claude"));
     // Multi-agent role (`agents = ["claude", "codex"]`) provisions
     // every supported agent's home state so `hardline --new --agent
     // claude` can switch agents without re-authentication. Both

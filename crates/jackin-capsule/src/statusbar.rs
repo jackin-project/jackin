@@ -94,10 +94,10 @@ pub struct StatusBar {
     /// bar omits it to preserve tab-strip columns. Resolved from
     /// `HOSTNAME`.
     pub identity_label: String,
-    /// The role key the host CLI passed in via `JACKIN_ROLE`. Stored
-    /// separately so the `ContainerInfo` modal can name it explicitly
-    /// without re-deriving it from the container-name suffix (which
-    /// is the lossy short form `thearchitect`, not the canonical
+    /// The role key from Capsule launch config. Stored separately so
+    /// the `ContainerInfo` modal can name it explicitly without
+    /// re-deriving it from the container-name suffix (which is the
+    /// lossy short form `thearchitect`, not the canonical
     /// `the-architect` selector the operator typed).
     pub role: String,
 }
@@ -110,6 +110,10 @@ impl Default for StatusBar {
 
 impl StatusBar {
     pub fn new() -> Self {
+        Self::new_with_role(String::new())
+    }
+
+    pub fn new_with_role(role: String) -> Self {
         Self {
             tab_regions: Vec::new(),
             hint_region: None,
@@ -119,7 +123,7 @@ impl StatusBar {
             palette_label: "Ctrl+\\".to_string(),
             prefix_enabled: false,
             identity_label: resolve_container_name(),
-            role: resolve_role_key(),
+            role,
         }
     }
 
@@ -562,12 +566,6 @@ fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
 /// frame burned columns the tab strip needs.
 fn resolve_container_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_default()
-}
-
-/// Role key the host CLI passed in via `JACKIN_ROLE`. Empty when the
-/// daemon was started outside the normal launch path (e.g. CI tests).
-fn resolve_role_key() -> String {
-    std::env::var("JACKIN_ROLE").unwrap_or_default()
 }
 
 #[cfg(test)]

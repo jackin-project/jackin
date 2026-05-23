@@ -67,10 +67,10 @@ export function ApproachCards() {
           <div className="landing-approach-card">
             <div className="landing-route">Route 02 · Build</div>
             <h3>Cast your own</h3>
-            <p>Two files, one git repo. A short <code>jackin.agent.toml</code> declares identity and Claude plugins. A Dockerfile installs your language toolchains and system packages. Versioned, reviewable, <em>self-contained</em>:</p>
+            <p>Two files, one git repo. A short <code>jackin.role.toml</code> declares identity and Claude plugins. A Dockerfile installs your language toolchains and system packages. Versioned, reviewable, <em>self-contained</em>:</p>
             <TabbedBuilder
               tabs={[
-                { id: 'manifest',   title: 'jackin.agent.toml', body: manifestBody   },
+                { id: 'manifest',   title: 'jackin.role.toml', body: manifestBody   },
                 { id: 'dockerfile', title: 'Dockerfile',        body: dockerfileBody },
               ]}
               statusLabel="Self-contained ✓"

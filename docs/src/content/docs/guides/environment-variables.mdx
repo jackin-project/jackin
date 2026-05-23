@@ -78,6 +78,7 @@ A small set of names is owned by the jackin' runtime and cannot be set from any 
 - `JACKIN_DIND_HOSTNAME`
 - `JACKIN_AGENT`
 - `JACKIN_ROLE`
+- `JACKIN_WORKDIR`
 - `JACKIN_GIT_COAUTHOR_TRAILER`
 - `JACKIN_GIT_DCO`
 - `DOCKER_HOST`
@@ -91,6 +92,10 @@ Trying to set one of these is rejected before the agent launches.
 passes the initial agent to the PID 1 multiplexer as an argv value, then sets
 `JACKIN_AGENT` only when spawning `/jackin/runtime/entrypoint.sh` for a real
 agent pane. Shell panes do not receive it.
+
+Role identity, workspace workdir, supported agent slugs, and manifest model
+overrides are written to `/jackin/run/agent.toml` for Capsule instead of being
+duplicated as container-wide environment variables.
 
 ## 1Password CLI setup
 

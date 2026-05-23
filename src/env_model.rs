@@ -37,22 +37,12 @@ pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVE
 /// itself; the initial agent is passed to PID 1 as argv.
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 
-/// Env var that carries the role's selector key (e.g. `agent-smith` or
-/// `chainargos/agent-brown`) into the role container so in-container
-/// scripts can identify which role they are running as.
+/// Reserved runtime name for role identity. Capsule receives the actual role
+/// key through `/jackin/run/agent.toml`.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 
-/// Env var that carries the absolute in-container workspace workdir.
-///
-/// The multiplexer daemon reads it at startup so every spawned PTY (agent or
-/// shell) gets that path as its `cwd`.
-///
-/// Without this, `portable_pty::CommandBuilder` defaults the child's cwd
-/// to `$HOME` (`/home/agent`) — it does not inherit the daemon's cwd —
-/// so agents would open in the operator's home dir instead of the
-/// workspace they configured. The `docker run --workdir` flag still sets
-/// PID 1's cwd, but this env var is the explicit contract the daemon
-/// relies on so it survives any future chdir inside the daemon.
+/// Reserved runtime name for the in-container workspace workdir. Capsule
+/// receives the actual workdir through `/jackin/run/agent.toml`.
 pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 
 /// Env var that signals the entrypoint to install a `prepare-commit-msg`
@@ -241,7 +231,7 @@ mod tests {
             "JACKIN",               // in-container sentinel (was JACKIN)
             "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
             "JACKIN_AGENT",         // injected per agent session — agent slug (claude/codex/amp)
-            "JACKIN_ROLE",          // injected by runtime — role selector key
+            "JACKIN_ROLE",          // runtime-owned role selector key
             "JACKIN_GIT_COAUTHOR_TRAILER",
             "JACKIN_GIT_DCO",
             "DOCKER_HOST",

@@ -997,13 +997,16 @@ fn state_after_refresh(current: AgentState, elapsed: std::time::Duration) -> Age
 }
 
 /// Reject agent-slug strings that are flags (start with `-`), empty,
-/// contain whitespace / control characters, or — when the derived
-/// image set `JACKIN_SUPPORTED_AGENTS` — do not appear in that
-/// allowlist. Shared by the PID-1 argv path, the
+/// contain whitespace / control characters, or — when the launch
+/// config lists supported agents — do not appear in that allowlist.
+/// Shared by the PID-1 argv path, the
 /// `jackin-capsule new <agent>` client path, and the daemon's
 /// `Hello.spawn` decode path so all three trust boundaries
 /// apply the same gate.
-pub fn validate_agent_slug(raw: &str) -> Result<&str, &'static str> {
+pub fn validate_agent_slug<'a>(
+    raw: &'a str,
+    supported_agents: &[String],
+) -> Result<&'a str, &'static str> {
     if raw.is_empty() {
         return Err("empty value");
     }
@@ -1013,39 +1016,30 @@ pub fn validate_agent_slug(raw: &str) -> Result<&str, &'static str> {
     if raw.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err("contains whitespace or control characters");
     }
-    let supported = available_agents();
-    if !supported.is_empty() && !supported.iter().any(|a| a == raw) {
-        return Err("not in JACKIN_SUPPORTED_AGENTS allowlist");
+    if !supported_agents.is_empty() && !supported_agents.iter().any(|a| a == raw) {
+        return Err("not in launch config allowlist");
     }
     Ok(raw)
-}
-
-/// Read the list of available agent slugs from the `JACKIN_SUPPORTED_AGENTS`
-/// environment variable injected by the derived image build.
-pub fn available_agents() -> Vec<String> {
-    std::env::var("JACKIN_SUPPORTED_AGENTS")
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect()
 }
 
 /// Build a CommandBuilder for an agent session.
 ///
 /// Entrypoint is `/jackin/runtime/entrypoint.sh` with `JACKIN_AGENT=<slug>`.
-/// `cwd` is the workspace workdir (read from `JACKIN_WORKDIR` at daemon
-/// startup). It must be passed explicitly: portable_pty's `CommandBuilder`
+/// `cwd` is the workspace workdir from the Capsule launch config. It must be
+/// passed explicitly: portable_pty's `CommandBuilder`
 /// defaults the child's cwd to `$HOME` when none is set — it does not
 /// inherit the daemon's cwd — so omitting this would land every agent in
 /// `/home/agent` regardless of the workspace.
 pub fn build_agent_command(
     agent: &str,
+    model: Option<&str>,
     env_passthrough: &[(String, String)],
     cwd: &Path,
 ) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/jackin/runtime/entrypoint.sh");
+    for arg in agent_model_args(agent, model) {
+        cmd.arg(arg);
+    }
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
@@ -1053,6 +1047,17 @@ pub fn build_agent_command(
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd
+}
+
+fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&'a str> {
+    let Some(model) = model else {
+        return Vec::new();
+    };
+    match agent {
+        "claude" | "kimi" => vec!["--model", model],
+        "codex" | "opencode" => vec!["-m", model],
+        _ => Vec::new(),
+    }
 }
 
 /// Build a CommandBuilder for an interactive shell session.
@@ -1142,12 +1147,34 @@ mod tests {
     #[test]
     fn build_agent_command_overrides_stale_agent_env() {
         let env = vec![("JACKIN_AGENT".to_string(), "claude".to_string())];
-        let cmd = build_agent_command("codex", &env, Path::new("/workspace"));
+        let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"));
 
         assert_eq!(
             cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
             Some("codex")
         );
+    }
+
+    #[test]
+    fn agent_model_args_match_cli_contracts() {
+        assert_eq!(
+            agent_model_args("claude", Some("sonnet")),
+            vec!["--model", "sonnet"]
+        );
+        assert_eq!(
+            agent_model_args("codex", Some("gpt-5")),
+            vec!["-m", "gpt-5"]
+        );
+        assert_eq!(
+            agent_model_args("kimi", Some("kimi-k2")),
+            vec!["--model", "kimi-k2"]
+        );
+        assert_eq!(
+            agent_model_args("opencode", Some("zai/glm")),
+            vec!["-m", "zai/glm"]
+        );
+        assert!(agent_model_args("amp", None).is_empty());
+        assert!(agent_model_args("amp", Some("ignored")).is_empty());
     }
 
     #[test]
@@ -1228,21 +1255,28 @@ mod tests {
 
     #[test]
     fn validate_agent_slug_rejects_typical_attacks() {
-        assert!(validate_agent_slug("").is_err());
-        assert!(validate_agent_slug("--debug").is_err());
-        assert!(validate_agent_slug("claude\n; rm -rf /").is_err());
-        assert!(validate_agent_slug("claude codex").is_err());
-        assert!(validate_agent_slug("claude\0").is_err());
+        let supported = Vec::new();
+        assert!(validate_agent_slug("", &supported).is_err());
+        assert!(validate_agent_slug("--debug", &supported).is_err());
+        assert!(validate_agent_slug("claude\n; rm -rf /", &supported).is_err());
+        assert!(validate_agent_slug("claude codex", &supported).is_err());
+        assert!(validate_agent_slug("claude\0", &supported).is_err());
     }
 
     #[test]
     fn validate_agent_slug_accepts_well_formed_slug_when_no_allowlist() {
-        // Without JACKIN_SUPPORTED_AGENTS set, allowlist check is
-        // skipped (the env var is set inside the derived image; tests
-        // run on the host). Any well-formed token passes.
-        // Note: assumes JACKIN_SUPPORTED_AGENTS is not set in the
-        // test env (cargo nextest does not set it).
-        assert!(validate_agent_slug("claude").is_ok());
-        assert!(validate_agent_slug("codex").is_ok());
+        let supported = Vec::new();
+        assert!(validate_agent_slug("claude", &supported).is_ok());
+        assert!(validate_agent_slug("codex", &supported).is_ok());
+    }
+
+    #[test]
+    fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
+        let supported = vec!["claude".to_string()];
+        assert!(validate_agent_slug("claude", &supported).is_ok());
+        assert_eq!(
+            validate_agent_slug("codex", &supported).unwrap_err(),
+            "not in launch config allowlist"
+        );
     }
 }
