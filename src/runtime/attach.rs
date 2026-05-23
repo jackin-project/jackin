@@ -4,7 +4,7 @@ use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
 
-pub const JACKIN_STATUS_CMD: &str = "/usr/local/bin/jackin-capsule status 2>/dev/null || true";
+pub const JACKIN_STATUS_CMD: &str = "/jackin/runtime/jackin-capsule status 2>/dev/null || true";
 
 pub use crate::docker_client::ContainerState;
 #[cfg(test)]
@@ -123,7 +123,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         "exec",
         "-it",
         container_name,
-        "/usr/local/bin/jackin-capsule",
+        "/jackin/runtime/jackin-capsule",
     ];
     if let Some(ref id) = focus_arg {
         args.push("--focus");
@@ -194,7 +194,7 @@ pub async fn spawn_shell_session(
                 "exec",
                 "-it",
                 container_name,
-                "/usr/local/bin/jackin-capsule",
+                "/jackin/runtime/jackin-capsule",
                 "new",
             ],
             None,
@@ -246,7 +246,7 @@ pub async fn spawn_agent_session(
         workdir,
         "-it",
         container_name,
-        "/usr/local/bin/jackin-capsule",
+        "/jackin/runtime/jackin-capsule",
         "new",
         agent.slug(),
     ];

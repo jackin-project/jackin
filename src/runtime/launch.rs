@@ -1133,7 +1133,7 @@ async fn launch_role_runtime(
                 "exec",
                 "-it",
                 container_name,
-                "/usr/local/bin/jackin-capsule",
+                "/jackin/runtime/jackin-capsule",
             ],
             None,
             &RunOptions::default(),

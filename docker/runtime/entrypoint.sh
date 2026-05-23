@@ -29,7 +29,7 @@ run_hook() {
 # trailer hook, plus per-agent home/auth preparation. This keeps
 # repeated pane starts quiet and avoids shell xtrace leaking token
 # values.
-/usr/local/bin/jackin-capsule runtime-setup
+/jackin/runtime/jackin-capsule runtime-setup
 
 # ── agent-specific setup ───────────────────────────────────────────
 #

@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
-const CONTAINER_INIT_MARKER: &str = "/tmp/jackin-runtime/container-init.done";
+const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
 const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
 const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v1.done";
@@ -447,10 +447,7 @@ mod tests {
 
     #[test]
     fn container_init_marker_is_container_local() {
-        assert_eq!(
-            CONTAINER_INIT_MARKER,
-            "/tmp/jackin-runtime/container-init.done"
-        );
+        assert_eq!(CONTAINER_INIT_MARKER, "/jackin/state/container-init.done");
     }
 
     #[test]

@@ -198,7 +198,7 @@ fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output
 }
 
 const fn snapshot_exec_script() -> &'static str {
-    "exec /usr/local/bin/jackin-capsule snapshot"
+    "exec /jackin/runtime/jackin-capsule snapshot"
 }
 
 fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
@@ -245,6 +245,6 @@ mod tests {
     #[test]
     fn snapshot_exec_script_uses_capsule_client() {
         let script = snapshot_exec_script();
-        assert_eq!(script, "exec /usr/local/bin/jackin-capsule snapshot");
+        assert_eq!(script, "exec /jackin/runtime/jackin-capsule snapshot");
     }
 }

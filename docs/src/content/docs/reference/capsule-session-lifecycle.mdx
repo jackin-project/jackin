@@ -6,7 +6,7 @@ import RepoFile from '../../../components/RepoFile.astro'
 
 ## Overview
 
-Every role container runs the jackin' Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /usr/local/bin/jackin-capsule` client. See [jackin' Capsule](/reference/jackin-capsule/) for the control-plane design and wire protocol.
+Every role container runs the jackin' Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /jackin/runtime/jackin-capsule` client. See [jackin' Capsule](/reference/jackin-capsule/) for the control-plane design and wire protocol.
 
 There are two session types:
 
@@ -21,9 +21,9 @@ There are two session types:
 
 When `jackin load` provisions a new instance, the container launch happens in two steps:
 
-1. `docker run -d ... <image> <agent>` starts the container detached. The image entrypoint is `/usr/local/bin/jackin-capsule`; the trailing `<agent>` argv tells PID 1 which initial agent tab to spawn. It is not exported as a container environment variable.
+1. `docker run -d ... <image> <agent>` starts the container detached. The image entrypoint is `/jackin/runtime/jackin-capsule`; the trailing `<agent>` argv tells PID 1 which initial agent tab to spawn. It is not exported as a container environment variable.
 2. The launcher checks that PID 1 did not exit before attach. If it exited, the launcher captures the last 40 lines of container logs and surfaces an actionable error.
-3. The launcher runs `docker exec -it <container> /usr/local/bin/jackin-capsule`. The client connects to the daemon socket and blocks the operator terminal for the duration of the attach.
+3. The launcher runs `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the daemon socket and blocks the operator terminal for the duration of the attach.
 
 Implementation: <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`, `diagnose_premature_exit`) and <RepoFile path="crates/jackin-capsule/src/main.rs" /> (`resolve_initial_agent`).
 
@@ -31,9 +31,9 @@ Implementation: <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`
 
 `jackin hardline` inspects the target container and chooses the reconnect path:
 
-- **Container is running**: attach with `docker exec -it <container> /usr/local/bin/jackin-capsule`.
-- **Container is running and the operator requested a new agent session**: run `docker exec --workdir <workdir> -it <container> /usr/local/bin/jackin-capsule new <agent>`. The agent slug travels as argv; `JACKIN_AGENT` is set later inside the spawned PTY.
-- **Container is running and the operator requested a shell**: run `docker exec -it <container> /usr/local/bin/jackin-capsule new`. No agent slug means a shell pane.
+- **Container is running**: attach with `docker exec -it <container> /jackin/runtime/jackin-capsule`.
+- **Container is running and the operator requested a new agent session**: run `docker exec --workdir <workdir> -it <container> /jackin/runtime/jackin-capsule new <agent>`. The agent slug travels as argv; `JACKIN_AGENT` is set later inside the spawned PTY.
+- **Container is running and the operator requested a shell**: run `docker exec -it <container> /jackin/runtime/jackin-capsule new`. No agent slug means a shell pane.
 - **Container is stopped with crash state**: restore the required DinD sidecar, network, and certs when needed, restart the role container, then attach.
 - **Container is gone but indexed recoverable state exists**: rebuild the runtime around jackin-managed local state.
 
@@ -44,10 +44,10 @@ Implementation: <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_
 jackin' queries the daemon through its socket by executing:
 
 ```bash
-/usr/local/bin/jackin-capsule status
+/jackin/runtime/jackin-capsule status
 ```
 
-The command opens the Capsule control channel, sends a typed `Status` request, and prints a line-oriented summary that older host paths parse into `AgentSession` records. Host console previews use the same control channel with a JSON `Snapshot` request: same-kernel Docker hosts connect directly to the bind-mounted socket, while Docker Desktop hosts fall back to `docker exec ... /usr/local/bin/jackin-capsule snapshot` because the host cannot connect to a Linux VM Unix socket directly. If the container is not running, inventory is reported as `sessions:not_running` without contacting Docker.
+The command opens the Capsule control channel, sends a typed `Status` request, and prints a line-oriented summary that older host paths parse into `AgentSession` records. Host console previews use the same control channel with a JSON `Snapshot` request: same-kernel Docker hosts connect directly to the bind-mounted socket, while Docker Desktop hosts fall back to `docker exec ... /jackin/runtime/jackin-capsule snapshot` because the host cannot connect to a Linux VM Unix socket directly. If the container is not running, inventory is reported as `sessions:not_running` without contacting Docker.
 
 Implementation: <RepoFile path="src/runtime/attach.rs" /> (`inspect_agent_sessions`) and <RepoFile path="crates/jackin-capsule/src/client.rs" /> (`run_status`).
 

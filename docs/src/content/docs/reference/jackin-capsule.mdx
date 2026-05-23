@@ -5,7 +5,7 @@ title: "jackin' Capsule: In-Container Control Plane"
 import RepoFile from '../../../components/RepoFile.astro'
 import { Aside } from '@astrojs/starlight/components'
 
-The **jackin' Capsule** is the in-container runtime control plane for every Capsule-managed role container. Its executable is `jackin-capsule`, installed at `/usr/local/bin/jackin-capsule` in the derived image and run as PID 1 when the container starts.
+The **jackin' Capsule** is the in-container runtime control plane for every Capsule-managed role container. Its executable is `jackin-capsule`, installed at `/jackin/runtime/jackin-capsule` in the derived image and run as PID 1 when the container starts.
 
 The Capsule is not the Docker container, the role image, or an agent runtime. It is the process inside the container that owns PTYs, supervises child processes, renders the in-container multiplexer, exposes the Unix socket API, and performs deterministic runtime setup before each agent starts. The `jackin` host CLI uses that process as the boundary between host orchestration and in-container session state.
 
@@ -32,7 +32,7 @@ Building it in-house gives jackin' a control plane that is:
 - **Typed and structured.** The socket has a one-shot JSON control channel for inventory queries and a binary attach channel for interactive sessions. The host asks for a session list and gets a typed response, not a string to parse.
 - **Agent-aware.** The multiplexer owns every PTY session from spawn to exit. It sees the output directly and can infer state (working / blocked / done / idle) without guessing.
 - **Socket-backed.** The daemon is the source of truth for session status and snapshots. The host can query typed state through the control channel today, and the same endpoint is the planned source for host-daemon and desktop event streams.
-- **Dependency-free in the image.** tmux is no longer installed in the construct image. The derived image only needs `jackin-capsule` at `/usr/local/bin/jackin-capsule`.
+- **Dependency-free in the image.** tmux is no longer installed in the construct image. The derived image only needs `jackin-capsule` at `/jackin/runtime/jackin-capsule`.
 
 ## Process model
 
@@ -53,7 +53,7 @@ does not imply that every pane is the same agent.
 
 **Attach client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-capsule`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and forwards attach frames between the terminal and daemon.
 
-**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The container init marker lives under `/tmp/jackin-runtime`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
+**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The container init marker lives under `/jackin/state`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
 
 ### Socket Interface
 
@@ -92,8 +92,8 @@ The `jackin` CLI talks to the Capsule through a few deliberately narrow paths:
 | Path | Mechanism | Purpose |
 |---|---|---|
 | Initial launch | `docker run -d ... <image> <agent>` | Starts `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the first tab; it is not exported as global container state. |
-| Interactive attach | `docker exec -it <container> /usr/local/bin/jackin-capsule` | Starts a second `jackin-capsule` process in attach client mode. That client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and bridges the operator terminal. |
-| New agent or shell | `docker exec -it <container> /usr/local/bin/jackin-capsule new [agent]` | The attach client sends a `Hello` frame with a spawn request. The daemon creates the new PTY and sets `JACKIN_AGENT` only for agent sessions. |
+| Interactive attach | `docker exec -it <container> /jackin/runtime/jackin-capsule` | Starts a second `jackin-capsule` process in attach client mode. That client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and bridges the operator terminal. |
+| New agent or shell | `docker exec -it <container> /jackin/runtime/jackin-capsule new [agent]` | The attach client sends a `Hello` frame with a spawn request. The daemon creates the new PTY and sets `JACKIN_AGENT` only for agent sessions. |
 | Session inventory | `jackin-capsule status`, direct host `UnixStream`, or `docker exec ... jackin-capsule snapshot` | Sends a typed control request and receives typed state. The CLI command prints a human-readable line format for older host paths; console snapshot code reads JSON directly, using `docker exec` when the host cannot connect to the bind-mounted Unix socket. |
 | Runtime setup | `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` | Runs container-local setup immediately before the selected agent process is `exec`'d. |
 
@@ -253,7 +253,7 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 ### Derived image build
 
-<RepoFile path="src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /usr/local/bin/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/usr/local/bin/jackin-capsule` the base image provides.
+<RepoFile path="src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
 
 ## Relationship to the rest of jackin'
 

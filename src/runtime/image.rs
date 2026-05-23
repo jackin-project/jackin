@@ -123,7 +123,7 @@ pub(super) async fn build_agent_image(
     // Ensure the jackin-capsule binary is available in the local cache.
     // Downloads from the GitHub preview release if not cached for this
     // version. Propagate the error: the derived image's ENTRYPOINT is
-    // `/usr/local/bin/jackin-capsule`, so a Dockerfile built without
+    // `/jackin/runtime/jackin-capsule`, so a Dockerfile built without
     // the binary would build successfully then fail at `docker run`
     // with the opaque "exec: file not found." Failing fast here with
     // the actionable message from `capsule_binary` is much better.
