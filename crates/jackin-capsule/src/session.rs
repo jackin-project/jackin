@@ -144,7 +144,8 @@ impl OscPolicy {
         self.allow_hyperlink
     }
 
-    #[cfg(test)]
+    /// All passthrough gates closed. Used by tests that assert the
+    /// per-OSC deny path; the production constructor is `from_env()`.
     pub fn deny_all() -> Self {
         Self {
             allow_title: false,

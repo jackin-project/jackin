@@ -244,7 +244,7 @@ pub async fn read_server_frame(
     Ok(Some(decode_server(tag, payload)?))
 }
 
-fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
+pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     Ok(match tag {
         TAG_HELLO => {
             if payload.len() < 4 {
@@ -338,7 +338,7 @@ fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     })
 }
 
-fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
+pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
     Ok(match tag {
         TAG_WELCOME => {
             if payload.len() < 4 {

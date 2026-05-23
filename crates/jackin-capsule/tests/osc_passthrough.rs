@@ -6,11 +6,17 @@
 /// the `OscCapture` callback layer is what re-emits them. These tests
 /// pin the contract by feeding raw OSC byte sequences into the parser
 /// and asserting that `drain_passthrough` yields the same bytes back.
-use jackin_capsule::session::OscCapture;
+use jackin_capsule::session::{OscCapture, OscPolicy};
 use vt100::Parser;
 
 fn drained(bytes: &[u8]) -> Vec<Vec<u8>> {
     let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    p.process(bytes);
+    p.callbacks_mut().drain()
+}
+
+fn drained_with_policy(bytes: &[u8], policy: OscPolicy) -> Vec<Vec<u8>> {
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(policy));
     p.process(bytes);
     p.callbacks_mut().drain()
 }
@@ -194,6 +200,49 @@ fn known_csi_does_not_double_emit() {
 fn drain_returns_empty_when_no_passthrough_emitted() {
     let drained = drained(b"plain text without any escape sequences");
     assert!(drained.is_empty());
+}
+
+#[test]
+fn osc_52_clipboard_dropped_when_policy_denies() {
+    // Operator opt-out: `JACKIN_OSC52=deny` (cached at spawn) must
+    // suppress every OSC 52 write the focused pane emits.
+    let drained = drained_with_policy(b"\x1b]52;c;SGVsbG8=\x07", OscPolicy::deny_all());
+    assert!(
+        drained.is_empty(),
+        "OSC 52 leaked under deny policy: {drained:?}"
+    );
+}
+
+#[test]
+fn osc_9_notification_dropped_when_policy_denies() {
+    // Same gate for OSC 9 (desktop notification) — a noisy untrusted
+    // role must not page the operator's notification center.
+    let drained = drained_with_policy(b"\x1b]9;build finished\x07", OscPolicy::deny_all());
+    assert!(
+        drained.is_empty(),
+        "OSC 9 leaked under deny policy: {drained:?}"
+    );
+}
+
+#[test]
+fn osc_2_title_dropped_when_policy_denies() {
+    let drained = drained_with_policy(b"\x1b]2;rogue title\x07", OscPolicy::deny_all());
+    assert!(
+        drained.is_empty(),
+        "OSC 2 leaked under deny policy: {drained:?}"
+    );
+}
+
+#[test]
+fn osc_8_hyperlink_dropped_when_policy_denies() {
+    let drained = drained_with_policy(
+        b"\x1b]8;;https://example/\x07text\x1b]8;;\x07",
+        OscPolicy::deny_all(),
+    );
+    assert!(
+        drained.is_empty(),
+        "OSC 8 leaked under deny policy: {drained:?}"
+    );
 }
 
 #[test]
