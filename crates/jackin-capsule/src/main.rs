@@ -34,7 +34,9 @@ async fn main() -> Result<()> {
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
                     Some(raw) => match validate_agent_slug(raw) {
-                        Ok(s) => Some(SpawnRequest::Agent(s.to_string())),
+                        Ok(s) => Some(SpawnRequest::agent(s).expect(
+                            "validate_agent_slug rejects empty input; agent() guard is satisfied",
+                        )),
                         Err(reason) => {
                             eprintln!(
                                 "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"

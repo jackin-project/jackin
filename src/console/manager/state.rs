@@ -1927,10 +1927,12 @@ impl ManagerState<'_> {
                             }
                         }
                         // Best-effort live tab/pane snapshot via the
-                        // daemon's bind-mounted socket. Missing socket =
-                        // container hasn't reached the bind-mount era
-                        // yet, or its daemon is wedged — either way the
-                        // render falls back to the manifest sessions.
+                        // daemon's bind-mounted socket. Errors during
+                        // the container's bring-up window (socket not
+                        // yet bound, in-container fallback exits non-
+                        // zero) land in the debug log and the render
+                        // falls back to the manifest sessions; the
+                        // next refresh tick retries.
                         match crate::runtime::snapshot::fetch_snapshot(paths, &entry.container_base)
                         {
                             Ok(Some(snapshot)) => {

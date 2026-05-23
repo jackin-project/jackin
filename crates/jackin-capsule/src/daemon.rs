@@ -916,10 +916,6 @@ impl Multiplexer {
         Ok(id)
     }
 
-    /// Split the focused pane and spawn a session of the operator's
-    /// choice inside it. `agent_slug = None` opens a shell. Used by
-    /// the AgentPicker → Split flow so the operator picks the new
-    /// pane's identity instead of cloning the source pane's agent.
     /// Bound the per-container surface for any path that allocates a
     /// new PTY (top-level spawn, split, etc.). All such paths must
     /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced
@@ -938,6 +934,10 @@ impl Multiplexer {
         Ok(())
     }
 
+    /// Split the focused pane and spawn a session of the operator's
+    /// choice inside it. `agent_slug = None` opens a shell. Used by
+    /// the AgentPicker → Split flow so the operator picks the new
+    /// pane's identity instead of cloning the source pane's agent.
     fn split_focused_into(
         &mut self,
         direction: SplitDirection,
@@ -1182,10 +1182,12 @@ impl Multiplexer {
         }
     }
 
-    /// Rewrite each tab's `label` based on the current pane contents.
-    /// Cheap (clones a few short strings) and easier to reason about
-    /// than dispatching incremental updates from every spawn / split
-    /// / remove site.
+    /// Rewrite each tab's auto-label based on the current pane
+    /// contents. Operator-typed `custom_label` shadows the auto-label
+    /// at display time, so this is safe to call after every spawn /
+    /// split / remove without losing typed names. Cheap (clones a few
+    /// short strings) and easier to reason about than dispatching
+    /// incremental updates from every mutation site.
     fn refresh_tab_labels(&mut self) {
         let mut new_labels = Vec::with_capacity(self.tabs.len());
         for tab in &self.tabs {
@@ -2613,8 +2615,9 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                                     crate::clog!(
                                         "attach: spawn_session for {agent_slug:?} failed: {err:?}"
                                     );
-                                    spawn_failure =
-                                        Some(format!("spawn agent {agent_slug:?} failed: {err}"));
+                                    spawn_failure = Some(format!(
+                                        "spawn agent {agent_slug:?} failed: {err:#}"
+                                    ));
                                 }
                             }
                             Err(reason) => {
@@ -2622,14 +2625,14 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                                     "attach: rejected Hello.spawn.Agent {agent_slug:?}: {reason}"
                                 );
                                 spawn_failure =
-                                    Some(format!("rejected agent {agent_slug:?}: {reason}"));
+                                    Some(format!("rejected agent {agent_slug:?}: {reason:#}"));
                             }
                         }
                     }
                     Some(SpawnRequest::Shell) => {
                         if let Err(err) = mux.spawn_session(None, &env) {
                             crate::clog!("attach: spawn_session (shell) failed: {err:?}");
-                            spawn_failure = Some(format!("spawn shell failed: {err}"));
+                            spawn_failure = Some(format!("spawn shell failed: {err:#}"));
                         }
                     }
                     None => {}
@@ -2692,9 +2695,13 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 initial.extend(mux.compose_full_frame(FullRedrawReason::FirstAttach));
                 let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
                 if let Some(reason) = spawn_failure {
-                    // Red foreground over the composed frame so the
-                    // failure stays visible until the operator types.
-                    let banner = format!("\x1b[1;31mjackin: {reason}\x1b[0m\r\n");
+                    // Save cursor + jump to row 1, col 1, paint a red
+                    // banner, restore cursor. Without the save/restore
+                    // the banner scrolls whichever pane the composed
+                    // frame's cursor landed in.
+                    let banner = format!(
+                        "\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8"
+                    );
                     let _ = new_out_tx
                         .send(encode_server(ServerFrame::Output(banner.into_bytes())));
                 }

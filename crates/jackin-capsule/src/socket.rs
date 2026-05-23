@@ -174,10 +174,11 @@ pub async fn handle_control_request(
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
         ClientMsg::Unknown => {
             // Forward-compat: a peer running a newer host CLI sent a
-            // variant this capsule does not understand yet. Log and
-            // close the connection without a reply rather than guess.
+            // variant this capsule does not understand yet. Reply with
+            // ServerMsg::Unknown so the peer's `read_exact` returns
+            // immediately rather than hanging until SOCKET_TIMEOUT.
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
-            return;
+            ServerMsg::Unknown
         }
     };
     if let Err(e) = stream.write_all(&frame(&reply)).await {

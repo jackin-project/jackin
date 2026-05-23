@@ -171,8 +171,16 @@ pub async fn run_status() -> Result<()> {
     stream.read_exact(&mut body).await?;
 
     let msg: ServerMsg = serde_json::from_slice(&body)?;
-    let ServerMsg::SessionList { sessions } = msg else {
-        anyhow::bail!("daemon replied with unexpected message kind for Status");
+    let sessions = match msg {
+        ServerMsg::SessionList { sessions } => sessions,
+        ServerMsg::Unknown => {
+            anyhow::bail!(
+                "daemon replied with ServerMsg::Unknown for Status — peer is newer than this CLI"
+            )
+        }
+        ServerMsg::Snapshot { .. } => {
+            anyhow::bail!("daemon replied with Snapshot for Status request")
+        }
     };
     println!("Sessions: {}", sessions.len());
     for s in &sessions {
@@ -213,8 +221,16 @@ pub async fn run_snapshot() -> Result<()> {
     stream.read_exact(&mut body).await?;
 
     let msg: ServerMsg = serde_json::from_slice(&body)?;
-    let ServerMsg::Snapshot { tabs, active_tab } = msg else {
-        anyhow::bail!("daemon replied with unexpected message kind for Snapshot");
+    let (tabs, active_tab) = match msg {
+        ServerMsg::Snapshot { tabs, active_tab } => (tabs, active_tab),
+        ServerMsg::Unknown => {
+            anyhow::bail!(
+                "daemon replied with ServerMsg::Unknown for Snapshot — peer is newer than this CLI"
+            )
+        }
+        ServerMsg::SessionList { .. } => {
+            anyhow::bail!("daemon replied with SessionList for Snapshot request")
+        }
     };
     let payload = serde_json::json!({
         "tabs": tabs,
