@@ -2991,11 +2991,27 @@ async fn perform_handshake(
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
     active_tab: u32,
 ) {
+    // Bound the handshake reads. A client that opens the socket and
+    // never sends a byte otherwise holds the `OwnedSemaphorePermit`
+    // forever — sixteen silent peers would starve the
+    // `MAX_CONCURRENT_CLIENTS` cap and lock out legitimate attaches.
+    const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
     let mut first = [0u8; 1];
-    if let Err(e) = stream.read_exact(&mut first).await {
-        crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
-        drop(client_permit);
-        return;
+    match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut first)).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
+            drop(client_permit);
+            return;
+        }
+        Err(_) => {
+            crate::clog!(
+                "attach: handshake first byte not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
+            );
+            drop(client_permit);
+            return;
+        }
     }
     if first[0] == 0x00 {
         // Control channel — one-shot length-prefixed JSON. The
@@ -3013,15 +3029,27 @@ async fn perform_handshake(
         drop(client_permit);
         return;
     }
-    let initial_frame = match read_client_frame(&mut stream, first[0]).await {
-        Ok(Some(frame)) => frame,
-        Ok(None) => {
+    let initial_frame = match tokio::time::timeout(
+        HANDSHAKE_TIMEOUT,
+        read_client_frame(&mut stream, first[0]),
+    )
+    .await
+    {
+        Ok(Ok(Some(frame))) => frame,
+        Ok(Ok(None)) => {
             crate::clog!("attach: handshake EOF before initial frame");
             drop(client_permit);
             return;
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             crate::clog!("attach: handshake frame decode failed: {e}");
+            drop(client_permit);
+            return;
+        }
+        Err(_) => {
+            crate::clog!(
+                "attach: handshake Hello frame not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
+            );
             drop(client_permit);
             return;
         }

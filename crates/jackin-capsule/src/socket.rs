@@ -47,7 +47,15 @@ const MAX_CONCURRENT_CLIENTS: usize = 16;
 /// task so the per-process cap correctly tracks live connections.
 pub fn start_listener()
 -> Result<mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>> {
-    let path = Path::new(SOCKET_PATH);
+    start_listener_at(Path::new(SOCKET_PATH))
+}
+
+/// Bind a `UnixListener` at `path` with the parent dir locked to 0o700
+/// and the socket file to 0o600. Pulled out for tests; production
+/// callers go through `start_listener`.
+pub fn start_listener_at(
+    path: &Path,
+) -> Result<mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>> {
     if path.exists() {
         std::fs::remove_file(path)?;
     }
@@ -73,7 +81,7 @@ pub fn start_listener()
     // channel has no authentication beyond file-mode. Same hard-error
     // policy as the parent dir above.
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("locking socket {SOCKET_PATH} to 0o600"))?;
+        .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();
     let limiter = Arc::new(Semaphore::new(MAX_CONCURRENT_CLIENTS));
 
@@ -187,8 +195,14 @@ pub async fn handle_control_request(
             ServerMsg::Unknown
         }
     };
-    if let Err(e) = stream.write_all(&frame(&reply)).await {
-        crate::clog!("control reply write failed (msg={msg:?}): {e}");
+    // Bound the reply write so a peer that disappeared between request
+    // decode and reply write cannot wedge this task forever holding the
+    // attach-concurrency permit. 2 s is generous for a single localhost
+    // socket write; anything slower is the peer being unresponsive.
+    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
     }
 }
 
@@ -244,5 +258,33 @@ mod tests {
         a.shutdown().await.unwrap();
         let msg = read_control_msg(&mut b, len_buf[0]).await.unwrap();
         assert!(matches!(msg, ClientMsg::Unknown));
+    }
+
+    #[tokio::test]
+    async fn start_listener_locks_socket_and_parent_dir_to_owner_only() {
+        // Hard regression guard for the file-mode security contract
+        // documented at `start_listener_at`. Any refactor that drops
+        // either chmod silently exposes the attach channel to any
+        // in-container uid sharing the agent uid — the exact threat
+        // the comments name.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let parent = tmp.path().join("run");
+        let socket_path = parent.join("jackin.sock");
+        let _rx = start_listener_at(&socket_path).expect("bind");
+        let parent_mode = std::fs::metadata(&parent)
+            .expect("parent metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        let sock_mode = std::fs::metadata(&socket_path)
+            .expect("socket metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            parent_mode, 0o700,
+            "parent dir must be 0o700 (was {parent_mode:o})"
+        );
+        assert_eq!(sock_mode, 0o600, "socket must be 0o600 (was {sock_mode:o})");
     }
 }
