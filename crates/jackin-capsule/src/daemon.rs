@@ -1547,13 +1547,14 @@ impl Multiplexer {
                 // = +8, ctrl = +16). Buttons 64–95 cover every wheel
                 // variant. Panes that requested mouse reporting own
                 // their wheel events (transcript scroll, list scroll,
-                // etc.). Agent panes and alternate-screen panes without
-                // mouse reporting get the same cursor-key fallback a
-                // terminal normally provides when the app owns the
-                // interaction but not the mouse. Plain shell panes
-                // without mouse reporting fall back to the scrollback
-                // owned by jackin' so raw SGR bytes never surface as
-                // prompt garbage.
+                // etc.). Alternate-screen panes without mouse reporting
+                // get the same cursor-key fallback a terminal normally
+                // provides when the app owns the interaction but not
+                // the mouse. Primary-screen panes without mouse reporting
+                // fall back to the scrollback owned by jackin' so raw
+                // SGR bytes never surface as prompt garbage, including
+                // agent panes such as Codex that render a transcript in
+                // the primary grid.
                 // Dialog overlay swallows the wheel so background
                 // pane scrollback does not move while the operator is
                 // interacting with the modal.
@@ -1571,7 +1572,7 @@ impl Multiplexer {
                 }
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get(&focused)
-                    && (session.agent.is_some() || session.screen().alternate_screen())
+                    && session.screen().alternate_screen()
                     && let Some(buf) = encode_wheel_cursor_fallback(session, button)
                 {
                     crate::cdebug!(
@@ -3564,8 +3565,8 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
         filled: session.scrollback_filled(),
     };
     if scrollbar.visible()
-        || !session.screen().alternate_screen()
-        || !alternate_screen_has_scroll_affordance(session.screen(), viewport_rows, viewport_cols)
+        || !pane_owns_scroll_affordance(session)
+        || !screen_has_scroll_affordance(session.screen(), viewport_rows, viewport_cols)
     {
         return scrollbar;
     }
@@ -3576,7 +3577,11 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
     }
 }
 
-fn alternate_screen_has_scroll_affordance(
+fn pane_owns_scroll_affordance(session: &Session) -> bool {
+    session.agent.is_some() || session.screen().alternate_screen() || session.mouse_enabled()
+}
+
+fn screen_has_scroll_affordance(
     screen: &vt100::Screen,
     viewport_rows: u16,
     viewport_cols: u16,
@@ -4090,9 +4095,12 @@ mod tests {
     }
 
     #[test]
-    fn wheel_sends_cursor_fallback_to_mouse_disabled_agent() {
+    fn wheel_scrolls_jackin_scrollback_for_primary_screen_agent() {
         let mut mux = single_pane_tab_mux();
-        let (session, mut input_rx) = test_session(20, 78);
+        let (mut session, mut input_rx) = test_session(20, 78);
+        for i in 0..40 {
+            session.feed_pty(format!("line {i}\r\n").as_bytes());
+        }
         mux.sessions.insert(1, session);
 
         let redraw = mux.handle_input(InputEvent::MousePress {
@@ -4102,20 +4110,14 @@ mod tests {
         });
 
         assert!(
-            redraw.is_none(),
-            "agent-owned fallback should not redraw jackin'"
-        );
-        assert_eq!(
-            input_rx
-                .try_recv()
-                .expect("wheel fallback should reach PTY"),
-            b"\x1b[A\x1b[A\x1b[A"
+            redraw.is_some(),
+            "primary-screen agent scrollback should redraw jackin'"
         );
         assert!(
             input_rx.try_recv().is_err(),
-            "wheel should not produce extra PTY input"
+            "mouse-disabled primary-screen agents must not receive wheel fallback bytes"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
     }
 
     #[test]
@@ -4197,6 +4199,28 @@ mod tests {
         assert!(
             rendered.contains('█'),
             "focused scrollable alt-screen pane should draw a scrollbar thumb"
+        );
+    }
+
+    #[test]
+    fn primary_screen_agent_draws_scroll_affordance_when_grid_is_full() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, _input_rx) = test_session(8, 20);
+        for row in 0..8 {
+            session.feed_pty(format!("\x1b[{};1Hrow {row}", row + 1).as_bytes());
+        }
+        mux.sessions.insert(1, session);
+
+        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        let rendered = String::from_utf8_lossy(&frame);
+
+        assert!(
+            rendered.contains("\x1b[0;38;2;0;255;65m"),
+            "focused primary-screen agent with a full grid should use green chrome"
+        );
+        assert!(
+            rendered.contains('█'),
+            "focused primary-screen agent with a full grid should draw a scrollbar thumb"
         );
     }
 
