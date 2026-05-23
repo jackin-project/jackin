@@ -27,6 +27,13 @@ tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros"
 crossterm = "0.29"
 portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process"] }
+# Pinned git fork of `vt100`. Upstream (doy/vt100-rust) is the
+# canonical crates.io publish but its `Callbacks` trait predates the
+# OSC + unhandled-CSI surface the multiplexer needs; the fork carries
+# patches that are not yet merged upstream (`set_window_title`,
+# `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`).
+# Replace with the upstream crate as soon as those PRs land. Tracked
+# in TODO.md under `vt100-rust-fork`.
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 url = "2"
 percent-encoding = "2"
