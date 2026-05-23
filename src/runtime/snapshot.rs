@@ -88,16 +88,15 @@ pub fn fetch_snapshot(
 
     match fetch_snapshot_via_docker_exec(container_name) {
         Ok(snapshot) => Ok(snapshot),
-        Err(exec_error) => {
-            if let Some(error) = direct_error {
+        Err(exec_error) => direct_error.map_or_else(
+            || Ok(None),
+            |error| {
                 Err(exec_error.context(format!(
                     "direct socket snapshot failed for {} ({error:#})",
                     path.display()
                 )))
-            } else {
-                Ok(None)
-            }
-        }
+            },
+        ),
     }
 }
 
@@ -185,7 +184,7 @@ fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output
     }
 }
 
-fn snapshot_exec_script() -> &'static str {
+const fn snapshot_exec_script() -> &'static str {
     "exec /usr/local/bin/jackin-capsule snapshot"
 }
 

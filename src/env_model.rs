@@ -30,10 +30,11 @@ pub const JACKIN_ENV_VALUE: &str = "1";
 pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
 pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVERRIDE";
 
-/// Env var that carries the AI agent slug (`claude` / `codex` / `amp`) into
-/// each agent session so the entrypoint and in-container tooling can dispatch
-/// on which agent is running. The host launcher does not set this on the
-/// container itself; the initial agent is passed to PID 1 as argv.
+/// Env var that carries the AI agent slug into each agent session.
+///
+/// The entrypoint and in-container tooling use this to dispatch on which
+/// agent is running. The host launcher does not set this on the container
+/// itself; the initial agent is passed to PID 1 as argv.
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 
 /// Env var that carries the role's selector key (e.g. `agent-smith` or
@@ -41,9 +42,10 @@ pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 /// scripts can identify which role they are running as.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 
-/// Env var that carries the workspace workdir (absolute in-container path)
-/// into the role container. The multiplexer daemon reads it at startup so
-/// every spawned PTY (agent or shell) gets that path as its `cwd`.
+/// Env var that carries the absolute in-container workspace workdir.
+///
+/// The multiplexer daemon reads it at startup so every spawned PTY (agent or
+/// shell) gets that path as its `cwd`.
 ///
 /// Without this, `portable_pty::CommandBuilder` defaults the child's cwd
 /// to `$HOME` (`/home/agent`) — it does not inherit the daemon's cwd —

@@ -10,6 +10,33 @@ use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use tempfile::tempdir;
 
+fn recorded_docker_build(runner: &FakeRunner) -> &str {
+    runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker build "))
+        .map(String::as_str)
+        .expect("docker build should run")
+}
+
+fn recorded_role_run(runner: &FakeRunner) -> &str {
+    runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
+        .map(String::as_str)
+        .expect("role docker run should run")
+}
+
+fn recorded_capsule_exec(runner: &FakeRunner) -> &str {
+    runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker exec") && call.contains("jackin-capsule"))
+        .map(String::as_str)
+        .expect("jackin-capsule exec session should start")
+}
+
 #[tokio::test]
 async fn codex_launch_invokes_docker_run_with_codex_agent() {
     let temp = tempdir().unwrap();
@@ -89,19 +116,11 @@ model = "gpt-5"
     .await
     .unwrap();
 
-    let build_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker build "))
-        .expect("docker build should run");
+    let build_cmd = recorded_docker_build(&runner);
     // No published_image and no --rebuild → workspace mode; --pull is omitted
     assert!(!build_cmd.contains("--pull"), "{build_cmd}");
 
-    let run_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
-        .expect("role docker run should run");
+    let run_cmd = recorded_role_run(&runner);
     assert!(
         !run_cmd.contains("JACKIN_AGENT="),
         "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
@@ -119,11 +138,7 @@ model = "gpt-5"
     // The initial agent is passed as container argv; model flag goes to the
     // exec session when wired through a future protocol extension. For now
     // assert the exec command targets jackin-capsule.
-    let session_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker exec") && call.contains("jackin-capsule"))
-        .expect("jackin-capsule exec session should start");
+    let session_cmd = recorded_capsule_exec(&runner);
     assert!(session_cmd.contains("jackin-capsule"), "{session_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
     // Multi-agent role (`agents = ["claude", "codex"]`) provisions
