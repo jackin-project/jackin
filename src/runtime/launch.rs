@@ -749,7 +749,7 @@ fn capsule_config(
         }
     }
     jackin_protocol::CapsuleConfig {
-        role: selector.key().to_string(),
+        role: selector.key(),
         workdir: workdir.to_string(),
         agents,
         models,
@@ -2033,8 +2033,7 @@ async fn load_role_with(
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
 
-        let launch_config =
-            capsule_config(&selector, &workspace.workdir, &validated_repo.manifest);
+        let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest);
         let ctx = LaunchContext {
             container_name: &container_name,
             image: &image,
