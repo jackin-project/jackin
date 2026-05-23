@@ -326,8 +326,16 @@ impl Multiplexer {
     }
 
     fn send_to_client(&self, frame: ServerFrame) {
-        if let Some(tx) = &self.attached_out {
-            let _ = tx.send(encode_server(frame));
+        if let Some(tx) = &self.attached_out
+            && tx.send(encode_server(frame)).is_err()
+        {
+            // Receiver dropped between the take/clone and this send.
+            // Any subsequent send into the same channel will also fail
+            // until the next attach swaps `attached_out`; logging once
+            // here makes the symptom observable in `multiplexer.log`.
+            crate::clog!(
+                "send_to_client: client receiver dropped; frame discarded (this attach is dead)"
+            );
         }
     }
 
@@ -470,17 +478,32 @@ impl Multiplexer {
         // after the initial dialog frame has been queued to the client.
         std::thread::spawn(move || {
             let branch = git_current_branch(&request.workdir);
-            let _ = event_tx.send(SessionEvent::ContainerInfoBranchLoaded {
-                request_id: request.request_id,
-                branch: branch.clone(),
-            });
+            if event_tx
+                .send(SessionEvent::ContainerInfoBranchLoaded {
+                    request_id: request.request_id,
+                    branch: branch.clone(),
+                })
+                .is_err()
+            {
+                crate::clog!(
+                    "container-info: event channel closed before branch reached the main loop"
+                );
+                return;
+            }
             let pull_request_url = branch
                 .as_deref()
                 .and_then(|branch| gh_pull_request_url(&request.workdir, branch));
-            let _ = event_tx.send(SessionEvent::ContainerInfoPullRequestLoaded {
-                request_id: request.request_id,
-                pull_request_url,
-            });
+            if event_tx
+                .send(SessionEvent::ContainerInfoPullRequestLoaded {
+                    request_id: request.request_id,
+                    pull_request_url,
+                })
+                .is_err()
+            {
+                crate::clog!(
+                    "container-info: event channel closed before pull-request URL reached the main loop"
+                );
+            }
         });
     }
 
@@ -1182,10 +1205,9 @@ impl Multiplexer {
         }
     }
 
-    /// Rewrite each tab's auto-label based on the current pane
-    /// contents. Operator-typed `custom_label` shadows the auto-label
-    /// at display time, so this is safe to call after every spawn /
-    /// split / remove without losing typed names. Cheap (clones a few
+    /// Rewrite each tab's auto-label after a spawn / split / remove.
+    /// `Tab::label()` reads `custom_label` first, so operator-typed
+    /// names survive this refresh automatically. Cheap (clones a few
     /// short strings) and easier to reason about than dispatching
     /// incremental updates from every mutation site.
     fn refresh_tab_labels(&mut self) {
@@ -1193,8 +1215,6 @@ impl Multiplexer {
         for tab in &self.tabs {
             new_labels.push(self.tab_display_label(tab));
         }
-        // `set_custom_label` shadows `set_auto_label` at display time,
-        // so the operator's typed name is preserved automatically.
         for (tab, label) in self.tabs.iter_mut().zip(new_labels) {
             tab.set_auto_label(label);
         }
@@ -1883,7 +1903,11 @@ impl Multiplexer {
                 // decoded bytes to the system clipboard.
                 let encoded = BASE64.encode(text.as_bytes());
                 let bytes = format!("\x1b]52;c;{}\x07", encoded).into_bytes();
-                let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
+                if tx.send(encode_server(ServerFrame::Output(bytes))).is_err() {
+                    crate::clog!(
+                        "OSC52 clipboard write: client receiver dropped; copy did not reach outer terminal"
+                    );
+                }
             }
         }
         Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
@@ -2695,15 +2719,9 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 initial.extend(mux.compose_full_frame(FullRedrawReason::FirstAttach));
                 let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
                 if let Some(reason) = spawn_failure {
-                    // Save cursor + jump to row 1, col 1, paint a red
-                    // banner, restore cursor. Without the save/restore
-                    // the banner scrolls whichever pane the composed
-                    // frame's cursor landed in.
-                    let banner = format!(
-                        "\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8"
-                    );
-                    let _ = new_out_tx
-                        .send(encode_server(ServerFrame::Output(banner.into_bytes())));
+                    let _ = new_out_tx.send(encode_server(ServerFrame::Output(
+                        spawn_failure_banner(&reason),
+                    )));
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.attached_task = Some(tokio::spawn(async move {
@@ -3341,7 +3359,12 @@ fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration)
             Err(_) => break,
         }
         if started.elapsed() >= timeout {
-            let _ = child.kill();
+            if let Err(e) = child.kill() {
+                crate::clog!(
+                    "command timeout ({timeout:?}): child.kill() failed: {e} (errno={:?}); child may linger",
+                    e.raw_os_error()
+                );
+            }
             let _ = child.wait();
             // Joining the reader is bounded: kill() closed the pipe,
             // so read_to_end returns quickly. Without the join the
@@ -3468,6 +3491,14 @@ fn push_xterm_mouse_number(
 /// Kitty, iTerm2, and Alacritty all parse. Forwarded to the operator's
 /// outer terminal via `send_output` from the `CopyToClipboard` dialog
 /// action.
+/// Format a spawn-failure banner: save cursor → jump to row 1, col 1
+/// → bold red text → clear to end of line → restore cursor. The
+/// save/restore wrap prevents the banner from scrolling whichever
+/// pane the composed frame left the cursor in.
+fn spawn_failure_banner(reason: &str) -> Vec<u8> {
+    format!("\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8").into_bytes()
+}
+
 fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     let encoded = BASE64.encode(payload.as_bytes());
     let mut out = Vec::with_capacity(8 + encoded.len());
@@ -3499,6 +3530,24 @@ fn pointer_shapes_supported_from_env() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spawn_failure_banner_wraps_in_save_restore_and_carries_reason() {
+        let bytes = spawn_failure_banner("boom: agent slug rejected");
+        assert!(bytes.starts_with(b"\x1b7\x1b[1;1H"));
+        assert!(bytes.ends_with(b"\x1b8"));
+        assert!(
+            bytes
+                .windows(b"boom: agent slug rejected".len())
+                .any(|w| w == b"boom: agent slug rejected"),
+            "reason missing from banner: {:?}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(
+            bytes.windows(2).any(|w| w == b"\x1b["),
+            "missing SGR opener"
+        );
+    }
 
     fn test_mux(rows: u16, cols: u16) -> Multiplexer {
         Multiplexer::new(rows, cols, PathBuf::from("/workspace"))

@@ -15,10 +15,7 @@ pub enum ClientMsg {
     Status,
     /// Request the tab/pane tree snapshot.
     Snapshot,
-    /// Forward-compat: any `{"type":"…"}` the peer adds in a future
-    /// release decodes as `Unknown` instead of failing the whole
-    /// response. The host CLI surfaces it as "ignored newer message"
-    /// rather than the parser bailing.
+    /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
 }
@@ -37,10 +34,7 @@ pub enum ServerMsg {
         tabs: Vec<TabSnapshot>,
         active_tab: u32,
     },
-    /// Forward-compat: any `{"type":"…"}` the peer adds in a future
-    /// release decodes as `Unknown` instead of failing the whole
-    /// response. Consumers should treat it as "ignore + retry on the
-    /// next call" rather than bailing.
+    /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
 }
@@ -100,18 +94,16 @@ impl AgentState {
 /// the panic doubles as a contract: any future variant that breaks the
 /// invariant surfaces immediately in tests instead of silently shipping
 /// a 4-byte length=0 frame the peer interprets as an empty payload.
+///
+/// `ServerMsg::Unknown` IS a legitimate reply (socket.rs returns it as
+/// the response to an unknown `ClientMsg` so the peer's `read_exact`
+/// returns immediately instead of hanging until `SOCKET_TIMEOUT`), so
+/// the encode side intentionally serializes it as `{"type":"unknown"}`.
+/// Peers re-decode it as `Unknown` and the host CLI surfaces the
+/// mismatch as an operator-facing error.
 pub fn frame(msg: &impl Serialize) -> Vec<u8> {
     let json =
         serde_json::to_vec(msg).expect("control-channel message serialization is infallible");
-    // Forward-compat `Unknown` variants are intentionally serializable
-    // (so the wire stays well-formed if a future variant ever round-
-    // trips), but the producer side must never frame Unknown — that
-    // would ship `{"type":"unknown"}` over the wire and the peer would
-    // re-decode it as Unknown and silently drop. Catch in debug builds.
-    debug_assert!(
-        !json.starts_with(br#"{"type":"unknown"}"#),
-        "frame(): refusing to ship ServerMsg/ClientMsg::Unknown over the wire"
-    );
     let len = (json.len() as u32).to_be_bytes();
     let mut out = Vec::with_capacity(4 + json.len());
     out.extend_from_slice(&len);

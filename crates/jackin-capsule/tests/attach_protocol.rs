@@ -5,8 +5,8 @@
 /// shape so a future refactor can't sneak base64 or JSON back into
 /// the hot path.
 use jackin_capsule::protocol::attach::{
-    ClientFrame, ServerFrame, SpawnRequest, TAG_HELLO, TAG_OUTPUT, TAG_RESIZE, TAG_SHUTDOWN,
-    TAG_WELCOME, decode_client, encode_client, encode_server,
+    ClientFrame, MAX_HELLO_ENV, ServerFrame, SpawnRequest, TAG_HELLO, TAG_OUTPUT, TAG_RESIZE,
+    TAG_SHUTDOWN, TAG_WELCOME, decode_client, encode_client, encode_server,
 };
 
 #[test]
@@ -110,4 +110,26 @@ fn spawn_request_agent_rejects_empty_slug() {
     SpawnRequest::agent("").expect_err("empty slug must be rejected at construction");
     let ok = SpawnRequest::agent("claude").expect("non-empty slug");
     assert!(matches!(ok, SpawnRequest::Agent(s) if s == "claude"));
+}
+
+#[test]
+fn hello_env_count_over_cap_is_rejected_by_encoder() {
+    // Encoder symmetry: the decoder bails on env_count > MAX_HELLO_ENV;
+    // the encoder must too, otherwise a refactor that drops one side
+    // would silently produce frames the peer rejects.
+    let env: Vec<(String, String)> = (0..MAX_HELLO_ENV + 1)
+        .map(|i| (format!("K{i}"), "v".into()))
+        .collect();
+    let err = encode_client(ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn: None,
+        env,
+        focus_session: None,
+    })
+    .expect_err("over-cap env must bail");
+    assert!(
+        format!("{err:#}").contains("exceeds wire cap"),
+        "unexpected error: {err:#}"
+    );
 }

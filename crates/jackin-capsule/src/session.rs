@@ -145,9 +145,7 @@ impl OscPolicy {
     }
 
     /// Test-only constructor with every passthrough gate closed.
-    /// `#[doc(hidden)]` + the explicit `__test_` prefix is the
-    /// strongest signal Rust gives us short of a Cargo feature flag;
-    /// production code must call `from_env()`.
+    /// Production code must call `from_env()`.
     #[doc(hidden)]
     pub fn __test_deny_all() -> Self {
         Self {
@@ -174,10 +172,10 @@ pub fn next_id() -> u64 {
 /// sequences for later focused-pane forwarding to the attached client.
 #[derive(Default)]
 pub struct OscCapture {
-    pub(crate) pending: Vec<Vec<u8>>,
+    pending: Vec<Vec<u8>>,
     policy: OscPolicy,
-    pub(crate) title: Option<String>,
-    pub(crate) icon_name: Option<String>,
+    title: Option<String>,
+    icon_name: Option<String>,
     /// Kitty keyboard protocol stack pushed by this session. Each
     /// `\x1b[>{n}u` from the PTY appends; `\x1b[<{n}u` pops. The
     /// daemon mirrors the *top* of this stack onto the outer
@@ -623,7 +621,14 @@ impl Session {
                 crate::pid1::reap_zombies();
             }
             crate::clog!("session {sid}: child reaped: {status:?}");
-            let _ = event_tx_exit.send(SessionEvent::Exited { session_id: sid });
+            if event_tx_exit
+                .send(SessionEvent::Exited { session_id: sid })
+                .is_err()
+            {
+                crate::clog!(
+                    "session {sid}: event channel closed — daemon will not see this child exit"
+                );
+            }
         });
 
         Ok((

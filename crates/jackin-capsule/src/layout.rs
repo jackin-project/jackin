@@ -641,11 +641,8 @@ pub fn clamp_split_ratio(r: f32) -> f32 {
     r.clamp(SPLIT_RATIO_MIN, SPLIT_RATIO_MAX)
 }
 
-/// A named tab — each tab has a label and its own pane layout.
-/// `custom_label` is the operator-typed override (set by the rename
-/// dialog); when present it is the single source of truth for the
-/// displayed label and the auto-deriver leaves the tab alone.
-/// Clearing it (rename to empty string) restores automatic naming.
+/// `label()` returns `custom_label` when set, otherwise `auto_label`.
+/// Mutators preserve that precedence; do not read fields directly.
 #[derive(Debug, Clone)]
 pub struct Tab {
     auto_label: String,
@@ -664,9 +661,6 @@ impl Tab {
         }
     }
 
-    /// Display label: the operator's typed name wins; otherwise the
-    /// auto-derived one. Single source of truth for everything that
-    /// renders or serialises a tab name.
     pub fn label(&self) -> &str {
         self.custom_label.as_deref().unwrap_or(&self.auto_label)
     }
@@ -675,19 +669,27 @@ impl Tab {
         self.label().to_string()
     }
 
-    /// `Some(_)` while the operator has set a fixed name.
     pub fn custom_label(&self) -> Option<&str> {
         self.custom_label.as_deref()
     }
 
-    /// Set or clear the operator's override (empty input clears).
+    /// Set the operator's override. Empty input is treated as a
+    /// request to revert to the auto-derived label; callers that want
+    /// only the explicit-revert intent should use `reset_to_auto`.
     pub fn set_custom_label(&mut self, label: String) {
         self.custom_label = if label.is_empty() { None } else { Some(label) };
     }
 
-    /// Update the auto-derived label. The custom label, if set, still
-    /// shadows this when the display label is read.
-    pub fn set_auto_label(&mut self, label: String) {
+    /// Clear the operator's override so the next `label()` read falls
+    /// back to the auto-derived name.
+    pub fn reset_to_auto(&mut self) {
+        self.custom_label = None;
+    }
+
+    /// Daemon-internal: refresh the auto-derived label after a spawn /
+    /// split / remove. `custom_label`, if set, still shadows this at
+    /// display time.
+    pub(crate) fn set_auto_label(&mut self, label: String) {
         self.auto_label = label;
     }
 }

@@ -173,9 +173,7 @@ pub async fn handle_control_request(
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
         ClientMsg::Unknown => {
-            // Forward-compat: a peer running a newer host CLI sent a
-            // variant this capsule does not understand yet. Reply with
-            // ServerMsg::Unknown so the peer's `read_exact` returns
+            // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
             ServerMsg::Unknown

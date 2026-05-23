@@ -32,7 +32,7 @@ pub const TAG_SHUTDOWN: u8 = 0x84;
 pub const TAG_BELL: u8 = 0x85;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
-const MAX_HELLO_ENV: usize = 64;
+pub const MAX_HELLO_ENV: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpawnRequest {
@@ -118,14 +118,10 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
     }
 }
 
-/// Encode a client frame.
-///
-/// Returns `Err` for caller-controlled inputs that overflow the wire
-/// field widths (env entry count > `MAX_HELLO_ENV`, agent slug > u16,
-/// env key > u16, env value > u32). The decoder side returns `Err` for
-/// the same conditions; symmetry means a producer learns about an
-/// over-cap input the same way a peer would, without crashing the
-/// process.
+/// Encode a client frame. Returns `Err` for inputs that overflow the
+/// wire field widths (env count, agent slug, env key, env value).
+/// Symmetric with `decode_client` so a producer learns about over-cap
+/// input the same way a peer would, without panicking.
 pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
     Ok(match frame {
         ClientFrame::Hello {
