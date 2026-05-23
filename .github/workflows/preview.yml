@@ -384,6 +384,10 @@ jobs:
         run: |
           echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
           echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -412,6 +416,10 @@ jobs:
           FULL_SHA: ${{ steps.meta.outputs.full_sha }}
           ARM64_SHA256: ${{ steps.shas.outputs.arm64_macos }}
           X86_SHA256: ${{ steps.shas.outputs.x86_macos }}
+          LINUX_ARM64_SHA256: ${{ steps.shas.outputs.arm64_linux }}
+          LINUX_X86_SHA256: ${{ steps.shas.outputs.x86_linux }}
+          CAPSULE_ARM64_SHA256: ${{ steps.shas.outputs.capsule_arm64_linux }}
+          CAPSULE_X86_SHA256: ${{ steps.shas.outputs.capsule_x86_linux }}
         run: |
           cat > homebrew-tap/Formula/jackin-preview.rb <<EOF
           # source-sha: ${FULL_SHA}
@@ -432,11 +440,40 @@ jobs:
               end
             end
 
+            on_linux do
+              on_arm do
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_ARM64_SHA256}"
+              end
+              on_intel do
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_X86_SHA256}"
+              end
+            end
+
+            resource "jackin-capsule-aarch64-unknown-linux-gnu" do
+              url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz"
+              sha256 "${CAPSULE_ARM64_SHA256}"
+            end
+
+            resource "jackin-capsule-x86_64-unknown-linux-gnu" do
+              url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${CAPSULE_X86_SHA256}"
+            end
+
             conflicts_with "jackin-project/tap/jackin", because: "preview and stable install the same binary"
 
             def install
               bin.install "jackin"
               bin.install "jackin-role"
+
+              capsule_target = Hardware::CPU.arm? ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"
+              capsule_arch = Hardware::CPU.arm? ? "arm64" : "amd64"
+              resource("jackin-capsule-#{capsule_target}").stage do
+                capsule_dir = libexec/"jackin-capsule/linux-#{capsule_arch}"
+                capsule_dir.install "jackin-capsule"
+                chmod 0755, capsule_dir/"jackin-capsule"
+              end
             end
 
             test do

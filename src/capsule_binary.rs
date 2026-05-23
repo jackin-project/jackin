@@ -10,6 +10,9 @@
 /// **Cache hit** (`~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/`):
 ///   Use the already-cached binary.
 ///
+/// **Packaged binary** (Homebrew formula installed with a Capsule resource):
+///   Use the binary installed under the formula's `libexec/` tree.
+///
 /// **Dev or preview version** (`-dev` or `-preview.` suffix, cache miss):
 ///   Download the `.tar.gz` archive from the rolling `preview`
 ///   GitHub Release tag, verify it, and extract the binary.
@@ -84,6 +87,15 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         return Ok(cached);
     }
 
+    if let Some(packaged) = packaged_binary_path(REQUIRED_VERSION, arch).await {
+        crate::debug_log!(
+            "capsule_binary",
+            "using packaged jackin-capsule {REQUIRED_VERSION} linux/{arch} at {}",
+            packaged.display()
+        );
+        return Ok(packaged);
+    }
+
     if let Some(parent) = cached.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create cache dir {}", parent.display()))?;
@@ -99,6 +111,56 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
     cache_dir
         .join("jackin-capsule")
         .join(safe_version)
+        .join(format!("linux-{arch}"))
+        .join("jackin-capsule")
+}
+
+async fn packaged_binary_path(version: &str, arch: &str) -> Option<PathBuf> {
+    let is_preview = version.contains("-dev") || version.contains("-preview.");
+    for candidate in packaged_binary_candidates(arch) {
+        if !is_valid_cached_binary(&candidate) {
+            continue;
+        }
+        match verify_version(&candidate, version, is_preview).await {
+            Ok(()) => return Some(candidate),
+            Err(err) => crate::debug_log!(
+                "capsule_binary",
+                "ignoring packaged jackin-capsule at {}: {err}",
+                candidate.display()
+            ),
+        }
+    }
+    None
+}
+
+fn packaged_binary_candidates(arch: &str) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        push_packaged_candidate(&mut candidates, &exe, arch);
+        if let Ok(canonical) = exe.canonicalize() {
+            push_packaged_candidate(&mut candidates, &canonical, arch);
+        }
+    }
+    candidates
+}
+
+fn push_packaged_candidate(candidates: &mut Vec<PathBuf>, exe: &Path, arch: &str) {
+    let Some(bin_dir) = exe.parent() else {
+        return;
+    };
+    let Some(keg_root) = bin_dir.parent() else {
+        return;
+    };
+    let candidate = packaged_binary_path_for_keg(keg_root, arch);
+    if !candidates.contains(&candidate) {
+        candidates.push(candidate);
+    }
+}
+
+fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
+    keg_root
+        .join("libexec")
+        .join("jackin-capsule")
         .join(format!("linux-{arch}"))
         .join("jackin-capsule")
 }
@@ -498,6 +560,20 @@ mod tests {
         let s = path.to_string_lossy();
         assert!(s.contains("0.6.0-dev_bf7df07"), "{s}");
         assert!(!s.contains('+'), "{s}");
+    }
+
+    #[test]
+    fn packaged_binary_path_for_keg_uses_libexec_arch_dir() {
+        let path = packaged_binary_path_for_keg(
+            Path::new("/opt/homebrew/Cellar/jackin-preview/0.6.0-preview.1"),
+            "arm64",
+        );
+        assert_eq!(
+            path,
+            Path::new(
+                "/opt/homebrew/Cellar/jackin-preview/0.6.0-preview.1/libexec/jackin-capsule/linux-arm64/jackin-capsule"
+            )
+        );
     }
 
     #[test]

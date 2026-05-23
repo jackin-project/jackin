@@ -333,7 +333,9 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 2. **Cache hit** — if `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule` exists and is executable, it is used immediately.
 
-3. **Download** — on a cache miss, a `jackin-capsule-*.tar.gz` archive and its `.sha256` companion are downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. The archive hash must match before jackin' extracts the top-level `jackin-capsule` binary into the cache. On Linux the extracted binary is also verified by executing `jackin-capsule --version` and asserting the output matches the expected version string.
+3. **Packaged binary** — Homebrew formulae install the matching Linux `jackin-capsule` resource under the formula's `libexec/jackin-capsule/linux-<arch>/jackin-capsule` path. If that binary exists and passes the same version check, jackin' uses it directly.
+
+4. **Download** — on a cache and package miss, a `jackin-capsule-*.tar.gz` archive and its `.sha256` companion are downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. The archive hash must match before jackin' extracts the top-level `jackin-capsule` binary into the cache. On Linux the extracted binary is also verified by executing `jackin-capsule --version` and asserting the output matches the expected version string.
 
 jackin' itself has no knowledge of how to build `jackin-capsule` from source. Build logic lives exclusively in the developer tool described below.
 
