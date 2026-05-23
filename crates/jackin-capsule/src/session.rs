@@ -981,6 +981,38 @@ impl Session {
     }
 }
 
+#[cfg(test)]
+impl Session {
+    pub(crate) fn new_for_test(
+        label: String,
+        agent: Option<String>,
+        size: (u16, u16),
+        scrollback_len: usize,
+        input_tx: mpsc::UnboundedSender<Vec<u8>>,
+        pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+        child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+    ) -> Self {
+        Self {
+            label,
+            agent,
+            state: AgentState::Working,
+            parser: vt100::Parser::new_with_callbacks(
+                size.0,
+                size.1,
+                scrollback_len,
+                OscCapture::with_policy(OscPolicy::default()),
+            ),
+            input_tx,
+            pty_master,
+            child_killer,
+            last_output_at: std::time::Instant::now(),
+            scrollback_offset: 0,
+            bracketed_paste_active: false,
+            received_output: true,
+        }
+    }
+}
+
 fn state_after_pty_output(current: AgentState) -> AgentState {
     match current {
         AgentState::Blocked | AgentState::Done => current,

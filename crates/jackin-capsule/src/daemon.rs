@@ -1534,19 +1534,23 @@ impl Multiplexer {
                 self.forward_mouse_to_focused_pane_with_kind(col, row, button, false);
                 None
             }
-            InputEvent::MousePress { button, .. } if is_wheel_button(button) => {
+            InputEvent::MousePress { col, row, button } if is_wheel_button(button) => {
                 // SGR mouse wheel: bits 6/7 indicate wheel events, with
                 // low bits selecting direction (even = up, odd = down)
                 // and modifier flags possibly OR'd in (shift = +4, alt
                 // = +8, ctrl = +16). Buttons 64–95 cover every wheel
-                // variant — never forward any of them to the PTY,
-                // because shells and pre-mount agents never asked for
-                // mouse mode and the SGR bytes would surface as
-                // garbage text at the prompt. Dialog overlay swallows
-                // the wheel too so background pane scrollback does
-                // not move while the operator is interacting with
-                // the modal.
+                // variant. Agent TUIs that enabled mouse reporting own
+                // their wheel events (transcript scroll, list scroll,
+                // etc.); shells and pre-mount agents fall back to
+                // the primary-screen scrollback owned by jackin' so
+                // raw SGR bytes never surface as prompt garbage.
+                // Dialog overlay swallows the wheel so background
+                // pane scrollback does not move while the operator is
+                // interacting with the modal.
                 if self.dialog_open() {
+                    return None;
+                }
+                if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {
                     return None;
                 }
                 let delta = if (button & 1) == 0 { 3 } else { -3 };
@@ -1758,8 +1762,8 @@ impl Multiplexer {
         Some(self.compose_full_frame(full_redraw_reason))
     }
 
-    fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) {
-        self.forward_mouse_to_focused_pane_with_kind(col, row, button, true);
+    fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) -> bool {
+        self.forward_mouse_to_focused_pane_with_kind(col, row, button, true)
     }
 
     /// Re-encode an SGR mouse event in the focused pane's local
@@ -1775,16 +1779,16 @@ impl Multiplexer {
         row: u16,
         button: u8,
         press: bool,
-    ) {
+    ) -> bool {
         let Some(focused) = self.active_focused_id() else {
-            return;
+            return false;
         };
         let Some(session) = self.sessions.get(&focused) else {
-            return;
+            return false;
         };
         let mouse_mode = session.mouse_protocol_mode();
         if !mouse_event_allowed_for_mode(mouse_mode, button, press) {
-            return;
+            return false;
         }
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let outer = if let Some(zoom_id) = self.active_zoomed_id() {
@@ -1805,14 +1809,14 @@ impl Multiplexer {
                 .map(|(_, r)| r)
         };
         let Some(outer) = outer else {
-            return;
+            return false;
         };
         let inner = outer.shrink(1);
         if row < inner.row || row >= inner.row + inner.rows {
-            return;
+            return false;
         }
         if col < inner.col || col >= inner.col + inner.cols {
-            return;
+            return false;
         }
         let local_row = row - inner.row;
         let local_col = col - inner.col;
@@ -1823,9 +1827,10 @@ impl Multiplexer {
             press,
             session.mouse_protocol_encoding(),
         ) else {
-            return;
+            return false;
         };
         session.send_input(&buf);
+        true
     }
 
     /// Zoomed tabs never produce a drag — there are no shared
@@ -3506,8 +3511,9 @@ fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
 /// `64..=95` is a wheel event with some combination of modifier flags
 /// (shift = +4, alt = +8, ctrl = +16). Forwarding any of them to an
 /// agent or shell that did not request mouse mode dumps the raw SGR
-/// bytes at the prompt — so the multiplexer always intercepts the
-/// wheel for scrollback regardless of modifiers.
+/// bytes at the prompt. The multiplexer therefore recognizes wheel
+/// separately and forwards it only after the focused pane has opted
+/// into mouse reporting; otherwise it becomes jackin' scrollback.
 fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
@@ -3620,6 +3626,62 @@ fn pointer_shapes_supported_from_env() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use portable_pty::{ChildKiller, MasterPty, PtySize};
+
+    #[derive(Debug)]
+    struct NullChildKiller;
+
+    impl ChildKiller for NullChildKiller {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn clone_killer(&self) -> Box<dyn ChildKiller + Send + Sync> {
+            Box::new(Self)
+        }
+    }
+
+    struct NullMasterPty;
+
+    impl MasterPty for NullMasterPty {
+        fn resize(&self, _size: PtySize) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn get_size(&self) -> anyhow::Result<PtySize> {
+            Ok(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+        }
+
+        fn try_clone_reader(&self) -> anyhow::Result<Box<dyn std::io::Read + Send>> {
+            Ok(Box::new(std::io::empty()))
+        }
+
+        fn take_writer(&self) -> anyhow::Result<Box<dyn std::io::Write + Send>> {
+            Ok(Box::new(std::io::sink()))
+        }
+
+        #[cfg(unix)]
+        fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+            None
+        }
+
+        #[cfg(unix)]
+        fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+            None
+        }
+
+        #[cfg(unix)]
+        fn tty_name(&self) -> Option<std::path::PathBuf> {
+            None
+        }
+    }
 
     #[test]
     fn spawn_failure_banner_wraps_in_save_restore_and_carries_reason() {
@@ -3656,6 +3718,22 @@ mod tests {
         let mut mux = test_mux(24, 80);
         mux.tabs.push(Tab::new_single("Shell", 1));
         mux
+    }
+
+    fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        let (input_tx, input_rx) = mpsc::unbounded_channel();
+        (
+            Session::new_for_test(
+                "Test".to_string(),
+                Some("codex".to_string()),
+                (rows, cols),
+                100,
+                input_tx,
+                Arc::new(Mutex::new(Box::new(NullMasterPty))),
+                Arc::new(Mutex::new(Box::new(NullChildKiller))),
+            ),
+            input_rx,
+        )
     }
 
     fn split_tab_mux() -> Multiplexer {
@@ -3826,6 +3904,58 @@ mod tests {
             SGR_NO_BUTTON_MOTION,
             true
         ));
+    }
+
+    #[test]
+    fn wheel_forwards_to_mouse_enabled_agent_tui() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_session(20, 78);
+        session.feed_pty(b"\x1b[?1049h\x1b[?1003h\x1b[?1006h");
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "agent-owned wheel should not redraw jackin'"
+        );
+        assert_eq!(
+            input_rx.try_recv().expect("wheel should reach PTY"),
+            b"\x1b[<64;1;1M"
+        );
+        assert!(
+            input_rx.try_recv().is_err(),
+            "wheel should not produce extra PTY input"
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
+    fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_session(20, 78);
+        for i in 0..40 {
+            session.feed_pty(format!("line {i}\r\n").as_bytes());
+        }
+        assert_eq!(session.scrollback_offset, 0);
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(redraw.is_some(), "jackin' scrollback should redraw");
+        assert!(
+            input_rx.try_recv().is_err(),
+            "mouse-disabled panes must not receive raw wheel bytes"
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
     }
 
     #[test]
