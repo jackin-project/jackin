@@ -1,16 +1,15 @@
 /// Build the scratch branch name for an isolated mount.
 ///
 /// Selector namespace `/` is preserved; an optional `suffix` is
-/// appended to the *final* selector segment with a leading `-`. The
-/// suffix is reserved for clone-instance disambiguation when clone
-/// mode ships (V1.1) — V1 worktree mode always passes `None` because
+/// appended to the *final* selector segment with a leading `-`.
+/// Current worktree materialization passes `None` because
 /// `validate_isolation_layout` rejects multi-isolated-mounts on the
 /// same host repo, so each container has at most one scratch branch
-/// per host repo and the selector alone is unique.
+/// per host repo.
 ///
 /// Examples:
 /// - `branch_name("the-architect", None)` → `jackin/scratch/the-architect`
-/// - `branch_name("the-architect", Some("clone-1"))` → `jackin/scratch/the-architect-clone-1`
+/// - `branch_name("the-architect", Some("repo-1"))` → `jackin/scratch/the-architect-repo-1`
 /// - `branch_name("chainargos/the-architect", None)`
 ///   → `jackin/scratch/chainargos/the-architect`
 pub fn branch_name(selector: &str, suffix: Option<&str>) -> String {
@@ -44,18 +43,18 @@ mod tests {
     }
 
     #[test]
-    fn clone_suffix_appends_to_final_segment_with_namespace() {
+    fn suffix_appends_to_final_segment_with_namespace() {
         assert_eq!(
-            branch_name("chainargos/the-architect", Some("clone-1")),
-            "jackin/scratch/chainargos/the-architect-clone-1"
+            branch_name("chainargos/the-architect", Some("repo-1")),
+            "jackin/scratch/chainargos/the-architect-repo-1"
         );
     }
 
     #[test]
-    fn clone_suffix_appends_without_namespace() {
+    fn suffix_appends_without_namespace() {
         assert_eq!(
-            branch_name("the-architect", Some("clone-2")),
-            "jackin/scratch/the-architect-clone-2"
+            branch_name("the-architect", Some("repo-2")),
+            "jackin/scratch/the-architect-repo-2"
         );
     }
 }

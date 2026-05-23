@@ -168,7 +168,7 @@ Workspace mounts pass through three distinct shapes between operator intent and 
 | `ResolvedWorkspace` | `resolve_load_workspace` | Expanded host paths plus the merged composition of workspace, ad-hoc, and global mounts. Still independent of the actual container instance. |
 | `MaterializedWorkspace` | post-name-claim materializer | Final host paths Docker should bind-mount for *this* container. Isolated checkouts have been created on disk; isolated `src` values point at the per-container worktree or clone path. |
 
-Materialization happens **after** jackin claims the final unique container name and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: first load creates the scratch branch from host `HEAD` and records `base_commit`; later loads to the same container reuse the existing checkout as-is — no reset, no rebase, no fast-forward.
+Materialization happens **after** jackin claims the final unique container name and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: worktree mode creates a scratch branch from host `HEAD`, clone mode runs a local clone of the host repo's current branch, and both modes record `base_commit`. Later loads to the same container reuse the existing checkout as-is — no reset, no rebase, no fast-forward.
 
 On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config writes via `git config --worktree` don't leak into the shared host `.git/config`.
 
@@ -188,8 +188,8 @@ The file lives next to the per-container agent state and `.jackin/` metadata and
 | `mount_dst` | Container destination path (the mount identity) |
 | `original_src` | Resolved host `src` recorded for source-drift detection |
 | `isolation` | Mode (`worktree` or `clone`) |
-| `worktree_path` | Materialized worktree path on the host |
-| `scratch_branch` | Scratch branch name (`jackin/scratch/<container>`) |
+| `worktree_path` | Materialized worktree or clone path on the host |
+| `scratch_branch` | Worktree scratch branch name (`jackin/scratch/<container>`); empty for clone records |
 | `base_commit` | Host `HEAD` at first materialization |
 | `selector_key` | Agent selector key |
 | `container_name` | Final container name |
@@ -201,11 +201,11 @@ Successful cleanup removes the corresponding record rather than keeping a histor
 
 Every command that opens or reopens an agent foreground session — `jackin load`, `jackin hardline`, the operator console — funnels through the same post-session finalizer. After the foreground `docker exec ... jackin-capsule` attach returns, jackin' inspects the container and decides:
 
-- **Container is still running** → preserve everything for `jackin hardline` to reconnect later. No isolated-worktree action.
-- **Stopped, non-zero exit or OOM** → preserve the container, DinD, and isolated worktrees so `jackin hardline` can restart in place.
-- **Stopped, exit code 0 (clean)** → attempt safe isolated-worktree cleanup. A worktree is safe to delete only when it has no uncommitted changes and **every** local branch in the worktree is safe — agents routinely rename the scratch branch to `feature/*` before opening a PR, so the safety check enumerates `git for-each-ref refs/heads/` rather than inspecting only the recorded scratch branch. A branch is safe when its tip is at `base_commit`, when its upstream is configured and `git rev-list <upstream>..<branch>` is empty, or when its upstream tracking is `[gone]` (the squash-merged-and-pruned heuristic — without it, the GitHub-default merge-and-delete-branch flow leaves a graveyard of preserved worktrees).
-- **Clean exit with unsafe cleanup**, interactive stdin → ask the operator whether to return to the agent (restart + re-attach), preserve recovery state, or force-delete. The prompt wording branches on whether the worktree is dirty (`uncommitted changes`) or clean-but-unpushed (`unpushed commits on a local branch`).
-- **Clean exit with unsafe cleanup**, non-interactive → preserve the recovery state and print the worktree path plus the per-reason phrasing and how to return, inspect, or discard.
+- **Container is still running** → preserve everything for `jackin hardline` to reconnect later. No isolated-checkout action.
+- **Stopped, non-zero exit or OOM** → preserve the container, DinD, and isolated checkouts so `jackin hardline` can restart in place.
+- **Stopped, exit code 0 (clean)** → attempt safe isolated-checkout cleanup. A checkout is safe to delete only when it has no uncommitted changes and **every** local branch in the checkout is safe — agents routinely rename the worktree scratch branch to `feature/*` before opening a PR, and clone mode starts on the host branch directly, so the safety check enumerates `git for-each-ref refs/heads/` rather than inspecting only the recorded scratch branch. A branch is safe when its tip is at `base_commit`, when its upstream is configured and `git rev-list <upstream>..<branch>` is empty, or when its upstream tracking is `[gone]` (the squash-merged-and-pruned heuristic — without it, the GitHub-default merge-and-delete-branch flow leaves a graveyard of preserved checkouts).
+- **Clean exit with unsafe cleanup**, interactive stdin → ask the operator whether to return to the agent (restart + re-attach), preserve recovery state, or force-delete. The prompt wording branches on whether the checkout is dirty (`uncommitted changes`) or clean-but-unpushed (`unpushed commits on a local branch`).
+- **Clean exit with unsafe cleanup**, non-interactive → preserve the recovery state and print the checkout path plus the per-reason phrasing and how to return, inspect, or discard.
 
 The same finalizer runs after `hardline` attaches, so the cleanup decision is independent of how the foreground session was opened.
 

@@ -316,6 +316,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Multi-runtime support', slug: 'reference/roadmap/multi-runtime-support' },
+                    { label: 'Native APM role support', slug: 'reference/roadmap/native-apm-role-support' },
                     { label: 'Reliable Claude authentication strategy', slug: 'reference/roadmap/claude-auth-strategy' },
                     { label: 'Workspace Claude token setup', slug: 'reference/roadmap/workspace-claude-token-setup' },
                     { label: 'GitHub CLI authentication strategy', slug: 'reference/roadmap/github-cli-auth-strategy' },
