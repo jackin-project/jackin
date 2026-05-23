@@ -19,6 +19,8 @@
 /// While a dialog is open, panes behind it render with the ANSI dim
 /// attribute so the operator sees a clear "focus is inside the
 /// dialog" cue (see `render_pane`'s `dim` parameter).
+use crate::session::PullRequestInfo;
+
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
 const RESET: &str = "\x1b[0m";
@@ -123,7 +125,7 @@ pub enum Dialog {
         git_loading: bool,
         git_branch: Option<String>,
         pull_request_loading: bool,
-        pull_request_url: Option<String>,
+        pull_request: Option<PullRequestInfo>,
         copied: bool,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -791,7 +793,7 @@ impl Dialog {
     /// strip). The dialog can render unusable when the terminal is
     /// pathologically small; the trade-off is that the host terminal
     /// stays in a recoverable state regardless.
-    fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
+    pub(crate) fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
         let width = match self {
             Self::ContainerInfo { .. } => CONTAINER_INFO_WIDTH
                 .min(term_cols.saturating_sub(4))
@@ -825,8 +827,8 @@ impl Dialog {
             }
             // Rename modal: top border + blank pad + input row + blank pad + bottom border.
             Self::RenameTab { .. } => 5,
-            // ContainerInfo: top + pad + 6 detail rows + pad + bottom.
-            Self::ContainerInfo { .. } => 10,
+            // ContainerInfo: top + pad + 9 detail rows + pad + bottom.
+            Self::ContainerInfo { .. } => 13,
             // ConfirmAction: top + pad + 2 message rows + pad + button + pad + bottom.
             Self::ConfirmAction { .. } => 9,
         };
@@ -907,7 +909,7 @@ impl Dialog {
                 git_loading,
                 git_branch,
                 pull_request_loading,
-                pull_request_url,
+                pull_request,
                 copied,
             } => {
                 render_container_info(
@@ -923,7 +925,7 @@ impl Dialog {
                     *git_loading,
                     git_branch.as_deref(),
                     *pull_request_loading,
-                    pull_request_url.as_deref(),
+                    pull_request.as_ref(),
                     *copied,
                 );
                 render_bottom_hint(buf, term_rows, term_cols, CONTAINER_INFO_HINT);
@@ -1714,7 +1716,7 @@ fn render_container_info(
     git_loading: bool,
     git_branch: Option<&str>,
     pull_request_loading: bool,
-    pull_request_url: Option<&str>,
+    pull_request: Option<&PullRequestInfo>,
     copied: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "Container info");
@@ -1726,33 +1728,45 @@ fn render_container_info(
     let value_col_offset = label_col_width + 2; // 2 = ": "
     let value_max_cols = interior_max_cols.saturating_sub(value_col_offset);
 
-    let rows: [(&str, String, bool); 6] = [
-        ("Container ID", container_name.to_string(), true),
-        ("Role", non_empty_or_dim(role), false),
-        (
-            "Agent",
-            non_empty_or_dim(focused_agent.unwrap_or("")),
-            false,
-        ),
-        ("Workdir", non_empty_or_dim(workdir), false),
-        ("Branch", git_context_value(git_branch, git_loading), false),
-        (
-            "Pull Request",
-            git_context_value(pull_request_url, pull_request_loading),
-            false,
-        ),
+    let branch_type = if let Some(pr) = pull_request {
+        pr.branch_type_label().to_string()
+    } else if git_branch.is_some() && !pull_request_loading {
+        "local branch".to_string()
+    } else {
+        git_context_value(None, pull_request_loading)
+    };
+    let pull_request_number = pull_request
+        .map(PullRequestInfo::number_label)
+        .unwrap_or_else(|| git_context_value(None, pull_request_loading));
+    let pull_request_title = pull_request
+        .map(|pr| non_empty_or_dim(&pr.title))
+        .unwrap_or_else(|| git_context_value(None, pull_request_loading));
+    let (pull_request_link, pull_request_href) = pull_request
+        .map(|pr| (non_empty_or_dim(&pr.url), Some(pr.url.as_str())))
+        .unwrap_or_else(|| (git_context_value(None, pull_request_loading), None));
+
+    let rows: [ContainerInfoRow; 9] = [
+        ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
+        ContainerInfoRow::new("Role", non_empty_or_dim(role)),
+        ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
+        ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
+        ContainerInfoRow::new("Branch", git_context_value(git_branch, git_loading)),
+        ContainerInfoRow::new("Branch Type", branch_type),
+        ContainerInfoRow::new("Pull Request", pull_request_number),
+        ContainerInfoRow::new("PR Title", pull_request_title),
+        ContainerInfoRow::new("PR Link", pull_request_link).hyperlink(pull_request_href),
     ];
-    for (i, (label, value, emphasise)) in rows.iter().enumerate() {
+    for (i, row) in rows.iter().enumerate() {
         let r = box_row + 2 + i as u16;
         move_to(buf, r, interior_left);
         buf.extend_from_slice(BG_DARK.as_bytes());
         buf.extend_from_slice(FG_BORDER.as_bytes());
-        buf.extend_from_slice(label.as_bytes());
-        for _ in label.chars().count()..label_col_width {
+        buf.extend_from_slice(row.label.as_bytes());
+        for _ in row.label.chars().count()..label_col_width {
             buf.push(b' ');
         }
         buf.extend_from_slice(b": ");
-        if *emphasise {
+        if row.emphasise {
             buf.extend_from_slice(FG_WHITE.as_bytes());
             buf.extend_from_slice(BOLD.as_bytes());
         } else {
@@ -1769,9 +1783,15 @@ fn render_container_info(
         } else {
             value_max_cols.saturating_sub(badge_cols)
         };
-        let value_cols = value.chars().count().min(available_value_cols);
-        let value_take: String = value.chars().take(value_cols).collect();
-        buf.extend_from_slice(value_take.as_bytes());
+        let value_cols = row.value.chars().count().min(available_value_cols);
+        let value_take: String = row.value.chars().take(value_cols).collect();
+        if let Some(href) = row.href {
+            emit_osc8_open(buf, href);
+            buf.extend_from_slice(value_take.as_bytes());
+            emit_osc8_close(buf);
+        } else {
+            buf.extend_from_slice(value_take.as_bytes());
+        }
         // Trailing "Copied!" badge on the Container ID row reserves
         // space before truncating the container name so long IDs still
         // show copy feedback.
@@ -1787,6 +1807,44 @@ fn render_container_info(
         }
         buf.extend_from_slice(RESET.as_bytes());
     }
+}
+
+struct ContainerInfoRow<'a> {
+    label: &'static str,
+    value: String,
+    emphasise: bool,
+    href: Option<&'a str>,
+}
+
+impl<'a> ContainerInfoRow<'a> {
+    fn new(label: &'static str, value: String) -> Self {
+        Self {
+            label,
+            value,
+            emphasise: false,
+            href: None,
+        }
+    }
+
+    fn emphasised(mut self) -> Self {
+        self.emphasise = true;
+        self
+    }
+
+    fn hyperlink(mut self, href: Option<&'a str>) -> Self {
+        self.href = href;
+        self
+    }
+}
+
+fn emit_osc8_open(buf: &mut Vec<u8>, href: &str) {
+    buf.extend_from_slice(b"\x1b]8;;");
+    buf.extend_from_slice(href.as_bytes());
+    buf.extend_from_slice(b"\x1b\\");
+}
+
+fn emit_osc8_close(buf: &mut Vec<u8>) {
+    buf.extend_from_slice(b"\x1b]8;;\x1b\\");
 }
 
 /// Show `"(none)"` for empty role / agent strings so a missing value
@@ -2378,8 +2436,17 @@ mod tests {
             git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
             pull_request_loading: false,
-            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
+            pull_request: Some(pull_request_fixture()),
             copied: false,
+        }
+    }
+
+    fn pull_request_fixture() -> PullRequestInfo {
+        PullRequestInfo {
+            number: 123,
+            title: "Surface PR context in Capsule".to_string(),
+            url: "https://github.com/jackin-project/jackin/pull/123".to_string(),
+            is_draft: false,
         }
     }
 
@@ -2460,7 +2527,7 @@ mod tests {
             git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
             pull_request_loading: false,
-            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
+            pull_request: Some(pull_request_fixture()),
             copied: true,
         };
         assert!(d.clear_copy_feedback());
@@ -2480,7 +2547,7 @@ mod tests {
             git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
             pull_request_loading: false,
-            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
+            pull_request: Some(pull_request_fixture()),
             copied: true,
         };
         let mut buf = Vec::new();
@@ -2504,7 +2571,14 @@ mod tests {
         assert!(rendered.contains("Branch"));
         assert!(rendered.contains("feature/container-info"));
         assert!(rendered.contains("Pull Request"));
+        assert!(rendered.contains("#123"));
+        assert!(rendered.contains("PR Title"));
+        assert!(rendered.contains("Surface PR context in Capsule"));
+        assert!(rendered.contains("PR Link"));
         assert!(rendered.contains("https://github.com/jackin-project/jackin/pull/123"));
+        assert!(
+            rendered.contains("\x1b]8;;https://github.com/jackin-project/jackin/pull/123\x1b\\")
+        );
     }
 
     #[test]
@@ -2517,7 +2591,7 @@ mod tests {
             git_loading: true,
             git_branch: None,
             pull_request_loading: true,
-            pull_request_url: None,
+            pull_request: None,
             copied: false,
         };
         let mut buf = Vec::new();
@@ -2526,7 +2600,7 @@ mod tests {
 
         assert!(rendered.contains("Branch"));
         assert!(rendered.contains("Pull Request"));
-        assert_eq!(rendered.matches("⠋ loading").count(), 2);
+        assert_eq!(rendered.matches("⠋ loading").count(), 5);
     }
 
     #[test]

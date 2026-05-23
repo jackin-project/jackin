@@ -3,7 +3,7 @@ title: "jackin' Capsule: In-Container Control Plane"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed the jackin' Capsule: an in-container PTY control plane built on the `vt100` crate with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`, including prefix `Ctrl+L` clear-pane), a persistent PID 1 daemon that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, OSC passthrough (52/9/2/8) gated to the focused pane, and top chrome with a brand pill, tab strip, and identity row.
+**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed the jackin' Capsule: an in-container PTY control plane built on the `vt100` crate with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`, including prefix `Ctrl+L` clear-pane), a persistent PID 1 daemon that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, OSC passthrough (52/9/2/8) gated to the focused pane, top chrome with a brand pill, tab strip, and identity row, and a bottom branch/PR context bar for non-default branches.
 
 The shipped-Phase-3 design and operator-visible behaviour now live in:
 
@@ -150,7 +150,7 @@ Zellij carries scope jackin explicitly does not need (multi-client collaboration
 
 The [Herdr](https://github.com/ogulcancelik/herdr) study under "Prior art: Herdr" below lists the conceptual borrows for the agent-state model, status roll-up, notification suppression, sound escalation, blocking `wait` semantics, foreground-process ownership, screen heuristics, and semantic integration reports. The multiplexer rewrite adds three structural borrows on top of those — drawn from Herdr's UI shape, not its code:
 
-- **Top-of-screen chrome.** The top chrome renders ` jackin' ` on the left followed by one tab per active jackin session, plus an identity row for container/role context. Active tab gets the brand-green underline/bold; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance.
+- **Top-of-screen chrome.** The top chrome renders ` jackin' ` on the left followed by one tab per active jackin session, plus an identity row for container/role context. Active tab gets a distinct amber background plus underline/bold treatment; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance without confusing it for the selected tab.
 - **Empty initial state when no agent is preselected.** When no initial agent argv is provided at daemon launch, the multiplexer can come up with the brand header, zero tabs, and a centred hint listing the agents from `/jackin/run/agent.toml` plus `Shell`. The operator picks one with the prefix key and the first tab spawns into that selection. When the host passes an initial agent argv, the daemon spawns the first tab with that agent automatically — matching the historical direct-into-agent UX.
 - **Per-tab "most urgent" state roll-up.** A tab containing any `blocked` pane is `blocked`; otherwise any `done` pane makes it `done`; otherwise `working`; otherwise `idle`. Same urgency order herdr uses. This drives the tab-strip glyph and feeds the future `agent-state-changed` event stream. Once a pane reaches `blocked`, the attention glyph stays visible until explicit operator keyboard input reaches that pane; incidental PTY output is not enough to clear it.
 
@@ -257,7 +257,7 @@ The top rows of the host terminal are owned by the multiplexer. Layout left to r
  jackin'   [Claude ●]  [Codex]  [Shell]                                 detach: Ctrl+B d
 ```
 
-The ` jackin' ` brand pill uses the bright-green background defined in <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> (kept from the first attempt). Each tab is rendered as ` Label ` with the rolled-up state glyph appended *before* the click-region width is computed (the existing bug appends it after, so click regions drift on `●`/`○`). The active tab uses bold + brand-green foreground; inactive tabs use dimmed grey.
+The ` jackin' ` brand pill uses the bright-green background defined in <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> (kept from the first attempt). Each tab is rendered as ` Label ` with the rolled-up state glyph appended *before* the click-region width is computed (the existing bug appends it after, so click regions drift on `●`/`○`). The active tab uses bold text on a warm amber background so it does not visually merge with the brand pill; inactive tabs use dimmed grey.
 
 The right side of the bar shows the current prefix-mode hint (`detach: Ctrl+B d` in Idle state, `prefix…` in Prefix-awaiting state). The hint is the only piece of the bar that updates on prefix key transitions; the tab strip updates on session lifecycle and state-change events.
 

@@ -470,8 +470,35 @@ pub enum SessionEvent {
     },
     ContainerInfoPullRequestLoaded {
         request_id: u64,
-        pull_request_url: Option<String>,
+        pull_request: Option<PullRequestInfo>,
     },
+    PullRequestContextLoaded {
+        request_id: u64,
+        branch: Option<String>,
+        pull_request: Option<PullRequestInfo>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestInfo {
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    pub is_draft: bool,
+}
+
+impl PullRequestInfo {
+    pub fn branch_type_label(&self) -> &'static str {
+        if self.is_draft {
+            "draft pull request branch"
+        } else {
+            "pull request branch"
+        }
+    }
+
+    pub fn number_label(&self) -> String {
+        format!("#{}", self.number)
+    }
 }
 
 impl Session {

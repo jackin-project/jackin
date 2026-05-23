@@ -20,11 +20,13 @@ use std::time::Instant;
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
+use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
+use unicode_width::UnicodeWidthChar;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -41,7 +43,8 @@ use crate::protocol::attach::{
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{PaneBodyCache, PaneBodyRenderMode, draw_scrollbar};
 use crate::session::{
-    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
+    PullRequestInfo, SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command,
+    build_shell_command,
 };
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
@@ -127,6 +130,12 @@ pub struct Multiplexer {
     /// Git / GitHub metadata lookup waiting until after the initial
     /// container-info frame has been queued to the attach writer.
     pending_container_info_lookup: Option<ContainerInfoLookupRequest>,
+    /// Current branch / PR context rendered in the bottom status line.
+    pull_request_context_branch: Option<String>,
+    pull_request_context: Option<PullRequestInfo>,
+    pull_request_context_request_id: u64,
+    pull_request_context_lookup_in_flight: bool,
+    last_pull_request_context_lookup: Option<Instant>,
     /// Workspace workdir read from `/jackin/run/agent.toml` at daemon startup.
     /// Every spawned PTY (agent or shell) receives this as its `cwd`
     /// so the operator's panes open in the workspace they configured
@@ -135,6 +144,11 @@ pub struct Multiplexer {
 }
 
 struct ContainerInfoLookupRequest {
+    request_id: u64,
+    workdir: PathBuf,
+}
+
+struct PullRequestContextLookupRequest {
     request_id: u64,
     workdir: PathBuf,
 }
@@ -155,6 +169,7 @@ enum FullRedrawReason {
     SessionExit,
     PaneClear,
     ExplicitRedraw,
+    StatusChange,
     PaneCacheMiss,
     UnsafePartial,
 }
@@ -176,6 +191,7 @@ impl FullRedrawReason {
             Self::SessionExit => "session-exit",
             Self::PaneClear => "pane-clear",
             Self::ExplicitRedraw => "explicit-redraw",
+            Self::StatusChange => "status-change",
             Self::PaneCacheMiss => "pane-cache-miss",
             Self::UnsafePartial => "unsafe-partial",
         }
@@ -300,6 +316,8 @@ const SGR_NO_BUTTON_MOTION: u8 = 35;
 
 const CONTAINER_INFO_COPY_FEEDBACK_DURATION: std::time::Duration =
     std::time::Duration::from_secs(2);
+const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
+const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: Duration = Duration::from_secs(5);
 
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> Self {
@@ -349,6 +367,11 @@ impl Multiplexer {
             container_info_copy_deadline: None,
             container_info_request_id: 0,
             pending_container_info_lookup: None,
+            pull_request_context_branch: None,
+            pull_request_context: None,
+            pull_request_context_request_id: 0,
+            pull_request_context_lookup_in_flight: false,
+            last_pull_request_context_lookup: None,
             workdir,
         }
     }
@@ -483,7 +506,7 @@ impl Multiplexer {
             git_loading: true,
             git_branch: None,
             pull_request_loading: true,
-            pull_request_url: None,
+            pull_request: None,
             copied: false,
         });
         self.pending_container_info_lookup = Some(ContainerInfoLookupRequest {
@@ -516,18 +539,60 @@ impl Multiplexer {
                 );
                 return;
             }
-            let pull_request_url = branch
+            let pull_request = branch
                 .as_deref()
-                .and_then(|branch| gh_pull_request_url(&request.workdir, branch));
+                .and_then(|branch| gh_pull_request_info(&request.workdir, branch));
             if event_tx
                 .send(SessionEvent::ContainerInfoPullRequestLoaded {
                     request_id: request.request_id,
-                    pull_request_url,
+                    pull_request,
                 })
                 .is_err()
             {
                 crate::clog!(
                     "container-info: event channel closed before pull-request URL reached the main loop"
+                );
+            }
+        });
+    }
+
+    fn maybe_spawn_pull_request_context_lookup(&mut self, now: Instant) {
+        if self.pull_request_context_lookup_in_flight {
+            return;
+        }
+        if self
+            .last_pull_request_context_lookup
+            .is_some_and(|last| now.duration_since(last) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL)
+        {
+            return;
+        }
+        self.last_pull_request_context_lookup = Some(now);
+        self.pull_request_context_request_id = self.pull_request_context_request_id.wrapping_add(1);
+        let request = PullRequestContextLookupRequest {
+            request_id: self.pull_request_context_request_id,
+            workdir: self.workdir.clone(),
+        };
+        self.pull_request_context_lookup_in_flight = true;
+        self.spawn_pull_request_context_lookup(request);
+    }
+
+    fn spawn_pull_request_context_lookup(&self, request: PullRequestContextLookupRequest) {
+        let event_tx = self.event_tx.clone();
+        std::thread::spawn(move || {
+            let branch = git_current_branch(&request.workdir);
+            let pull_request = branch
+                .as_deref()
+                .and_then(|branch| gh_pull_request_info(&request.workdir, branch));
+            if event_tx
+                .send(SessionEvent::PullRequestContextLoaded {
+                    request_id: request.request_id,
+                    branch,
+                    pull_request,
+                })
+                .is_err()
+            {
+                crate::clog!(
+                    "pull-request-context: event channel closed before metadata reached the main loop"
                 );
             }
         });
@@ -557,22 +622,42 @@ impl Multiplexer {
     fn apply_container_info_pull_request_loaded(
         &mut self,
         request_id: u64,
-        pull_request_url: Option<String>,
+        pull_request: Option<PullRequestInfo>,
     ) -> bool {
         if request_id != self.container_info_request_id {
             return false;
         }
         let Some(Dialog::ContainerInfo {
             pull_request_loading,
-            pull_request_url: current_pull_request_url,
+            pull_request: current_pull_request,
             ..
         }) = self.dialog_top_mut()
         else {
             return false;
         };
         *pull_request_loading = false;
-        *current_pull_request_url = pull_request_url;
+        *current_pull_request = pull_request;
         true
+    }
+
+    fn apply_pull_request_context_loaded(
+        &mut self,
+        request_id: u64,
+        branch: Option<String>,
+        pull_request: Option<PullRequestInfo>,
+    ) -> bool {
+        if request_id != self.pull_request_context_request_id {
+            return false;
+        }
+        self.pull_request_context_lookup_in_flight = false;
+        let changed =
+            self.pull_request_context_branch != branch || self.pull_request_context != pull_request;
+        self.pull_request_context_branch = branch;
+        self.pull_request_context = pull_request;
+        if self.reconcile_content_rows() {
+            return true;
+        }
+        changed
     }
 
     /// Pop the top dialog. Returns `Some(prev)` when something was on
@@ -1187,8 +1272,36 @@ impl Multiplexer {
         self.cancel_drag();
         self.term_rows = rows;
         self.term_cols = cols;
-        self.content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
+        self.content_rows = self.available_content_rows();
         self.resize_panes();
+    }
+
+    fn bottom_chrome_rows(&self) -> u16 {
+        if branch_context_bar_visible(
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_ref(),
+        ) {
+            BRANCH_CONTEXT_BAR_ROWS
+        } else {
+            0
+        }
+    }
+
+    fn available_content_rows(&self) -> u16 {
+        self.term_rows
+            .saturating_sub(STATUS_BAR_ROWS)
+            .saturating_sub(self.bottom_chrome_rows())
+    }
+
+    fn reconcile_content_rows(&mut self) -> bool {
+        let next = self.available_content_rows();
+        if next == self.content_rows {
+            return false;
+        }
+        self.content_rows = next;
+        self.pane_body_caches.clear();
+        self.resize_panes();
+        true
     }
 
     fn active_focused_id(&self) -> Option<u64> {
@@ -2192,6 +2305,14 @@ impl Multiplexer {
             dialog.render(&mut buf, self.term_rows, self.term_cols);
         }
 
+        render_branch_context_bar(
+            &mut buf,
+            self.term_rows,
+            self.term_cols,
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_ref(),
+        );
+
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
 
         crate::cdebug!(
@@ -2215,6 +2336,13 @@ impl Multiplexer {
         if let Some(dialog) = self.dialog_top() {
             dialog.render(&mut buf, self.term_rows, self.term_cols);
         }
+        render_branch_context_bar(
+            &mut buf,
+            self.term_rows,
+            self.term_cols,
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_ref(),
+        );
 
         crate::cdebug!(
             "render: kind=dialog-overlay reason={} bytes={} duration_us={}",
@@ -2860,15 +2988,24 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     }
                     SessionEvent::ContainerInfoPullRequestLoaded {
                         request_id,
-                        pull_request_url,
+                        pull_request,
                     } => {
                         if mux.apply_container_info_pull_request_loaded(
                             request_id,
-                            pull_request_url,
+                            pull_request,
                         ) {
                             let frame =
                                 mux.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
                             mux.send_output(frame);
+                        }
+                    }
+                    SessionEvent::PullRequestContextLoaded {
+                        request_id,
+                        branch,
+                        pull_request,
+                    } => {
+                        if mux.apply_pull_request_context_loaded(request_id, branch, pull_request) {
+                            mux.request_full_redraw(FullRedrawReason::StatusChange);
                         }
                     }
                 }
@@ -2922,6 +3059,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // visibly jumps to the tab strip every tick and parks
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
+                mux.maybe_spawn_pull_request_context_lookup(Instant::now());
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
                 }
@@ -2937,6 +3075,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     .map(|(&id, s)| (id, s.state))
                     .collect();
                 mux.status_bar.render(&mut sbuf, mux.term_cols, &mux.tabs, mux.active_tab, &states);
+                render_branch_context_bar(
+                    &mut sbuf,
+                    mux.term_rows,
+                    mux.term_cols,
+                    mux.pull_request_context_branch.as_deref(),
+                    mux.pull_request_context.as_ref(),
+                );
                 sbuf.extend_from_slice(b"\x1b8");
                 mux.send_output(sbuf);
             }
@@ -3363,6 +3508,113 @@ fn display_title(session: &Session) -> String {
     }
 }
 
+const BRANCH_CONTEXT_BAR_BG: &str = "\x1b[48;2;255;255;255m";
+const BRANCH_CONTEXT_BAR_FG: &str = "\x1b[38;2;0;0;0m";
+const BRANCH_CONTEXT_BAR_LINK_FG: &str = "\x1b[38;2;0;80;180m";
+const BRANCH_CONTEXT_BAR_BOLD: &str = "\x1b[1m";
+const RESET: &str = "\x1b[0m";
+
+fn render_branch_context_bar(
+    buf: &mut Vec<u8>,
+    term_rows: u16,
+    term_cols: u16,
+    branch: Option<&str>,
+    pull_request: Option<&PullRequestInfo>,
+) {
+    if !branch_context_bar_visible(branch, pull_request) {
+        return;
+    }
+    if term_rows == 0 || term_cols == 0 {
+        return;
+    }
+
+    let (left, right, href) = match pull_request {
+        Some(pr) => (
+            format!(" PR {} · {} ", pr.number_label(), pr.title),
+            Some(format!(" {} ", pr.url)),
+            Some(pr.url.as_str()),
+        ),
+        None => (
+            format!(" Branch · {} ", branch.unwrap_or_default()),
+            None,
+            None,
+        ),
+    };
+    let term_cols_usize = usize::from(term_cols);
+
+    buf.extend_from_slice(format!("\x1b[{};1H", term_rows).as_bytes());
+    buf.extend_from_slice(BRANCH_CONTEXT_BAR_BG.as_bytes());
+    buf.extend_from_slice(BRANCH_CONTEXT_BAR_FG.as_bytes());
+    for _ in 0..term_cols {
+        buf.push(b' ');
+    }
+
+    buf.extend_from_slice(format!("\x1b[{};1H", term_rows).as_bytes());
+    buf.extend_from_slice(BRANCH_CONTEXT_BAR_BG.as_bytes());
+    buf.extend_from_slice(BRANCH_CONTEXT_BAR_FG.as_bytes());
+    buf.extend_from_slice(BRANCH_CONTEXT_BAR_BOLD.as_bytes());
+
+    let right_cols = right.as_deref().map(display_cols).unwrap_or(0);
+    let right_fits = right_cols + 2 < term_cols_usize;
+    let left_max_cols = if right_fits {
+        term_cols_usize.saturating_sub(right_cols + 1)
+    } else {
+        term_cols_usize
+    };
+    let left_take = take_display_cols(&left, left_max_cols);
+    buf.extend_from_slice(left_take.as_bytes());
+
+    if right_fits && let (Some(right), Some(href)) = (right.as_deref(), href) {
+        let right_start = term_cols_usize.saturating_sub(right_cols).saturating_add(1);
+        buf.extend_from_slice(format!("\x1b[{};{}H", term_rows, right_start).as_bytes());
+        buf.extend_from_slice(BRANCH_CONTEXT_BAR_BG.as_bytes());
+        buf.extend_from_slice(BRANCH_CONTEXT_BAR_LINK_FG.as_bytes());
+        emit_osc8_open(buf, href);
+        buf.extend_from_slice(right.as_bytes());
+        emit_osc8_close(buf);
+    }
+    buf.extend_from_slice(RESET.as_bytes());
+}
+
+fn branch_context_bar_visible(
+    branch: Option<&str>,
+    pull_request: Option<&PullRequestInfo>,
+) -> bool {
+    pull_request.is_some() || branch.is_some_and(|branch| !is_default_branch_name(branch))
+}
+
+fn is_default_branch_name(branch: &str) -> bool {
+    matches!(branch, "main" | "master" | "")
+}
+
+fn emit_osc8_open(buf: &mut Vec<u8>, href: &str) {
+    buf.extend_from_slice(b"\x1b]8;;");
+    buf.extend_from_slice(href.as_bytes());
+    buf.extend_from_slice(b"\x1b\\");
+}
+
+fn emit_osc8_close(buf: &mut Vec<u8>) {
+    buf.extend_from_slice(b"\x1b]8;;\x1b\\");
+}
+
+fn display_cols(s: &str) -> usize {
+    s.chars().map(|c| c.width().unwrap_or(0)).sum()
+}
+
+fn take_display_cols(s: &str, max_cols: usize) -> String {
+    let mut out = String::new();
+    let mut used = 0usize;
+    for c in s.chars() {
+        let width = c.width().unwrap_or(0);
+        if used + width > max_cols {
+            break;
+        }
+        out.push(c);
+        used += width;
+    }
+    out
+}
+
 const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -3376,23 +3628,46 @@ fn git_current_branch(workdir: &Path) -> Option<String> {
     )
 }
 
-fn gh_pull_request_url(workdir: &Path, branch: &str) -> Option<String> {
-    let url = command_stdout_trimmed_with_timeout(
+fn gh_pull_request_info(workdir: &Path, branch: &str) -> Option<PullRequestInfo> {
+    #[derive(Deserialize)]
+    struct GhPullRequest {
+        number: u64,
+        title: String,
+        url: String,
+        #[serde(rename = "isDraft")]
+        is_draft: bool,
+    }
+
+    let json = command_stdout_trimmed_with_timeout(
         Command::new("gh")
             .current_dir(workdir)
             .env("GH_PROMPT_DISABLED", "1")
             .env("GH_NO_UPDATE_NOTIFIER", "1")
             .args([
-                "pr", "list", "--head", branch, "--state", "open", "--limit", "1", "--json", "url",
-                "--jq", ".[0].url",
+                "pr",
+                "list",
+                "--head",
+                branch,
+                "--state",
+                "open",
+                "--limit",
+                "1",
+                "--json",
+                "number,title,url,isDraft",
             ]),
         GH_PULL_REQUEST_COMMAND_TIMEOUT,
     )?;
-    if url == "null" || !(url.starts_with("https://") || url.starts_with("http://")) {
-        None
-    } else {
-        Some(url)
+    let mut prs: Vec<GhPullRequest> = serde_json::from_str(&json).ok()?;
+    let pr = prs.pop()?;
+    if !(pr.url.starts_with("https://") || pr.url.starts_with("http://")) {
+        return None;
     }
+    Some(PullRequestInfo {
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        is_draft: pr.is_draft,
+    })
 }
 
 #[cfg(test)]
@@ -3658,6 +3933,15 @@ mod tests {
         mux
     }
 
+    fn pull_request_fixture(number: u64) -> PullRequestInfo {
+        PullRequestInfo {
+            number,
+            title: "Surface PR context in Capsule".to_string(),
+            url: format!("https://github.com/jackin-project/jackin/pull/{number}"),
+            is_draft: false,
+        }
+    }
+
     fn split_tab_mux() -> Multiplexer {
         let mut mux = test_mux(24, 80);
         let mut tab = Tab::new_single("Shell", 1);
@@ -3723,6 +4007,71 @@ mod tests {
                 filter
             }) if filter.is_empty()
         ));
+    }
+
+    #[test]
+    fn branch_context_bar_renders_pr_id_title_and_hyperlink_without_branch() {
+        let pr = pull_request_fixture(434);
+        let mut buf = Vec::new();
+        render_branch_context_bar(&mut buf, 24, 120, Some("asa/pr-context"), Some(&pr));
+        let rendered = String::from_utf8_lossy(&buf);
+
+        assert!(rendered.contains("\x1b[24;1H"));
+        assert!(rendered.contains("\x1b[48;2;255;255;255m"));
+        assert!(rendered.contains("PR #434"));
+        assert!(!rendered.contains("asa/pr-context"));
+        assert!(rendered.contains("Surface PR context in Capsule"));
+        assert!(rendered.contains("https://github.com/jackin-project/jackin/pull/434"));
+        assert!(
+            rendered.contains("\x1b]8;;https://github.com/jackin-project/jackin/pull/434\x1b\\")
+        );
+    }
+
+    #[test]
+    fn branch_context_bar_renders_non_default_branch_without_pr() {
+        let mut buf = Vec::new();
+        render_branch_context_bar(&mut buf, 24, 80, Some("feature/no-pr"), None);
+        let rendered = String::from_utf8_lossy(&buf);
+
+        assert!(rendered.contains("Branch · feature/no-pr"));
+        assert!(!rendered.contains("\x1b]8;;"));
+    }
+
+    #[test]
+    fn branch_context_bar_skips_main_and_master_without_pr() {
+        let mut main_buf = Vec::new();
+        render_branch_context_bar(&mut main_buf, 24, 80, Some("main"), None);
+        assert!(main_buf.is_empty());
+
+        let mut master_buf = Vec::new();
+        render_branch_context_bar(&mut master_buf, 24, 80, Some("master"), None);
+        assert!(master_buf.is_empty());
+    }
+
+    #[test]
+    fn branch_context_visibility_resizes_content_area() {
+        let mut mux = test_mux(24, 100);
+        mux.pull_request_context_request_id = 9;
+        assert_eq!(mux.content_rows, 22);
+
+        assert!(mux.apply_pull_request_context_loaded(
+            9,
+            Some("asa/pr-context".to_string()),
+            Some(pull_request_fixture(434)),
+        ));
+        assert_eq!(mux.content_rows, 21);
+        assert_eq!(
+            mux.pull_request_context.as_ref().map(|pr| pr.number),
+            Some(434)
+        );
+
+        assert!(mux.apply_pull_request_context_loaded(9, Some("feature/no-pr".to_string()), None));
+        assert_eq!(mux.content_rows, 21);
+        assert!(mux.pull_request_context.is_none());
+
+        assert!(mux.apply_pull_request_context_loaded(9, Some("main".to_string()), None));
+        assert_eq!(mux.content_rows, 22);
+        assert!(mux.pull_request_context.is_none());
     }
 
     #[test]
@@ -3910,7 +4259,7 @@ mod tests {
             git_loading: false,
             git_branch: Some("main".to_string()),
             pull_request_loading: false,
-            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
+            pull_request: Some(pull_request_fixture(1)),
             copied: true,
         });
         let now = Instant::now();
@@ -3935,7 +4284,7 @@ mod tests {
             git_loading: true,
             git_branch: None,
             pull_request_loading: true,
-            pull_request_url: None,
+            pull_request: None,
             copied: false,
         });
 
@@ -3946,7 +4295,7 @@ mod tests {
             git_loading,
             git_branch,
             pull_request_loading,
-            pull_request_url,
+            pull_request,
             ..
         }) = mux.dialog_top()
         else {
@@ -3955,18 +4304,15 @@ mod tests {
         assert!(!*git_loading);
         assert!(*pull_request_loading);
         assert_eq!(git_branch.as_deref(), Some("feature/container-info"));
-        assert_eq!(pull_request_url, &None);
+        assert_eq!(pull_request, &None);
 
-        assert!(mux.apply_container_info_pull_request_loaded(
-            7,
-            Some("https://github.com/jackin-project/jackin/pull/414".to_string()),
-        ));
+        assert!(mux.apply_container_info_pull_request_loaded(7, Some(pull_request_fixture(414)),));
 
         let Some(Dialog::ContainerInfo {
             git_loading,
             git_branch,
             pull_request_loading,
-            pull_request_url,
+            pull_request,
             ..
         }) = mux.dialog_top()
         else {
@@ -3975,10 +4321,7 @@ mod tests {
         assert!(!*git_loading);
         assert!(!*pull_request_loading);
         assert_eq!(git_branch.as_deref(), Some("feature/container-info"));
-        assert_eq!(
-            pull_request_url.as_deref(),
-            Some("https://github.com/jackin-project/jackin/pull/414")
-        );
+        assert_eq!(pull_request.as_ref().map(|pr| pr.number), Some(414));
     }
 
     #[test]
@@ -3993,23 +4336,20 @@ mod tests {
             git_loading: true,
             git_branch: None,
             pull_request_loading: true,
-            pull_request_url: None,
+            pull_request: None,
             copied: false,
         });
 
         let stale_branch_applied =
             mux.apply_container_info_branch_loaded(6, Some("stale".to_string()));
         assert!(!stale_branch_applied);
-        assert!(!mux.apply_container_info_pull_request_loaded(
-            6,
-            Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
-        ));
+        assert!(!mux.apply_container_info_pull_request_loaded(6, Some(pull_request_fixture(1)),));
 
         let Some(Dialog::ContainerInfo {
             git_loading,
             git_branch,
             pull_request_loading,
-            pull_request_url,
+            pull_request,
             ..
         }) = mux.dialog_top()
         else {
@@ -4018,7 +4358,7 @@ mod tests {
         assert!(*git_loading);
         assert!(*pull_request_loading);
         assert_eq!(git_branch, &None);
-        assert_eq!(pull_request_url, &None);
+        assert_eq!(pull_request, &None);
     }
 
     #[test]
@@ -4033,16 +4373,20 @@ mod tests {
             git_loading: false,
             git_branch: Some("main".to_string()),
             pull_request_loading: false,
-            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
+            pull_request: Some(pull_request_fixture(1)),
             copied: false,
         });
         let (tx, mut rx) = mpsc::unbounded_channel();
         mux.attached_out = Some(tx);
+        let (box_row, box_col, _, _) = mux
+            .dialog_top()
+            .expect("container info dialog should be open")
+            .box_rect(mux.term_rows, mux.term_cols);
 
         let frame = mux
             .handle_input(InputEvent::MousePress {
-                row: 17,
-                col: 18,
+                row: box_row + 1,
+                col: box_col + 1,
                 button: 0,
             })
             .expect("container id click should redraw copy feedback");

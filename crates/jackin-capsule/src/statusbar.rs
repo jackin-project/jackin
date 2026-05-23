@@ -10,10 +10,10 @@
 ///   signal — the same pattern the console uses below "General /
 ///   Mounts / Roles / Environments / Auth."
 ///
-/// Inactive tab cells get a `PHOSPHOR_DARK` background so they stand
-/// out against the terminal's default-black background. Active tab
-/// has the same dark-green background with a white bold label, plus
-/// the row-1 underline.
+/// Inactive tab cells get a subtle dark-grey background so they stand
+/// out against the terminal's default-black background. The active tab
+/// uses a warm amber background instead of the brand green, so it stays
+/// distinct from the ` jackin' ` brand pill, plus the row-1 underline.
 ///
 /// Layout columns come from `jackin_tui::lay_out_tabs`, so the
 /// console TUI and the multiplexer cannot drift on cell sizing /
@@ -41,9 +41,9 @@ const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
 const BRAND_BOLD: &str = "\x1b[1m";
 
 const TAB_BG_INACTIVE: &str = "\x1b[48;2;30;30;30m"; // subtle dark grey
-const TAB_BG_ACTIVE: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN (brand)
+const TAB_BG_ACTIVE: &str = "\x1b[48;2;242;184;75m"; // warm amber, distinct from brand
 const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const TAB_FG_ACTIVE: &str = "\x1b[38;2;0;0;0m"; // BLACK on bright green
+const TAB_FG_ACTIVE: &str = "\x1b[38;2;0;0;0m"; // BLACK on amber
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waiting for operator"
 const BOLD: &str = "\x1b[1m";

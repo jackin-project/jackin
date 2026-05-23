@@ -26,6 +26,24 @@ fn brand_pill_renders_first() {
 }
 
 #[test]
+fn active_tab_background_differs_from_brand_pill() {
+    let mut bar = StatusBar::new();
+    let tab = Tab::new_single("Codex", 7);
+    let s = render(&mut bar, 80, &[tab], 0, &[]);
+    let brand_green_bg = "\x1b[48;2;0;255;65m";
+    let active_tab_amber_bg = "\x1b[48;2;242;184;75m";
+    assert_eq!(
+        s.matches(brand_green_bg).count(),
+        1,
+        "brand green should only paint the brand pill"
+    );
+    assert!(
+        s.contains(active_tab_amber_bg),
+        "active tab should use distinct amber bg: {s:?}"
+    );
+}
+
+#[test]
 fn tab_click_region_includes_state_glyph_width() {
     let mut bar = StatusBar::new();
     let tab = Tab::new_single("Codex", 7);
