@@ -108,19 +108,12 @@ jobs:
         run: |
           set -euo pipefail
           set -a && source docker/construct/versions.env && set +a
-          url="https://mise.en.dev/deb/dists/stable/main/binary-amd64/Packages"
-          MISE_APT_VERSION="$(curl -fsSL --max-time 30 "$url" | awk '
-            $1 == "Package:" { in_mise = ($2 == "mise"); next }
-            in_mise && $1 == "Version:" { print $2; found = 1; exit }
-            END { if (!found) exit 1 }
-          ')"
-          export MISE_APT_VERSION
           docker buildx build \
             --cache-from type=gha,scope=construct-ci-e2e \
             --cache-to type=gha,scope=construct-ci-e2e,mode=max \
             --build-arg SHELLFIRM_VERSION="$SHELLFIRM_VERSION" \
             --build-arg TIRITH_VERSION="$TIRITH_VERSION" \
-            --build-arg MISE_APT_VERSION="$MISE_APT_VERSION" \
+            --build-arg MISE_VERSION="$MISE_VERSION" \
             --load \
             -t projectjackin/construct:trixie \
             docker/construct/

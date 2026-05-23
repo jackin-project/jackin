@@ -43,7 +43,7 @@ variable "SHELLFIRM_VERSION" {
   default = ""
 }
 
-variable "MISE_APT_VERSION" {
+variable "MISE_VERSION" {
   default = ""
 }
 
@@ -63,7 +63,7 @@ target "_construct-common" {
   args = {
     TIRITH_VERSION    = TIRITH_VERSION
     SHELLFIRM_VERSION = SHELLFIRM_VERSION
-    MISE_APT_VERSION  = MISE_APT_VERSION
+    MISE_VERSION      = MISE_VERSION
   }
   labels = {
     "org.opencontainers.image.title"       = "jackin construct"
