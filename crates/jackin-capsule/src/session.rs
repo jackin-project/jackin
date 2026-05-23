@@ -144,9 +144,12 @@ impl OscPolicy {
         self.allow_hyperlink
     }
 
-    /// All passthrough gates closed. Used by tests that assert the
-    /// per-OSC deny path; the production constructor is `from_env()`.
-    pub fn deny_all() -> Self {
+    /// Test-only constructor with every passthrough gate closed.
+    /// `#[doc(hidden)]` + the explicit `__test_` prefix is the
+    /// strongest signal Rust gives us short of a Cargo feature flag;
+    /// production code must call `from_env()`.
+    #[doc(hidden)]
+    pub fn __test_deny_all() -> Self {
         Self {
             allow_title: false,
             allow_osc52: false,
@@ -172,7 +175,7 @@ pub fn next_id() -> u64 {
 #[derive(Default)]
 pub struct OscCapture {
     pub(crate) pending: Vec<Vec<u8>>,
-    pub(crate) policy: OscPolicy,
+    policy: OscPolicy,
     pub(crate) title: Option<String>,
     pub(crate) icon_name: Option<String>,
     /// Kitty keyboard protocol stack pushed by this session. Each
@@ -895,7 +898,7 @@ impl Session {
     }
 
     pub fn title(&self) -> Option<&str> {
-        self.parser.callbacks().title.as_deref()
+        self.parser.callbacks().title()
     }
 
     /// Most recently announced working directory (OSC 7), if any.
