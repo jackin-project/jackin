@@ -90,15 +90,13 @@ pub fn fetch_snapshot(
 
     match fetch_snapshot_via_docker_exec(container_name) {
         Ok(snapshot) => Ok(snapshot),
-        Err(exec_error) => direct_error.map_or_else(
-            || Ok(None),
-            |error| {
-                Err(exec_error.context(format!(
-                    "direct socket snapshot failed for {} ({error:#})",
-                    path.display()
-                )))
-            },
-        ),
+        Err(exec_error) => match direct_error {
+            Some(error) => Err(exec_error.context(format!(
+                "direct socket snapshot failed for {} ({error:#})",
+                path.display()
+            ))),
+            None => Err(exec_error),
+        },
     }
 }
 

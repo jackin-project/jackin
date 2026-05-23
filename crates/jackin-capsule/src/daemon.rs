@@ -2613,8 +2613,12 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 // afterwards so the writer side has a chance to drain
                 // before the task is cancelled. Then `detach_client`
                 // takes care of the abort + per-field bookkeeping.
-                if let Some(tx) = mux.attached_out.take() {
-                    let _ = tx.send(encode_server(ServerFrame::Shutdown));
+                if let Some(tx) = mux.attached_out.take()
+                    && tx.send(encode_server(ServerFrame::Shutdown)).is_err()
+                {
+                    crate::clog!(
+                        "takeover: prior client receiver already dropped; Shutdown frame not delivered"
+                    );
                 }
                 // A single `yield_now()` does not guarantee the writer
                 // task drained `out_rx` and finished `write_all` to the
@@ -3035,8 +3039,12 @@ async fn drain_and_exit(mux: &mut Multiplexer) {
 /// `attached_task` field cannot drift Some(handle) without a
 /// corresponding live attach.
 fn detach_client(mux: &mut Multiplexer) {
-    if let Some(tx) = mux.attached_out.take() {
-        let _ = tx.send(encode_server(ServerFrame::Shutdown));
+    if let Some(tx) = mux.attached_out.take()
+        && tx.send(encode_server(ServerFrame::Shutdown)).is_err()
+    {
+        crate::clog!(
+            "detach_client: client receiver already dropped; Shutdown frame not delivered"
+        );
     }
     if let Some(handle) = mux.attached_task.take() {
         handle.abort();
@@ -3249,12 +3257,22 @@ fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
 
 fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration) -> Option<String> {
     command.stdout(Stdio::piped()).stderr(Stdio::null());
-    let mut child = command.spawn().ok()?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            crate::clog!(
+                "command spawn failed ({:?}): {e} (errno={:?})",
+                command.get_program(),
+                e.raw_os_error()
+            );
+            return None;
+        }
+    };
     let mut stdout = child.stdout.take()?;
-    let stdout_reader = std::thread::spawn(move || {
+    let stdout_reader = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
         let mut bytes = Vec::new();
-        stdout.read_to_end(&mut bytes).ok()?;
-        Some(bytes)
+        stdout.read_to_end(&mut bytes)?;
+        Ok(bytes)
     });
     let started = Instant::now();
     let mut status_success = None;
@@ -3284,7 +3302,20 @@ fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration)
     if status_success == Some(false) {
         return None;
     }
-    let stdout = stdout_reader.join().ok()??;
+    let stdout = match stdout_reader.join() {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(e)) => {
+            crate::clog!(
+                "command stdout read failed: {e} (errno={:?})",
+                e.raw_os_error()
+            );
+            return None;
+        }
+        Err(_) => {
+            crate::clog!("command stdout reader thread panicked");
+            return None;
+        }
+    };
     let value = String::from_utf8_lossy(&stdout).trim().to_string();
     if value.is_empty() { None } else { Some(value) }
 }

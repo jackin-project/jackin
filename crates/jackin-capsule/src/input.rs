@@ -476,9 +476,7 @@ fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
         .strip_prefix(b"\x1b[")
         .and_then(|body| body.strip_suffix(b"u"))
     {
-        let Some((codepoint, modifier, event)) = parse_csi_u_key(rest) else {
-            return None;
-        };
+        let (codepoint, modifier, event) = parse_csi_u_key(rest)?;
         if codepoint == 27 && modifier.unwrap_or(1) == 1 {
             if event == Some(3) {
                 return Some(None);

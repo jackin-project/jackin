@@ -480,7 +480,14 @@ impl Session {
                 .and_then(|guard| guard.take_writer().ok());
             let Some(mut writer) = writer else {
                 crate::clog!("session {sid}: failed to take PTY writer; aborting writer task");
-                let _ = event_tx_writer_err.send(SessionEvent::Exited { session_id: sid });
+                if event_tx_writer_err
+                    .send(SessionEvent::Exited { session_id: sid })
+                    .is_err()
+                {
+                    crate::clog!(
+                        "session {sid}: event channel closed — daemon will not reap this half-initialised session"
+                    );
+                }
                 return;
             };
             while let Some(data) = input_rx.blocking_recv() {
@@ -489,7 +496,14 @@ impl Session {
                         "session {sid}: PTY write error: {e} (errno={:?}); aborting writer",
                         e.raw_os_error()
                     );
-                    let _ = event_tx_writer_err.send(SessionEvent::Exited { session_id: sid });
+                    if event_tx_writer_err
+                        .send(SessionEvent::Exited { session_id: sid })
+                        .is_err()
+                    {
+                        crate::clog!(
+                            "session {sid}: event channel closed — daemon will not reap this dead writer"
+                        );
+                    }
                     return;
                 }
             }
@@ -503,7 +517,14 @@ impl Session {
                 .and_then(|guard| guard.try_clone_reader().ok());
             let Some(mut reader) = reader else {
                 crate::clog!("session {sid}: failed to clone PTY reader; aborting reader task");
-                let _ = event_tx_reader_err.send(SessionEvent::Exited { session_id: sid });
+                if event_tx_reader_err
+                    .send(SessionEvent::Exited { session_id: sid })
+                    .is_err()
+                {
+                    crate::clog!(
+                        "session {sid}: event channel closed — daemon will not reap this half-initialised session"
+                    );
+                }
                 return;
             };
             let mut buf = [0u8; 4096];

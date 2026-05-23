@@ -1319,6 +1319,7 @@ fn render_rename_tab(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, input: &
     render_bottom_hint(buf, term_rows, term_cols, RENAME_HINT);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_palette(
     buf: &mut Vec<u8>,
     start_row: u16,
