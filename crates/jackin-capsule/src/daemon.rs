@@ -1345,14 +1345,38 @@ impl Multiplexer {
             // pane cannot downgrade the multiplexer's input channel
             // to legacy X10 after a focus-changing close/split.
             if let Some(tx) = &self.attached_out {
-                let _ = tx.send(encode_server(ServerFrame::Output(
-                    crate::session::Session::focus_swap_reset().to_vec(),
-                )));
-                let _ = tx.send(encode_server(ServerFrame::Output(
-                    crate::session::Session::client_owned_mode_state().to_vec(),
-                )));
-                for bytes in s.current_mode_state() {
-                    let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
+                let mut stage = "focus_swap_reset";
+                let mut failed = false;
+                if tx
+                    .send(encode_server(ServerFrame::Output(
+                        crate::session::Session::focus_swap_reset().to_vec(),
+                    )))
+                    .is_err()
+                {
+                    failed = true;
+                } else {
+                    stage = "client_owned_mode_state";
+                    if tx
+                        .send(encode_server(ServerFrame::Output(
+                            crate::session::Session::client_owned_mode_state().to_vec(),
+                        )))
+                        .is_err()
+                    {
+                        failed = true;
+                    } else {
+                        for bytes in s.current_mode_state() {
+                            stage = "current_mode_state";
+                            if tx.send(encode_server(ServerFrame::Output(bytes))).is_err() {
+                                failed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if failed {
+                    crate::clog!(
+                        "focus swap: client receiver dropped during {stage}; outer terminal mode-state is partial"
+                    );
                 }
             }
         }
@@ -2569,10 +2593,12 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 }
                 // Honor a spawn intent from `jackin-capsule new
                 // <agent>` / `jackin-capsule new` (shell). Spawn
-                // failures get clog'd at error level so a
-                // `jackin load --debug` run shows the underlying cause;
-                // the attach completes either way so the operator can
-                // still interact with the existing focused session.
+                // failures get clog'd and surfaced to the new client
+                // as an Output frame after Welcome so the operator
+                // sees the reason in their terminal — silently
+                // landing on an empty multiplexer would otherwise be
+                // indistinguishable from "no spawn requested".
+                let mut spawn_failure: Option<String> = None;
                 match spawn {
                     Some(SpawnRequest::Agent(agent_slug)) => {
                         // Re-validate the wire-decoded slug. The CLI argv
@@ -2589,18 +2615,23 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                                     crate::clog!(
                                         "attach: spawn_session for {agent_slug:?} failed: {err:?}"
                                     );
+                                    spawn_failure =
+                                        Some(format!("spawn agent {agent_slug:?} failed: {err}"));
                                 }
                             }
                             Err(reason) => {
                                 crate::clog!(
                                     "attach: rejected Hello.spawn.Agent {agent_slug:?}: {reason}"
                                 );
+                                spawn_failure =
+                                    Some(format!("rejected agent {agent_slug:?}: {reason}"));
                             }
                         }
                     }
                     Some(SpawnRequest::Shell) => {
                         if let Err(err) = mux.spawn_session(None, &env) {
                             crate::clog!("attach: spawn_session (shell) failed: {err:?}");
+                            spawn_failure = Some(format!("spawn shell failed: {err}"));
                         }
                     }
                     None => {}
@@ -2660,6 +2691,13 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 let mut initial = b"\x1b[2J".to_vec();
                 initial.extend(mux.compose_full_frame(FullRedrawReason::FirstAttach));
                 let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
+                if let Some(reason) = spawn_failure {
+                    // Red foreground over the composed frame so the
+                    // failure stays visible until the operator types.
+                    let banner = format!("\x1b[1;31mjackin: {reason}\x1b[0m\r\n");
+                    let _ = new_out_tx
+                        .send(encode_server(ServerFrame::Output(banner.into_bytes())));
+                }
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.attached_task = Some(tokio::spawn(async move {
                     handle_attach_client(stream, new_out_rx, cmd_tx_for_task).await;
@@ -3100,8 +3138,15 @@ async fn handle_attach_client(
     // Signal the main loop that this client is gone so it can clear
     // `attached_out` / `attached_task` — without this, subsequent
     // `send_to_client` calls silently drop into the closed channel
-    // and the daemon keeps treating the dead socket as live.
-    let _ = cmd_tx.send(ClientFrame::Detach);
+    // and the daemon keeps treating the dead socket as live. If the
+    // main loop is already shutting down the send fails; log so the
+    // exact symptom this comment warns against does not happen
+    // silently if the cmd_tx side is the one that died first.
+    if cmd_tx.send(ClientFrame::Detach).is_err() {
+        crate::clog!(
+            "attach client: cmd_tx closed before synthetic Detach could fire; main loop is already tearing down"
+        );
+    }
 }
 
 /// Extract the text inside `sel` from the source pane's `vt100`

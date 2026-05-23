@@ -96,13 +96,25 @@ pub async fn run_client(
                 match frame {
                     ServerFrame::Output(bytes) => {
                         let mut stdout = std::io::stdout();
-                        let _ = stdout.write_all(&bytes);
-                        let _ = stdout.flush();
+                        if let Err(e) = stdout.write_all(&bytes) {
+                            break Err(anyhow::anyhow!(
+                                "stdout closed while writing Output ({} bytes): {e}",
+                                bytes.len()
+                            ));
+                        }
+                        if let Err(e) = stdout.flush() {
+                            break Err(anyhow::anyhow!("stdout flush failed: {e}"));
+                        }
                     }
                     ServerFrame::Shutdown => break Ok(()),
                     ServerFrame::Bell => {
-                        let _ = std::io::stdout().write_all(b"\x07");
-                        let _ = std::io::stdout().flush();
+                        let mut stdout = std::io::stdout();
+                        if let Err(e) = stdout.write_all(b"\x07") {
+                            break Err(anyhow::anyhow!("stdout closed while writing Bell: {e}"));
+                        }
+                        if let Err(e) = stdout.flush() {
+                            break Err(anyhow::anyhow!("stdout flush failed after Bell: {e}"));
+                        }
                     }
                     ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
                 }

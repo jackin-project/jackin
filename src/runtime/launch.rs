@@ -1242,12 +1242,24 @@ async fn diagnose_with_state(
             if phase == ExitPhase::PostAttach && *exit_code == 0 && !oom_killed {
                 return None;
             }
-            let logs = runner
+            // Distinguish "docker logs succeeded but was empty" from
+            // "docker logs CLI failed" — the latter is a post-mortem
+            // signal the operator needs (daemon down, container gone)
+            // rather than the empty body the prose body falls back to.
+            let logs = match runner
                 .capture("docker", &["logs", "--tail", "40", container_name], None)
                 .await
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
+            {
+                Ok(text) => {
+                    let trimmed = text.trim().to_string();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed)
+                    }
+                }
+                Err(e) => Some(format!("(docker logs failed: {e:#})")),
+            };
             let reason = if *oom_killed {
                 "OOM killed".to_string()
             } else {

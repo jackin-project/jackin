@@ -455,7 +455,26 @@ fn run_optional_command(program: &str, args: &[&str]) {
     if !env_is_one("JACKIN_DEBUG") {
         command.stdout(Stdio::null()).stderr(Stdio::null());
     }
-    let _ = command.status();
+    // "Optional" means "do not abort runtime_setup", not "swallow the
+    // exit code." A failing `claude mcp add tirith` or `shellfirm`
+    // call leaves the role launched without the MCP wired up, so log
+    // the exact failure to the multiplexer log for operator triage.
+    match command.status() {
+        Ok(status) if status.success() => {}
+        Ok(status) => {
+            crate::clog!(
+                "optional command {} exited with status {status}",
+                format_command(program, args)
+            );
+        }
+        Err(e) => {
+            crate::clog!(
+                "optional command {} failed to spawn: {e} (errno={:?})",
+                format_command(program, args),
+                e.raw_os_error()
+            );
+        }
+    }
 }
 
 fn format_command(program: &str, args: &[&str]) -> String {
