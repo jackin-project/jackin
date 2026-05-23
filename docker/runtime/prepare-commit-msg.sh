@@ -14,13 +14,16 @@ _append_trailer() {
     if ! grep -qF "$2" "$1"; then
         _last=$(grep -v '^[[:space:]]*$' "$1" | tail -1)
         if printf '%s' "$_last" | grep -qE '^[A-Za-z-]+: .+'; then
-            printf '%s\n' "$2" >> "$1"
+            printf '%s\n' "$2" >> "$1" || {
+                echo "[jackin prepare-commit-msg] ERROR: failed to append $3 to $1" >&2
+                exit 1
+            }
         else
-            printf '\n%s\n' "$2" >> "$1"
-        fi || {
-            echo "[jackin prepare-commit-msg] ERROR: failed to append $3 to $1" >&2
-            exit 1
-        }
+            printf '\n%s\n' "$2" >> "$1" || {
+                echo "[jackin prepare-commit-msg] ERROR: failed to append $3 to $1" >&2
+                exit 1
+            }
+        fi
     fi
 }
 

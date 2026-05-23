@@ -397,9 +397,10 @@ fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String
             (host_term, Some(mount))
         }
         Err(e) => {
-            crate::debug_log!(
-                "terminfo",
-                "export failed for TERM={host_term}: {e:#}; falling back to xterm-256color (container loses {host_term}-specific capabilities)",
+            eprintln!(
+                "jackin: terminfo export failed for TERM={host_term}: {e:#}; \
+                 falling back to xterm-256color (container loses \
+                 {host_term}-specific capabilities)",
             );
             ("xterm-256color".to_string(), None)
         }
@@ -1092,11 +1093,10 @@ async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/run/jackin");
     run_args.extend_from_slice(&["-v", &socket_mount]);
-    if crate::tui::is_debug_mode() {
-        eprintln!(
-            "[jackin debug] prepared host socket dir {socket_dir_str} (0o700) for bind-mount at /run/jackin",
-        );
-    }
+    crate::debug_log!(
+        "launch",
+        "prepared host socket dir {socket_dir_str} (0o700) for bind-mount at /run/jackin",
+    );
     // Forward JACKIN_WORKDIR so the daemon spawns every PTY in the
     // workspace workdir (portable_pty defaults to $HOME otherwise).
     run_args.extend_from_slice(&["-e", &jackin_workdir_env]);
@@ -2037,17 +2037,18 @@ async fn load_role_with(
         );
         let launch_result = launch_role_runtime(&ctx, &mut steps, docker, runner).await;
         if launch_result.is_err() {
-            // FailedSetup write error must not abort cleanup; surface via debug.
+            // FailedSetup write error must not abort cleanup; surface to stderr
+            // so the operator sees the on-disk status is stale (Active) and
+            // that `jackin inspect` / `hardline` may report misleading state.
             if let Err(status_err) = write_instance_status(
                 paths,
                 &container_state,
                 &mut instance_manifest,
                 InstanceStatus::FailedSetup,
             ) {
-                crate::debug_log!(
-                    "instance",
-                    "failed to mark FailedSetup for {} after launch error: {status_err}",
-                    container_name,
+                eprintln!(
+                    "jackin: warning: failed to mark FailedSetup for {container_name} \
+                     after launch error: {status_err:#}; on-disk status may be stale",
                 );
             }
             cleanup.run(docker).await;
@@ -2070,7 +2071,7 @@ async fn load_role_with(
         let mut prompt = crate::isolation::finalize::StdinPrompt;
         let outcome = inspect_attach_outcome(docker, &container_name).await?;
         write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
-        let decision = crate::isolation::finalize::finalize_foreground_session(
+        let mut decision = crate::isolation::finalize::finalize_foreground_session(
             &container_name,
             &paths.data_dir.join(&container_name),
             outcome,
@@ -2115,7 +2116,7 @@ async fn load_role_with(
                 &mut instance_manifest,
                 outcome2,
             )?;
-            let _ = crate::isolation::finalize::finalize_foreground_session(
+            decision = crate::isolation::finalize::finalize_foreground_session(
                 &container_name,
                 &paths.data_dir.join(&container_name),
                 outcome2,
@@ -2124,6 +2125,13 @@ async fn load_role_with(
                 docker,
                 runner,
             ).await?;
+            if matches!(
+                decision,
+                crate::isolation::finalize::FinalizeDecision::Preserved
+            ) {
+                let status = preserved_instance_status(&container_state)?;
+                write_instance_status(paths, &container_state, &mut instance_manifest, status)?;
+            }
         }
 
         // Classify how the interactive session ended and tear down DinD/network

@@ -257,15 +257,6 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             let mut cursor = PayloadCursor::new(&payload);
             let rows = cursor.read_u16("rows")?;
             let cols = cursor.read_u16("cols")?;
-            if cursor.finished() {
-                return Ok(ClientFrame::Hello {
-                    rows,
-                    cols,
-                    spawn: None,
-                    env: Vec::new(),
-                    focus_session: None,
-                });
-            }
             let spawn_kind = cursor.read_u8("spawn kind")?;
             let agent_len = cursor.read_u16("agent length")? as usize;
             let agent = cursor.read_string(agent_len, "agent slug")?;
@@ -297,21 +288,11 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 let value = cursor.read_string(value_len, "env value")?;
                 env.push((key, value));
             }
-            // `focus_kind` (1 byte) + optional `session_id` (8 bytes).
-            // Pre-focus-session clients omit both, so a finished
-            // cursor at this point is still a valid Hello — fall
-            // back to `focus_session = None`. Future fields can be
-            // appended the same way: read if cursor still has bytes,
-            // otherwise default.
-            let focus_session = if cursor.finished() {
-                None
-            } else {
-                let focus_kind = cursor.read_u8("focus kind")?;
-                match focus_kind {
-                    0 => None,
-                    1 => Some(cursor.read_u64("focus session id")?),
-                    other => bail!("unknown hello focus kind {other}"),
-                }
+            let focus_kind = cursor.read_u8("focus kind")?;
+            let focus_session = match focus_kind {
+                0 => None,
+                1 => Some(cursor.read_u64("focus session id")?),
+                other => bail!("unknown hello focus kind {other}"),
             };
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");
@@ -540,20 +521,8 @@ mod tests {
     }
 
     #[test]
-    fn hello_legacy_4_byte_decodes_with_none_spawn() {
-        // A short (rows+cols only) Hello matches `payload.len() >= 6`
-        // being false → spawn = None.
+    fn hello_rejects_truncated_4_byte_payload() {
         let payload = vec![0, 24, 0, 80];
-        let frame = decode_client(TAG_HELLO, payload).unwrap();
-        assert_eq!(
-            frame,
-            ClientFrame::Hello {
-                rows: 24,
-                cols: 80,
-                spawn: None,
-                env: Vec::new(),
-                focus_session: None,
-            }
-        );
+        assert!(decode_client(TAG_HELLO, payload).is_err());
     }
 }

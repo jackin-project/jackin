@@ -89,8 +89,17 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
 }
 
 fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
-    let title = InstanceManifest::read(&paths.data_dir.join(container_name))
-        .map_or_else(|_| container_name.to_string(), |m| m.role_display_name);
+    let title = match InstanceManifest::read(&paths.data_dir.join(container_name)) {
+        Ok(m) => m.role_display_name,
+        Err(e) => {
+            crate::debug_log!(
+                "attach",
+                "set_role_terminal_title: manifest read failed for {container_name}: {e:#}; \
+                 using container name as title",
+            );
+            container_name.to_string()
+        }
+    };
     crate::tui::set_terminal_title(&title);
 }
 

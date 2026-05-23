@@ -337,7 +337,13 @@ fn default_prefix() -> Option<u8> {
     if s.eq_ignore_ascii_case("none") {
         return None;
     }
-    parse_prefix(&s)
+    match parse_prefix(&s) {
+        Some(byte) => Some(byte),
+        None => {
+            eprintln!("[jackin-capsule] invalid JACKIN_PREFIX={s:?}; prefix mode disabled");
+            None
+        }
+    }
 }
 
 /// Palette key defaults to `Ctrl+\` (`0x1C`). Picked because raw-mode

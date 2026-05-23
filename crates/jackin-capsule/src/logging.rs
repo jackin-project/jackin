@@ -69,11 +69,17 @@ pub fn init() {
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
 
     let path = resolve_log_path();
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .ok();
+    let file = match OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(f) => Some(f),
+        Err(e) => {
+            eprintln!(
+                "[jackin-capsule] log file open failed for {}: {e} (errno={:?})",
+                path.display(),
+                e.raw_os_error()
+            );
+            None
+        }
+    };
     if let Some(mut f) = file.as_ref().and_then(|f| f.try_clone().ok()) {
         // Drop a startup marker so the operator can tell where one
         // multiplexer run ends and the next begins in a long-lived

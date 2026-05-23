@@ -74,6 +74,13 @@ pub struct Multiplexer {
     input_parser: InputParser,
     detach_requested: bool,
     attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    /// Latched true on the first `send_to_client` after `attached_out`
+    /// was set: once the receiver drops mid-attach, every subsequent
+    /// frame send into the same channel will also fail. Without this
+    /// latch the per-tick redraw + per-PTY output + per-OSC repaint
+    /// would write one `clog!` line each, swamping `multiplexer.log`.
+    /// Cleared whenever `attached_out` is reassigned (next attach).
+    attached_out_dead_logged: bool,
     /// JoinHandle of the spawned `handle_attach_client` task for the
     /// currently-attached client. Tracked so a takeover (second `Hello`)
     /// can abort the old task's reader loop — without the abort, the
@@ -309,6 +316,7 @@ impl Multiplexer {
             input_parser,
             detach_requested: false,
             attached_out: None,
+            attached_out_dead_logged: false,
             attached_task: None,
             last_tab_click: None,
             drag: None,
@@ -325,21 +333,19 @@ impl Multiplexer {
         }
     }
 
-    fn send_to_client(&self, frame: ServerFrame) {
+    fn send_to_client(&mut self, frame: ServerFrame) {
         if let Some(tx) = &self.attached_out
             && tx.send(encode_server(frame)).is_err()
+            && !self.attached_out_dead_logged
         {
-            // Receiver dropped between the take/clone and this send.
-            // Any subsequent send into the same channel will also fail
-            // until the next attach swaps `attached_out`; logging once
-            // here makes the symptom observable in `multiplexer.log`.
+            self.attached_out_dead_logged = true;
             crate::clog!(
                 "send_to_client: client receiver dropped; frame discarded (this attach is dead)"
             );
         }
     }
 
-    fn send_output(&self, bytes: Vec<u8>) {
+    fn send_output(&mut self, bytes: Vec<u8>) {
         self.send_to_client(ServerFrame::Output(bytes));
     }
 
@@ -1897,12 +1903,7 @@ impl Multiplexer {
             if !text.is_empty()
                 && let Some(tx) = &self.attached_out
             {
-                // OSC 52 with `c` selection (clipboard) and a
-                // base64-encoded payload. The outer terminal
-                // (Ghostty / iTerm2 / kitty / wezterm) writes the
-                // decoded bytes to the system clipboard.
-                let encoded = BASE64.encode(text.as_bytes());
-                let bytes = format!("\x1b]52;c;{}\x07", encoded).into_bytes();
+                let bytes = encode_osc52_clipboard_write(&text);
                 if tx.send(encode_server(ServerFrame::Output(bytes))).is_err() {
                     crate::clog!(
                         "OSC52 clipboard write: client receiver dropped; copy did not reach outer terminal"
@@ -2637,7 +2638,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                                     mux.spawn_session(Some(agent_slug.clone()), &env)
                                 {
                                     crate::clog!(
-                                        "attach: spawn_session for {agent_slug:?} failed: {err:?}"
+                                        "attach: spawn_session for {agent_slug:?} failed: {err:#}"
                                     );
                                     spawn_failure = Some(format!(
                                         "spawn agent {agent_slug:?} failed: {err:#}"
@@ -2649,13 +2650,13 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                                     "attach: rejected Hello.spawn.Agent {agent_slug:?}: {reason}"
                                 );
                                 spawn_failure =
-                                    Some(format!("rejected agent {agent_slug:?}: {reason:#}"));
+                                    Some(format!("rejected agent {agent_slug:?}: {reason}"));
                             }
                         }
                     }
                     Some(SpawnRequest::Shell) => {
                         if let Err(err) = mux.spawn_session(None, &env) {
-                            crate::clog!("attach: spawn_session (shell) failed: {err:?}");
+                            crate::clog!("attach: spawn_session (shell) failed: {err:#}");
                             spawn_failure = Some(format!("spawn shell failed: {err:#}"));
                         }
                     }
@@ -2696,6 +2697,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 while cmd_rx.try_recv().is_ok() {}
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 mux.attached_out = Some(new_out_tx.clone());
+                mux.attached_out_dead_logged = false;
                 let welcome = encode_server(ServerFrame::Welcome {
                     session_count: mux.sessions.len() as u32,
                 });
@@ -3486,11 +3488,6 @@ fn push_xterm_mouse_number(
     Some(())
 }
 
-/// OSC 52 clipboard-write sequence: `\x1b]52;c;<base64>\x07`. Targets
-/// the system clipboard (`c`); the BEL terminator is the form Ghostty,
-/// Kitty, iTerm2, and Alacritty all parse. Forwarded to the operator's
-/// outer terminal via `send_output` from the `CopyToClipboard` dialog
-/// action.
 /// Format a spawn-failure banner: save cursor → jump to row 1, col 1
 /// → bold red text → clear to end of line → restore cursor. The
 /// save/restore wrap prevents the banner from scrolling whichever
@@ -3499,6 +3496,11 @@ fn spawn_failure_banner(reason: &str) -> Vec<u8> {
     format!("\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8").into_bytes()
 }
 
+/// OSC 52 clipboard-write sequence: `\x1b]52;c;<base64>\x07`. Targets
+/// the system clipboard (`c`); the BEL terminator is the form Ghostty,
+/// Kitty, iTerm2, and Alacritty all parse. Forwarded to the operator's
+/// outer terminal via `send_output` from the `CopyToClipboard` dialog
+/// action.
 fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     let encoded = BASE64.encode(payload.as_bytes());
     let mut out = Vec::with_capacity(8 + encoded.len());
