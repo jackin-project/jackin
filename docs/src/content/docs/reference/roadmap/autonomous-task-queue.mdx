@@ -14,7 +14,7 @@ respect parallelism limits, recover gracefully on failure, and let the
 operator leave the console running overnight.
 
 This is the headline workflow that justifies the program. Without it, the
-program just makes jackin's existing surface nicer; with it, jackin'
+program just makes jackin' existing surface nicer; with it, jackin'
 becomes something an organization deploys instead of building their own.
 
 ## Why It Matters
@@ -60,13 +60,13 @@ limit, periodic re-scan, automatic dispatch when a slot frees.
 
 What multicode does that jackin' should *not* match: hardcoded "issue"
 vocabulary, GitHub-only sources, lack of per-task isolation (multicode
-agents share a workspace dir; jackin's worktree isolation gives every
+agents share a workspace dir; jackin' worktree isolation gives every
 queued task its own materialized branch).
 
 ## Recommended Shape
 
 A queue that's **per-workspace**, dispatches to **per-task isolated
-instances**, and uses jackin's existing primitives for everything except
+instances**, and uses jackin' existing primitives for everything except
 the dispatch loop itself.
 
 ### Config
@@ -90,7 +90,7 @@ manual_gates = ["publish_pr", "mark_ready", "request_review", "merge"]
 
 ### Mounts
 
-Every queue dispatch creates a per-task instance using **jackin's
+Every queue dispatch creates a per-task instance using **jackin'
 existing isolation primitives** — no new mount type. The workspace's
 mounts are inherited; a worktree-isolated mount becomes a per-instance
 materialized worktree exactly like manual `jackin load`. Each task

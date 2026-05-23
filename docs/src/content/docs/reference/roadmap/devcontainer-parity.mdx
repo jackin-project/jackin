@@ -10,7 +10,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 The upstream [Claude Code repository](https://github.com/anthropics/claude-code/tree/main/.devcontainer)
 ships a working VS Code devcontainer that runs Claude Code inside an isolated
-Docker environment. Its design predates jackin's, solves several problems
+Docker environment. Its design predates jackin', solves several problems
 jackin also has, and makes a few different choices that are worth comparing
 directly:
 
@@ -43,10 +43,10 @@ This page captures the comparison so those lessons aren't lost.
 - **jackin images are not usable as devcontainers.** Operators who prefer VS
   Code / Cursor / Codespaces for code navigation cannot point those tools at a
   jackin-generated image without authoring their own `devcontainer.json`.
-  Shipping (or generating) one would widen jackin's surface without changing
+  Shipping (or generating) one would widen jackin' surface without changing
   the runtime.
 - **The construct's `claude` user has blanket `NOPASSWD:ALL` sudo.** Upstream
-  restricts sudo to a single script (`init-firewall.sh`). jackin's model is
+  restricts sudo to a single script (`init-firewall.sh`). jackin' model is
   intentionally more permissive because the agent runs under
   `--dangerously-skip-permissions`, but scoping sudo is still worth a design
   pass — especially if a firewall-init hook lands.
@@ -187,11 +187,11 @@ Definition, debugging, or extension auto-install.
    only for one-time initialization, an extensions list curated per agent.
 2. **Ship a static reference `devcontainer.json` in the docs.** Operators
    copy it into their project. Zero product change, lowest cost. Loses
-   coupling to jackin's actual runtime config.
+   coupling to jackin' actual runtime config.
 3. **Skip IDE integration.** jackin stays a terminal-first product. Users
    who want IDE integration use the standalone upstream devcontainer.
 
-**Recommendation**: Option 1 is the most aligned with jackin's positioning
+**Recommendation**: Option 1 is the most aligned with jackin' positioning
 as a managed runtime, but it is not urgent. Option 2 is a cheap way to
 validate demand first.
 
@@ -206,7 +206,7 @@ against devcontainer `waitFor` semantics, not only generated fields.
 ### Finding 3 — Scope the `claude` user's sudo
 
 **Gap**: The `claude` user has `NOPASSWD:ALL`. Upstream scopes sudo to one
-explicit command (`/usr/local/bin/init-firewall.sh`). jackin's choice is
+explicit command (`/usr/local/bin/init-firewall.sh`). jackin' choice is
 defensible because the agent runs under `--dangerously-skip-permissions` and
 is already free to do anything inside the container — but if Finding 1
 lands, a firewall-init script is a new reason to allow sudo for one
@@ -214,7 +214,7 @@ specific command rather than globally.
 
 **Options**:
 
-1. **Leave as-is.** Tracks jackin's "agent is fully autonomous inside the
+1. **Leave as-is.** Tracks jackin' "agent is fully autonomous inside the
    box" model.
 2. **Scope sudo to a curated allowlist** (`apt-get`, `init-firewall.sh`,
    and a small handful of others). Breaks agents that expect to install
@@ -257,7 +257,7 @@ None of these are gating; they're quality-of-life notes.
 - **Deliberate omissions**: upstream installs none of `tirith`, `shellfirm`,
   `ripgrep`, `fd-find`, `yq`, `git-lfs`, `tree`, Docker CLI, `mise`,
   GitHub CLI. jackin adds all of these on purpose. No change recommended —
-  they are part of what makes jackin's baseline more useful than a bare
+  they are part of what makes jackin' baseline more useful than a bare
   devcontainer.
 
 ### Finding 6 — VS Code extension kit
@@ -271,8 +271,8 @@ extensions list becomes an obvious payload for it.
 
 ## Non-Goals
 
-- Replacing jackin's construct/derived-layer model with a monolithic Node-
-  based image. The split is one of jackin's core advantages.
+- Replacing jackin' construct/derived-layer model with a monolithic Node-
+  based image. The split is one of jackin' core advantages.
 - Bundling IDE-specific logic into the core CLI beyond a generated
   `devcontainer.json`.
 - Claiming parity with Docker Sandboxes' credential-injection model. That

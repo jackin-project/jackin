@@ -8,7 +8,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-Jackin's current isolation model operates at two coarse granularities:
+jackin' current isolation model operates at two coarse granularities:
 
 - **Git-level isolation** (shipped): `shared | worktree | clone` modes control how each mount is materialized per agent session. This governs filesystem branching, not command-level access control.
 - **Runtime-level isolation** (deferred): `dind | microvm` modes determine which compute boundary the entire workspace runs inside. This governs the VM or container boundary, not individual operations inside it.
@@ -68,13 +68,13 @@ Zerobox includes a snapshot module (Blake3 + Merkle trees + LZ4 compression) tha
 
 Zerobox is in early active development (v0.2.x as of May 2026, roughly 580 GitHub stars, daily release cadence). It is not yet production-stable. APIs may change. The Rust SDK (`zerobox` crate), TypeScript SDK (npm `zerobox`), and Python SDK (PyPI `zerobox`) are all available.
 
-Given the pre-1.0 state, the right posture for Jackin is to track zerobox and treat it as a reference implementation that defines the architecture — not to depend on it as a pinned production dependency today.
+Given the pre-1.0 state, the right posture for jackin' is to track zerobox and treat it as a reference implementation that defines the architecture — not to depend on it as a pinned production dependency today.
 
 ## Codex CLI Sandbox Mode
 
 OpenAI's [Codex CLI](https://github.com/openai/codex) runs each shell command it issues through a process sandbox in its default `suggest` mode and in `full-auto` mode. The underlying runtime is zerobox: when Codex CLI tells the user it is running a command in "sandbox mode", it is invoking zerobox with a policy derived from the workspace's declared network allow-list and the set of paths Codex is currently working in.
 
-This is the production pattern worth understanding for Jackin:
+This is the production pattern worth understanding for jackin':
 
 - The *agent entrypoint* (Claude Code, Codex, Amp) runs with normal container permissions.
 - Each *tool call* (shell command, file write, subprocess) is wrapped in a process sandbox scoped to the minimal access that operation requires.
@@ -98,17 +98,17 @@ The two improvements address different attack surfaces:
 
 Process sandboxing is the layer that controls *what individual operations can do inside the sandbox*, complementing the layer that controls *what the sandbox can see of the host*.
 
-## Integration Shape for Jackin
+## Integration Shape for jackin'
 
-This section captures early thinking on how process-level sandboxing could surface in Jackin. It is not a committed design.
+This section captures early thinking on how process-level sandboxing could surface in jackin'. It is not a committed design.
 
 ### Entrypoint wrapping
 
-The construct image and runtime entrypoint could install a sandboxing shim and configure the agent runtime to route shell executions through it. For Claude Code, this aligns with its `--dangerously-skip-permissions` full-auto model: the agent still runs without interactive permission prompts, but each shell command it issues is constrained by a Jackin-managed sandbox policy rather than running unrestricted.
+The construct image and runtime entrypoint could install a sandboxing shim and configure the agent runtime to route shell executions through it. For Claude Code, this aligns with its `--dangerously-skip-permissions` full-auto model: the agent still runs without interactive permission prompts, but each shell command it issues is constrained by a jackin'-managed sandbox policy rather than running unrestricted.
 
 ### Policy derivation
 
-Jackin already knows, per workspace mount, which host paths are shared and with what intent. A natural extension is to derive a per-mount process-sandbox policy from the same mount configuration:
+jackin' already knows, per workspace mount, which host paths are shared and with what intent. A natural extension is to derive a per-mount process-sandbox policy from the same mount configuration:
 
 ```toml
 [[mounts]]
@@ -126,7 +126,7 @@ The sandbox policy for any command running against these mounts would be derived
 
 ### Credential proxy
 
-Zerobox's built-in network proxy implements the same credential injection architecture that Docker Sandboxes uses: secrets never enter the sandboxed process; the proxy substitutes them only for approved host names. This is a direct implementation path for the credential proxy item in the security roadmap. Rather than building a standalone proxy, Jackin could delegate this to the process sandbox layer for commands that run inside the agent session.
+Zerobox's built-in network proxy implements the same credential injection architecture that Docker Sandboxes uses: secrets never enter the sandboxed process; the proxy substitutes them only for approved host names. This is a direct implementation path for the credential proxy item in the security roadmap. Rather than building a standalone proxy, jackin' could delegate this to the process sandbox layer for commands that run inside the agent session.
 
 ### Sandboxed DinD commands
 
@@ -154,12 +154,12 @@ WASI (WebAssembly System Interface) provides capability-based isolation for port
 
 ### Custom seccomp profiles
 
-The DinD container already applies a default seccomp profile. Jackin could tighten this by supplying a custom profile tuned to what agent workloads actually need. This is a weaker and more brittle mechanism than process sandboxing: it restricts syscalls globally for the whole container rather than per-operation, and maintaining correct seccomp profiles for diverse agent toolchains is operationally expensive.
+The DinD container already applies a default seccomp profile. jackin' could tighten this by supplying a custom profile tuned to what agent workloads actually need. This is a weaker and more brittle mechanism than process sandboxing: it restricts syscalls globally for the whole container rather than per-operation, and maintaining correct seccomp profiles for diverse agent toolchains is operationally expensive.
 
 ## Open Questions
 
 1. **Which zerobox integration surface?** Shell-out to the `zerobox` CLI, embed the Rust crate directly, or wait for a more mature API surface before committing to either.
-2. **Policy authoring burden.** Who specifies which paths and hosts each agent operation may access? Should Jackin derive this from mount configuration automatically, expose it in `jackin.role.toml`, or leave it to a default-open policy with operator override?
+2. **Policy authoring burden.** Who specifies which paths and hosts each agent operation may access? Should jackin' derive this from mount configuration automatically, expose it in `jackin.role.toml`, or leave it to a default-open policy with operator override?
 3. **Interaction with Bubblewrap inside the DinD container.** DinD currently runs a privileged container. Bubblewrap requires unprivileged user namespaces, which may be restricted by AppArmor on some hosts. Compatibility testing is needed before committing to the Linux mechanism.
 4. **Performance at scale.** Zerobox reports 10 ms overhead per invocation. An agent making 500 tool calls in a session adds 5 seconds of overhead. At 1000 calls, 10 seconds. Whether this is acceptable depends on the operation mix.
 5. **Snapshot policy.** Should snapshots be taken before every command, only before commands classified as risky, or only on explicit operator opt-in?

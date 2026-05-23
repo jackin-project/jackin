@@ -17,14 +17,14 @@ they do not fully answer recovery for every agent session:
 - future autonomous queues may run unattended long enough that "just inspect
   the diff" is not enough
 
-Jackin needs a recovery story that is explicit, scoped, and opt-in. It should
+jackin' needs a recovery story that is explicit, scoped, and opt-in. It should
 not become a silent host backup system.
 
 ## Inspiration
 
 Hazmat takes a pre-session snapshot and exposes restore/diff workflows. Its
 verification docs also model backup/restore ordering and reversibility
-invariants. That is stronger than jackin needs for a first pass, but the
+invariants. That is stronger than jackin' needs for a first pass, but the
 principle is useful: recovery behavior should be visible before launch and
 should not rely on the agent behaving.
 
@@ -68,7 +68,7 @@ Launch output must print:
 - Add opt-in snapshots for non-git mounts and dirty working trees.
 - Use integration-provided excludes from
   [stack integration contracts](/reference/roadmap/stack-integration-contracts/).
-- Store snapshots under jackin's data directory, not inside the project.
+- Store snapshots under jackin' data directory, not inside the project.
 - Add diff/list commands before restore.
 
 ### Phase 3 — State snapshots
@@ -102,7 +102,7 @@ The restore command should refuse to run while the instance is active. It
 should print the exact host paths it will mutate and require an explicit flag
 or interactive confirmation.
 
-Before any destructive restore, jackin should snapshot the current state of the
+Before any destructive restore, jackin' should snapshot the current state of the
 paths it is about to overwrite. That emergency snapshot is not a replacement
 for a real backup system, but it preserves a last-known state if the operator
 selected the wrong instance, the restore target changed since launch, or the
@@ -110,7 +110,7 @@ snapshot excludes were too broad.
 
 ## Host-side effects
 
-Snapshots write to jackin's data directory. Restore mutates host workspace
+Snapshots write to jackin' data directory. Restore mutates host workspace
 paths and must therefore be opt-in, visible in the session contract, and
 guarded by interactive confirmation or an explicit destructive flag.
 

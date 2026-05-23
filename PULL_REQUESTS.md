@@ -135,7 +135,7 @@ For non-trivial code changes, structure the PR's "Verify locally" section by int
 
 Do not add generic commands that do not materially validate the PR. In particular, do not include `git diff --check` unless the PR is specifically about whitespace, patch hygiene, generated diffs, or another issue that command is meant to catch.
 
-For console/TUI changes that can be manually verified in jackin itself, include the command that opens the changed surface and then list the keys/clicks the operator should walk. Prefer:
+For console/TUI changes that can be manually verified in jackin' itself, include the command that opens the changed surface and then list the keys/clicks the operator should walk. Prefer:
 
 ```sh
 cargo run --bin jackin -- console --debug
@@ -242,9 +242,9 @@ Do not flag items listed under "Accepted exceptions" on the [Open review finding
 
 The catalog itself is a forward-looking backlog — consult it on demand when a review task calls for it. It is not operational context and should not be loaded at session start.
 
-### Always check the PR against jackin's design principles
+### Always check the PR against the jackin' design principles
 
-Every PR review must explicitly verify the change against jackin's [design principles](docs/src/content/docs/getting-started/design-principles.mdx). Read that page before producing review output. If a change appears to contradict any principle (most commonly: *never mutate the host machine silently*, *operator-only configuration boundaries*, *container is the trust boundary, not the prompt*), flag it loudly in the review with a specific reference to which principle is at risk.
+Every PR review must explicitly verify the change against the jackin' [design principles](docs/src/content/docs/getting-started/design-principles.mdx). Read that page before producing review output. If a change appears to contradict any principle (most commonly: *never mutate the host machine silently*, *operator-only configuration boundaries*, *container is the trust boundary, not the prompt*), flag it loudly in the review with a specific reference to which principle is at risk.
 
 Don't silently let a principle violation pass because the diff is small or the operator seemed to want the shortcut. The whole point of the principles is that operators rely on them across every feature — a quietly-merged exception erodes that contract for every future PR.
 

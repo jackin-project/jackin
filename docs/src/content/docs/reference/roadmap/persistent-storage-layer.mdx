@@ -192,7 +192,7 @@ observing real footprint.
 
 ## Open Questions
 
-- **`sqlx` vs `rusqlite`.** `sqlx` is async-native and matches jackin's
+- **`sqlx` vs `rusqlite`.** `sqlx` is async-native and matches jackin'
   Tokio runtime, but adds a meaningful build-time cost (offline mode
   with macro-checked queries). `rusqlite` is simpler and battle-tested
   but blocking — needs `spawn_blocking` discipline. Recommended:

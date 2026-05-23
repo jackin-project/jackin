@@ -1,10 +1,10 @@
 ---
-title: "Jackin Capsule: Multiplexer Design Rules"
+title: "jackin' Capsule: Multiplexer Design Rules"
 ---
 
 **Rule zero: the agent's experience is inviolable.**
 
-The operator chose their agent (Claude Code, Codex, Amp, etc.) for its UX. The Jackin Capsule multiplexer is a thin layer of glass in front of that UX — transparent in every direction, with zero opinions about what happens inside.
+The operator chose their agent (Claude Code, Codex, Amp, etc.) for its UX. The jackin' Capsule multiplexer is a thin layer of glass in front of that UX — transparent in every direction, with zero opinions about what happens inside.
 
 Every feature, bug fix, and refactor must pass this test before it ships: **does the agent work exactly as it would in a bare terminal?** If the answer is anything other than an unqualified yes, the feature is incomplete.
 
@@ -38,12 +38,12 @@ Every capability the base image supports must reach the agent inside the pane.
 - Enable **SGR mouse** (`\e[?1006h`) and **any-event tracking** (`\e[?1003h`) on the host terminal when a client connects.
 - Forward mouse events to the active pane when that pane's program has enabled mouse reporting. Events that land on multiplexer UI (top chrome rows, pane borders, dialogs) are handled by the multiplexer first.
 - Preserve the mouse protocol the agent expects on the PTY side: if the agent sets SGR mouse, forward SGR; if it uses default xterm/X10 or UTF-8 mouse encoding, re-encode into that form. The client always keeps the outer terminal in SGR any-event mode so the multiplexer can parse every event, then `vt100::Screen::mouse_protocol_mode()` and `mouse_protocol_encoding()` decide the per-pane PTY encoding.
-- **Mouse button 1 (left click) on pane content reaches the agent only after the pane opted into mouse reporting.** When a pane has not opted in (plain shell, prompt, post-exit output), a left drag starts jackin's text-selection path instead of leaking raw mouse escape bytes into the prompt.
+- **Mouse button 1 (left click) on pane content reaches the agent only after the pane opted into mouse reporting.** When a pane has not opted in (plain shell, prompt, post-exit output), a left drag starts jackin' text-selection path instead of leaking raw mouse escape bytes into the prompt.
 
 ### Clipboard and OSC 52
 
 - Pass OSC 52 sequences from the focused pane to the host terminal unmodified unless the operator disabled `JACKIN_OSC52`. This enables agent-initiated clipboard writes to reach the operator's clipboard.
-- Jackin-owned copy actions such as the container-info dialog's Container ID copy target and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
+- jackin'-owned copy actions such as the container-info dialog's Container ID copy target and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
 - Never intercept or log clipboard content.
 
 ### Pointer shape
@@ -75,8 +75,8 @@ Every capability the base image supports must reach the agent inside the pane.
 
 ### Scrollback
 
-- Each pane keeps bounded primary-screen scrollback through `vt100`. Alternate-screen TUIs own their own scrollback and jackin does not synthesize history for them. Mouse wheel on a pane scrolls jackin's primary-screen view unless that pane opted into mouse reporting.
-- Plain `Ctrl+L` is pane input and must pass through unchanged. Jackin-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin's `vt100` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
+- Each pane keeps bounded primary-screen scrollback through `vt100`. Alternate-screen TUIs own their own scrollback and jackin' does not synthesize history for them. Mouse wheel on a pane scrolls jackin' primary-screen view unless that pane opted into mouse reporting.
+- Plain `Ctrl+L` is pane input and must pass through unchanged. jackin'-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin' `vt100` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
 
 ### Dirty output
 

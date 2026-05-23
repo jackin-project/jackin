@@ -251,7 +251,7 @@ That gives a meaningful security improvement without redesigning the whole build
 
 ### What Should Run Inside The VM
 
-The cleanest microVM model for jackin is not "replace Docker with a VM". It is:
+The cleanest microVM model for jackin' is not "replace Docker with a VM". It is:
 
 - run the agent inside the VM
 - run a private Docker-compatible engine inside the same VM
@@ -265,7 +265,7 @@ That means the VM should contain at least:
 - a Docker-compatible daemon such as `dockerd` or possibly `containerd` + compatibility tooling
 - guest-local writable storage for engine state
 
-This is the closest match to Docker Sandboxes' architecture while still reusing jackin's current agent image model.
+This is the closest match to Docker Sandboxes' architecture while still reusing jackin' current agent image model.
 
 ### Why Existing Agent Dockerfiles Still Matter
 
@@ -820,9 +820,9 @@ As of v2.1.1 the filesystem-scope gap that previously distinguished OrbStack fro
 
 #### Filesystem: Default Machines Still Auto-Mount `/Users`
 
-The default (non-isolated) OrbStack machine mode still auto-mounts the macOS `/Users` directory via VirtioFS. For jackin's use case this is not the right default: agents should not see every project on the host just because they happen to boot in a VM.
+The default (non-isolated) OrbStack machine mode still auto-mounts the macOS `/Users` directory via VirtioFS. For jackin' use case this is not the right default: agents should not see every project on the host just because they happen to boot in a VM.
 
-The practical resolution, as of April 2026, is to **always create jackin's machines with `--isolated`** and then selectively share only the active workspace:
+The practical resolution, as of April 2026, is to **always create jackin' machines with `--isolated`** and then selectively share only the active workspace:
 
 - v2.1.0 (April 19, 2026): "Isolated machines without filesystem integration" — an isolated machine has no automatic `/Users` mount and the host filesystem is not visible
 - v2.1.1 (April 20, 2026): "Selective file sharing mounts in isolated machines" — inside an isolated machine, specific host paths can be declared as shares
@@ -951,11 +951,11 @@ Every real user consumes libkrun through a wrapper that fills those gaps. The wr
 | `muvm` | Minimal userspace microVM launcher | Desktop Linux apps inside a VM |
 | `smolvm` | Portable, OCI-consuming VM runtime with packaged `.smolmachine` files | General-purpose portable VMs |
 
-For jackin the candidate wrappers reduce to `smolvm` or a jackin-specific wrapper built directly on the libkrun C API. `crun --krun` is tied to Podman's container workflow, which jackin does not use. `krunvm` and `muvm` are closer to developer conveniences than runtimes jackin would embed. `krunkit` solves a different problem.
+For jackin the candidate wrappers reduce to `smolvm` or a jackin-specific wrapper built directly on the libkrun C API. `crun --krun` is tied to Podman's container workflow, which jackin' does not use. `krunvm` and `muvm` are closer to developer conveniences than runtimes jackin would embed. `krunkit` solves a different problem.
 
 ### smolvm as the Example libkrun Wrapper
 
-[smolvm](https://github.com/smol-machines/smolvm) from the smol-machines organization is the closest off-the-shelf analog to what jackin's `microvm` backend would need to do. It sits on top of libkrun (plus libkrun's custom kernel `libkrunfw`), adds an OCI image pipeline, and wraps the whole thing in a CLI.
+[smolvm](https://github.com/smol-machines/smolvm) from the smol-machines organization is the closest off-the-shelf analog to what jackin' `microvm` backend would need to do. It sits on top of libkrun (plus libkrun's custom kernel `libkrunfw`), adds an OCI image pipeline, and wraps the whole thing in a CLI.
 
 Relevant properties:
 
@@ -970,13 +970,13 @@ Relevant properties:
 - **Language**: Rust (83%), shell (15%), TypeScript (2%)
 - **Maintenance**: latest release `v0.5.19` on April 18, 2026; 41 releases; 515 commits on main; 2.3k stars
 
-smolvm is explicitly positioned as a runtime, not a platform — "one CLI, OCI in, VM out". That scope alignment matters: jackin can shell out to smolvm for the microVM plumbing and keep all the agent/workspace/plugin concepts in jackin's own layer.
+smolvm is explicitly positioned as a runtime, not a platform — "one CLI, OCI in, VM out". That scope alignment matters: jackin' can shell out to smolvm for the microVM plumbing and keep all the agent/workspace/plugin concepts in its own layer.
 
 ### Three Integration Options for jackin
 
 #### Option A: Shell out to `smolvm`
 
-jackin treats `smolvm` as an external CLI, similar to how the current implementation shells out to `docker`.
+jackin' treats `smolvm` as an external CLI, similar to how the current implementation shells out to `docker`.
 
 ```rust
 // pseudocode
@@ -1012,7 +1012,7 @@ jackin links against `libkrun` and `libkrunfw` and drives the VM lifecycle itsel
 Pros:
 
 - full control over guest boot, device configuration, TSI policy, and PTY wiring
-- can align the sandbox model exactly with jackin's agent/workspace contract
+- can align the sandbox model exactly with jackin' agent/workspace contract
 - removes the smolvm CLI dependency and ships as a single Rust binary
 
 Cons:
@@ -1068,10 +1068,10 @@ For the first phase, option 3 is acceptable.
 
 ### Why the Landscape Actually Shows Two Viable Paths
 
-The honest reading of the April 2026 landscape for jackin is that **OrbStack and libkrun-based wrappers are not competing for the same slot** — they are two different answers to two different questions:
+The honest reading of the April 2026 landscape for jackin' is that **OrbStack and libkrun-based wrappers are not competing for the same slot** — they are two different answers to two different questions:
 
 - **If the goal is "give Mac users a stronger local sandbox tomorrow, with minimal jackin engineering":** OrbStack isolated machines. Production-ready, the security gap that previously ruled it out is closed (v2.1.0 / v2.1.1), integration is shell-out to `orb`, and users who already have OrbStack installed get it for free.
-- **If the goal is "give every user on every platform a stronger sandbox that jackin owns end-to-end":** libkrun via smolvm, then eventually directly. Open source, Apache 2.0, cross-platform, same language as jackin, and aligned with the broader container/VM ecosystem (crun, Podman, Buildah) rather than a single commercial product.
+- **If the goal is "give every user on every platform a stronger sandbox that jackin' owns end-to-end":** libkrun via smolvm, then eventually directly. Open source, Apache 2.0, cross-platform, same language as jackin, and aligned with the broader container/VM ecosystem (crun, Podman, Buildah) rather than a single commercial product.
 
 Those two paths can coexist in the backend abstraction. The `microvm` user-facing mode can route to `orbstack` on macOS hosts that have it, and to `smolvm` on Linux and on macOS hosts that don't. Users pick the mode; jackin picks the provider.
 
@@ -1128,9 +1128,9 @@ Both `microvm` provider paths close the two biggest DinD gaps (shared kernel, pr
 
 ### Open Questions
 
-1. **Image transfer mechanics for smolvm.** Is the cleanest path a local OCI registry (jackin runs one on the host for VMs to pull from) or docker-archive + side-channel import? A local registry is simpler for users but adds a background service.
+1. **Image transfer mechanics for smolvm.** Is the cleanest path a local OCI registry (jackin' runs one on the host for VMs to pull from) or docker-archive + side-channel import? A local registry is simpler for users but adds a background service.
 2. **Interactive attach semantics.** smolvm's attach/exec behavior needs to be validated for Claude's interactive session — specifically Ctrl+P/Ctrl+Q detach, window resize forwarding, and reconnect.
-3. **macOS host matrix.** smolvm requires macOS 11+; libkrun's HVF backend requires macOS 14+. The effective minimum for jackin's libkrun track is macOS 14+.
+3. **macOS host matrix.** smolvm requires macOS 11+; libkrun's HVF backend requires macOS 14+. The effective minimum for jackin' libkrun track is macOS 14+.
 4. **`libkrunfw` distribution.** The custom guest kernel ships as a shared library. Packaging this for end users (Homebrew tap? bundled with jackin?) is an open question for direct-integration paths.
 5. **Outer-DinD agents.** Some current agent images rely on nested Docker. Is the answer to route those to `dind` backend only, or to invest in nested dockerd inside the microVM? First-phase recommendation: route them to `dind`.
 

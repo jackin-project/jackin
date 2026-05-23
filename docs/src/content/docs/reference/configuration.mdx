@@ -6,7 +6,7 @@ import { Aside } from '@astrojs/starlight/components'
 
 <Aside type="note">
 This page is an **internals reference** for contributors and operators
-who want to read, audit, or hand-edit jackin's config file directly —
+who want to read, audit, or hand-edit jackin' config file directly —
 typically while debugging or shipping a fix. Day-to-day operator work
 goes through `jackin workspace …`, `jackin config …`, and the
 operator console, none of which require touching this file. Start
@@ -30,7 +30,7 @@ Three environment variables redirect these default storage roots without touchin
 | Variable | Default | Overrides |
 |---|---|---|
 | `JACKIN_CONFIG_DIR` | `~/.config/jackin` | Config root — `config.toml`, `workspaces/` |
-| `JACKIN_HOME_DIR` | `~/.jackin` | Jackin home root — `data/`, `roles/`, `cache/` |
+| `JACKIN_HOME_DIR` | `~/.jackin` | jackin' home root — `data/`, `roles/`, `cache/` |
 | `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | Override the construct base image used at derived-build time. Role Dockerfiles always reference the canonical name; this substitutes it during `docker build`. Set to `jackin-local/construct:trixie` after `just construct-build-local` to test against a local construct build. See [The Construct Image](/developing/construct-image/) for the full workflow. |
 
 Setting `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` to fresh directories before running jackin means every command reads and writes only those directories, leaving the live operator state completely untouched. Unset behavior is identical to not setting the variables — jackin falls back to the defaults above.

@@ -13,7 +13,7 @@ If a proposed implementation conflicts with a rule here, fix the implementation,
 
 ## Navigation conventions
 
-Jackin's TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else.
+jackin' TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else.
 
 ### Key roles
 
@@ -69,7 +69,7 @@ This rule applies to every TUI surface: list view, workspace editor (all tabs), 
 
 **`Enter`** is the key for **action** semantics (activate a button, open a dialog, confirm a choice, navigate into detail, submit a form). It is also the key for shortcut-letter bindings (`Y` yes, `N` no, `S` save, `D` discard, etc.) on confirmation dialogs.
 
-Binding both `Space` and `Enter` to the same toggle action is a W3C violation — Space is sufficient and Enter would collide with its role as the action key. Binding both to a button widget is acceptable (W3C requires both on standard buttons), but jackin's button-strip widgets use letter shortcuts + Enter to avoid this; don't add Space to them.
+Binding both `Space` and `Enter` to the same toggle action is a W3C violation — Space is sufficient and Enter would collide with its role as the action key. Binding both to a button widget is acceptable (W3C requires both on standard buttons), but jackin' button-strip widgets use letter shortcuts + Enter to avoid this; don't add Space to them.
 
 Summary:
 - Toggle row (keep_awake, git_pull, trusted, allowed role): `Space` only.

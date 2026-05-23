@@ -30,7 +30,7 @@ Please run /login · API Error: 401 {"type":"error","error":{"type":"authenticat
 
 ## Why It Matters
 
-- jackin's value proposition is smooth operator UX when the host is already set up
+- jackin' value proposition is smooth operator UX when the host is already set up
 - auth that works today but fails tomorrow is worse than auth that is explicit from the start
 - operators often keep multiple agent sessions open across projects, workspaces, and clone containers
 - a copied OAuth session is not a stable runtime contract when refresh tokens rotate independently
@@ -50,13 +50,13 @@ Claude Code's own authentication model also matters here. The official docs supp
 - `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`
 - API-key based terminal auth (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper`)
 
-That means jackin is not limited to copying the default `/login` credential store. There is room for a more runtime-friendly auth contract.
+That means jackin' is not limited to copying the default `/login` credential store. There is room for a more runtime-friendly auth contract.
 
 ## Goal
 
 Keep the current convenience goal:
 
-1. If the operator is already authenticated locally, jackin should be able to start an agent without requiring manual `/login` inside the container.
+1. If the operator is already authenticated locally, jackin' should be able to start an agent without requiring manual `/login` inside the container.
 2. The chosen auth mechanism should remain reliable across restarts and normal day-to-day usage.
 3. The operator should understand which mode they are using and what tradeoffs it carries.
 4. Multiple active jackin sessions should degrade gracefully rather than surprising the operator with intermittent 401s.
@@ -64,7 +64,7 @@ Keep the current convenience goal:
 ## Non-Goals
 
 - Replacing Claude Code's upstream authentication implementation
-- Claiming jackin can fully prevent OAuth refresh races inside Claude Code itself
+- Claiming jackin' can fully prevent OAuth refresh races inside Claude Code itself
 - Building a general secrets platform in this design pass
 - Solving auth for non-Claude runtimes before the Claude-specific path is made robust
 
@@ -222,7 +222,7 @@ Launch output should clearly state the active auth mode, for example:
 - `claude auth: long-lived OAuth token`
 - `claude auth: none (manual /login required)`
 
-If multiple containers are active with copied session auth, jackin should say so directly.
+If multiple containers are active with copied session auth, jackin' should say so directly.
 
 ## Security Notes
 
@@ -235,7 +235,7 @@ Requirements:
 - avoid persisting it into world-readable files
 - make revocation and rotation straightforward
 
-This proposal is about a better auth primitive, not about relaxing jackin's security stance.
+This proposal is about a better auth primitive, not about relaxing jackin' security stance.
 
 ## Implementation Outline
 

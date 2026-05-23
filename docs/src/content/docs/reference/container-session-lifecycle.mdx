@@ -1,12 +1,12 @@
 ---
 title: Container Session Lifecycle
-description: Technical reference for how jackin creates, manages, and tears down in-container sessions
+description: Technical reference for how jackin' creates, manages, and tears down in-container sessions
 ---
 import RepoFile from '../../../components/RepoFile.astro'
 
 ## Overview
 
-Every role container runs the Jackin Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/run/jackin/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /usr/local/bin/jackin-capsule` client. See [Jackin Capsule](/reference/jackin-capsule/) for the control-plane design and wire protocol.
+Every role container runs the jackin' Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/run/jackin/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /usr/local/bin/jackin-capsule` client. See [jackin' Capsule](/reference/jackin-capsule/) for the control-plane design and wire protocol.
 
 There are two session types:
 
@@ -22,8 +22,8 @@ There are two session types:
 When `jackin load` provisions a new instance, the container launch happens in two steps:
 
 1. `docker run -d ... <image> <agent>` starts the container detached. The image entrypoint is `/usr/local/bin/jackin-capsule`; the trailing `<agent>` argv tells PID 1 which initial agent tab to spawn. It is not exported as a container environment variable.
-2. jackin checks that PID 1 did not exit before attach. If it exited, jackin captures the last 40 lines of container logs and surfaces an actionable error.
-3. jackin runs `docker exec -it <container> /usr/local/bin/jackin-capsule`. The client connects to the daemon socket and blocks the operator terminal for the duration of the attach.
+2. The launcher checks that PID 1 did not exit before attach. If it exited, the launcher captures the last 40 lines of container logs and surfaces an actionable error.
+3. The launcher runs `docker exec -it <container> /usr/local/bin/jackin-capsule`. The client connects to the daemon socket and blocks the operator terminal for the duration of the attach.
 
 Implementation: <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`, `diagnose_premature_exit`) and <RepoFile path="crates/jackin-capsule/src/main.rs" /> (`resolve_initial_agent`).
 
@@ -41,7 +41,7 @@ Implementation: <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_
 
 ## Session Inventory
 
-jackin queries the daemon through its socket by executing:
+jackin' queries the daemon through its socket by executing:
 
 ```bash
 /usr/local/bin/jackin-capsule status
@@ -65,13 +65,15 @@ Implementation: <RepoFile path="src/runtime/attach.rs" /> (`inspect_agent_sessio
    - `docker network rm <network>`
 5. Keep-awake state is reconciled after the managed containers are gone.
 
+The palette **Exit** command deliberately drives this same shutdown shape. It asks for confirmation, terminates every live pane, lets PID 1 exit once the session set is empty, and then the reconnect/attach finalizer removes the Docker resources with the normal eject cleanup path.
+
 ### Detach
 
-When the operator detaches or the terminal closes while sessions are still alive, the attach client exits but PID 1 and the session PTYs continue running. `jackin hardline` can reconnect to the daemon later. The DinD sidecar, network, and certs volume remain while the role container is preserved.
+When the operator detaches or the terminal closes while sessions are still alive, the attach client exits but PID 1 and the session PTYs continue running. `jackin hardline` can reconnect to the daemon later. The DinD sidecar, network, and certs volume remain while the role container is preserved. This is separate from **Exit**: detach is the keep-running path, while **Exit** is the stop-and-clean-up path.
 
 ### Crash Or Forced Stop
 
-If the role container exits non-zero or is OOM-killed, jackin records crash state and removes the DinD sidecar, network, and certs volume. If Docker sends `SIGTERM` to the role container, PID 1 shuts down the daemon and sessions as the container namespace exits.
+If the role container exits non-zero or is OOM-killed, jackin' records crash state and removes the DinD sidecar, network, and certs volume. If Docker sends `SIGTERM` to the role container, PID 1 shuts down the daemon and sessions as the container namespace exits.
 
 ## What Persists Across Session Exit
 

@@ -52,7 +52,7 @@ For pushing to GitHub from inside the container, jackin' uses HTTPS plus the for
 
 ## Host machine is never modified
 
-Authentication forwarding is one of the places where jackin's repo-wide *[never mutate the host](/getting-started/design-principles/#never-mutate-the-host-machine-silently)* rule matters most. Forwarded credentials are read from your host but never written back; in-container token rotations stay inside the container; HTTPS rewrites and credential-helper wiring happen inside the container's own git config, never in your `~/.gitconfig`. See the design-principles page for the full rule and audit; this group's per-axis pages call out the rule again only where it shapes a specific feature.
+Authentication forwarding is one of the places where jackin' repo-wide *[never mutate the host](/getting-started/design-principles/#never-mutate-the-host-machine-silently)* rule matters most. Forwarded credentials are read from your host but never written back; in-container token rotations stay inside the container; HTTPS rewrites and credential-helper wiring happen inside the container's own git config, never in your `~/.gitconfig`. See the design-principles page for the full rule and audit; this group's per-axis pages call out the rule again only where it shapes a specific feature.
 
 ## See also
 

@@ -18,7 +18,7 @@ Every published role image must carry two OCI labels that jackin reads at launch
 | `jackin.role_git_sha` | The git commit SHA of the role repo at build time | Version display and staleness tracking |
 
 <Aside type="caution">
-If either label is missing or set to `unknown`, jackin treats the image as built without version tracking. Staleness warnings are suppressed — jackin cannot detect that the published image is behind. The image still loads and runs, but the operator loses visibility into whether they are running a stale agent.
+If either label is missing or set to `unknown`, jackin' treats the image as built without version tracking. Staleness warnings are suppressed — jackin' cannot detect that the published image is behind. The image still loads and runs, but the operator loses visibility into whether they are running a stale agent.
 </Aside>
 
 ## Using the provided workflow (recommended)
@@ -198,7 +198,7 @@ jobs:
 </TabItem>
 </Tabs>
 
-**jackin must be able to pull the image at launch time.** If you publish to a private registry, the credentials must be available in the operator's Docker environment before running `jackin load` or `jackin console`. Configure Docker credentials on the operator's machine using `docker login <registry>` or a credential helper.
+**jackin' must be able to pull the image at launch time.** If you publish to a private registry, the credentials must be available in the operator's Docker environment before running `jackin load` or `jackin console`. Configure Docker credentials on the operator's machine using `docker login <registry>` or a credential helper.
 
 ## Minimum Dockerfile requirements
 
