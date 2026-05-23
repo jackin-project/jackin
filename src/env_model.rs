@@ -45,9 +45,11 @@ pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 /// receives the actual workdir through `/jackin/run/agent.toml`.
 pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 
-/// Env var that signals the entrypoint to install a `prepare-commit-msg`
-/// hook via `core.hooksPath` so the running agent's `Co-authored-by`
-/// trailer is appended automatically whenever Git prepares a commit message.
+/// Env var that enables the in-container git trailer hook.
+///
+/// The entrypoint installs the `prepare-commit-msg` hook via `core.hooksPath`
+/// so the running agent's `Co-authored-by` trailer is appended whenever Git
+/// prepares a commit message.
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 
 /// Env var that signals the entrypoint to append a `Signed-off-by` DCO trailer.
