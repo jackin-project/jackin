@@ -168,8 +168,8 @@ pub fn render_pane(
 /// Only thumb rows are emitted: non-thumb rows keep the box border
 /// underneath so the scrollbar reads as a textured border, not as a
 /// duplicate vertical line. `filled == 0` suppresses the call
-/// entirely so alt-screen agents and fresh shells keep their full
-/// border.
+/// entirely so alternate-screen TUIs and fresh primary-screen panes
+/// keep their full border.
 ///
 /// Thumb height is proportional to viewport / total; thumb position
 /// represents the slice of history the operator is looking at

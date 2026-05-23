@@ -1539,11 +1539,11 @@ impl Multiplexer {
                 // low bits selecting direction (even = up, odd = down)
                 // and modifier flags possibly OR'd in (shift = +4, alt
                 // = +8, ctrl = +16). Buttons 64–95 cover every wheel
-                // variant. Agent TUIs that enabled mouse reporting own
-                // their wheel events (transcript scroll, list scroll,
-                // etc.); shells and pre-mount agents fall back to
-                // the primary-screen scrollback owned by jackin' so
-                // raw SGR bytes never surface as prompt garbage.
+                // variant. Full-screen TUIs own their wheel events
+                // (transcript scroll, list scroll, etc.); primary-screen
+                // panes without mouse reporting fall back to the
+                // scrollback owned by jackin' so raw SGR bytes never
+                // surface as prompt garbage.
                 // Dialog overlay swallows the wheel so background
                 // pane scrollback does not move while the operator is
                 // interacting with the modal.
@@ -3504,11 +3504,11 @@ fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
 
 /// SGR mouse wheel events set bit 6 of the button byte. Every value in
 /// `64..=95` is a wheel event with some combination of modifier flags
-/// (shift = +4, alt = +8, ctrl = +16). Forwarding any of them to an
-/// agent or shell that did not request mouse mode dumps the raw SGR
-/// bytes at the prompt. The multiplexer therefore recognizes wheel
-/// separately and forwards it only after the focused pane has opted
-/// into mouse reporting; otherwise it becomes jackin' scrollback.
+/// (shift = +4, alt = +8, ctrl = +16). Primary-screen panes that did
+/// not request mouse mode must not receive these bytes because they
+/// dump raw SGR at prompts; alternate-screen panes own their viewport
+/// and get wheel input even when the parser did not retain a standard
+/// DEC mouse mode.
 fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
@@ -3543,12 +3543,12 @@ fn mouse_event_encoding_for_session(
         return Some(session.mouse_protocol_encoding());
     }
     if press && is_wheel_button(button) && session.screen().alternate_screen() {
-        // Full-screen TUIs own their viewport. Some agents do not
+        // Full-screen TUIs own their viewport. Some programs do not
         // leave a standard DEC mouse mode in vt100's tracked state,
         // but the attach client still receives SGR wheel events from
         // the outer terminal. Forward wheel-only fallback events as
         // SGR so alternate-screen panes can scroll internally, while
-        // primary-screen shells continue to use jackin' scrollback.
+        // primary-screen panes continue to use jackin' scrollback.
         return Some(vt100::MouseProtocolEncoding::Sgr);
     }
     None
@@ -3922,7 +3922,7 @@ mod tests {
     }
 
     #[test]
-    fn wheel_forwards_to_mouse_enabled_agent_tui() {
+    fn wheel_forwards_to_mouse_enabled_tui() {
         let mut mux = single_pane_tab_mux();
         let (mut session, mut input_rx) = test_session(20, 78);
         session.feed_pty(b"\x1b[?1049h\x1b[?1003h\x1b[?1006h");
@@ -3936,7 +3936,7 @@ mod tests {
 
         assert!(
             redraw.is_none(),
-            "agent-owned wheel should not redraw jackin'"
+            "pane-owned wheel should not redraw jackin'"
         );
         assert_eq!(
             input_rx.try_recv().expect("wheel should reach PTY"),
@@ -3988,7 +3988,7 @@ mod tests {
 
         assert!(
             redraw.is_none(),
-            "alternate-screen TUI wheel should be agent-owned"
+            "alternate-screen TUI wheel should be pane-owned"
         );
         assert_eq!(
             input_rx.try_recv().expect("wheel should reach PTY"),
