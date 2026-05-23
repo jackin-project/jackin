@@ -317,10 +317,8 @@ async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]
 
 pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::Result<()> {
     let names = list_managed_role_names(docker).await?;
-    futures_util::future::try_join_all(
-        names.iter().map(|name| eject_role(paths, name, docker)),
-    )
-    .await?;
+    futures_util::future::try_join_all(names.iter().map(|name| eject_role(paths, name, docker)))
+        .await?;
     Ok(())
 }
 

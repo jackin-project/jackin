@@ -1,29 +1,33 @@
 #!/bin/bash
 set -euo pipefail
-# Skip amend (-c/-C/--amend all pass $2=commit), squash, and merge:
+# Skip amend (-c/-C/--amend all pass $2=commit) and squash:
 # the original or consolidated message already has the trailers.
 case "${2:-}" in
-  commit|squash|merge) exit 0 ;;
+  commit|squash) exit 0 ;;
 esac
 
-# Append $2 trailer to commit-msg file $1 unless it is already present.
-# If the last non-empty line is already a trailer (Key: value), append
-# directly so the block stays contiguous. Otherwise prepend a blank line
-# to separate the new trailer from the body.
+# Ensure $2 is in the final Git trailer block. GitHub only renders
+# co-authors from that parseable block, so exact existing copies are
+# removed before re-adding through Git's trailer parser.
 _append_trailer() {
-    if ! grep -qF "$2" "$1"; then
-        _last=$(grep -v '^[[:space:]]*$' "$1" | tail -1)
-        if printf '%s' "$_last" | grep -qE '^[A-Za-z-]+: .+'; then
-            printf '%s\n' "$2" >> "$1" || {
-                echo "[jackin prepare-commit-msg] ERROR: failed to append $3 to $1" >&2
-                exit 1
-            }
-        else
-            printf '\n%s\n' "$2" >> "$1" || {
-                echo "[jackin prepare-commit-msg] ERROR: failed to append $3 to $1" >&2
-                exit 1
-            }
-        fi
+    _tmp="$(mktemp)" || {
+        echo "[jackin prepare-commit-msg] ERROR: failed to create tempfile while appending $3" >&2
+        exit 1
+    }
+    if ! awk -v trailer="$2" '$0 != trailer { print }' "$1" > "$_tmp"; then
+        rm -f "$_tmp"
+        echo "[jackin prepare-commit-msg] ERROR: failed to normalize existing $3 trailer in $1" >&2
+        exit 1
+    fi
+    if ! cat "$_tmp" > "$1"; then
+        rm -f "$_tmp"
+        echo "[jackin prepare-commit-msg] ERROR: failed to rewrite $1 while appending $3" >&2
+        exit 1
+    fi
+    rm -f "$_tmp"
+    if ! git interpret-trailers --in-place --if-exists=addIfDifferent --trailer "$2" "$1"; then
+        echo "[jackin prepare-commit-msg] ERROR: failed to append $3 to $1" >&2
+        exit 1
     fi
 }
 

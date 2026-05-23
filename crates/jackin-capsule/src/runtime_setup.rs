@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail};
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
 const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
-const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v1.done";
+const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v2.done";
 
 const PREPARE_COMMIT_MSG_HOOK: &str = include_str!("../../../docker/runtime/prepare-commit-msg.sh");
 
@@ -101,7 +101,7 @@ fn install_git_trailer_hook_if_requested() -> Result<()> {
         "git",
         &["config", "--global", "core.hooksPath", GIT_HOOKS_DIR],
     )?;
-    fs::write(GIT_HOOK_MARKER, b"v1\n")
+    fs::write(GIT_HOOK_MARKER, b"v2\n")
         .with_context(|| format!("failed to write {GIT_HOOK_MARKER}"))?;
 
     let mut active = Vec::new();
@@ -444,6 +444,71 @@ fn is_executable(path: impl AsRef<Path>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write as _;
+
+    const CODEX_TRAILER: &str = "Co-authored-by: Codex <codex@openai.com>";
+    const SIGNOFF_TRAILER: &str = "Signed-off-by: Test User <test@example.com>";
+
+    fn run_prepare_commit_msg_hook(input: &str, source: Option<&str>) -> String {
+        let temp = tempfile::tempdir().unwrap();
+        let message_path = temp.path().join("COMMIT_EDITMSG");
+        let hook_path = temp.path().join("prepare-commit-msg");
+        let git_config_path = temp.path().join("gitconfig");
+        fs::write(&message_path, input).unwrap();
+        fs::write(&hook_path, PREPARE_COMMIT_MSG_HOOK).unwrap();
+        fs::write(
+            &git_config_path,
+            "[user]\n\tname = Test User\n\temail = test@example.com\n",
+        )
+        .unwrap();
+
+        let mut command = Command::new("bash");
+        command
+            .arg(&hook_path)
+            .arg(&message_path)
+            .env("GIT_CONFIG_GLOBAL", &git_config_path)
+            .env("JACKIN_AGENT", "codex")
+            .env("JACKIN_GIT_COAUTHOR_TRAILER", "1")
+            .env("JACKIN_GIT_DCO", "1");
+        if let Some(source) = source {
+            command.arg(source);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        fs::read_to_string(message_path).unwrap()
+    }
+
+    fn parse_trailers(message: &str) -> String {
+        let mut child = Command::new("git")
+            .args(["interpret-trailers", "--parse"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(message.as_bytes()).unwrap();
+        drop(stdin);
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn assert_parseable_test_trailers(message: &str) {
+        assert_eq!(
+            parse_trailers(message),
+            format!("{CODEX_TRAILER}\n{SIGNOFF_TRAILER}\n")
+        );
+    }
 
     #[test]
     fn container_init_marker_is_container_local() {
@@ -454,7 +519,7 @@ mod tests {
     fn git_hook_marker_is_versioned() {
         assert_eq!(
             GIT_HOOK_MARKER,
-            "/jackin/state/git-hooks/prepare-commit-msg.v1.done"
+            "/jackin/state/git-hooks/prepare-commit-msg.v2.done"
         );
     }
 
@@ -472,5 +537,39 @@ mod tests {
         assert!(PREPARE_COMMIT_MSG_HOOK.contains("Signed-off-by:"));
         assert!(PREPARE_COMMIT_MSG_HOOK.contains("git config user.name"));
         assert!(PREPARE_COMMIT_MSG_HOOK.contains("git config user.email"));
+    }
+
+    #[test]
+    fn hook_normalizes_separated_manual_trailers() {
+        let message = run_prepare_commit_msg_hook(
+            &format!("subject\n\n{CODEX_TRAILER}\n\n{SIGNOFF_TRAILER}\n"),
+            None,
+        );
+
+        assert_parseable_test_trailers(&message);
+        assert_eq!(message.matches(CODEX_TRAILER).count(), 1);
+        assert_eq!(message.matches(SIGNOFF_TRAILER).count(), 1);
+    }
+
+    #[test]
+    fn hook_normalizes_trailers_without_subject_separator() {
+        let message = run_prepare_commit_msg_hook(
+            &format!("subject\n{CODEX_TRAILER}\n{SIGNOFF_TRAILER}\n"),
+            None,
+        );
+
+        assert_parseable_test_trailers(&message);
+        assert_eq!(message.matches(CODEX_TRAILER).count(), 1);
+        assert_eq!(message.matches(SIGNOFF_TRAILER).count(), 1);
+    }
+
+    #[test]
+    fn hook_injects_trailers_for_merge_messages() {
+        let message = run_prepare_commit_msg_hook(
+            "Merge remote-tracking branch 'origin/main' into feature\n",
+            Some("merge"),
+        );
+
+        assert_parseable_test_trailers(&message);
     }
 }
