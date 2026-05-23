@@ -15,6 +15,7 @@ use crate::protocol::attach::{
 use crate::protocol::control::{ClientMsg, ServerMsg, frame as control_frame};
 use crate::session::{SESSION_ENV_PASSTHROUGH, Session};
 use crate::socket::SOCKET_PATH;
+use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 
 /// Connect to the running daemon and run the interactive attach client.
 ///
@@ -223,8 +224,8 @@ pub async fn run_snapshot() -> Result<()> {
 /// short. The fix is one line — keep the flip explicit so a future
 /// reader sees the convention difference at the call site.
 fn terminal_size() -> (u16, u16) {
-    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    (rows, cols)
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((DEFAULT_COLS, DEFAULT_ROWS));
+    normalize_size(rows, cols)
 }
 
 fn collect_session_env(include: bool) -> Vec<(String, String)> {

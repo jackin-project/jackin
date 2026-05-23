@@ -16,3 +16,4 @@ pub mod runtime_setup;
 pub mod session;
 pub mod socket;
 pub mod statusbar;
+pub mod terminal_geometry;

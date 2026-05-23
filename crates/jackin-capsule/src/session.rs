@@ -449,6 +449,10 @@ impl Session {
         let mut child = slave
             .spawn_command(cmd)
             .context("failed to spawn session process")?;
+        let child_pid = child.process_id();
+        if let Some(pid) = child_pid {
+            crate::pid1::register_managed_child(pid);
+        }
         let child_killer = Arc::new(Mutex::new(child.clone_killer()));
         drop(slave);
 
@@ -554,6 +558,10 @@ impl Session {
         // multiplexer process itself exits.
         tokio::task::spawn_blocking(move || {
             let status = child.wait();
+            if let Some(pid) = child_pid {
+                crate::pid1::unregister_managed_child(pid);
+                crate::pid1::reap_zombies();
+            }
             crate::clog!("session {sid}: child reaped: {status:?}");
             let _ = event_tx_exit.send(SessionEvent::Exited { session_id: sid });
         });

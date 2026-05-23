@@ -45,6 +45,7 @@ use crate::session::{
 };
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
+use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 
 pub struct Multiplexer {
     sessions: HashMap<u64, Session>,
@@ -277,6 +278,7 @@ const CONTAINER_INFO_COPY_FEEDBACK_DURATION: std::time::Duration =
 
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16, workdir: PathBuf) -> Self {
+        let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
         let agents = available_agents();
@@ -1118,6 +1120,7 @@ impl Multiplexer {
     }
 
     fn resize(&mut self, rows: u16, cols: u16) {
+        let (rows, cols) = normalize_size(rows, cols);
         // Outer-terminal resize invalidates the drag's saved rect.
         self.cancel_drag();
         self.term_rows = rows;
@@ -2408,11 +2411,12 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     let rows = std::env::var("JACKIN_ROWS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(24u16);
+        .unwrap_or(DEFAULT_ROWS);
     let cols = std::env::var("JACKIN_COLS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(80u16);
+        .unwrap_or(DEFAULT_COLS);
+    let (rows, cols) = normalize_size(rows, cols);
 
     // JACKIN_WORKDIR is the explicit contract between the host launcher
     // and the daemon for "where panes open". Missing/empty means the

@@ -4,8 +4,44 @@
 /// re-parented to PID 1. PID 1 MUST call waitpid to reap those zombies or
 /// they accumulate in the process table. Tokio does not do this automatically.
 use nix::sys::signal::{SigSet, Signal};
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+use nix::sys::wait::{Id, waitid};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
+
+static MANAGED_CHILDREN: OnceLock<Mutex<HashSet<i32>>> = OnceLock::new();
+
+fn managed_children() -> &'static Mutex<HashSet<i32>> {
+    MANAGED_CHILDREN.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+pub fn register_managed_child(pid: u32) {
+    let Ok(pid) = i32::try_from(pid) else {
+        return;
+    };
+    if let Ok(mut children) = managed_children().lock() {
+        children.insert(pid);
+    }
+}
+
+pub fn unregister_managed_child(pid: u32) {
+    let Ok(pid) = i32::try_from(pid) else {
+        return;
+    };
+    if let Ok(mut children) = managed_children().lock() {
+        children.remove(&pid);
+    }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn is_managed_child(pid: Pid) -> bool {
+    managed_children()
+        .lock()
+        .is_ok_and(|children| children.contains(&pid.as_raw()))
+}
 
 /// Install a SIGCHLD handler that reaps all available zombie children.
 /// Called once at startup from PID 1 mode.
@@ -44,7 +80,42 @@ pub fn install_sigchld_reaper() {
         .expect("failed to spawn zombie-reaper thread");
 }
 
-fn reap_zombies() {
+pub(crate) fn reap_zombies() {
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    {
+        reap_zombies_linux();
+    }
+    #[cfg(not(all(target_os = "linux", not(target_env = "uclibc"))))]
+    {
+        reap_zombies_unfiltered();
+    }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn reap_zombies_linux() {
+    let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
+    loop {
+        match waitid(Id::All, flags) {
+            Ok(WaitStatus::StillAlive) | Err(nix::errno::Errno::ECHILD) => break,
+            Ok(status) => {
+                let Some(pid) = status.pid() else {
+                    break;
+                };
+                if is_managed_child(pid) {
+                    break;
+                }
+                match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+                    Ok(WaitStatus::StillAlive) | Err(_) => break,
+                    Ok(_) => continue,
+                }
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+#[cfg(not(all(target_os = "linux", not(target_env = "uclibc"))))]
+fn reap_zombies_unfiltered() {
     loop {
         match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) | Err(_) => break,
@@ -89,5 +160,28 @@ mod tests {
         // ECHILD is the kernel's "no zombie for this pid" response —
         // identical to the `Err(_)` arm the reaper short-circuits on.
         assert!(probe.is_err(), "expected ECHILD, got {probe:?}");
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    #[test]
+    fn reap_zombies_does_not_steal_registered_session_child() {
+        let mut child = Command::new("true")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn /bin/true");
+        let pid = Pid::from_raw(child.id() as i32);
+        register_managed_child(child.id());
+        waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT)
+            .expect("child should exit but remain waitable");
+
+        reap_zombies();
+
+        let status = child
+            .wait()
+            .expect("session owner should still be able to reap child");
+        unregister_managed_child(child.id());
+        assert!(status.success());
     }
 }

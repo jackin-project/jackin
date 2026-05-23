@@ -26,6 +26,7 @@ use std::sync::{Mutex, OnceLock};
 use chrono::{SecondsFormat, Utc};
 
 static LOG_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
+static PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// `true` when `JACKIN_DEBUG=1` (or any truthy value) was set in the
@@ -89,6 +90,13 @@ pub fn init() {
         );
     }
     let _ = LOG_FILE.set(Mutex::new(file));
+    let _ = PANIC_HOOK_INSTALLED.get_or_init(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            write_line(&format!("[jackin-capsule] panic: {info}"));
+            default_hook(info);
+        }));
+    });
 }
 
 /// Emit one line to both stderr and the log file (if open). Lines
