@@ -119,8 +119,15 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
 }
 
 /// Encode a client frame.
-pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
-    match frame {
+///
+/// Returns `Err` for caller-controlled inputs that overflow the wire
+/// field widths (env entry count > `MAX_HELLO_ENV`, agent slug > u16,
+/// env key > u16, env value > u32). The decoder side returns `Err` for
+/// the same conditions; symmetry means a producer learns about an
+/// over-cap input the same way a peer would, without crashing the
+/// process.
+pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
+    Ok(match frame {
         ClientFrame::Hello {
             rows,
             cols,
@@ -139,20 +146,17 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
                 Some(SpawnRequest::Shell) => (1u8, b"".as_slice()),
                 Some(SpawnRequest::Agent(agent)) => (2u8, agent.as_bytes()),
             };
-            // Programmer-error if any of these clamp: an agent slug,
-            // env key, or env value larger than the wire field would
-            // silently corrupt the frame. Panic loudly rather than
-            // truncate; callers control these inputs and should keep
-            // them under the configured wire limits.
-            assert!(
-                env.len() <= MAX_HELLO_ENV,
-                "hello env count {} exceeds wire cap {MAX_HELLO_ENV} (decoder will reject)",
-                env.len()
-            );
+            if env.len() > MAX_HELLO_ENV {
+                bail!(
+                    "hello env count {} exceeds wire cap {MAX_HELLO_ENV}",
+                    env.len()
+                );
+            }
             let agent_len = u16::try_from(agent_bytes.len())
-                .expect("agent slug exceeds u16::MAX bytes on the wire");
-            let env_count = u16::try_from(env.len())
-                .expect("hello env count exceeds u16::MAX entries on the wire");
+                .map_err(|_| anyhow::anyhow!("agent slug exceeds u16::MAX bytes on the wire"))?;
+            let env_count = u16::try_from(env.len()).map_err(|_| {
+                anyhow::anyhow!("hello env count exceeds u16::MAX entries on the wire")
+            })?;
             let mut payload = Vec::with_capacity(10 + agent_bytes.len());
             payload.extend_from_slice(&rows.to_be_bytes());
             payload.extend_from_slice(&cols.to_be_bytes());
@@ -163,10 +167,14 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
             for (key, value) in env {
                 let key_bytes = key.as_bytes();
                 let value_bytes = value.as_bytes();
-                let key_len = u16::try_from(key_bytes.len())
-                    .expect("hello env key exceeds u16::MAX bytes on the wire");
-                let value_len = u32::try_from(value_bytes.len())
-                    .expect("hello env value exceeds u32::MAX bytes on the wire");
+                let key_len = u16::try_from(key_bytes.len()).map_err(|_| {
+                    anyhow::anyhow!("hello env key {key:?} exceeds u16::MAX bytes on the wire")
+                })?;
+                let value_len = u32::try_from(value_bytes.len()).map_err(|_| {
+                    anyhow::anyhow!(
+                        "hello env value for {key:?} exceeds u32::MAX bytes on the wire"
+                    )
+                })?;
                 payload.extend_from_slice(&key_len.to_be_bytes());
                 payload.extend_from_slice(&value_len.to_be_bytes());
                 payload.extend_from_slice(key_bytes);
@@ -192,7 +200,7 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
         ClientFrame::Detach => encode(TAG_DETACH, &[]),
         ClientFrame::FocusIn => encode(TAG_FOCUS_IN, &[]),
         ClientFrame::FocusOut => encode(TAG_FOCUS_OUT, &[]),
-    }
+    })
 }
 
 /// Read one length-prefixed payload from `stream` given the already-
@@ -446,7 +454,8 @@ mod tests {
             spawn: None,
             env: Vec::new(),
             focus_session: None,
-        });
+        })
+        .unwrap();
         // First byte is tag, never `0x00` (which is reserved for the
         // control-channel JSON length high byte).
         assert_eq!(bytes[0], TAG_HELLO);
@@ -461,7 +470,8 @@ mod tests {
             spawn: Some(SpawnRequest::Shell),
             env: Vec::new(),
             focus_session: None,
-        });
+        })
+        .unwrap();
         let payload = bytes[5..].to_vec();
         let frame = decode_client(TAG_HELLO, payload).unwrap();
         assert_eq!(
@@ -487,7 +497,8 @@ mod tests {
                 ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
             ],
             focus_session: None,
-        });
+        })
+        .unwrap();
         // Decode skips the 4-byte length prefix that `encode_client` writes
         // after the tag; reconstruct the payload to feed `decode_client`.
         let payload = bytes[5..].to_vec();

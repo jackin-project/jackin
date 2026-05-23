@@ -55,15 +55,15 @@ pub async fn run_client(
         .await
         .context("cannot connect to jackin-capsule daemon — is it running?")?;
 
-    stream
-        .write_all(&encode_client(ClientFrame::Hello {
-            rows,
-            cols,
-            env: collect_session_env(spawn_request.is_some()),
-            spawn: spawn_request,
-            focus_session,
-        }))
-        .await?;
+    let hello = encode_client(ClientFrame::Hello {
+        rows,
+        cols,
+        env: collect_session_env(spawn_request.is_some()),
+        spawn: spawn_request,
+        focus_session,
+    })
+    .context("encoding attach Hello frame")?;
+    stream.write_all(&hello).await?;
 
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
@@ -127,7 +127,10 @@ pub async fn run_client(
                     Err(e) => break Err(anyhow::anyhow!("stdin read failed: {e}")),
                     Ok(n) => n,
                 };
-                let msg = encode_client(ClientFrame::Input(stdin_buf[..n].to_vec()));
+                let msg = match encode_client(ClientFrame::Input(stdin_buf[..n].to_vec())) {
+                    Ok(bytes) => bytes,
+                    Err(e) => break Err(e.context("encoding Input frame")),
+                };
                 if let Err(e) = stream.write_all(&msg).await {
                     break Err(anyhow::anyhow!("attach socket write failed (input): {e}"));
                 }
@@ -136,7 +139,10 @@ pub async fn run_client(
             // Outer terminal resize → propagate.
             _ = winch.recv() => {
                 let (rows, cols) = terminal_size();
-                let msg = encode_client(ClientFrame::Resize { rows, cols });
+                let msg = match encode_client(ClientFrame::Resize { rows, cols }) {
+                    Ok(bytes) => bytes,
+                    Err(e) => break Err(e.context("encoding Resize frame")),
+                };
                 if let Err(e) = stream.write_all(&msg).await {
                     break Err(anyhow::anyhow!("attach socket write failed (resize): {e}"));
                 }

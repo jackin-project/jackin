@@ -39,7 +39,8 @@ fn hello_first_byte_never_collides_with_control_channel() {
         spawn: None,
         env: Vec::new(),
         focus_session: None,
-    });
+    })
+    .expect("encode Hello");
     assert_ne!(bytes[0], 0x00);
     assert_eq!(bytes[0], TAG_HELLO);
 }
@@ -56,7 +57,8 @@ fn welcome_carries_session_count_be() {
 
 #[test]
 fn input_frame_carries_raw_bytes_unchanged() {
-    let bytes = encode_client(ClientFrame::Input(b"hello\x02world".to_vec()));
+    let bytes =
+        encode_client(ClientFrame::Input(b"hello\x02world".to_vec())).expect("encode Input");
     assert_eq!(&bytes[5..], b"hello\x02world");
 }
 
@@ -65,7 +67,8 @@ fn resize_frame_roundtrips() {
     let bytes = encode_client(ClientFrame::Resize {
         rows: 50,
         cols: 200,
-    });
+    })
+    .expect("encode Resize");
     assert_eq!(bytes[0], TAG_RESIZE);
     let payload = bytes[5..].to_vec();
     let decoded = decode_client(TAG_RESIZE, payload).expect("decode Resize");

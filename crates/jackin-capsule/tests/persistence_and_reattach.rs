@@ -58,16 +58,15 @@ async fn attach_hello_roundtrips_over_socket() {
     });
 
     let mut client = UnixStream::connect(&sock).await.unwrap();
-    client
-        .write_all(&encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: None,
-            env: Vec::new(),
-            focus_session: None,
-        }))
-        .await
-        .unwrap();
+    let hello = encode_client(ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn: None,
+        env: Vec::new(),
+        focus_session: None,
+    })
+    .expect("encode Hello");
+    client.write_all(&hello).await.unwrap();
 
     // Read two server frames and assert payloads.
     let mut tag = [0u8; 1];
@@ -159,29 +158,21 @@ async fn second_attach_takes_over_first() {
         }
     });
 
-    let mut client_a = UnixStream::connect(&sock).await.unwrap();
-    client_a
-        .write_all(&encode_client(ClientFrame::Hello {
+    let hello = || {
+        encode_client(ClientFrame::Hello {
             rows: 24,
             cols: 80,
             spawn: None,
             env: Vec::new(),
             focus_session: None,
-        }))
-        .await
-        .unwrap();
+        })
+        .expect("encode Hello")
+    };
+    let mut client_a = UnixStream::connect(&sock).await.unwrap();
+    client_a.write_all(&hello()).await.unwrap();
 
     let mut client_b = UnixStream::connect(&sock).await.unwrap();
-    client_b
-        .write_all(&encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: None,
-            env: Vec::new(),
-            focus_session: None,
-        }))
-        .await
-        .unwrap();
+    client_b.write_all(&hello()).await.unwrap();
 
     // Client A should receive a Shutdown frame. Cap the wait so a
     // scheduler-ordering deadlock fails the test deterministically
