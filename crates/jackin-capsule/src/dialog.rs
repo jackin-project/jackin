@@ -899,8 +899,9 @@ impl Dialog {
     /// hit-test cannot drift. The free-function `render_*` helpers
     /// take the `(row, col, height, width)` tuple from `box_rect`
     /// instead of recomputing the centring. Footer hints are rendered
-    /// by the multiplexer compositor on the bottom status row so every
-    /// dialog follows the same bottom-screen hint contract.
+    /// by the multiplexer compositor near the bottom chrome so every
+    /// dialog follows the same hint contract without competing with
+    /// the branch/container status row.
     pub fn render(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
         self.render_with_hover(buf, term_rows, term_cols, false);
     }
@@ -1008,11 +1009,12 @@ impl Dialog {
     }
 
     pub fn render_footer_hint(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
-        if term_rows == 0 {
+        if term_rows < 3 {
             return;
         }
         let spans = self.footer_hint_spans();
-        render_hint_row(buf, term_rows - 1, term_cols, spans);
+        render_blank_row(buf, term_rows - 2, term_cols);
+        render_hint_row(buf, term_rows - 3, term_cols, spans);
     }
 
     fn footer_hint_spans(&self) -> &'static [HintSpan<'static>] {
@@ -2213,6 +2215,14 @@ fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpa
     let _ = FG_DIM; // reserved for future Dyn spans (e.g., "N items selected")
 }
 
+fn render_blank_row(buf: &mut Vec<u8>, row: u16, term_cols: u16) {
+    move_to(buf, row, 0);
+    buf.extend_from_slice(RESET.as_bytes());
+    for _ in 0..term_cols {
+        buf.push(b' ');
+    }
+}
+
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
     buf.extend_from_slice(b"\x1b[");
     write_dec(buf, row + 1);
@@ -2904,7 +2914,7 @@ mod tests {
     }
 
     #[test]
-    fn github_context_hint_renders_on_bottom_footer_row() {
+    fn github_context_hint_renders_above_bottom_status_row() {
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
             pull_request: Some(pull_request_fixture()),
@@ -2915,16 +2925,23 @@ mod tests {
         let term_cols = 120;
         let padded_cols = hint_span_cols(GITHUB_CONTEXT_HINT) + 4;
         let expected_col = ((term_cols as usize).saturating_sub(padded_cols) / 2) as u16;
+        let hint_row = term_rows - 2;
+        let spacer_row = term_rows - 1;
 
         let mut buf = Vec::new();
         d.render(&mut buf, term_rows, term_cols);
         d.render_footer_hint(&mut buf, term_rows, term_cols);
         let rendered = String::from_utf8_lossy(&buf);
-        let cursor = format!("\x1b[{};{}H", term_rows, expected_col + 1);
+        let cursor = format!("\x1b[{};{}H", hint_row, expected_col + 1);
+        let spacer_cursor = format!("\x1b[{};1H", spacer_row);
 
         assert!(
             rendered.contains(&cursor),
-            "hint should render on the bottom footer row at {cursor:?}: {rendered:?}"
+            "hint should render above the spacer/status rows at {cursor:?}: {rendered:?}"
+        );
+        assert!(
+            rendered.contains(&spacer_cursor),
+            "spacer row should be cleared above the bottom status row: {rendered:?}"
         );
         assert!(rendered.contains("copy GitHub URL"));
     }

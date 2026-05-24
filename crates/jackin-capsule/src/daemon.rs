@@ -5594,11 +5594,21 @@ mod tests {
         assert!(rendered.contains("GitHub context"));
         assert!(
             rendered.contains("copy GitHub URL"),
-            "dialog hint must render in the bottom footer row: {rendered:?}"
+            "dialog hint must render above the bottom branch/context bar: {rendered:?}"
         );
         assert!(
             rendered.rfind("copy GitHub URL") > rendered.rfind("jk-test-container"),
-            "dialog footer should be painted after the bottom branch/context bar: {rendered:?}"
+            "dialog footer should be painted after the bottom branch/context bar so it clears its own rows: {rendered:?}"
+        );
+        let hint_row = mux.term_rows - 2;
+        let bottom_row = mux.term_rows;
+        assert!(
+            rendered.contains(&format!("\x1b[{hint_row};")),
+            "dialog hint should render one row above the spacer: {rendered:?}"
+        );
+        assert!(
+            rendered.contains(&format!("\x1b[{bottom_row};")),
+            "bottom branch/context bar should stay on the final row: {rendered:?}"
         );
         assert!(matches!(
             mux.dialog_top(),
