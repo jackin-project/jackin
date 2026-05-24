@@ -189,6 +189,7 @@ jobs:
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
           github-token: ${{ github.token }}
+          external-links: "false"
 
   check-deployed:
     # Schedule fires daily; workflow_dispatch from non-main branches lets a
