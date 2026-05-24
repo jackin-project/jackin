@@ -428,6 +428,10 @@ Desktop. Desktop displays it; it does not own the scraping/token logic.
 
 The daemon should cache account and usage data once on the host and fan it out to the Desktop app, `jackin console`, CLI commands, and Capsule. Running role containers should not each poll Claude/Codex/Amp independently. If an agent needs to read the latest state from inside a container, Capsule should expose a read-only control-channel response or a daemon-materialized file under `/jackin/run/usage/` with freshness metadata. The host cache is the write authority; container files are views.
 
+### Host-side effects
+
+Desktop may display, refresh, and request repairs for daemon-owned account and usage state, but the daemon remains the only writer for the telemetry cache described in the [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-side-effects) roadmap item. Desktop repair controls must surface any host-side write before it happens; background refresh must not silently alter provider config, Keychain entries, browser profiles, dotfiles, Git config, or user repositories.
+
 ### GitHub / PR integration
 
 The highest-value Desktop feature is direct PR access.

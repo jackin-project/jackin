@@ -160,6 +160,12 @@ Rules:
 - The cache stores tokens, costs, percentages, reset times, source metadata, and opaque account labels. It never stores prompts, completions, raw conversation text, provider cookies, or bearer tokens.
 - If an account requires authentication, the daemon requests it through existing jackin auth mechanisms: forwarded CLI auth, 1Password references, macOS Keychain integration, or an explicit host-bridge approval. Failed auth is a first-class `needs_login` / `needs_secret` state.
 
+### Host-side effects
+
+The host-side write this roadmap authorizes is the daemon telemetry cache itself, stored under jackin'-owned host state and surfaced through the launch/daemon summary before the feature ships. Telemetry refresh may read existing host-side auth/config sources when the operator has enabled that source, but it must not write provider config, Keychain entries, browser profiles, Git config, shell dotfiles, or any user repository as part of normal refresh.
+
+Any repair action that would change host state, such as connecting a provider account, adding a Keychain item, or enabling a browser-cookie fallback, must be an explicit operator action rather than a background refresh side effect. Containers only receive read-only views through the daemon/Capsule channel or daemon-materialized files under `/jackin/run/usage/`; they do not own or mutate the host cache.
+
 ### UI surfaces
 
 The same cached telemetry feeds four surfaces:
