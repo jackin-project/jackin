@@ -52,8 +52,10 @@ const BOLD: &str = "\x1b[1m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
 const BUTTON_BG_IDLE: &str = "\x1b[48;2;18;70;130m"; // restrained blue
+const BUTTON_BG_IDLE_HOVER: &str = "\x1b[48;2;32;92;158m"; // hover lift
 const BUTTON_FG_IDLE: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const BUTTON_BG_AWAITING: &str = "\x1b[48;2;96;180;255m"; // active blue
+const BUTTON_BG_AWAITING_HOVER: &str = "\x1b[48;2;132;202;255m"; // active hover lift
 const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
 const RESET: &str = "\x1b[0m";
 
@@ -151,6 +153,7 @@ impl StatusBar {
         active_tab: usize,
         sessions_state: &[(u64, AgentState)],
         hovered_tab: Option<usize>,
+        menu_hovered: bool,
     ) {
         self.tab_regions.clear();
         self.hint_region = None;
@@ -218,9 +221,11 @@ impl StatusBar {
         let hint_start = cols.saturating_sub(hint_cols);
         if hint_start > brand_end_1based {
             move_to(buf, 1, hint_start);
-            let (bg, fg) = match self.prefix_mode {
-                PrefixMode::Idle => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
-                PrefixMode::Awaiting => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
+            let (bg, fg) = match (self.prefix_mode, menu_hovered) {
+                (PrefixMode::Idle, false) => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
+                (PrefixMode::Idle, true) => (BUTTON_BG_IDLE_HOVER, BUTTON_FG_IDLE),
+                (PrefixMode::Awaiting, false) => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
+                (PrefixMode::Awaiting, true) => (BUTTON_BG_AWAITING_HOVER, BUTTON_FG_AWAITING),
             };
             buf.extend_from_slice(bg.as_bytes());
             buf.extend_from_slice(fg.as_bytes());
@@ -266,7 +271,7 @@ impl StatusBar {
 
     fn button_text(&self) -> String {
         match self.prefix_mode {
-            PrefixMode::Idle => "☰ Menu".to_string(),
+            PrefixMode::Idle => " ☰ Menu ".to_string(),
             PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
@@ -506,12 +511,12 @@ mod tests {
         let tabs = vec![tab];
         let states = vec![(1u64, AgentState::Blocked)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &states, None);
+        bar.render(&mut buf, 80, &tabs, 0, &states, None, false);
         let (start, end) = bar.tab_regions[0];
         assert_eq!(end - start, 10);
         // Re-rendering with no state must keep the same width.
         let mut buf2 = Vec::new();
-        bar.render(&mut buf2, 80, &tabs, 0, &[], None);
+        bar.render(&mut buf2, 80, &tabs, 0, &[], None, false);
         let (s2, e2) = bar.tab_regions[0];
         assert_eq!(e2 - s2, 10);
         assert_eq!((s2, e2), (start, end));
@@ -528,7 +533,7 @@ mod tests {
     fn idle_hint_is_rendered() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None);
+        bar.render(&mut buf, 80, &[], 0, &[], None, false);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("☰ Menu"), "menu hint missing: {s:?}");
         assert!(!s.contains("☰  Menu"), "menu hint spacing drifted: {s:?}");
@@ -544,11 +549,24 @@ mod tests {
     }
 
     #[test]
+    fn idle_hint_hover_uses_lifted_button_chrome() {
+        let mut bar = StatusBar::new();
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 80, &[], 0, &[], None, true);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains(" ☰ Menu "), "menu hint should be padded: {s:?}");
+        assert!(
+            s.contains(BUTTON_BG_IDLE_HOVER),
+            "hovered menu hint should use lifted blue chrome: {s:?}"
+        );
+    }
+
+    #[test]
     fn awaiting_prefix_hint_is_rendered() {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None);
+        bar.render(&mut buf, 80, &[], 0, &[], None, false);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("prefix…"), "prefix hint missing: {s:?}");
         assert!(
@@ -562,7 +580,7 @@ mod tests {
         let mut bar = StatusBar::new();
         let tabs = vec![Tab::new_single("Claude", 1)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &[], None);
+        bar.render(&mut buf, 80, &tabs, 0, &[], None, false);
         let s = String::from_utf8_lossy(&buf);
         // Row 1 = ANSI row 2 (1-based). Underline uses `━`.
         assert!(s.contains("\x1b[2;"), "row 2 cursor move missing: {s:?}");

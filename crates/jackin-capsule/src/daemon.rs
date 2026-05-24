@@ -2548,6 +2548,7 @@ impl Multiplexer {
             self.active_tab,
             &states,
             hovered_tab(self.hover_target),
+            hovered_menu(self.hover_target),
         );
 
         let focused_id = self.active_focused_id();
@@ -2684,6 +2685,7 @@ impl Multiplexer {
             self.active_tab,
             &states,
             hovered_tab(self.hover_target),
+            hovered_menu(self.hover_target),
         );
         render_branch_context_bar(
             &mut buf,
@@ -3431,6 +3433,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.active_tab,
                     &states,
                     hovered_tab(mux.hover_target),
+                    hovered_menu(mux.hover_target),
                 );
                 render_branch_context_bar(
                     &mut sbuf,
@@ -4095,6 +4098,10 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
         Some(HoverTarget::Tab(idx)) => Some(idx),
         _ => None,
     }
+}
+
+const fn hovered_menu(target: Option<HoverTarget>) -> bool {
+    matches!(target, Some(HoverTarget::Menu))
 }
 
 fn branch_context_bar_hit(

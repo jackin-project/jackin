@@ -9,6 +9,8 @@ This document is the **canonical record of every binding TUI design decision** â
 
 If a proposed implementation conflicts with a rule here, fix the implementation, not the rule (or open a discussion to amend the rule first). Violations are bugs and must be fixed before a PR lands.
 
+Every PR review that touches a TUI surface must verify the diff against this page before producing review output. Reviewers must call out any mismatch as a TUI design-decision violation, especially missing clickable affordances, missing footer hints, focusability drift, or layout geometry that diverges from the shared helpers.
+
 ---
 
 ## Navigation conventions
@@ -63,7 +65,7 @@ Rules:
 
 ### Clickable targets must look clickable
 
-Any jackin' TUI element that performs an action on click must expose three matching cues: a distinct resting style, a hover style change, and pointer-shape feedback where the terminal supports it. The visual target must be the exact value or control that will act. For copy dialogs, only the value copied by `Enter` is rendered as the emphasized clickable value; informational rows stay in the normal value color.
+Any jackin' TUI element that performs an action on click must expose three matching cues: a distinct resting style, a hover style change, and pointer-shape feedback where the terminal supports it. The hover change must be visible but modest â€” a lifted background, brighter foreground, or equivalent cue that matches the website's "this is interactive" clarity without overpowering the surrounding chrome. The visual target must be the exact value or control that will act. For copy dialogs, only the value copied by `Enter` is rendered as the emphasized clickable value; informational rows stay in the normal value color.
 
 When a footer says `Enter copy <value>`, clicking that same emphasized value must perform the same copy action and show visible feedback. Do not make a whole dialog row look actionable if only one value is copied, and do not add click handlers without a visible hover/resting affordance.
 
