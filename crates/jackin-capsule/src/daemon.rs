@@ -227,6 +227,7 @@ enum HoverTarget {
     Tab(usize),
     BranchContext,
     Container,
+    DialogCopyTarget,
 }
 
 impl PointerShape {
@@ -313,7 +314,10 @@ const SGR_NO_BUTTON_MOTION: u8 = 35;
 
 const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::from_secs(2);
 const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
-const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: Duration = Duration::from_secs(5);
+// GitHub context is operator-facing chrome, not a live feed. Keep the
+// branch/PR/CI cache warm without polling `gh` aggressively enough to
+// waste API quota or trip secondary rate limits.
+const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: Duration = Duration::from_secs(60);
 
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> Self {
@@ -409,12 +413,21 @@ impl Multiplexer {
             return None;
         }
         self.hover_target = next;
-        Some(self.compose_chrome_hover_frame())
+        if self.dialog_open() {
+            Some(self.compose_full_frame(FullRedrawReason::DialogChange))
+        } else {
+            Some(self.compose_chrome_hover_frame())
+        }
     }
 
     fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
-        if self.drag.is_some() || self.selection.is_some() || self.dialog_open() {
+        if self.drag.is_some() || self.selection.is_some() {
             return None;
+        }
+        if let Some(dialog) = self.dialog_top() {
+            return dialog
+                .clickable_at(row + 1, col + 1, self.term_rows, self.term_cols)
+                .then_some(HoverTarget::DialogCopyTarget);
         }
         let row_1based = row + 1;
         let col_1based = col + 1;
@@ -2297,7 +2310,12 @@ impl Multiplexer {
         );
 
         if let Some(dialog) = self.dialog_top() {
-            dialog.render(&mut buf, self.term_rows, self.term_cols);
+            dialog.render_with_hover(
+                &mut buf,
+                self.term_rows,
+                self.term_cols,
+                self.hover_target == Some(HoverTarget::DialogCopyTarget),
+            );
         }
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
@@ -4524,12 +4542,13 @@ mod tests {
             })
             .expect("container id click should redraw copy feedback");
 
-        let osc52 = rx.try_recv().expect("copy should emit OSC 52");
-        assert!(
-            osc52
+        let mut saw_osc52 = false;
+        while let Ok(output) = rx.try_recv() {
+            saw_osc52 |= output
                 .windows(b"\x1b]52;c;".len())
-                .any(|w| w == b"\x1b]52;c;")
-        );
+                .any(|w| w == b"\x1b]52;c;");
+        }
+        assert!(saw_osc52, "copy should emit OSC 52");
         assert!(String::from_utf8_lossy(&frame).contains("Copied!"));
         assert!(matches!(
             mux.dialog_top(),

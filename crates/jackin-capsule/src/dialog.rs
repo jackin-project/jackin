@@ -31,6 +31,7 @@ const FG_GREEN: &str = "\x1b[38;2;0;255;65m"; // PHOSPHOR_GREEN
 const FG_DIM: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
 const FG_BORDER: &str = "\x1b[38;2;0;80;18m"; // PHOSPHOR_DARK
 const FG_WHITE: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const FG_CLICK_HOVER: &str = "\x1b[38;2;180;255;180m"; // lifted clickable value
 const SELECT_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
 const SELECT_FG: &str = "\x1b[38;2;0;0;0m"; // BLACK fg
 const SELECT_MARK: &str = "▸ ";
@@ -630,6 +631,19 @@ impl Dialog {
             *copied = true;
             return DialogAction::CopyToClipboard(payload);
         }
+        if let Self::GitHubContext {
+            pull_request: Some(pr),
+            copied,
+            ..
+        } = self
+        {
+            if !github_context_url_row_clickable(row, col, box_row, box_col, width) {
+                return DialogAction::Consume;
+            }
+            let payload = pr.url.clone();
+            *copied = true;
+            return DialogAction::CopyToClipboard(payload);
+        }
         // ConfirmAction: only the visible Yes/No button cells confirm
         // or dismiss; other inside-box clicks (title, explanation,
         // padding) are swallowed. Mirrors the layout in
@@ -780,6 +794,10 @@ impl Dialog {
             Self::ContainerInfo { .. } => {
                 container_info_id_row_clickable(row, col, box_row, box_col, width)
             }
+            Self::GitHubContext {
+                pull_request: Some(_),
+                ..
+            } => github_context_url_row_clickable(row, col, box_row, box_col, width),
             Self::GitHubContext { .. } => false,
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
@@ -886,6 +904,16 @@ impl Dialog {
     /// still relative to `term_rows` because the hint lives outside
     /// the box.
     pub fn render(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
+        self.render_with_hover(buf, term_rows, term_cols, false);
+    }
+
+    pub fn render_with_hover(
+        &self,
+        buf: &mut Vec<u8>,
+        term_rows: u16,
+        term_cols: u16,
+        copy_target_hovered: bool,
+    ) {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
         // Skip rendering entirely when the terminal is too small to
         // hold the box without overlapping the status bar or the
@@ -913,13 +941,13 @@ impl Dialog {
                     filter,
                     *close_label,
                 );
-                render_bottom_hint(buf, term_rows, term_cols, PALETTE_HINT);
+                render_dialog_hint(buf, box_row, height, term_rows, term_cols, PALETTE_HINT);
             }
             Self::SplitDirectionPicker { selected, filter } => {
                 render_split_direction_picker(
                     buf, box_row, box_col, height, width, *selected, filter,
                 );
-                render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
+                render_dialog_hint(buf, box_row, height, term_rows, term_cols, PICKER_HINT);
             }
             Self::AgentPicker {
                 agents,
@@ -930,10 +958,11 @@ impl Dialog {
                 render_agent_picker(
                     buf, box_row, box_col, height, width, agents, *selected, *intent, filter,
                 );
-                render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
+                render_dialog_hint(buf, box_row, height, term_rows, term_cols, PICKER_HINT);
             }
             Self::RenameTab { input, .. } => {
                 render_rename_tab(buf, term_rows, term_cols, input.value());
+                render_dialog_hint(buf, box_row, height, term_rows, term_cols, RENAME_HINT);
             }
             Self::ContainerInfo {
                 container_name,
@@ -953,8 +982,16 @@ impl Dialog {
                     focused_agent.as_deref(),
                     workdir,
                     *copied,
+                    copy_target_hovered,
                 );
-                render_bottom_hint(buf, term_rows, term_cols, CONTAINER_INFO_HINT);
+                render_dialog_hint(
+                    buf,
+                    box_row,
+                    height,
+                    term_rows,
+                    term_cols,
+                    CONTAINER_INFO_HINT,
+                );
             }
             Self::GitHubContext {
                 branch,
@@ -970,20 +1007,28 @@ impl Dialog {
                     branch.as_deref(),
                     pull_request.as_ref(),
                     *copied,
+                    copy_target_hovered,
                 );
                 if pull_request.is_some() {
-                    render_bottom_hint(buf, term_rows, term_cols, GITHUB_CONTEXT_HINT);
+                    render_dialog_hint(
+                        buf,
+                        box_row,
+                        height,
+                        term_rows,
+                        term_cols,
+                        GITHUB_CONTEXT_HINT,
+                    );
                 } else {
-                    render_bottom_hint(buf, term_rows, term_cols, READ_ONLY_HINT);
+                    render_dialog_hint(buf, box_row, height, term_rows, term_cols, READ_ONLY_HINT);
                 }
             }
             Self::CloseTargetPicker { selected, filter } => {
                 render_close_target_picker(buf, box_row, box_col, height, width, *selected, filter);
-                render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
+                render_dialog_hint(buf, box_row, height, term_rows, term_cols, PICKER_HINT);
             }
             Self::ConfirmAction { kind, selected_yes } => {
                 render_confirm_action(buf, box_row, box_col, height, width, *kind, *selected_yes);
-                render_bottom_hint(buf, term_rows, term_cols, CONFIRM_HINT);
+                render_dialog_hint(buf, box_row, height, term_rows, term_cols, CONFIRM_HINT);
             }
         }
     }
@@ -1019,6 +1064,19 @@ fn container_info_id_row_clickable(
     let start = box_col.saturating_add(2);
     let end = box_col.saturating_add(width.saturating_sub(2));
     row == box_row + 2 && col >= start && col < end
+}
+
+fn github_context_url_row_clickable(
+    row: u16,
+    col: u16,
+    box_row: u16,
+    box_col: u16,
+    width: u16,
+) -> bool {
+    const URL_ROW_OFFSET: u16 = 5;
+    let start = box_col.saturating_add(2);
+    let end = box_col.saturating_add(width.saturating_sub(2));
+    row == box_row + URL_ROW_OFFSET && col >= start && col < end
 }
 
 /// Edit a rename-tab input buffer in response to a raw key chunk.
@@ -1373,7 +1431,6 @@ fn render_rename_tab(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, input: &
         input,
         cursor_byte,
     );
-    render_bottom_hint(buf, term_rows, term_cols, RENAME_HINT);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1763,7 +1820,7 @@ fn render_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str, se
 /// Render the read-only ContainerInfo modal. Label/value rows live
 /// inside the standard `render_box` chrome.
 /// The container ID is rendered in white-bold to flag it as the copy
-/// target the bottom hint advertises. No selection state — Enter / a
+/// target the footer hint advertises. No selection state — Enter / a
 /// click on the Container ID row copies the ID via OSC 52; Esc / q
 /// dismisses.
 #[allow(clippy::too_many_arguments)]
@@ -1778,6 +1835,7 @@ fn render_container_info(
     focused_agent: Option<&str>,
     workdir: &str,
     copied: bool,
+    copy_target_hovered: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "Container info");
     let rows: [ContainerInfoRow; 4] = [
@@ -1786,7 +1844,15 @@ fn render_container_info(
         ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
         ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
     ];
-    render_info_rows(buf, box_row, box_col, width, &rows, copied);
+    render_info_rows(
+        buf,
+        box_row,
+        box_col,
+        width,
+        &rows,
+        copied,
+        copy_target_hovered.then_some(0),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1799,6 +1865,7 @@ fn render_github_context(
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     copied: bool,
+    copy_target_hovered: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "GitHub context");
     let pull_request_number = pull_request
@@ -1817,12 +1884,22 @@ fn render_github_context(
 
     let rows: [ContainerInfoRow; 5] = [
         ContainerInfoRow::new("Branch", non_empty_or_dim(branch.unwrap_or(""))),
-        ContainerInfoRow::new("Pull Request", pull_request_number).emphasised(),
+        ContainerInfoRow::new("Pull Request", pull_request_number),
         ContainerInfoRow::new("PR Title", pull_request_title),
-        ContainerInfoRow::new("GitHub URL", pull_request_link).hyperlink(pull_request_href),
+        ContainerInfoRow::new("GitHub URL", pull_request_link)
+            .hyperlink(pull_request_href)
+            .emphasised(),
         ContainerInfoRow::new("CI Status", ci_status),
     ];
-    render_info_rows(buf, box_row, box_col, width, &rows, false);
+    render_info_rows(
+        buf,
+        box_row,
+        box_col,
+        width,
+        &rows,
+        false,
+        copy_target_hovered.then_some(3),
+    );
     if copied {
         render_info_row_badge(buf, box_row, box_col, width, 3, "✓ Copied!");
     }
@@ -1857,6 +1934,7 @@ fn render_info_rows(
     width: u16,
     rows: &[ContainerInfoRow<'_>],
     copied: bool,
+    hovered_row: Option<usize>,
 ) {
     let label_col_width = rows
         .iter()
@@ -1879,7 +1957,11 @@ fn render_info_rows(
         }
         buf.extend_from_slice(b": ");
         if row.emphasise {
-            buf.extend_from_slice(FG_WHITE.as_bytes());
+            if hovered_row == Some(i) {
+                buf.extend_from_slice(FG_CLICK_HOVER.as_bytes());
+            } else {
+                buf.extend_from_slice(FG_WHITE.as_bytes());
+            }
             buf.extend_from_slice(BOLD.as_bytes());
         } else {
             buf.extend_from_slice(FG_GREEN.as_bytes());
@@ -2044,7 +2126,7 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
 }
 
 /// Compute the visual column width of a hint span row. Matches the
-/// formatting in `render_bottom_hint` so centring is exact.
+/// formatting in `render_hint_row` so centring is exact.
 fn hint_span_cols(spans: &[HintSpan<'_>]) -> usize {
     spans
         .iter()
@@ -2057,19 +2139,41 @@ fn hint_span_cols(spans: &[HintSpan<'_>]) -> usize {
         .sum()
 }
 
-/// Paint the hint row centred on the **terminal's last row**, on top of
-/// the agent / shell content beneath the dialog box. Lives outside the
-/// box so the box border ends cleanly and the hint reads as the
-/// global-footer pattern jackin's console TUI uses.
-fn render_bottom_hint(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
-    let total = hint_span_cols(spans);
-    if total > term_cols as usize || term_rows == 0 {
+/// Paint the hint row directly under the dialog when space allows.
+/// Falling back to the second-to-last terminal row keeps hints above the
+/// branch/PR context bar, which owns the last row when visible.
+fn render_dialog_hint(
+    buf: &mut Vec<u8>,
+    box_row: u16,
+    height: u16,
+    term_rows: u16,
+    term_cols: u16,
+    spans: &[HintSpan<'_>],
+) {
+    if term_rows == 0 {
         return;
     }
-    let start_col = ((term_cols as usize).saturating_sub(total) / 2) as u16;
-    let row = term_rows - 1;
+    let row_below_box = box_row.saturating_add(height);
+    let fallback_row = term_rows.saturating_sub(2);
+    let row = if row_below_box < term_rows.saturating_sub(1) {
+        row_below_box
+    } else {
+        fallback_row
+    };
+    render_hint_row(buf, row, term_cols, spans);
+}
+
+fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
+    let total = hint_span_cols(spans);
+    let padded_total = total.saturating_add(4);
+    if padded_total > term_cols as usize {
+        return;
+    }
+    let start_col = ((term_cols as usize).saturating_sub(padded_total) / 2) as u16;
     move_to(buf, row, start_col);
     buf.extend_from_slice(BG_DARK.as_bytes());
+    buf.extend_from_slice(FG_BORDER.as_bytes());
+    buf.extend_from_slice("  ".as_bytes());
     for span in spans {
         match span {
             HintSpan::Key(k) => {
@@ -2097,6 +2201,10 @@ fn render_bottom_hint(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, spans: 
             }
         }
     }
+    buf.extend_from_slice(BG_DARK.as_bytes());
+    buf.extend_from_slice(FG_BORDER.as_bytes());
+    buf.extend_from_slice("  ".as_bytes());
+    buf.extend_from_slice(RESET.as_bytes());
     let _ = FG_DIM; // reserved for future Dyn spans (e.g., "N items selected")
 }
 
@@ -2726,6 +2834,68 @@ mod tests {
         d.render(&mut buf, 40, 120);
         let rendered = String::from_utf8_lossy(&buf);
         assert!(rendered.contains("Copied!"));
+    }
+
+    #[test]
+    fn github_context_url_click_copies_pr_url() {
+        let mut d = Dialog::GitHubContext {
+            branch: Some("feature/container-info".to_string()),
+            pull_request: Some(pull_request_fixture()),
+            copied: false,
+        };
+        let (row, col, _, _) = d.box_rect(40, 120);
+
+        assert!(d.clickable_at(row + 5, col + 2, 40, 120));
+        match d.handle_click(row + 5, col + 2, 40, 120) {
+            DialogAction::CopyToClipboard(payload) => {
+                assert_eq!(payload, "https://github.com/jackin-project/jackin/pull/123");
+            }
+            other => panic!("GitHub URL row click must request clipboard copy, got {other:?}"),
+        }
+        assert!(d.has_copy_feedback());
+    }
+
+    #[test]
+    fn github_context_hover_lifts_only_url_copy_value() {
+        let d = Dialog::GitHubContext {
+            branch: Some("feature/container-info".to_string()),
+            pull_request: Some(pull_request_fixture()),
+            copied: false,
+        };
+        let mut buf = Vec::new();
+        d.render_with_hover(&mut buf, 40, 120, true);
+        let rendered = String::from_utf8_lossy(&buf);
+
+        assert!(
+            rendered.contains(FG_CLICK_HOVER),
+            "hovered GitHub URL copy target should lift color: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn github_context_hint_renders_below_dialog_not_terminal_footer() {
+        let d = Dialog::GitHubContext {
+            branch: Some("feature/container-info".to_string()),
+            pull_request: Some(pull_request_fixture()),
+            copied: false,
+        };
+        let term_rows = 40;
+        let term_cols = 120;
+        let (box_row, _, height, _) = d.box_rect(term_rows, term_cols);
+        let expected_row = box_row + height;
+        let padded_cols = hint_span_cols(GITHUB_CONTEXT_HINT) + 4;
+        let expected_col = ((term_cols as usize).saturating_sub(padded_cols) / 2) as u16;
+
+        let mut buf = Vec::new();
+        d.render(&mut buf, term_rows, term_cols);
+        let rendered = String::from_utf8_lossy(&buf);
+        let cursor = format!("\x1b[{};{}H", expected_row + 1, expected_col + 1);
+
+        assert!(
+            rendered.contains(&cursor),
+            "hint should render directly below the dialog at {cursor:?}: {rendered:?}"
+        );
+        assert!(rendered.contains("copy GitHub URL"));
     }
 
     #[test]

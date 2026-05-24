@@ -75,11 +75,11 @@ Clear pane drops scrollback saved by jackin' for the focused pane and sends the 
 
 The palette's close action is context-aware. On a one-pane tab it appears as **Close tab** and opens the confirmation directly. On a split tab it appears as **Close**, then asks whether to close the focused pane or the whole tab; **Close pane** is highlighted first.
 
-When the workspace workdir is on a branch with an open GitHub pull request, the multiplexer shows a bottom pull-request bar. The left side shows the PR number and title; the right side shows the container ID. On a non-`main` / non-`master` branch without an open PR, the same line shows the branch name instead. Hovering either clickable side changes the pointer and slightly lifts the color, matching the top tab strip. Capsule refreshes that context periodically, so switching back to `main` or `master` removes the bar.
+When the workspace workdir is on a branch with an open GitHub pull request, the multiplexer shows a bottom pull-request bar. The left side shows the PR number and title; the right side shows the container ID. On a non-`main` / non-`master` branch without an open PR, the same line shows the branch name instead. Hovering either clickable side changes the pointer and slightly lifts the color, matching the top tab strip. Capsule refreshes that cached context periodically, using a conservative cadence so `gh` is not polled aggressively.
 
-Click the container ID on the right side of that bar to open **Container info**. The modal shows the full container ID, role, active pane's agent, and current workdir. Its footer hints that `Enter` copies the container ID, and a copied badge appears after the clipboard write.
+Click the container ID on the right side of that bar to open **Container info**. The modal shows the full container ID, role, active pane's agent, and current workdir. Its footer hints that `Enter` copies the container ID, the Container ID value is emphasized as the copy target, and clicking that value performs the same copy action.
 
-Click the PR or branch text on the left side of the bar to open **GitHub context**. The modal shows the branch, GitHub pull request URL, pull request title, and best-effort CI status from `gh pr checks` when a pull request exists. Its footer hints that `Enter` copies the GitHub URL when a pull request is available.
+Click the PR or branch text on the left side of the bar to open **GitHub context**. The modal shows the branch, GitHub pull request URL, pull request title, and best-effort CI status from `gh pr checks` when a pull request exists. Its footer hints that `Enter` copies the GitHub URL when a pull request is available, the GitHub URL value is emphasized as the copy target, and clicking that value performs the same copy action.
 
 ## Examples
 

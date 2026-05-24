@@ -318,14 +318,14 @@ fn write_cursor(buf: &mut Vec<u8>, row: u16, col: u16) {
 
 fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dialog_dim: bool) {
     buf.extend_from_slice(b"\x1b[0");
-    // Cell-level dim (Amp uses this for its animated bottom-bar) and
-    // dialog-backdrop dim (when a modal is open) both produce the
-    // same ANSI `;2` attribute — they OR together so neither shadows
-    // the other.
+    // Cell-level dim (Amp uses this for its animated bottom-bar) uses
+    // ANSI dim. Dialog backdrop dim is intentionally stronger: ANSI dim
+    // is subtle in many terminals, so modal background cells also get
+    // darkened foreground/background colors below.
     if a.dim || dialog_dim {
         buf.extend_from_slice(b";2");
     }
-    if a.bold {
+    if a.bold && !dialog_dim {
         buf.extend_from_slice(b";1");
     }
     if a.italic {
@@ -337,7 +337,18 @@ fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dialog_dim: bool) {
     if a.inverse {
         buf.extend_from_slice(b";7");
     }
-    match a.fg {
+    if dialog_dim {
+        emit_backdrop_fg(buf, a.fg);
+        emit_backdrop_bg(buf, a.bg);
+    } else {
+        emit_fg(buf, a.fg);
+        emit_bg(buf, a.bg);
+    }
+    buf.push(b'm');
+}
+
+fn emit_fg(buf: &mut Vec<u8>, color: ColorKey) {
+    match color {
         ColorKey::Default => {}
         ColorKey::Idx(n) if n < 8 => {
             let _ = write!(buf, ";3{}", n);
@@ -352,7 +363,10 @@ fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dialog_dim: bool) {
             let _ = write!(buf, ";38;2;{r};{g};{b}");
         }
     }
-    match a.bg {
+}
+
+fn emit_bg(buf: &mut Vec<u8>, color: ColorKey) {
+    match color {
         ColorKey::Default => {}
         ColorKey::Idx(n) if n < 8 => {
             let _ = write!(buf, ";4{}", n);
@@ -367,7 +381,50 @@ fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dialog_dim: bool) {
             let _ = write!(buf, ";48;2;{r};{g};{b}");
         }
     }
-    buf.push(b'm');
+}
+
+fn emit_backdrop_fg(buf: &mut Vec<u8>, color: ColorKey) {
+    let (r, g, b) = match color {
+        ColorKey::Default => (58, 58, 58),
+        ColorKey::Idx(n) => dim_indexed_color(n),
+        ColorKey::Rgb(r, g, b) => (strong_dim(r), strong_dim(g), strong_dim(b)),
+    };
+    let _ = write!(buf, ";38;2;{r};{g};{b}");
+}
+
+fn emit_backdrop_bg(buf: &mut Vec<u8>, color: ColorKey) {
+    let (r, g, b) = match color {
+        ColorKey::Default => (0, 0, 0),
+        ColorKey::Idx(n) => dim_indexed_color(n),
+        ColorKey::Rgb(r, g, b) => (strong_dim(r), strong_dim(g), strong_dim(b)),
+    };
+    let _ = write!(buf, ";48;2;{r};{g};{b}");
+}
+
+const fn strong_dim(value: u8) -> u8 {
+    value / 5
+}
+
+const fn dim_indexed_color(idx: u8) -> (u8, u8, u8) {
+    let (r, g, b) = match idx & 0x0f {
+        0 => (0, 0, 0),
+        1 => (170, 0, 0),
+        2 => (0, 170, 0),
+        3 => (170, 85, 0),
+        4 => (0, 0, 170),
+        5 => (170, 0, 170),
+        6 => (0, 170, 170),
+        7 => (170, 170, 170),
+        8 => (85, 85, 85),
+        9 => (255, 85, 85),
+        10 => (85, 255, 85),
+        11 => (255, 255, 85),
+        12 => (85, 85, 255),
+        13 => (255, 85, 255),
+        14 => (85, 255, 255),
+        _ => (255, 255, 255),
+    };
+    (strong_dim(r), strong_dim(g), strong_dim(b))
 }
 
 #[cfg(test)]
@@ -409,6 +466,20 @@ mod tests {
         assert!(
             s.contains("\x1b[5;3H"),
             "missing pane-origin cursor move: {s:?}"
+        );
+    }
+
+    #[test]
+    fn dialog_backdrop_dim_uses_strong_darkened_colors() {
+        let mut parser = Parser::new(1, 10, 0);
+        parser.process(b"\x1b[31mred");
+        let mut buf = Vec::new();
+        render_pane(parser.screen(), 0, 0, 1, 10, true, &mut buf);
+        let out = String::from_utf8_lossy(&buf);
+
+        assert!(
+            out.contains(";2;38;2;34;0;0;48;2;0;0;0m"),
+            "dialog backdrop should darken colors, not rely on ANSI dim alone: {out:?}"
         );
     }
 

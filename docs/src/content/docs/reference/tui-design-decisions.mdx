@@ -61,6 +61,12 @@ Rules:
 - `Tab switch tab`, `S save`, and `Esc back/discard` are always shown in the global footer.
 - Keep each hint concise: one symbol or key name, one word label. Use `·` separators between hints.
 
+### Clickable targets must look clickable
+
+Any jackin' TUI element that performs an action on click must expose three matching cues: a distinct resting style, a hover style change, and pointer-shape feedback where the terminal supports it. The visual target must be the exact value or control that will act. For copy dialogs, only the value copied by `Enter` is rendered as the emphasized clickable value; informational rows stay in the normal value color.
+
+When a footer says `Enter copy <value>`, clicking that same emphasized value must perform the same copy action and show visible feedback. Do not make a whole dialog row look actionable if only one value is copied, and do not add click handlers without a visible hover/resting affordance.
+
 This rule applies to every TUI surface: list view, workspace editor (all tabs), settings (all tabs), all modals and overlays.
 
 ### Space vs Enter — W3C semantic distinction
