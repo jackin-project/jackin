@@ -88,6 +88,12 @@ jackin load the-architect --role-branch feat/my-pr
 13. Starts the selected agent CLI
 
 <Aside type="note">
+Host-side Docker work follows the operator's selected Docker daemon. If
+`DOCKER_HOST` is set, jackin' uses it. Otherwise jackin' follows the
+active Docker CLI context, so the image build, per-agent network, DinD
+sidecar, and role container are created on the same Docker backend.
+</Aside>
+<Aside type="note">
 If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.
 </Aside>
 <Aside type="caution">
