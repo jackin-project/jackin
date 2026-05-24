@@ -464,6 +464,10 @@ pub enum SessionEvent {
     Exited {
         session_id: u64,
     },
+    GitBranchContextLoaded {
+        request_id: u64,
+        branch: Option<String>,
+    },
     PullRequestContextLoaded {
         request_id: u64,
         branch: Option<String>,

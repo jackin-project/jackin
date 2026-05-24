@@ -133,9 +133,12 @@ pub struct Multiplexer {
     /// Current branch / PR context rendered in the bottom status line.
     pull_request_context_branch: Option<String>,
     pull_request_context: Option<PullRequestInfo>,
+    git_branch_context_request_id: u64,
+    git_branch_context_lookup_in_flight: bool,
+    last_git_branch_context_lookup: Option<Instant>,
     pull_request_context_request_id: u64,
     pull_request_context_lookup_in_flight: bool,
-    last_pull_request_context_lookup: Option<Instant>,
+    pull_request_context_cache: HashMap<String, PullRequestContextCacheEntry>,
     /// Workspace workdir read from `/jackin/run/agent.toml` at daemon startup.
     /// Every spawned PTY (agent or shell) receives this as its `cwd`
     /// so the operator's panes open in the workspace they configured
@@ -146,6 +149,18 @@ pub struct Multiplexer {
 struct PullRequestContextLookupRequest {
     request_id: u64,
     workdir: PathBuf,
+    branch: String,
+}
+
+struct GitBranchContextLookupRequest {
+    request_id: u64,
+    workdir: PathBuf,
+}
+
+#[derive(Clone)]
+struct PullRequestContextCacheEntry {
+    checked_at: Instant,
+    pull_request: Option<PullRequestInfo>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -319,6 +334,7 @@ const SGR_NO_BUTTON_MOTION: u8 = 35;
 
 const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::from_secs(2);
 const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
+const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 // GitHub context is operator-facing chrome, not a live feed. Keep the
 // branch/PR/CI cache warm without polling `gh` aggressively enough to
 // waste API quota or trip secondary rate limits.
@@ -374,9 +390,12 @@ impl Multiplexer {
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
             pull_request_context: None,
+            git_branch_context_request_id: 0,
+            git_branch_context_lookup_in_flight: false,
+            last_git_branch_context_lookup: None,
             pull_request_context_request_id: 0,
             pull_request_context_lookup_in_flight: false,
-            last_pull_request_context_lookup: None,
+            pull_request_context_cache: HashMap::new(),
             workdir,
         }
     }
@@ -567,21 +586,59 @@ impl Multiplexer {
         });
     }
 
+    fn maybe_spawn_git_branch_context_lookup(&mut self, now: Instant) {
+        if self.git_branch_context_lookup_in_flight {
+            return;
+        }
+        if self
+            .last_git_branch_context_lookup
+            .is_some_and(|last| now.duration_since(last) < GIT_BRANCH_CONTEXT_POLL_INTERVAL)
+        {
+            return;
+        }
+        self.last_git_branch_context_lookup = Some(now);
+        self.git_branch_context_request_id = self.git_branch_context_request_id.wrapping_add(1);
+        let request = GitBranchContextLookupRequest {
+            request_id: self.git_branch_context_request_id,
+            workdir: self.workdir.clone(),
+        };
+        self.git_branch_context_lookup_in_flight = true;
+        self.spawn_git_branch_context_lookup(request);
+    }
+
+    fn spawn_git_branch_context_lookup(&self, request: GitBranchContextLookupRequest) {
+        let event_tx = self.event_tx.clone();
+        std::thread::spawn(move || {
+            let branch = git_current_branch(&request.workdir);
+            if event_tx
+                .send(SessionEvent::GitBranchContextLoaded {
+                    request_id: request.request_id,
+                    branch,
+                })
+                .is_err()
+            {
+                crate::clog!(
+                    "git-branch-context: event channel closed before branch reached the main loop"
+                );
+            }
+        });
+    }
+
     fn maybe_spawn_pull_request_context_lookup(&mut self, now: Instant) {
         if self.pull_request_context_lookup_in_flight {
             return;
         }
-        if self
-            .last_pull_request_context_lookup
-            .is_some_and(|last| now.duration_since(last) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL)
-        {
+        let Some(branch) = self.pull_request_context_branch.clone() else {
+            return;
+        };
+        if is_default_branch_name(&branch) || self.pull_request_cache_is_fresh(&branch, now) {
             return;
         }
-        self.last_pull_request_context_lookup = Some(now);
         self.pull_request_context_request_id = self.pull_request_context_request_id.wrapping_add(1);
         let request = PullRequestContextLookupRequest {
             request_id: self.pull_request_context_request_id,
             workdir: self.workdir.clone(),
+            branch,
         };
         self.pull_request_context_lookup_in_flight = true;
         self.spawn_pull_request_context_lookup(request);
@@ -590,14 +647,11 @@ impl Multiplexer {
     fn spawn_pull_request_context_lookup(&self, request: PullRequestContextLookupRequest) {
         let event_tx = self.event_tx.clone();
         std::thread::spawn(move || {
-            let branch = git_current_branch(&request.workdir);
-            let pull_request = branch
-                .as_deref()
-                .and_then(|branch| gh_pull_request_info(&request.workdir, branch));
+            let pull_request = gh_pull_request_info(&request.workdir, &request.branch);
             if event_tx
                 .send(SessionEvent::PullRequestContextLoaded {
                     request_id: request.request_id,
-                    branch,
+                    branch: Some(request.branch),
                     pull_request,
                 })
                 .is_err()
@@ -609,24 +663,95 @@ impl Multiplexer {
         });
     }
 
+    fn apply_git_branch_context_loaded(
+        &mut self,
+        request_id: u64,
+        branch: Option<String>,
+        now: Instant,
+    ) -> bool {
+        if request_id != self.git_branch_context_request_id {
+            return false;
+        }
+        self.git_branch_context_lookup_in_flight = false;
+        self.apply_git_branch_context(branch, now)
+    }
+
+    fn apply_git_branch_context(&mut self, branch: Option<String>, now: Instant) -> bool {
+        let old_branch = self.pull_request_context_branch.clone();
+        if old_branch == branch {
+            self.maybe_spawn_pull_request_context_lookup(now);
+            return false;
+        }
+        let old_pull_request = self.pull_request_context.clone();
+        self.pull_request_context_branch = branch.clone();
+        self.pull_request_context = branch
+            .as_deref()
+            .and_then(|branch| self.cached_pull_request_for_branch(branch, now));
+
+        self.pull_request_context_lookup_in_flight = false;
+        crate::cdebug!(
+            "git-branch-context: branch changed old={:?} new={:?}",
+            old_branch,
+            self.pull_request_context_branch
+        );
+        let changed = old_branch != self.pull_request_context_branch
+            || old_pull_request != self.pull_request_context;
+        let resized = self.reconcile_content_rows();
+        self.maybe_spawn_pull_request_context_lookup(now);
+        resized || changed
+    }
+
     fn apply_pull_request_context_loaded(
         &mut self,
         request_id: u64,
         branch: Option<String>,
         pull_request: Option<PullRequestInfo>,
+        now: Instant,
     ) -> bool {
         if request_id != self.pull_request_context_request_id {
             return false;
         }
         self.pull_request_context_lookup_in_flight = false;
-        let changed =
-            self.pull_request_context_branch != branch || self.pull_request_context != pull_request;
-        self.pull_request_context_branch = branch;
+        let Some(branch) = branch else {
+            return false;
+        };
+        self.pull_request_context_cache.insert(
+            branch.clone(),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                pull_request: pull_request.clone(),
+            },
+        );
+        if self.pull_request_context_branch.as_deref() != Some(branch.as_str()) {
+            return false;
+        }
+        let changed = self.pull_request_context != pull_request;
         self.pull_request_context = pull_request;
         if self.reconcile_content_rows() {
             return true;
         }
         changed
+    }
+
+    fn cached_pull_request_for_branch(
+        &self,
+        branch: &str,
+        now: Instant,
+    ) -> Option<PullRequestInfo> {
+        self.pull_request_context_cache
+            .get(branch)
+            .filter(|entry| {
+                now.duration_since(entry.checked_at) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
+            })
+            .and_then(|entry| entry.pull_request.clone())
+    }
+
+    fn pull_request_cache_is_fresh(&self, branch: &str, now: Instant) -> bool {
+        self.pull_request_context_cache
+            .get(branch)
+            .is_some_and(|entry| {
+                now.duration_since(entry.checked_at) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
+            })
     }
 
     /// Pop the top dialog. Returns `Some(prev)` when something was on
@@ -3013,12 +3138,22 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             return Ok(());
                         }
                     }
+                    SessionEvent::GitBranchContextLoaded { request_id, branch } => {
+                        if mux.apply_git_branch_context_loaded(request_id, branch, Instant::now()) {
+                            mux.request_full_redraw(FullRedrawReason::StatusChange);
+                        }
+                    }
                     SessionEvent::PullRequestContextLoaded {
                         request_id,
                         branch,
                         pull_request,
                     } => {
-                        if mux.apply_pull_request_context_loaded(request_id, branch, pull_request) {
+                        if mux.apply_pull_request_context_loaded(
+                            request_id,
+                            branch,
+                            pull_request,
+                            Instant::now(),
+                        ) {
                             mux.request_full_redraw(FullRedrawReason::StatusChange);
                         }
                     }
@@ -3072,6 +3207,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // visibly jumps to the tab strip every tick and parks
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
+                mux.maybe_spawn_git_branch_context_lookup(Instant::now());
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
@@ -4422,27 +4558,89 @@ mod tests {
     #[test]
     fn branch_context_visibility_resizes_content_area() {
         let mut mux = test_mux(24, 100);
-        mux.pull_request_context_request_id = 9;
+        let now = Instant::now();
         assert_eq!(mux.content_rows, 22);
 
-        assert!(mux.apply_pull_request_context_loaded(
-            9,
-            Some("asa/pr-context".to_string()),
-            Some(pull_request_fixture(434)),
-        ));
+        mux.pull_request_context_cache.insert(
+            "asa/pr-context".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                pull_request: Some(pull_request_fixture(434)),
+            },
+        );
+        assert!(mux.apply_git_branch_context(Some("asa/pr-context".to_string()), now));
         assert_eq!(mux.content_rows, 21);
         assert_eq!(
             mux.pull_request_context.as_ref().map(|pr| pr.number),
             Some(434)
         );
 
-        assert!(mux.apply_pull_request_context_loaded(9, Some("feature/no-pr".to_string()), None));
+        mux.pull_request_context_cache.insert(
+            "feature/no-pr".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                pull_request: None,
+            },
+        );
+        assert!(mux.apply_git_branch_context(Some("feature/no-pr".to_string()), now));
         assert_eq!(mux.content_rows, 21);
         assert!(mux.pull_request_context.is_none());
 
-        assert!(mux.apply_pull_request_context_loaded(9, Some("main".to_string()), None));
+        assert!(mux.apply_git_branch_context(Some("main".to_string()), now));
         assert_eq!(mux.content_rows, 22);
         assert!(mux.pull_request_context.is_none());
+    }
+
+    #[test]
+    fn git_branch_context_updates_status_before_github_lookup() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_context_branch = Some("old/pr".to_string());
+        mux.pull_request_context = Some(pull_request_fixture(434));
+        mux.reconcile_content_rows();
+        assert_eq!(mux.content_rows, 21);
+
+        mux.pull_request_context_cache.insert(
+            "new/local-branch".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                pull_request: None,
+            },
+        );
+        assert!(mux.apply_git_branch_context(Some("new/local-branch".to_string()), now));
+
+        assert_eq!(
+            mux.pull_request_context_branch.as_deref(),
+            Some("new/local-branch")
+        );
+        assert!(mux.pull_request_context.is_none());
+        assert!(branch_context_bar_visible(
+            mux.pull_request_context_branch.as_deref(),
+            mux.pull_request_context.as_ref(),
+        ));
+        assert_eq!(mux.content_rows, 21);
+    }
+
+    #[test]
+    fn git_branch_context_keeps_current_pr_while_refreshing_same_branch() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_context_branch = Some("feature/current".to_string());
+        mux.pull_request_context = Some(pull_request_fixture(436));
+        mux.pull_request_context_lookup_in_flight = true;
+        mux.pull_request_context_cache.insert(
+            "feature/current".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL,
+                pull_request: Some(pull_request_fixture(436)),
+            },
+        );
+
+        assert!(!mux.apply_git_branch_context(Some("feature/current".to_string()), now));
+        assert_eq!(
+            mux.pull_request_context.as_ref().map(|pr| pr.number),
+            Some(436)
+        );
     }
 
     #[test]
