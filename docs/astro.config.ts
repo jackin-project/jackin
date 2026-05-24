@@ -192,6 +192,7 @@ export default defineConfig({
                       collapsed: true,
                       items: [
                         { label: 'Agent runtime status authority', slug: 'reference/roadmap/agent-runtime-status' },
+                        { label: 'Launch progress TUI', slug: 'reference/roadmap/launch-progress-tui' },
                         { label: 'Console agent session control', slug: 'reference/roadmap/console-agent-session-control' },
                         { label: 'Console resource panel', slug: 'reference/roadmap/console-resource-panel' },
                         { label: 'Agent tag protocol', slug: 'reference/roadmap/agent-tag-protocol' },
