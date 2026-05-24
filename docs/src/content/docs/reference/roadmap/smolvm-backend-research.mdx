@@ -21,6 +21,8 @@ Primary source: [smol-machines/smolvm](https://github.com/smol-machines/smolvm).
 
 Comparison sources:
 
+- [smol machines product/docs site](https://www.smolmachines.com/) - positioning, usage examples, network defaults, `.smolmachine`, platform matrix, and comparison table.
+- [smolvm SDK overview](https://smolmachines.com/sdk/) - current SDK shape, language bindings, server requirement, and machine API surface.
 - [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) - Docker's productized agent sandbox runtime.
 - [Docker Sandboxes architecture](https://docs.docker.com/ai/sandboxes/architecture/) - workspace mounting, persistence, networking, lifecycle, and alternatives.
 - [Docker Sandboxes security model](https://docs.docker.com/ai/sandboxes/security/) and [isolation layers](https://docs.docker.com/ai/sandboxes/security/isolation/) - hypervisor, network, private Docker Engine, and credential proxy boundaries.
@@ -31,12 +33,13 @@ Current repository signals as of May 24, 2026:
 - Apache-2.0 repository with roughly 3.4k GitHub stars and active releases.
 - Latest GitHub release observed during this research: `v0.7.2` on May 21, 2026.
 - README describes smolvm as a CLI for portable, lightweight, self-contained virtual machines.
-- README claims sub-second cold start, cross-platform macOS/Linux support, elastic memory, OCI image input, `.smolmachine` portable artifacts, network off by default, allow-host egress, SSH agent forwarding, persistent machines, and an embeddable SDK.
+- Public docs claim sub-second cold start, cross-platform macOS/Linux support, elastic memory, OCI image input, `.smolmachine` portable artifacts, network off by default, allow-host egress, SSH agent forwarding, persistent machines, and SDK access.
 - README says each workload gets its own kernel through Hypervisor.framework on macOS or KVM on Linux, using libkrun with a custom kernel.
 - README says Docker Hub, GHCR, and other OCI registry images can be booted as microVMs with no Docker daemon required.
 - Known limitations include opt-in TCP/UDP networking only, no ICMP, directory-only volume mounts, Hypervisor.framework signing entitlements on macOS, host SSH agent requirement for `--ssh-agent`, and GPU requirements.
 - Release notes for `v0.7.0` mention "enabling docker within smolvm through TSI", which is directly relevant to jackin' Docker-workflow compatibility and needs hands-on validation.
 - Development docs show a Rust build with cargo-make, git-lfs, libkrun/libkrunfw binaries, a smolvm agent rootfs, and macOS codesigning.
+- The public SDK docs currently present TypeScript/JavaScript and Python SDKs that talk to a smolvm server. A direct Rust embedding API for jackin' must be verified rather than assumed.
 
 ## Comparison Target
 
@@ -54,7 +57,7 @@ Do not expand this item into Firecracker research. Firecracker can remain a late
 |---|---|---|---|
 | Product shape | Polished macOS app and CLI | Open-source CLI/library-oriented runtime | Productized Docker CLI/service for agent sandboxes |
 | License/control | Proprietary | Apache-2.0 | Commercial Docker product surface around a proprietary service/runtime |
-| Implementation fit | Shell out to `orb` | Shell out first, potentially embed later | Shell out to `sbx` or integrate around Docker's sandbox workflow if APIs allow |
+| Implementation fit | Shell out to `orb` | Shell out first; SDK/server or Rust embedding requires validation | Shell out to `sbx` or integrate around Docker's sandbox workflow if APIs allow |
 | Boundary wording | Isolated machine, shared kernel per OrbStack docs | VM per workload with its own kernel per smolvm README | Dedicated microVM per sandbox per Docker docs |
 | Platform | macOS only | macOS and Linux with KVM | macOS, Windows, and Linux per Docker docs |
 | Docker compatibility | Install/start Docker inside machine | OCI images boot without Docker daemon; Docker-in-guest needs research | Private Docker Engine is a core feature |
@@ -98,7 +101,7 @@ smolvm should be compared against that shape, not against generic "microVM" clai
 Potential advantages to validate:
 
 - Open-source runtime that can be audited, patched, forked, and discussed in jackin' roadmap terms without depending on vendor APIs.
-- Rust-heavy implementation and claimed SDK path, which may eventually fit jackin' better than a black-box CLI integration.
+- Rust-heavy implementation and libkrun foundation, which may eventually fit jackin' better than a black-box CLI integration if a stable Rust-consumable API exists.
 - Direct OCI-image boot without requiring Docker as the outer runtime.
 - Network-off-by-default posture that maps naturally to jackin' deny-by-default egress goals.
 - Linux/KVM and macOS Hypervisor.framework support in one project, giving jackin' a possible non-OrbStack local VM backend beyond macOS.
@@ -147,7 +150,7 @@ Research whether smolvm can support one or more jackin' backend modes:
 2. **Docker-free role backend**: boot a role OCI image directly as a smolvm workload without a Docker daemon.
 3. **Persistent machine backend**: create one smolvm machine per jackin' instance, preserve agent state, and reconnect later.
 4. **Docker-capable VM backend**: run Docker-compatible workflows inside the smolvm boundary if the `v0.7.0` Docker-in-smolvm work is usable.
-5. **Embedded backend**: eventually integrate through a Rust SDK or library boundary instead of shelling out to the CLI.
+5. **Embedded backend**: eventually integrate through a stable SDK, server, or library boundary instead of shelling out to the CLI.
 
 The research should produce a go/no-go recommendation for each mode.
 
@@ -303,6 +306,7 @@ Implications for jackin':
 - Single-file secret/config mounts would need a parent directory mount, a generated staging directory, or a different credential mechanism.
 - Mount destination control must be validated: jackin' supports arbitrary `dst`, while smolvm examples use `-v /host/dir:/workspace`.
 - Read-only mount support must be checked.
+- Directory mount confinement must be tested with symlinks, bind-mount escape attempts, nested filesystems, and parent-directory access assumptions.
 - Worktree/clone isolation can still materialize on the host before the directory is mounted into smolvm.
 
 ## Authentication
@@ -318,16 +322,17 @@ Rules for jackin':
 
 ## Packaging And Embedding
 
-smolvm is attractive because it is Rust-heavy and claims an embeddable SDK. That creates a possible sequence:
+smolvm is attractive because it is Rust-heavy and exposes more than a one-off CLI story. That creates a possible sequence:
 
 1. Shell out to `smolvm` CLI for research and prototypes.
 2. Build a backend adapter around stable CLI output and instance handles.
-3. Evaluate SDK embedding only after the CLI prototype proves the product value.
-4. Embed only if it materially improves launch latency, logs, lifecycle control, or packaging.
+3. Evaluate the public SDK/server path only after the CLI prototype proves the product value.
+4. Evaluate lower-level Rust/libkrun embedding only if it materially improves launch latency, logs, lifecycle control, or packaging.
 
 Embedding risks:
 
 - smolvm is pre-1.0 and moving quickly.
+- Public SDK shape may not match jackin' Rust integration needs.
 - libkrun/libkrunfw binaries and git-lfs assets complicate distribution.
 - macOS Hypervisor.framework entitlements require signing.
 - Linux requires KVM.
@@ -391,8 +396,8 @@ Embedding risks:
 
 ### Phase 5 - SDK and packaging decision
 
-- Evaluate SDK/API stability.
-- Decide whether embedding beats shell-out.
+- Evaluate CLI, public SDK/server, and lower-level Rust/libkrun integration stability separately.
+- Decide whether any embedding path beats shell-out.
 - Document distribution requirements for macOS signing and Linux KVM.
 - Keep CLI shell-out if embedding would make jackin' own too much VM-runtime maintenance.
 
@@ -403,7 +408,7 @@ Embedding risks:
 3. Does smolvm support read-only mounts and arbitrary destination paths well enough for jackin' workspace mounts?
 4. Does Docker inside smolvm support Compose and Testcontainers?
 5. Can smolvm expose a stable attach channel for long-running interactive TUI sessions?
-6. How stable is the claimed SDK, and is it Rust-consumable in a way that fits jackin' release/distribution needs?
+6. How stable are the CLI, public SDK/server, and any Rust-consumable lower-level API, and which one fits jackin' release/distribution needs?
 7. How should `.smolmachine` artifacts map to jackin' state and purge semantics?
 8. Does smolvm's network allowlist cover DNS, redirects, registry auth, and package-manager mirrors predictably?
 9. How close can smolvm get to Docker Sandboxes' host-side policy and credential proxy model without jackin' building a full proxy subsystem first?
