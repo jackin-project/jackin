@@ -879,8 +879,12 @@ impl Session {
     /// own transcript state may still report `0` if it neither scrolls
     /// the grid nor uses a top-anchored scroll region.
     pub fn scrollback_filled(&mut self) -> usize {
-        self.vt_scrollback_filled()
-            .saturating_add(self.inline_scrollback.len())
+        let (vt_filled, inline_filled) = self.scrollback_counts();
+        vt_filled.saturating_add(inline_filled)
+    }
+
+    pub fn scrollback_counts(&mut self) -> (usize, usize) {
+        (self.vt_scrollback_filled(), self.inline_scrollback.len())
     }
 
     fn vt_scrollback_filled(&mut self) -> usize {
@@ -1017,6 +1021,29 @@ impl Session {
         } else {
             self.scroll_to_live();
         }
+        if crate::logging::debug_enabled() {
+            let (vt_filled, inline_filled) = self.scrollback_counts();
+            let screen = self.parser.screen();
+            let (screen_rows, screen_cols) = screen.size();
+            let (cursor_row, cursor_col) = screen.cursor_position();
+            crate::cdebug!(
+                "session feed_pty: agent={:?} label={} bytes={} alt_screen={} mouse_enabled={} screen={}x{} cursor={}x{} vt_scrollback={} inline_scrollback={} scrollback_offset={} inline_region={}..{}",
+                self.agent,
+                self.label,
+                bytes.len(),
+                screen.alternate_screen(),
+                self.mouse_enabled(),
+                screen_rows,
+                screen_cols,
+                cursor_row,
+                cursor_col,
+                vt_filled,
+                inline_filled,
+                self.scrollback_offset,
+                self.inline_scroll_region_tracker.region.top,
+                self.inline_scroll_region_tracker.region.bottom
+            );
+        }
         self.last_output_at = std::time::Instant::now();
         self.state = state_after_pty_output(self.state);
     }
@@ -1048,6 +1075,7 @@ impl Session {
             return;
         }
 
+        let row_len = row.len();
         self.inline_scrollback.push_back(row);
         if self.scrollback_offset != 0 {
             self.scrollback_offset = self.scrollback_offset.saturating_add(1);
@@ -1056,6 +1084,16 @@ impl Session {
             self.inline_scrollback.pop_front();
             self.scrollback_offset = self.scrollback_offset.saturating_sub(1);
         }
+        crate::cdebug!(
+            "inline scrollback capture: agent={:?} label={} row_len={} inline_filled={} scrollback_offset={} region={}..{}",
+            self.agent,
+            self.label,
+            row_len,
+            self.inline_scrollback.len(),
+            self.scrollback_offset,
+            self.inline_scroll_region_tracker.region.top,
+            self.inline_scroll_region_tracker.region.bottom
+        );
     }
 
     fn clear_transient_keyboard_modes(&mut self) {

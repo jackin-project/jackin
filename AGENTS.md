@@ -122,6 +122,8 @@ The flag is the same `JACKIN_DEBUG` the host's `--debug` flag sets — it flows 
 
 When you find yourself adding "TEMPORARY logging to triage a regression", stop and convert it to `cdebug!` instead — the next bug report needs the same telemetry, and removing-and-readding-it on every regression cycle is exactly the loop this rule exists to break. The same applies to any other surface that grows a telemetry / tracing layer (the host CLI's `tui::tprintln`, the docs site's render warnings, the `runtime::launch` path): two tiers, debug-gated firehose, default compact.
 
+When the current logs are insufficient to explain a complex or inconsistent behaviour, do not guess at the fix. First add durable `cdebug!` telemetry that captures the missing state, ask the operator to rerun the repro with `--debug`, and then make the fix from that new evidence. The only exception is when the missing state can be obtained safely from the live process or container without changing code; in that case inspect it directly and keep going.
+
 The reason: operators can rarely reproduce on demand. When they hit something weird, they need to be able to paste a log that already has the answer — without rebuilding, without enabling extra instrumentation we forgot to ship, and without an extra round of "now please run it again with this added line". The host's `--debug` flag is the single switch that turns the firehose on; everything downstream honours it.
 
 ## Reuse before writing — DRY (hard rule)

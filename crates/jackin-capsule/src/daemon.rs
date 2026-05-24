@@ -1610,7 +1610,17 @@ impl Multiplexer {
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
                 {
-                    let filled = session.scrollback_filled();
+                    let debug_enabled = crate::logging::debug_enabled();
+                    let (filled, vt_filled, inline_filled) = if debug_enabled {
+                        let (vt_filled, inline_filled) = session.scrollback_counts();
+                        (
+                            vt_filled.saturating_add(inline_filled),
+                            vt_filled,
+                            inline_filled,
+                        )
+                    } else {
+                        (session.scrollback_filled(), 0, 0)
+                    };
                     if filled == 0
                         && let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(session)
                         && let Some(buf) = encode_wheel_cursor_fallback(session, button)
@@ -1627,6 +1637,21 @@ impl Multiplexer {
                             buf
                         );
                         session.send_input(&buf);
+                        return None;
+                    }
+                    if filled == 0 {
+                        crate::cdebug!(
+                            "wheel dispatch: no-scrollback session={} agent={:?} row={} col={} button={} alt_screen={} mouse_enabled={} vt_scrollback={} inline_scrollback={}",
+                            focused,
+                            session.agent,
+                            row,
+                            col,
+                            button,
+                            session.screen().alternate_screen(),
+                            session.mouse_enabled(),
+                            vt_filled,
+                            inline_filled
+                        );
                         return None;
                     }
                     crate::cdebug!(
@@ -3565,26 +3590,28 @@ impl PaneScrollbar {
 }
 
 fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16) -> PaneScrollbar {
-    let filled = session.scrollback_filled();
+    let debug_enabled = crate::logging::debug_enabled();
+    let (filled, vt_filled, inline_filled) = if debug_enabled {
+        let (vt_filled, inline_filled) = session.scrollback_counts();
+        (
+            vt_filled.saturating_add(inline_filled),
+            vt_filled,
+            inline_filled,
+        )
+    } else {
+        (session.scrollback_filled(), 0, 0)
+    };
     let scrollbar = PaneScrollbar {
         offset: session.scrollback_offset,
         filled,
     };
-    let needs_synthetic = !scrollbar.visible();
-    let metrics = if needs_synthetic || crate::logging::debug_enabled() {
+    let metrics = if debug_enabled {
         screen_scroll_affordance_metrics(session.screen(), viewport_rows, viewport_cols)
     } else {
         None
     };
-    let synthetic_reason = if scrollbar.visible() {
-        None
-    } else {
-        metrics
-            .as_ref()
-            .and_then(|metrics| pane_synthetic_scroll_affordance_reason(session, metrics))
-    };
     crate::cdebug!(
-        "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} first_occupied_row={} last_occupied_row={} scrollback_filled={} visible={} synthetic_reason={}",
+        "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} first_occupied_row={} last_occupied_row={} vt_scrollback={} inline_scrollback={} scrollback_filled={} visible={} reason={}",
         session.agent,
         session.screen().alternate_screen(),
         session.mouse_enabled(),
@@ -3603,24 +3630,22 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
             .as_ref()
             .and_then(|m| m.last_occupied_row)
             .map_or(-1, i32::from),
+        vt_filled,
+        inline_filled,
         filled,
-        scrollbar.visible() || synthetic_reason.is_some(),
-        synthetic_reason.unwrap_or("none")
+        scrollbar.visible(),
+        if scrollbar.visible() {
+            "retained-scrollback"
+        } else {
+            "none"
+        }
     );
-    if scrollbar.visible() || synthetic_reason.is_none() {
-        return scrollbar;
-    }
-
-    PaneScrollbar {
-        offset: 0,
-        filled: usize::from(viewport_rows).max(1),
-    }
+    scrollbar
 }
 
 struct ScrollAffordanceMetrics {
     screen_rows: u16,
     screen_cols: u16,
-    rows: u16,
     cursor_row: u16,
     cursor_col: u16,
     occupied_rows: usize,
@@ -3655,44 +3680,12 @@ fn screen_scroll_affordance_metrics(
     Some(ScrollAffordanceMetrics {
         screen_rows,
         screen_cols,
-        rows,
         cursor_row,
         cursor_col,
         occupied_rows,
         first_occupied_row,
         last_occupied_row,
     })
-}
-
-fn screen_metrics_have_scroll_affordance(metrics: &ScrollAffordanceMetrics) -> bool {
-    metrics.occupied_rows >= usize::from(metrics.rows.saturating_sub(1).max(1))
-}
-
-fn pane_synthetic_scroll_affordance_reason(
-    session: &Session,
-    metrics: &ScrollAffordanceMetrics,
-) -> Option<&'static str> {
-    if screen_metrics_have_scroll_affordance(metrics) {
-        return Some("occupied-grid");
-    }
-    if normal_screen_content_span_suggests_scroll_affordance(session, metrics) {
-        return Some("normal-screen-content-span");
-    }
-    None
-}
-
-fn normal_screen_content_span_suggests_scroll_affordance(
-    session: &Session,
-    metrics: &ScrollAffordanceMetrics,
-) -> bool {
-    if session.screen().alternate_screen() || session.mouse_enabled() || metrics.occupied_rows == 0
-    {
-        return false;
-    }
-    let (Some(first), Some(last)) = (metrics.first_occupied_row, metrics.last_occupied_row) else {
-        return false;
-    };
-    first <= metrics.rows / 4 && last >= metrics.rows.saturating_sub(3)
 }
 
 fn pane_wheel_cursor_fallback_reason(session: &Session) -> Option<&'static str> {
@@ -3986,6 +3979,13 @@ mod tests {
         );
     }
 
+    fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
+        assert!(
+            !String::from_utf8_lossy(frame).contains('█'),
+            "{context} should not draw fake scrollback chrome"
+        );
+    }
+
     fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, lines: usize) {
         session.feed_pty(format!("\x1b[1;{region_bottom}r\x1b[{region_bottom};1H").as_bytes());
         for i in 0..lines {
@@ -4264,7 +4264,7 @@ mod tests {
     }
 
     #[test]
-    fn wheel_does_not_send_cursor_keys_to_focused_normal_screen_pane_without_scrollback() {
+    fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
         for (agent, pane_kind) in pane_kind_cases() {
             let mut mux = single_pane_tab_mux_with_size(55, 200);
             let (mut session, mut input_rx) = test_pane_session(51, 198, agent);
@@ -4279,17 +4279,12 @@ mod tests {
             });
 
             assert!(
-                redraw.is_some(),
-                "{pane_kind} normal-screen transcript pane should redraw jackin'"
-            );
-            let frame = redraw.expect("normal-screen wheel should redraw");
-            assert!(
-                !String::from_utf8_lossy(&frame).contains('█'),
-                "normal-screen {pane_kind} pane without retained history should not draw fake scrollback chrome"
+                redraw.is_none(),
+                "{pane_kind} normal-screen pane without scrollback should not redraw jackin'"
             );
             assert!(
                 input_rx.try_recv().is_err(),
-                "normal-screen {pane_kind} transcript pane without vt100 scrollback must not receive cursor-key wheel fallback"
+                "normal-screen {pane_kind} pane without scrollback must not receive cursor-key wheel fallback"
             );
             assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
         }
@@ -4391,21 +4386,22 @@ mod tests {
     }
 
     #[test]
-    fn alt_screen_overflow_draws_pane_scrollbar_chrome() {
+    fn alt_screen_overflow_does_not_draw_scrollbar_without_retained_scrollback() {
         let mut mux = single_pane_tab_mux();
         let (mut session, _input_rx) = test_session(8, 20);
         session.feed_pty(b"\x1b[?1049h");
         for i in 0..20 {
             session.feed_pty(format!("line {i}\r\n").as_bytes());
         }
+        assert_eq!(session.scrollback_filled(), 0);
         mux.sessions.insert(1, session);
 
         let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
-        assert_focused_scroll_chrome(&frame, "scrollable alt-screen pane");
+        assert_no_scroll_thumb(&frame, "alt-screen pane without retained scrollback");
     }
 
     #[test]
-    fn normal_screen_panes_draw_scroll_affordance_when_grid_is_full() {
+    fn normal_screen_panes_do_not_draw_scrollbar_when_grid_is_full_without_scrollback() {
         for (agent, pane_kind) in pane_kind_cases() {
             let mut mux = single_pane_tab_mux();
             let (mut session, _input_rx) = test_pane_session(8, 20, agent);
@@ -4415,12 +4411,15 @@ mod tests {
             mux.sessions.insert(1, session);
 
             let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
-            assert_focused_scroll_chrome(&frame, &format!("normal-screen {pane_kind} pane"));
+            assert_no_scroll_thumb(
+                &frame,
+                &format!("normal-screen {pane_kind} pane with full grid but no scrollback"),
+            );
         }
     }
 
     #[test]
-    fn normal_screen_panes_draw_scroll_affordance_when_content_spans_viewport() {
+    fn normal_screen_panes_do_not_draw_scrollbar_when_content_spans_viewport_without_scrollback() {
         for (agent, pane_kind) in pane_kind_cases() {
             let mut mux = single_pane_tab_mux();
             let (mut session, _input_rx) = test_pane_session(8, 20, agent);
@@ -4429,15 +4428,17 @@ mod tests {
             mux.sessions.insert(1, session);
 
             let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
-            assert_focused_scroll_chrome(
+            assert_no_scroll_thumb(
                 &frame,
-                &format!("normal-screen {pane_kind} pane with viewport-spanning content"),
+                &format!(
+                    "normal-screen {pane_kind} pane with viewport-spanning content but no scrollback"
+                ),
             );
         }
     }
 
     #[test]
-    fn normal_screen_panes_keep_scroll_affordance_when_cursor_moves_above_bottom_band() {
+    fn normal_screen_panes_do_not_keep_scrollbar_when_cursor_moves_without_scrollback() {
         for (agent, pane_kind) in pane_kind_cases() {
             let mut mux = single_pane_tab_mux_with_size(55, 200);
             let (mut session, _input_rx) = test_pane_session(51, 198, agent);
@@ -4446,7 +4447,7 @@ mod tests {
             mux.sessions.insert(1, session);
 
             let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
-            assert_focused_scroll_chrome(
+            assert_no_scroll_thumb(
                 &frame,
                 &format!("normal-screen {pane_kind} transcript pane after cursor moved up"),
             );
