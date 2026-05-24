@@ -167,14 +167,14 @@ The same cached telemetry feeds four surfaces:
 - **Desktop app.** The Accounts view is the full inspection surface: every known account, provider, source, current availability, reset time, last refresh, confidence, active workspaces, and repair actions. The Running Agents view also shows the focused account quota and workspace/session spend inline so the operator does not have to switch screens before starting work.
 - **macOS status bar.** Shows the most constrained active account by default: provider glyph/name plus remaining percentage or “stale/login” state. The menu expands to all accounts with reset timers, confidence/source labels, and repair actions. This is the fastest glance surface and must make quota risk visible without opening a browser or the full Desktop window.
 - **`jackin console` account screen.** A new Accounts / Usage view lists every known account, provider, source, current availability, reset time, last refresh, and which workspaces currently use it. Workspace and running-agent rows should also include compact quota badges for the account currently attached to that workspace/agent.
-- **Capsule multiplexer quota signal.** Inside `jackin-capsule`, the top chrome shows a compact always-visible quota signal for the focused agent, e.g. `Claude 80%`, `Codex 12%`, `Amp login`, or `stale`. Prefix `u` (or a palette command) opens a read-only dialog with account availability, reset countdown, today/session/workspace tokens, burn rate, and cache freshness. Detailed numbers belong in the dialog; the chrome signal exists so the operator can see “safe / low / unavailable” without leaving the agent.
+- **Capsule multiplexer quota signal.** Inside `jackin-capsule`, the status chrome shows a compact always-visible quota signal for the focused tab/pane's provider only, placed beside the branch/repository details when that line is present: a Codex tab shows `Codex 12%`, a Claude tab shows `Claude 80%`, and an Amp tab shows `Amp login`. Prefix `u` (or a palette command) opens a read-only dialog with that focused agent's account availability, reset countdown, today/session/workspace tokens, burn rate, and cache freshness. Detailed numbers belong in the dialog; the compact signal exists so the operator can see “safe / low / unavailable” without leaving the agent.
 - **CLI / automation.** `jackin usage` exposes account, workspace, and session views with `--json`, including freshness and provenance fields so scripts do not mistake local estimates for provider-enforced limits.
 
 ### Compact visibility contract
 
 Every interactive jackin' surface that can launch or focus an agent must expose the active account's quota state without making the operator open a separate browser dashboard:
 
-- **Always visible:** macOS status item, Desktop running-agent rows, `jackin console` workspace/agent rows, and Capsule top chrome all show a compact quota signal for the active or most constrained account.
+- **Always visible:** macOS status item, Desktop running-agent rows, `jackin console` workspace/agent rows, and Capsule status chrome all show a compact quota signal. Capsule is stricter than the other surfaces: it shows only the focused tab/pane's provider account, never the global most-constrained account, and should colocate that signal with the branch/repository status line.
 - **Compact by default:** the signal is short enough to scan beside existing status: provider plus percent remaining (`Claude 80%`, `Codex 18%`), state (`Amp login`, `stale`), or color/ring/glyph when text would crowd the surface.
 - **Details one action away:** click the menu/status item, open the Desktop Accounts view, switch to the `jackin console` Accounts / Usage screen, or press Capsule prefix `u` to see reset windows, confidence, source, freshness, and workspace/session spend.
 - **Never ambiguous:** percentages mean remaining quota unless the label explicitly says `used`; low quota and stale data must be visually distinct from healthy quota.
@@ -254,7 +254,7 @@ $ jackin usage the-architect --json
 - Host-owned telemetry cache with TTL, stale/error states, and provider-specific refresh backoff.
 - Pricing table with operator override; ship sensible defaults.
 - Console "Cost (today)" column when the resource panel is open.
-- Compact quota badges on Desktop running-agent rows, `jackin console` workspace/agent rows, macOS status item, and Capsule top chrome.
+- Compact quota badges on Desktop running-agent rows, `jackin console` workspace/agent rows, macOS status item, and Capsule status chrome next to branch/repository details.
 - Console / Desktop account panel showing all accounts, quota windows, reset time, workspace attribution, and stale/login-needed state.
 - Capsule multiplexer quota signal plus focused-agent usage dialog.
 - `jackin usage <selector>` CLI with `--json` and human-readable
