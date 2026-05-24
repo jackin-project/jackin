@@ -115,19 +115,21 @@ CREATE TABLE github_link_statuses (
 );
 
 -- Token / cost samples. Rolling N=86400 entries (~1/sec for 24h).
+-- `instance` is implicit in the per-instance DB file path; not stored per-row.
 CREATE TABLE usage_samples (
-    occurred_at INTEGER PRIMARY KEY,
-    instance TEXT,
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,            -- epoch seconds
     session_id INTEGER,
     workspace TEXT,
-    provider TEXT,
-    model TEXT,
+    provider TEXT NOT NULL,                  -- 'claude' | 'codex' | 'amp' | 'kimi' | 'opencode'
+    model TEXT NOT NULL,
     token_input INTEGER,
     token_output INTEGER,
     token_cache_read INTEGER,
     token_cache_write INTEGER,
     cost_usd_micros INTEGER                  -- $cost * 1e6, integer-safe
 );
+CREATE INDEX usage_samples_by_time ON usage_samples (occurred_at);
 
 -- Tool fire audit. Rolling N=1000 entries.
 CREATE TABLE tool_history (

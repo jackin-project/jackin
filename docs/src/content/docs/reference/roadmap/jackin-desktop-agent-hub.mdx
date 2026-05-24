@@ -78,9 +78,7 @@ Implementation details worth borrowing selectively:
 
 What not to copy:
 
-- OpenUsage is a generic AI subscription tracker. jackin' Desktop should not become a catalog of every AI provider; it should start with the runtimes jackin' launches and accounts the operator explicitly wires into jackin'.
-- A public plugin marketplace is premature. jackin' should first prove the typed adapter shape for `claude`, `codex`, `amp`, `kimi`, and `opencode`.
-- Provider refresh must not silently write to host-side auth/config state. Any repair action that changes the host has to be explicit and surfaced under the host-side effects rule.
+- OpenUsage is a generic AI subscription tracker. jackin' Desktop should not become a catalog of every AI provider; it should start with the runtimes jackin' launches and accounts the operator explicitly wires into jackin'. Provider adapter shape and host-mutation policy live in the telemetry roadmap.
 
 ### CodexBar
 
@@ -127,29 +125,15 @@ What not to copy:
 
 ### Tokemon, Token Tracker, Brim, MeterBar, Control Tower
 
-References:
+Source priorities, confidence labels, and accuracy reasoning for these apps live in [Token & Cost Telemetry → Better accuracy references](/reference/roadmap/token-cost-telemetry/#better-accuracy-references). Desktop borrows their **macOS UI patterns**:
 
-- Tokemon — https://github.com/richyparr/tokemon and https://www.tokemon.ai/
-- Token Tracker — https://github.com/mm7894215/TokenTracker and https://www.tokentracker.cc/
-- Brim — https://getbrim.tech/
-- MeterBar — https://github.com/shipshitdev/meterbar.app and https://meterbar.app/
-- Control Tower — https://github.com/krishcdbry/ControlTower and https://control-tower.dev/
+- Brim — native rings for 5-hour and weekly windows; explicit refresh/freshness widget.
+- MeterBar — simple multi-account dashboard layout; menu-bar plus CLI JSON pairing.
+- Control Tower — quiet-hours, alert routing, and usage-history detail pages.
+- Tokemon — terminal statusline export shape, burn-rate projection display.
+- Token Tracker — menu bar + widget split for at-a-glance vs. detail views.
 
-These are better comparisons than CodexBar for the specific “is the number accurate and understandable?” problem.
-
-Useful ideas:
-
-- Tokemon's source hierarchy: provider/OAuth quota endpoint first for subscription limits; local JSONL logs only as fallback or project-cost attribution.
-- Token Tracker's local-first normalization: hooks and passive readers normalize many agent CLIs into a shared token/cost/project schema, plus machine-readable status output.
-- Brim's trust posture: narrow scope, native rings for 5-hour and weekly windows, explicit refresh/freshness, and clear separation between local logs and provider quota.
-- MeterBar's simple account dashboard and CLI JSON surface.
-- Control Tower's multi-account, quiet-hours, usage-history, and alert concepts, with maturity treated as lower confidence.
-
-Product rule:
-
-- Desktop must label quota data by confidence: **provider-authoritative**, **local estimate**, **stale**, **needs login**, or **unsupported**.
-- The status item should never show a bare percentage without provider, window, and freshness available in the popover.
-- Provider scraping is a fallback, not the default. The daemon owns account connectors and authentication repair states.
+The data model and confidence-labeling rules (`provider-authoritative`, `local estimate`, `stale`, `needs login`, `unsupported`) are the telemetry roadmap's contract; Desktop renders them.
 
 ### RepoBar
 
@@ -223,10 +207,10 @@ The main menu should be PR-first, then workspace-aware. The fastest path should 
 4. Active workspaces: each row shows workspace name, repo/branch, role, agent, container state, last event, and primary action.
 5. Ready for review: PR rows promoted to the top when an agent explicitly reports a PR as ready.
 6. Accounts: Claude Enterprise, Claude Personal, Codex Personal, Amp Personal.
-   Account rows should follow the [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) account-snapshot model: quota window, reset time, source, stale/error state, confidence label, and repair action. Tokemon, Token Tracker, Brim, MeterBar, CodexBar, and OpenUsage are comparison references for these rows; the jackin' daemon remains the data source.
-7. Recent / saved workspaces: launch shortcuts for jackin' workspaces not
-   currently running.
+7. Recent / saved workspaces: launch shortcuts for jackin' workspaces not currently running.
 8. Footer: Open Desktop, Refresh, Open Console, Settings, Quit.
+
+Account rows follow the [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) account-snapshot model: quota window, reset time, source, stale/error state, confidence label, and repair action. The jackin' daemon is the data source; Tokemon, Token Tracker, Brim, MeterBar, CodexBar, and OpenUsage are comparison references.
 
 The menu should be usable without opening the full Desktop window. A first-pass
 shape:
