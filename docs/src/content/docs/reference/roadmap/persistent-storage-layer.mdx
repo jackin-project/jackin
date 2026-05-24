@@ -121,7 +121,7 @@ CREATE TABLE usage_samples (
     occurred_at INTEGER NOT NULL,            -- epoch seconds
     session_id INTEGER,
     workspace TEXT,
-    provider TEXT NOT NULL,                  -- 'claude' | 'codex' | 'amp' | 'kimi' | 'opencode'
+    provider TEXT NOT NULL,                  -- Agent::slug() from src/agent/mod.rs
     model TEXT NOT NULL,
     token_input INTEGER,
     token_output INTEGER,
@@ -157,6 +157,18 @@ plan makes the host daemon the single owner of provider refresh, then fans
 read-only account state out to Desktop, `jackin console`, Capsule, and CLI
 surfaces. The daemon-global cache keeps that state from diverging across role
 containers.
+
+**Location and lifecycle.** The DB lives at `~/.jackin/data/daemon/accounts.db` —
+outside any `~/.jackin/data/<container>/` tree so it survives `jackin purge`
+on individual instances. The daemon creates and migrates this file on first
+start; CLI / `jackin console` / Capsule never write to it. The daemon
+process is the single writer; CLI tools and the console open the file
+read-only. WAL mode handles the daemon-write / multi-reader-process pattern
+(this table's concurrency model is **different** from the per-instance
+tables described in the "Concurrency model" section below — those assume
+single-process single-writer; the daemon-global cache assumes single-writer
+across **all** host processes, enforced by the daemon's per-operator-user
+singleton).
 
 ```sql
 CREATE TABLE account_usage_snapshots (

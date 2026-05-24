@@ -74,7 +74,7 @@ Useful ideas:
 - Track **account quota snapshots** separately from per-session token samples. A Claude weekly limit, Codex session window, Amp free-tier usage bucket, or OpenCode workspace subscription window is not the same entity as a single assistant-message token sample.
 - Store reset-window metadata: provider, account label, plan/source, usage amount, limit amount when known, reset time, stale/error state, and provenance.
 - Keep refresh state resilient: background refresh, stale-but-usable cached values, throttled errors when prior data exists, and a clear repair/login state when no data can be trusted.
-- Provide a small local read API eventually, but make the jackin' daemon the owner rather than adding a second always-on HTTP server in the first cut.
+- The daemon's `account/*` and `usage/*` endpoints (specified below) are the local read API; resist the temptation to ship a second always-on HTTP server.
 - Treat provider adapters as a small, typed set for the built-in jackin' runtimes (`claude`, `codex`, `amp`, `kimi`, `opencode`) instead of inheriting CodexBar/OpenUsage's generic provider marketplace shape.
 - Prefer runtime-owned credentials or credentials forwarded by jackin' over host-wide browser-cookie scraping. Cookie import can exist as an explicit diagnostic or fallback, but it must not become the primary path for account state jackin' already launched.
 - Preserve the host-mutation rule: reading host-side auth/config is allowed when surfaced; writing provider config, Keychain entries, browser profiles, or host dotfiles is not part of telemetry refresh.
@@ -116,23 +116,22 @@ samples land in the
 
 ```rust
 pub struct UsageSample {
-    pub at: SystemTime,
+    pub at: SystemTime,                 // wall-clock at sample emission; SQL stores epoch seconds (occurred_at)
     pub session_id: Option<i64>,        // Capsule session emitting the sample, when known
     pub workspace: Option<String>,      // jackin' workspace name for attribution
     pub provider: Agent,                // canonical runtime enum from src/agent/mod.rs
-    pub model: String,                  // 'claude-opus-4-7', 'gpt-5-codex', etc.
-    pub token_input: u64,
+    pub model: String,                  // must match a key in the pricing table; example: "claude-opus-4-7"
+    pub token_input: u64,               // delta per assistant message (not cumulative)
     pub token_output: u64,
     pub token_cache_read: u64,
     pub token_cache_write: u64,
-    pub cost_usd_micros: i64,           // computed from a model→price table
+    pub cost_usd_micros: u64,           // computed from (provider, model, tokens) at sample time; never recomputed
 }
 ```
 
 Per-instance DB rows mirror the value fields; the SQL row adds a surrogate `id INTEGER PRIMARY KEY` and stores `at` as `occurred_at INTEGER` (epoch seconds). `instance` is implicit in the DB file path and is not stored per-row.
 
-`cost_usd_micros` is integer to avoid floating-point summation drift
-across thousands of samples. Renderers divide by 1e6 for display.
+`cost_usd_micros` is integer to avoid floating-point summation drift across thousands of samples; renderers divide by 1e6 for display. The `delta per assistant message` rule matters: Claude stream-json emits cumulative chunks, Codex app-server emits per-event deltas — adapters convert to deltas before emitting `UsageSample`, so SQL aggregates are simple sums.
 
 ### Account quota snapshots
 
@@ -157,7 +156,34 @@ Per-message samples answer "what did this agent session cost?" Account snapshots
 
 `confidence` answers "how much do we trust this number?" — provenance. `status` answers "is this snapshot useful right now?" — lifecycle. The two axes are intentionally separate; a snapshot can be `provider_authoritative` + `stale` (we have a trusted number that's past TTL) or `local_estimate` + `fresh` (best-effort number we just computed).
 
-`UsageAmount` packs `{ amount: u64, unit: &str }` (e.g. `tokens`, `messages`, `requests`, `usd_micros`) so SQL stores it as `<field>_amount INTEGER` + `<field>_unit TEXT` column pairs. `window: UsageWindow` serializes as `window_kind TEXT`. `UsageRefreshError` carries `{ kind: ErrorKind, at: SystemTime, message: String }` and serializes to `last_error TEXT` as JSON. `account_key_hash` is a write-time hash of `(provider, account_label-after-normalization)`; it lives in the SQL row but not in the value struct (the daemon derives it on write so consumers cannot stamp inconsistent hashes).
+Supporting types:
+
+```rust
+pub enum UsageSource { RuntimeApi, LocalLog, CliAuth, BrowserCookie, Manual }
+pub enum UsageConfidence { ProviderAuthoritative, LocalEstimate, Fallback }
+pub enum UsageWindow { Session, Daily, Weekly, Monthly, Credits }
+pub enum UsageSnapshotStatus { Fresh, Stale, NeedsLogin, Unsupported, Error }
+
+pub struct UsageAmount {
+    pub amount: u64,
+    pub unit: &'static str,             // "tokens" | "messages" | "requests" | "usd_micros"
+}
+
+pub struct UsageRefreshError {
+    pub kind: RefreshErrorKind,         // Network | Auth | RateLimited | Schema | Other
+    pub at: SystemTime,                 // attempt timestamp
+    pub message: String,                // operator-facing diagnostic, never contains secrets
+}
+```
+
+Cross-field invariants the daemon writer must uphold (none are expressible in the type system; failing them is a bug):
+
+- `used.unit == limit.unit` whenever both are `Some` (renderers compare amounts).
+- `limit.is_some() ⇒ used.is_some()` (knowing the cap without the current consumption is not a real provider state; the converse is fine — `used` alone is meaningful).
+- `last_error.is_some() ⇔ status ∈ { UsageSnapshotStatus::Error, UsageSnapshotStatus::Stale }` (and only when the stale state came from a failed refresh).
+- `(source, confidence)` defaults to `(RuntimeApi → ProviderAuthoritative)`, `(LocalLog | CliAuth → LocalEstimate)`, `(BrowserCookie | Manual → Fallback)`; adapters override only when a runtime_api response is demonstrably stale.
+
+`UsageAmount` packs `{ amount, unit }` so SQL stores it as `<field>_amount INTEGER` + `<field>_unit TEXT` column pairs. `window: UsageWindow` serializes as `window_kind TEXT`. `UsageRefreshError` serializes to `last_error TEXT` as JSON. `account_key_hash` is a write-time hash of the provider-stable account identity (OAuth `sub`, provider user id, or salted hash of the canonical login email — **not** the editable `account_label` display string); it lives in the SQL row but not in the value struct, so consumers cannot stamp inconsistent hashes and a label rename does not produce a duplicate snapshot row.
 
 ### Source priority by runtime
 
@@ -179,7 +205,7 @@ Rules:
 
 - The daemon is the only component that refreshes provider quota snapshots by default. Containers can request a refresh through the daemon, but they do not hold independent polling loops.
 - Each snapshot carries `fetched_at`, `expires_at`, `source`, `confidence`, and `last_error`. UI surfaces must show stale data as stale rather than silently hiding it.
-- Containers receive read-only access through the Capsule/daemon control channel, not by bind-mounting writable host cache directories into every container. A narrow read-only materialized file under `/jackin/run/usage/` is acceptable for agents that can only read files, but the daemon remains authoritative and writes the file.
+- Containers receive read-only access through the Capsule/daemon control channel, not by bind-mounting writable host cache directories into every container. A narrow read-only materialized file at `/jackin/run/usage/accounts.json` is acceptable for agents that can only read files; the daemon writes the file with tmp+rename atomicity (write to `accounts.json.tmp` in the same directory, `fsync`, then `rename(2)` over `accounts.json`) so concurrent readers always see a complete document. The payload carries an embedded `fetched_at` epoch-seconds field per snapshot so readers do not depend on file `mtime`; a missing file means "no snapshots yet" and is distinct from a stale-but-present file.
 - Cache TTL is provider-specific. Server-side quota endpoints get conservative refresh intervals and backoff on errors; local session samples can update on session events.
 - The cache stores tokens, costs, percentages, reset times, source metadata, and opaque account labels. It never stores prompts, completions, raw conversation text, provider cookies, or bearer tokens.
 - If an account requires authentication, the daemon requests it through existing jackin' auth mechanisms: forwarded CLI auth, 1Password references, macOS Keychain integration, or an explicit host-bridge approval. Failed auth is a first-class `needs_login` / `needs_secret` state.
@@ -196,12 +222,13 @@ Per-message samples land in the per-instance `usage_samples` table; account snap
 
 ### Daemon API contract
 
-Daemon-owned account usage endpoints land before any UI polish:
+Daemon-owned account usage endpoints land before any UI polish. The naming follows the existing daemon convention (`daemon/hello`, `session/list`, `event/subscribe`) — slash-namespaced, two segments:
 
-- `usage.accounts.list`: returns every known account snapshot with freshness, confidence, and active workspace/session references.
-- `usage.accounts.refresh { provider?, account? }`: schedules a refresh and returns the last cached snapshot immediately; does not block the UI on provider network calls.
-- `usage.workspace.summary { workspace, window }`: returns local token/cost attribution from per-instance samples.
-- `usage.session.summary { instance, session_id, window }`: returns the focused Capsule tab/pane summary when the session is still known.
+- `account/list`: returns every known account snapshot with freshness, confidence, and active workspace/session references.
+- `account/refresh { provider?, account? }`: schedules a refresh and returns the last cached snapshot immediately; does not block the UI on provider network calls.
+- `usage/workspace { workspace, window }`: returns local token/cost attribution from per-instance samples.
+- `usage/session { instance, session_id, window }`: returns the per-session token/cost summary when the session is still known.
+- `usage/focused`: active account quota plus session/workspace spend for the currently focused Capsule pane.
 
 These can live in the daemon protocol first. Capsule should consume a narrow read path later: focused provider/account summary in, no provider polling out. If a file bridge is needed for agents that can only read files, the daemon writes a read-only materialized JSON file under `/jackin/run/usage/` inside the container; containers never write back to the host telemetry cache.
 
@@ -230,12 +257,24 @@ Every interactive jackin' surface that can launch or focus an agent exposes the 
 Surfaces consuming the cache:
 
 - **Desktop app.** Accounts view is the full inspection surface: every account, provider, source, current availability, reset time, confidence, last refresh, active workspaces, repair actions. Running Agents view shows focused-account quota and workspace/session spend inline.
-- **macOS status bar.** Most-constrained active account by default: provider glyph plus remaining percent or `stale`/`login` state. Menu expands to all accounts with reset timers, source labels, and repair actions.
+- **macOS status bar.** Most-constrained active account by default — see the [most-constrained ordering](#most-constrained-ordering) rule below. Provider glyph plus remaining percent or `stale` / `login` state. Menu expands to all accounts with reset timers, source labels, and repair actions.
 - **`jackin console` Accounts / Usage.** Lists every known account with source, current availability, reset time, last refresh, and which workspaces currently use it. Workspace and running-agent rows carry compact badges for the attached account.
 - **Capsule multiplexer.** Focused-tab provider only — see [jackin' Capsule → Usage and quota overlay](/reference/roadmap/jackin-capsule/#usage-and-quota-overlay) for the rendering contract (status-line layout, prefix `u`, modal contents, daemon-disconnected and needs-login fallbacks).
 - **CLI / automation.** `jackin usage` exposes account, workspace, and session views with `--json`, including freshness and provenance so scripts do not mistake local estimates for provider-enforced limits.
 
 The contract must answer, for the focused agent: which built-in-runtime accounts jackin' knows about, which one this agent is using, how much quota remains, when it resets, how much this workspace/session burned today/this week/lifetime, and which confidence + status pair the displayed limit carries.
+
+#### Most-constrained ordering
+
+Compare accounts across providers in this fixed priority chain (first hit wins):
+
+1. `status == NeedsLogin` or `Error` — show this first regardless of any percentage; one broken account is the highest-risk surface state.
+2. `status == Stale` AND age > 2× provider TTL — the snapshot is too old to trust.
+3. `status == Fresh` AND `used.is_some()` AND `limit.is_some()` AND `used.unit == limit.unit` — rank by **remaining percentage** = `1 - used.amount / limit.amount`. Lowest remaining wins.
+4. `status == Fresh` AND `resets_at.is_some()` AND no usable percentage — rank by **earliest `resets_at`**. Soonest reset wins.
+5. Tie-break: provider alphabetical (`Agent::slug()`).
+
+The status bar never compares percentages across different `UsageAmount.unit` values (a tokens-remaining percentage is not the same scale as a messages-remaining percentage); same-unit percentage comparison is the only legitimate use of step 3.
 
 ### Adapter shape
 

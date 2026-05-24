@@ -230,6 +230,7 @@ Default prefix bindings (subject to refinement during implementation):
 | `Space` or `:` | Open command palette |
 | `Ctrl+L` | Clear focused pane scrollback and send form-feed to request redraw |
 | `r` | Force redraw |
+| `u` | (Phase 4) Open usage and quota overlay for the focused pane |
 | Prefix again | Literal prefix byte to PTY |
 
 `Ctrl+J` is **not** a default binding. It is reserved as an opt-in alternate prefix that experienced operators may enable when they accept the `0x0A` collision risk; the default never assigns it.
@@ -264,6 +265,8 @@ The right side of the bar shows the current prefix-mode hint (`detach: Ctrl+B d`
 When the bar is wider than the host terminal, tabs past the right edge are clipped and an overflow indicator (`›`) is shown. Tab navigation via prefix bindings still works on clipped tabs.
 
 #### Usage and quota overlay
+
+**Phase 4 work documented under Phase 3.** The rendering contract is the status-chrome design (Phase 3 territory); the data source is the host daemon (Phase 4 territory). The subsection lives here so the status-bar layout decisions are colocated; nothing in this overlay ships in Phase 3.
 
 Phase 4 should add a read-only usage overlay fed by the host daemon's [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) cache. The Capsule does not poll providers and does not persist credentials. It asks the daemon only for the focused tab/pane's provider account quota and workspace/session spend, then renders that focused-agent result inside the multiplexer. The compact signal belongs in the same low-noise status chrome as the branch/repository detail line, not as a second standalone widget.
 
