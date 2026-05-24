@@ -2704,14 +2704,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.resize(rows, cols);
                 if mux.sessions.is_empty()
                     && let Some(request) = pending_initial_spawn.take()
+                    && let Err(err) = mux.spawn_request(request.clone(), &[])
                 {
-                    if let Err(err) = mux.spawn_request(request.clone(), &[]) {
-                        crate::clog!(
-                            "initial spawn failed (request={}): {err:#}",
-                            spawn_request_label(&request)
-                        );
-                        return Err(err);
-                    }
+                    crate::clog!(
+                        "initial spawn failed (request={}): {err:#}",
+                        spawn_request_label(&request)
+                    );
+                    return Err(err);
                 }
                 if let Some(target) = focus_session
                     && !mux.focus_session_globally(target)
