@@ -8,6 +8,7 @@ pub struct RunOptions {
     pub capture_stderr: bool,
     pub quiet: bool,
     pub extra_env: Vec<(String, String)>,
+    pub null_stdin: bool,
 }
 
 pub trait CommandRunner {
@@ -48,6 +49,24 @@ impl ShellRunner {
             command.current_dir(dir);
         }
         command
+    }
+
+    fn apply_run_opts(cmd: &mut Command, opts: &RunOptions) {
+        // Destructure so a new RunOptions field forces a maintainer to
+        // decide whether it belongs here (applied to every `run` arm)
+        // or stays the responsibility of an arm-specific branch.
+        let RunOptions {
+            capture_stderr: _,
+            quiet: _,
+            extra_env,
+            null_stdin,
+        } = opts;
+        if *null_stdin {
+            cmd.stdin(std::process::Stdio::null());
+        }
+        if !extra_env.is_empty() {
+            cmd.envs(extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        }
     }
 
     fn log_command(&self, program: &str, args: &[&str], cwd: Option<&Path>) {
@@ -102,9 +121,7 @@ impl CommandRunner for ShellRunner {
 
         if opts.quiet {
             let mut cmd = Self::build_command(program, args, cwd);
-            if !opts.extra_env.is_empty() {
-                cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-            }
+            Self::apply_run_opts(&mut cmd, opts);
             let status = cmd
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
@@ -118,9 +135,7 @@ impl CommandRunner for ShellRunner {
             );
         } else if opts.capture_stderr {
             let mut cmd = Self::build_command(program, args, cwd);
-            if !opts.extra_env.is_empty() {
-                cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-            }
+            Self::apply_run_opts(&mut cmd, opts);
             let mut child = cmd.stderr(std::process::Stdio::piped()).spawn()?;
             let mut stderr_pipe = child.stderr.take().ok_or_else(|| {
                 anyhow::anyhow!(
@@ -158,9 +173,7 @@ impl CommandRunner for ShellRunner {
             }
         } else {
             let mut cmd = Self::build_command(program, args, cwd);
-            if !opts.extra_env.is_empty() {
-                cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-            }
+            Self::apply_run_opts(&mut cmd, opts);
             let status = cmd.status().await?;
             anyhow::ensure!(
                 status.success(),

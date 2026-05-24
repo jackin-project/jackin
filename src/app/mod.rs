@@ -154,7 +154,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 paths: paths.clone(),
                 debug,
             };
-            let Some(outcome) = console::run_console(config, &paths, &cwd, &mut in_place)? else {
+            let Some(outcome) =
+                console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?
+            else {
                 return Ok(());
             };
 
