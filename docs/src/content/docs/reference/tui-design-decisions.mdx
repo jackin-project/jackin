@@ -96,6 +96,10 @@ Enforcement:
 - `render_settings` checks the three settings modal chains (`auth.modal`, `env.modal`, `mounts.modal`) in priority order; if any is `Some`, calls the corresponding `*_modal_footer_items` function.
 - No `Constraint::Length` row for a hint line may remain inside any widget layout.
 
+### Modals dim the full surface behind them
+
+Every modal or dialog is global to the TUI surface, not scoped to one pane, tab, list row, or content block. Opening a modal must redraw the whole background in backdrop colors before painting the modal: top chrome, bottom chrome, pane/list/card borders, focused-state accents, scrollbars, and content all dim together. Do not leave active green borders, selected scrollbars, or bright clickable chrome visible behind a modal. Those focus cues belong to the surface behind the dialog and return only after the modal closes.
+
 ---
 
 ## Focusability

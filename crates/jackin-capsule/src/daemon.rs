@@ -2612,6 +2612,7 @@ impl Multiplexer {
         let mut buf = Vec::with_capacity(65536);
         self.append_outer_terminal_title(&mut buf);
         buf.extend_from_slice(b"\x1b[?25l");
+        let dialog_dim = self.dialog_open();
 
         // Tab labels track the pane makeup. Done here (not on every
         // spawn / split / remove) so the rule lives in one place.
@@ -2627,6 +2628,7 @@ impl Multiplexer {
             &states,
             hovered_tab(self.hover_target),
             hovered_menu(self.hover_target),
+            dialog_dim,
         );
 
         let focused_id = self.active_focused_id();
@@ -2682,7 +2684,8 @@ impl Multiplexer {
                     pane.outer.rows,
                     pane.outer.cols,
                     &title,
-                    pane.focused && highlight_focus,
+                    pane.focused && highlight_focus && !dialog_dim,
+                    dialog_dim,
                 );
                 draw_scrollbar(
                     &mut buf,
@@ -2692,7 +2695,7 @@ impl Multiplexer {
                     pane.outer.cols,
                     scrollbar.offset,
                     scrollbar.filled,
-                    pane.focused && highlight_focus,
+                    pane.focused && highlight_focus && !dialog_dim,
                 );
             }
         }
@@ -2718,6 +2721,7 @@ impl Multiplexer {
             self.pull_request_context_loading(),
             self.status_bar.container_name(),
             self.hover_target,
+            dialog_dim,
         );
 
         if let Some(dialog) = self.dialog_top() {
@@ -2764,6 +2768,7 @@ impl Multiplexer {
             &states,
             hovered_tab(self.hover_target),
             hovered_menu(self.hover_target),
+            self.dialog_open(),
         );
         render_branch_context_bar(
             &mut buf,
@@ -2774,6 +2779,7 @@ impl Multiplexer {
             self.pull_request_context_loading(),
             self.status_bar.container_name(),
             self.hover_target,
+            self.dialog_open(),
         );
         buf.extend_from_slice(b"\x1b8");
         buf
@@ -2871,6 +2877,7 @@ impl Multiplexer {
                     pane.outer.cols,
                     &title,
                     pane.focused && highlight_focus,
+                    false,
                 );
                 draw_scrollbar(
                     &mut buf,
@@ -3478,6 +3485,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     &states,
                     hovered_tab(mux.hover_target),
                     hovered_menu(mux.hover_target),
+                    mux.dialog_open(),
                 );
                 render_branch_context_bar(
                     &mut sbuf,
@@ -3488,6 +3496,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.pull_request_context_loading(),
                     mux.status_bar.container_name(),
                     mux.hover_target,
+                    mux.dialog_open(),
                 );
                 sbuf.extend_from_slice(b"\x1b8");
                 mux.send_output(sbuf);
@@ -4000,6 +4009,9 @@ const BRANCH_CONTEXT_BAR_FG: &str = "\x1b[38;2;0;0;0m";
 const BRANCH_CONTEXT_BAR_LINK_FG: &str = "\x1b[38;2;0;80;180m";
 const BRANCH_CONTEXT_BAR_HOVER_FG: &str = "\x1b[38;2;0;55;140m";
 const BRANCH_CONTEXT_BAR_BOLD: &str = "\x1b[1m";
+const BRANCH_CONTEXT_BAR_BG_DIM: &str = "\x1b[48;2;51;51;51m";
+const BRANCH_CONTEXT_BAR_FG_DIM: &str = "\x1b[38;2;0;28;6m";
+const BRANCH_CONTEXT_BAR_LINK_FG_DIM: &str = "\x1b[38;2;0;16;36m";
 const RESET: &str = "\x1b[0m";
 
 fn render_branch_context_bar(
@@ -4011,6 +4023,7 @@ fn render_branch_context_bar(
     pull_request_loading: bool,
     container_name: &str,
     hover_target: Option<HoverTarget>,
+    dim: bool,
 ) {
     let Some(layout) = branch_context_bar_layout(
         term_rows,
@@ -4024,38 +4037,62 @@ fn render_branch_context_bar(
     };
 
     buf.extend_from_slice(format!("\x1b[{};1H", term_rows).as_bytes());
-    buf.extend_from_slice(BRANCH_CONTEXT_BAR_BG.as_bytes());
-    buf.extend_from_slice(BRANCH_CONTEXT_BAR_FG.as_bytes());
+    buf.extend_from_slice(
+        if dim {
+            BRANCH_CONTEXT_BAR_BG_DIM
+        } else {
+            BRANCH_CONTEXT_BAR_BG
+        }
+        .as_bytes(),
+    );
+    buf.extend_from_slice(
+        if dim {
+            BRANCH_CONTEXT_BAR_FG_DIM
+        } else {
+            BRANCH_CONTEXT_BAR_FG
+        }
+        .as_bytes(),
+    );
     for _ in 0..term_cols {
         buf.push(b' ');
     }
 
     buf.extend_from_slice(format!("\x1b[{};1H", term_rows).as_bytes());
-    let left_hovered = hover_target == Some(HoverTarget::BranchContext);
-    let left_bg = if left_hovered {
+    let left_hovered = !dim && hover_target == Some(HoverTarget::BranchContext);
+    let left_bg = if dim {
+        BRANCH_CONTEXT_BAR_BG_DIM
+    } else if left_hovered {
         BRANCH_CONTEXT_BAR_HOVER_BG
     } else {
         BRANCH_CONTEXT_BAR_BG
     };
-    let left_fg = if left_hovered {
+    let left_fg = if dim {
+        BRANCH_CONTEXT_BAR_FG_DIM
+    } else if left_hovered {
         BRANCH_CONTEXT_BAR_HOVER_FG
     } else {
         BRANCH_CONTEXT_BAR_FG
     };
     buf.extend_from_slice(left_bg.as_bytes());
     buf.extend_from_slice(left_fg.as_bytes());
-    buf.extend_from_slice(BRANCH_CONTEXT_BAR_BOLD.as_bytes());
+    if !dim {
+        buf.extend_from_slice(BRANCH_CONTEXT_BAR_BOLD.as_bytes());
+    }
     buf.extend_from_slice(layout.left.as_bytes());
 
     if let Some(container_start) = layout.container_start {
         buf.extend_from_slice(format!("\x1b[{};{}H", term_rows, container_start).as_bytes());
-        let container_hovered = hover_target == Some(HoverTarget::Container);
-        let bg = if container_hovered {
+        let container_hovered = !dim && hover_target == Some(HoverTarget::Container);
+        let bg = if dim {
+            BRANCH_CONTEXT_BAR_BG_DIM
+        } else if container_hovered {
             BRANCH_CONTEXT_BAR_HOVER_BG
         } else {
             BRANCH_CONTEXT_BAR_BG
         };
-        let fg = if container_hovered {
+        let fg = if dim {
+            BRANCH_CONTEXT_BAR_LINK_FG_DIM
+        } else if container_hovered {
             BRANCH_CONTEXT_BAR_HOVER_FG
         } else {
             BRANCH_CONTEXT_BAR_LINK_FG
@@ -5260,6 +5297,55 @@ mod tests {
     }
 
     #[test]
+    fn dialog_backdrop_dims_full_multiplexer_chrome() {
+        fn mux_with_two_sessions() -> Multiplexer {
+            let mut mux = split_tab_mux();
+            let (session_one, _) = test_session(24, 80);
+            let (session_two, _) = test_shell_session(24, 80);
+            mux.sessions.insert(1, session_one);
+            mux.sessions.insert(2, session_two);
+            mux
+        }
+
+        fn assert_backdrop_dimmed(mut mux: Multiplexer, context: &str) {
+            let frame =
+                String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::DialogChange))
+                    .to_string();
+
+            assert!(
+                frame.contains("\x1b[48;2;0;51;13m"),
+                "{context} should dim the top status brand: {frame:?}"
+            );
+            assert!(
+                frame.contains("\x1b[48;2;51;51;51m"),
+                "{context} should dim the bottom context bar: {frame:?}"
+            );
+            assert!(
+                frame.contains("\x1b[38;2;48;48;48m┌"),
+                "{context} should dim pane borders behind the dialog: {frame:?}"
+            );
+            assert!(
+                !frame.contains("\x1b[38;2;0;255;65m┌"),
+                "{context} should not leave the active pane border green behind the dialog: {frame:?}"
+            );
+        }
+
+        let mut menu_mux = mux_with_two_sessions();
+        menu_mux.open_command_palette();
+        assert_backdrop_dimmed(menu_mux, "menu dialog");
+
+        let mut container_mux = mux_with_two_sessions();
+        container_mux.open_container_info_dialog();
+        assert_backdrop_dimmed(container_mux, "container info dialog");
+
+        let mut github_mux = mux_with_two_sessions();
+        github_mux.pull_request_context_branch = Some("feat/capsule-pr-context-bar".to_string());
+        github_mux.pull_request_context = Some(pull_request_fixture(436));
+        github_mux.open_github_context_dialog();
+        assert_backdrop_dimmed(github_mux, "GitHub context dialog");
+    }
+
+    #[test]
     fn palette_close_single_pane_opens_confirm_directly() {
         let mut mux = single_pane_tab_mux();
         mux.handle_palette_command(PaletteCommand::Close);
@@ -5300,6 +5386,7 @@ mod tests {
             false,
             "jk-test-container",
             None,
+            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
 
@@ -5325,6 +5412,7 @@ mod tests {
             false,
             "jk-test-container",
             None,
+            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
 
@@ -5345,6 +5433,7 @@ mod tests {
             true,
             "jk-test-container",
             None,
+            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
 
@@ -5371,6 +5460,7 @@ mod tests {
             false,
             "jk-test-container-with-extra-long-suffix",
             None,
+            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
         assert!(rendered.contains("PR #999"));
@@ -5475,6 +5565,7 @@ mod tests {
             false,
             "jk-test-container",
             Some(HoverTarget::BranchContext),
+            false,
         );
         let context_rendered = String::from_utf8_lossy(&context_buf);
         assert!(context_rendered.contains(BRANCH_CONTEXT_BAR_HOVER_BG));
@@ -5490,6 +5581,7 @@ mod tests {
             false,
             "jk-test-container",
             Some(HoverTarget::Container),
+            false,
         );
         let container_rendered = String::from_utf8_lossy(&container_buf);
         assert!(container_rendered.contains(BRANCH_CONTEXT_BAR_HOVER_BG));
@@ -5508,6 +5600,7 @@ mod tests {
             false,
             "jk-test-container",
             None,
+            false,
         );
         let main_rendered = String::from_utf8_lossy(&main_buf);
         assert!(main_rendered.contains("jk-test-container"));
@@ -5538,6 +5631,7 @@ mod tests {
             false,
             "jk-test-container",
             None,
+            false,
         );
         let master_rendered = String::from_utf8_lossy(&master_buf);
         assert!(master_rendered.contains("jk-test-container"));
