@@ -587,7 +587,7 @@ Delivery rules:
 - PR 2: Add active workspaces and running-agent counts.
 - PR 3: Add My open PRs newest-first and active projects.
 - PR 4: Add open actions for hardline / Ghostty, repository, and PR.
-- PR 5: Add Claude/Codex/Amp account cards using daemon-provided status.
+- PR 5: Add account cards for the built-in jackin' runtimes using daemon-provided status. Implementations may stage individual providers by adapter maturity, but the Desktop model and daemon API stay shaped for Claude/Codex/Amp/Kimi/OpenCode from the start.
 
 ### Phase 2 — Simple desktop window
 
@@ -630,8 +630,8 @@ Delivery rules:
 
 - [jackin' daemon](/reference/roadmap/jackin-daemon/) — base daemon lifecycle, control socket, notification bridge, and the contract this feature depends on.
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — daemon
-  adapter that should own account/auth sync state for Claude, Codex, Amp, and
-  GitHub CLI.
+  adapter that should own account/auth sync state for the built-in jackin'
+  runtimes and GitHub CLI.
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) —
   daemon/MCP path for waiting, finished, and ready-for-review events.
 - [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/) —
@@ -641,8 +641,9 @@ Delivery rules:
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) — live
   busy/idle/waiting status vocabulary that the menu bar should eventually use.
 - [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) — broader
-  token/cost tracking work; Desktop's first cut should stay narrower and only
-  cover Claude, Codex, and Amp accounts jackin' launches.
+  token/cost tracking work; Desktop reads the same built-in-runtime account
+  snapshots as `jackin console`, CLI usage views, and Capsule instead of owning
+  a narrower provider list.
 - [CodexBar](https://github.com/steipete/CodexBar) — native menu bar reference
   for provider/account quota display, refresh loops, and status-item UI. Borrow
   selectively; avoid its broad provider catalog and browser-cookie-first Amp

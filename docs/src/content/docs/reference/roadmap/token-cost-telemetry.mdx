@@ -134,14 +134,18 @@ across thousands of samples. Renderers divide by 1e6 for display.
 ```rust
 pub struct AccountUsageSnapshot {
     pub at: SystemTime,
+    pub fetched_at: SystemTime,
+    pub expires_at: Option<SystemTime>,
     pub provider: AgentKind,              // claude, codex, amp, kimi, opencode
     pub account_label: String,            // operator-facing, never a raw token
     pub source: UsageSource,              // runtime_api, local_log, cli_auth, browser_cookie, manual
+    pub confidence: UsageConfidence,       // provider_authoritative, local_estimate, fallback
     pub window: UsageWindow,              // session, daily, weekly, monthly, credits
     pub used: Option<UsageAmount>,
     pub limit: Option<UsageAmount>,
     pub resets_at: Option<SystemTime>,
     pub status: UsageSnapshotStatus,      // fresh, stale, needs_login, unsupported, error
+    pub last_error: Option<UsageRefreshError>,
 }
 ```
 
