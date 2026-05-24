@@ -318,6 +318,7 @@ same session contract and persistent storage decisions.
 | Item | Inspiration in multicode | Depends on |
 |---|---|---|
 | [Task source abstraction](/reference/roadmap/task-source-abstraction/) | Issue/task queue substrate | — |
+| [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) | Multi-agent task pipeline with parallel review fan-out and deterministic phase routing | Task source; persistent storage; agent runtime status; Capsule session control |
 | [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) | Parallel issue scanning and dispatch | Task source; persistent storage; agent runtime status |
 | [Idle runtime cleanup](/reference/roadmap/idle-runtime-cleanup/) | Runtime cleanup toggle | Agent runtime status |
 
@@ -355,7 +356,7 @@ launched, what can be reached, and how to recover.
 | Item | Primary inspiration | Depends on |
 |---|---|---|
 | [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) | Docker Sandboxes microVM + private daemon; Hazmat Tier 3 decision | Runtime backend refactor |
-| [Rootless DinD](/reference/roadmap/rootless-dind/) | Harden current Docker substrate before/alongside microVMs | DinD TLS; runtime backend refactor |
+| [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) | Harden current Docker substrate before/alongside stronger backends | DinD TLS; runtime backend refactor; session contract |
 | [Devcontainer parity](/reference/roadmap/devcontainer-parity/) | Claude/devcontainer firewall and reproducibility pattern | Network egress policy |
 
 ### Phase B4 — Recover and govern host-side effects

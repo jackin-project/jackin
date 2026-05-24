@@ -140,7 +140,7 @@ Some agents (role repos that invoke Docker to build sibling containers) issue Do
 | [Network egress policy](/reference/roadmap/network-egress-policy/) | Zerobox implements per-process network policy enforcement at the OS level. Its allow-list mechanism is a concrete implementation path for egress policy inside agent sessions. |
 | Credential proxy (planned) | Zerobox's built-in HTTPS proxy with per-host credential injection is a direct implementation of the credential proxy architecture described in the roadmap overview. |
 | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) | Zerobox's snapshot module (Blake3 + Merkle + LZ4) provides per-operation filesystem checkpointing as a lightweight alternative to full container/VM checkpoints. |
-| [Rootless DinD](/reference/roadmap/rootless-dind/) | Both are hardening steps that improve the DinD security posture without requiring microVM. Rootless DinD reduces the sidecar's host privilege; process sandboxing reduces per-operation access inside the container. |
+| [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) | Both are hardening steps that improve the Docker runtime before microVMs. Rootless DinD reduces the sidecar's host privilege; process sandboxing reduces per-operation access inside the container. |
 
 ## Alternatives
 
