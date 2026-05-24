@@ -123,7 +123,7 @@ impl StatusBar {
 
     pub fn new_with_role_and_container(role: String, identity_label: String) -> Self {
         let instance_id_label = instance_id_from_container_name(&identity_label)
-            .unwrap_or_else(|| identity_label.clone());
+            .map_or_else(|| identity_label.clone(), str::to_string);
         Self::new_with_role_container_and_instance(role, identity_label, instance_id_label)
     }
 
@@ -612,14 +612,14 @@ fn resolve_instance_id(container_name: &str) -> String {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| {
             instance_id_from_container_name(container_name)
-                .unwrap_or_else(|| container_name.to_string())
+                .map_or_else(|| container_name.to_string(), str::to_string)
         })
 }
 
-fn instance_id_from_container_name(name: &str) -> Option<String> {
+fn instance_id_from_container_name(name: &str) -> Option<&str> {
     let rest = name.strip_prefix("jk-")?;
     let id = rest.split('-').next()?;
-    (!id.is_empty()).then(|| id.to_string())
+    (!id.is_empty()).then_some(id)
 }
 
 #[cfg(test)]

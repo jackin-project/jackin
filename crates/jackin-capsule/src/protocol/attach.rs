@@ -104,6 +104,7 @@ impl ClientTerminal {
         }
     }
 
+    #[must_use]
     pub fn pointer_shapes_supported(&self) -> bool {
         let term = self.term.as_deref().unwrap_or("").to_ascii_lowercase();
         let term_program = self
@@ -315,18 +316,17 @@ fn write_terminal_field(payload: &mut Vec<u8>, value: Option<&str>, label: &str)
     Ok(())
 }
 
-fn optional_string(value: String) -> Option<String> {
-    (!value.is_empty()).then_some(value)
-}
-
 fn read_terminal_field(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Option<String>> {
-    let len_label = format!("terminal {label} length");
-    let len = cursor.read_u16(&len_label)? as usize;
+    let len = cursor
+        .read_u16(label)
+        .with_context(|| format!("terminal {label} length"))? as usize;
     if len > MAX_CLIENT_TERMINAL_FIELD {
         bail!("hello terminal {label} length {len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}");
     }
-    let value_label = format!("terminal {label}");
-    Ok(optional_string(cursor.read_string(len, &value_label)?))
+    let value = cursor
+        .read_string(len, label)
+        .with_context(|| format!("terminal {label}"))?;
+    Ok((!value.is_empty()).then_some(value))
 }
 
 /// Read one length-prefixed payload from `stream` given the already-

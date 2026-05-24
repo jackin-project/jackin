@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -145,7 +146,7 @@ pub struct Multiplexer {
     dialog_copy_feedback_deadline: Option<Instant>,
     /// Current branch / PR context rendered in the bottom status line.
     pull_request_context_branch: Option<String>,
-    pull_request_context: Option<PullRequestInfo>,
+    pull_request_context: Option<Arc<PullRequestInfo>>,
     /// State of the fast local git branch lookup (`git_current_branch`):
     /// monotonic request id, in-flight gate, last-run instant for the
     /// cooldown check. The result lands on `pull_request_context_branch`.
@@ -244,9 +245,8 @@ fn command_in_path(name: &str) -> bool {
     matches!(cmd.status(), Ok(status) if status.success())
 }
 
-/// Shared scaffold for short-lived `git -C <workdir> <args…>` probes
-/// bounded by `GIT_CONTEXT_COMMAND_TIMEOUT`. Returns trimmed stdout
-/// on success, `None` on timeout / non-zero exit / spawn failure.
+/// Bounded by `GIT_CONTEXT_COMMAND_TIMEOUT` so a stalled `git`
+/// subprocess against a network-mounted `.git` cannot block the daemon.
 fn git_capture_at_workdir(workdir: &Path, args: &[&str]) -> Option<String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(workdir).args(args);
@@ -301,7 +301,7 @@ impl LookupState {
 #[derive(Clone)]
 struct PullRequestContextCacheEntry {
     checked_at: Instant,
-    pull_request: Option<PullRequestInfo>,
+    pull_request: Option<Arc<PullRequestInfo>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -628,7 +628,7 @@ impl Multiplexer {
             self.term_rows,
             self.term_cols,
             self.context_bar_branch(),
-            self.pull_request_context.as_ref(),
+            self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             self.status_bar.instance_id_label(),
         ) {
@@ -666,7 +666,7 @@ impl Multiplexer {
             self.term_rows,
             self.term_cols,
             self.context_bar_branch(),
-            self.pull_request_context.as_ref(),
+            self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             self.status_bar.instance_id_label(),
         )
@@ -754,31 +754,19 @@ impl Multiplexer {
     }
 
     fn sync_github_context_dialogs(&mut self) -> bool {
-        let branch = self.pull_request_context_branch.clone();
-        let pull_request = self.pull_request_context.clone();
-        let pull_request_loading = self.pull_request_context_loading();
+        if !self
+            .dialog_stack
+            .iter()
+            .any(|d| matches!(d, Dialog::GitHubContext { .. }))
+        {
+            return false;
+        }
+        let branch = self.pull_request_context_branch.as_deref();
+        let pull_request = self.pull_request_context.as_ref();
+        let loading = self.pull_request_context_loading();
         let mut changed = false;
         for dialog in &mut self.dialog_stack {
-            if let Dialog::GitHubContext {
-                branch: dialog_branch,
-                pull_request: dialog_pull_request,
-                pull_request_loading: dialog_pull_request_loading,
-                ..
-            } = dialog
-            {
-                if *dialog_branch != branch {
-                    *dialog_branch = branch.clone();
-                    changed = true;
-                }
-                if *dialog_pull_request != pull_request {
-                    *dialog_pull_request = pull_request.clone();
-                    changed = true;
-                }
-                if *dialog_pull_request_loading != pull_request_loading {
-                    *dialog_pull_request_loading = pull_request_loading;
-                    changed = true;
-                }
-            }
+            changed |= dialog.sync_github_context(branch, pull_request, loading);
         }
         changed
     }
@@ -942,11 +930,11 @@ impl Multiplexer {
         now: Instant,
     ) -> bool {
         if request_id != self.pull_request_lookup.request_id {
-            return false;
+            return self.sync_github_context_dialogs();
         }
         self.pull_request_lookup.in_flight = false;
         let Some(branch) = branch else {
-            return false;
+            return self.sync_github_context_dialogs();
         };
         // Transient gh failures (binary missing, auth not configured,
         // JSON parse, timeout) MUST NOT poison the 60s cache with a
@@ -968,7 +956,7 @@ impl Multiplexer {
             },
         );
         if self.pull_request_context_branch.as_deref() != Some(branch.as_str()) {
-            return false;
+            return self.sync_github_context_dialogs();
         }
         let changed = self.pull_request_context != pull_request;
         self.pull_request_context = pull_request;
@@ -994,7 +982,7 @@ impl Multiplexer {
         &self,
         branch: &str,
         now: Instant,
-    ) -> Option<PullRequestInfo> {
+    ) -> Option<Arc<PullRequestInfo>> {
         self.pull_request_context_cache
             .get(branch)
             .filter(|entry| {
@@ -1657,14 +1645,10 @@ impl Multiplexer {
         self.resize_panes();
     }
 
-    fn bottom_chrome_rows(&self) -> u16 {
-        BRANCH_CONTEXT_BAR_ROWS
-    }
-
     fn available_content_rows(&self) -> u16 {
         self.term_rows
             .saturating_sub(STATUS_BAR_ROWS)
-            .saturating_sub(self.bottom_chrome_rows())
+            .saturating_sub(BRANCH_CONTEXT_BAR_ROWS)
     }
 
     fn reconcile_content_rows(&mut self) -> bool {
@@ -2148,7 +2132,7 @@ impl Multiplexer {
                 self.term_rows,
                 self.term_cols,
                 self.context_bar_branch(),
-                self.pull_request_context.as_ref(),
+                self.pull_request_context.as_deref(),
                 self.pull_request_context_loading(),
                 self.status_bar.instance_id_label(),
             )
@@ -2160,7 +2144,7 @@ impl Multiplexer {
                     self.term_rows,
                     self.term_cols,
                     self.context_bar_branch(),
-                    self.pull_request_context.as_ref(),
+                    self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
                     self.status_bar.instance_id_label(),
                 ) {
@@ -2659,7 +2643,7 @@ impl Multiplexer {
         let title = compose_outer_terminal_title(
             &self.workdir,
             self.pull_request_context_branch.as_deref(),
-            self.pull_request_context.as_ref(),
+            self.pull_request_context.as_deref(),
         );
         if self.last_outer_terminal_title.as_deref() == Some(title.as_str()) {
             return;
@@ -2778,7 +2762,7 @@ impl Multiplexer {
             self.term_rows,
             self.term_cols,
             self.context_bar_branch(),
-            self.pull_request_context.as_ref(),
+            self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             self.status_bar.instance_id_label(),
             self.hover_target,
@@ -2836,7 +2820,7 @@ impl Multiplexer {
             self.term_rows,
             self.term_cols,
             self.context_bar_branch(),
-            self.pull_request_context.as_ref(),
+            self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             self.status_bar.instance_id_label(),
             self.hover_target,
@@ -3551,7 +3535,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.term_rows,
                     mux.term_cols,
                     mux.context_bar_branch(),
-                    mux.pull_request_context.as_ref(),
+                    mux.pull_request_context.as_deref(),
                     mux.pull_request_context_loading(),
                     mux.status_bar.instance_id_label(),
                     mux.hover_target,
@@ -4030,19 +4014,23 @@ fn workspace_title(workdir: &Path) -> String {
 }
 
 fn sanitize_terminal_title(title: &str) -> String {
-    title
-        .chars()
-        .map(|ch| {
-            if ch.is_control() || ch == '\u{7f}' {
-                ' '
-            } else {
-                ch
+    let mut out = String::with_capacity(title.len());
+    let mut prev_space = true;
+    for ch in title.chars() {
+        if ch.is_control() || ch == '\u{7f}' || ch.is_whitespace() {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
             }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+        } else {
+            out.push(ch);
+            prev_space = false;
+        }
+    }
+    if out.ends_with(' ') {
+        out.pop();
+    }
+    out
 }
 
 fn trim_title_chars(title: &str, max_chars: usize) -> String {
@@ -4094,7 +4082,8 @@ fn render_branch_context_bar(
         return;
     };
 
-    buf.extend_from_slice(format!("\x1b[{};1H", term_rows).as_bytes());
+    use std::io::Write as _;
+    let _ = write!(buf, "\x1b[{term_rows};1H");
     buf.extend_from_slice(
         if dim {
             BRANCH_CONTEXT_BAR_BG_DIM
@@ -4115,7 +4104,7 @@ fn render_branch_context_bar(
         buf.push(b' ');
     }
 
-    buf.extend_from_slice(format!("\x1b[{};1H", term_rows).as_bytes());
+    let _ = write!(buf, "\x1b[{term_rows};1H");
     let left_hovered = !dim && hover_target == Some(HoverTarget::BranchContext);
     let left_bg = if dim {
         BRANCH_CONTEXT_BAR_BG_DIM
@@ -4139,7 +4128,7 @@ fn render_branch_context_bar(
     buf.extend_from_slice(layout.left.as_bytes());
 
     if let Some(container_start) = layout.container_start {
-        buf.extend_from_slice(format!("\x1b[{};{}H", term_rows, container_start).as_bytes());
+        let _ = write!(buf, "\x1b[{term_rows};{container_start}H");
         let container_hovered = !dim && hover_target == Some(HoverTarget::Container);
         let bg = if dim {
             BRANCH_CONTEXT_BAR_BG_DIM
@@ -4184,17 +4173,12 @@ fn branch_context_bar_layout(
     if term_rows == 0 || term_cols == 0 {
         return None;
     }
-    let branch_detail_visible = branch.is_some_and(|branch| !is_default_branch_name(branch));
-    let (left, left_clickable) = match pull_request {
-        Some(pr) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
-        None if pull_request_loading && branch_detail_visible => (
-            format!(" Resolving PR · {} ", branch.unwrap_or_default()),
-            true,
-        ),
-        None if branch_detail_visible => {
-            (format!(" Branch · {} ", branch.unwrap_or_default()), true)
-        }
-        None => (String::new(), false),
+    let non_default_branch = branch.filter(|b| !is_default_branch_name(b));
+    let (left, left_clickable) = match (pull_request, non_default_branch) {
+        (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
+        (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
+        (None, Some(b)) => (format!(" Branch · {b} "), true),
+        (None, None) => (String::new(), false),
     };
     let container = if container_name.is_empty() {
         String::new()
@@ -4357,11 +4341,12 @@ fn git_current_branch(workdir: &Path) -> Option<String> {
 }
 
 fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
+    const GIT_METADATA_FILE_MAX_BYTES: u64 = 64 * 1024;
     let git_path = workdir.join(".git");
     let head_path = if git_path.is_dir() {
         git_path.join("HEAD")
     } else {
-        let git_file = std::fs::read_to_string(&git_path).ok()?;
+        let git_file = read_text_bounded(&git_path, GIT_METADATA_FILE_MAX_BYTES)?;
         let git_dir = git_file.trim().strip_prefix("gitdir:")?.trim();
         let git_dir = PathBuf::from(git_dir);
         let git_dir = if git_dir.is_absolute() {
@@ -4371,11 +4356,20 @@ fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
         };
         git_dir.join("HEAD")
     };
-    let head = std::fs::read_to_string(head_path).ok()?;
+    let head = read_text_bounded(&head_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let trimmed = head.trim();
     trimmed
         .strip_prefix("ref: refs/heads/")
         .map(|s| s.to_string())
+}
+
+/// Cap reads against `.git` metadata so a corrupt or hostile file cannot
+/// pin daemon memory while parsing branch state.
+fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut buf = String::new();
+    file.take(max_bytes).read_to_string(&mut buf).ok()?;
+    Some(buf)
 }
 
 /// Distinguishes "lookup succeeded but command was unavailable / failed
@@ -4406,7 +4400,7 @@ fn build_gh_command(workdir: &Path) -> Command {
 fn gh_pull_request_info(
     workdir: &Path,
     branch: &str,
-) -> Result<Option<PullRequestInfo>, LookupError> {
+) -> Result<Option<Arc<PullRequestInfo>>, LookupError> {
     #[derive(Deserialize)]
     struct GhPullRequest {
         number: u64,
@@ -4462,13 +4456,13 @@ fn gh_pull_request_info(
         .map_err(|e| crate::clog!("pull-request-context: gh pr checks failed: {e}"))
         .ok()
         .flatten();
-    Ok(Some(PullRequestInfo {
+    Ok(Some(Arc::new(PullRequestInfo {
         number: pr.number,
         title: pr.title,
         url: pr.url,
         is_draft: pr.is_draft,
         checks,
-    }))
+    })))
 }
 
 fn gh_pull_request_checks(
@@ -4631,22 +4625,20 @@ fn command_output_or_lookup_error(
     stdout_bytes: &[u8],
     stderr_bytes: &[u8],
 ) -> Result<Option<String>, LookupError> {
-    let stderr_text = String::from_utf8_lossy(stderr_bytes).trim().to_string();
-    if status_success == Some(false) {
-        return Err(LookupError::Failed(format!(
-            "{program}: non-accepted status; stderr: {stderr_text}"
-        )));
-    }
+    let stderr_nonempty = stderr_bytes.iter().any(|b| !b.is_ascii_whitespace());
+    let trimmed_stderr = || String::from_utf8_lossy(stderr_bytes).trim().to_string();
     let value = String::from_utf8_lossy(stdout_bytes).trim().to_string();
-    if status_success.is_none() && value.is_empty() && !stderr_text.is_empty() {
-        return Err(LookupError::Failed(format!(
-            "{program}: status unavailable; stderr: {stderr_text}"
-        )));
-    }
-    if value.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(value))
+    match status_success {
+        Some(false) => Err(LookupError::Failed(format!(
+            "{program}: non-accepted status; stderr: {}",
+            trimmed_stderr()
+        ))),
+        None if value.is_empty() && stderr_nonempty => Err(LookupError::Failed(format!(
+            "{program}: status unavailable; stderr: {}",
+            trimmed_stderr()
+        ))),
+        _ if value.is_empty() => Ok(None),
+        _ => Ok(Some(value)),
     }
 }
 
@@ -5149,6 +5141,18 @@ mod tests {
         }
     }
 
+    fn arm_pending_pr_lookup(mux: &mut Multiplexer, branch: &str, request_id: u64) {
+        mux.pull_request_lookup.request_id = request_id;
+        mux.pull_request_lookup.in_flight = true;
+        mux.pull_request_context_branch = Some(branch.to_string());
+        mux.dialog_push(Dialog::GitHubContext {
+            branch: Some(branch.to_string()),
+            pull_request: None,
+            pull_request_loading: true,
+            copied: false,
+        });
+    }
+
     #[test]
     fn outer_terminal_title_uses_workspace_and_pr_title() {
         let title = compose_outer_terminal_title(
@@ -5232,7 +5236,7 @@ mod tests {
             "unchanged full frame should not spam title: {second:?}"
         );
 
-        mux.pull_request_context = Some(pull_request_fixture(436));
+        mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
         let updated =
             String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
                 .to_string();
@@ -5430,7 +5434,7 @@ mod tests {
 
         let mut github_mux = mux_with_two_sessions();
         github_mux.pull_request_context_branch = Some("feat/capsule-pr-context-bar".to_string());
-        github_mux.pull_request_context = Some(pull_request_fixture(436));
+        github_mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
         github_mux.open_github_context_dialog();
         assert_backdrop_dimmed(github_mux, "GitHub context dialog");
     }
@@ -5740,13 +5744,13 @@ mod tests {
             "asa/pr-context".to_string(),
             PullRequestContextCacheEntry {
                 checked_at: now,
-                pull_request: Some(pull_request_fixture(434)),
+                pull_request: Some(Arc::new(pull_request_fixture(434))),
             },
         );
         assert!(mux.apply_git_branch_context(Some("asa/pr-context".to_string()), now));
         assert_eq!(mux.content_rows, 21);
         assert_eq!(
-            mux.pull_request_context.as_ref().map(|pr| pr.number),
+            mux.pull_request_context.as_deref().map(|pr| pr.number),
             Some(434)
         );
 
@@ -5771,7 +5775,7 @@ mod tests {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
         mux.pull_request_context_branch = Some("old/pr".to_string());
-        mux.pull_request_context = Some(pull_request_fixture(434));
+        mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
         mux.reconcile_content_rows();
         assert_eq!(mux.content_rows, 21);
 
@@ -5819,7 +5823,7 @@ mod tests {
         let changed = mux.apply_pull_request_context_loaded(
             3,
             Some("feat/x".to_string()),
-            PullRequestLookupOutcome::Resolved(Some(pr)),
+            PullRequestLookupOutcome::Resolved(Some(Arc::new(pr))),
             Instant::now(),
         );
         assert!(!changed, "stale request must not mutate state");
@@ -5840,12 +5844,12 @@ mod tests {
         mux.pull_request_lookup.request_id = 7;
         mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_branch = Some("feat/x".to_string());
-        mux.pull_request_context = Some(pull_request_fixture(123));
+        mux.pull_request_context = Some(Arc::new(pull_request_fixture(123)));
         mux.pull_request_context_cache.insert(
             "feat/x".to_string(),
             PullRequestContextCacheEntry {
                 checked_at: now - Duration::from_secs(5),
-                pull_request: Some(pull_request_fixture(123)),
+                pull_request: Some(Arc::new(pull_request_fixture(123))),
             },
         );
         let changed = mux.apply_pull_request_context_loaded(
@@ -5872,20 +5876,12 @@ mod tests {
     fn apply_pull_request_context_loaded_refreshes_open_github_dialog() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        mux.pull_request_lookup.request_id = 7;
-        mux.pull_request_lookup.in_flight = true;
-        mux.pull_request_context_branch = Some("feat/x".to_string());
-        mux.dialog_push(Dialog::GitHubContext {
-            branch: Some("feat/x".to_string()),
-            pull_request: None,
-            pull_request_loading: true,
-            copied: false,
-        });
+        arm_pending_pr_lookup(&mut mux, "feat/x", 7);
 
         let changed = mux.apply_pull_request_context_loaded(
             7,
             Some("feat/x".to_string()),
-            PullRequestLookupOutcome::Resolved(Some(pull_request_fixture(436))),
+            PullRequestLookupOutcome::Resolved(Some(Arc::new(pull_request_fixture(436)))),
             now,
         );
 
@@ -5905,15 +5901,7 @@ mod tests {
     fn transient_pull_request_failure_clears_open_dialog_loading_state() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        mux.pull_request_lookup.request_id = 7;
-        mux.pull_request_lookup.in_flight = true;
-        mux.pull_request_context_branch = Some("feat/x".to_string());
-        mux.dialog_push(Dialog::GitHubContext {
-            branch: Some("feat/x".to_string()),
-            pull_request: None,
-            pull_request_loading: true,
-            copied: false,
-        });
+        arm_pending_pr_lookup(&mut mux, "feat/x", 7);
 
         let changed = mux.apply_pull_request_context_loaded(
             7,
@@ -5974,14 +5962,14 @@ mod tests {
             "feat/fresh".to_string(),
             PullRequestContextCacheEntry {
                 checked_at: now - Duration::from_secs(10),
-                pull_request: Some(pull_request_fixture(1)),
+                pull_request: Some(Arc::new(pull_request_fixture(1))),
             },
         );
         mux.pull_request_context_cache.insert(
             "feat/old".to_string(),
             PullRequestContextCacheEntry {
                 checked_at: now - ttl - Duration::from_secs(1),
-                pull_request: Some(pull_request_fixture(2)),
+                pull_request: Some(Arc::new(pull_request_fixture(2))),
             },
         );
         mux.purge_expired_pull_request_cache_entries(now);
@@ -6018,19 +6006,19 @@ mod tests {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
         mux.pull_request_context_branch = Some("feature/current".to_string());
-        mux.pull_request_context = Some(pull_request_fixture(436));
+        mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
         mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_cache.insert(
             "feature/current".to_string(),
             PullRequestContextCacheEntry {
                 checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL,
-                pull_request: Some(pull_request_fixture(436)),
+                pull_request: Some(Arc::new(pull_request_fixture(436))),
             },
         );
 
         assert!(!mux.apply_git_branch_context(Some("feature/current".to_string()), now));
         assert_eq!(
-            mux.pull_request_context.as_ref().map(|pr| pr.number),
+            mux.pull_request_context.as_deref().map(|pr| pr.number),
             Some(436)
         );
     }
@@ -6569,7 +6557,7 @@ mod tests {
             mux.term_rows,
             mux.term_cols,
             mux.pull_request_context_branch.as_deref(),
-            mux.pull_request_context.as_ref(),
+            mux.pull_request_context.as_deref(),
             mux.pull_request_context_loading(),
             mux.status_bar.instance_id_label(),
         )
@@ -6652,7 +6640,7 @@ mod tests {
             mux.term_rows,
             mux.term_cols,
             mux.pull_request_context_branch.as_deref(),
-            mux.pull_request_context.as_ref(),
+            mux.pull_request_context.as_deref(),
             mux.pull_request_context_loading(),
             mux.status_bar.instance_id_label(),
         )
@@ -6693,12 +6681,12 @@ mod tests {
         mux.status_bar.identity_label = "jk-test-container".to_string();
         mux.status_bar.instance_id_label = "test".to_string();
         mux.pull_request_context_branch = Some("feature/context".to_string());
-        mux.pull_request_context = Some(pull_request_fixture(434));
+        mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
         let hit = branch_context_bar_layout(
             mux.term_rows,
             mux.term_cols,
             mux.pull_request_context_branch.as_deref(),
-            mux.pull_request_context.as_ref(),
+            mux.pull_request_context.as_deref(),
             mux.pull_request_context_loading(),
             mux.status_bar.instance_id_label(),
         )

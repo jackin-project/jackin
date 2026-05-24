@@ -653,7 +653,7 @@ pub enum SessionEvent {
 /// 60s cache with a fake "no PR" answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PullRequestLookupOutcome {
-    Resolved(Option<PullRequestInfo>),
+    Resolved(Option<Arc<PullRequestInfo>>),
     TransientFailure,
 }
 
@@ -667,14 +667,6 @@ pub struct PullRequestInfo {
 }
 
 impl PullRequestInfo {
-    pub fn branch_type_label(&self) -> &'static str {
-        if self.is_draft {
-            "draft pull request branch"
-        } else {
-            "pull request branch"
-        }
-    }
-
     pub fn number_label(&self) -> String {
         format!("#{}", self.number)
     }

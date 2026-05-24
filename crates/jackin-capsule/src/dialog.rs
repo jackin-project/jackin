@@ -20,6 +20,8 @@
 /// background content dimmed before this overlay is painted. Keep that
 /// behavior in the shared overlay path so every dialog gets the same
 /// focus cue.
+use std::sync::Arc;
+
 use crate::session::PullRequestInfo;
 
 const PALETTE_WIDTH: u16 = 50;
@@ -131,7 +133,7 @@ pub enum Dialog {
     /// still making the PR URL, branch, title, and CI status available.
     GitHubContext {
         branch: Option<String>,
-        pull_request: Option<PullRequestInfo>,
+        pull_request: Option<Arc<PullRequestInfo>>,
         pull_request_loading: bool,
         copied: bool,
     },
@@ -993,7 +995,7 @@ impl Dialog {
                     height,
                     width,
                     branch.as_deref(),
-                    pull_request.as_ref(),
+                    pull_request.as_deref(),
                     *pull_request_loading,
                     *copied,
                     copy_target_hovered,
@@ -1054,6 +1056,42 @@ impl Dialog {
             self,
             Self::ContainerInfo { copied: true, .. } | Self::GitHubContext { copied: true, .. }
         )
+    }
+
+    /// Refresh a `GitHubContext` dialog's snapshot from live multiplexer
+    /// state. Mux pull-request state can shift while the dialog is on the
+    /// stack (branch flip, lookup arrival); this is the single point that
+    /// propagates the change into the dialog. Returns true when a visible
+    /// field actually changed.
+    pub fn sync_github_context(
+        &mut self,
+        branch: Option<&str>,
+        pull_request: Option<&Arc<PullRequestInfo>>,
+        loading: bool,
+    ) -> bool {
+        let Self::GitHubContext {
+            branch: dialog_branch,
+            pull_request: dialog_pull_request,
+            pull_request_loading: dialog_pull_request_loading,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        let mut changed = false;
+        if dialog_branch.as_deref() != branch {
+            *dialog_branch = branch.map(str::to_string);
+            changed = true;
+        }
+        if dialog_pull_request.as_deref() != pull_request.map(Arc::as_ref) {
+            *dialog_pull_request = pull_request.cloned();
+            changed = true;
+        }
+        if *dialog_pull_request_loading != loading {
+            *dialog_pull_request_loading = loading;
+            changed = true;
+        }
+        changed
     }
 }
 
@@ -1870,43 +1908,29 @@ fn render_github_context(
     copy_target_hovered: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "GitHub context");
+    let none_placeholder = if pull_request_loading {
+        "resolving…"
+    } else {
+        "(none)"
+    };
+    let unknown_placeholder = if pull_request_loading {
+        "resolving…"
+    } else {
+        "(unknown)"
+    };
     let pull_request_number = pull_request
         .map(PullRequestInfo::number_label)
-        .unwrap_or_else(|| {
-            if pull_request_loading {
-                "resolving…".to_string()
-            } else {
-                "(none)".to_string()
-            }
-        });
+        .unwrap_or_else(|| none_placeholder.to_string());
     let pull_request_title = pull_request
         .map(|pr| non_empty_or_dim(&pr.title))
-        .unwrap_or_else(|| {
-            if pull_request_loading {
-                "resolving…".to_string()
-            } else {
-                "(none)".to_string()
-            }
-        });
+        .unwrap_or_else(|| none_placeholder.to_string());
     let (pull_request_link, pull_request_href) = pull_request
         .map(|pr| (non_empty_or_dim(&pr.url), Some(pr.url.as_str())))
-        .unwrap_or_else(|| {
-            if pull_request_loading {
-                ("resolving…".to_string(), None)
-            } else {
-                ("(none)".to_string(), None)
-            }
-        });
+        .unwrap_or_else(|| (none_placeholder.to_string(), None));
     let ci_status = pull_request
         .and_then(|pr| pr.checks.as_ref())
         .map(|checks| checks.summary())
-        .unwrap_or_else(|| {
-            if pull_request_loading {
-                "resolving…".to_string()
-            } else {
-                "(unknown)".to_string()
-            }
-        });
+        .unwrap_or_else(|| unknown_placeholder.to_string());
 
     let rows: [ContainerInfoRow; 5] = [
         ContainerInfoRow::new("Branch", non_empty_or_dim(branch.unwrap_or(""))),
@@ -2806,7 +2830,7 @@ mod tests {
         });
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
-            pull_request: Some(pr),
+            pull_request: Some(Arc::new(pr)),
             pull_request_loading: false,
             copied: false,
         };
@@ -2856,7 +2880,7 @@ mod tests {
     fn github_context_enter_copies_pr_url_and_shows_feedback() {
         let mut d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
-            pull_request: Some(pull_request_fixture()),
+            pull_request: Some(Arc::new(pull_request_fixture())),
             pull_request_loading: false,
             copied: false,
         };
@@ -2879,7 +2903,7 @@ mod tests {
     fn github_context_url_click_copies_pr_url() {
         let mut d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
-            pull_request: Some(pull_request_fixture()),
+            pull_request: Some(Arc::new(pull_request_fixture())),
             pull_request_loading: false,
             copied: false,
         };
@@ -2899,7 +2923,7 @@ mod tests {
     fn github_context_hover_lifts_only_url_copy_value() {
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
-            pull_request: Some(pull_request_fixture()),
+            pull_request: Some(Arc::new(pull_request_fixture())),
             pull_request_loading: false,
             copied: false,
         };
@@ -2917,7 +2941,7 @@ mod tests {
     fn github_context_hint_renders_above_bottom_status_row() {
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
-            pull_request: Some(pull_request_fixture()),
+            pull_request: Some(Arc::new(pull_request_fixture())),
             pull_request_loading: false,
             copied: false,
         };
