@@ -140,11 +140,15 @@ pub struct Multiplexer {
     /// Current branch / PR context rendered in the bottom status line.
     pull_request_context_branch: Option<String>,
     pull_request_context: Option<PullRequestInfo>,
-    git_branch_context_request_id: u64,
-    git_branch_context_lookup_in_flight: bool,
-    last_git_branch_context_lookup: Option<Instant>,
-    pull_request_context_request_id: u64,
-    pull_request_context_lookup_in_flight: bool,
+    /// State of the 1 Hz git branch lookup (`git_current_branch`):
+    /// monotonic request id, in-flight gate, last-run instant for the
+    /// cooldown check. The result lands on `pull_request_context_branch`.
+    git_branch_lookup: LookupState,
+    /// State of the 60 s `gh` PR-info lookup. Uses `request_id` +
+    /// `in_flight`; `last_run` is unused (per-branch freshness lives
+    /// in `pull_request_context_cache` instead because the operator
+    /// can flip between branches with cached results in flight).
+    pull_request_lookup: LookupState,
     pull_request_context_cache: HashMap<String, PullRequestContextCacheEntry>,
     /// Workspace workdir read from `/jackin/run/agent.toml` at daemon startup.
     /// Every spawned PTY (agent or shell) receives this as its `cwd`
@@ -248,15 +252,32 @@ fn resolve_default_branch(workdir: &Path) -> Option<String> {
     raw.strip_prefix("origin/").map(|s| s.to_string())
 }
 
-struct PullRequestContextLookupRequest {
+/// Shared shape for the two background context lookups (git branch +
+/// gh PR). Wraps the three book-keeping fields that always travel
+/// together — bumping `request_id` on every spawn, flipping
+/// `in_flight` for the dedup gate, and stamping `last_run` for the
+/// optional cooldown check. Collapsing them into one struct prevents
+/// the symmetric-variant drift the project DRY rule warns about: a
+/// future change that bumps `request_id` without clearing
+/// `in_flight` on one side and not the other was the exact shape of
+/// the branch-flip race bug just fixed.
+#[derive(Default)]
+struct LookupState {
     request_id: u64,
-    workdir: PathBuf,
-    branch: String,
+    in_flight: bool,
+    last_run: Option<Instant>,
 }
 
-struct GitBranchContextLookupRequest {
-    request_id: u64,
-    workdir: PathBuf,
+impl LookupState {
+    fn next_request_id(&mut self) -> u64 {
+        self.request_id = self.request_id.wrapping_add(1);
+        self.request_id
+    }
+
+    fn cooldown_active(&self, now: Instant, interval: Duration) -> bool {
+        self.last_run
+            .is_some_and(|last| now.duration_since(last) < interval)
+    }
 }
 
 #[derive(Clone)]
@@ -507,11 +528,8 @@ impl Multiplexer {
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
             pull_request_context: None,
-            git_branch_context_request_id: 0,
-            git_branch_context_lookup_in_flight: false,
-            last_git_branch_context_lookup: None,
-            pull_request_context_request_id: 0,
-            pull_request_context_lookup_in_flight: false,
+            git_branch_lookup: LookupState::default(),
+            pull_request_lookup: LookupState::default(),
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
@@ -708,48 +726,31 @@ impl Multiplexer {
         if !self.workdir_context.is_git_repo {
             return;
         }
-        if self.git_branch_context_lookup_in_flight {
+        if self.git_branch_lookup.in_flight {
             return;
         }
         if self
-            .last_git_branch_context_lookup
-            .is_some_and(|last| now.duration_since(last) < GIT_BRANCH_CONTEXT_POLL_INTERVAL)
+            .git_branch_lookup
+            .cooldown_active(now, GIT_BRANCH_CONTEXT_POLL_INTERVAL)
         {
             return;
         }
-        self.last_git_branch_context_lookup = Some(now);
-        self.git_branch_context_request_id = self.git_branch_context_request_id.wrapping_add(1);
-        let request = GitBranchContextLookupRequest {
-            request_id: self.git_branch_context_request_id,
-            workdir: self.workdir.clone(),
-        };
-        self.git_branch_context_lookup_in_flight = true;
-        self.spawn_git_branch_context_lookup(request);
-    }
-
-    fn spawn_git_branch_context_lookup(&self, request: GitBranchContextLookupRequest) {
-        let event_tx = self.event_tx.clone();
-        std::thread::spawn(move || {
-            let branch = git_current_branch(&request.workdir);
-            if event_tx
-                .send(SessionEvent::GitBranchContextLoaded {
-                    request_id: request.request_id,
-                    branch,
-                })
-                .is_err()
-            {
-                crate::clog!(
-                    "git-branch-context: event channel closed before branch reached the main loop"
-                );
-            }
-        });
+        self.git_branch_lookup.last_run = Some(now);
+        let request_id = self.git_branch_lookup.next_request_id();
+        self.git_branch_lookup.in_flight = true;
+        let workdir = self.workdir.clone();
+        self.spawn_context_lookup(
+            "git-branch-context",
+            move || git_current_branch(&workdir),
+            move |branch| SessionEvent::GitBranchContextLoaded { request_id, branch },
+        );
     }
 
     fn maybe_spawn_pull_request_context_lookup(&mut self, now: Instant) {
         if !self.workdir_context.gh_available || !self.workdir_context.is_git_repo {
             return;
         }
-        if self.pull_request_context_lookup_in_flight {
+        if self.pull_request_lookup.in_flight {
             return;
         }
         let Some(branch) = self.pull_request_context_branch.clone() else {
@@ -760,39 +761,49 @@ impl Multiplexer {
         {
             return;
         }
-        self.pull_request_context_request_id = self.pull_request_context_request_id.wrapping_add(1);
-        let request = PullRequestContextLookupRequest {
-            request_id: self.pull_request_context_request_id,
-            workdir: self.workdir.clone(),
-            branch,
-        };
-        self.pull_request_context_lookup_in_flight = true;
-        self.spawn_pull_request_context_lookup(request);
-    }
-
-    fn spawn_pull_request_context_lookup(&self, request: PullRequestContextLookupRequest) {
-        let event_tx = self.event_tx.clone();
-        std::thread::spawn(move || {
-            let outcome = match gh_pull_request_info(&request.workdir, &request.branch) {
+        let request_id = self.pull_request_lookup.next_request_id();
+        self.pull_request_lookup.in_flight = true;
+        let workdir = self.workdir.clone();
+        let branch_for_event = branch.clone();
+        self.spawn_context_lookup(
+            "pull-request-context",
+            move || match gh_pull_request_info(&workdir, &branch) {
                 Ok(pr) => PullRequestLookupOutcome::Resolved(pr),
                 Err(err) => {
                     crate::clog!(
                         "pull-request-context: gh lookup failed for branch {:?}: {err}",
-                        request.branch
+                        branch
                     );
                     PullRequestLookupOutcome::TransientFailure
                 }
-            };
-            if event_tx
-                .send(SessionEvent::PullRequestContextLoaded {
-                    request_id: request.request_id,
-                    branch: Some(request.branch),
-                    outcome,
-                })
-                .is_err()
-            {
+            },
+            move |outcome| SessionEvent::PullRequestContextLoaded {
+                request_id,
+                branch: Some(branch_for_event),
+                outcome,
+            },
+        );
+    }
+
+    /// Generic worker spawn for the two background context lookups.
+    /// `work` runs the actual `git`/`gh` subprocess (off the daemon's
+    /// main thread); `to_event` maps the worker's return value into
+    /// the `SessionEvent` variant the main loop dispatches. The
+    /// channel-closed `clog!` is uniform across callers so a future
+    /// triage of "why didn't the bar refresh?" has the same shape
+    /// regardless of which lookup misbehaved.
+    fn spawn_context_lookup<F, T, E>(&self, label: &'static str, work: F, to_event: E)
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+        E: FnOnce(T) -> SessionEvent + Send + 'static,
+    {
+        let event_tx = self.event_tx.clone();
+        std::thread::spawn(move || {
+            let value = work();
+            if event_tx.send(to_event(value)).is_err() {
                 crate::clog!(
-                    "pull-request-context: event channel closed before metadata reached the main loop"
+                    "{label}: event channel closed before result reached main loop"
                 );
             }
         });
@@ -804,10 +815,10 @@ impl Multiplexer {
         branch: Option<String>,
         now: Instant,
     ) -> bool {
-        if request_id != self.git_branch_context_request_id {
+        if request_id != self.git_branch_lookup.request_id {
             return false;
         }
-        self.git_branch_context_lookup_in_flight = false;
+        self.git_branch_lookup.in_flight = false;
         self.apply_git_branch_context(branch, now)
     }
 
@@ -830,9 +841,9 @@ impl Multiplexer {
         // branch's cache slot with the wrong branch's PR. Bumping the
         // id makes the late-arrival response fail the equality guard
         // in `apply_pull_request_context_loaded`.
-        self.pull_request_context_request_id =
-            self.pull_request_context_request_id.wrapping_add(1);
-        self.pull_request_context_lookup_in_flight = false;
+        self.pull_request_lookup.request_id =
+            self.pull_request_lookup.request_id.wrapping_add(1);
+        self.pull_request_lookup.in_flight = false;
         crate::cdebug!(
             "git-branch-context: branch changed old={:?} new={:?}",
             old_branch,
@@ -852,10 +863,10 @@ impl Multiplexer {
         outcome: PullRequestLookupOutcome,
         now: Instant,
     ) -> bool {
-        if request_id != self.pull_request_context_request_id {
+        if request_id != self.pull_request_lookup.request_id {
             return false;
         }
-        self.pull_request_context_lookup_in_flight = false;
+        self.pull_request_lookup.in_flight = false;
         let Some(branch) = branch else {
             return false;
         };
@@ -4866,6 +4877,100 @@ mod tests {
     }
 
     #[test]
+    fn branch_context_bar_truncates_left_chunk_on_narrow_terminal() {
+        // 20-column terminal with a long PR title: the left chunk
+        // must truncate via `take_display_cols` and the container
+        // region must drop entirely rather than overlap the left
+        // chunk. No panic from `u16::try_from` overflow.
+        let mut pr = pull_request_fixture(999);
+        pr.title = "Implement enormous feature with very long title that exceeds the bar"
+            .to_string();
+        let mut buf = Vec::new();
+        render_branch_context_bar(
+            &mut buf,
+            24,
+            20,
+            Some("feature/x"),
+            Some(&pr),
+            "jk-test-container-with-extra-long-suffix",
+            None,
+        );
+        let rendered = String::from_utf8_lossy(&buf);
+        assert!(rendered.contains("PR #999"));
+        // The container label should be omitted at this width — its
+        // chunk would otherwise collide with the (already-truncated)
+        // left chunk.
+        assert!(
+            !rendered.contains("jk-test-container-with-extra-long-suffix"),
+            "narrow terminal must drop container chunk: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn branch_context_bar_layout_returns_none_for_zero_dimensions() {
+        let pr = pull_request_fixture(1);
+        assert!(
+            branch_context_bar_layout(
+                0,
+                80,
+                Some("feature/x"),
+                Some(&pr),
+                "jk-test"
+            )
+            .is_none()
+        );
+        assert!(
+            branch_context_bar_layout(
+                24,
+                0,
+                Some("feature/x"),
+                Some(&pr),
+                "jk-test"
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn branch_context_bar_hit_rejects_columns_outside_region() {
+        let pr = pull_request_fixture(7);
+        let layout = branch_context_bar_layout(
+            24,
+            120,
+            Some("feature/x"),
+            Some(&pr),
+            "jk-test",
+        )
+        .expect("layout fits");
+        // left_region covers exactly its declared range.
+        let (left_start, left_end) = layout.left_region.expect("left region present");
+        assert_eq!(
+            branch_context_bar_hit(24, left_start, 24, 120, Some("feature/x"), Some(&pr), "jk-test"),
+            Some(BranchContextBarHit::Context)
+        );
+        assert_eq!(
+            branch_context_bar_hit(24, left_end - 1, 24, 120, Some("feature/x"), Some(&pr), "jk-test"),
+            Some(BranchContextBarHit::Context)
+        );
+        // `end` is exclusive — `col == end` is outside the region.
+        let outside_left = branch_context_bar_hit(
+            24, left_end, 24, 120, Some("feature/x"), Some(&pr), "jk-test",
+        );
+        // The column may belong to the container region if it abuts.
+        assert!(matches!(
+            outside_left,
+            None | Some(BranchContextBarHit::Container)
+        ));
+        // Wrong row — never a hit.
+        assert_eq!(
+            branch_context_bar_hit(
+                23, left_start, 24, 120, Some("feature/x"), Some(&pr), "jk-test"
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn branch_context_bar_hover_highlights_click_targets() {
         let pr = pull_request_fixture(434);
         let mut context_buf = Vec::new();
@@ -4993,8 +5098,8 @@ mod tests {
     #[test]
     fn apply_pull_request_context_loaded_drops_stale_request() {
         let mut mux = test_mux(24, 100);
-        mux.pull_request_context_request_id = 5;
-        mux.pull_request_context_lookup_in_flight = true;
+        mux.pull_request_lookup.request_id = 5;
+        mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_branch = Some("feat/x".to_string());
         let pr = pull_request_fixture(99);
         let changed = mux.apply_pull_request_context_loaded(
@@ -5005,7 +5110,7 @@ mod tests {
         );
         assert!(!changed, "stale request must not mutate state");
         assert!(
-            mux.pull_request_context_lookup_in_flight,
+            mux.pull_request_lookup.in_flight,
             "stale request must leave in_flight untouched"
         );
         assert!(
@@ -5018,8 +5123,8 @@ mod tests {
     fn apply_pull_request_context_loaded_transient_failure_preserves_prior_cache() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        mux.pull_request_context_request_id = 7;
-        mux.pull_request_context_lookup_in_flight = true;
+        mux.pull_request_lookup.request_id = 7;
+        mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_branch = Some("feat/x".to_string());
         mux.pull_request_context = Some(pull_request_fixture(123));
         mux.pull_request_context_cache.insert(
@@ -5037,7 +5142,7 @@ mod tests {
         );
         assert!(!changed, "transient failure must not mutate visible state");
         assert!(
-            !mux.pull_request_context_lookup_in_flight,
+            !mux.pull_request_lookup.in_flight,
             "transient failure must clear in_flight so next tick retries"
         );
         assert_eq!(
@@ -5052,8 +5157,8 @@ mod tests {
     #[test]
     fn apply_git_branch_context_loaded_drops_stale_request() {
         let mut mux = test_mux(24, 100);
-        mux.git_branch_context_request_id = 4;
-        mux.git_branch_context_lookup_in_flight = true;
+        mux.git_branch_lookup.request_id = 4;
+        mux.git_branch_lookup.in_flight = true;
         let changed = mux.apply_git_branch_context_loaded(
             2,
             Some("feat/x".to_string()),
@@ -5061,7 +5166,7 @@ mod tests {
         );
         assert!(!changed);
         assert!(
-            mux.git_branch_context_lookup_in_flight,
+            mux.git_branch_lookup.in_flight,
             "stale id leaves in_flight"
         );
         assert!(mux.pull_request_context_branch.is_none());
@@ -5072,10 +5177,10 @@ mod tests {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
         mux.pull_request_context_branch = Some("feat/a".to_string());
-        let id_before = mux.pull_request_context_request_id;
+        let id_before = mux.pull_request_lookup.request_id;
         let _ = mux.apply_git_branch_context(Some("feat/b".to_string()), now);
         assert_eq!(
-            mux.pull_request_context_request_id,
+            mux.pull_request_lookup.request_id,
             id_before.wrapping_add(1),
             "branch change must bump request_id so stale gh worker responses are rejected"
         );
@@ -5135,7 +5240,7 @@ mod tests {
         let now = Instant::now();
         mux.pull_request_context_branch = Some("feature/current".to_string());
         mux.pull_request_context = Some(pull_request_fixture(436));
-        mux.pull_request_context_lookup_in_flight = true;
+        mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_cache.insert(
             "feature/current".to_string(),
             PullRequestContextCacheEntry {
