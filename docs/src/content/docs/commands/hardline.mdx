@@ -65,7 +65,7 @@ To stop the whole container from inside the multiplexer, use the command palette
 
 ## Terminal tab title
 
-`jackin hardline` sets the terminal tab title to the role's display name (e.g. `jackin' · The Architect`) before connecting, matching the behavior of `jackin load`. This applies to all three paths: reconnect, `--new`, and `--shell`.
+`jackin hardline` sets the terminal tab title before connecting, matching the behavior of `jackin load`. Once attached, `jackin-capsule` owns the title so Ghostty-style tab and window lists show the active workspace plus the current GitHub context. On a pull request branch it uses the workspace directory name and pull request title, for example `jackin · PR #436 · feat(capsule): show branch and PR context`; on a non-default branch without an open pull request it uses the workspace plus branch name.
 
 ## Attached multiplexer shortcuts
 

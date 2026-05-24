@@ -312,6 +312,8 @@ Modern terminals interpret OSC escape sequences agents emit for window titles, c
 
 OSC 7 (current working directory) is never forwarded — it would tell the operator's host terminal to track the *container's* cwd, which has no meaning outside the container; jackin-capsule captures it locally for the pane title and stops. OSC 8 forwarding additionally rejects any URI whose scheme is not `http`, `https`, or `mailto` (so a compromised agent cannot ship a `javascript:` or `file://` hyperlink that would script the operator's host terminal on click).
 
+The multiplexer also emits its own OSC 2 title from the compositor. That title is not pane content: it is derived from `/jackin/run/agent.toml`'s workdir and the cached GitHub branch / pull request context, then re-emitted only when the value changes. This keeps Ghostty-style tab and window lists anchored to the workspace plus pull request title even when a focused pane briefly forwards its own shell title.
+
 ### Pointer shape feedback
 
 The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion and the outer terminal advertises a known OSC 22-capable identity (`xterm-ghostty`, `xterm-kitty`, Foot, or iTerm via `TERM` / `TERM_PROGRAM`), it emits OSC 22 pointer-shape updates:

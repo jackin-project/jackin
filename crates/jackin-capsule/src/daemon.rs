@@ -121,6 +121,11 @@ pub struct Multiplexer {
     /// True only for outer terminals known to support OSC 22 with CSS
     /// pointer names. Unsupported terminals keep normal cursor behavior.
     pointer_shapes_supported: bool,
+    /// Last multiplexer-owned title sent to the outer terminal. Pane
+    /// OSC titles are still forwarded for focused sessions, but every
+    /// redraw reasserts the workspace/PR title so Ghostty-style tab
+    /// lists show the operator's current workspace context.
+    last_outer_terminal_title: Option<String>,
     hover_target: Option<HoverTarget>,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
@@ -364,6 +369,7 @@ impl Multiplexer {
             pending_full_redraw: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: pointer_shapes_supported_from_env(),
+            last_outer_terminal_title: None,
             hover_target: None,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
@@ -2199,9 +2205,23 @@ impl Multiplexer {
         self.compose_partial_frame(dirty_panes)
     }
 
+    fn append_outer_terminal_title(&mut self, buf: &mut Vec<u8>) {
+        let title = compose_outer_terminal_title(
+            &self.workdir,
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_ref(),
+        );
+        if self.last_outer_terminal_title.as_deref() == Some(title.as_str()) {
+            return;
+        }
+        append_osc_window_title(buf, &title);
+        self.last_outer_terminal_title = Some(title);
+    }
+
     fn compose_full_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
         let started = Instant::now();
         let mut buf = Vec::with_capacity(65536);
+        self.append_outer_terminal_title(&mut buf);
         buf.extend_from_slice(b"\x1b[?25l");
 
         // Tab labels track the pane makeup. Done here (not on every
@@ -2407,6 +2427,7 @@ impl Multiplexer {
         }
 
         let mut buf = Vec::with_capacity(16384);
+        self.append_outer_terminal_title(&mut buf);
         buf.extend_from_slice(b"\x1b[?25l");
         let mut rows_emitted = 0usize;
         let mut panes_rendered = 0usize;
@@ -2929,6 +2950,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // vecs so the `&mut Session` borrow ends before
                         // `mux.send_output` (which takes `&mut Multiplexer`).
                         let mut to_emit: Vec<Vec<u8>> = Vec::new();
+                        let mut reassert_outer_terminal_title = false;
                         if let Some(session) = mux.sessions.get_mut(&session_id) {
                             session.feed_pty(&data);
                             // Always drain the OSC + unhandled-CSI
@@ -2954,12 +2976,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             // anyway).
                             let mode_transitions = session.drain_mode_transitions();
                             if is_focused {
+                                reassert_outer_terminal_title = !drained.is_empty();
                                 to_emit.extend(drained);
                                 to_emit.extend(mode_transitions);
                             }
                         }
                         for bytes in to_emit {
                             mux.send_output(bytes);
+                        }
+                        if reassert_outer_terminal_title {
+                            mux.last_outer_terminal_title = None;
                         }
                         // Mark the pane body dirty; the render ticker coalesces
                         // bursts of PTY output into one frame per
@@ -3502,6 +3528,70 @@ fn display_title(session: &Session) -> String {
     } else {
         session.label.clone()
     }
+}
+
+const OUTER_TERMINAL_TITLE_MAX_CHARS: usize = 180;
+
+fn compose_outer_terminal_title(
+    workdir: &Path,
+    branch: Option<&str>,
+    pull_request: Option<&PullRequestInfo>,
+) -> String {
+    let workspace = workspace_title(workdir);
+    let context = pull_request
+        .map(|pr| format!("PR #{} · {}", pr.number, pr.title))
+        .or_else(|| branch.map(ToOwned::to_owned))
+        .filter(|value| !value.trim().is_empty());
+
+    let raw_title = match context {
+        Some(context) => format!("{workspace} · {context}"),
+        None => workspace,
+    };
+    trim_title_chars(
+        &sanitize_terminal_title(&raw_title),
+        OUTER_TERMINAL_TITLE_MAX_CHARS,
+    )
+}
+
+fn workspace_title(workdir: &Path) -> String {
+    workdir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| workdir.display().to_string())
+}
+
+fn sanitize_terminal_title(title: &str) -> String {
+    title
+        .chars()
+        .map(|ch| {
+            if ch.is_control() || ch == '\u{7f}' {
+                ' '
+            } else {
+                ch
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn trim_title_chars(title: &str, max_chars: usize) -> String {
+    if title.chars().count() <= max_chars {
+        return title.to_string();
+    }
+    let keep = max_chars.saturating_sub(1);
+    let mut trimmed = title.chars().take(keep).collect::<String>();
+    trimmed.push('…');
+    trimmed
+}
+
+fn append_osc_window_title(buf: &mut Vec<u8>, title: &str) {
+    buf.extend_from_slice(b"\x1b]2;");
+    buf.extend_from_slice(title.as_bytes());
+    buf.extend_from_slice(b"\x1b\\");
 }
 
 const BRANCH_CONTEXT_BAR_BG: &str = "\x1b[48;2;255;255;255m";
@@ -4088,6 +4178,75 @@ mod tests {
             is_draft: false,
             checks: None,
         }
+    }
+
+    #[test]
+    fn outer_terminal_title_uses_workspace_and_pr_title() {
+        let title = compose_outer_terminal_title(
+            Path::new("/Users/operator/Projects/jackin"),
+            Some("feat/capsule-pr-context-bar"),
+            Some(&pull_request_fixture(436)),
+        );
+
+        assert_eq!(title, "jackin · PR #436 · Surface PR context in Capsule");
+    }
+
+    #[test]
+    fn outer_terminal_title_falls_back_to_branch_without_pr() {
+        let title = compose_outer_terminal_title(
+            Path::new("/Users/operator/Projects/jackin"),
+            Some("feat/capsule-pr-context-bar"),
+            None,
+        );
+
+        assert_eq!(title, "jackin · feat/capsule-pr-context-bar");
+    }
+
+    #[test]
+    fn outer_terminal_title_sanitizes_control_bytes() {
+        let pull_request = PullRequestInfo {
+            number: 436,
+            title: "bad\x1b]2;owned\x07title".to_string(),
+            url: "https://github.com/jackin-project/jackin/pull/436".to_string(),
+            is_draft: false,
+            checks: None,
+        };
+        let title =
+            compose_outer_terminal_title(Path::new("/workspace/jackin"), None, Some(&pull_request));
+
+        assert_eq!(title, "jackin · PR #436 · bad ]2;owned title");
+    }
+
+    #[test]
+    fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
+        let mut mux = single_pane_tab_mux();
+        mux.workdir = PathBuf::from("/workspace/jackin");
+        mux.pull_request_context_branch = Some("feat/capsule-pr-context-bar".to_string());
+
+        let first =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            first.contains("\x1b]2;jackin · feat/capsule-pr-context-bar\x1b\\"),
+            "first frame should set branch title: {first:?}"
+        );
+
+        let second =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            !second.contains("\x1b]2;jackin · feat/capsule-pr-context-bar\x1b\\"),
+            "unchanged full frame should not spam title: {second:?}"
+        );
+
+        mux.pull_request_context = Some(pull_request_fixture(436));
+        let updated =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            updated.contains("\x1b]2;jackin · PR #436 · Surface PR context in Capsule\x1b\\"),
+            "PR context change should refresh title: {updated:?}"
+        );
     }
 
     fn split_tab_mux() -> Multiplexer {
