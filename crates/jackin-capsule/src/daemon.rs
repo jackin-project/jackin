@@ -27,7 +27,6 @@ use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
-use unicode_width::UnicodeWidthChar;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -647,10 +646,11 @@ impl Multiplexer {
         }
     }
 
-    fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
-        if self.drag.is_some() || self.selection.is_some() {
-            return None;
-        }
+    /// Resolve the chrome target a hit at `(row, col)` (0-based)
+    /// would land on, walking dialog → tab strip → menu → branch bar
+    /// in priority order. Both `hover_target_at` and `pointer_shape_at`
+    /// consume this so the priority ordering lives once.
+    fn chrome_hit_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
         if let Some(dialog) = self.dialog_top() {
             let github = self.github_context_view();
             return dialog
@@ -689,6 +689,13 @@ impl Multiplexer {
         }
     }
 
+    fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
+        if self.drag.is_some() || self.selection.is_some() {
+            return None;
+        }
+        self.chrome_hit_target_at(row, col)
+    }
+
     fn pointer_shape_at(&self, row: u16, col: u16, button: u8) -> PointerShape {
         if self.drag.is_some() {
             return PointerShape::Grabbing;
@@ -696,41 +703,13 @@ impl Multiplexer {
         if self.selection.is_some() {
             return PointerShape::Text;
         }
-        if let Some(dialog) = self.dialog_top() {
-            let github = self.github_context_view();
-            return if dialog.clickable_at(
-                row + 1,
-                col + 1,
-                self.term_rows,
-                self.term_cols,
-                Some(&github),
-            ) {
-                PointerShape::Pointer
-            } else {
-                PointerShape::Default
-            };
-        }
-        let row_1based = row + 1;
-        let col_1based = col + 1;
-        if row_1based == 1 && self.status_bar.tab_at_col(col_1based).is_some() {
-            return PointerShape::Pointer;
-        }
-        if self.status_bar.hint_at(row_1based, col_1based) {
-            return PointerShape::Pointer;
-        }
-        if branch_context_bar_hit(
-            row_1based,
-            col_1based,
-            self.term_rows,
-            self.term_cols,
-            self.context_bar_branch(),
-            self.pull_request_context.as_deref(),
-            self.pull_request_context_loading(),
-            self.status_bar.instance_id_label(),
-        )
-        .is_some()
-        {
-            return PointerShape::Pointer;
+        match self.chrome_hit_target_at(row, col) {
+            Some(HoverTarget::DialogCopyTarget) => return PointerShape::Pointer,
+            // Non-clickable dialog interior still pins the pointer to the
+            // default cursor — the dialog "captures" pointer state.
+            None if self.dialog_top().is_some() => return PointerShape::Default,
+            Some(_) => return PointerShape::Pointer,
+            None => {}
         }
         if let Some(drag) = self.detect_drag_start(row, col) {
             return match drag.orient {
@@ -807,20 +786,15 @@ impl Multiplexer {
     }
 
     fn github_context_view(&self) -> GithubContextView<'_> {
+        let status = match self.pull_request_context.as_deref() {
+            Some(pr) => PullRequestStatus::Loaded(pr),
+            None if self.pull_request_context_loading() => PullRequestStatus::Resolving,
+            None => PullRequestStatus::Idle,
+        };
         GithubContextView {
             branch: self.pull_request_context_branch.as_deref(),
-            status: self.pull_request_status(),
+            status,
         }
-    }
-
-    fn pull_request_status(&self) -> PullRequestStatus<'_> {
-        if let Some(pr) = self.pull_request_context.as_deref() {
-            return PullRequestStatus::Loaded(pr);
-        }
-        if self.pull_request_context_loading() {
-            return PullRequestStatus::Resolving;
-        }
-        PullRequestStatus::Idle
     }
 
     /// Single `&mut self.dialog_stack` borrow alongside a
@@ -2750,8 +2724,7 @@ impl Multiplexer {
         // spawn / split / remove) so the rule lives in one place.
         self.refresh_tab_labels();
 
-        let states: Vec<(u64, AgentState)> =
-            self.sessions.iter().map(|(&id, s)| (id, s.state)).collect();
+        let states = self.snapshot_session_states();
         self.status_bar.render(
             &mut buf,
             self.term_cols,
@@ -2858,15 +2831,7 @@ impl Multiplexer {
         );
 
         if let Some(dialog) = self.dialog_top() {
-            let status = match self.pull_request_context.as_deref() {
-                Some(pr) => PullRequestStatus::Loaded(pr),
-                None if pull_request_loading => PullRequestStatus::Resolving,
-                None => PullRequestStatus::Idle,
-            };
-            let github = GithubContextView {
-                branch: self.pull_request_context_branch.as_deref(),
-                status,
-            };
+            let github = self.github_context_view();
             dialog.render_with_hover(
                 &mut buf,
                 self.term_rows,
@@ -2899,10 +2864,14 @@ impl Multiplexer {
         self.compose_full_frame(reason)
     }
 
+    fn snapshot_session_states(&self) -> Vec<(u64, AgentState)> {
+        self.sessions.iter().map(|(&id, s)| (id, s.state)).collect()
+    }
+
     fn compose_chrome_hover_frame(&mut self) -> Vec<u8> {
+        self.refresh_tab_labels();
         let mut buf = b"\x1b7".to_vec();
-        let states: Vec<(u64, AgentState)> =
-            self.sessions.iter().map(|(&id, s)| (id, s.state)).collect();
+        let states = self.snapshot_session_states();
         self.status_bar.render(
             &mut buf,
             self.term_cols,
@@ -4086,25 +4055,7 @@ fn workspace_title(workdir: &Path) -> String {
         .unwrap_or_else(|| workdir.display().to_string())
 }
 
-fn sanitize_terminal_title(title: &str) -> String {
-    let mut out = String::with_capacity(title.len());
-    let mut prev_space = true;
-    for ch in title.chars() {
-        if ch.is_control() || ch == '\u{7f}' || ch.is_whitespace() {
-            if !prev_space {
-                out.push(' ');
-                prev_space = true;
-            }
-        } else {
-            out.push(ch);
-            prev_space = false;
-        }
-    }
-    if out.ends_with(' ') {
-        out.pop();
-    }
-    out
-}
+use jackin_tui::sanitize_terminal_title;
 
 fn trim_title_chars(title: &str, max_chars: usize) -> String {
     if title.chars().count() <= max_chars {
@@ -4131,7 +4082,7 @@ const BRANCH_CONTEXT_BAR_BOLD: &str = "\x1b[1m";
 const BRANCH_CONTEXT_BAR_BG_DIM: &str = "\x1b[48;2;51;51;51m";
 const BRANCH_CONTEXT_BAR_FG_DIM: &str = "\x1b[38;2;0;28;6m";
 const BRANCH_CONTEXT_BAR_LINK_FG_DIM: &str = "\x1b[38;2;0;16;36m";
-const RESET: &str = "\x1b[0m";
+use jackin_tui::ansi::RESET;
 
 fn render_branch_context_bar(
     buf: &mut Vec<u8>,
@@ -4157,74 +4108,105 @@ fn render_branch_context_bar(
 
     let bar_row = term_rows.saturating_sub(1);
     jackin_tui::ansi::move_to(buf, bar_row, 0);
-    buf.extend_from_slice(
-        if dim {
-            BRANCH_CONTEXT_BAR_BG_DIM
-        } else {
-            BRANCH_CONTEXT_BAR_BG
-        }
-        .as_bytes(),
-    );
-    buf.extend_from_slice(
-        if dim {
-            BRANCH_CONTEXT_BAR_FG_DIM
-        } else {
-            BRANCH_CONTEXT_BAR_FG
-        }
-        .as_bytes(),
-    );
+    let bar_bg = if dim {
+        BRANCH_CONTEXT_BAR_BG_DIM
+    } else {
+        BRANCH_CONTEXT_BAR_BG
+    };
+    let bar_fg = if dim {
+        BRANCH_CONTEXT_BAR_FG_DIM
+    } else {
+        BRANCH_CONTEXT_BAR_FG
+    };
+    buf.extend_from_slice(bar_bg.as_bytes());
+    buf.extend_from_slice(bar_fg.as_bytes());
     for _ in 0..term_cols {
         buf.push(b' ');
     }
 
-    jackin_tui::ansi::move_to(buf, bar_row, 0);
-    let left_hovered = !dim && hover_target == Some(HoverTarget::BranchContext);
-    let left_bg = if dim {
+    paint_branch_bar_chunk(
+        buf,
+        bar_row,
+        0,
+        &layout.left,
+        ChunkStyle::left(),
+        !dim && hover_target == Some(HoverTarget::BranchContext),
+        dim,
+    );
+    if let Some(region) = layout.container_region {
+        paint_branch_bar_chunk(
+            buf,
+            bar_row,
+            region.start.saturating_sub(1),
+            &layout.container,
+            ChunkStyle::container(),
+            !dim && hover_target == Some(HoverTarget::Container),
+            dim,
+        );
+    }
+    buf.extend_from_slice(RESET.as_bytes());
+}
+
+/// Per-chunk colour selection rule for `render_branch_context_bar`.
+/// The left chunk always emits bold unless dimmed; the container
+/// chunk emits bold only on hover and uses the "link" foreground
+/// instead of the plain foreground.
+struct ChunkStyle {
+    /// Idle foreground (`!dim && !hovered`).
+    idle_fg: &'static str,
+    /// Foreground when dimmed; both chunks share their idle dim shape.
+    dim_fg: &'static str,
+    /// Emit bold even when not hovered.
+    always_bold: bool,
+}
+
+impl ChunkStyle {
+    const fn left() -> Self {
+        Self {
+            idle_fg: BRANCH_CONTEXT_BAR_FG,
+            dim_fg: BRANCH_CONTEXT_BAR_FG_DIM,
+            always_bold: true,
+        }
+    }
+    const fn container() -> Self {
+        Self {
+            idle_fg: BRANCH_CONTEXT_BAR_LINK_FG,
+            dim_fg: BRANCH_CONTEXT_BAR_LINK_FG_DIM,
+            always_bold: false,
+        }
+    }
+}
+
+fn paint_branch_bar_chunk(
+    buf: &mut Vec<u8>,
+    bar_row: u16,
+    start_col: u16,
+    label: &str,
+    style: ChunkStyle,
+    hovered: bool,
+    dim: bool,
+) {
+    jackin_tui::ansi::move_to(buf, bar_row, start_col);
+    let bg = if dim {
         BRANCH_CONTEXT_BAR_BG_DIM
-    } else if left_hovered {
+    } else if hovered {
         BRANCH_CONTEXT_BAR_HOVER_BG
     } else {
         BRANCH_CONTEXT_BAR_BG
     };
-    let left_fg = if dim {
-        BRANCH_CONTEXT_BAR_FG_DIM
-    } else if left_hovered {
+    let fg = if dim {
+        style.dim_fg
+    } else if hovered {
         BRANCH_CONTEXT_BAR_HOVER_FG
     } else {
-        BRANCH_CONTEXT_BAR_FG
+        style.idle_fg
     };
-    buf.extend_from_slice(left_bg.as_bytes());
-    buf.extend_from_slice(left_fg.as_bytes());
-    if !dim {
+    buf.extend_from_slice(bg.as_bytes());
+    buf.extend_from_slice(fg.as_bytes());
+    if !dim && (style.always_bold || hovered) {
         buf.extend_from_slice(BRANCH_CONTEXT_BAR_BOLD.as_bytes());
     }
-    buf.extend_from_slice(layout.left.as_bytes());
-
-    if let Some(region) = layout.container_region {
-        jackin_tui::ansi::move_to(buf, bar_row, region.start.saturating_sub(1));
-        let container_hovered = !dim && hover_target == Some(HoverTarget::Container);
-        let bg = if dim {
-            BRANCH_CONTEXT_BAR_BG_DIM
-        } else if container_hovered {
-            BRANCH_CONTEXT_BAR_HOVER_BG
-        } else {
-            BRANCH_CONTEXT_BAR_BG
-        };
-        let fg = if dim {
-            BRANCH_CONTEXT_BAR_LINK_FG_DIM
-        } else if container_hovered {
-            BRANCH_CONTEXT_BAR_HOVER_FG
-        } else {
-            BRANCH_CONTEXT_BAR_LINK_FG
-        };
-        buf.extend_from_slice(bg.as_bytes());
-        buf.extend_from_slice(fg.as_bytes());
-        if container_hovered {
-            buf.extend_from_slice(BRANCH_CONTEXT_BAR_BOLD.as_bytes());
-        }
-        buf.extend_from_slice(layout.container.as_bytes());
-    }
-    buf.extend_from_slice(RESET.as_bytes());
+    buf.extend_from_slice(label.as_bytes());
 }
 
 /// Half-open `[start, end)` column range. Constructor returns `None`
@@ -4368,36 +4350,7 @@ fn branch_context_bar_hit(
 /// without consuming columns. Stripping them here makes the chrome
 /// bar safe for arbitrary upstream strings (PR titles, branch names)
 /// without each caller re-implementing the same guard.
-fn display_cols(s: &str) -> usize {
-    s.chars()
-        .filter(|c| !is_control_char(*c))
-        .map(|c| c.width().unwrap_or(0))
-        .sum()
-}
-
-fn take_display_cols(s: &str, max_cols: usize) -> String {
-    let mut out = String::new();
-    let mut used = 0usize;
-    for c in s.chars() {
-        if is_control_char(c) {
-            continue;
-        }
-        let width = c.width().unwrap_or(0);
-        if used + width > max_cols {
-            break;
-        }
-        out.push(c);
-        used += width;
-    }
-    out
-}
-
-/// True for any C0 / C1 control byte or DEL (`0x7f`). These bytes are
-/// what terminal injection attacks (`\x1b[…m`, `\x9b…`, OSC, BEL)
-/// build their sequences from; stripping them eliminates the class.
-fn is_control_char(c: char) -> bool {
-    (c as u32) < 0x20 || c == '\x7f' || ((c as u32) >= 0x80 && (c as u32) < 0xa0)
-}
+use jackin_tui::{display_cols, take_display_cols};
 
 const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
@@ -4469,6 +4422,34 @@ fn build_gh_command(workdir: &Path) -> Command {
     cmd
 }
 
+/// Run `gh <args>` and parse stdout as JSON. `Ok(None)` means
+/// `gh` exited successfully (per `accepted_statuses`) with empty
+/// stdout, the documented "no rows" shape. Failure is mapped to
+/// `LookupError::Failed` with the JSON parse error and a payload
+/// prefix so the operator can triage via `multiplexer.log` /
+/// `--debug` traces.
+fn gh_json<T: serde::de::DeserializeOwned>(
+    workdir: &Path,
+    label: &str,
+    args: &[&str],
+    accepted_statuses: &[i32],
+) -> Result<Option<T>, LookupError> {
+    let mut cmd = build_gh_command(workdir);
+    cmd.args(args);
+    let json =
+        run_command_capturing_output(&mut cmd, GH_PULL_REQUEST_COMMAND_TIMEOUT, accepted_statuses)?;
+    let Some(json) = json else {
+        return Ok(None);
+    };
+    let parsed = serde_json::from_str::<T>(&json).map_err(|e| {
+        LookupError::Failed(format!(
+            "{label} JSON parse failed: {e}; payload prefix: {:.200?}",
+            json
+        ))
+    })?;
+    Ok(Some(parsed))
+}
+
 fn gh_pull_request_info(
     workdir: &Path,
     branch: &str,
@@ -4482,33 +4463,29 @@ fn gh_pull_request_info(
         is_draft: bool,
     }
 
-    let mut cmd = build_gh_command(workdir);
-    cmd.args([
-        "pr",
-        "list",
-        "--head",
-        branch,
-        "--state",
-        "open",
-        "--limit",
-        "1",
-        "--json",
-        "number,title,url,isDraft",
-    ]);
-    let json = run_command_capturing_output(&mut cmd, GH_PULL_REQUEST_COMMAND_TIMEOUT, &[0])?;
     // `gh pr list` with no matching PR prints an empty JSON array `[]`,
-    // which `run_command_capturing_output` returns as `Some("[]")`. An
-    // empty stdout indicates an authoritative "no rows" only when
-    // `gh` chose to print nothing — accept either shape as "no PR".
-    let Some(json) = json else {
+    // which `gh_json` parses to `Some(vec![])`. An empty stdout
+    // surfaces as `Ok(None)`. Either shape collapses to "no PR".
+    let Some(prs) = gh_json::<Vec<GhPullRequest>>(
+        workdir,
+        "gh pr list",
+        &[
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--state",
+            "open",
+            "--limit",
+            "1",
+            "--json",
+            "number,title,url,isDraft",
+        ],
+        &[0],
+    )?
+    else {
         return Ok(None);
     };
-    let prs: Vec<GhPullRequest> = serde_json::from_str(&json).map_err(|e| {
-        LookupError::Failed(format!(
-            "gh pr list JSON parse failed: {e}; payload prefix: {:.200?}",
-            json
-        ))
-    })?;
     let Some(pr) = prs.into_iter().next() else {
         return Ok(None);
     };
@@ -4551,20 +4528,17 @@ fn gh_pull_request_checks(
         bucket: String,
     }
 
-    let mut cmd = build_gh_command(workdir);
-    cmd.args(["pr", "checks", url, "--json", "bucket"]);
     // `gh pr checks` exits with `8` when checks are pending and `0`
     // otherwise; both are accepted statuses.
-    let json = run_command_capturing_output(&mut cmd, GH_PULL_REQUEST_COMMAND_TIMEOUT, &[0, 8])?;
-    let Some(json) = json else {
+    let Some(checks) = gh_json::<Vec<GhCheck>>(
+        workdir,
+        "gh pr checks",
+        &["pr", "checks", url, "--json", "bucket"],
+        &[0, 8],
+    )?
+    else {
         return Ok(None);
     };
-    let checks: Vec<GhCheck> = serde_json::from_str(&json).map_err(|e| {
-        LookupError::Failed(format!(
-            "gh pr checks JSON parse failed: {e}; payload prefix: {:.200?}",
-            json
-        ))
-    })?;
     for check in &checks {
         if !matches!(
             check.bucket.as_str(),

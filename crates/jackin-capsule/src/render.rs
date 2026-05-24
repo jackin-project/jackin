@@ -102,18 +102,7 @@ impl PaneBodyCache {
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
         let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
-        let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
-        render_snapshot_rows(&snapshot, &changed_rows, dest_row, dest_col, dim, buf);
-        self.rows = rect_rows;
-        self.cols = rect_cols;
-        self.dim = dim;
-        self.valid = true;
-        self.snapshot = snapshot;
-        PaneBodyRenderStats {
-            mode: PaneBodyRenderMode::Full,
-            rows_emitted: changed_rows.len(),
-            changed_rows,
-        }
+        self.render_full_from_snapshot(snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, buf)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -130,6 +119,20 @@ impl PaneBodyCache {
     ) -> PaneBodyRenderStats {
         let snapshot =
             pane_snapshot_with_scrollback_prefix(screen, scrollback_prefix, rect_rows, rect_cols);
+        self.render_full_from_snapshot(snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, buf)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_full_from_snapshot(
+        &mut self,
+        snapshot: Vec<RowSnapshot>,
+        dest_row: u16,
+        dest_col: u16,
+        rect_rows: u16,
+        rect_cols: u16,
+        dim: PaneBodyDim,
+        buf: &mut Vec<u8>,
+    ) -> PaneBodyRenderStats {
         let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
         render_snapshot_rows(&snapshot, &changed_rows, dest_row, dest_col, dim, buf);
         self.rows = rect_rows;
@@ -430,58 +433,83 @@ fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dim: PaneBodyDim) {
     buf.push(b'm');
 }
 
-fn emit_fg(buf: &mut Vec<u8>, color: ColorKey) {
+/// Which SGR plane an emit targets. `Fg` uses the `3x`/`9x`/`38;…`
+/// family; `Bg` uses `4x`/`10x`/`48;…`. The two emit functions are
+/// parameterised over this so a future palette change moves once.
+#[derive(Clone, Copy)]
+enum SgrLayer {
+    Fg,
+    Bg,
+}
+
+impl SgrLayer {
+    const fn low(self) -> u8 {
+        match self {
+            Self::Fg => 3,
+            Self::Bg => 4,
+        }
+    }
+    const fn bright(self) -> u8 {
+        match self {
+            Self::Fg => 9,
+            Self::Bg => 10,
+        }
+    }
+    const fn truecolor(self) -> u8 {
+        match self {
+            Self::Fg => 38,
+            Self::Bg => 48,
+        }
+    }
+    const fn backdrop_default_rgb(self) -> (u8, u8, u8) {
+        match self {
+            Self::Fg => (58, 58, 58),
+            Self::Bg => (0, 0, 0),
+        }
+    }
+}
+
+fn emit_color(buf: &mut Vec<u8>, layer: SgrLayer, color: ColorKey) {
     match color {
         ColorKey::Default => {}
         ColorKey::Idx(n) if n < 8 => {
-            let _ = write!(buf, ";3{}", n);
+            let _ = write!(buf, ";{}{n}", layer.low());
         }
         ColorKey::Idx(n) if n < 16 => {
-            let _ = write!(buf, ";9{}", n - 8);
+            let _ = write!(buf, ";{}{}", layer.bright(), n - 8);
         }
         ColorKey::Idx(n) => {
-            let _ = write!(buf, ";38;5;{n}");
+            let _ = write!(buf, ";{};5;{n}", layer.truecolor());
         }
         ColorKey::Rgb(r, g, b) => {
-            let _ = write!(buf, ";38;2;{r};{g};{b}");
+            let _ = write!(buf, ";{};2;{r};{g};{b}", layer.truecolor());
         }
     }
+}
+
+fn emit_fg(buf: &mut Vec<u8>, color: ColorKey) {
+    emit_color(buf, SgrLayer::Fg, color);
 }
 
 fn emit_bg(buf: &mut Vec<u8>, color: ColorKey) {
-    match color {
-        ColorKey::Default => {}
-        ColorKey::Idx(n) if n < 8 => {
-            let _ = write!(buf, ";4{}", n);
-        }
-        ColorKey::Idx(n) if n < 16 => {
-            let _ = write!(buf, ";10{}", n - 8);
-        }
-        ColorKey::Idx(n) => {
-            let _ = write!(buf, ";48;5;{n}");
-        }
-        ColorKey::Rgb(r, g, b) => {
-            let _ = write!(buf, ";48;2;{r};{g};{b}");
-        }
-    }
+    emit_color(buf, SgrLayer::Bg, color);
+}
+
+fn emit_backdrop(buf: &mut Vec<u8>, layer: SgrLayer, color: ColorKey) {
+    let (r, g, b) = match color {
+        ColorKey::Default => layer.backdrop_default_rgb(),
+        ColorKey::Idx(n) => dim_indexed_color(n),
+        ColorKey::Rgb(r, g, b) => (strong_dim(r), strong_dim(g), strong_dim(b)),
+    };
+    let _ = write!(buf, ";{};2;{r};{g};{b}", layer.truecolor());
 }
 
 fn emit_backdrop_fg(buf: &mut Vec<u8>, color: ColorKey) {
-    let (r, g, b) = match color {
-        ColorKey::Default => (58, 58, 58),
-        ColorKey::Idx(n) => dim_indexed_color(n),
-        ColorKey::Rgb(r, g, b) => (strong_dim(r), strong_dim(g), strong_dim(b)),
-    };
-    let _ = write!(buf, ";38;2;{r};{g};{b}");
+    emit_backdrop(buf, SgrLayer::Fg, color);
 }
 
 fn emit_backdrop_bg(buf: &mut Vec<u8>, color: ColorKey) {
-    let (r, g, b) = match color {
-        ColorKey::Default => (0, 0, 0),
-        ColorKey::Idx(n) => dim_indexed_color(n),
-        ColorKey::Rgb(r, g, b) => (strong_dim(r), strong_dim(g), strong_dim(b)),
-    };
-    let _ = write!(buf, ";48;2;{r};{g};{b}");
+    emit_backdrop(buf, SgrLayer::Bg, color);
 }
 
 const fn strong_dim(value: u8) -> u8 {

@@ -44,17 +44,12 @@ impl<'a> PullRequestStatus<'a> {
             _ => None,
         }
     }
-
-    pub fn is_loading(&self) -> bool {
-        matches!(self, Self::Resolving)
-    }
 }
+
+use jackin_tui::ansi::{BG_DARK, BOLD, RESET};
 
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
-const RESET: &str = "\x1b[0m";
-const BOLD: &str = "\x1b[1m";
-const BG_DARK: &str = "\x1b[48;2;0;0;0m"; // pure black
 const FG_GREEN: &str = "\x1b[38;2;0;255;65m"; // PHOSPHOR_GREEN
 const FG_DIM: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
 const FG_BORDER: &str = "\x1b[38;2;0;80;18m"; // PHOSPHOR_DARK
@@ -359,45 +354,27 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
-        // ContainerInfo is read-only — Enter copies the container
-        // name to clipboard, every other key (except dismiss handled
-        // below) is a no-op redraw. `copied` flips to `true` inline
-        // so the next render's "Copied!" indicator confirms the OSC
-        // 52 fired; the dialog stays open until the operator
-        // dismisses so the feedback is actually visible.
-        if let Self::ContainerInfo {
-            container_name,
-            copied,
-            ..
-        } = self
-        {
+        // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
+        // dismiss keys close, Enter copies the dialog's value to the
+        // operator's clipboard with the `copied` flag flipped to true
+        // so the next render's "Copied!" indicator confirms the OSC 52
+        // fired. The dialog stays open until dismissed so the feedback
+        // is actually visible.
+        if matches!(
+            self,
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. }
+        ) {
             if is_dismiss_key(key) {
                 return DialogAction::Dismiss;
             }
             return match key {
-                b"\r" | b"\n" => {
-                    let payload = container_name.clone();
-                    *copied = true;
-                    DialogAction::CopyToClipboard(payload)
-                }
-                _ => DialogAction::Redraw,
-            };
-        }
-        if let Self::GitHubContext { copied } = self {
-            if is_dismiss_key(key) {
-                return DialogAction::Dismiss;
-            }
-            return match key {
-                b"\r" | b"\n" => {
-                    let Some(url) = github
-                        .and_then(|view| view.status.loaded())
-                        .map(|pr| pr.url.clone())
-                    else {
-                        return DialogAction::Redraw;
-                    };
-                    *copied = true;
-                    DialogAction::CopyToClipboard(url)
-                }
+                b"\r" | b"\n" => match self.copy_target(github) {
+                    Some(target) => {
+                        *target.copied = true;
+                        DialogAction::CopyToClipboard(target.payload)
+                    }
+                    None => DialogAction::Redraw,
+                },
                 _ => DialogAction::Redraw,
             };
         }
@@ -646,43 +623,26 @@ impl Dialog {
         // ContainerInfo: only the Container ID row is the copy
         // target. Other inside-box clicks are informational and must
         // not mutate the operator's clipboard.
-        if let Self::ContainerInfo {
-            container_name,
-            copied,
-            ..
-        } = self
-        {
-            if !info_box_value_row_clickable(
-                row,
-                col,
-                box_row,
-                box_col,
-                width,
-                CONTAINER_INFO_ID_ROW,
-            ) {
-                return DialogAction::Consume;
-            }
-            let payload = container_name.clone();
-            *copied = true;
-            return DialogAction::CopyToClipboard(payload);
-        }
-        if let Self::GitHubContext { copied } = self {
-            let Some(pr) = github.and_then(|view| view.status.loaded()) else {
-                return DialogAction::Consume;
+        if matches!(
+            self,
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. }
+        ) {
+            return match self.copy_target(github) {
+                Some(target)
+                    if info_box_value_row_clickable(
+                        row,
+                        col,
+                        box_row,
+                        box_col,
+                        width,
+                        target.row_offset,
+                    ) =>
+                {
+                    *target.copied = true;
+                    DialogAction::CopyToClipboard(target.payload)
+                }
+                _ => DialogAction::Consume,
             };
-            if !info_box_value_row_clickable(
-                row,
-                col,
-                box_row,
-                box_col,
-                width,
-                GITHUB_CONTEXT_URL_ROW,
-            ) {
-                return DialogAction::Consume;
-            }
-            let payload = pr.url.clone();
-            *copied = true;
-            return DialogAction::CopyToClipboard(payload);
         }
         // ConfirmAction: only the visible Yes/No button cells confirm
         // or dismiss; other inside-box clicks (title, explanation,
@@ -959,6 +919,7 @@ impl Dialog {
     /// by the multiplexer compositor near the bottom chrome so every
     /// dialog follows the same hint contract without competing with
     /// the branch/container status row.
+    #[cfg(test)]
     pub fn render(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
         self.render_with_hover(buf, term_rows, term_cols, false, None);
     }
@@ -1041,7 +1002,8 @@ impl Dialog {
             Self::GitHubContext { copied } => {
                 let branch = github.and_then(|view| view.branch);
                 let pull_request = github.and_then(|view| view.status.loaded());
-                let loading = github.is_some_and(|view| view.status.is_loading());
+                let loading =
+                    github.is_some_and(|view| matches!(view.status, PullRequestStatus::Resolving));
                 render_github_context(
                     buf,
                     box_row,
@@ -1120,6 +1082,45 @@ impl Dialog {
             Self::ContainerInfo { copied: true, .. } | Self::GitHubContext { copied: true, .. }
         )
     }
+
+    /// Derive the active "copy this value" target for read-only info
+    /// dialogs. Returns `None` when the dialog variant is not one of
+    /// the info-row shapes, or when a `GitHubContext` lookup has not
+    /// yet resolved a PR. Borrowing the `copied` flag lets callers
+    /// flip it inline alongside emitting the clipboard action; the
+    /// `row_offset` lets `handle_click` / `clickable_at` hit-test the
+    /// same row the renderer painted.
+    fn copy_target<'a>(
+        &'a mut self,
+        github: Option<&GithubContextView<'_>>,
+    ) -> Option<CopyTarget<'a>> {
+        match self {
+            Self::ContainerInfo {
+                container_name,
+                copied,
+                ..
+            } => Some(CopyTarget {
+                payload: container_name.clone(),
+                copied,
+                row_offset: CONTAINER_INFO_ID_ROW,
+            }),
+            Self::GitHubContext { copied } => {
+                let url = github.and_then(|view| view.status.loaded())?.url.clone();
+                Some(CopyTarget {
+                    payload: url,
+                    copied,
+                    row_offset: GITHUB_CONTEXT_URL_ROW,
+                })
+            }
+            _ => None,
+        }
+    }
+}
+
+struct CopyTarget<'a> {
+    payload: String,
+    copied: &'a mut bool,
+    row_offset: u16,
 }
 
 /// `box_row + row_offset` is the row of an emphasized / clickable value
@@ -1896,7 +1897,7 @@ fn render_container_info(
         box_col,
         width,
         &rows,
-        copied,
+        copied.then_some(0),
         copy_target_hovered.then_some(0),
     );
 }
@@ -1954,34 +1955,9 @@ fn render_github_context(
         box_col,
         width,
         &rows,
-        false,
+        copied.then_some(3),
         copy_target_hovered.then_some(3),
     );
-    if copied {
-        render_info_row_badge(buf, box_row, box_col, width, 3, "✓ Copied!");
-    }
-}
-
-fn render_info_row_badge(
-    buf: &mut Vec<u8>,
-    box_row: u16,
-    box_col: u16,
-    width: u16,
-    row_idx: u16,
-    badge: &str,
-) {
-    let interior_max_cols = (width as usize).saturating_sub(4);
-    let badge_cols = badge.chars().count();
-    if badge_cols > interior_max_cols {
-        return;
-    }
-    let row = box_row + 2 + row_idx;
-    let col = box_col + width.saturating_sub(badge_cols as u16 + 2);
-    move_to(buf, row, col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_GREEN.as_bytes());
-    buf.extend_from_slice(BOLD.as_bytes());
-    buf.extend_from_slice(badge.as_bytes());
 }
 
 fn render_info_rows(
@@ -1990,7 +1966,7 @@ fn render_info_rows(
     box_col: u16,
     width: u16,
     rows: &[ContainerInfoRow<'_>],
-    copied: bool,
+    copied_row: Option<usize>,
     hovered_row: Option<usize>,
 ) {
     let label_col_width = rows
@@ -2023,7 +1999,7 @@ fn render_info_rows(
         } else {
             buf.extend_from_slice(FG_GREEN.as_bytes());
         }
-        let badge = if i == 0 && copied {
+        let badge = if copied_row == Some(i) {
             "  ✓ Copied!"
         } else {
             ""

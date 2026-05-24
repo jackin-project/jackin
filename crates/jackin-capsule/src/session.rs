@@ -714,21 +714,27 @@ impl PullRequestChecks {
         checks
     }
 
+    #[cfg(test)]
     pub fn passing(&self) -> usize {
         self.passing
     }
+    #[cfg(test)]
     pub fn failing(&self) -> usize {
         self.failing
     }
+    #[cfg(test)]
     pub fn pending(&self) -> usize {
         self.pending
     }
+    #[cfg(test)]
     pub fn skipped(&self) -> usize {
         self.skipped
     }
+    #[cfg(test)]
     pub fn cancelled(&self) -> usize {
         self.cancelled
     }
+    #[cfg(test)]
     pub fn total(&self) -> usize {
         self.total
     }

@@ -1,8 +1,9 @@
 use crate::selector::RoleSelector;
+pub use jackin_protocol::{
+    CONTAINER_PREFIX, CONTAINER_PREFIX_DASH, instance_id_from_container_base,
+};
 use sha2::{Digest, Sha256};
 
-pub(crate) const CONTAINER_PREFIX: &str = "jk";
-pub(crate) const CONTAINER_PREFIX_DASH: &str = "jk-";
 const INSTANCE_ID_LEN: usize = 8;
 const ROLE_BASE_DNS_BUDGET: usize = 58;
 
@@ -57,20 +58,6 @@ pub fn container_name_with_id(
     debug_assert!(is_dns_label(&name));
     debug_assert!(name.len() <= ROLE_BASE_DNS_BUDGET);
     name
-}
-
-/// Extract the instance-ID component from a container name.
-///
-/// Returns `None` when the name does not start with `jk-` or has no `-` after
-/// the id component. Used by both manifest construction (the stored
-/// `instance_id` field) and operator display rendering — one parser owns the
-/// shape `jk-<id>[-<workspace>]-<role>` produced by [`new_container_name`].
-#[must_use]
-pub fn instance_id_from_container_base(container_base: &str) -> Option<&str> {
-    container_base
-        .strip_prefix(CONTAINER_PREFIX_DASH)?
-        .split_once('-')
-        .map(|(id, _)| id)
 }
 
 /// Recognize names of the shape `jk-<id>[-<workspace>]-<role>`

@@ -21,7 +21,6 @@
 use std::io::Write as _;
 
 use jackin_tui::{TAB_GAP, TabCell, lay_out_tabs};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::layout::Tab;
 
@@ -32,7 +31,7 @@ use crate::layout::Tab;
 /// the click-region maths from drifting on CJK / emoji / combining
 /// marks.
 fn display_cols(s: &str) -> u16 {
-    u16::try_from(UnicodeWidthStr::width(s)).unwrap_or(u16::MAX)
+    u16::try_from(jackin_tui::display_cols(s)).unwrap_or(u16::MAX)
 }
 use crate::protocol::AgentState;
 
@@ -57,7 +56,6 @@ const TAB_BG_DIM: &str = "\x1b[48;2;8;8;8m";
 const TAB_FG_DIM: &str = "\x1b[38;2;51;51;51m";
 const TAB_UNDERLINE_FG_DIM: &str = "\x1b[38;2;51;51;51m";
 const GLYPH_BLOCKED_FG_DIM: &str = "\x1b[38;2;51;12;12m";
-const BOLD: &str = "\x1b[1m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
 const BUTTON_BG_IDLE: &str = "\x1b[48;2;18;70;130m"; // restrained blue
@@ -69,7 +67,7 @@ const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
 const HINT_FG_DIM: &str = "\x1b[38;2;0;28;6m";
 const BUTTON_BG_DIM: &str = "\x1b[48;2;4;14;26m";
 const BUTTON_FG_DIM: &str = "\x1b[38;2;51;51;51m";
-const RESET: &str = "\x1b[0m";
+use jackin_tui::ansi::{BOLD, RESET};
 
 const BRAND_TEXT: &str = " jackin' ";
 const BRAND_PAD_COLS: u16 = 1; // single space between brand pill and first tab
@@ -569,20 +567,7 @@ pub fn draw_pane_box(
 }
 
 fn take_display_cols(s: &str, max_cols: u16) -> String {
-    let mut out = String::new();
-    let mut used = 0u16;
-    for c in s.chars() {
-        if c.is_control() {
-            continue;
-        }
-        let width = u16::try_from(c.width().unwrap_or(0)).unwrap_or(u16::MAX);
-        if used.saturating_add(width) > max_cols {
-            break;
-        }
-        out.push(c);
-        used = used.saturating_add(width);
-    }
-    out
+    jackin_tui::take_display_cols(s, usize::from(max_cols))
 }
 
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
@@ -634,11 +619,7 @@ fn resolve_instance_id(container_name: &str) -> String {
         })
 }
 
-fn instance_id_from_container_name(name: &str) -> Option<&str> {
-    let rest = name.strip_prefix("jk-")?;
-    let id = rest.split('-').next()?;
-    (!id.is_empty()).then_some(id)
-}
+use jackin_protocol::instance_id_from_container_base as instance_id_from_container_name;
 
 #[cfg(test)]
 mod tests {
