@@ -612,6 +612,11 @@ pub fn render(
             }
         }
     }
+
+    if let Some(overlay) = &state.status_overlay {
+        let overlay_area = centered_rect_fixed(area, 50, 7);
+        super::super::widgets::status_popup::render(frame, overlay_area, overlay);
+    }
 }
 
 fn clamp_editor_scroll_for_frame(area: Rect, editor: &mut super::state::EditorState<'_>) {

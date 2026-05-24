@@ -203,8 +203,7 @@ pub(super) async fn resolve_agent_repo(
         selector,
         git_url,
         runner,
-        debug,
-        branch_override,
+        RepoResolveOptions::interactive(debug).with_branch(branch_override),
         confirm_repo_removal_interactive,
     )
     .await
@@ -237,9 +236,15 @@ pub(super) async fn register_agent_repo(
     let cached_repo = CachedRepo::new(paths, selector);
     let legacy_root = role_cache_root(paths, selector);
     if cached_repo.repo_dir.join(".git").is_dir() || legacy_root.join(".git").is_dir() {
-        let (cached_repo, validated_repo, _lock_file) =
-            resolve_agent_repo_with(paths, selector, git_url, runner, debug, None, || Ok(false))
-                .await?;
+        let (cached_repo, validated_repo, _lock_file) = resolve_agent_repo_with(
+            paths,
+            selector,
+            git_url,
+            runner,
+            RepoResolveOptions::interactive(debug),
+            || Ok(false),
+        )
+        .await?;
         persist_registration()?;
         return Ok((cached_repo, validated_repo));
     }
@@ -352,74 +357,62 @@ fn clone_args<'a>(git_url: &'a str, dest: &'a str, branch: Option<&'a str>) -> V
     )
 }
 
+/// Whether the git subprocess may surface interactive prompts (SSH
+/// passphrase, credential helper, branch-divergence questions) on the
+/// caller's terminal. `NonInteractive` closes stdin and sets
+/// `GIT_TERMINAL_PROMPT=0` so a hanging credential helper cannot freeze
+/// the TUI under `jackin console`.
+#[derive(Clone, Copy)]
+enum GitInteractivity {
+    Interactive,
+    NonInteractive,
+}
+
+pub(super) struct RepoResolveOptions {
+    debug: bool,
+    branch_override: Option<String>,
+    git_interactivity: GitInteractivity,
+}
+
+impl RepoResolveOptions {
+    pub(super) const fn interactive(debug: bool) -> Self {
+        Self {
+            debug,
+            branch_override: None,
+            git_interactivity: GitInteractivity::Interactive,
+        }
+    }
+
+    /// `debug` is intentionally absent — non-interactive callers run
+    /// from inside the TUI alt-screen, where streaming git output via
+    /// `--debug` would corrupt the render. Diagnostics go through the
+    /// buffered `crate::debug_log!` channel instead.
+    pub(super) const fn non_interactive() -> Self {
+        Self {
+            debug: false,
+            branch_override: None,
+            git_interactivity: GitInteractivity::NonInteractive,
+        }
+    }
+
+    pub(super) fn with_branch(mut self, branch: Option<&str>) -> Self {
+        self.branch_override = branch.map(str::to_string);
+        self
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub(super) async fn resolve_agent_repo_with(
     paths: &JackinPaths,
     selector: &RoleSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
-    debug: bool,
-    branch_override: Option<&str>,
-    confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
-) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
-    resolve_agent_repo_with_options(
-        paths,
-        selector,
-        git_url,
-        runner,
-        RepoResolveOptions {
-            debug,
-            branch_override,
-            non_interactive_git: false,
-        },
-        confirm_removal,
-    )
-    .await
-}
-
-pub(super) async fn resolve_agent_repo_non_interactive_with(
-    paths: &JackinPaths,
-    selector: &RoleSelector,
-    git_url: &str,
-    runner: &mut impl CommandRunner,
-    debug: bool,
-    branch_override: Option<&str>,
-    confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
-) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
-    resolve_agent_repo_with_options(
-        paths,
-        selector,
-        git_url,
-        runner,
-        RepoResolveOptions {
-            debug,
-            branch_override,
-            non_interactive_git: true,
-        },
-        confirm_removal,
-    )
-    .await
-}
-
-#[derive(Clone, Copy)]
-struct RepoResolveOptions<'a> {
-    debug: bool,
-    branch_override: Option<&'a str>,
-    non_interactive_git: bool,
-}
-
-#[allow(clippy::too_many_lines)]
-async fn resolve_agent_repo_with_options(
-    paths: &JackinPaths,
-    selector: &RoleSelector,
-    git_url: &str,
-    runner: &mut impl CommandRunner,
-    opts: RepoResolveOptions<'_>,
+    opts: RepoResolveOptions,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
     let normalized = normalize_github_url(git_url);
     let git_url = normalized.as_str();
-    let cached_repo = opts.branch_override.map_or_else(
+    let cached_repo = opts.branch_override.as_deref().map_or_else(
         || CachedRepo::new(paths, selector),
         |branch| CachedRepo::for_branch(paths, selector, branch),
     );
@@ -465,14 +458,15 @@ async fn resolve_agent_repo_with_options(
         .lock_exclusive()
         .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
 
+    let non_interactive = matches!(opts.git_interactivity, GitInteractivity::NonInteractive);
     let git_run_opts = RunOptions {
         quiet: !opts.debug,
-        extra_env: if opts.non_interactive_git {
+        extra_env: if non_interactive {
             vec![("GIT_TERMINAL_PROMPT".to_string(), "0".to_string())]
         } else {
             Vec::new()
         },
-        null_stdin: opts.non_interactive_git,
+        null_stdin: non_interactive,
         ..RunOptions::default()
     };
 
@@ -490,10 +484,8 @@ async fn resolve_agent_repo_with_options(
             )
             .await?;
         if !repo_matches(git_url, &remote_url) {
-            // Route diagnostics through the buffered debug channel rather
-            // than `eprintln!` — the latter corrupts the alt-screen render
-            // when called from inside the TUI session. Operators with
-            // `--debug` still get the full expected/found/path trio.
+            // TUI alt-screen corruption: `eprintln!` from inside a
+            // console session paints over the render.
             crate::debug_log!(
                 "repo_cache",
                 "cached role repo remote mismatch: expected={git_url:?} \
@@ -503,7 +495,7 @@ async fn resolve_agent_repo_with_options(
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
-                let clone_args = clone_args(git_url, &repo_path, opts.branch_override);
+                let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());
                 runner
                     .run("git", &clone_args, None, &git_run_opts)
                     .await
@@ -541,7 +533,7 @@ async fn resolve_agent_repo_with_options(
         // remote has multiple branches. When a branch is pinned via
         // `--branch`, use it directly; otherwise derive from HEAD.
         let branch_val = git_branch(&cached_repo.repo_dir, runner).await;
-        let branch = opts.branch_override.map_or_else(
+        let branch = opts.branch_override.as_deref().map_or_else(
             || {
                 branch_val.ok_or_else(|| {
                     anyhow::anyhow!(
@@ -569,8 +561,11 @@ async fn resolve_agent_repo_with_options(
             )
             .await;
         if ff_result.is_err() {
-            eprintln!(
-                "        cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
+            // Route through buffered debug channel so the TUI alt-screen
+            // is not corrupted when this fires under `jackin console`.
+            crate::debug_log!(
+                "repo_cache",
+                "cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
             );
             runner
                 .run(
@@ -582,7 +577,7 @@ async fn resolve_agent_repo_with_options(
                 .await?;
         }
     } else {
-        let clone_args = clone_args(git_url, &repo_path, opts.branch_override);
+        let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());
         runner
             .run("git", &clone_args, None, &git_run_opts)
             .await
@@ -805,8 +800,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
-            false,
-            None,
+            RepoResolveOptions::interactive(false),
             || Ok(true), // user confirms removal
         )
         .await;
@@ -848,8 +842,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
-            false,
-            None,
+            RepoResolveOptions::interactive(false),
             || Ok(false), // user declines
         )
         .await
@@ -958,8 +951,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
-            false,
-            None,
+            RepoResolveOptions::interactive(false),
             || Ok(true),
         )
         .await;

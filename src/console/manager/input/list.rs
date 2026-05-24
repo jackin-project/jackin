@@ -569,7 +569,6 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
-        Modal::StatusPopup { .. } => InputOutcome::Continue,
         _ => {
             state.list_modal = None;
             InputOutcome::Continue

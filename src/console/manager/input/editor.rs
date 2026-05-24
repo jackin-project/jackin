@@ -1095,7 +1095,6 @@ pub(super) fn handle_editor_modal(
             }
             ModalOutcome::Continue => {}
         },
-        Modal::StatusPopup { .. } => {}
         Modal::ScopePicker { state: scope_state } => {
             use crate::console::widgets::scope_picker::ScopeChoice;
             match scope_state.handle_key(key) {

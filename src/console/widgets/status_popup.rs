@@ -10,8 +10,8 @@ use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone)]
 pub struct StatusPopupState {
-    pub title: String,
-    pub message: String,
+    title: String,
+    message: String,
 }
 
 impl StatusPopupState {
@@ -24,6 +24,12 @@ impl StatusPopupState {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &StatusPopupState) {
+    // Skip render when the slot is too small for the border + at least
+    // one message row + one footer row. Avoids ratatui collapsing the
+    // `Min(1)` arm to zero on tiny terminals and stomping the border.
+    if area.width < 8 || area.height < 5 {
+        return;
+    }
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_GREEN))
@@ -40,10 +46,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &StatusPopupState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(1),
-            Constraint::Length(2),
             Constraint::Length(1),
             Constraint::Min(1),
+            Constraint::Length(1),
         ])
         .split(inner);
 

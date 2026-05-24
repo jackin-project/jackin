@@ -155,8 +155,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 debug,
             };
             let Some(outcome) =
-                console::run_console(config, &paths, &cwd, &mut in_place, &mut runner, debug)
-                    .await?
+                console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?
             else {
                 return Ok(());
             };

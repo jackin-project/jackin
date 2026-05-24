@@ -219,7 +219,6 @@ const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> 
         Modal::GithubPicker { .. } => "GithubPicker",
         Modal::ConfirmSave { .. } => "ConfirmSave",
         Modal::ErrorPopup { .. } => "ErrorPopup",
-        Modal::StatusPopup { .. } => "StatusPopup",
         Modal::OpPicker { .. } => "OpPicker",
         Modal::RolePicker { .. } => "RolePicker",
         Modal::RoleOverridePicker { .. } => "RoleOverridePicker",
@@ -394,23 +393,15 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
     out.flush()
 }
 
-async fn maybe_open_inline_agent_picker(
+async fn open_inline_agent_picker(
     state: &mut ConsoleState,
     paths: &JackinPaths,
     config: &AppConfig,
     runner: &mut impl crate::docker::CommandRunner,
-    debug: bool,
-    role: RoleSelector,
-    workspace: &ResolvedWorkspace,
+    role: &RoleSelector,
 ) -> anyhow::Result<bool> {
-    if workspace.default_agent.is_some() {
-        return Ok(false);
-    }
-
     let agents =
-        crate::runtime::resolve_supported_agents_for_console(paths, config, &role, runner, debug)
-            .await?;
-
+        crate::runtime::resolve_supported_agents_for_console(paths, config, role, runner).await?;
     if agents.len() < 2 {
         return Ok(false);
     }
@@ -421,14 +412,14 @@ async fn maybe_open_inline_agent_picker(
         crate::console::widgets::agent_choice::AgentChoiceState::with_choices(agents),
     ));
     ms.inline_role_picker = None;
-    state.pending_launch_role = Some(role);
+    state.pending_launch_role = Some(role.clone());
     Ok(true)
 }
 
 enum AgentPickerResolution {
     Opened,
     NotNeeded,
-    ErrorShown,
+    Failed(anyhow::Error),
 }
 
 fn draw_role_resolution_dialog<B>(
@@ -443,20 +434,22 @@ where
     B::Error: std::error::Error + Send + Sync + 'static,
 {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.list_modal = Some(manager::state::Modal::StatusPopup {
-        state: widgets::status_popup::StatusPopupState::new(
-            "Resolving agent role",
-            format!("Loading and resolving {}", role.key()),
-        ),
-    });
+    ms.status_overlay = Some(widgets::status_popup::StatusPopupState::new(
+        "Resolving agent role",
+        format!("Loading and resolving {}", role.key()),
+    ));
     terminal.draw(|frame| {
         manager::render(frame, ms, config, cwd);
     })?;
-    ms.list_modal = None;
+    ms.status_overlay = None;
     Ok(())
 }
 
-fn show_role_resolution_error(state: &mut ConsoleState, role: &RoleSelector, error: anyhow::Error) {
+fn show_role_resolution_error(
+    state: &mut ConsoleState,
+    role: &RoleSelector,
+    error: &anyhow::Error,
+) {
     let ConsoleStage::Manager(ms) = &mut state.stage;
     ms.list_modal = Some(manager::state::Modal::ErrorPopup {
         state: widgets::error_popup::ErrorPopupState::new(
@@ -466,15 +459,15 @@ fn show_role_resolution_error(state: &mut ConsoleState, role: &RoleSelector, err
     });
 }
 
-async fn maybe_open_inline_agent_picker_with_dialog<B>(
+#[allow(clippy::too_many_arguments)]
+async fn try_prompt_for_agent<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
     paths: &JackinPaths,
     config: &AppConfig,
     cwd: &std::path::Path,
     runner: &mut impl crate::docker::CommandRunner,
-    debug: bool,
-    role: RoleSelector,
+    role: &RoleSelector,
     workspace: &ResolvedWorkspace,
 ) -> anyhow::Result<AgentPickerResolution>
 where
@@ -485,24 +478,106 @@ where
         return Ok(AgentPickerResolution::NotNeeded);
     }
 
-    draw_role_resolution_dialog(terminal, state, config, cwd, &role)?;
-    match maybe_open_inline_agent_picker(
+    draw_role_resolution_dialog(terminal, state, config, cwd, role)?;
+    Ok(
+        match open_inline_agent_picker(state, paths, config, runner, role).await {
+            Ok(true) => AgentPickerResolution::Opened,
+            Ok(false) => AgentPickerResolution::NotNeeded,
+            Err(error) => AgentPickerResolution::Failed(error),
+        },
+    )
+}
+
+/// Outcome of `prompt_agent_for_launch`. Two states because callers
+/// only branch on "the helper already drives the next interaction"
+/// (`Defer`) vs "no prompt was needed, launch immediately" (`Launch`).
+enum PromptOutcome {
+    Launch,
+    Defer,
+}
+
+/// Whether `prompt_agent_for_launch` should hold the pending-launch
+/// pin so the operator can retry after dismissing the error popup.
+/// Arms that pinned `pending_launch` upstream pass `RestorePending`;
+/// arms that built `input` fresh from the key event pass `ClearPending`.
+#[derive(Clone, Copy)]
+enum OnPromptFailure {
+    ClearPending,
+    RestorePending,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn prompt_agent_for_launch<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    paths: &JackinPaths,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    runner: &mut impl crate::docker::CommandRunner,
+    role: &RoleSelector,
+    workspace: &ResolvedWorkspace,
+    input: LoadWorkspaceInput,
+    on_failure: OnPromptFailure,
+) -> anyhow::Result<PromptOutcome>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    match try_prompt_for_agent(terminal, state, paths, config, cwd, runner, role, workspace)
+        .await?
+    {
+        AgentPickerResolution::Opened => {
+            state.pending_launch = Some(input);
+            Ok(PromptOutcome::Defer)
+        }
+        AgentPickerResolution::NotNeeded => Ok(PromptOutcome::Launch),
+        AgentPickerResolution::Failed(error) => {
+            if matches!(on_failure, OnPromptFailure::RestorePending) {
+                state.pending_launch = Some(input);
+            }
+            show_role_resolution_error(state, role, &error);
+            Ok(PromptOutcome::Defer)
+        }
+    }
+}
+
+async fn dispatch_and_prompt_launch<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    paths: &JackinPaths,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    runner: &mut impl crate::docker::CommandRunner,
+    input: LoadWorkspaceInput,
+) -> anyhow::Result<Option<ConsoleOutcome>>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    let Some((role, workspace, agent)) =
+        state.dispatch_launch_for_workspace(config, cwd, input.clone())?
+    else {
+        return Ok(None);
+    };
+    if agent.is_some() {
+        return Ok(Some(ConsoleOutcome::Launch(role, workspace, agent)));
+    }
+    match prompt_agent_for_launch(
+        terminal,
         state,
         paths,
         config,
+        cwd,
         runner,
-        debug,
-        role.clone(),
-        workspace,
+        &role,
+        &workspace,
+        input,
+        OnPromptFailure::ClearPending,
     )
-    .await
+    .await?
     {
-        Ok(true) => Ok(AgentPickerResolution::Opened),
-        Ok(false) => Ok(AgentPickerResolution::NotNeeded),
-        Err(error) => {
-            show_role_resolution_error(state, &role, error);
-            Ok(AgentPickerResolution::ErrorShown)
-        }
+        PromptOutcome::Launch => Ok(Some(ConsoleOutcome::Launch(role, workspace, None))),
+        PromptOutcome::Defer => Ok(None),
     }
 }
 
@@ -513,7 +588,6 @@ pub async fn run_console(
     cwd: &std::path::Path,
     action_handler: &mut dyn InstanceActionHandler,
     runner: &mut impl crate::docker::CommandRunner,
-    debug: bool,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
@@ -635,79 +709,33 @@ pub async fn run_console(
                             break 'main Ok(None);
                         }
                         manager::InputOutcome::LaunchNamed(name) => {
-                            let input = LoadWorkspaceInput::Saved(name);
-                            match state.dispatch_launch_for_workspace(&config, cwd, input.clone()) {
-                                Ok(Some((role, workspace, agent))) => {
-                                    if agent.is_none() {
-                                        match maybe_open_inline_agent_picker_with_dialog(
-                                            &mut terminal,
-                                            &mut state,
-                                            paths,
-                                            &config,
-                                            cwd,
-                                            runner,
-                                            debug,
-                                            role.clone(),
-                                            &workspace,
-                                        )
-                                        .await?
-                                        {
-                                            AgentPickerResolution::Opened => {
-                                                state.pending_launch = Some(input);
-                                            }
-                                            AgentPickerResolution::NotNeeded => {
-                                                break 'main Ok(Some(ConsoleOutcome::Launch(
-                                                    role, workspace, agent,
-                                                )));
-                                            }
-                                            AgentPickerResolution::ErrorShown => {}
-                                        }
-                                    } else {
-                                        break 'main Ok(Some(ConsoleOutcome::Launch(
-                                            role, workspace, agent,
-                                        )));
-                                    }
-                                }
-                                Ok(None) => {}
-                                Err(e) => break 'main Err(e),
+                            if let Some(outcome) = dispatch_and_prompt_launch(
+                                &mut terminal,
+                                &mut state,
+                                paths,
+                                &config,
+                                cwd,
+                                runner,
+                                LoadWorkspaceInput::Saved(name),
+                            )
+                            .await?
+                            {
+                                break 'main Ok(Some(outcome));
                             }
                         }
                         manager::InputOutcome::LaunchCurrentDir => {
-                            let input = LoadWorkspaceInput::CurrentDir;
-                            match state.dispatch_launch_for_workspace(&config, cwd, input.clone()) {
-                                Ok(Some((role, workspace, agent))) => {
-                                    if agent.is_none() {
-                                        match maybe_open_inline_agent_picker_with_dialog(
-                                            &mut terminal,
-                                            &mut state,
-                                            paths,
-                                            &config,
-                                            cwd,
-                                            runner,
-                                            debug,
-                                            role.clone(),
-                                            &workspace,
-                                        )
-                                        .await?
-                                        {
-                                            AgentPickerResolution::Opened => {
-                                                state.pending_launch = Some(input);
-                                            }
-                                            AgentPickerResolution::NotNeeded => {
-                                                break 'main Ok(Some(ConsoleOutcome::Launch(
-                                                    role, workspace, agent,
-                                                )));
-                                            }
-                                            AgentPickerResolution::ErrorShown => {}
-                                        }
-                                    } else {
-                                        break 'main Ok(Some(ConsoleOutcome::Launch(
-                                            role, workspace, agent,
-                                        )));
-                                    }
-                                }
-                                Ok(None) => {}
-                                Err(e) => break 'main Err(e),
+                            if let Some(outcome) = dispatch_and_prompt_launch(
+                                &mut terminal,
+                                &mut state,
+                                paths,
+                                &config,
+                                cwd,
+                                runner,
+                                LoadWorkspaceInput::CurrentDir,
+                            )
+                            .await?
+                            {
+                                break 'main Ok(Some(outcome));
                             }
                         }
                         manager::InputOutcome::LaunchWithAgent(role) => {
@@ -721,29 +749,27 @@ pub async fn run_console(
                                     &config, cwd, &choice, &role,
                                 ) {
                                     Ok(workspace) => {
-                                        match maybe_open_inline_agent_picker_with_dialog(
+                                        match prompt_agent_for_launch(
                                             &mut terminal,
                                             &mut state,
                                             paths,
                                             &config,
                                             cwd,
                                             runner,
-                                            debug,
-                                            role.clone(),
+                                            &role,
                                             &workspace,
+                                            input,
+                                            OnPromptFailure::RestorePending,
                                         )
                                         .await?
                                         {
-                                            AgentPickerResolution::Opened => {
-                                                state.pending_launch = Some(input);
-                                            }
-                                            AgentPickerResolution::NotNeeded => {
+                                            PromptOutcome::Launch => {
                                                 state.pending_launch_role = None;
                                                 break 'main Ok(Some(ConsoleOutcome::Launch(
                                                     role, workspace, None,
                                                 )));
                                             }
-                                            AgentPickerResolution::ErrorShown => {}
+                                            PromptOutcome::Defer => {}
                                         }
                                     }
                                     Err(e) => break 'main Err(e),
@@ -983,5 +1009,156 @@ mod quit_confirm_tests {
             s.handle_key(key(crossterm::event::KeyCode::Esc)),
             ModalOutcome::Cancel
         ));
+    }
+
+    #[test]
+    fn show_role_resolution_error_opens_error_popup_with_role_and_error() {
+        let mut state = fresh_state();
+        let selector = RoleSelector::new(Some("acme"), "agent-smith");
+        let error = anyhow::anyhow!("network is unreachable");
+
+        show_role_resolution_error(&mut state, &selector, &error);
+
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        let Some(Modal::ErrorPopup { state: popup }) = ms.list_modal.as_ref() else {
+            panic!("expected ErrorPopup, got {:?}", ms.list_modal);
+        };
+        let body = format!("{popup:?}");
+        assert!(
+            body.contains("acme/agent-smith"),
+            "popup must reference the failing role selector: {body}"
+        );
+        assert!(
+            body.contains("network is unreachable"),
+            "popup must surface the underlying error: {body}"
+        );
+    }
+
+    fn unresolved_workspace() -> ResolvedWorkspace {
+        ResolvedWorkspace {
+            label: "scratch".to_string(),
+            workdir: "/workspace".to_string(),
+            mounts: Vec::new(),
+            default_agent: None,
+            keep_awake_enabled: false,
+            git_pull_on_entry: false,
+        }
+    }
+
+    async fn run_prompt_for_unknown_role(
+        on_failure: OnPromptFailure,
+    ) -> (ConsoleState, PromptOutcome) {
+        use ratatui::backend::TestBackend;
+        let cwd = std::env::temp_dir();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        // Empty config → resolve_supported_agents_for_console errors on
+        // the unregistered selector; helper routes that into Failed.
+        let config = AppConfig::default();
+        let mut state = ConsoleState::new(&config, &cwd).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let workspace = unresolved_workspace();
+        let mut runner = crate::runtime::FakeRunner::default();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let input = LoadWorkspaceInput::CurrentDir;
+        let outcome = super::prompt_agent_for_launch(
+            &mut terminal,
+            &mut state,
+            &paths,
+            &config,
+            &cwd,
+            &mut runner,
+            &selector,
+            &workspace,
+            input,
+            on_failure,
+        )
+        .await
+        .unwrap();
+        (state, outcome)
+    }
+
+    #[tokio::test]
+    async fn prompt_agent_for_launch_skips_resolution_when_workspace_default_agent_set() {
+        // workspace.default_agent.is_some() must short-circuit before
+        // any git work — operators with a configured default never
+        // wait on a network round trip just to confirm a launch.
+        use ratatui::backend::TestBackend;
+        let cwd = std::env::temp_dir();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let config = AppConfig::default();
+        let mut state = ConsoleState::new(&config, &cwd).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut workspace = unresolved_workspace();
+        workspace.default_agent = Some(crate::agent::Agent::Codex);
+        let mut runner = crate::runtime::FakeRunner::default();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+
+        let outcome = super::prompt_agent_for_launch(
+            &mut terminal,
+            &mut state,
+            &paths,
+            &config,
+            &cwd,
+            &mut runner,
+            &selector,
+            &workspace,
+            LoadWorkspaceInput::CurrentDir,
+            OnPromptFailure::ClearPending,
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(outcome, PromptOutcome::Launch));
+        assert!(
+            runner.recorded.is_empty(),
+            "workspace default_agent must short-circuit before any git work: {:?}",
+            runner.recorded
+        );
+        let ConsoleStage::Manager(ms) = &state.stage;
+        assert!(
+            ms.list_modal.is_none(),
+            "no modal must be opened on the default-agent short-circuit"
+        );
+        assert!(
+            ms.status_overlay.is_none(),
+            "no status overlay must be left behind on the default-agent short-circuit"
+        );
+    }
+
+    #[tokio::test]
+    async fn prompt_agent_for_launch_restore_pending_keeps_input_for_retry() {
+        let (state, outcome) =
+            run_prompt_for_unknown_role(OnPromptFailure::RestorePending).await;
+        assert!(matches!(outcome, PromptOutcome::Defer));
+        assert!(
+            state.pending_launch.is_some(),
+            "RestorePending must hold the input so the operator can retry after dismissing the error"
+        );
+        let ConsoleStage::Manager(ms) = &state.stage;
+        assert!(
+            matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
+            "Failed outcome must surface the error popup regardless of restore policy"
+        );
+    }
+
+    #[tokio::test]
+    async fn prompt_agent_for_launch_clear_pending_drops_input() {
+        let (state, outcome) = run_prompt_for_unknown_role(OnPromptFailure::ClearPending).await;
+        assert!(matches!(outcome, PromptOutcome::Defer));
+        assert!(
+            state.pending_launch.is_none(),
+            "ClearPending must drop the input so a fresh workspace pick re-resolves cleanly"
+        );
+        let ConsoleStage::Manager(ms) = &state.stage;
+        assert!(
+            matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
+            "Failed outcome must surface the error popup regardless of restore policy"
+        );
     }
 }

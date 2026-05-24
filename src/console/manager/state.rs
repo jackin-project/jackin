@@ -82,6 +82,10 @@ pub struct ManagerState<'a> {
     /// Modal slot at the list level (e.g. `Modal::GithubPicker`); the
     /// Editor / `CreatePrelude` stages own their own modal slots.
     pub list_modal: Option<Modal<'a>>,
+    /// Passive overlay drawn on top of `list_modal` for the duration of
+    /// a single frame while a blocking async operation runs (currently
+    /// the console role-resolution path). Input handlers do not see it.
+    pub status_overlay: Option<crate::console::widgets::status_popup::StatusPopupState>,
     pub inline_role_picker: Option<RolePickerState>,
     pub inline_agent_picker: Option<(
         crate::selector::RoleSelector,
@@ -1217,9 +1221,6 @@ pub enum Modal<'a> {
     ErrorPopup {
         state: ErrorPopupState,
     },
-    StatusPopup {
-        state: crate::console::widgets::status_popup::StatusPopupState,
-    },
     /// Boxed because the picker's `Vec`s + runner + channel are
     /// substantially larger than other variants.
     OpPicker {
@@ -1512,6 +1513,7 @@ impl ManagerState<'_> {
             current_dir: cwd.display().to_string(),
             selected,
             list_modal: None,
+            status_overlay: None,
             inline_role_picker: None,
             inline_agent_picker: None,
             inline_new_session_picker: None,
