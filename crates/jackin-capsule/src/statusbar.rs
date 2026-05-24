@@ -11,8 +11,9 @@
 ///
 /// Inactive tab cells get a subtle dark-grey background so they stand
 /// out against the terminal's default-black background. The active tab
-/// uses a warm amber background instead of the brand green, so it stays
-/// distinct from the ` jackin' ` brand pill, plus the row-1 underline.
+/// uses a slightly lifted graphite background instead of the brand
+/// green, so it stays distinct from the ` jackin' ` brand pill, plus
+/// the row-1 white underline.
 ///
 /// Layout columns come from `jackin_tui::lay_out_tabs`, so the
 /// console TUI and the multiplexer cannot drift on cell sizing /
@@ -41,10 +42,10 @@ const BRAND_BOLD: &str = "\x1b[1m";
 
 const TAB_BG_INACTIVE: &str = "\x1b[48;2;30;30;30m"; // subtle dark grey
 const TAB_BG_INACTIVE_HOVER: &str = "\x1b[48;2;48;48;48m"; // hover lift for clickable tabs
-const TAB_BG_ACTIVE: &str = "\x1b[48;2;242;184;75m"; // warm amber, distinct from brand
-const TAB_BG_ACTIVE_HOVER: &str = "\x1b[48;2;255;205;105m"; // active tab hover lift
+const TAB_BG_ACTIVE: &str = "\x1b[48;2;42;42;42m"; // graphite, distinct from brand
+const TAB_BG_ACTIVE_HOVER: &str = "\x1b[48;2;58;58;58m"; // active tab hover lift
 const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const TAB_FG_ACTIVE: &str = "\x1b[38;2;0;0;0m"; // BLACK on amber
+const TAB_FG_ACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE on graphite
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waiting for operator"
 const BOLD: &str = "\x1b[1m";

@@ -44,15 +44,15 @@ fn active_tab_background_differs_from_brand_pill() {
     let tab = Tab::new_single("Codex", 7);
     let s = render(&mut bar, 80, &[tab], 0, &[]);
     let brand_green_bg = "\x1b[48;2;0;255;65m";
-    let active_tab_amber_bg = "\x1b[48;2;242;184;75m";
+    let active_tab_graphite_bg = "\x1b[48;2;42;42;42m";
     assert_eq!(
         s.matches(brand_green_bg).count(),
         1,
         "brand green should only paint the brand pill"
     );
     assert!(
-        s.contains(active_tab_amber_bg),
-        "active tab should use distinct amber bg: {s:?}"
+        s.contains(active_tab_graphite_bg),
+        "active tab should use distinct graphite bg: {s:?}"
     );
 }
 
@@ -64,6 +64,17 @@ fn hovered_tab_uses_lifted_background() {
     assert!(
         s.contains("\x1b[48;2;48;48;48m"),
         "hovered inactive tab should use lifted bg: {s:?}"
+    );
+}
+
+#[test]
+fn active_tab_hover_uses_lifted_graphite_background() {
+    let mut bar = StatusBar::new();
+    let tabs = vec![Tab::new_single("Codex", 7), Tab::new_single("Shell", 8)];
+    let s = render_with_hover(&mut bar, 80, &tabs, 0, &[], Some(0));
+    assert!(
+        s.contains("\x1b[48;2;58;58;58m"),
+        "hovered active tab should use lifted graphite bg: {s:?}"
     );
 }
 
