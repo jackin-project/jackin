@@ -470,7 +470,9 @@ impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> Self {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
+        let content_rows = rows
+            .saturating_sub(STATUS_BAR_ROWS)
+            .saturating_sub(BRANCH_CONTEXT_BAR_ROWS);
         let agents = launch_config.supported_agents();
 
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
@@ -602,6 +604,7 @@ impl Multiplexer {
             col_1based,
             self.term_rows,
             self.term_cols,
+            &workspace_title(&self.workdir),
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
@@ -640,6 +643,7 @@ impl Multiplexer {
             col_1based,
             self.term_rows,
             self.term_cols,
+            &workspace_title(&self.workdir),
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
@@ -1581,14 +1585,7 @@ impl Multiplexer {
     }
 
     fn bottom_chrome_rows(&self) -> u16 {
-        if branch_context_bar_visible(
-            self.context_bar_branch(),
-            self.pull_request_context.as_ref(),
-        ) {
-            BRANCH_CONTEXT_BAR_ROWS
-        } else {
-            0
-        }
+        BRANCH_CONTEXT_BAR_ROWS
     }
 
     fn available_content_rows(&self) -> u16 {
@@ -1986,6 +1983,7 @@ impl Multiplexer {
                 col + 1,
                 self.term_rows,
                 self.term_cols,
+                &workspace_title(&self.workdir),
                 self.context_bar_branch(),
                 self.pull_request_context.as_ref(),
                 self.pull_request_context_loading(),
@@ -1998,6 +1996,7 @@ impl Multiplexer {
                     col + 1,
                     self.term_rows,
                     self.term_cols,
+                    &workspace_title(&self.workdir),
                     self.context_bar_branch(),
                     self.pull_request_context.as_ref(),
                     self.pull_request_context_loading(),
@@ -2635,6 +2634,7 @@ impl Multiplexer {
             &mut buf,
             self.term_rows,
             self.term_cols,
+            &workspace_title(&self.workdir),
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
@@ -2690,6 +2690,7 @@ impl Multiplexer {
             &mut buf,
             self.term_rows,
             self.term_cols,
+            &workspace_title(&self.workdir),
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
@@ -3437,6 +3438,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     &mut sbuf,
                     mux.term_rows,
                     mux.term_cols,
+                    &workspace_title(&mux.workdir),
                     mux.context_bar_branch(),
                     mux.pull_request_context.as_ref(),
                     mux.pull_request_context_loading(),
@@ -3945,6 +3947,7 @@ fn render_branch_context_bar(
     buf: &mut Vec<u8>,
     term_rows: u16,
     term_cols: u16,
+    workspace_name: &str,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
@@ -3954,6 +3957,7 @@ fn render_branch_context_bar(
     let Some(layout) = branch_context_bar_layout(
         term_rows,
         term_cols,
+        workspace_name,
         branch,
         pull_request,
         pull_request_loading,
@@ -4020,18 +4024,40 @@ struct BranchContextBarLayout {
 fn branch_context_bar_layout(
     term_rows: u16,
     term_cols: u16,
+    workspace_name: &str,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
     container_name: &str,
 ) -> Option<BranchContextBarLayout> {
-    if !branch_context_bar_visible(branch, pull_request) || term_rows == 0 || term_cols == 0 {
+    if term_rows == 0 || term_cols == 0 {
         return None;
     }
-    let left = match pull_request {
-        Some(pr) => format!(" PR {} · {} ", pr.number_label(), pr.title),
-        None if pull_request_loading => format!(" Resolving PR · {} ", branch.unwrap_or_default()),
-        None => format!(" Branch · {} ", branch.unwrap_or_default()),
+    let workspace = if workspace_name.trim().is_empty() {
+        "workspace"
+    } else {
+        workspace_name.trim()
+    };
+    let branch_detail_visible = branch.is_some_and(|branch| !is_default_branch_name(branch));
+    let workspace_prefix = format!(" {workspace} ");
+    let context_prefix = format!(" {workspace} · ");
+    let (left, context_start_col) = match pull_request {
+        Some(pr) => (
+            format!("{context_prefix}PR {} · {} ", pr.number_label(), pr.title),
+            Some(display_cols(&context_prefix).saturating_add(1)),
+        ),
+        None if pull_request_loading && branch_detail_visible => (
+            format!(
+                "{context_prefix}Resolving PR · {} ",
+                branch.unwrap_or_default()
+            ),
+            Some(display_cols(&context_prefix).saturating_add(1)),
+        ),
+        None if branch_detail_visible => (
+            format!("{context_prefix}Branch · {} ", branch.unwrap_or_default()),
+            Some(display_cols(&context_prefix).saturating_add(1)),
+        ),
+        None => (workspace_prefix, None),
     };
     let container = if container_name.is_empty() {
         String::new()
@@ -4048,9 +4074,10 @@ fn branch_context_bar_layout(
     };
     let left = take_display_cols(&left, left_max_cols);
     let left_cols = display_cols(&left);
-    let left_region = if left_cols > 0 {
+    let left_region = if let Some(start) = context_start_col.filter(|start| *start <= left_cols) {
+        let start = u16::try_from(start).unwrap_or(u16::MAX);
         let end = u16::try_from(left_cols.saturating_add(1)).unwrap_or(u16::MAX);
-        Some((1, end))
+        Some((start, end))
     } else {
         None
     };
@@ -4096,6 +4123,7 @@ fn branch_context_bar_hit(
     col: u16,
     term_rows: u16,
     term_cols: u16,
+    workspace_name: &str,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
@@ -4107,6 +4135,7 @@ fn branch_context_bar_hit(
     let layout = branch_context_bar_layout(
         term_rows,
         term_cols,
+        workspace_name,
         branch,
         pull_request,
         pull_request_loading,
@@ -4125,13 +4154,6 @@ fn branch_context_bar_hit(
         return Some(BranchContextBarHit::Context);
     }
     None
-}
-
-fn branch_context_bar_visible(
-    branch: Option<&str>,
-    pull_request: Option<&PullRequestInfo>,
-) -> bool {
-    pull_request.is_some() || branch.is_some_and(|branch| !is_default_branch_name(branch))
 }
 
 fn is_default_branch_name(branch: &str) -> bool {
@@ -4911,6 +4933,7 @@ mod tests {
             &mut buf,
             24,
             120,
+            "jackin",
             Some("asa/pr-context"),
             Some(&pr),
             false,
@@ -4936,6 +4959,7 @@ mod tests {
             &mut buf,
             24,
             80,
+            "jackin",
             Some("feature/no-pr"),
             None,
             false,
@@ -4956,6 +4980,7 @@ mod tests {
             &mut buf,
             24,
             100,
+            "jackin",
             Some("feature/slow-gh"),
             None,
             true,
@@ -4982,6 +5007,7 @@ mod tests {
             &mut buf,
             24,
             20,
+            "jackin",
             Some("feature/x"),
             Some(&pr),
             false,
@@ -5003,21 +5029,44 @@ mod tests {
     fn branch_context_bar_layout_returns_none_for_zero_dimensions() {
         let pr = pull_request_fixture(1);
         assert!(
-            branch_context_bar_layout(0, 80, Some("feature/x"), Some(&pr), false, "jk-test")
-                .is_none()
+            branch_context_bar_layout(
+                0,
+                80,
+                "jackin",
+                Some("feature/x"),
+                Some(&pr),
+                false,
+                "jk-test"
+            )
+            .is_none()
         );
         assert!(
-            branch_context_bar_layout(24, 0, Some("feature/x"), Some(&pr), false, "jk-test")
-                .is_none()
+            branch_context_bar_layout(
+                24,
+                0,
+                "jackin",
+                Some("feature/x"),
+                Some(&pr),
+                false,
+                "jk-test"
+            )
+            .is_none()
         );
     }
 
     #[test]
     fn branch_context_bar_hit_rejects_columns_outside_region() {
         let pr = pull_request_fixture(7);
-        let layout =
-            branch_context_bar_layout(24, 120, Some("feature/x"), Some(&pr), false, "jk-test")
-                .expect("layout fits");
+        let layout = branch_context_bar_layout(
+            24,
+            120,
+            "jackin",
+            Some("feature/x"),
+            Some(&pr),
+            false,
+            "jk-test",
+        )
+        .expect("layout fits");
         // left_region covers exactly its declared range.
         let (left_start, left_end) = layout.left_region.expect("left region present");
         assert_eq!(
@@ -5026,6 +5075,7 @@ mod tests {
                 left_start,
                 24,
                 120,
+                "jackin",
                 Some("feature/x"),
                 Some(&pr),
                 false,
@@ -5039,6 +5089,7 @@ mod tests {
                 left_end - 1,
                 24,
                 120,
+                "jackin",
                 Some("feature/x"),
                 Some(&pr),
                 false,
@@ -5052,6 +5103,7 @@ mod tests {
             left_end,
             24,
             120,
+            "jackin",
             Some("feature/x"),
             Some(&pr),
             false,
@@ -5069,6 +5121,7 @@ mod tests {
                 left_start,
                 24,
                 120,
+                "jackin",
                 Some("feature/x"),
                 Some(&pr),
                 false,
@@ -5086,6 +5139,7 @@ mod tests {
             &mut context_buf,
             24,
             120,
+            "jackin",
             Some("asa/pr-context"),
             Some(&pr),
             false,
@@ -5101,6 +5155,7 @@ mod tests {
             &mut container_buf,
             24,
             120,
+            "jackin",
             Some("asa/pr-context"),
             Some(&pr),
             false,
@@ -5113,39 +5168,61 @@ mod tests {
     }
 
     #[test]
-    fn branch_context_bar_skips_main_and_master_without_pr() {
+    fn branch_context_bar_shows_workspace_and_container_on_default_branches() {
         let mut main_buf = Vec::new();
         render_branch_context_bar(
             &mut main_buf,
             24,
             80,
+            "jackin",
             Some("main"),
             None,
             false,
             "jk-test-container",
             None,
         );
-        assert!(main_buf.is_empty());
+        let main_rendered = String::from_utf8_lossy(&main_buf);
+        assert!(main_rendered.contains("jackin"));
+        assert!(main_rendered.contains("jk-test-container"));
+        assert!(!main_rendered.contains("Branch · main"));
+        assert_eq!(
+            branch_context_bar_hit(
+                24,
+                2,
+                24,
+                80,
+                "jackin",
+                Some("main"),
+                None,
+                false,
+                "jk-test-container",
+            ),
+            None
+        );
 
         let mut master_buf = Vec::new();
         render_branch_context_bar(
             &mut master_buf,
             24,
             80,
+            "jackin",
             Some("master"),
             None,
             false,
             "jk-test-container",
             None,
         );
-        assert!(master_buf.is_empty());
+        let master_rendered = String::from_utf8_lossy(&master_buf);
+        assert!(master_rendered.contains("jackin"));
+        assert!(master_rendered.contains("jk-test-container"));
+        assert!(!master_rendered.contains("Branch · master"));
     }
 
     #[test]
-    fn branch_context_visibility_resizes_content_area() {
+    fn branch_context_visibility_keeps_content_area_reserved() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        assert_eq!(mux.content_rows, 22);
+        assert_eq!(mux.content_rows, 21);
 
         mux.pull_request_context_cache.insert(
             "asa/pr-context".to_string(),
@@ -5173,7 +5250,7 @@ mod tests {
         assert!(mux.pull_request_context.is_none());
 
         assert!(mux.apply_git_branch_context(Some("main".to_string()), now));
-        assert_eq!(mux.content_rows, 22);
+        assert_eq!(mux.content_rows, 21);
         assert!(mux.pull_request_context.is_none());
     }
 
@@ -5200,10 +5277,6 @@ mod tests {
             Some("new/local-branch")
         );
         assert!(mux.pull_request_context.is_none());
-        assert!(branch_context_bar_visible(
-            mux.pull_request_context_branch.as_deref(),
-            mux.pull_request_context.as_ref(),
-        ));
         assert_eq!(mux.content_rows, 21);
     }
 
@@ -5518,12 +5591,23 @@ mod tests {
         mux.pull_request_context_branch = Some("feature/context".to_string());
         let (tx, mut rx) = mpsc::unbounded_channel();
         mux.attached_out = Some(tx);
+        let hit = branch_context_bar_layout(
+            mux.term_rows,
+            mux.term_cols,
+            &workspace_title(&mux.workdir),
+            mux.pull_request_context_branch.as_deref(),
+            mux.pull_request_context.as_ref(),
+            mux.pull_request_context_loading(),
+            mux.status_bar.container_name(),
+        )
+        .and_then(|layout| layout.left_region)
+        .expect("branch context should fit");
 
-        mux.update_pointer_shape_for_mouse(23, 2, SGR_NO_BUTTON_MOTION);
+        mux.update_pointer_shape_for_mouse(23, hit.0 - 1, SGR_NO_BUTTON_MOTION);
         let first = rx.try_recv().expect("first pointer-shape update");
         assert!(first.ends_with(b"\x1b]22;pointer\x1b\\"));
 
-        mux.update_pointer_shape_for_mouse(23, 3, SGR_NO_BUTTON_MOTION);
+        mux.update_pointer_shape_for_mouse(23, hit.0, SGR_NO_BUTTON_MOTION);
         assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
     }
 
@@ -5539,6 +5623,7 @@ mod tests {
         let hit = branch_context_bar_layout(
             mux.term_rows,
             mux.term_cols,
+            &workspace_title(&mux.workdir),
             mux.pull_request_context_branch.as_deref(),
             mux.pull_request_context.as_ref(),
             mux.pull_request_context_loading(),
@@ -5581,11 +5666,22 @@ mod tests {
         mux.status_bar.identity_label = "jk-test-container".to_string();
         mux.pull_request_context_branch = Some("feature/context".to_string());
         mux.pull_request_context = Some(pull_request_fixture(434));
+        let hit = branch_context_bar_layout(
+            mux.term_rows,
+            mux.term_cols,
+            &workspace_title(&mux.workdir),
+            mux.pull_request_context_branch.as_deref(),
+            mux.pull_request_context.as_ref(),
+            mux.pull_request_context_loading(),
+            mux.status_bar.container_name(),
+        )
+        .and_then(|layout| layout.left_region)
+        .expect("GitHub context should fit");
 
         let frame = mux
             .handle_input(InputEvent::MousePress {
                 row: mux.term_rows - 1,
-                col: 1,
+                col: hit.0 - 1,
                 button: 0,
             })
             .expect("context click should redraw");
