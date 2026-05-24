@@ -244,25 +244,29 @@ fn command_in_path(name: &str) -> bool {
     matches!(cmd.status(), Ok(status) if status.success())
 }
 
+/// Shared scaffold for short-lived `git -C <workdir> <args…>` probes
+/// bounded by `GIT_CONTEXT_COMMAND_TIMEOUT`. Returns trimmed stdout
+/// on success, `None` on timeout / non-zero exit / spawn failure.
+fn git_capture_at_workdir(workdir: &Path, args: &[&str]) -> Option<String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(workdir).args(args);
+    command_stdout_trimmed_with_timeout(&mut cmd, GIT_CONTEXT_COMMAND_TIMEOUT)
+}
+
 /// `git symbolic-ref --short refs/remotes/origin/HEAD` returns
 /// `origin/main` (or whatever the default branch is). Strip the
 /// `origin/` so it can compare directly against `git branch
 /// --show-current` output.
 fn resolve_default_branch(workdir: &Path) -> Option<String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(workdir)
-        .args(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
-    let raw = command_stdout_trimmed_with_timeout(&mut cmd, GIT_CONTEXT_COMMAND_TIMEOUT)?;
+    let raw = git_capture_at_workdir(
+        workdir,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )?;
     raw.strip_prefix("origin/").map(|s| s.to_string())
 }
 
 fn workdir_is_inside_git_tree(workdir: &Path) -> bool {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(workdir)
-        .args(["rev-parse", "--is-inside-work-tree"]);
-    command_stdout_trimmed_with_timeout(&mut cmd, GIT_CONTEXT_COMMAND_TIMEOUT)
+    git_capture_at_workdir(workdir, &["rev-parse", "--is-inside-work-tree"])
         .is_some_and(|value| value == "true")
 }
 
@@ -749,6 +753,36 @@ impl Multiplexer {
         });
     }
 
+    fn sync_github_context_dialogs(&mut self) -> bool {
+        let branch = self.pull_request_context_branch.clone();
+        let pull_request = self.pull_request_context.clone();
+        let pull_request_loading = self.pull_request_context_loading();
+        let mut changed = false;
+        for dialog in &mut self.dialog_stack {
+            if let Dialog::GitHubContext {
+                branch: dialog_branch,
+                pull_request: dialog_pull_request,
+                pull_request_loading: dialog_pull_request_loading,
+                ..
+            } = dialog
+            {
+                if *dialog_branch != branch {
+                    *dialog_branch = branch.clone();
+                    changed = true;
+                }
+                if *dialog_pull_request != pull_request {
+                    *dialog_pull_request = pull_request.clone();
+                    changed = true;
+                }
+                if *dialog_pull_request_loading != pull_request_loading {
+                    *dialog_pull_request_loading = pull_request_loading;
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
     fn pull_request_context_loading(&self) -> bool {
         let Some(branch) = self.pull_request_context_branch.as_deref() else {
             return false;
@@ -866,7 +900,7 @@ impl Multiplexer {
         let old_branch = self.pull_request_context_branch.clone();
         if old_branch == branch {
             self.maybe_spawn_pull_request_context_lookup(now);
-            return false;
+            return self.sync_github_context_dialogs();
         }
         let old_pull_request = self.pull_request_context.clone();
         self.pull_request_context_branch = branch.clone();
@@ -896,7 +930,8 @@ impl Multiplexer {
             || old_pull_request != self.pull_request_context;
         let resized = self.reconcile_content_rows();
         self.maybe_spawn_pull_request_context_lookup(now);
-        resized || changed
+        let dialog_changed = self.sync_github_context_dialogs();
+        resized || changed || dialog_changed
     }
 
     fn apply_pull_request_context_loaded(
@@ -920,7 +955,9 @@ impl Multiplexer {
         // cached value; the next state-ticker tick retries.
         let pull_request = match outcome {
             PullRequestLookupOutcome::Resolved(pr) => pr,
-            PullRequestLookupOutcome::TransientFailure => return false,
+            PullRequestLookupOutcome::TransientFailure => {
+                return self.sync_github_context_dialogs();
+            }
         };
         self.purge_expired_pull_request_cache_entries(now);
         self.pull_request_context_cache.insert(
@@ -935,10 +972,11 @@ impl Multiplexer {
         }
         let changed = self.pull_request_context != pull_request;
         self.pull_request_context = pull_request;
+        let dialog_changed = self.sync_github_context_dialogs();
         if self.reconcile_content_rows() {
             return true;
         }
-        changed
+        changed || dialog_changed
     }
 
     /// Drop cache entries older than `2 * PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL`
@@ -3953,14 +3991,6 @@ fn capitalize(s: &str) -> String {
 fn display_title(session: &Session) -> String {
     let title = session.title().filter(|title| !title.trim().is_empty());
     let cwd = session.cwd().map(jackin_tui::shorten_home);
-    if session.agent.is_none() {
-        return match title {
-            Some(title) if title == session.label => session.label.clone(),
-            Some(title) => title.to_string(),
-            None => cwd.unwrap_or_else(|| session.label.clone()),
-        };
-    }
-
     title
         .map(str::to_string)
         .or(cwd)
@@ -4323,13 +4353,7 @@ fn git_current_branch(workdir: &Path) -> Option<String> {
     if let Some(branch) = read_branch_from_git_head(workdir) {
         return Some(branch);
     }
-    command_stdout_trimmed_with_timeout(
-        Command::new("git")
-            .arg("-C")
-            .arg(workdir)
-            .args(["branch", "--show-current"]),
-        GIT_CONTEXT_COMMAND_TIMEOUT,
-    )
+    git_capture_at_workdir(workdir, &["branch", "--show-current"])
 }
 
 fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
@@ -4598,13 +4622,27 @@ fn run_command_capturing_output(
         .join()
         .unwrap_or(Ok(Vec::new()))
         .unwrap_or_default();
+    command_output_or_lookup_error(&program, status_success, &stdout_bytes, &stderr_bytes)
+}
+
+fn command_output_or_lookup_error(
+    program: &str,
+    status_success: Option<bool>,
+    stdout_bytes: &[u8],
+    stderr_bytes: &[u8],
+) -> Result<Option<String>, LookupError> {
+    let stderr_text = String::from_utf8_lossy(stderr_bytes).trim().to_string();
     if status_success == Some(false) {
-        let stderr_text = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
         return Err(LookupError::Failed(format!(
             "{program}: non-accepted status; stderr: {stderr_text}"
         )));
     }
-    let value = String::from_utf8_lossy(&stdout_bytes).trim().to_string();
+    let value = String::from_utf8_lossy(stdout_bytes).trim().to_string();
+    if status_success.is_none() && value.is_empty() && !stderr_text.is_empty() {
+        return Err(LookupError::Failed(format!(
+            "{program}: status unavailable; stderr: {stderr_text}"
+        )));
+    }
     if value.is_empty() {
         Ok(None)
     } else {
@@ -5831,6 +5869,76 @@ mod tests {
     }
 
     #[test]
+    fn apply_pull_request_context_loaded_refreshes_open_github_dialog() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_lookup.request_id = 7;
+        mux.pull_request_lookup.in_flight = true;
+        mux.pull_request_context_branch = Some("feat/x".to_string());
+        mux.dialog_push(Dialog::GitHubContext {
+            branch: Some("feat/x".to_string()),
+            pull_request: None,
+            pull_request_loading: true,
+            copied: false,
+        });
+
+        let changed = mux.apply_pull_request_context_loaded(
+            7,
+            Some("feat/x".to_string()),
+            PullRequestLookupOutcome::Resolved(Some(pull_request_fixture(436))),
+            now,
+        );
+
+        assert!(changed, "dialog refresh should request redraw");
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::GitHubContext {
+                branch: Some(branch),
+                pull_request: Some(pr),
+                pull_request_loading: false,
+                copied: false,
+            }) if branch == "feat/x" && pr.number == 436
+        ));
+    }
+
+    #[test]
+    fn transient_pull_request_failure_clears_open_dialog_loading_state() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_lookup.request_id = 7;
+        mux.pull_request_lookup.in_flight = true;
+        mux.pull_request_context_branch = Some("feat/x".to_string());
+        mux.dialog_push(Dialog::GitHubContext {
+            branch: Some("feat/x".to_string()),
+            pull_request: None,
+            pull_request_loading: true,
+            copied: false,
+        });
+
+        let changed = mux.apply_pull_request_context_loaded(
+            7,
+            Some("feat/x".to_string()),
+            PullRequestLookupOutcome::TransientFailure,
+            now,
+        );
+
+        assert!(changed, "dialog loading state changed");
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::GitHubContext {
+                branch: Some(branch),
+                pull_request: None,
+                pull_request_loading: false,
+                copied: false,
+            }) if branch == "feat/x"
+        ));
+        assert!(
+            !mux.pull_request_context_cache.contains_key("feat/x"),
+            "transient failure must not cache a no-PR result"
+        );
+    }
+
+    #[test]
     fn apply_git_branch_context_loaded_drops_stale_request() {
         let mut mux = test_mux(24, 100);
         mux.git_branch_lookup.request_id = 4;
@@ -6727,5 +6835,16 @@ mod tests {
         command.args(["-c", "printf branch-name; sleep 0.05; exit 1"]);
 
         assert_eq!(command_stdout_trimmed(&mut command), None);
+    }
+
+    #[test]
+    fn gh_lookup_output_rejects_statusless_stderr_only_failure() {
+        let err = command_output_or_lookup_error("gh", None, b"", b"HTTP 401: Bad credentials\n")
+            .expect_err("stderr-only statusless gh output is a transient failure");
+
+        assert!(
+            err.to_string().contains("HTTP 401"),
+            "stderr detail should survive for logs: {err}"
+        );
     }
 }
