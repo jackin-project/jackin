@@ -16,3 +16,4 @@ pub mod session;
 pub mod socket;
 pub mod statusbar;
 pub mod terminal_geometry;
+pub mod util;

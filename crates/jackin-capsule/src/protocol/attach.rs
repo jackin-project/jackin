@@ -317,15 +317,13 @@ fn write_terminal_field(payload: &mut Vec<u8>, value: Option<&str>, label: &str)
 }
 
 fn read_terminal_field(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Option<String>> {
-    let len = cursor
-        .read_u16(label)
-        .with_context(|| format!("terminal {label} length"))? as usize;
+    let len_label = format!("terminal {label} length");
+    let len = cursor.read_u16(&len_label)? as usize;
     if len > MAX_CLIENT_TERMINAL_FIELD {
         bail!("hello terminal {label} length {len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}");
     }
-    let value = cursor
-        .read_string(len, label)
-        .with_context(|| format!("terminal {label}"))?;
+    let value_label = format!("terminal {label}");
+    let value = cursor.read_string(len, &value_label)?;
     Ok((!value.is_empty()).then_some(value))
 }
 

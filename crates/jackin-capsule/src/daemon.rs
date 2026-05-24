@@ -765,9 +765,29 @@ impl Multiplexer {
     fn github_context_view(&self) -> GithubContextView<'_> {
         GithubContextView {
             branch: self.pull_request_context_branch.as_deref(),
-            pull_request: self.pull_request_context.as_ref(),
+            pull_request: self.pull_request_context.as_deref(),
             loading: self.pull_request_context_loading(),
         }
+    }
+
+    /// Mutable counterpart to `github_context_view` plus a `&mut Dialog`
+    /// handle to the top of the stack. Combining the two into one helper
+    /// lets the call site name only its dispatch action; the borrow split
+    /// (immutable field refs for the view, mutable for `dialog_stack`)
+    /// happens once here instead of being open-coded at every dispatch site.
+    /// Returns `None` when no dialog is on the stack.
+    fn dispatch_to_dialog_top<F, R>(&mut self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut Dialog, Option<&GithubContextView<'_>>) -> R,
+    {
+        let loading = self.pull_request_context_loading();
+        let view = GithubContextView {
+            branch: self.pull_request_context_branch.as_deref(),
+            pull_request: self.pull_request_context.as_deref(),
+            loading,
+        };
+        let dialog = self.dialog_stack.last_mut()?;
+        Some(f(dialog, Some(&view)))
     }
 
     fn pull_request_context_loading(&self) -> bool {
@@ -803,20 +823,20 @@ impl Multiplexer {
         );
     }
 
-    fn maybe_spawn_pull_request_context_lookup(&mut self, now: Instant) {
+    fn maybe_spawn_pull_request_context_lookup(&mut self, now: Instant) -> bool {
         if !self.workdir_context.gh_available {
-            return;
+            return false;
         }
         if self.pull_request_lookup.in_flight {
-            return;
+            return false;
         }
         let Some(branch) = self.pull_request_context_branch.clone() else {
-            return;
+            return false;
         };
         if self.workdir_context.is_default_branch(&branch)
             || self.pull_request_cache_is_fresh(&branch, now)
         {
-            return;
+            return false;
         }
         let request_id = self.pull_request_lookup.next_request_id();
         self.pull_request_lookup.in_flight = true;
@@ -840,6 +860,7 @@ impl Multiplexer {
                 outcome,
             },
         );
+        true
     }
 
     /// Generic worker spawn for the two background context lookups.
@@ -884,12 +905,10 @@ impl Multiplexer {
     }
 
     fn apply_git_branch_context(&mut self, branch: Option<String>, now: Instant) -> bool {
-        let old_branch = self.pull_request_context_branch.clone();
-        let github_dialog_open = self.has_github_context_dialog_open();
-        if old_branch == branch {
-            self.maybe_spawn_pull_request_context_lookup(now);
-            return github_dialog_open;
+        if self.pull_request_context_branch.as_deref() == branch.as_deref() {
+            return self.maybe_spawn_pull_request_context_lookup(now);
         }
+        let old_branch = self.pull_request_context_branch.take();
         let old_pull_request = self.pull_request_context.clone();
         self.pull_request_context_branch = branch.clone();
         if branch.is_some() && !self.workdir_context.is_git_repo {
@@ -918,7 +937,7 @@ impl Multiplexer {
             || old_pull_request != self.pull_request_context;
         let resized = self.reconcile_content_rows();
         self.maybe_spawn_pull_request_context_lookup(now);
-        resized || changed || github_dialog_open
+        resized || changed
     }
 
     fn apply_pull_request_context_loaded(
@@ -929,6 +948,12 @@ impl Multiplexer {
         now: Instant,
     ) -> bool {
         if request_id != self.pull_request_lookup.request_id {
+            // Stale response from a worker invalidated by a branch flip.
+            // `in_flight` belongs to the NEW lookup spawned in the
+            // interim, so we must NOT clear it here — that would cause
+            // the new spawn-gate to allow a third concurrent worker.
+            // No mux state changed, so the dialog (if open) does not
+            // need a redraw either.
             return false;
         }
         let github_dialog_open = self.has_github_context_dialog_open();
@@ -2006,17 +2031,11 @@ impl Multiplexer {
                 // outside-the-box and dismisses the dialog.
                 let term_rows = self.term_rows;
                 let term_cols = self.term_cols;
-                let loading = self.pull_request_context_loading();
-                let github = GithubContextView {
-                    branch: self.pull_request_context_branch.as_deref(),
-                    pull_request: self.pull_request_context.as_ref(),
-                    loading,
-                };
                 let action = self
-                    .dialog_stack
-                    .last_mut()
-                    .expect("dialog presence checked")
-                    .handle_click(row + 1, col + 1, term_rows, term_cols, Some(&github));
+                    .dispatch_to_dialog_top(|dialog, github| {
+                        dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
+                    })
+                    .expect("dialog presence checked");
                 Some(self.apply_dialog_action(action))
             }
             InputEvent::MousePress { .. } if self.dialog_open() => {
@@ -2138,7 +2157,7 @@ impl Multiplexer {
                 row,
                 col,
                 button: 0,
-            } if branch_context_bar_hit(
+            } if let Some(hit) = branch_context_bar_hit(
                 row + 1,
                 col + 1,
                 self.term_rows,
@@ -2147,22 +2166,11 @@ impl Multiplexer {
                 self.pull_request_context.as_deref(),
                 self.pull_request_context_loading(),
                 self.status_bar.instance_id_label(),
-            )
-            .is_some() =>
+            ) =>
             {
-                match branch_context_bar_hit(
-                    row + 1,
-                    col + 1,
-                    self.term_rows,
-                    self.term_cols,
-                    self.context_bar_branch(),
-                    self.pull_request_context.as_deref(),
-                    self.pull_request_context_loading(),
-                    self.status_bar.instance_id_label(),
-                ) {
-                    Some(BranchContextBarHit::Context) => self.open_github_context_dialog(),
-                    Some(BranchContextBarHit::Container) => self.open_container_info_dialog(),
-                    None => {}
+                match hit {
+                    BranchContextBarHit::Context => self.open_github_context_dialog(),
+                    BranchContextBarHit::Container => self.open_container_info_dialog(),
                 }
                 Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange))
             }
@@ -2267,14 +2275,9 @@ impl Multiplexer {
                 None
             }
             InputEvent::Data(bytes) => {
-                let loading = self.pull_request_context_loading();
-                let github = GithubContextView {
-                    branch: self.pull_request_context_branch.as_deref(),
-                    pull_request: self.pull_request_context.as_ref(),
-                    loading,
-                };
-                if let Some(dialog) = self.dialog_stack.last_mut() {
-                    let action = dialog.handle_key(&bytes, Some(&github));
+                if let Some(action) =
+                    self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
+                {
                     Some(self.apply_dialog_action(action))
                 } else {
                     // Any keyboard input from the operator returns the
@@ -2775,20 +2778,25 @@ impl Multiplexer {
             }
         }
 
+        let pull_request_loading = self.pull_request_context_loading();
         render_branch_context_bar(
             &mut buf,
             self.term_rows,
             self.term_cols,
             self.context_bar_branch(),
             self.pull_request_context.as_deref(),
-            self.pull_request_context_loading(),
+            pull_request_loading,
             self.status_bar.instance_id_label(),
             self.hover_target,
             dialog_dim,
         );
 
         if let Some(dialog) = self.dialog_top() {
-            let github = self.github_context_view();
+            let github = GithubContextView {
+                branch: self.pull_request_context_branch.as_deref(),
+                pull_request: self.pull_request_context.as_deref(),
+                loading: pull_request_loading,
+            };
             dialog.render_with_hover(
                 &mut buf,
                 self.term_rows,
@@ -4102,8 +4110,8 @@ fn render_branch_context_bar(
         return;
     };
 
-    use std::io::Write as _;
-    let _ = write!(buf, "\x1b[{term_rows};1H");
+    let bar_row = term_rows.saturating_sub(1);
+    jackin_tui::ansi::move_to(buf, bar_row, 0);
     buf.extend_from_slice(
         if dim {
             BRANCH_CONTEXT_BAR_BG_DIM
@@ -4124,7 +4132,7 @@ fn render_branch_context_bar(
         buf.push(b' ');
     }
 
-    let _ = write!(buf, "\x1b[{term_rows};1H");
+    jackin_tui::ansi::move_to(buf, bar_row, 0);
     let left_hovered = !dim && hover_target == Some(HoverTarget::BranchContext);
     let left_bg = if dim {
         BRANCH_CONTEXT_BAR_BG_DIM
@@ -4148,7 +4156,7 @@ fn render_branch_context_bar(
     buf.extend_from_slice(layout.left.as_bytes());
 
     if let Some(container_start) = layout.container_start {
-        let _ = write!(buf, "\x1b[{term_rows};{container_start}H");
+        jackin_tui::ansi::move_to(buf, bar_row, container_start.saturating_sub(1));
         let container_hovered = !dim && hover_target == Some(HoverTarget::Container);
         let bg = if dim {
             BRANCH_CONTEXT_BAR_BG_DIM
@@ -4193,8 +4201,10 @@ fn branch_context_bar_layout(
     if term_rows == 0 || term_cols == 0 {
         return None;
     }
-    let non_default_branch = branch.filter(|b| !is_default_branch_name(b));
-    let (left, left_clickable) = match (pull_request, non_default_branch) {
+    // `branch` is the post-filter result from `Multiplexer::context_bar_branch`
+    // (default-branch suppression already applied with the smart
+    // `WorkdirContext::is_default_branch` check). Trust the input here.
+    let (left, left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
         (None, Some(b)) => (format!(" Branch · {b} "), true),
@@ -4298,10 +4308,6 @@ fn branch_context_bar_hit(
     None
 }
 
-fn is_default_branch_name(branch: &str) -> bool {
-    matches!(branch, "main" | "master" | "")
-}
-
 /// Width of `s` measured in terminal cells, ignoring ASCII control
 /// bytes / OSC / CSI bytes. Control bytes report width 0 from
 /// `unicode-width`, which would let a PR title like `\x1b[2J` slip
@@ -4366,7 +4372,7 @@ fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
     let head_path = if git_path.is_dir() {
         git_path.join("HEAD")
     } else {
-        let git_file = read_text_bounded(&git_path, GIT_METADATA_FILE_MAX_BYTES)?;
+        let git_file = crate::util::read_text_bounded(&git_path, GIT_METADATA_FILE_MAX_BYTES)?;
         let git_dir = git_file.trim().strip_prefix("gitdir:")?.trim();
         let git_dir = PathBuf::from(git_dir);
         let git_dir = if git_dir.is_absolute() {
@@ -4376,20 +4382,11 @@ fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
         };
         git_dir.join("HEAD")
     };
-    let head = read_text_bounded(&head_path, GIT_METADATA_FILE_MAX_BYTES)?;
+    let head = crate::util::read_text_bounded(&head_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let trimmed = head.trim();
     trimmed
         .strip_prefix("ref: refs/heads/")
         .map(|s| s.to_string())
-}
-
-/// Cap reads against `.git` metadata so a corrupt or hostile file cannot
-/// pin daemon memory while parsing branch state.
-fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
-    let file = std::fs::File::open(path).ok()?;
-    let mut buf = String::new();
-    file.take(max_bytes).read_to_string(&mut buf).ok()?;
-    Some(buf)
 }
 
 /// Distinguishes "lookup succeeded but command was unavailable / failed
@@ -5161,11 +5158,19 @@ mod tests {
         }
     }
 
+    /// Construct the state production would land in after
+    /// `maybe_spawn_pull_request_context_lookup` actually spawned a
+    /// worker for `branch` (without shelling out to `gh`):
+    /// `request_id` is the id the worker carries, `in_flight = true`
+    /// gates the next spawn, `pull_request_context_branch` is the
+    /// branch the worker was started for, and a `GitHubContext`
+    /// dialog is open so apply-path redraw decisions exercise the
+    /// dialog-open code path.
     fn arm_pending_pr_lookup(mux: &mut Multiplexer, branch: &str, request_id: u64) {
         mux.pull_request_lookup.request_id = request_id;
         mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_branch = Some(branch.to_string());
-        mux.dialog_push(Dialog::GitHubContext { copied: false });
+        mux.open_github_context_dialog();
     }
 
     #[test]
@@ -5698,55 +5703,33 @@ mod tests {
     }
 
     #[test]
-    fn branch_context_bar_leaves_left_side_empty_on_default_branches() {
-        let mut main_buf = Vec::new();
+    fn branch_context_bar_leaves_left_side_empty_when_branch_filtered_out() {
+        // `Multiplexer::context_bar_branch` is the layer that drops
+        // default-branch names before this function runs, so the
+        // post-filter input here is `None` regardless of whether the
+        // operator is on main, master, trunk, develop, or detached HEAD.
+        let mut buf = Vec::new();
         render_branch_context_bar(
-            &mut main_buf,
+            &mut buf,
             24,
             80,
-            Some("main"),
+            None,
             None,
             false,
             "jk-test-container",
             None,
             false,
         );
-        let main_rendered = String::from_utf8_lossy(&main_buf);
-        assert!(main_rendered.contains("jk-test-container"));
-        assert!(!main_rendered.contains("jackin"));
-        assert!(!main_rendered.contains("Branch · main"));
-        assert!(!main_rendered.contains("PR #"));
+        let rendered = String::from_utf8_lossy(&buf);
+        assert!(rendered.contains("jk-test-container"));
+        assert!(!rendered.contains("jackin"));
+        assert!(!rendered.contains("Branch ·"));
+        assert!(!rendered.contains("Resolving PR"));
+        assert!(!rendered.contains("PR #"));
         assert_eq!(
-            branch_context_bar_hit(
-                24,
-                2,
-                24,
-                80,
-                Some("main"),
-                None,
-                false,
-                "jk-test-container",
-            ),
+            branch_context_bar_hit(24, 2, 24, 80, None, None, false, "jk-test-container"),
             None
         );
-
-        let mut master_buf = Vec::new();
-        render_branch_context_bar(
-            &mut master_buf,
-            24,
-            80,
-            Some("master"),
-            None,
-            false,
-            "jk-test-container",
-            None,
-            false,
-        );
-        let master_rendered = String::from_utf8_lossy(&master_buf);
-        assert!(master_rendered.contains("jk-test-container"));
-        assert!(!master_rendered.contains("jackin"));
-        assert!(!master_rendered.contains("Branch · master"));
-        assert!(!master_rendered.contains("PR #"));
     }
 
     #[test]

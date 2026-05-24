@@ -599,9 +599,12 @@ fn resolve_container_name() -> String {
         .or_else(|| std::env::var("HOSTNAME").ok())
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
-            std::fs::read_to_string("/etc/hostname")
-                .ok()
-                .map(|value| value.trim().to_string())
+            const ETC_HOSTNAME_MAX_BYTES: u64 = 256;
+            crate::util::read_text_bounded(
+                std::path::Path::new("/etc/hostname"),
+                ETC_HOSTNAME_MAX_BYTES,
+            )
+            .map(|value| value.trim().to_string())
         })
         .unwrap_or_default()
 }

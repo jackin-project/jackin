@@ -109,81 +109,6 @@ pub fn hint_row_cols(spans: &[HintSpan<'_>]) -> usize {
     spans.iter().map(HintSpan::display_cols).sum()
 }
 
-/// Filter / type-to-search palette hint. `Enter` selects, `Esc`
-/// cancels, arrow keys navigate.
-pub const PALETTE_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Enter"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
-
-/// Agent picker / sub-picker hint. Same shape as `PALETTE_HINT`
-/// except the action label is "launch" instead of "select".
-pub const PICKER_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Enter"),
-    HintSpan::Text("launch"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
-
-/// Text-input "rename" hint. Empty value means "use the auto name".
-pub const RENAME_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
-    HintSpan::Text("save"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-    HintSpan::GroupSep,
-    HintSpan::Text("empty = auto name"),
-];
-
-/// Container-info modal hint. `Enter` copies the container ID.
-pub const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
-    HintSpan::Text("copy container ID"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("dismiss"),
-];
-
-/// GitHub-context modal hint. `Enter` copies the PR URL.
-pub const GITHUB_CONTEXT_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
-    HintSpan::Text("copy GitHub URL"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("dismiss"),
-];
-
-/// Read-only modal hint shared by dialogs that only need to be
-/// dismissed (no copy action available).
-pub const READ_ONLY_HINT: &[HintSpan<'static>] = &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
-
-/// Yes/No confirmation hint.
-pub const CONFIRM_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Y"),
-    HintSpan::Text("confirm"),
-    HintSpan::GroupSep,
-    HintSpan::Key("N"),
-    HintSpan::Text("cancel"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("back"),
-];
-
 /// Title-case display name for an agent slug. Mirrors the console
 /// TUI's `agent_picker_label` so both surfaces use the same casing.
 /// Returns `None` for unrecognised slugs so callers can fall back to
@@ -663,5 +588,35 @@ mod tests {
         assert_eq!(cells[1].start_col, 9 + 1);
         assert_eq!(cells[1].cell_cols, 8); // " Mounts "
         assert!(!cells[1].active);
+    }
+
+    #[test]
+    fn hint_span_display_cols_match_render_contract() {
+        // Key spans render the glyph(s) unchanged.
+        assert_eq!(HintSpan::Key("Enter").display_cols(), 5);
+        // Text spans render with a leading space.
+        assert_eq!(HintSpan::Text("save").display_cols(), 5);
+        // Separators occupy three columns each.
+        assert_eq!(HintSpan::Sep.display_cols(), 3);
+        assert_eq!(HintSpan::GroupSep.display_cols(), 3);
+        // Multi-byte / wide glyphs use char count, not byte len.
+        assert_eq!(HintSpan::Key("↑↓").display_cols(), 2);
+    }
+
+    #[test]
+    fn hint_row_cols_sums_spans() {
+        let spans = [
+            HintSpan::Key("Enter"),
+            HintSpan::Text("save"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
+        ];
+        assert_eq!(hint_row_cols(&spans), 5 + 5 + 3 + 3 + 7);
+    }
+
+    #[test]
+    fn hint_row_cols_handles_empty_slice() {
+        assert_eq!(hint_row_cols(&[]), 0);
     }
 }

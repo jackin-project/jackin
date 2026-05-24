@@ -20,18 +20,15 @@
 /// background content dimmed before this overlay is painted. Keep that
 /// behavior in the shared overlay path so every dialog gets the same
 /// focus cue.
-use std::sync::Arc;
-
 use crate::session::PullRequestInfo;
 
-/// Borrowed view of the multiplexer's live GitHub context, threaded
-/// through every dialog method that depends on it. Non-`GitHubContext`
-/// dialogs ignore the value, so callers may pass `None` when no
-/// `GitHubContext` dialog is on the stack.
+/// Live multiplexer state needed to render and dispatch a
+/// `Dialog::GitHubContext` instance without copying it into the
+/// dialog itself.
 #[derive(Clone, Copy)]
 pub struct GithubContextView<'a> {
     pub branch: Option<&'a str>,
-    pub pull_request: Option<&'a Arc<PullRequestInfo>>,
+    pub pull_request: Option<&'a PullRequestInfo>,
     pub loading: bool,
 }
 
@@ -140,12 +137,9 @@ pub enum Dialog {
         copied: bool,
     },
     /// Read-only modal opened from the bottom branch/PR context.
-    /// Keeps GitHub metadata out of the container details modal while
-    /// still making the PR URL, branch, title, and CI status available.
-    /// Live state (branch, PR, loading flag) is read from the
-    /// multiplexer at dispatch / render time via `GithubContextView`,
-    /// so a branch flip mid-life reflects in the dialog without an
-    /// explicit per-`apply_*` refresh step.
+    /// Branch / PR / loading state come from `GithubContextView` at
+    /// render time so a mid-life branch flip reflects without an
+    /// explicit refresh step.
     GitHubContext { copied: bool },
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
@@ -640,7 +634,14 @@ impl Dialog {
             ..
         } = self
         {
-            if !container_info_id_row_clickable(row, col, box_row, box_col, width) {
+            if !info_box_value_row_clickable(
+                row,
+                col,
+                box_row,
+                box_col,
+                width,
+                CONTAINER_INFO_ID_ROW,
+            ) {
                 return DialogAction::Consume;
             }
             let payload = container_name.clone();
@@ -651,7 +652,14 @@ impl Dialog {
             let Some(pr) = github.and_then(|view| view.pull_request) else {
                 return DialogAction::Consume;
             };
-            if !github_context_url_row_clickable(row, col, box_row, box_col, width) {
+            if !info_box_value_row_clickable(
+                row,
+                col,
+                box_row,
+                box_col,
+                width,
+                GITHUB_CONTEXT_URL_ROW,
+            ) {
                 return DialogAction::Consume;
             }
             let payload = pr.url.clone();
@@ -812,12 +820,24 @@ impl Dialog {
         }
         match self {
             Self::RenameTab { .. } => false,
-            Self::ContainerInfo { .. } => {
-                container_info_id_row_clickable(row, col, box_row, box_col, width)
-            }
+            Self::ContainerInfo { .. } => info_box_value_row_clickable(
+                row,
+                col,
+                box_row,
+                box_col,
+                width,
+                CONTAINER_INFO_ID_ROW,
+            ),
             Self::GitHubContext { .. } => {
                 github.and_then(|view| view.pull_request).is_some()
-                    && github_context_url_row_clickable(row, col, box_row, box_col, width)
+                    && info_box_value_row_clickable(
+                        row,
+                        col,
+                        box_row,
+                        box_col,
+                        width,
+                        GITHUB_CONTEXT_URL_ROW,
+                    )
             }
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
@@ -1002,7 +1022,7 @@ impl Dialog {
             }
             Self::GitHubContext { copied } => {
                 let branch = github.and_then(|view| view.branch);
-                let pull_request = github.and_then(|view| view.pull_request).map(Arc::as_ref);
+                let pull_request = github.and_then(|view| view.pull_request);
                 let loading = github.is_some_and(|view| view.loading);
                 render_github_context(
                     buf,
@@ -1084,30 +1104,25 @@ impl Dialog {
     }
 }
 
-fn container_info_id_row_clickable(
+/// `box_row + row_offset` is the row of an emphasized / clickable value
+/// inside an info-style dialog (Container info row 2, GitHub context
+/// URL row 5). Two-column inset on each side so the border / padding
+/// isn't treated as a hit.
+fn info_box_value_row_clickable(
     row: u16,
     col: u16,
     box_row: u16,
     box_col: u16,
     width: u16,
+    row_offset: u16,
 ) -> bool {
     let start = box_col.saturating_add(2);
     let end = box_col.saturating_add(width.saturating_sub(2));
-    row == box_row + 2 && col >= start && col < end
+    row == box_row.saturating_add(row_offset) && col >= start && col < end
 }
 
-fn github_context_url_row_clickable(
-    row: u16,
-    col: u16,
-    box_row: u16,
-    box_col: u16,
-    width: u16,
-) -> bool {
-    const URL_ROW_OFFSET: u16 = 5;
-    let start = box_col.saturating_add(2);
-    let end = box_col.saturating_add(width.saturating_sub(2));
-    row == box_row + URL_ROW_OFFSET && col >= start && col < end
-}
+const CONTAINER_INFO_ID_ROW: u16 = 2;
+const GITHUB_CONTEXT_URL_ROW: u16 = 5;
 
 /// Edit a rename-tab input buffer in response to a raw key chunk.
 /// Enter commits, Esc cancels, Backspace removes the trailing char,
@@ -1367,10 +1382,72 @@ fn step_selectable(rows: &[PickerRow], from: usize, forward: bool) -> usize {
     }
 }
 
-use jackin_tui::{
-    CONFIRM_HINT, CONTAINER_INFO_HINT, GITHUB_CONTEXT_HINT, HintSpan, PALETTE_HINT, PICKER_HINT,
-    READ_ONLY_HINT, RENAME_HINT, hint_row_cols,
-};
+use jackin_tui::{HintSpan, hint_row_cols};
+
+const PALETTE_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("navigate"),
+    HintSpan::GroupSep,
+    HintSpan::Text("type filter"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Enter"),
+    HintSpan::Text("select"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("cancel"),
+];
+
+const PICKER_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("navigate"),
+    HintSpan::GroupSep,
+    HintSpan::Text("type filter"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Enter"),
+    HintSpan::Text("launch"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("cancel"),
+];
+
+const RENAME_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("save"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("cancel"),
+    HintSpan::GroupSep,
+    HintSpan::Text("empty = auto name"),
+];
+
+const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("copy container ID"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("dismiss"),
+];
+
+const GITHUB_CONTEXT_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("copy GitHub URL"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("dismiss"),
+];
+
+const READ_ONLY_HINT: &[HintSpan<'static>] = &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
+
+const CONFIRM_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Y"),
+    HintSpan::Text("confirm"),
+    HintSpan::GroupSep,
+    HintSpan::Key("N"),
+    HintSpan::Text("cancel"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("back"),
+];
 
 /// Render the tab-rename modal. One text-input row showing the current
 /// buffer plus a blinking-style trailing `▌` caret.
@@ -2717,9 +2794,11 @@ mod tests {
         assert!(!rendered.contains("Pull Request"));
     }
 
-    fn github_view_for_fixture(pr: &Arc<PullRequestInfo>) -> GithubContextView<'_> {
+    const GITHUB_FIXTURE_BRANCH: &str = "feature/container-info";
+
+    fn github_view_for_fixture(pr: &PullRequestInfo) -> GithubContextView<'_> {
         GithubContextView {
-            branch: Some("feature/container-info"),
+            branch: Some(GITHUB_FIXTURE_BRANCH),
             pull_request: Some(pr),
             loading: false,
         }
@@ -2727,7 +2806,7 @@ mod tests {
 
     fn github_view_loading() -> GithubContextView<'static> {
         GithubContextView {
-            branch: Some("feature/container-info"),
+            branch: Some(GITHUB_FIXTURE_BRANCH),
             pull_request: None,
             loading: true,
         }
@@ -2744,7 +2823,6 @@ mod tests {
             cancelled: 0,
             total: 5,
         });
-        let pr = Arc::new(pr);
         let view = github_view_for_fixture(&pr);
         let d = Dialog::GitHubContext { copied: false };
         let mut buf = Vec::new();
@@ -2787,7 +2865,7 @@ mod tests {
 
     #[test]
     fn github_context_enter_copies_pr_url_and_shows_feedback() {
-        let pr = Arc::new(pull_request_fixture());
+        let pr = pull_request_fixture();
         let view = github_view_for_fixture(&pr);
         let mut d = Dialog::GitHubContext { copied: false };
 
@@ -2807,7 +2885,7 @@ mod tests {
 
     #[test]
     fn github_context_url_click_copies_pr_url() {
-        let pr = Arc::new(pull_request_fixture());
+        let pr = pull_request_fixture();
         let view = github_view_for_fixture(&pr);
         let mut d = Dialog::GitHubContext { copied: false };
         let (row, col, _, _) = d.box_rect(40, 120);
@@ -2824,7 +2902,7 @@ mod tests {
 
     #[test]
     fn github_context_hover_lifts_only_url_copy_value() {
-        let pr = Arc::new(pull_request_fixture());
+        let pr = pull_request_fixture();
         let view = github_view_for_fixture(&pr);
         let d = Dialog::GitHubContext { copied: false };
         let mut buf = Vec::new();
@@ -2839,7 +2917,7 @@ mod tests {
 
     #[test]
     fn github_context_hint_renders_above_bottom_status_row() {
-        let pr = Arc::new(pull_request_fixture());
+        let pr = pull_request_fixture();
         let view = github_view_for_fixture(&pr);
         let d = Dialog::GitHubContext { copied: false };
         let term_rows = 40;
