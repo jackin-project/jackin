@@ -159,7 +159,7 @@ The queue considers a task **complete** when:
 
 Completion writes `tasks.state = 'completed'`, records the outcome
 (PR URL if any, exit code, runtime cost from
-[token & cost telemetry](/reference/roadmap/token-cost-telemetry/)),
+[Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/)),
 and keeps the per-task instance data dir available until the operator purges it
 or the configured completed-instance retention window expires.
 
@@ -296,7 +296,7 @@ jackin queue approve <workspace> <id> <gate> # approve publish/review/merge gate
   required state
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) —
   required completion-detection signal
-- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
+- [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) —
   budget gating
 - [Per-mount isolation](/guides/workspaces/#per-mount-isolation) —
   per-task isolation reuses worktree mode

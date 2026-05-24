@@ -29,13 +29,7 @@ routing. The phased plan below is the review strategy, not a reduced scope.
 
 ## Existing local foundation
 
-- The proposal is intentionally layered on the roadmap items that motivated it:
-  [jackin daemon](/reference/roadmap/jackin-daemon/),
-  [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/),
-  [Agent attention prompts](/reference/roadmap/agent-attention-prompts/), and
-  [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/).
-  Those documents define the backend responsibilities Desktop should surface
-  rather than reimplement.
+- The proposal layers on the roadmap items that motivated it: [jackin' daemon](/reference/roadmap/jackin-daemon/), [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/), [Agent attention prompts](/reference/roadmap/agent-attention-prompts/), and [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/). Those documents define the backend responsibilities Desktop should surface rather than reimplement.
 - PR 283 implements the first daemon shape: per-user Unix socket, singleton
   lock, lifecycle commands, launchd / systemd install, keep-awake
   reconciliation, cache warmup, and macOS notification dispatch.
@@ -61,6 +55,30 @@ routing. The phased plan below is the review strategy, not a reduced scope.
 These apps are references, not implementation templates. jackin' should borrow
 specific native macOS interaction patterns from them while keeping the jackin'
 daemon, workspace, isolation, and agent-runtime model.
+
+### OpenUsage
+
+Reference: https://github.com/robinebers/openusage
+
+Useful ideas:
+
+- Menu-bar-first usage panel focused on subscription visibility rather than full provider management.
+- Provider tiles with progress bars, badges, reset windows, and clear stale/error labels.
+- Automatic refresh with an operator-chosen cadence.
+- Global shortcut to open the usage panel without hunting for the status item.
+- Local HTTP API for other tools to read cached usage state.
+- Proxy support for provider requests.
+- Plugin-shaped provider extension point, even though current plugins are bundled while the API settles.
+
+Implementation details worth borrowing selectively:
+
+- The product model treats usage state as cached local data with a fast UI path, not as a live blocking request every time the menu opens.
+- Provider implementations are separate from the menu surface, so adding or repairing a provider does not rewrite the UI.
+- The local API is intentionally loopback-only. If jackin' exposes account usage outside the app, the daemon should provide a similarly local, explicitly scoped endpoint rather than a broad network listener.
+
+What not to copy:
+
+- OpenUsage is a generic AI subscription tracker. jackin' Desktop should not become a catalog of every AI provider; it should start with the runtimes jackin' launches and accounts the operator explicitly wires into jackin'. Provider adapter shape and host-mutation policy live in the telemetry roadmap.
 
 ### CodexBar
 
@@ -104,6 +122,18 @@ What not to copy:
   primary path for jackin'-owned account state.
 - Token monitoring should be scoped to accounts jackin' launches, not every
   provider installed on the host.
+
+### Tokemon, Token Tracker, Brim, MeterBar, Control Tower
+
+Source priorities, confidence labels, and accuracy reasoning for these apps live in [Token & Cost Telemetry → Better accuracy references](/reference/roadmap/token-cost-telemetry/#better-accuracy-references). Desktop borrows their **macOS UI patterns**:
+
+- Brim — native rings for 5-hour and weekly windows; explicit refresh/freshness widget.
+- MeterBar — simple multi-account dashboard layout; menu-bar plus CLI JSON pairing.
+- Control Tower — quiet-hours, alert routing, and usage-history detail pages.
+- Tokemon — terminal statusline export shape, burn-rate projection display.
+- Token Tracker — menu bar + widget split for at-a-glance vs. detail views.
+
+The data model and the `UsageConfidence` + `UsageSnapshotStatus` labels are the [telemetry roadmap's contract](/reference/roadmap/token-cost-telemetry/#account-quota-snapshots); Desktop renders them.
 
 ### RepoBar
 
@@ -163,9 +193,9 @@ Proposed states:
 The menu bar label should be conservative:
 
 - Icon only by default.
-- Optional text: `3` active sessions, or `2 wait` when attention is required.
-- Avoid showing token percentages directly in the menu bar unless the operator
-  explicitly enables it; percentages are better in the menu.
+- Optional text: `3` active sessions, `2 wait` when attention is required, or the most constrained active account when quota is the highest-risk status.
+- Quota visibility is first-class and on by default for active sessions: `Claude 36%`, `Codex 18%`, `Amp login`, or a compact ring/gauge icon. The status item can stay visually quiet, but the operator must be able to see low quota, stale quota, or auth failure from the menu bar without opening the full Desktop window.
+- The popover must explain the provider, account, quota window, reset time, freshness, and source before the operator trusts the number.
 
 ### Main menu
 
@@ -176,10 +206,11 @@ The main menu should be PR-first, then workspace-aware. The fastest path should 
 3. Active projects: repositories recently touched by jackin' work, grouped by owner/org and filterable later in the app window.
 4. Active workspaces: each row shows workspace name, repo/branch, role, agent, container state, last event, and primary action.
 5. Ready for review: PR rows promoted to the top when an agent explicitly reports a PR as ready.
-6. Accounts: Claude Enterprise, Claude Personal, Codex Personal, Amp Personal.
-7. Recent / saved workspaces: launch shortcuts for jackin' workspaces not
-   currently running.
+6. Accounts: cards for the configured built-in jackin' runtimes (Claude, Codex, Amp, Kimi, OpenCode), one or more accounts each.
+7. Recent / saved workspaces: launch shortcuts for jackin' workspaces not currently running.
 8. Footer: Open Desktop, Refresh, Open Console, Settings, Quit.
+
+Account rows follow the [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) account-snapshot model: quota window, reset time, source, stale/error state, confidence label, and repair action. The jackin' daemon is the data source; Tokemon, Token Tracker, Brim, MeterBar, CodexBar, and OpenUsage are comparison references.
 
 The menu should be usable without opening the full Desktop window. A first-pass
 shape:
@@ -218,9 +249,9 @@ jackin'
     tailrocks/site              Start...
 
   Accounts
-    Claude Enterprise           64% used          resets 3h
-    Claude Personal             12% used          resets 4h
-    Codex Personal              38% used          resets 2h
+    Claude Enterprise           36% left          resets 3h    provider
+    Claude Personal             88% left          resets 4h    provider
+    Codex Personal              62% left          resets 2h    provider
     Amp Personal                needs login
 ```
 
@@ -268,8 +299,11 @@ Recommended layout:
 - Pull Requests: an inbox-style list of open PRs authored by the operator, newest first, with filters for organization, project/repository, workspace-linked only, draft/open, and ready-for-review.
 - Projects: GitHub repositories jackin' has seen recently through saved workspaces, running sessions, mounted repos, branch activity, or PR tracking. This is not "all GitHub repositories"; it is the operator's current working set.
 - Workspaces: saved jackin' workspaces with a launch button, active/running badge, number of running agents, primary repositories, and last activity. No create/edit form in v1.
-- Running Agents: current role containers grouped by workspace/project, with agent runtime, role, branch, PR, attention state, and stop/hardline/open actions.
-- Accounts: Claude/Codex/Amp account cards with source, plan/quota, reset time, and repair/login actions.
+- Running Agents: current role containers grouped by workspace/project, with agent runtime, role, branch, PR, attention state, focused-account quota, workspace spend, and stop/hardline/open actions.
+- Accounts: Claude/Codex/Amp/Kimi/OpenCode account cards with source, plan/quota, reset time, confidence, last refresh, stale/error state, and repair/login actions.
+- Usage: workspace/session spend view showing tokens and cost by workspace, role, agent, model, and time window.
+
+Compact visibility rule: every Desktop view that can start, focus, or stop an agent should show the active account quota beside that agent. The full Accounts and Usage screens are for inspection; the Running Agents, Workspaces, and menu-bar surfaces are for immediate "can I safely keep working?" decisions.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
@@ -283,6 +317,8 @@ and host-bridge state because the daemon is the component that can keep those
 statuses warm and reactive. Direct CLI calls from the app are reserved for
 one-shot actions or fallback cases where the daemon is unavailable, broken, or
 would make the UI/UX worse.
+
+The Desktop account UI should not try to reconcile conflicting numbers silently. If provider quota says "64% used" and local logs imply "31% used," the row shows provider quota as the enforced availability and local logs as workspace/session attribution. This is the core accuracy distinction from the [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) roadmap item.
 
 ## Architecture proposal
 
@@ -315,8 +351,11 @@ Add request/response shapes:
 - `session/action`: hardline/open-in-ghostty/stop/eject/mute.
 - `event/subscribe`: JSON Lines stream of session, attention, auth, PR, and
   daemon health events.
-- `account/list`: configured Claude/Codex/Amp accounts and latest status.
-- `account/refresh`: explicit account status refresh.
+- `account/list`: configured Claude/Codex/Amp/Kimi/OpenCode accounts and latest quota snapshots, including freshness and confidence.
+- `account/refresh`: explicit account status refresh with provider-specific backoff.
+- `usage/workspace`: token/cost totals for a workspace over today, week, month, lifetime, or a custom range.
+- `usage/session`: token/cost totals for one running Capsule session.
+- `usage/focused`: active account quota plus session/workspace spend for the currently focused Capsule pane.
 - `github/project_inbox`: open PRs for recently active jackin' projects, with org/project filters.
 - `github/my_open_prs`: open PRs authored by the operator, sorted by created date descending.
 - `github/repository_prs`: PRs for a workspace/repo/branch, cache-first.
@@ -335,6 +374,7 @@ The daemon should maintain an in-memory state cache and append a small event log
 ~/.jackin/events/events.jsonl
 ~/.jackin/cache/github/
 ~/.jackin/cache/accounts/
+~/.jackin/cache/usage/
 ```
 
 Session discovery can start from Docker labels already present in
@@ -369,6 +409,12 @@ Support only the current jackin' agents:
 
 Account status should be daemon-owned because it is useful to CLI, TUI, and
 Desktop. Desktop displays it; it does not own the scraping/token logic.
+
+The daemon should cache account and usage data once on the host and fan it out to the Desktop app, `jackin console`, CLI commands, and Capsule. Running role containers should not each poll providers independently. If an agent needs to read the latest state from inside a container, Capsule should expose a read-only control-channel response or a daemon-materialized file under `/jackin/run/usage/` with freshness metadata. The host cache is the write authority; container files are views.
+
+### Host-side effects
+
+Desktop may display, refresh, and request repairs for daemon-owned account and usage state, but the daemon remains the only writer for the telemetry cache described in the [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-side-effects) roadmap item. Desktop repair controls must surface any host-side write before it happens; background refresh must not silently alter provider config, Keychain entries, browser profiles, dotfiles, Git config, or user repositories.
 
 ### GitHub / PR integration
 
@@ -525,7 +571,7 @@ Delivery rules:
 - PR 2: Add active workspaces and running-agent counts.
 - PR 3: Add My open PRs newest-first and active projects.
 - PR 4: Add open actions for hardline / Ghostty, repository, and PR.
-- PR 5: Add Claude/Codex/Amp account cards using daemon-provided status.
+- PR 5: Add account cards for the built-in jackin' runtimes using daemon-provided status. Implementations may stage individual providers by adapter maturity, but the Desktop model and daemon API stay shaped for Claude/Codex/Amp/Kimi/OpenCode from the start.
 
 ### Phase 2 — Simple desktop window
 
@@ -566,11 +612,10 @@ Delivery rules:
 
 ## Related work
 
-- [jackin daemon](/reference/roadmap/jackin-daemon/) — base daemon lifecycle,
-  control socket, notification bridge, and the contract this feature depends on.
+- [jackin' daemon](/reference/roadmap/jackin-daemon/) — base daemon lifecycle, control socket, notification bridge, and the contract this feature depends on.
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — daemon
-  adapter that should own account/auth sync state for Claude, Codex, Amp, and
-  GitHub CLI.
+  adapter that should own account/auth sync state for the built-in jackin'
+  runtimes and GitHub CLI.
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) —
   daemon/MCP path for waiting, finished, and ready-for-review events.
 - [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/) —
@@ -579,9 +624,10 @@ Delivery rules:
   PR/repo/link-state tracking work from the Agent Orchestrator Research Program.
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) — live
   busy/idle/waiting status vocabulary that the menu bar should eventually use.
-- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) — broader
-  token/cost tracking work; Desktop's first cut should stay narrower and only
-  cover Claude, Codex, and Amp accounts jackin' launches.
+- [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) — broader
+  token/cost tracking work; Desktop reads the same built-in-runtime account
+  snapshots as `jackin console`, CLI usage views, and Capsule instead of owning
+  a narrower provider list.
 - [CodexBar](https://github.com/steipete/CodexBar) — native menu bar reference
   for provider/account quota display, refresh loops, and status-item UI. Borrow
   selectively; avoid its broad provider catalog and browser-cookie-first Amp

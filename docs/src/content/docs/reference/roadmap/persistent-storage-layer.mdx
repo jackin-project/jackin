@@ -16,6 +16,7 @@ operator config is a single TOML file. There's no way to store:
   busy?")
 - Cached GitHub link state (refresh windows, last-fetched, last-error)
 - Token / cost samples over time
+- Provider account quota snapshots and stale/error metadata
 - Tool fire history (audit log)
 - The autonomous queue's pending and completed tasks
 
@@ -33,7 +34,7 @@ the program.
   state).
 - Several leaves explicitly reference this item:
   [GitHub link tracking](/reference/roadmap/github-link-tracking/),
-  [token & cost telemetry](/reference/roadmap/token-cost-telemetry/),
+  [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/),
   [autonomous task queue](/reference/roadmap/autonomous-task-queue/),
   [agent runtime status](/reference/roadmap/agent-runtime-status/)
   (status_log table), and completed-instance retention metadata for queued work.
@@ -114,14 +115,28 @@ CREATE TABLE github_link_statuses (
 );
 
 -- Token / cost samples. Rolling N=86400 entries (~1/sec for 24h).
+-- `instance` is implicit in the per-instance DB file path; not stored per-row.
+-- `session_id` is the Capsule session ID assigned over the in-container control
+-- channel (`session.create` reply, also visible as the leftmost column in
+-- `tmux list-sessions` analogues). There is no `sessions` table in V1 so this
+-- column has no FOREIGN KEY; sessions are owned by the running jackin-capsule
+-- daemon, not by the SQLite schema.
 CREATE TABLE usage_samples (
-    occurred_at INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,            -- epoch seconds
+    session_id INTEGER,                      -- Capsule session id; null when sample is not session-attributed
+    workspace TEXT,
+    provider TEXT NOT NULL,                  -- Agent::slug() from src/agent/mod.rs
+    model TEXT NOT NULL,
     token_input INTEGER,
     token_output INTEGER,
     token_cache_read INTEGER,
     token_cache_write INTEGER,
     cost_usd_micros INTEGER                  -- $cost * 1e6, integer-safe
 );
+CREATE INDEX usage_samples_by_time ON usage_samples (occurred_at);
+CREATE INDEX usage_samples_by_session ON usage_samples (session_id, occurred_at);
+CREATE INDEX usage_samples_by_workspace ON usage_samples (workspace, occurred_at);
 
 -- Tool fire audit. Rolling N=1000 entries.
 CREATE TABLE tool_history (
@@ -140,6 +155,49 @@ CREATE TABLE _meta (
 ```
 
 Future leaves add more tables; the migration framework handles upgrades.
+
+### Daemon-global account cache
+
+Provider account quota snapshots do **not** belong in each per-instance
+database. The [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/)
+plan makes the host daemon the single owner of provider refresh, then fans
+read-only account state out to Desktop, `jackin console`, Capsule, and CLI
+surfaces. The daemon-global cache keeps that state from diverging across role
+containers.
+
+**Location and lifecycle.** The DB lives at `~/.jackin/data/daemon/accounts.db` —
+outside any `~/.jackin/data/<container>/` tree so it survives `jackin purge`
+on individual instances. The daemon creates and migrates this file on first
+start; CLI / `jackin console` / Capsule never write to it. The daemon
+process is the single writer; CLI tools and the console open the file
+read-only. WAL mode handles the daemon-write / multi-reader-process pattern
+(this table's concurrency model is **different** from the per-instance
+tables described in the "Concurrency model" section below — those assume
+single-process single-writer; the daemon-global cache assumes single-writer
+across **all** host processes, enforced by the daemon's per-operator-user
+singleton).
+
+```sql
+CREATE TABLE account_usage_snapshots (
+    id INTEGER PRIMARY KEY,
+    provider TEXT NOT NULL,
+    account_key_hash TEXT NOT NULL,
+    account_label TEXT NOT NULL,
+    source TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    window_kind TEXT NOT NULL,
+    used_amount INTEGER,
+    used_unit TEXT,
+    limit_amount INTEGER,
+    limit_unit TEXT,
+    resets_at INTEGER,
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER,                  -- nullable: not every provider returns an expiry
+    status TEXT NOT NULL,
+    last_error TEXT,
+    UNIQUE(provider, account_key_hash, source, window_kind)
+);
+```
 
 ### Lifecycle
 
@@ -170,6 +228,9 @@ observing real footprint.
 ## Scope (V1)
 
 - One SQLite DB per `~/.jackin/data/<container>/`, at `jackin.db`.
+- One daemon-global cache for account quota snapshots once the host
+  daemon owns provider refresh; per-instance databases remain the
+  source for workspace/session token attribution.
 - Schema above; migrations embedded in the binary via the chosen
   toolkit.
 - WAL mode enabled at creation.
@@ -218,7 +279,7 @@ observing real footprint.
 ## See Also
 
 - [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)
-- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
+- [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) —
   primary V1 consumer
 - [GitHub link tracking](/reference/roadmap/github-link-tracking/) —
   schema home for the link cache
