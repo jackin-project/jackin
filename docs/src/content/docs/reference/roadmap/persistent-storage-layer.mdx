@@ -116,10 +116,15 @@ CREATE TABLE github_link_statuses (
 
 -- Token / cost samples. Rolling N=86400 entries (~1/sec for 24h).
 -- `instance` is implicit in the per-instance DB file path; not stored per-row.
+-- `session_id` is the Capsule session ID assigned over the in-container control
+-- channel (`session.create` reply, also visible as the leftmost column in
+-- `tmux list-sessions` analogues). There is no `sessions` table in V1 so this
+-- column has no FOREIGN KEY; sessions are owned by the running jackin-capsule
+-- daemon, not by the SQLite schema.
 CREATE TABLE usage_samples (
     id INTEGER PRIMARY KEY,
     occurred_at INTEGER NOT NULL,            -- epoch seconds
-    session_id INTEGER,
+    session_id INTEGER,                      -- Capsule session id; null when sample is not session-attributed
     workspace TEXT,
     provider TEXT NOT NULL,                  -- Agent::slug() from src/agent/mod.rs
     model TEXT NOT NULL,
@@ -130,6 +135,8 @@ CREATE TABLE usage_samples (
     cost_usd_micros INTEGER                  -- $cost * 1e6, integer-safe
 );
 CREATE INDEX usage_samples_by_time ON usage_samples (occurred_at);
+CREATE INDEX usage_samples_by_session ON usage_samples (session_id, occurred_at);
+CREATE INDEX usage_samples_by_workspace ON usage_samples (workspace, occurred_at);
 
 -- Tool fire audit. Rolling N=1000 entries.
 CREATE TABLE tool_history (
