@@ -808,6 +808,12 @@ impl Multiplexer {
         branch: Option<String>,
         now: Instant,
     ) -> bool {
+        crate::cdebug!(
+            "git-branch-context: lookup loaded request_id={} current_request_id={} branch={:?}",
+            request_id,
+            self.git_branch_lookup.request_id,
+            branch
+        );
         if request_id != self.git_branch_lookup.request_id {
             return false;
         }
@@ -2957,6 +2963,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     }
 
     let mut new_clients = socket::start_listener()?;
+    let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(Duration::from_secs(1));
     // Render ticker: ~30 fps. Coalesces PTY-output bursts into one
     // frame per tick. With 4+ panes producing output continuously,
@@ -3356,6 +3363,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
             }
 
+            // Branch changes are directly operator-triggered (`git checkout`)
+            // and should surface in chrome immediately. Keep this separate
+            // from the heavier 1s state ticker so session state refreshes and
+            // GitHub lookups do not need the same fast cadence.
+            _ = branch_context_ticker.tick() => {
+                mux.maybe_spawn_git_branch_context_lookup(Instant::now());
+            }
+
             // Periodic state refresh: re-render the status bar so the tab
             // strip's state glyph follows the four-state model. The full
             // pane bodies stay where they are.
@@ -3367,7 +3382,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // visibly jumps to the tab strip every tick and parks
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
-                mux.maybe_spawn_git_branch_context_lookup(Instant::now());
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
