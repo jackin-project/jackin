@@ -3,7 +3,7 @@ title: "Docker Runtime Hardening Contract"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open - design proposal (Docker-first containment track)
+**Status**: Open — design proposal (Docker-first containment track)
 
 ## Problem
 
@@ -235,14 +235,14 @@ This is the first profile that can meaningfully support "safe-ish read-only agen
 
 DinD is the highest-priority Docker-specific risk because jackin' keeps Docker available inside the agent environment.
 
-### Phase A - make the current DinD contract explicit
+### Phase A — make the current DinD contract explicit
 
 - Report sidecar image, privilege status, transport, cert volume, and network in the launch/session contract.
 - Ensure all docs say TLS-authenticated DinD, not plain TCP.
 - Keep the host Docker socket blocked from the role container.
 - Add regression tests that fail if the host socket is mounted into either the role container or the DinD sidecar by accident.
 
-### Phase B - evaluate `docker:dind-rootless`
+### Phase B — evaluate `docker:dind-rootless`
 
 Research questions:
 
@@ -259,7 +259,7 @@ Decision rule:
 - If it only passes some workflows, make it opt-in under `hardened`.
 - If it breaks common workflows, keep it documented as unsupported and revisit only when Docker changes.
 
-### Phase C - evaluate Sysbox on Linux
+### Phase C — evaluate Sysbox on Linux
 
 Sysbox is a Linux-only container runtime that can run Docker-in-Docker style workloads without the usual privileged-container model. It is not a microVM.
 
@@ -275,7 +275,7 @@ Decision rule:
 - Treat Sysbox as a Linux operator opt-in, not a default dependency.
 - Surface any host-side installation requirement before launch.
 
-### Phase D - support DinD-free roles
+### Phase D — support DinD-free roles
 
 Some roles do not need Docker inside the sandbox. For those roles, `hardened` should skip the sidecar entirely.
 
@@ -437,32 +437,32 @@ Host matrix:
 
 ## Implementation Phases
 
-### Phase 1 - contract-only refactor
+### Phase 1 — contract-only refactor
 
 - Add a `DockerSecurityProfile` internal enum with `compat` as the only active behavior.
 - Add launch/session contract reporting for current Docker settings.
 - Update docs to describe the current profile honestly.
 - Add tests that assert the host Docker socket is never mounted.
 
-### Phase 2 - resource and `no-new-privileges`
+### Phase 2 — resource and `no-new-privileges`
 
 - Wire declared resource limits into Docker container creation.
 - Add `no-new-privileges` to `standard` after compatibility testing.
 - Report missing resource budgets during multi-agent launches.
 
-### Phase 3 - rootless DinD and DinD-free roles
+### Phase 3 — rootless DinD and DinD-free roles
 
 - Prototype `docker:dind-rootless`.
 - Add a role/runtime capability flag for inner Docker requirements.
 - Skip DinD for roles that do not need it under `hardened` and `locked`.
 
-### Phase 4 - read-only root and capability policy
+### Phase 4 — read-only root and capability policy
 
 - Build the read-only root filesystem writable-path inventory.
 - Add read-only root to `hardened`.
 - Start with capability reporting, then move to capability dropping once tests identify the minimum safe set for common roles.
 
-### Phase 5 - network and credential enforcement
+### Phase 5 — network and credential enforcement
 
 - Connect profile defaults to network egress policy.
 - Report partial enforcement when DinD or inner containers are uncovered.

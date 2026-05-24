@@ -3,7 +3,7 @@ title: "OrbStack Isolated Machine Backend"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open - research and design proposal
+**Status**: Open — research and design proposal
 
 ## Problem
 
@@ -320,7 +320,7 @@ The "shared-kernel" line is important. It avoids using microVM language for a ba
 
 ## Implementation Phases
 
-### Phase 0 - discovery prototype
+### Phase 0 — discovery prototype
 
 - Verify exact `orb create --isolated` CLI flags and selective share flags.
 - Verify whether the "block host/machines" setting is scriptable per machine.
@@ -328,13 +328,13 @@ The "shared-kernel" line is important. It avoids using microVM language for a ba
 - Create a machine manually, install Docker, import a jackin' role image, and run `jackin-capsule` inside the role container.
 - Record cold-start, warm-start, image import, and attach latency.
 
-### Phase 1 - backend-neutral instance registry
+### Phase 1 — backend-neutral instance registry
 
 - Extract backend kind/provider fields from Docker-specific naming.
 - Persist OrbStack machine handles separately from Docker container names.
 - Teach `hardline --inspect` to report local manifest state even when the backend is not Docker.
 
-### Phase 2 - experimental launch path
+### Phase 2 — experimental launch path
 
 - Add `orbstack-isolated` as a hidden or experimental backend.
 - Shell out to `orb` for machine lifecycle.
@@ -342,20 +342,20 @@ The "shared-kernel" line is important. It avoids using microVM language for a ba
 - Use host-build + image archive import for role images.
 - Run the role container inside the machine Docker engine.
 
-### Phase 3 - attach, reconnect, eject, purge
+### Phase 3 — attach, reconnect, eject, purge
 
 - Attach to capsule inside the role container.
 - Reconnect to stopped/running machines.
 - Cleanly stop/delete machines on eject/purge.
 - Preserve isolated worktree cleanup behavior.
 
-### Phase 4 - security controls and contract output
+### Phase 4 — security controls and contract output
 
 - Add launch/session contract output for machine isolation, shares, inner Docker, network host/machine blocking, SSH agent forwarding, and residual risk.
 - Connect Docker profile selection to the role container running inside the machine.
 - Fail closed when the operator requests isolated behavior but OrbStack cannot enforce it.
 
-### Phase 5 - performance and caching
+### Phase 5 — performance and caching
 
 - Integrate with [Workspace registry cache](/reference/roadmap/workspace-registry-cache/) or a machine-local image cache.
 - Reuse provisioned base machines if doing so does not blur containment.

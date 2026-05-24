@@ -3,7 +3,7 @@ title: "smolvm Backend Research"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open - research and design proposal
+**Status**: Open — research and design proposal
 
 ## Problem
 
@@ -196,7 +196,7 @@ This schema is intentionally speculative. If it lands in versioned config, it mu
 
 ## Implementation Hypotheses
 
-### Mode A - ephemeral operation sandbox
+### Mode A — ephemeral operation sandbox
 
 Run a single command or classified high-risk operation inside smolvm:
 
@@ -218,7 +218,7 @@ Risk:
 - Integrating per-command smolvm from inside an existing agent session may need a host bridge, not only the current container runtime.
 - It overlaps with [Process-level sandboxing](/reference/roadmap/process-level-sandboxing/), which is likely lower overhead for routine commands.
 
-### Mode B - direct role image backend
+### Mode B — direct role image backend
 
 Boot the role OCI image directly as the smolvm workload:
 
@@ -241,7 +241,7 @@ Risk:
 - Current jackin' roles assume a container entrypoint and Docker-style mounts, not necessarily a VM init model.
 - `jackin-capsule` as PID 1 inside a smolvm-booted OCI image needs validation.
 
-### Mode C - persistent smolvm instance
+### Mode C — persistent smolvm instance
 
 Create one smolvm persistent machine per jackin' instance:
 
@@ -262,7 +262,7 @@ Risk:
 - Persistence can become invisible bloat unless jackin' owns cleanup and disk reporting.
 - Current jackin' state model deliberately separates agent state from mutable runtime filesystems.
 
-### Mode D - Docker-capable smolvm backend
+### Mode D — Docker-capable smolvm backend
 
 Validate whether Docker inside smolvm is good enough for current jackin' roles. This is the important compatibility gate.
 
@@ -354,7 +354,7 @@ Embedding risks:
 
 ## Implementation Phases
 
-### Phase 0 - hands-on smoke
+### Phase 0 — hands-on smoke
 
 - Install smolvm explicitly in a disposable test environment.
 - Run `smolvm machine run --image alpine -- uname -a` without network.
@@ -364,14 +364,14 @@ Embedding risks:
 - Test SSH agent forwarding with a non-sensitive key.
 - Record the same smoke matrix against Docker Sandboxes where licensing/access permits: workspace path, network deny/allow, private Docker Engine, credential behavior, attach/restart, and cleanup.
 
-### Phase 1 - role-image compatibility
+### Phase 1 — role-image compatibility
 
 - Build a jackin' role image with the current Docker path.
 - Try to boot that OCI image directly through smolvm.
 - Verify `jackin-capsule` can run, expose a control channel, and attach.
 - Document entrypoint, init, UID/GID, and `/jackin/` path gaps.
 
-### Phase 2 - Docker workflow compatibility
+### Phase 2 — Docker workflow compatibility
 
 - Validate the `v0.7.0` Docker-in-smolvm capability.
 - Run `docker build`, `docker run`, Compose, and Testcontainers inside smolvm.
@@ -379,14 +379,14 @@ Embedding risks:
 - Compare with Docker Sandboxes as the benchmark for a private Docker daemon inside a VM boundary.
 - Decide whether smolvm can support normal jackin' roles or only Docker-free roles.
 
-### Phase 3 - policy and credential parity
+### Phase 3 — policy and credential parity
 
 - Prototype network-deny, allow-host, package-manager, and registry-auth behavior.
 - Decide whether jackin' can add a host-side proxy layer comparable to Docker Sandboxes without making smolvm support too complex.
 - Prototype credential delivery without raw token files or environment variables where possible.
 - Decide whether SSH agent forwarding is enough for Git-only workflows and how model-provider credentials should be brokered.
 
-### Phase 4 - backend adapter prototype
+### Phase 4 — backend adapter prototype
 
 - Add an experimental `smolvm` backend behind a feature flag or hidden config.
 - Shell out to `smolvm`.
@@ -394,7 +394,7 @@ Embedding risks:
 - Implement inspect/eject/purge before general launch support.
 - Keep the adapter honest about whether it is `direct-image`, `persistent`, or `docker-capable`.
 
-### Phase 5 - SDK and packaging decision
+### Phase 5 — SDK and packaging decision
 
 - Evaluate CLI, public SDK/server, and lower-level Rust/libkrun integration stability separately.
 - Decide whether any embedding path beats shell-out.
