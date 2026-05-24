@@ -29,7 +29,7 @@ routing. The phased plan below is the review strategy, not a reduced scope.
 
 ## Existing local foundation
 
-- The proposal is intentionally layered on the roadmap items that motivated it: [jackin' daemon](/reference/roadmap/jackin-daemon/), [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/), [Agent attention prompts](/reference/roadmap/agent-attention-prompts/), and [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/). Those documents define the backend responsibilities Desktop should surface rather than reimplement.
+- The proposal layers on the roadmap items that motivated it: [jackin' daemon](/reference/roadmap/jackin-daemon/), [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/), [Agent attention prompts](/reference/roadmap/agent-attention-prompts/), and [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/). Those documents define the backend responsibilities Desktop should surface rather than reimplement.
 - PR 283 implements the first daemon shape: per-user Unix socket, singleton
   lock, lifecycle commands, launchd / systemd install, keep-awake
   reconciliation, cache warmup, and macOS notification dispatch.
@@ -410,7 +410,7 @@ Support only the current jackin' agents:
 Account status should be daemon-owned because it is useful to CLI, TUI, and
 Desktop. Desktop displays it; it does not own the scraping/token logic.
 
-The daemon should cache account and usage data once on the host and fan it out to the Desktop app, `jackin console`, CLI commands, and Capsule. Running role containers should not each poll Claude/Codex/Amp independently. If an agent needs to read the latest state from inside a container, Capsule should expose a read-only control-channel response or a daemon-materialized file under `/jackin/run/usage/` with freshness metadata. The host cache is the write authority; container files are views.
+The daemon should cache account and usage data once on the host and fan it out to the Desktop app, `jackin console`, CLI commands, and Capsule. Running role containers should not each poll providers independently. If an agent needs to read the latest state from inside a container, Capsule should expose a read-only control-channel response or a daemon-materialized file under `/jackin/run/usage/` with freshness metadata. The host cache is the write authority; container files are views.
 
 ### Host-side effects
 
@@ -624,7 +624,7 @@ Delivery rules:
   PR/repo/link-state tracking work from the Agent Orchestrator Research Program.
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) — live
   busy/idle/waiting status vocabulary that the menu bar should eventually use.
-- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) — broader
+- [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) — broader
   token/cost tracking work; Desktop reads the same built-in-runtime account
   snapshots as `jackin console`, CLI usage views, and Capsule instead of owning
   a narrower provider list.

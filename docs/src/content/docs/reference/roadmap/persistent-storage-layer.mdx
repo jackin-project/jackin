@@ -34,7 +34,7 @@ the program.
   state).
 - Several leaves explicitly reference this item:
   [GitHub link tracking](/reference/roadmap/github-link-tracking/),
-  [token & cost telemetry](/reference/roadmap/token-cost-telemetry/),
+  [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/),
   [autonomous task queue](/reference/roadmap/autonomous-task-queue/),
   [agent runtime status](/reference/roadmap/agent-runtime-status/)
   (status_log table), and completed-instance retention metadata for queued work.
@@ -173,7 +173,7 @@ CREATE TABLE account_usage_snapshots (
     limit_unit TEXT,
     resets_at INTEGER,
     fetched_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL,
+    expires_at INTEGER,                  -- nullable: not every provider returns an expiry
     status TEXT NOT NULL,
     last_error TEXT,
     UNIQUE(provider, account_key_hash, source, window_kind)
@@ -260,7 +260,7 @@ observing real footprint.
 ## See Also
 
 - [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)
-- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
+- [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) —
   primary V1 consumer
 - [GitHub link tracking](/reference/roadmap/github-link-tracking/) —
   schema home for the link cache

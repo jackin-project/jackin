@@ -119,7 +119,7 @@ pub struct UsageSample {
     pub at: SystemTime,
     pub session_id: Option<i64>,        // Capsule session emitting the sample, when known
     pub workspace: Option<String>,      // jackin' workspace name for attribution
-    pub provider: AgentKind,            // claude, codex, amp, kimi, opencode
+    pub provider: Agent,                // canonical runtime enum from src/agent/mod.rs
     pub model: String,                  // 'claude-opus-4-7', 'gpt-5-codex', etc.
     pub token_input: u64,
     pub token_output: u64,
@@ -129,7 +129,7 @@ pub struct UsageSample {
 }
 ```
 
-Per-instance DB rows mirror these fields directly; `instance` is implicit in the DB file path and is not stored per-row.
+Per-instance DB rows mirror the value fields; the SQL row adds a surrogate `id INTEGER PRIMARY KEY` and stores `at` as `occurred_at INTEGER` (epoch seconds). `instance` is implicit in the DB file path and is not stored per-row.
 
 `cost_usd_micros` is integer to avoid floating-point summation drift
 across thousands of samples. Renderers divide by 1e6 for display.
@@ -138,16 +138,15 @@ across thousands of samples. Renderers divide by 1e6 for display.
 
 ```rust
 pub struct AccountUsageSnapshot {
-    pub at: SystemTime,
-    pub fetched_at: SystemTime,
-    pub expires_at: Option<SystemTime>,
-    pub provider: AgentKind,              // claude, codex, amp, kimi, opencode
+    pub fetched_at: SystemTime,           // when the daemon read this snapshot
+    pub expires_at: Option<SystemTime>,   // when the daemon must refresh; None if provider doesn't say
+    pub provider: Agent,                  // canonical runtime enum
     pub account_label: String,            // operator-facing, never a raw token
     pub source: UsageSource,              // runtime_api, local_log, cli_auth, browser_cookie, manual
-    pub confidence: UsageConfidence,       // provider_authoritative, local_estimate, fallback
+    pub confidence: UsageConfidence,      // provider_authoritative, local_estimate, fallback
     pub window: UsageWindow,              // session, daily, weekly, monthly, credits
-    pub used: Option<UsageAmount>,
-    pub limit: Option<UsageAmount>,
+    pub used: Option<UsageAmount>,        // {amount, unit} pair
+    pub limit: Option<UsageAmount>,       // {amount, unit} pair
     pub resets_at: Option<SystemTime>,
     pub status: UsageSnapshotStatus,      // fresh, stale, needs_login, unsupported, error
     pub last_error: Option<UsageRefreshError>,
@@ -155,6 +154,10 @@ pub struct AccountUsageSnapshot {
 ```
 
 Per-message samples answer "what did this agent session cost?" Account snapshots answer "can I safely start more work on this account before the next reset?" The two models stay separate so renderers can mix them without confusing readers about provenance.
+
+`confidence` answers "how much do we trust this number?" — provenance. `status` answers "is this snapshot useful right now?" — lifecycle. The two axes are intentionally separate; a snapshot can be `provider_authoritative` + `stale` (we have a trusted number that's past TTL) or `local_estimate` + `fresh` (best-effort number we just computed).
+
+`UsageAmount` packs `{ amount: u64, unit: &str }` (e.g. `tokens`, `messages`, `requests`, `usd_micros`) so SQL stores it as `<field>_amount INTEGER` + `<field>_unit TEXT` column pairs. `UsageRefreshError` carries `{ kind: ErrorKind, at: SystemTime, message: String }` and serializes to `last_error TEXT` as JSON. `account_key_hash` is a write-time hash of `(provider, account_label-after-normalization)`; it lives in the SQL row but not in the value struct (the daemon derives it on write so consumers cannot stamp inconsistent hashes).
 
 ### Source priority by runtime
 
@@ -212,7 +215,7 @@ These can live in the daemon protocol first. Capsule should consume a narrow rea
 4. **Shared daemon endpoints.** Expose account list, refresh, workspace summary, and session summary; include source, confidence, freshness, and last-error fields in every response.
 5. **CLI.** Ship `jackin usage --json` and a compact human view before the Desktop/Capsule work so the data contract can be tested without a native UI.
 6. **Console and Desktop surfaces.** Add compact badges, then account/detail panels. Badges must render `stale`, `login`, `unsupported`, and `estimate` states before shipping percentage-only displays.
-7. **Capsule focused signal.** Add a read-only focused-pane quota signal after the daemon can map Capsule `session_id` to provider/account. Keep detailed numbers behind prefix `u`.
+7. **Capsule focused signal.** Once the daemon can map Capsule `session_id` to provider/account, add the always-visible compact quota signal to the status chrome and the read-only modal behind prefix `u`. Rendering contract lives in [jackin' Capsule → Usage and quota overlay](/reference/roadmap/jackin-capsule/#usage-and-quota-overlay).
 8. **Amp/Kimi/OpenCode research adapters.** Add provider rows only after each runtime has a non-interactive source contract or an explicit fallback UX. Until then, render honest unsupported/local-estimate states.
 
 ### Surface contract
@@ -221,7 +224,7 @@ Every interactive jackin' surface that can launch or focus an agent exposes the 
 
 - **Compact by default:** provider plus remaining percent (`Claude 80%`, `Codex 18%`) or state (`Amp login`, `stale`); use a glyph/ring when text crowds the surface. Prefer "remaining" over "used" language — `Claude 18% left` is safer than `Claude 82%` when the operator is moving quickly.
 - **Two rows, labeled:** when both numbers exist, render **Account availability** (provider-authoritative) and **Workspace spend** (local attribution) separately. Never combine into one gauge.
-- **Source and freshness visible:** label every number by source (`provider-authoritative`, `local estimate`, `stale`, `needs login`, `unsupported`). `Kimi unsupported` beats a missing badge. A stale provider-authoritative number is not healthier than a fresh local estimate.
+- **Confidence and status visible:** every rendered number carries two labels — confidence (`provider-authoritative`, `local estimate`, `fallback`) for provenance, and status (`fresh`, `stale`, `needs login`, `unsupported`, `error`) for lifecycle. `Kimi unsupported` beats a missing badge. A `provider-authoritative` + `stale` snapshot is not healthier than a `local estimate` + `fresh` one; render both axes.
 - **Color plus text:** pair warning colors with glyphs or labels because the Capsule and console may run in low-color terminals.
 - **Focused-agent aware:** when the operator is attached to one agent, the visible signal follows that agent's account, not a global average.
 - **Repair stays explicit:** separate "read-only auth source missing" from "jackin' wants to write host state". The latter requires explicit operator approval under the [host-side effects](#host-side-effects) rule.
@@ -234,7 +237,7 @@ Surfaces consuming the cache:
 - **Capsule multiplexer.** Focused-tab provider only — see [jackin' Capsule → Usage and quota overlay](/reference/roadmap/jackin-capsule/#usage-and-quota-overlay) for the rendering contract (status-line layout, prefix `u`, modal contents, daemon-disconnected and needs-login fallbacks).
 - **CLI / automation.** `jackin usage` exposes account, workspace, and session views with `--json`, including freshness and provenance so scripts do not mistake local estimates for provider-enforced limits.
 
-The contract must answer, for the focused agent: which Claude/Codex/Amp/Kimi/OpenCode accounts jackin' knows about, which one this agent is using, how much quota remains, when it resets, how much this workspace/session burned today/this week/lifetime, and whether the displayed limit is provider-authoritative, locally estimated, stale, or unavailable.
+The contract must answer, for the focused agent: which built-in-runtime accounts jackin' knows about, which one this agent is using, how much quota remains, when it resets, how much this workspace/session burned today/this week/lifetime, and which confidence + status pair the displayed limit carries.
 
 ### Adapter shape
 
