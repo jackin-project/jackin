@@ -791,12 +791,26 @@ impl Multiplexer {
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
 
-    pub fn spawn_initial(&mut self, agent: &str) -> Result<u64> {
-        self.spawn_session(Some(agent.to_string()), &[])
-    }
-
     fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.launch_config.model_for_agent(agent)
+    }
+
+    fn spawn_request(
+        &mut self,
+        request: SpawnRequest,
+        env_overrides: &[(String, String)],
+    ) -> Result<u64> {
+        match request {
+            SpawnRequest::Agent(agent_slug) => {
+                if let Err(reason) =
+                    crate::session::validate_agent_slug(&agent_slug, &self.available_agents)
+                {
+                    anyhow::bail!("rejected agent {agent_slug:?}: {reason}");
+                }
+                self.spawn_session(Some(agent_slug), env_overrides)
+            }
+            SpawnRequest::Shell => self.spawn_session(None, env_overrides),
+        }
     }
 
     fn session_launch(
@@ -2553,19 +2567,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     );
 
     let mut mux = Multiplexer::new(rows, cols, launch_config);
-    // Spawn the first tab. Treat any spawn error as fatal at boot —
-    // it usually means the entrypoint binary is missing from the
-    // derived image, and silently degrading to an empty multiplexer
-    // would hide the real problem behind a blank screen.
-    if !initial_agent.is_empty() {
-        if let Err(err) = mux.spawn_initial(&initial_agent) {
-            crate::clog!("initial agent spawn failed (agent={initial_agent:?}): {err:?}");
-            return Err(err);
-        }
-    } else if let Err(err) = mux.spawn_session(None, &[]) {
-        crate::clog!("initial shell spawn failed: {err:?}");
-        return Err(err);
-    }
+    // Defer the first pane until the first attach Hello has supplied
+    // real outer-terminal dimensions. Later panes already spawn after
+    // attach-time resize; routing the first pane through the same
+    // path removes first-tab-only scrollback/chrome differences.
+    let mut pending_initial_spawn = Some(initial_spawn_request(&initial_agent));
 
     let mut new_clients = socket::start_listener()?;
     let mut state_ticker = interval(Duration::from_secs(1));
@@ -2671,6 +2677,17 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     client_permit,
                 } = ready;
                 mux.resize(rows, cols);
+                if mux.sessions.is_empty()
+                    && let Some(request) = pending_initial_spawn.take()
+                {
+                    if let Err(err) = mux.spawn_request(request.clone(), &[]) {
+                        crate::clog!(
+                            "initial spawn failed (request={}): {err:#}",
+                            spawn_request_label(&request)
+                        );
+                        return Err(err);
+                    }
+                }
                 if let Some(target) = focus_session
                     && !mux.focus_session_globally(target)
                 {
@@ -2686,46 +2703,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // landing on an empty multiplexer would otherwise be
                 // indistinguishable from "no spawn requested".
                 let mut spawn_failure: Option<String> = None;
-                match spawn {
-                    Some(SpawnRequest::Agent(agent_slug)) => {
-                        // Re-validate the wire-decoded slug. The CLI argv
-                        // path validates via `validate_agent_slug`, but the
-                        // attach protocol carries a raw String — a peer
-                        // that wins the socket race could otherwise inject
-                        // an unallowlisted agent name (or a control byte)
-                        // straight into `build_agent_command`.
-                        match crate::session::validate_agent_slug(
-                            &agent_slug,
-                            &mux.available_agents,
-                        ) {
-                            Ok(_) => {
-                                if let Err(err) =
-                                    mux.spawn_session(Some(agent_slug.clone()), &env)
-                                {
-                                    crate::clog!(
-                                        "attach: spawn_session for {agent_slug:?} failed: {err:#}"
-                                    );
-                                    spawn_failure = Some(format!(
-                                        "spawn agent {agent_slug:?} failed: {err:#}"
-                                    ));
-                                }
-                            }
-                            Err(reason) => {
-                                crate::clog!(
-                                    "attach: rejected Hello.spawn.Agent {agent_slug:?}: {reason}"
-                                );
-                                spawn_failure =
-                                    Some(format!("rejected agent {agent_slug:?}: {reason}"));
-                            }
-                        }
+                if let Some(request) = spawn {
+                    let label = spawn_request_label(&request);
+                    if let Err(err) = mux.spawn_request(request, &env) {
+                        crate::clog!("attach: spawn {label} failed: {err:#}");
+                        spawn_failure = Some(format!("spawn {label} failed: {err:#}"));
                     }
-                    Some(SpawnRequest::Shell) => {
-                        if let Err(err) = mux.spawn_session(None, &env) {
-                            crate::clog!("attach: spawn_session (shell) failed: {err:#}");
-                            spawn_failure = Some(format!("spawn shell failed: {err:#}"));
-                        }
-                    }
-                    None => {}
                 }
                 // Take over from any existing attach client. The shared
                 // helper sends Shutdown, gives the writer side a brief
@@ -3234,6 +3217,21 @@ async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
     }
     if let Some(handle) = mux.attached_task.take() {
         handle.abort();
+    }
+}
+
+fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
+    if initial_agent.is_empty() {
+        SpawnRequest::Shell
+    } else {
+        SpawnRequest::Agent(initial_agent.to_string())
+    }
+}
+
+fn spawn_request_label(request: &SpawnRequest) -> String {
+    match request {
+        SpawnRequest::Agent(agent) => format!("agent {agent:?}"),
+        SpawnRequest::Shell => "shell".to_string(),
     }
 }
 
@@ -4039,6 +4037,28 @@ mod tests {
                 crate::terminal_geometry::DEFAULT_COLS
             )
         );
+    }
+
+    #[test]
+    fn initial_spawn_request_is_data_only_agent_or_shell() {
+        assert_eq!(
+            initial_spawn_request("codex"),
+            SpawnRequest::Agent("codex".to_string())
+        );
+        assert_eq!(initial_spawn_request(""), SpawnRequest::Shell);
+    }
+
+    #[test]
+    fn spawn_request_rejects_agent_outside_allowlist_before_pty_spawn() {
+        let mut mux = test_mux(24, 80);
+        mux.available_agents = vec!["codex".to_string()];
+
+        let err = mux
+            .spawn_request(SpawnRequest::Agent("claude".to_string()), &[])
+            .unwrap_err();
+
+        assert!(err.to_string().contains("rejected agent \"claude\""));
+        assert!(mux.sessions.is_empty());
     }
 
     #[test]
