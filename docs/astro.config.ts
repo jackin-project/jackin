@@ -214,6 +214,7 @@ export default defineConfig({
                       collapsed: true,
                       items: [
                         { label: 'Task source abstraction', slug: 'reference/roadmap/task-source-abstraction' },
+                        { label: 'Agent workflow orchestration', slug: 'reference/roadmap/agent-workflow-orchestration' },
                         { label: 'Autonomous task queue', slug: 'reference/roadmap/autonomous-task-queue' },
                         { label: 'Idle runtime cleanup', slug: 'reference/roadmap/idle-runtime-cleanup' },
                       ],
