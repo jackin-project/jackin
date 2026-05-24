@@ -351,6 +351,7 @@ export default defineConfig({
                   label: 'Documentation tooling',
                   collapsed: true,
                   items: [
+                    { label: 'Brand identity system', slug: 'reference/roadmap/brand-identity-system' },
                     { label: 'Docs markdown linting', slug: 'reference/roadmap/docs-markdown-linting' },
                     { label: 'Move documentation to a separate repository', slug: 'reference/roadmap/docs-separate-repository' },
                   ],
