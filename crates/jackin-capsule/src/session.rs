@@ -598,11 +598,11 @@ pub struct Session {
     /// scroll regions.
     pub scrollback_offset: usize,
     /// Rows that leave the top of a top-anchored DECSTBM scroll
-    /// region. Codex's inline TUI writes transcript history this way:
-    /// it keeps the app in the primary screen and lets the terminal
-    /// emulator own the scrollback. `vt100` only records scrollback
-    /// when the full screen scrolls, so jackin' mirrors those rows
-    /// here before handing the bytes to `vt100`.
+    /// region. Codex's inline TUI keeps the app in the primary screen
+    /// and uses a top-anchored scroll region to push history off the
+    /// top. `vt100` only records scrollback when the full screen
+    /// scrolls, so jackin' captures those rows here before forwarding
+    /// bytes to `vt100`.
     inline_scrollback: VecDeque<String>,
     inline_scroll_region_tracker: InlineScrollRegionTracker,
     /// Most recently observed value of `Screen::bracketed_paste()`.
@@ -910,11 +910,6 @@ impl Session {
     /// the actual filled count, which we read back via
     /// `Screen::scrollback`. The saved offset is restored so this is
     /// safe to call from a render path.
-    ///
-    /// Includes alternate-screen overflow when the foreground program
-    /// lets the terminal retain it. Full-screen agents that keep their
-    /// own transcript state may still report `0` if it neither scrolls
-    /// the grid nor uses a top-anchored scroll region.
     pub fn scrollback_filled(&mut self) -> usize {
         let (vt_filled, inline_filled) = self.scrollback_counts();
         vt_filled.saturating_add(inline_filled)
@@ -928,6 +923,9 @@ impl Session {
         let saved = self.parser.screen().scrollback();
         self.parser.screen_mut().set_scrollback(usize::MAX);
         let filled = self.parser.screen().scrollback();
+        // saved.min(filled): vt100 rejects offsets above the actual fill
+        // count, so restoring `saved` verbatim would be wrong if the fill
+        // shrank between the read and the probe.
         self.parser.screen_mut().set_scrollback(saved.min(filled));
         filled
     }
@@ -942,9 +940,8 @@ impl Session {
     /// Inline scrollback rows that should be prepended above the
     /// `vt100` visible rows for the current unified scrollback
     /// offset. Rendering this prefix in the shared pane renderer
-    /// makes shell- and agent-owned panes use the same chrome and
-    /// wheel path; only the command that produced the PTY bytes
-    /// differs.
+    /// lets normal-screen panes with inline history use the same
+    /// scrollbar chrome as vt100-scrollback panes.
     pub fn scrollback_render_prefix(&mut self, viewport_rows: u16) -> Vec<String> {
         let vt_filled = self.vt_scrollback_filled();
         self.parser
