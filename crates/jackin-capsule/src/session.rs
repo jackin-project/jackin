@@ -933,9 +933,13 @@ impl Session {
     /// Outer-terminal modes owned by the attach client, not by the
     /// focused pane. Reassert after attach and focus swaps so a pane
     /// that requested legacy X10 or press-only mouse tracking cannot
-    /// downgrade the multiplexer's own input channel.
+    /// downgrade the multiplexer's own input channel. Alternate-scroll
+    /// (`?1007`) is disabled because some terminals translate wheel
+    /// gestures in the alternate screen into cursor keys; jackin'
+    /// needs the wheel to stay as mouse input so the daemon can decide
+    /// whether scrollback, PTY mouse forwarding, or a no-op owns it.
     pub fn client_owned_mode_state() -> &'static [u8] {
-        b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
+        b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
     }
 
     /// Outer-terminal reset sequence applied just before a focus
@@ -1183,18 +1187,35 @@ mod tests {
     }
 
     #[test]
+    fn client_owned_mode_state_captures_mouse_focus_and_alternate_scroll() {
+        let state = Session::client_owned_mode_state();
+        for needle in [
+            &b"\x1b[?1003h"[..],
+            &b"\x1b[?1006h"[..],
+            &b"\x1b[?1004h"[..],
+            &b"\x1b[?1007l"[..],
+        ] {
+            assert!(
+                state.windows(needle.len()).any(|w| w == needle),
+                "client_owned_mode_state missing {needle:?}; got {state:?}"
+            );
+        }
+    }
+
+    #[test]
     fn focus_swap_reset_leaves_client_owned_modes_alone() {
         // The attach client owns mouse reporting, focus reporting,
-        // and alt-screen. The reset must not touch them; clobbering
-        // them here drops the multiplexer's ability to receive tab
-        // clicks, drag-resize, and FocusIn/FocusOut events for the
-        // remainder of the session.
+        // alt-screen, and alternate-scroll suppression. The reset must
+        // not touch them; clobbering them here drops the multiplexer's
+        // ability to receive tab clicks, drag-resize, FocusIn/FocusOut,
+        // or wheel mouse events for the remainder of the session.
         let reset = Session::focus_swap_reset();
         for forbidden in [
             &b"\x1b[?1000l"[..],
             &b"\x1b[?1002l"[..],
             &b"\x1b[?1003l"[..],
             &b"\x1b[?1006l"[..],
+            &b"\x1b[?1007l"[..],
             &b"\x1b[?1004l"[..],
             &b"\x1b[?1049l"[..],
             &b"\x1b[?25l"[..],

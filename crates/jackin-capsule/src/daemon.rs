@@ -1573,10 +1573,10 @@ impl Multiplexer {
                 // first use scrollback owned by jackin'. Transcript
                 // TUIs can also render in the normal grid without
                 // leaving vt100 scrollback; when that scrollback is
-                // empty, send cursor fallback keys instead of eating
-                // the wheel. This is based on the focused pane's
-                // screen state, not whether the pane was spawned as an
-                // agent or shell.
+                // empty, keep wheel input local to jackin' so it does
+                // not become prompt cursor keys. This is based on the
+                // focused pane's screen state, not whether the pane
+                // was spawned as an agent or shell.
                 // Dialog overlay swallows the wheel so background
                 // pane scrollback does not move while the operator is
                 // interacting with the modal.
@@ -1593,14 +1593,12 @@ impl Multiplexer {
                     return None;
                 }
                 let delta = if (button & 1) == 0 { 3 } else { -3 };
-                let focused_inner = self.active_focused_inner_rect();
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
                 {
                     let filled = session.scrollback_filled();
                     if filled == 0
-                        && let Some(fallback_reason) =
-                            pane_wheel_cursor_fallback_reason(session, focused_inner)
+                        && let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(session)
                         && let Some(buf) = encode_wheel_cursor_fallback(session, button)
                     {
                         crate::cdebug!(
@@ -3674,19 +3672,14 @@ fn normal_screen_cursor_suggests_scroll_affordance(
         && metrics.cursor_row >= metrics.rows.saturating_sub(3)
 }
 
-fn pane_wheel_cursor_fallback_reason(
-    session: &Session,
-    focused_inner: Option<Rect>,
-) -> Option<&'static str> {
+fn pane_wheel_cursor_fallback_reason(session: &Session) -> Option<&'static str> {
     if session.mouse_enabled() {
         return None;
     }
     if session.screen().alternate_screen() {
         return Some("alternate-screen");
     }
-    let inner = focused_inner?;
-    screen_scroll_affordance_metrics(session.screen(), inner.rows, inner.cols)
-        .and_then(|metrics| pane_synthetic_scroll_affordance_reason(session, &metrics))
+    None
 }
 
 /// SGR mouse wheel events set bit 6 of the button byte. Every value in
@@ -4218,7 +4211,7 @@ mod tests {
     }
 
     #[test]
-    fn wheel_falls_back_to_focused_normal_screen_pane_when_cursor_is_in_bottom_input_band() {
+    fn wheel_does_not_send_cursor_keys_to_focused_normal_screen_pane_without_scrollback() {
         for (agent, pane_kind) in pane_kind_cases() {
             let mut mux = single_pane_tab_mux_with_size(55, 200);
             let (mut session, mut input_rx) = test_pane_session(51, 198, agent);
@@ -4233,14 +4226,16 @@ mod tests {
             });
 
             assert!(
-                redraw.is_none(),
-                "{pane_kind} normal-screen transcript pane should receive wheel fallback"
+                redraw.is_some(),
+                "{pane_kind} normal-screen transcript pane should redraw jackin'"
             );
-            assert_eq!(
-                input_rx
-                    .try_recv()
-                    .expect("wheel fallback should reach focused pane"),
-                b"\x1b[A\x1b[A\x1b[A"
+            assert_focused_scroll_chrome(
+                &redraw.expect("normal-screen wheel should redraw"),
+                &format!("normal-screen {pane_kind} transcript pane after wheel"),
+            );
+            assert!(
+                input_rx.try_recv().is_err(),
+                "normal-screen {pane_kind} transcript pane without vt100 scrollback must not receive cursor-key wheel fallback"
             );
             assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
         }

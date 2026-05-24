@@ -17,6 +17,10 @@ use crate::session::{SESSION_ENV_PASSTHROUGH, Session};
 use crate::socket::SOCKET_PATH;
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 
+fn outer_terminal_reset_sequence() -> &'static [u8] {
+    b"\x1b]22;default\x1b\\\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1007l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h\x1b[?1049l"
+}
+
 /// Connect to the running daemon and run the interactive attach client.
 ///
 /// `spawn_request` is set by `docker exec ... jackin-capsule new`;
@@ -290,9 +294,9 @@ impl Drop for RawModeGuard {
         // least gets cooked mode; if disable fails but the reset
         // already shipped, the visible state matches the escape codes.
         let mut stdout = std::io::stdout().lock();
-        let write_result = stdout.write_all(
-            b"\x1b]22;default\x1b\\\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h\x1b[?1049l",
-        ).and_then(|_| stdout.flush());
+        let write_result = stdout
+            .write_all(outer_terminal_reset_sequence())
+            .and_then(|_| stdout.flush());
         drop(stdout);
         let log = |label: &str, e: &dyn std::fmt::Display| {
             eprintln!("[jackin-capsule] failed to {label} on detach: {e}");
@@ -303,5 +307,20 @@ impl Drop for RawModeGuard {
         if let Err(e) = crossterm::terminal::disable_raw_mode() {
             log("disable raw mode", &e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outer_terminal_reset_disables_alternate_scroll() {
+        let reset = outer_terminal_reset_sequence();
+        let needle = b"\x1b[?1007l";
+        assert!(
+            reset.windows(needle.len()).any(|w| w == needle),
+            "outer terminal reset missing alternate-scroll disable: {reset:?}"
+        );
     }
 }
