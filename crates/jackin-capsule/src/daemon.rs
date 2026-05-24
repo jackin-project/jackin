@@ -1621,8 +1621,7 @@ impl Multiplexer {
                     } else {
                         (session.scrollback_filled(), 0, 0)
                     };
-                    if filled == 0
-                        && let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(session)
+                    if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(session)
                         && let Some(buf) = encode_wheel_cursor_fallback(session, button)
                     {
                         crate::cdebug!(
@@ -3985,6 +3984,20 @@ mod tests {
         );
     }
 
+    fn assert_wheel_cursor_fallback_sent(
+        input_rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
+        expected_bytes: &[u8],
+    ) {
+        assert_eq!(
+            input_rx.try_recv().expect("wheel fallback should reach PTY"),
+            expected_bytes,
+        );
+        assert!(
+            input_rx.try_recv().is_err(),
+            "wheel should not produce extra PTY input"
+        );
+    }
+
     fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, lines: usize) {
         session.feed_pty(format!("\x1b[1;{region_bottom}r\x1b[{region_bottom};1H").as_bytes());
         for i in 0..lines {
@@ -4422,16 +4435,39 @@ mod tests {
             redraw.is_none(),
             "pane-owned fallback should not redraw jackin'"
         );
-        assert_eq!(
-            input_rx
-                .try_recv()
-                .expect("wheel fallback should reach PTY"),
-            b"\x1b[A\x1b[A\x1b[A"
-        );
+        assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
+    fn wheel_sends_cursor_fallback_to_alt_screen_tui_with_retained_primary_scrollback() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_shell_session(20, 78);
+        for i in 0..40 {
+            session.feed_pty(format!("line {i}\r\n").as_bytes());
+        }
         assert!(
-            input_rx.try_recv().is_err(),
-            "wheel should not produce extra PTY input"
+            session.scrollback_filled() > 0,
+            "setup should leave retained primary-screen scrollback"
         );
+        session.feed_pty(b"\x1b[?1049h");
+        assert!(
+            session.screen().alternate_screen(),
+            "setup should leave pane in the alternate screen"
+        );
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "alternate-screen fallback should not redraw jackin'"
+        );
+        assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
     }
 
@@ -4452,16 +4488,7 @@ mod tests {
             redraw.is_none(),
             "pane-owned fallback should not redraw jackin'"
         );
-        assert_eq!(
-            input_rx
-                .try_recv()
-                .expect("wheel fallback should reach PTY"),
-            b"\x1bOB\x1bOB\x1bOB"
-        );
-        assert!(
-            input_rx.try_recv().is_err(),
-            "wheel should not produce extra PTY input"
-        );
+        assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1bOB\x1bOB\x1bOB");
     }
 
     #[test]
