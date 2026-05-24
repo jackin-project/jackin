@@ -604,7 +604,6 @@ impl Multiplexer {
             col_1based,
             self.term_rows,
             self.term_cols,
-            &workspace_title(&self.workdir),
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
@@ -643,7 +642,6 @@ impl Multiplexer {
             col_1based,
             self.term_rows,
             self.term_cols,
-            &workspace_title(&self.workdir),
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
@@ -1983,7 +1981,6 @@ impl Multiplexer {
                 col + 1,
                 self.term_rows,
                 self.term_cols,
-                &workspace_title(&self.workdir),
                 self.context_bar_branch(),
                 self.pull_request_context.as_ref(),
                 self.pull_request_context_loading(),
@@ -1996,7 +1993,6 @@ impl Multiplexer {
                     col + 1,
                     self.term_rows,
                     self.term_cols,
-                    &workspace_title(&self.workdir),
                     self.context_bar_branch(),
                     self.pull_request_context.as_ref(),
                     self.pull_request_context_loading(),
@@ -2634,7 +2630,6 @@ impl Multiplexer {
             &mut buf,
             self.term_rows,
             self.term_cols,
-            &workspace_title(&self.workdir),
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
@@ -2690,7 +2685,6 @@ impl Multiplexer {
             &mut buf,
             self.term_rows,
             self.term_cols,
-            &workspace_title(&self.workdir),
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
@@ -3438,7 +3432,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     &mut sbuf,
                     mux.term_rows,
                     mux.term_cols,
-                    &workspace_title(&mux.workdir),
                     mux.context_bar_branch(),
                     mux.pull_request_context.as_ref(),
                     mux.pull_request_context_loading(),
@@ -3947,7 +3940,6 @@ fn render_branch_context_bar(
     buf: &mut Vec<u8>,
     term_rows: u16,
     term_cols: u16,
-    workspace_name: &str,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
@@ -3957,7 +3949,6 @@ fn render_branch_context_bar(
     let Some(layout) = branch_context_bar_layout(
         term_rows,
         term_cols,
-        workspace_name,
         branch,
         pull_request,
         pull_request_loading,
@@ -4024,7 +4015,6 @@ struct BranchContextBarLayout {
 fn branch_context_bar_layout(
     term_rows: u16,
     term_cols: u16,
-    workspace_name: &str,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
@@ -4033,31 +4023,17 @@ fn branch_context_bar_layout(
     if term_rows == 0 || term_cols == 0 {
         return None;
     }
-    let workspace = if workspace_name.trim().is_empty() {
-        "workspace"
-    } else {
-        workspace_name.trim()
-    };
     let branch_detail_visible = branch.is_some_and(|branch| !is_default_branch_name(branch));
-    let workspace_prefix = format!(" {workspace} ");
-    let context_prefix = format!(" {workspace} · ");
-    let (left, context_start_col) = match pull_request {
-        Some(pr) => (
-            format!("{context_prefix}PR {} · {} ", pr.number_label(), pr.title),
-            Some(display_cols(&context_prefix).saturating_add(1)),
-        ),
+    let (left, left_clickable) = match pull_request {
+        Some(pr) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         None if pull_request_loading && branch_detail_visible => (
-            format!(
-                "{context_prefix}Resolving PR · {} ",
-                branch.unwrap_or_default()
-            ),
-            Some(display_cols(&context_prefix).saturating_add(1)),
+            format!(" Resolving PR · {} ", branch.unwrap_or_default()),
+            true,
         ),
-        None if branch_detail_visible => (
-            format!("{context_prefix}Branch · {} ", branch.unwrap_or_default()),
-            Some(display_cols(&context_prefix).saturating_add(1)),
-        ),
-        None => (workspace_prefix, None),
+        None if branch_detail_visible => {
+            (format!(" Branch · {} ", branch.unwrap_or_default()), true)
+        }
+        None => (String::new(), false),
     };
     let container = if container_name.is_empty() {
         String::new()
@@ -4074,10 +4050,9 @@ fn branch_context_bar_layout(
     };
     let left = take_display_cols(&left, left_max_cols);
     let left_cols = display_cols(&left);
-    let left_region = if let Some(start) = context_start_col.filter(|start| *start <= left_cols) {
-        let start = u16::try_from(start).unwrap_or(u16::MAX);
+    let left_region = if left_clickable && left_cols > 0 {
         let end = u16::try_from(left_cols.saturating_add(1)).unwrap_or(u16::MAX);
-        Some((start, end))
+        Some((1, end))
     } else {
         None
     };
@@ -4123,7 +4098,6 @@ fn branch_context_bar_hit(
     col: u16,
     term_rows: u16,
     term_cols: u16,
-    workspace_name: &str,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
@@ -4135,7 +4109,6 @@ fn branch_context_bar_hit(
     let layout = branch_context_bar_layout(
         term_rows,
         term_cols,
-        workspace_name,
         branch,
         pull_request,
         pull_request_loading,
@@ -4933,7 +4906,6 @@ mod tests {
             &mut buf,
             24,
             120,
-            "jackin",
             Some("asa/pr-context"),
             Some(&pr),
             false,
@@ -4959,7 +4931,6 @@ mod tests {
             &mut buf,
             24,
             80,
-            "jackin",
             Some("feature/no-pr"),
             None,
             false,
@@ -4980,7 +4951,6 @@ mod tests {
             &mut buf,
             24,
             100,
-            "jackin",
             Some("feature/slow-gh"),
             None,
             true,
@@ -5007,7 +4977,6 @@ mod tests {
             &mut buf,
             24,
             20,
-            "jackin",
             Some("feature/x"),
             Some(&pr),
             false,
@@ -5029,44 +4998,21 @@ mod tests {
     fn branch_context_bar_layout_returns_none_for_zero_dimensions() {
         let pr = pull_request_fixture(1);
         assert!(
-            branch_context_bar_layout(
-                0,
-                80,
-                "jackin",
-                Some("feature/x"),
-                Some(&pr),
-                false,
-                "jk-test"
-            )
-            .is_none()
+            branch_context_bar_layout(0, 80, Some("feature/x"), Some(&pr), false, "jk-test")
+                .is_none()
         );
         assert!(
-            branch_context_bar_layout(
-                24,
-                0,
-                "jackin",
-                Some("feature/x"),
-                Some(&pr),
-                false,
-                "jk-test"
-            )
-            .is_none()
+            branch_context_bar_layout(24, 0, Some("feature/x"), Some(&pr), false, "jk-test")
+                .is_none()
         );
     }
 
     #[test]
     fn branch_context_bar_hit_rejects_columns_outside_region() {
         let pr = pull_request_fixture(7);
-        let layout = branch_context_bar_layout(
-            24,
-            120,
-            "jackin",
-            Some("feature/x"),
-            Some(&pr),
-            false,
-            "jk-test",
-        )
-        .expect("layout fits");
+        let layout =
+            branch_context_bar_layout(24, 120, Some("feature/x"), Some(&pr), false, "jk-test")
+                .expect("layout fits");
         // left_region covers exactly its declared range.
         let (left_start, left_end) = layout.left_region.expect("left region present");
         assert_eq!(
@@ -5075,7 +5021,6 @@ mod tests {
                 left_start,
                 24,
                 120,
-                "jackin",
                 Some("feature/x"),
                 Some(&pr),
                 false,
@@ -5089,7 +5034,6 @@ mod tests {
                 left_end - 1,
                 24,
                 120,
-                "jackin",
                 Some("feature/x"),
                 Some(&pr),
                 false,
@@ -5103,7 +5047,6 @@ mod tests {
             left_end,
             24,
             120,
-            "jackin",
             Some("feature/x"),
             Some(&pr),
             false,
@@ -5121,7 +5064,6 @@ mod tests {
                 left_start,
                 24,
                 120,
-                "jackin",
                 Some("feature/x"),
                 Some(&pr),
                 false,
@@ -5139,7 +5081,6 @@ mod tests {
             &mut context_buf,
             24,
             120,
-            "jackin",
             Some("asa/pr-context"),
             Some(&pr),
             false,
@@ -5155,7 +5096,6 @@ mod tests {
             &mut container_buf,
             24,
             120,
-            "jackin",
             Some("asa/pr-context"),
             Some(&pr),
             false,
@@ -5168,13 +5108,12 @@ mod tests {
     }
 
     #[test]
-    fn branch_context_bar_shows_workspace_and_container_on_default_branches() {
+    fn branch_context_bar_leaves_left_side_empty_on_default_branches() {
         let mut main_buf = Vec::new();
         render_branch_context_bar(
             &mut main_buf,
             24,
             80,
-            "jackin",
             Some("main"),
             None,
             false,
@@ -5182,16 +5121,16 @@ mod tests {
             None,
         );
         let main_rendered = String::from_utf8_lossy(&main_buf);
-        assert!(main_rendered.contains("jackin"));
         assert!(main_rendered.contains("jk-test-container"));
+        assert!(!main_rendered.contains("jackin"));
         assert!(!main_rendered.contains("Branch · main"));
+        assert!(!main_rendered.contains("PR #"));
         assert_eq!(
             branch_context_bar_hit(
                 24,
                 2,
                 24,
                 80,
-                "jackin",
                 Some("main"),
                 None,
                 false,
@@ -5205,7 +5144,6 @@ mod tests {
             &mut master_buf,
             24,
             80,
-            "jackin",
             Some("master"),
             None,
             false,
@@ -5213,9 +5151,10 @@ mod tests {
             None,
         );
         let master_rendered = String::from_utf8_lossy(&master_buf);
-        assert!(master_rendered.contains("jackin"));
         assert!(master_rendered.contains("jk-test-container"));
+        assert!(!master_rendered.contains("jackin"));
         assert!(!master_rendered.contains("Branch · master"));
+        assert!(!master_rendered.contains("PR #"));
     }
 
     #[test]
@@ -5594,7 +5533,6 @@ mod tests {
         let hit = branch_context_bar_layout(
             mux.term_rows,
             mux.term_cols,
-            &workspace_title(&mux.workdir),
             mux.pull_request_context_branch.as_deref(),
             mux.pull_request_context.as_ref(),
             mux.pull_request_context_loading(),
@@ -5623,7 +5561,6 @@ mod tests {
         let hit = branch_context_bar_layout(
             mux.term_rows,
             mux.term_cols,
-            &workspace_title(&mux.workdir),
             mux.pull_request_context_branch.as_deref(),
             mux.pull_request_context.as_ref(),
             mux.pull_request_context_loading(),
@@ -5669,7 +5606,6 @@ mod tests {
         let hit = branch_context_bar_layout(
             mux.term_rows,
             mux.term_cols,
-            &workspace_title(&mux.workdir),
             mux.pull_request_context_branch.as_deref(),
             mux.pull_request_context.as_ref(),
             mux.pull_request_context_loading(),
