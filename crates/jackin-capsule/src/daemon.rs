@@ -1221,6 +1221,25 @@ impl Multiplexer {
         }
     }
 
+    fn active_focused_outer_rect(&self) -> Option<Rect> {
+        let focused = self.active_focused_id()?;
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        if let Some(zoom_id) = self.active_zoomed_id() {
+            return (zoom_id == focused).then_some(content_rect);
+        }
+        self.tabs
+            .get(self.active_tab)?
+            .tree
+            .leaves(content_rect)
+            .into_iter()
+            .find(|(id, _)| *id == focused)
+            .map(|(_, rect)| rect)
+    }
+
+    fn active_focused_inner_rect(&self) -> Option<Rect> {
+        self.active_focused_outer_rect().map(|rect| rect.shrink(1))
+    }
+
     /// Derive the label that should appear in the tab strip for `tab`
     /// given the current pane contents. Operator's mental model is
     /// "what kinds of things am I running in here?", so the label
@@ -1590,16 +1609,17 @@ impl Multiplexer {
                     return None;
                 }
                 let delta = if (button & 1) == 0 { 3 } else { -3 };
+                let focused_inner = self.active_focused_inner_rect();
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
                 {
                     let filled = session.scrollback_filled();
                     if filled == 0
-                        && session.agent.is_some()
+                        && primary_screen_wheel_should_fall_back_to_pane(session, focused_inner)
                         && let Some(buf) = encode_wheel_cursor_fallback(session, button)
                     {
                         crate::cdebug!(
-                            "wheel dispatch: primary-agent-cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} bytes={:02x?}",
+                            "wheel dispatch: primary-cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} bytes={:02x?}",
                             focused,
                             session.agent,
                             row,
@@ -1858,28 +1878,9 @@ impl Multiplexer {
         let Some(encoding) = mouse_event_encoding_for_session(session, button, press) else {
             return false;
         };
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-        let outer = if let Some(zoom_id) = self.active_zoomed_id() {
-            if zoom_id == focused {
-                Some(content_rect)
-            } else {
-                None
-            }
-        } else {
-            self.tabs
-                .get(self.active_tab)
-                .and_then(|tab| {
-                    tab.tree
-                        .leaves(content_rect)
-                        .into_iter()
-                        .find(|(id, _)| *id == focused)
-                })
-                .map(|(_, r)| r)
-        };
-        let Some(outer) = outer else {
+        let Some(inner) = self.active_focused_inner_rect() else {
             return false;
         };
-        let inner = outer.shrink(1);
         if row < inner.row || row >= inner.row + inner.rows {
             return false;
         }
@@ -3586,24 +3587,25 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
         filled,
     };
     let owns_affordance = pane_owns_scroll_affordance(session);
-    let needs_synthetic = !scrollbar.visible() && owns_affordance;
+    let needs_synthetic = !scrollbar.visible();
     let metrics = if needs_synthetic || crate::logging::debug_enabled() {
         screen_scroll_affordance_metrics(session.screen(), viewport_rows, viewport_cols)
     } else {
         None
     };
-    let synthetic_reason = if scrollbar.visible() || !owns_affordance {
+    let synthetic_reason = if scrollbar.visible() {
         None
-    } else if metrics
-        .as_ref()
-        .is_some_and(screen_metrics_have_scroll_affordance)
+    } else if owns_affordance
+        && metrics
+            .as_ref()
+            .is_some_and(screen_metrics_have_scroll_affordance)
     {
         Some("occupied-grid")
     } else if metrics
         .as_ref()
-        .is_some_and(|metrics| agent_cursor_suggests_scroll_affordance(session, metrics))
+        .is_some_and(|metrics| primary_cursor_suggests_scroll_affordance(session, metrics))
     {
-        Some("agent-cursor-floor")
+        Some("primary-cursor-floor")
     } else {
         None
     };
@@ -3678,15 +3680,31 @@ fn screen_metrics_have_scroll_affordance(metrics: &ScrollAffordanceMetrics) -> b
     metrics.occupied_rows >= usize::from(metrics.rows.saturating_sub(1).max(1))
 }
 
-fn agent_cursor_suggests_scroll_affordance(
+fn primary_cursor_suggests_scroll_affordance(
     session: &Session,
     metrics: &ScrollAffordanceMetrics,
 ) -> bool {
-    session.agent.is_some()
-        && !session.screen().alternate_screen()
+    !session.screen().alternate_screen()
         && !session.mouse_enabled()
         && metrics.occupied_rows > 0
-        && metrics.cursor_row >= metrics.rows.saturating_sub(2)
+        && metrics.cursor_row >= metrics.rows.saturating_sub(3)
+}
+
+fn primary_screen_wheel_should_fall_back_to_pane(
+    session: &Session,
+    focused_inner: Option<Rect>,
+) -> bool {
+    if session.screen().alternate_screen() || session.mouse_enabled() {
+        return false;
+    }
+    if session.agent.is_some() {
+        return true;
+    }
+    let Some(inner) = focused_inner else {
+        return false;
+    };
+    screen_scroll_affordance_metrics(session.screen(), inner.rows, inner.cols)
+        .is_some_and(|metrics| primary_cursor_suggests_scroll_affordance(session, &metrics))
 }
 
 /// SGR mouse wheel events set bit 6 of the button byte. Every value in
@@ -3928,7 +3946,12 @@ mod tests {
     }
 
     fn single_pane_tab_mux() -> Multiplexer {
+        single_pane_tab_mux_with_size(24, 80)
+    }
+
+    fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
         let mut mux = test_mux(24, 80);
+        mux.resize(rows, cols);
         mux.tabs.push(Tab::new_single("Shell", 1));
         mux
     }
@@ -4237,6 +4260,33 @@ mod tests {
     }
 
     #[test]
+    fn wheel_falls_back_to_primary_screen_shell_when_cursor_is_in_bottom_input_band() {
+        let mut mux = single_pane_tab_mux_with_size(55, 200);
+        let (mut session, mut input_rx) = test_shell_session(51, 198);
+        session.feed_pty(b"\x1b[49;3Hcodex prompt");
+        assert_eq!(session.scrollback_filled(), 0);
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 10,
+            col: 10,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "primary-screen shell TUI should receive wheel fallback"
+        );
+        assert_eq!(
+            input_rx
+                .try_recv()
+                .expect("wheel fallback should reach shell TUI"),
+            b"\x1b[A\x1b[A\x1b[A"
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
     fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
         let mut mux = single_pane_tab_mux();
         let (mut session, mut input_rx) = test_shell_session(20, 78);
@@ -4358,6 +4408,48 @@ mod tests {
         assert!(
             rendered.contains('█'),
             "focused primary-screen agent with cursor at the floor should draw a scrollbar thumb"
+        );
+    }
+
+    #[test]
+    fn primary_screen_agent_draws_scroll_affordance_when_cursor_is_in_bottom_input_band() {
+        let mut mux = single_pane_tab_mux_with_size(55, 200);
+        let (mut session, _input_rx) = test_session(51, 198);
+        session.feed_pty(b"\x1b[49;3Hcodex prompt");
+        assert_eq!(session.scrollback_filled(), 0);
+        mux.sessions.insert(1, session);
+
+        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        let rendered = String::from_utf8_lossy(&frame);
+
+        assert!(
+            rendered.contains("\x1b[0;38;2;0;255;65m"),
+            "focused primary-screen agent with bottom-band cursor should use green chrome"
+        );
+        assert!(
+            rendered.contains('█'),
+            "focused primary-screen agent with bottom-band cursor should draw a scrollbar thumb"
+        );
+    }
+
+    #[test]
+    fn primary_screen_shell_draws_scroll_affordance_when_cursor_is_in_bottom_input_band() {
+        let mut mux = single_pane_tab_mux_with_size(55, 200);
+        let (mut session, _input_rx) = test_shell_session(51, 198);
+        session.feed_pty(b"\x1b[49;3Hcodex prompt");
+        assert_eq!(session.scrollback_filled(), 0);
+        mux.sessions.insert(1, session);
+
+        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        let rendered = String::from_utf8_lossy(&frame);
+
+        assert!(
+            rendered.contains("\x1b[0;38;2;0;255;65m"),
+            "focused primary-screen shell TUI with bottom-band cursor should use green chrome"
+        );
+        assert!(
+            rendered.contains('█'),
+            "focused primary-screen shell TUI with bottom-band cursor should draw a scrollbar thumb"
         );
     }
 
