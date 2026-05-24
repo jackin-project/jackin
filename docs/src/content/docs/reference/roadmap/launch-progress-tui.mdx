@@ -9,13 +9,13 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 `jackin load` and the launch path entered from `jackin console` should feel like the same product surface, but today the launch path still reads as a sequence of terminal printouts. The current implementation in <RepoFile path="src/runtime/launch.rs" /> uses direct status lines, config tables, animated step shimmer, and full-screen rain hooks that are tied to a single launch rather than to the larger "operator has entered or left jackin'" lifecycle. That makes repeated sequential launches slower and visually noisy, and it makes debug mode worse for normal users because troubleshooting detail competes with the product-level progress story.
 
-The missing product model is a launch cockpit: a compact, recognizable, cyberpunk-styled TUI that explains what jackin' is doing now, what is waiting next, where failures are recorded, and when the operator has crossed a session boundary. Full digital rain should mark entering or leaving jackin' work, not every container start.
+The missing product model is a launch cockpit: a compact, recognizable, cyberpunk-styled TUI that explains what jackin' is doing now, what is waiting next, where failures are recorded, and when the operator has crossed a session boundary. Full digital rain should mark entering or leaving jackin' work, not every container start. The stage names should use jackin' vocabulary: the `construct` is the base world, the derived image is the role-specific layer, the Capsule is the persistent in-container control plane, and the `hardline` is the direct line into a running agent session.
 
 ## Product principles
 
 - Digital rain is a boundary ritual. It appears when the operator starts the first active container owned by jackin', and when the last active container owned by jackin' exits. It does not appear between sequential launches while any container owned by jackin' is still running.
 - `jackin load` and console-triggered launches use the same launch visualization when the terminal supports it.
-- The default operator surface stays compact: lifecycle status, current step, next step, short failure diagnosis, and log location.
+- The default operator surface stays compact: lifecycle status, current stage, next stage, short failure diagnosis, and log location.
 - Debug output becomes more detailed in logs, not on screen. `--debug` should not turn the launch TUI into raw command output.
 - The launch UI is product-facing, but its internal event stream is contributor-facing and testable.
 - Startup speed matters. Work that is independent should run in parallel after prompts and trust barriers are satisfied.
@@ -34,15 +34,16 @@ agent        claude
 image        jackin/agent-smith:latest
 
 ● identity       resolved role + operator
-● trust          trusted source
-◐ image          building derived layer
+● role           trusted source
+◐ construct      pulling base world
+○ derived image  queued
 ○ workspace      queued
 ○ network        queued
 ○ sidecar        queued
-○ runtime        queued
-○ attach         queued
+○ capsule        queued
+○ hardline       queued
 
-status: building Docker image
+status: pulling projectjackin/construct:trixie
 log: launch log available from `jackin logs` or failure dialog
 ```
 
@@ -52,35 +53,44 @@ When the terminal is not interactive or cannot support the TUI, launch falls bac
 
 ## Digital rain lifecycle
 
-The current launch code calls the intro animation before the launch and the outro renderer after the foreground session exits. The new rule should be keyed to active jackin' container count:
+The current launch code calls the intro animation before the launch and the outro renderer after the foreground session exits. The new rule should be keyed to the active count of containers owned by jackin':
 
 | Moment | Desired behavior |
 |---|---|
-| Before launch, zero active jackin' containers | Show full intro rain, then enter the launch progress TUI. |
-| Before launch, one or more active jackin' containers | Skip full intro rain and enter the launch progress TUI immediately. |
-| After foreground session exit, one or more active jackin' containers remain | Skip full outro rain and show a compact return/remaining-sessions notice if needed. |
-| After foreground session exit, zero active jackin' containers remain | Show full outro rain. |
+| Before launch, zero active containers owned by jackin' | Show full intro rain, then enter the launch progress TUI. |
+| Before launch, one or more active containers owned by jackin' | Skip full intro rain and enter the launch progress TUI immediately. |
+| After foreground session exit, one or more active containers owned by jackin' remain | Skip full outro rain and show a compact return/remaining-sessions notice if needed. |
+| After foreground session exit, zero active containers owned by jackin' remain | Show full outro rain. |
 
 The count must use runtime discovery managed by jackin' rather than raw Docker process guesses. It should include containers preserved because active Capsule sessions remain, and it should exclude stale records that are not actually running. If discovery fails, the safe default is to skip the boundary animation and log the reason; a failed count should not block launch or exit.
 
-## Step vocabulary
+## Stage vocabulary
 
-The TUI should show a small stable list of public steps. Substatus text can be more specific, but the top-level steps should not mirror every implementation detail.
+The TUI should show a small stable list of public stages. Substatus text can be more specific, but the top-level stages should not mirror every implementation detail. The labels should make the launch feel like jackin' is assembling an isolated world and then opening a hardline into it, not like Docker is dumping raw plumbing into the terminal.
 
-| Step | Meaning |
+| Stage | Meaning |
 |---|---|
-| `identity` | Resolve role source, workspace, operator Git/host identity, selected runtime agent, and container identity. |
-| `trust` | Complete source trust, branch confirmation, sensitive mount confirmation, and role contract validation. |
+| `identity` | Resolve the operator, workspace, selected runtime agent, and instance identity. |
+| `role` | Fetch/update the role repository, validate its contract, and complete source trust or branch confirmation. |
 | `credentials` | Resolve manifest env, operator env, agent auth mode, GitHub auth mode, and credential preflight checks. |
-| `image` | Pull, build, refresh, or reuse the derived role image and agent CLI layers. |
+| `construct` | Pull or verify the shared `construct` image and prepare the matching Capsule binary for the derived build. This is the base world every role extends. |
+| `derived image` | Build, refresh, or reuse the role-specific image layered on top of the `construct`, including the role tools and selected agent runtime layers. |
 | `workspace` | Materialize workspace mounts, isolated worktrees/clones, and launch-time filesystem state. |
-| `network` | Create the per-instance network and any launch-scoped Docker resources. |
-| `sidecar` | Start Docker-in-Docker and wait until it is reachable. |
-| `runtime` | Create and start the role container with resolved mounts, env, terminfo, state, and Capsule config. |
-| `inject` | Run setup hooks and seed container-local runtime integration artifacts. |
-| `attach` | Attach through Capsule, focus the requested session, and hand the terminal to the agent. |
+| `network` | Create the private per-instance network and launch-scoped Docker resources. |
+| `sidecar` | Start Docker-in-Docker and wait until the private daemon is reachable. |
+| `capsule` | Create and start the role container with resolved mounts, env, terminfo, state, Capsule config, setup hooks, and container-local runtime integration artifacts. |
+| `hardline` | Open the direct line through Capsule to the focused agent session and hand the terminal to that session. |
 
 Statuses should be explicit: `queued`, `running`, `done`, `skipped`, `failed`, and optionally `blocked` when a prompt is open. The UI should distinguish "skipped because cached/reused" from "not reached yet".
+
+The `construct` and `derived image` stages should expose precise substatus because they are the most visible slow path on first launch:
+
+| Stage | Example substatus |
+|---|---|
+| `construct` | `pulling projectjackin/construct:trixie`, `construct already current`, `using JACKIN_CONSTRUCT_IMAGE override`, `preparing Capsule binary` |
+| `derived image` | `checking role image cache`, `building role tools`, `refreshing Claude layer`, `reusing image built from current role SHA` |
+| `capsule` | `creating role container`, `seeding agent home`, `running setup hooks`, `starting Capsule` |
+| `hardline` | `opening primary session`, `focusing Claude tab`, `ready for operator` |
 
 ## Failure model
 
@@ -100,7 +110,7 @@ Enter close
 The dialog should show:
 
 - a short human diagnosis;
-- the failed public step;
+- the failed public stage;
 - one actionable next move when obvious;
 - the log command or log path;
 - no stack trace unless no structured diagnosis exists.
@@ -127,13 +137,13 @@ The launch path should stop rendering directly from deep implementation code. In
 ```rust
 enum LaunchEvent {
     Started { role, workspace, agent },
-    StepStarted { step, label },
-    StepProgress { step, detail },
-    StepSkipped { step, reason },
-    StepDone { step, detail },
-    StepFailed { step, summary, detail },
+    StageStarted { stage, label },
+    StageProgress { stage, detail },
+    StageSkipped { stage, reason },
+    StageDone { stage, detail },
+    StageFailed { stage, summary, detail },
     LogHint { command_or_path },
-    HandingOffToAgent,
+    OpeningHardline,
 }
 ```
 
@@ -141,12 +151,12 @@ The exact Rust shape can differ, but the boundary should exist. Renderers then b
 
 | Renderer | Used when | Behavior |
 |---|---|---|
-| Rich TUI renderer | Interactive terminal with required capabilities | Full-screen ratatui launch surface with bounded rain, progress list, identity panel, footer, and error dialog. |
+| Rich TUI renderer | Interactive terminal with required capabilities | Full-screen ratatui launch surface with bounded rain, stage list, identity panel, footer, and error dialog. |
 | Compact renderer | TTY without rich support or explicit no-TUI mode | Same events as short line output. |
 | Non-interactive renderer | Script/CI/no TTY | Deterministic compact text, no cursor control, no animation. |
 | Test renderer | Unit/integration tests | Captures events for assertions without terminal I/O. |
 
-This also gives future console integration a clean handoff: `jackin console` can tear down the manager, run the shared launch progress renderer, then hand the terminal to Capsule without duplicating the launch UI.
+This also gives future console integration a clean transition: `jackin console` can tear down the manager, run the shared launch progress renderer, then open the Capsule hardline without duplicating the launch UI.
 
 ## Parallelization plan
 
@@ -155,9 +165,9 @@ Parallelization should come after the event/logging boundary, because concurrent
 - Safe early parallel work: orphan cleanup, Docker connectivity probe, Git identity lookup, host identity lookup, terminal capability detection, and cached role metadata reads.
 - Prompt barriers: source trust, branch confirmation, sensitive mount confirmation, and interactive manifest env prompts remain sequential and must finish before irreversible work.
 - Credential preflights should run before expensive image/network work where possible so missing secrets fail early.
-- Image build and workspace materialization can run in parallel only when materialization does not depend on the final image and all host-side preflight prompts have completed.
+- Construct verification, Capsule-binary preparation, derived-image cache checks, and workspace materialization can run in parallel only when all host-side preflight prompts have completed and the dependency edge is explicit.
 - Network and DinD sidecar setup can begin after names/resources are claimed and before the role image is ready if the Docker API path confirms no image dependency.
-- Attach remains last because the foreground terminal is handed to the agent.
+- Hardline remains last because the foreground terminal is handed to the selected agent session.
 
 The first implementation should prioritize correctness and clean progress events. Parallel work should be added one dependency edge at a time with tests or trace assertions showing that failures still clean up claimed resources.
 
@@ -169,11 +179,11 @@ Capture the product model, UX rules, event vocabulary, logging split, intro/outr
 
 ### Phase 1 — Boundary animation gating
 
-Replace launch-local intro/outro decisions with active jackin-managed container counting. Ensure both `jackin load` and console-triggered launches use the same rule. Keep existing animations for now, but call them only at first-container start and last-container exit.
+Replace launch-local intro/outro decisions with active container counting managed by jackin'. Ensure both `jackin load` and console-triggered launches use the same rule. Keep existing animations for now, but call them only at first-container start and last-container exit.
 
 ### Phase 2 — Launch progress event sink
 
-Add a launch-scoped progress sink and route current `StepCounter`, config-table, auth notices, Docker launch milestones, restore decisions, cleanup notices, and failure paths through structured events. Keep the compact renderer initially so behavior changes are small and testable.
+Add a launch-scoped progress sink and route current `StepCounter`, config-table, auth notices, Docker launch milestones, restore decisions, cleanup notices, and failure paths through structured events. Keep the compact renderer initially so behavior changes are small and testable. This phase should establish the public stage names (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even before the rich TUI exists.
 
 ### Phase 3 — Durable launch log
 
@@ -185,7 +195,7 @@ Build the ratatui launch renderer using console-compatible palette, layout, foot
 
 ### Phase 5 — Console integration
 
-Make console-triggered launches use the same renderer as `jackin load`. The console should select workspace/role/agent, then the shared launch progress surface owns terminal feedback until Capsule attach begins.
+Make console-triggered launches use the same renderer as `jackin load`. The console should select workspace/role/agent, then the shared launch progress surface owns terminal feedback until the Capsule hardline opens.
 
 ### Phase 6 — Parallel launch execution
 
@@ -202,9 +212,9 @@ The design may add a host-side launch log under state owned by jackin' and may w
 ## Acceptance criteria
 
 - Full digital rain appears only at first-container start and last-container exit.
-- `jackin load` and console-triggered launch share the same progress vocabulary and renderer selection.
+- `jackin load` and console-triggered launch share the same progress vocabulary native to jackin' and the same renderer selection.
 - Rich terminals get a full-screen launch progress TUI; non-rich and non-interactive environments get compact deterministic output.
 - `--debug` increases log detail without dumping raw debug text into the TUI.
 - Failures show a short diagnosis plus log retrieval path, with detailed evidence in logs.
-- Launch steps are emitted as structured events and can be tested without a real terminal.
+- Launch stages are emitted as structured events and can be tested without a real terminal.
 - Startup parallelization is introduced only after evented progress and cleanup behavior are testable.
