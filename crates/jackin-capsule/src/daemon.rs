@@ -34,8 +34,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use portable_pty::CommandBuilder;
 
 use crate::dialog::{
-    ConfirmKind, Dialog, DialogAction, PaletteCloseLabel, PaletteCommand, PickerIntent,
-    SplitDirection,
+    ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
+    PickerIntent, SplitDirection,
 };
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
@@ -608,8 +608,15 @@ impl Multiplexer {
             return None;
         }
         if let Some(dialog) = self.dialog_top() {
+            let github = self.github_context_view();
             return dialog
-                .clickable_at(row + 1, col + 1, self.term_rows, self.term_cols)
+                .clickable_at(
+                    row + 1,
+                    col + 1,
+                    self.term_rows,
+                    self.term_cols,
+                    Some(&github),
+                )
                 .then_some(HoverTarget::DialogCopyTarget);
         }
         let row_1based = row + 1;
@@ -646,7 +653,14 @@ impl Multiplexer {
             return PointerShape::Text;
         }
         if let Some(dialog) = self.dialog_top() {
-            return if dialog.clickable_at(row + 1, col + 1, self.term_rows, self.term_cols) {
+            let github = self.github_context_view();
+            return if dialog.clickable_at(
+                row + 1,
+                col + 1,
+                self.term_rows,
+                self.term_cols,
+                Some(&github),
+            ) {
                 PointerShape::Pointer
             } else {
                 PointerShape::Default
@@ -745,30 +759,15 @@ impl Multiplexer {
     }
 
     fn open_github_context_dialog(&mut self) {
-        self.dialog_push(Dialog::GitHubContext {
-            branch: self.pull_request_context_branch.clone(),
-            pull_request: self.pull_request_context.clone(),
-            pull_request_loading: self.pull_request_context_loading(),
-            copied: false,
-        });
+        self.dialog_push(Dialog::GitHubContext { copied: false });
     }
 
-    fn sync_github_context_dialogs(&mut self) -> bool {
-        if !self
-            .dialog_stack
-            .iter()
-            .any(|d| matches!(d, Dialog::GitHubContext { .. }))
-        {
-            return false;
+    fn github_context_view(&self) -> GithubContextView<'_> {
+        GithubContextView {
+            branch: self.pull_request_context_branch.as_deref(),
+            pull_request: self.pull_request_context.as_ref(),
+            loading: self.pull_request_context_loading(),
         }
-        let branch = self.pull_request_context_branch.as_deref();
-        let pull_request = self.pull_request_context.as_ref();
-        let loading = self.pull_request_context_loading();
-        let mut changed = false;
-        for dialog in &mut self.dialog_stack {
-            changed |= dialog.sync_github_context(branch, pull_request, loading);
-        }
-        changed
     }
 
     fn pull_request_context_loading(&self) -> bool {
@@ -886,9 +885,10 @@ impl Multiplexer {
 
     fn apply_git_branch_context(&mut self, branch: Option<String>, now: Instant) -> bool {
         let old_branch = self.pull_request_context_branch.clone();
+        let github_dialog_open = self.has_github_context_dialog_open();
         if old_branch == branch {
             self.maybe_spawn_pull_request_context_lookup(now);
-            return self.sync_github_context_dialogs();
+            return github_dialog_open;
         }
         let old_pull_request = self.pull_request_context.clone();
         self.pull_request_context_branch = branch.clone();
@@ -918,8 +918,7 @@ impl Multiplexer {
             || old_pull_request != self.pull_request_context;
         let resized = self.reconcile_content_rows();
         self.maybe_spawn_pull_request_context_lookup(now);
-        let dialog_changed = self.sync_github_context_dialogs();
-        resized || changed || dialog_changed
+        resized || changed || github_dialog_open
     }
 
     fn apply_pull_request_context_loaded(
@@ -930,11 +929,12 @@ impl Multiplexer {
         now: Instant,
     ) -> bool {
         if request_id != self.pull_request_lookup.request_id {
-            return self.sync_github_context_dialogs();
+            return false;
         }
+        let github_dialog_open = self.has_github_context_dialog_open();
         self.pull_request_lookup.in_flight = false;
         let Some(branch) = branch else {
-            return self.sync_github_context_dialogs();
+            return github_dialog_open;
         };
         // Transient gh failures (binary missing, auth not configured,
         // JSON parse, timeout) MUST NOT poison the 60s cache with a
@@ -944,7 +944,7 @@ impl Multiplexer {
         let pull_request = match outcome {
             PullRequestLookupOutcome::Resolved(pr) => pr,
             PullRequestLookupOutcome::TransientFailure => {
-                return self.sync_github_context_dialogs();
+                return github_dialog_open;
             }
         };
         self.purge_expired_pull_request_cache_entries(now);
@@ -956,15 +956,20 @@ impl Multiplexer {
             },
         );
         if self.pull_request_context_branch.as_deref() != Some(branch.as_str()) {
-            return self.sync_github_context_dialogs();
+            return github_dialog_open;
         }
         let changed = self.pull_request_context != pull_request;
         self.pull_request_context = pull_request;
-        let dialog_changed = self.sync_github_context_dialogs();
         if self.reconcile_content_rows() {
             return true;
         }
-        changed || dialog_changed
+        changed || github_dialog_open
+    }
+
+    fn has_github_context_dialog_open(&self) -> bool {
+        self.dialog_stack
+            .iter()
+            .any(|d| matches!(d, Dialog::GitHubContext { .. }))
     }
 
     /// Drop cache entries older than `2 * PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL`
@@ -2001,10 +2006,17 @@ impl Multiplexer {
                 // outside-the-box and dismisses the dialog.
                 let term_rows = self.term_rows;
                 let term_cols = self.term_cols;
+                let loading = self.pull_request_context_loading();
+                let github = GithubContextView {
+                    branch: self.pull_request_context_branch.as_deref(),
+                    pull_request: self.pull_request_context.as_ref(),
+                    loading,
+                };
                 let action = self
-                    .dialog_top_mut()
+                    .dialog_stack
+                    .last_mut()
                     .expect("dialog presence checked")
-                    .handle_click(row + 1, col + 1, term_rows, term_cols);
+                    .handle_click(row + 1, col + 1, term_rows, term_cols, Some(&github));
                 Some(self.apply_dialog_action(action))
             }
             InputEvent::MousePress { .. } if self.dialog_open() => {
@@ -2255,8 +2267,14 @@ impl Multiplexer {
                 None
             }
             InputEvent::Data(bytes) => {
-                if let Some(dialog) = self.dialog_top_mut() {
-                    let action = dialog.handle_key(&bytes);
+                let loading = self.pull_request_context_loading();
+                let github = GithubContextView {
+                    branch: self.pull_request_context_branch.as_deref(),
+                    pull_request: self.pull_request_context.as_ref(),
+                    loading,
+                };
+                if let Some(dialog) = self.dialog_stack.last_mut() {
+                    let action = dialog.handle_key(&bytes, Some(&github));
                     Some(self.apply_dialog_action(action))
                 } else {
                     // Any keyboard input from the operator returns the
@@ -2770,13 +2788,15 @@ impl Multiplexer {
         );
 
         if let Some(dialog) = self.dialog_top() {
+            let github = self.github_context_view();
             dialog.render_with_hover(
                 &mut buf,
                 self.term_rows,
                 self.term_cols,
                 self.hover_target == Some(HoverTarget::DialogCopyTarget),
+                Some(&github),
             );
-            dialog.render_footer_hint(&mut buf, self.term_rows, self.term_cols);
+            dialog.render_footer_hint(&mut buf, self.term_rows, self.term_cols, Some(&github));
         }
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
@@ -5145,12 +5165,7 @@ mod tests {
         mux.pull_request_lookup.request_id = request_id;
         mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_branch = Some(branch.to_string());
-        mux.dialog_push(Dialog::GitHubContext {
-            branch: Some(branch.to_string()),
-            pull_request: None,
-            pull_request_loading: true,
-            copied: false,
-        });
+        mux.dialog_push(Dialog::GitHubContext { copied: false });
     }
 
     #[test]
@@ -5888,13 +5903,14 @@ mod tests {
         assert!(changed, "dialog refresh should request redraw");
         assert!(matches!(
             mux.dialog_top(),
-            Some(Dialog::GitHubContext {
-                branch: Some(branch),
-                pull_request: Some(pr),
-                pull_request_loading: false,
-                copied: false,
-            }) if branch == "feat/x" && pr.number == 436
+            Some(Dialog::GitHubContext { copied: false })
         ));
+        assert_eq!(mux.pull_request_context_branch.as_deref(), Some("feat/x"));
+        assert_eq!(
+            mux.pull_request_context.as_ref().map(|pr| pr.number),
+            Some(436)
+        );
+        assert!(!mux.pull_request_context_loading());
     }
 
     #[test]
@@ -5913,13 +5929,11 @@ mod tests {
         assert!(changed, "dialog loading state changed");
         assert!(matches!(
             mux.dialog_top(),
-            Some(Dialog::GitHubContext {
-                branch: Some(branch),
-                pull_request: None,
-                pull_request_loading: false,
-                copied: false,
-            }) if branch == "feat/x"
+            Some(Dialog::GitHubContext { copied: false })
         ));
+        assert_eq!(mux.pull_request_context_branch.as_deref(), Some("feat/x"));
+        assert!(mux.pull_request_context.is_none());
+        assert!(!mux.pull_request_context_loading());
         assert!(
             !mux.pull_request_context_cache.contains_key("feat/x"),
             "transient failure must not cache a no-PR result"
@@ -6723,13 +6737,16 @@ mod tests {
         );
         assert!(matches!(
             mux.dialog_top(),
-            Some(Dialog::GitHubContext {
-                branch: Some(branch),
-                pull_request: Some(pr),
-                pull_request_loading: false,
-                copied: false,
-            }) if branch == "feature/context" && pr.number == 434
+            Some(Dialog::GitHubContext { copied: false })
         ));
+        assert_eq!(
+            mux.pull_request_context_branch.as_deref(),
+            Some("feature/context")
+        );
+        assert_eq!(
+            mux.pull_request_context.as_ref().map(|pr| pr.number),
+            Some(434)
+        );
     }
 
     #[test]

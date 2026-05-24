@@ -24,6 +24,17 @@ use std::sync::Arc;
 
 use crate::session::PullRequestInfo;
 
+/// Borrowed view of the multiplexer's live GitHub context, threaded
+/// through every dialog method that depends on it. Non-`GitHubContext`
+/// dialogs ignore the value, so callers may pass `None` when no
+/// `GitHubContext` dialog is on the stack.
+#[derive(Clone, Copy)]
+pub struct GithubContextView<'a> {
+    pub branch: Option<&'a str>,
+    pub pull_request: Option<&'a Arc<PullRequestInfo>>,
+    pub loading: bool,
+}
+
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
 const RESET: &str = "\x1b[0m";
@@ -131,12 +142,11 @@ pub enum Dialog {
     /// Read-only modal opened from the bottom branch/PR context.
     /// Keeps GitHub metadata out of the container details modal while
     /// still making the PR URL, branch, title, and CI status available.
-    GitHubContext {
-        branch: Option<String>,
-        pull_request: Option<Arc<PullRequestInfo>>,
-        pull_request_loading: bool,
-        copied: bool,
-    },
+    /// Live state (branch, PR, loading flag) is read from the
+    /// multiplexer at dispatch / render time via `GithubContextView`,
+    /// so a branch flip mid-life reflects in the dialog without an
+    /// explicit per-`apply_*` refresh step.
+    GitHubContext { copied: bool },
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
     /// on confirm, the dialog is replaced with an `AgentPicker` carrying
@@ -325,7 +335,11 @@ impl Dialog {
     }
 
     /// Handle a raw key byte and return the resulting action.
-    pub fn handle_key(&mut self, key: &[u8]) -> DialogAction {
+    pub fn handle_key(
+        &mut self,
+        key: &[u8],
+        github: Option<&GithubContextView<'_>>,
+    ) -> DialogAction {
         // Text-input dialog has its own dismissal / editing rules and
         // must intercept keys before the arrow-key + dismiss-key
         // shortcuts below would steal them (e.g. `q` is a legal
@@ -357,22 +371,20 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
-        if let Self::GitHubContext {
-            pull_request,
-            copied,
-            ..
-        } = self
-        {
+        if let Self::GitHubContext { copied } = self {
             if is_dismiss_key(key) {
                 return DialogAction::Dismiss;
             }
             return match key {
                 b"\r" | b"\n" => {
-                    let Some(pr) = pull_request else {
+                    let Some(url) = github
+                        .and_then(|view| view.pull_request)
+                        .map(|pr| pr.url.clone())
+                    else {
                         return DialogAction::Redraw;
                     };
                     *copied = true;
-                    DialogAction::CopyToClipboard(pr.url.clone())
+                    DialogAction::CopyToClipboard(url)
                 }
                 _ => DialogAction::Redraw,
             };
@@ -605,6 +617,7 @@ impl Dialog {
         col: u16,
         term_rows: u16,
         term_cols: u16,
+        github: Option<&GithubContextView<'_>>,
     ) -> DialogAction {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
         let inside_box =
@@ -634,12 +647,10 @@ impl Dialog {
             *copied = true;
             return DialogAction::CopyToClipboard(payload);
         }
-        if let Self::GitHubContext {
-            pull_request: Some(pr),
-            copied,
-            ..
-        } = self
-        {
+        if let Self::GitHubContext { copied } = self {
+            let Some(pr) = github.and_then(|view| view.pull_request) else {
+                return DialogAction::Consume;
+            };
             if !github_context_url_row_clickable(row, col, box_row, box_col, width) {
                 return DialogAction::Consume;
             }
@@ -785,7 +796,14 @@ impl Dialog {
     /// Return true when `(row, col)` is a dialog hit target that will
     /// perform an action on click. The daemon uses this to drive OSC 22
     /// pointer-shape feedback without duplicating dialog layout maths.
-    pub fn clickable_at(&self, row: u16, col: u16, term_rows: u16, term_cols: u16) -> bool {
+    pub fn clickable_at(
+        &self,
+        row: u16,
+        col: u16,
+        term_rows: u16,
+        term_cols: u16,
+        github: Option<&GithubContextView<'_>>,
+    ) -> bool {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
         let inside_box =
             row >= box_row && row < box_row + height && col >= box_col && col < box_col + width;
@@ -797,11 +815,10 @@ impl Dialog {
             Self::ContainerInfo { .. } => {
                 container_info_id_row_clickable(row, col, box_row, box_col, width)
             }
-            Self::GitHubContext {
-                pull_request: Some(_),
-                ..
-            } => github_context_url_row_clickable(row, col, box_row, box_col, width),
-            Self::GitHubContext { .. } => false,
+            Self::GitHubContext { .. } => {
+                github.and_then(|view| view.pull_request).is_some()
+                    && github_context_url_row_clickable(row, col, box_row, box_col, width)
+            }
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
                 filter,
@@ -905,7 +922,7 @@ impl Dialog {
     /// dialog follows the same hint contract without competing with
     /// the branch/container status row.
     pub fn render(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
-        self.render_with_hover(buf, term_rows, term_cols, false);
+        self.render_with_hover(buf, term_rows, term_cols, false, None);
     }
 
     pub fn render_with_hover(
@@ -914,6 +931,7 @@ impl Dialog {
         term_rows: u16,
         term_cols: u16,
         copy_target_hovered: bool,
+        github: Option<&GithubContextView<'_>>,
     ) {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
         // Skip rendering entirely when the terminal is too small to
@@ -982,21 +1000,19 @@ impl Dialog {
                     copy_target_hovered,
                 );
             }
-            Self::GitHubContext {
-                branch,
-                pull_request,
-                pull_request_loading,
-                copied,
-            } => {
+            Self::GitHubContext { copied } => {
+                let branch = github.and_then(|view| view.branch);
+                let pull_request = github.and_then(|view| view.pull_request).map(Arc::as_ref);
+                let loading = github.is_some_and(|view| view.loading);
                 render_github_context(
                     buf,
                     box_row,
                     box_col,
                     height,
                     width,
-                    branch.as_deref(),
-                    pull_request.as_deref(),
-                    *pull_request_loading,
+                    branch,
+                    pull_request,
+                    loading,
                     *copied,
                     copy_target_hovered,
                 );
@@ -1010,16 +1026,25 @@ impl Dialog {
         }
     }
 
-    pub fn render_footer_hint(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
+    pub fn render_footer_hint(
+        &self,
+        buf: &mut Vec<u8>,
+        term_rows: u16,
+        term_cols: u16,
+        github: Option<&GithubContextView<'_>>,
+    ) {
         if term_rows < 3 {
             return;
         }
-        let spans = self.footer_hint_spans();
+        let spans = self.footer_hint_spans(github);
         render_blank_row(buf, term_rows - 2, term_cols);
         render_hint_row(buf, term_rows - 3, term_cols, spans);
     }
 
-    fn footer_hint_spans(&self) -> &'static [HintSpan<'static>] {
+    fn footer_hint_spans(
+        &self,
+        github: Option<&GithubContextView<'_>>,
+    ) -> &'static [HintSpan<'static>] {
         match self {
             Self::CommandPalette { .. } => PALETTE_HINT,
             Self::SplitDirectionPicker { .. }
@@ -1027,8 +1052,8 @@ impl Dialog {
             | Self::CloseTargetPicker { .. } => PICKER_HINT,
             Self::RenameTab { .. } => RENAME_HINT,
             Self::ContainerInfo { .. } => CONTAINER_INFO_HINT,
-            Self::GitHubContext { pull_request, .. } => {
-                if pull_request.is_some() {
+            Self::GitHubContext { .. } => {
+                if github.and_then(|view| view.pull_request).is_some() {
                     GITHUB_CONTEXT_HINT
                 } else {
                     READ_ONLY_HINT
@@ -1056,42 +1081,6 @@ impl Dialog {
             self,
             Self::ContainerInfo { copied: true, .. } | Self::GitHubContext { copied: true, .. }
         )
-    }
-
-    /// Refresh a `GitHubContext` dialog's snapshot from live multiplexer
-    /// state. Mux pull-request state can shift while the dialog is on the
-    /// stack (branch flip, lookup arrival); this is the single point that
-    /// propagates the change into the dialog. Returns true when a visible
-    /// field actually changed.
-    pub fn sync_github_context(
-        &mut self,
-        branch: Option<&str>,
-        pull_request: Option<&Arc<PullRequestInfo>>,
-        loading: bool,
-    ) -> bool {
-        let Self::GitHubContext {
-            branch: dialog_branch,
-            pull_request: dialog_pull_request,
-            pull_request_loading: dialog_pull_request_loading,
-            ..
-        } = self
-        else {
-            return false;
-        };
-        let mut changed = false;
-        if dialog_branch.as_deref() != branch {
-            *dialog_branch = branch.map(str::to_string);
-            changed = true;
-        }
-        if dialog_pull_request.as_deref() != pull_request.map(Arc::as_ref) {
-            *dialog_pull_request = pull_request.cloned();
-            changed = true;
-        }
-        if *dialog_pull_request_loading != loading {
-            *dialog_pull_request_loading = loading;
-            changed = true;
-        }
-        changed
     }
 }
 
@@ -2301,19 +2290,19 @@ mod tests {
     #[test]
     fn esc_dismisses_palette() {
         let mut d = palette();
-        assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
+        assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
     }
 
     #[test]
     fn ctrl_c_dismisses_palette() {
         let mut d = palette();
-        assert_eq!(d.handle_key(b"\x03"), DialogAction::Dismiss);
+        assert_eq!(d.handle_key(b"\x03", None), DialogAction::Dismiss);
     }
 
     #[test]
     fn arrow_down_advances_palette_selection() {
         let mut d = palette();
-        assert_eq!(d.handle_key(b"\x1b[B"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
         let Dialog::CommandPalette { selected, .. } = d else {
             unreachable!()
         };
@@ -2323,7 +2312,7 @@ mod tests {
     #[test]
     fn arrow_down_clamps_palette_at_last_item() {
         let mut d = palette_with(PALETTE_ITEMS.len() - 1, String::new());
-        d.handle_key(b"\x1b[B");
+        d.handle_key(b"\x1b[B", None);
         let Dialog::CommandPalette { selected, .. } = d else {
             unreachable!()
         };
@@ -2333,7 +2322,7 @@ mod tests {
     #[test]
     fn enter_on_palette_emits_command() {
         let mut d = palette();
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::Command(cmd) => assert_eq!(cmd, PALETTE_ITEMS[0].0),
             other => panic!("expected Command, got {other:?}"),
         }
@@ -2342,7 +2331,7 @@ mod tests {
     #[test]
     fn enter_on_agent_picker_emits_spawn() {
         let mut d = picker(vec!["claude", "codex"]);
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::SpawnAgent { agent, intent } => {
                 assert_eq!(agent.as_deref(), Some("claude"));
                 assert_eq!(intent, PickerIntent::NewTab);
@@ -2361,8 +2350,8 @@ mod tests {
         // Arrow Down from index 1 must skip the Section at index 2 and
         // land directly on the Shell row at index 3.
         let mut d = picker(vec!["claude"]);
-        d.handle_key(b"\x1b[B");
-        match d.handle_key(b"\r") {
+        d.handle_key(b"\x1b[B", None);
+        match d.handle_key(b"\r", None) {
             DialogAction::SpawnAgent { agent, .. } => assert!(agent.is_none()),
             other => panic!("expected SpawnAgent, got {other:?}"),
         }
@@ -2375,8 +2364,8 @@ mod tests {
         // the header itself.
         let mut d = picker(vec!["claude", "codex"]);
         // Walk past both agents (selected 1 → 2 → expected 4 = Shell).
-        d.handle_key(b"\x1b[B"); // 1 → 2
-        d.handle_key(b"\x1b[B"); // 2 → 4 (skips Section at 3)
+        d.handle_key(b"\x1b[B", None); // 1 → 2
+        d.handle_key(b"\x1b[B", None); // 2 → 4 (skips Section at 3)
         let Dialog::AgentPicker { selected, .. } = &d else {
             unreachable!()
         };
@@ -2397,7 +2386,7 @@ mod tests {
             intent: PickerIntent::NewTab,
             filter: String::new(),
         };
-        assert_eq!(d.handle_key(b"\r"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\r", None), DialogAction::Redraw);
     }
 
     #[test]
@@ -2405,16 +2394,16 @@ mod tests {
         let mut d = palette();
         // Click in the top-left corner is reliably outside the centred
         // box even on tiny terminals.
-        assert_eq!(d.handle_click(0, 0, 40, 100), DialogAction::Dismiss);
+        assert_eq!(d.handle_click(0, 0, 40, 100, None), DialogAction::Dismiss);
     }
 
     #[test]
     fn clickable_at_reports_container_info_copy_target() {
         let d = container_info_fixture();
         let (row, col, _, _) = d.box_rect(40, 100);
-        assert!(d.clickable_at(row + 2, col + 2, 40, 100));
-        assert!(!d.clickable_at(row + 3, col + 2, 40, 100));
-        assert!(!d.clickable_at(0, 0, 40, 100));
+        assert!(d.clickable_at(row + 2, col + 2, 40, 100, None));
+        assert!(!d.clickable_at(row + 3, col + 2, 40, 100, None));
+        assert!(!d.clickable_at(0, 0, 40, 100, None));
     }
 
     #[test]
@@ -2423,11 +2412,11 @@ mod tests {
         let (row, col, _, _) = d.box_rect(40, 100);
         let first_item_row = row + 3;
         assert!(
-            !d.clickable_at(first_item_row, col + 2, 40, 100),
+            !d.clickable_at(first_item_row, col + 2, 40, 100, None),
             "section label must not advertise as clickable"
         );
         assert!(
-            d.clickable_at(first_item_row + 1, col + 2, 40, 100),
+            d.clickable_at(first_item_row + 1, col + 2, 40, 100, None),
             "agent row should advertise as clickable"
         );
     }
@@ -2439,7 +2428,7 @@ mod tests {
         // resets selection to 0. The directional choice lives in the
         // SplitDirectionPicker sub-dialog opened on confirm.
         for &c in b"split" {
-            d.handle_key(&[c]);
+            d.handle_key(&[c], None);
         }
         let Dialog::CommandPalette {
             selected, filter, ..
@@ -2465,9 +2454,9 @@ mod tests {
         // (e.g. directly emitting SplitDirection) gets caught.
         let mut d = palette();
         for &c in b"split" {
-            d.handle_key(&[c]);
+            d.handle_key(&[c], None);
         }
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Split),
             other => panic!("expected Command(Split), got {other:?}"),
         }
@@ -2480,7 +2469,7 @@ mod tests {
             filter: String::new(),
         };
         // selected = 0 → first item = Right
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::SplitDirection(dir) => assert_eq!(dir, SplitDirection::Right),
             other => panic!("expected SplitDirection(Right), got {other:?}"),
         }
@@ -2504,9 +2493,9 @@ mod tests {
             filter: String::new(),
         };
         for &c in b"belo" {
-            d.handle_key(&[c]);
+            d.handle_key(&[c], None);
         }
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::SplitDirection(dir) => assert_eq!(dir, SplitDirection::Below),
             other => panic!("expected SplitDirection(Below), got {other:?}"),
         }
@@ -2516,12 +2505,12 @@ mod tests {
     fn palette_enter_after_filter_emits_matching_command() {
         let mut d = palette();
         for &c in b"close" {
-            d.handle_key(&[c]);
+            d.handle_key(&[c], None);
         }
         // "close" matches the top-level Close command; the daemon
         // decides whether to confirm directly or open the target
         // picker based on the active tab's pane count.
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Close),
             other => panic!("expected Close, got {other:?}"),
         }
@@ -2545,9 +2534,9 @@ mod tests {
     fn palette_clear_filter_emits_clear_pane() {
         let mut d = palette();
         for &c in b"clear" {
-            d.handle_key(&[c]);
+            d.handle_key(&[c], None);
         }
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::ClearPane),
             other => panic!("expected ClearPane, got {other:?}"),
         }
@@ -2556,7 +2545,7 @@ mod tests {
     #[test]
     fn palette_backspace_pops_filter_char_and_resets_selection() {
         let mut d = palette_with(0, "split");
-        d.handle_key(b"\x7f");
+        d.handle_key(b"\x7f", None);
         let Dialog::CommandPalette { filter, .. } = &d else {
             unreachable!()
         };
@@ -2569,7 +2558,7 @@ mod tests {
         // character because the dialog is type-to-filter. Esc remains
         // the dismiss key.
         let mut d = palette();
-        assert_eq!(d.handle_key(b"q"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"q", None), DialogAction::Redraw);
         let Dialog::CommandPalette { filter, .. } = &d else {
             unreachable!()
         };
@@ -2585,7 +2574,7 @@ mod tests {
         // not a stray agent."
         let mut d = picker(vec!["claude", "codex", "kimi"]);
         for &c in b"sh" {
-            d.handle_key(&[c]);
+            d.handle_key(&[c], None);
         }
         let Dialog::AgentPicker { agents, filter, .. } = &d else {
             unreachable!()
@@ -2601,10 +2590,10 @@ mod tests {
     fn picker_typing_cla_filters_to_claude() {
         let mut d = picker(vec!["claude", "codex", "kimi"]);
         for &c in b"cla" {
-            d.handle_key(&[c]);
+            d.handle_key(&[c], None);
         }
         // Enter on filtered list[0] = claude
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::SpawnAgent { agent, .. } => {
                 assert_eq!(agent.as_deref(), Some("claude"));
             }
@@ -2616,10 +2605,10 @@ mod tests {
     fn picker_enter_with_empty_filtered_list_is_redraw_noop() {
         let mut d = picker(vec!["claude", "codex"]);
         for &c in b"zzz" {
-            d.handle_key(&[c]);
+            d.handle_key(&[c], None);
         }
         assert_eq!(
-            d.handle_key(b"\r"),
+            d.handle_key(b"\r", None),
             DialogAction::Redraw,
             "Enter with no matches must not synthesise a SpawnAgent"
         );
@@ -2631,7 +2620,7 @@ mod tests {
             tab_idx: 3,
             input: jackin_tui::TextField::new("").with_allow_empty(true),
         };
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::RenameTab { tab_idx, label } => {
                 assert_eq!(tab_idx, 3);
                 assert_eq!(label, "");
@@ -2646,7 +2635,7 @@ mod tests {
             tab_idx: 0,
             input: jackin_tui::TextField::new("abc"),
         };
-        assert_eq!(d.handle_key(b"\x7f"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x7f", None), DialogAction::Redraw);
         let Dialog::RenameTab { input, .. } = d else {
             unreachable!()
         };
@@ -2659,7 +2648,7 @@ mod tests {
             tab_idx: 0,
             input: jackin_tui::TextField::new("abc"),
         };
-        assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
+        assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
     }
 
     #[test]
@@ -2671,7 +2660,7 @@ mod tests {
             tab_idx: 0,
             input: jackin_tui::TextField::new("a"),
         };
-        assert_eq!(d.handle_key(b"q"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"q", None), DialogAction::Redraw);
         let Dialog::RenameTab { input, .. } = d else {
             unreachable!()
         };
@@ -2701,7 +2690,7 @@ mod tests {
     #[test]
     fn container_info_enter_flips_copied_flag_for_render_feedback() {
         let mut d = container_info_fixture();
-        let _ = d.handle_key(b"\r");
+        let _ = d.handle_key(b"\r", None);
         let Dialog::ContainerInfo { copied, .. } = d else {
             unreachable!()
         };
@@ -2717,7 +2706,7 @@ mod tests {
         // dismissing themselves — handle_key must NOT return Dismiss
         // for Enter.
         let mut d = container_info_fixture();
-        let action = d.handle_key(b"\r");
+        let action = d.handle_key(b"\r", None);
         assert!(
             matches!(action, DialogAction::CopyToClipboard(_)),
             "Enter must request a copy, not dismiss; got {action:?}"
@@ -2727,7 +2716,7 @@ mod tests {
     #[test]
     fn container_info_enter_copies_container_name() {
         let mut d = container_info_fixture();
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", None) {
             DialogAction::CopyToClipboard(payload) => {
                 assert_eq!(payload, "jk-abc123-thearchitect");
             }
@@ -2739,7 +2728,7 @@ mod tests {
     fn container_info_click_on_id_row_copies_container_name() {
         let mut d = container_info_fixture();
         let (row, col, _, _) = d.box_rect(40, 100);
-        match d.handle_click(row + 2, col + 2, 40, 100) {
+        match d.handle_click(row + 2, col + 2, 40, 100, None) {
             DialogAction::CopyToClipboard(payload) => {
                 assert_eq!(payload, "jk-abc123-thearchitect");
             }
@@ -2756,7 +2745,7 @@ mod tests {
         let mut d = container_info_fixture();
         let (row, col, _, _) = d.box_rect(40, 100);
         assert_eq!(
-            d.handle_click(row + 3, col + 2, 40, 100),
+            d.handle_click(row + 3, col + 2, 40, 100, None),
             DialogAction::Consume
         );
         let Dialog::ContainerInfo { copied, .. } = d else {
@@ -2817,6 +2806,22 @@ mod tests {
         assert!(!rendered.contains("Pull Request"));
     }
 
+    fn github_view_for_fixture(pr: &Arc<PullRequestInfo>) -> GithubContextView<'_> {
+        GithubContextView {
+            branch: Some("feature/container-info"),
+            pull_request: Some(pr),
+            loading: false,
+        }
+    }
+
+    fn github_view_loading() -> GithubContextView<'static> {
+        GithubContextView {
+            branch: Some("feature/container-info"),
+            pull_request: None,
+            loading: true,
+        }
+    }
+
     #[test]
     fn github_context_renders_branch_pr_url_and_ci_status() {
         let mut pr = pull_request_fixture();
@@ -2828,14 +2833,11 @@ mod tests {
             cancelled: 0,
             total: 5,
         });
-        let d = Dialog::GitHubContext {
-            branch: Some("feature/container-info".to_string()),
-            pull_request: Some(Arc::new(pr)),
-            pull_request_loading: false,
-            copied: false,
-        };
+        let pr = Arc::new(pr);
+        let view = github_view_for_fixture(&pr);
+        let d = Dialog::GitHubContext { copied: false };
         let mut buf = Vec::new();
-        d.render(&mut buf, 40, 120);
+        d.render_with_hover(&mut buf, 40, 120, false, Some(&view));
         let rendered = String::from_utf8_lossy(&buf);
 
         assert!(rendered.contains("Branch"));
@@ -2859,14 +2861,10 @@ mod tests {
 
     #[test]
     fn github_context_renders_pr_lookup_in_progress() {
-        let d = Dialog::GitHubContext {
-            branch: Some("feature/container-info".to_string()),
-            pull_request: None,
-            pull_request_loading: true,
-            copied: false,
-        };
+        let view = github_view_loading();
+        let d = Dialog::GitHubContext { copied: false };
         let mut buf = Vec::new();
-        d.render(&mut buf, 40, 120);
+        d.render_with_hover(&mut buf, 40, 120, false, Some(&view));
         let rendered = String::from_utf8_lossy(&buf);
 
         assert!(rendered.contains("Branch"));
@@ -2878,14 +2876,11 @@ mod tests {
 
     #[test]
     fn github_context_enter_copies_pr_url_and_shows_feedback() {
-        let mut d = Dialog::GitHubContext {
-            branch: Some("feature/container-info".to_string()),
-            pull_request: Some(Arc::new(pull_request_fixture())),
-            pull_request_loading: false,
-            copied: false,
-        };
+        let pr = Arc::new(pull_request_fixture());
+        let view = github_view_for_fixture(&pr);
+        let mut d = Dialog::GitHubContext { copied: false };
 
-        match d.handle_key(b"\r") {
+        match d.handle_key(b"\r", Some(&view)) {
             DialogAction::CopyToClipboard(payload) => {
                 assert_eq!(payload, "https://github.com/jackin-project/jackin/pull/123");
             }
@@ -2894,23 +2889,20 @@ mod tests {
         assert!(d.has_copy_feedback());
 
         let mut buf = Vec::new();
-        d.render(&mut buf, 40, 120);
+        d.render_with_hover(&mut buf, 40, 120, false, Some(&view));
         let rendered = String::from_utf8_lossy(&buf);
         assert!(rendered.contains("Copied!"));
     }
 
     #[test]
     fn github_context_url_click_copies_pr_url() {
-        let mut d = Dialog::GitHubContext {
-            branch: Some("feature/container-info".to_string()),
-            pull_request: Some(Arc::new(pull_request_fixture())),
-            pull_request_loading: false,
-            copied: false,
-        };
+        let pr = Arc::new(pull_request_fixture());
+        let view = github_view_for_fixture(&pr);
+        let mut d = Dialog::GitHubContext { copied: false };
         let (row, col, _, _) = d.box_rect(40, 120);
 
-        assert!(d.clickable_at(row + 5, col + 2, 40, 120));
-        match d.handle_click(row + 5, col + 2, 40, 120) {
+        assert!(d.clickable_at(row + 5, col + 2, 40, 120, Some(&view)));
+        match d.handle_click(row + 5, col + 2, 40, 120, Some(&view)) {
             DialogAction::CopyToClipboard(payload) => {
                 assert_eq!(payload, "https://github.com/jackin-project/jackin/pull/123");
             }
@@ -2921,14 +2913,11 @@ mod tests {
 
     #[test]
     fn github_context_hover_lifts_only_url_copy_value() {
-        let d = Dialog::GitHubContext {
-            branch: Some("feature/container-info".to_string()),
-            pull_request: Some(Arc::new(pull_request_fixture())),
-            pull_request_loading: false,
-            copied: false,
-        };
+        let pr = Arc::new(pull_request_fixture());
+        let view = github_view_for_fixture(&pr);
+        let d = Dialog::GitHubContext { copied: false };
         let mut buf = Vec::new();
-        d.render_with_hover(&mut buf, 40, 120, true);
+        d.render_with_hover(&mut buf, 40, 120, true, Some(&view));
         let rendered = String::from_utf8_lossy(&buf);
 
         assert!(
@@ -2939,12 +2928,9 @@ mod tests {
 
     #[test]
     fn github_context_hint_renders_above_bottom_status_row() {
-        let d = Dialog::GitHubContext {
-            branch: Some("feature/container-info".to_string()),
-            pull_request: Some(Arc::new(pull_request_fixture())),
-            pull_request_loading: false,
-            copied: false,
-        };
+        let pr = Arc::new(pull_request_fixture());
+        let view = github_view_for_fixture(&pr);
+        let d = Dialog::GitHubContext { copied: false };
         let term_rows = 40;
         let term_cols = 120;
         let padded_cols = hint_span_cols(GITHUB_CONTEXT_HINT) + 4;
@@ -2953,8 +2939,8 @@ mod tests {
         let spacer_row = term_rows - 1;
 
         let mut buf = Vec::new();
-        d.render(&mut buf, term_rows, term_cols);
-        d.render_footer_hint(&mut buf, term_rows, term_cols);
+        d.render_with_hover(&mut buf, term_rows, term_cols, false, Some(&view));
+        d.render_footer_hint(&mut buf, term_rows, term_cols, Some(&view));
         let rendered = String::from_utf8_lossy(&buf);
         let cursor = format!("\x1b[{};{}H", hint_row, expected_col + 1);
         let spacer_cursor = format!("\x1b[{};1H", spacer_row);
@@ -2973,7 +2959,7 @@ mod tests {
     #[test]
     fn container_info_esc_dismisses() {
         let mut d = container_info_fixture();
-        assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
+        assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
     }
 
     #[test]
@@ -2981,7 +2967,7 @@ mod tests {
         // ContainerInfo has no editable input, so `q` is also a valid
         // dismiss key (same as the list-style dialogs).
         let mut d = container_info_fixture();
-        assert_eq!(d.handle_key(b"q"), DialogAction::Dismiss);
+        assert_eq!(d.handle_key(b"q", None), DialogAction::Dismiss);
     }
 
     #[test]
@@ -2991,9 +2977,9 @@ mod tests {
         // bare Redraw keeps the box on screen and waits for Enter /
         // Esc.
         let mut d = container_info_fixture();
-        assert_eq!(d.handle_key(b"\x1b[A"), DialogAction::Redraw);
-        assert_eq!(d.handle_key(b"\x1b[B"), DialogAction::Redraw);
-        assert_eq!(d.handle_key(b"\x1b[C"), DialogAction::Redraw);
-        assert_eq!(d.handle_key(b"\x1b[D"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
     }
 }
