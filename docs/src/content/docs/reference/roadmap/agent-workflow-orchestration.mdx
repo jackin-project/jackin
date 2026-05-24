@@ -1,0 +1,179 @@
+---
+title: "Agent Workflow Orchestration"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — research and design proposal (Phase 4, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+
+## Problem
+
+jackin' already runs multiple coding agents in isolated, visible, hijackable terminal sessions. The missing product layer is a durable workflow runner that can take a well-scoped work item — for example a jackin' roadmap page — and drive it through a known sequence: research, implementation, tests, documentation, pull request creation, review by a different agent, fixes, and final operator verification.
+
+The operator goal is not "hide the agent and tell me when it is done." The goal is "start the right workflow from a known source, keep every agent visible, let me attach and intervene, and make the durable state visible through GitHub." A roadmap item such as [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) should become a tracked run with live Capsule sessions, GitHub status, a reviewable PR, and a final human gate, not a pile of manually coordinated terminal tabs.
+
+## Target workflow
+
+The first workflow worth building is `roadmap-to-pr`:
+
+1. The operator selects a roadmap item, workspace, role, implementer agent, and reviewer agent.
+2. jackin' creates a durable run record and a GitHub-visible tracking surface.
+3. jackin' creates an isolated branch/worktree/instance for the implementation.
+4. Codex starts first by default and receives a long-running objective: read the roadmap item, inspect related docs/code, research external references if the roadmap is incomplete or stale, update the roadmap if the research changes the design, implement the feature, run tests, update docs, and open or prepare a pull request.
+5. jackin' streams phase/status changes to `jackin console` and to GitHub comments/checks.
+6. When implementation reaches a review-ready state, jackin' starts Claude Code in a separate visible Capsule session with the operator's review plugins enabled.
+7. Claude reviews the branch/PR, posts structured findings, and exits with a review result.
+8. Codex receives the findings and addresses them.
+9. The review/fix loop repeats until the configured exit condition is met: no blocking findings, max cycles reached, or operator intervention.
+10. jackin' leaves a non-draft, reviewable PR for the operator and stops before merge.
+
+The workflow must be interruptible. The operator can attach to any live Capsule session, type directly into the agent, add context, pause the run, cancel the run, or take over the branch manually. That intervention is part of the run history instead of an invisible side channel.
+
+## Why jackin' should own the substrate
+
+External orchestrators are moving quickly, but jackin' has four properties that are hard to bolt onto a generic orchestrator after the fact:
+
+| jackin' property | Why it matters for workflow orchestration |
+|---|---|
+| Capsule-owned PTYs | The operator can see and hijack the exact agent session instead of watching summarized logs. |
+| Container isolation and per-mount worktree/clone modes | Each run can get a real engineering environment without silently mutating the host checkout. |
+| Role repositories | Toolchains, hooks, and agent runtime setup are already packaged as reusable environments. |
+| Host-mutation discipline | Workflow automation can be powerful without silently editing host Git config, credential stores, shell rc files, or user repositories. |
+
+Because of those properties, jackin' should not adopt a third-party orchestrator as the authoritative runtime before that project has clearly become a stable industry standard. The safer architecture is to make jackin' the execution substrate and expose adapter seams so outside products can drive it later.
+
+## External project findings
+
+These projects are worth tracking and testing, but none is an obvious project-level dependency yet.
+
+| Project | Useful idea | Adoption stance |
+|---|---|---|
+| [Conductor](https://opensource.microsoft.com/blog/2026/05/14/conductor-deterministic-orchestration-for-multi-agent-ai-workflows/) | Deterministic, YAML-first workflows with declared routing, parallel groups, script steps, human gates, provider/model mixing, and a dashboard. Strong argument that known multi-agent workflows should be explicit graphs rather than an LLM inventing control flow at runtime. | Use as a design reference for workflow definitions and human gates. Consider a future adapter that lets a Conductor workflow call jackin' run/session APIs, but do not make it the primary runtime yet. |
+| [Contrabass](https://www.contrabass.dev/) | Terminal-first issue-driven orchestration with `WORKFLOW.md`, GitHub/Linear/internal task sources, worktree provisioning, plan/execute/verify phases, stall detection, liveness snapshots, and TUI/web dashboards. | Strongest direct comparison for `roadmap-to-pr`. Study by running real jackin' roadmap tasks through it, but it overlaps heavily with the jackin' product surface and uses its own worktree/runtime model. |
+| [agtx](https://github.com/fynnfluegge/agtx) | Kanban board for coding agents, spec-driven plugins, one worktree per task, phase-specific agents, and MCP control by an orchestrator agent. | Good reference for task board semantics and MCP-facing control. Treat as research, not a dependency, until its task model and project direction stabilize. |
+| [Forge MCP](https://forgemcp.dev/) | Persistent PTY sessions, event subscriptions, `wait_for`, dashboard, and MCP tools that let agents spawn/read/control terminal sessions. | Useful adapter reference. jackin' already has the stronger container/role/Capsule substrate; the borrow is an MCP surface for jackin' sessions, not the PTY implementation. |
+| [MCO / Hive lineage](https://github.com/mco-org/mco) | Multi-provider review, consensus scoring, SARIF/PR Markdown output, custom provider adapters, live/JSONL streams, and ACP support. | Good reference for multi-agent review fan-out and result normalization. Could be called as a review step, but jackin' should preserve visible Capsule sessions for agents that mutate code. |
+| [Bernstein](https://bernstein.run/) | Multi-agent coding orchestration across many CLI agents, tracker adapters, capability cards, audit logs, secrets broker, cost guards, and web UI/PWA. | Track as a broad industry reference. Too broad and young to adopt before jackin' understands its own minimal workflow contract. |
+| [GitHub Agent HQ](https://github.blog/changelog/2026-02-04-claude-and-codex-are-now-available-in-public-preview-on-github) | GitHub-native assignment of issues/PRs to Copilot, Claude, Codex, or custom agents. Strong validation that GitHub-visible agent work is becoming standard. | Use for visibility and operator expectations, not as the execution substrate. GitHub-hosted agents lose jackin' container visibility, role environments, and hijackable terminals. |
+| [Claude Code Review](https://code.claude.com/docs/en/code-review) and [Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions) | PR review that posts inline findings and GitHub Actions automation around Claude Code. | Candidate reviewer step or reference output format. jackin' must still support local visible Claude review sessions because the operator uses custom Claude Code plugins. |
+| [Gemini CLI hooks](https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/writing-hooks.md) and [Google's Antigravity transition](https://developers.googleblog.com/en/an-important-update-transitioning-gemini-cli-to-antigravity-cli/) | Lifecycle hooks, stream output, and Google's public claim that terminal workflows now need multiple agents sharing a unified backend. | Strong signal that multi-agent orchestration is mainstream. Runtime integration should be adapter-based because Gemini/Antigravity is still moving. |
+| [Grok Build](https://x.ai/news/grok-build-cli) | xAI's terminal coding agent beta with a likely fast-moving agent/runtime surface. | Track as another runtime candidate; integrate through the multi-runtime adapter path only after stable CLI/hook semantics exist. |
+
+The common pattern is clear: every serious tool is converging on visible execution, durable task state, provider mixing, human gates, and GitHub or issue-tracker visibility. The difference is substrate. Most tools assume host-native worktrees, tmux, a web dashboard, or their own PTY server. jackin' should keep Capsule as the runtime boundary and make the workflow runner speak to Capsule.
+
+## Design
+
+### Core objects
+
+`WorkflowRun` is the durable unit. It should record the source, target workspace, role, agent assignments, branch, container/instance names, current phase, GitHub surfaces, events, artifacts, and operator interventions.
+
+`WorkflowDefinition` describes a deterministic phase graph. The first implementation can be hardcoded as `roadmap-to-pr`; later it can become a checked-in YAML/TOML format inspired by Conductor. The workflow graph should support agent steps, shell/script steps, parallel groups, wait conditions, and human gates.
+
+`WorkItemSource` resolves the input. Initial sources should be roadmap page, GitHub issue, PR, local spec file, and ad-hoc prompt. This should build on [Task source abstraction](/reference/roadmap/task-source-abstraction/) rather than invent a separate queue source system.
+
+`RunSession` binds a workflow phase to a Capsule session. The workflow runner should spawn and control sessions through typed Capsule/host APIs, not by scraping terminal output.
+
+`RunReporter` writes durable visibility. The first reporter should be GitHub: tracking issue comments, PR comments, check runs, branch/PR links, and final status summaries. A console reporter renders the same event stream in `jackin console`.
+
+### Control plane
+
+The workflow runner should sit above three existing/future jackin' surfaces:
+
+| Surface | Responsibility |
+|---|---|
+| [jackin' Capsule](/reference/jackin-capsule/) | Visible sessions, PTYs, attach/hijack, per-pane status, session input/output, and future `session.read` / `wait` control calls. |
+| [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) | Reliable `working`, `blocked`, `done`, `idle`, `unknown`, and stuck signals. Workflows must consume this authority instead of treating silence as state. |
+| [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) | Durable run records, event logs, GitHub links, review results, and retry/cancel state. |
+
+The runner can initially live in the host CLI process for foreground runs. Overnight/background orchestration should move behind [jackin' daemon](/reference/roadmap/jackin-daemon/) once that daemon exists, because a long-running queue cannot depend on a terminal process staying alive.
+
+### GitHub visibility
+
+GitHub should be the durable audit plane because the operator already reviews and merges there. The first implementation should prefer a tracking issue during work and a non-draft PR only when the run is reviewable. If an operator wants continuous PR visibility earlier, the workflow can use a draft PR mode later.
+
+The GitHub reporter should write:
+
+- A tracking issue or issue comment naming the run, source, branch, active phase, and live command to attach.
+- Check runs for workflow phases: implementation, test/docs verification, Claude review, fix-review loop, final ready state.
+- PR comments summarizing review findings, addressed findings, verification commands, and remaining risk.
+- Links back to `jackin console`/CLI commands rather than embedding internal host state paths.
+
+The reporter must not merge PRs. Merge remains an explicit operator action under the existing PR rules.
+
+### Operator intervention
+
+Every visible session should remain attachable:
+
+```sh
+jackin run attach <run-id> --session implementer
+jackin run pause <run-id>
+jackin run resume <run-id>
+jackin run cancel <run-id>
+jackin run status <run-id>
+```
+
+When the operator types into a live session, the run should record an `operator_intervention` event and either pause automatically or re-evaluate the current phase. Silent operator edits outside the run are expected in a shared workspace, so phase verification must inspect git state before continuing.
+
+## Minimal V1
+
+V1 should be intentionally narrow:
+
+1. Add a foreground `jackin run roadmap <roadmap-page>` command.
+2. Hardcode `roadmap-to-pr`.
+3. Use Codex as implementer by default and Claude Code as reviewer by default, with explicit flags to swap agents.
+4. Create a run record and isolated branch/instance using existing workspace isolation.
+5. Spawn Codex in a visible Capsule session with a generated objective.
+6. Wait for a reliable done/blocked/failed signal; if state authority is not ready, require an explicit agent-emitted completion marker or operator confirmation instead of guessing from silence.
+7. Run configured verification commands.
+8. Create/update the PR only after the workflow reaches review-ready state.
+9. Spawn Claude Code review in a second visible Capsule session.
+10. Feed findings back to Codex for one fix cycle.
+11. Stop before merge and ask the operator to verify.
+
+The first version may be foreground-only. Background/overnight dispatch belongs to [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) and the daemon.
+
+## Phases
+
+### Phase 0 — Research harness
+
+Run the same real jackin' roadmap task through Contrabass, agtx, Forge MCP, MCO/Hive-style review, GitHub Agent HQ, and a manual jackin' Capsule workflow. Record which surfaces are actually useful: status fidelity, hijackability, branch hygiene, PR quality, review quality, cost visibility, and recovery after failure.
+
+### Phase 1 — Run record and GitHub reporter
+
+Add durable run records, phase events, GitHub issue/PR/check-run reporting, and `jackin run status`. This can land before full autonomous control because it gives manual multi-agent workflows a shared audit trail.
+
+### Phase 2 — Capsule session control API
+
+Add the missing control calls the workflow runner needs: create session, send prompt/input, read visible/recent output for debugging, wait for status, focus/attach by session, and cancel. These should extend <RepoFile path="crates/jackin-protocol/src/control.rs" /> and the Capsule daemon rather than shelling into terminal sessions.
+
+### Phase 3 — Hardcoded `roadmap-to-pr`
+
+Implement the first deterministic workflow with Codex implementation and Claude Code review. Keep workflow topology in Rust until the product contract is proven.
+
+### Phase 4 — Declarative workflows
+
+Move from a hardcoded workflow to a declared graph only after the core phases prove stable. The file format should borrow Conductor's strengths: explicit routes, script steps, parallel groups, context selection, and human gates.
+
+### Phase 5 — External adapter surface
+
+Expose jackin' as an execution substrate for external orchestrators through MCP and/or ACP: create visible container-backed sessions, subscribe to events, wait for state, attach, and read outputs. External products can then drive jackin' without jackin' depending on any one product winning the market.
+
+## Open questions
+
+- Should the first GitHub surface be a tracking issue, a draft PR, or a check-run-only branch until review-ready?
+- Should operator intervention automatically pause the workflow, or should it mark the phase dirty and continue after a verification step?
+- How should the workflow represent review quality: Claude-only, MCO/Hive-style consensus, GitHub Code Review, or a configurable reviewer chain?
+- How much of `/goal` should jackin' rely on for Codex, and how much should jackin' own as its own run state?
+- What is the minimum reliable completion signal before [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) ships?
+- Should declarative workflow files live in the jackin' repo, role repos, workspace config, or all three with precedence rules?
+
+## Related roadmap items
+
+- [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/) — parent research program.
+- [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — reliable session state required for unattended progression.
+- [Task source abstraction](/reference/roadmap/task-source-abstraction/) — shared source model for roadmap pages, GitHub issues, local files, and future queues.
+- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) — background dispatch and parallel task execution.
+- [GitHub link tracking](/reference/roadmap/github-link-tracking/) — PR/issue state synchronization.
+- [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) — durable run records and event logs.
+- [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) — structured agent-emitted links and completion markers.
+- [Console agent session control](/reference/roadmap/console-agent-session-control/) — operator surface for visible sessions.
+- [jackin' daemon](/reference/roadmap/jackin-daemon/) — eventual home for background/overnight orchestration.
