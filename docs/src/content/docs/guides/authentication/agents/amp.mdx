@@ -25,6 +25,10 @@ Follow the prompted flow. Once it completes, Amp is ready on your host and jacki
 To verify the host login is active, run `amp` briefly on the host — if it starts a session without prompting for credentials, you're good.
 </Aside>
 
+## Runtime trust prompts
+
+jackin' launches Amp with `--dangerously-allow-all`, so workspace-backed launches do not stop on command confirmation prompts. This applies only inside the jackin' container runtime; jackin' does not write Amp preferences on the host.
+
 ## Subscription
 
 Amp does not require a separate subscription — access is included with your Sourcegraph account.

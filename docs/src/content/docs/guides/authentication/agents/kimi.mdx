@@ -30,6 +30,10 @@ Kimi writes its host-side state under `~/.kimi`. jackin' reads these files when 
 
 jackin' reads those host files but does not write back to them. If Kimi rotates or creates auth state inside the container, that state stays in jackin-managed instance storage for that container.
 
+## Runtime trust prompts
+
+jackin' launches Kimi with `--yolo`, so workspace-backed launches auto-approve Kimi actions instead of stopping on approval prompts. This applies only inside the jackin' container runtime; jackin' does not write Kimi settings on the host.
+
 ## Models
 
 Role authors can set a Kimi model in `jackin.role.toml`:

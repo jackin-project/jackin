@@ -36,6 +36,10 @@ The Z.AI Coding Plan is a subscription that gives access to the GLM-5.1 model th
 The model is specified in the role manifest as a `provider/model` string — for example, `zai-coding-plan/glm-5.1`. jackin' passes the model to OpenCode via the `-m` flag at launch time. You don't need to configure the model separately in OpenCode.
 </Aside>
 
+## Runtime trust prompts
+
+jackin' launches OpenCode with inline runtime config that sets `permission` to `allow`, so workspace-backed launches do not stop on OpenCode permission prompts. This applies only inside the jackin' container runtime; jackin' does not write OpenCode settings on the host.
+
 ## Subscription
 
 OpenCode itself is open source and free. The providers it connects to have their own pricing — a subscription is usually more cost-effective than pay-as-you-go for regular agent use.
