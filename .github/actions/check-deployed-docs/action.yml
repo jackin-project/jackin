@@ -20,6 +20,10 @@ inputs:
   github-token:
     description: Token forwarded to lychee so it can authenticate against the GitHub API for rate-limited URL checks.
     required: true
+  external-links:
+    description: Whether to check third-party links from deployed pages. Disable for post-deploy gating to avoid blocking releases on unrelated external outages.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -70,11 +74,43 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        SITEMAP_URL: ${{ inputs.sitemap-url }}
+        EXTERNAL_LINKS: ${{ inputs.external-links }}
       run: |
-        lychee \
-          --config docs/lychee.toml \
-          --cache=false \
-          --include-fragments \
-          --remap "${{ inputs.edit-url }}/(.*) file://${{ github.workspace }}/\$1" \
-          --remap "${{ inputs.blob-url }}/(.*) file://${{ github.workspace }}/\$1" \
-          --files-from lychee/deployed-pages.txt
+        set -euo pipefail
+
+        check_links() {
+          args=(
+            --config docs/lychee.toml
+            --cache=false
+            --include-fragments
+            --remap "${{ inputs.edit-url }}/(.*) file://${{ github.workspace }}/\$1"
+            --remap "${{ inputs.blob-url }}/(.*) file://${{ github.workspace }}/\$1"
+            --files-from lychee/deployed-pages.txt
+          )
+
+          if [[ "$EXTERNAL_LINKS" != "true" ]]; then
+            site_origin="${SITEMAP_URL%/sitemap-*}"
+            site_origin_re="$(printf '%s' "$site_origin" | sed 's/[][\/.^$*+?{}()|]/\\&/g')"
+            args+=(--include "^${site_origin_re}(/|$)|^file://")
+          fi
+
+          lychee \
+            "${args[@]}"
+        }
+
+        for attempt in 1 2 3; do
+          if check_links; then
+            exit 0
+          fi
+
+          if [[ "$attempt" == "3" ]]; then
+            break
+          fi
+
+          echo "::notice::deployed docs link check failed on attempt ${attempt}; retrying after 30 seconds"
+          sleep 30
+        done
+
+        echo "::error::deployed docs link check failed after 3 attempts"
+        exit 1
