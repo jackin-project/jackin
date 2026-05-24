@@ -165,17 +165,17 @@ impl DockerContextEndpoint {
 
         if host.starts_with("ssh://") {
             return ConnectionChoice::Unsupported(format!(
-                "active Docker context uses SSH transport ({host}); this jackin build cannot mirror SSH Docker contexts for Bollard API calls"
+                "active Docker context uses SSH transport ({host}); this jackin build cannot mirror SSH Docker contexts for Bollard API calls. {OVERRIDE_HINT}"
             ));
         }
         if host.starts_with("https://") {
             return ConnectionChoice::Unsupported(format!(
-                "active Docker context uses TLS transport ({host}); this jackin build cannot mirror TLS Docker contexts for Bollard API calls"
+                "active Docker context uses TLS transport ({host}); this jackin build cannot mirror TLS Docker contexts for Bollard API calls. {OVERRIDE_HINT}"
             ));
         }
         if self.skip_tls_verify || self.has_tls_material {
             return ConnectionChoice::Unsupported(format!(
-                "active Docker context for {host} includes TLS settings; this jackin build cannot mirror Docker context TLS material for Bollard API calls"
+                "active Docker context for {host} includes TLS settings; this jackin build cannot mirror Docker context TLS material for Bollard API calls. {OVERRIDE_HINT}"
             ));
         }
 
@@ -183,11 +183,14 @@ impl DockerContextEndpoint {
             ConnectionChoice::Host(host.to_string())
         } else {
             ConnectionChoice::Unsupported(format!(
-                "active Docker context uses unsupported Docker host URI {host}"
+                "active Docker context uses unsupported Docker host URI {host}. {OVERRIDE_HINT}"
             ))
         }
     }
 }
+
+const OVERRIDE_HINT: &str =
+    "Set DOCKER_HOST to a unix:// or tcp:// endpoint reachable without TLS to override.";
 
 fn context_host_supported_without_extra_settings(host: &str) -> bool {
     host.starts_with("unix://")
@@ -236,7 +239,7 @@ fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
             crate::debug_log!("docker", "connect context host {host}");
             Ok(Docker::connect_with_host(&host)?)
         }
-        ConnectionChoice::Unsupported(reason) => bail!("{reason}"),
+        ConnectionChoice::Unsupported(reason) => bail!(reason),
     }
 }
 
@@ -1088,6 +1091,37 @@ mod tests {
             parse_docker_context_endpoint(br#"{"Endpoints": {}, "TLSMaterial": {}}"#),
             None
         );
+    }
+
+    #[test]
+    fn parse_docker_context_endpoint_returns_none_on_malformed_json() {
+        assert_eq!(parse_docker_context_endpoint(b""), None);
+        assert_eq!(parse_docker_context_endpoint(b"not json"), None);
+        assert_eq!(
+            parse_docker_context_endpoint(br#"{"Endpoints": {"docker"#),
+            None
+        );
+    }
+
+    #[test]
+    fn tls_material_present_treats_emptiness_as_absent() {
+        use serde_json::Value;
+        assert!(!tls_material_present(&Value::Null));
+        assert!(!tls_material_present(&serde_json::json!([])));
+        assert!(!tls_material_present(&serde_json::json!({})));
+        assert!(!tls_material_present(&Value::String(String::new())));
+        assert!(!tls_material_present(&Value::String("   ".to_string())));
+        assert!(!tls_material_present(&Value::Bool(false)));
+    }
+
+    #[test]
+    fn tls_material_present_treats_populated_values_as_present() {
+        use serde_json::Value;
+        assert!(tls_material_present(&serde_json::json!(["ca.pem"])));
+        assert!(tls_material_present(&serde_json::json!({"ca": "ca.pem"})));
+        assert!(tls_material_present(&Value::String("ca.pem".to_string())));
+        assert!(tls_material_present(&Value::Bool(true)));
+        assert!(tls_material_present(&serde_json::json!(1)));
     }
 
     fn context_endpoint(host: &str) -> DockerContextEndpoint {
