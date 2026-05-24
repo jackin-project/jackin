@@ -17,6 +17,7 @@
 /// (`\x1b[>{n}u`), synchronised output markers (`\x1b[?2026h/l`), and
 /// every other terminal extension the operator's outer terminal
 /// understands would vanish at the multiplexer boundary.
+use std::collections::VecDeque;
 use std::io::Write as _;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -52,6 +53,148 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
 /// without bound. 64 is well past any real terminal program's nested
 /// keymap-mode depth.
 pub const KITTY_KB_STACK_CAP: usize = 64;
+
+#[derive(Debug, Clone, Copy)]
+struct InlineScrollRegion {
+    top: u16,
+    bottom: u16,
+}
+
+impl InlineScrollRegion {
+    fn full_screen(rows: u16) -> Self {
+        Self {
+            top: 0,
+            bottom: rows.saturating_sub(1),
+        }
+    }
+
+    fn resize(&mut self, rows: u16) {
+        if rows == 0 || self.top >= rows || self.bottom >= rows || self.top >= self.bottom {
+            *self = Self::full_screen(rows);
+        }
+    }
+
+    fn set_decstbm(&mut self, rows: u16, top: u16, bottom: u16) {
+        if rows == 0 {
+            *self = Self::full_screen(rows);
+            return;
+        }
+
+        let top = top.max(1).saturating_sub(1);
+        let bottom = bottom.max(1).saturating_sub(1).min(rows.saturating_sub(1));
+        if top < bottom {
+            self.top = top;
+            self.bottom = bottom;
+        } else {
+            *self = Self::full_screen(rows);
+        }
+    }
+
+    fn top_anchored_bottom(self, rows: u16) -> Option<u16> {
+        (rows > 1 && self.top == 0 && self.bottom < rows.saturating_sub(1)).then_some(self.bottom)
+    }
+}
+
+struct InlineScrollRegionTracker {
+    parser: vte::Parser,
+    region: InlineScrollRegion,
+}
+
+#[derive(Default)]
+struct InlineScrollActions {
+    scroll_up: usize,
+    erase_display: Option<u16>,
+}
+
+impl InlineScrollRegionTracker {
+    fn new(rows: u16) -> Self {
+        Self {
+            parser: vte::Parser::new(),
+            region: InlineScrollRegion::full_screen(rows),
+        }
+    }
+
+    fn resize(&mut self, rows: u16) {
+        self.region.resize(rows);
+    }
+
+    fn reset(&mut self, rows: u16) {
+        self.region = InlineScrollRegion::full_screen(rows);
+    }
+
+    fn top_anchored_bottom(&self, rows: u16) -> Option<u16> {
+        self.region.top_anchored_bottom(rows)
+    }
+
+    fn advance(&mut self, byte: u8, screen_rows: u16) -> InlineScrollActions {
+        let mut actions = InlineScrollActions::default();
+        let mut performer = InlineScrollRegionPerformer {
+            region: &mut self.region,
+            screen_rows,
+            actions: &mut actions,
+        };
+        self.parser
+            .advance(&mut performer, std::slice::from_ref(&byte));
+        actions
+    }
+}
+
+struct InlineScrollRegionPerformer<'a> {
+    region: &'a mut InlineScrollRegion,
+    screen_rows: u16,
+    actions: &'a mut InlineScrollActions,
+}
+
+fn first_csi_value(params: &vte::Params) -> Option<u16> {
+    params
+        .iter()
+        .next()
+        .and_then(|param| param.first())
+        .copied()
+}
+
+fn csi_count(params: &vte::Params) -> usize {
+    usize::from(
+        first_csi_value(params)
+            .filter(|&value| value != 0)
+            .unwrap_or(1),
+    )
+}
+
+impl vte::Perform for InlineScrollRegionPerformer<'_> {
+    fn csi_dispatch(
+        &mut self,
+        params: &vte::Params,
+        intermediates: &[u8],
+        ignore: bool,
+        action: char,
+    ) {
+        if ignore || !intermediates.is_empty() {
+            return;
+        }
+
+        match action {
+            'J' => {
+                self.actions.erase_display = Some(first_csi_value(params).unwrap_or(0));
+            }
+            'S' => {
+                self.actions.scroll_up = csi_count(params);
+            }
+            'r' => {
+                let mut values = params
+                    .iter()
+                    .map(|param| param.first().copied().unwrap_or(0));
+                let top = values.next().filter(|&value| value != 0).unwrap_or(1);
+                let bottom = values
+                    .next()
+                    .filter(|&value| value != 0)
+                    .unwrap_or(self.screen_rows);
+                self.region.set_decstbm(self.screen_rows, top, bottom);
+            }
+            _ => {}
+        }
+    }
+}
 
 /// True when an OSC 8 `URI` payload is safe to forward to the
 /// operator's host terminal. The empty URI is a terminator (closing
@@ -197,6 +340,11 @@ pub struct OscCapture {
     /// here from `unhandled_csi` and consult it before synthesising
     /// `\x1b[I` / `\x1b[O` on focus swap.
     pub(crate) focus_events: bool,
+    /// Xterm modifyOtherKeys level requested by the focused program
+    /// (`CSI > 4 ; <n> m`). Full-screen agents may leave this enabled
+    /// when they return to a shell, making plain text arrive as CSI-u
+    /// fragments. Track it so alternate-screen exit can reset it.
+    pub(crate) modify_other_keys: Option<u16>,
     /// Most recently announced working directory, captured from
     /// `OSC 7` (`\x1b]7;file://<host>/<path>\x07`). Modern shells
     /// (zsh + starship, bash + PROMPT_COMMAND, fish) emit this on
@@ -215,6 +363,7 @@ impl OscCapture {
             icon_name: None,
             kitty_kb_stack: Vec::new(),
             focus_events: false,
+            modify_other_keys: None,
             cwd: None,
         }
     }
@@ -394,6 +543,17 @@ impl Callbacks for OscCapture {
             self.focus_events = c == 'h';
             return;
         }
+        if c == 'm'
+            && i1 == Some(b'>')
+            && let Some(first) = params.first().and_then(|p| p.first())
+            && *first == 4
+        {
+            self.modify_other_keys = params
+                .get(1)
+                .and_then(|p| p.first())
+                .copied()
+                .filter(|level| *level != 0);
+        }
         // Re-emit verbatim. vt100 routes here only for CSI sequences
         // it does not itself handle — `modifyOtherKeys`
         // (`\x1b[>4;{n}m`) and any other extension the outer
@@ -433,9 +593,18 @@ pub struct Session {
     pub last_output_at: std::time::Instant,
     /// Current scrollback view offset in lines from the live tail.
     /// `0` = following live output; `> 0` = paused, looking back.
-    /// `vt100::Screen::set_scrollback` mirrors this value so
-    /// `screen().cell(r, c)` returns the right slice during render.
+    /// This is a unified offset across `vt100`'s native scrollback
+    /// and the inline scrollback rows captured from top-anchored
+    /// scroll regions.
     pub scrollback_offset: usize,
+    /// Rows that leave the top of a top-anchored DECSTBM scroll
+    /// region. Codex's inline TUI keeps the app in the primary screen
+    /// and uses a top-anchored scroll region to push history off the
+    /// top. `vt100` only records scrollback when the full screen
+    /// scrolls, so jackin' captures those rows here before forwarding
+    /// bytes to `vt100`.
+    inline_scrollback: VecDeque<String>,
+    inline_scroll_region_tracker: InlineScrollRegionTracker,
     /// Most recently observed value of `Screen::bracketed_paste()`.
     /// The daemon compares this to the post-feed state to detect
     /// transitions, then re-emits the matching `\x1b[?2004h/l`
@@ -683,6 +852,8 @@ impl Session {
                 child_killer,
                 last_output_at: std::time::Instant::now(),
                 scrollback_offset: 0,
+                inline_scrollback: VecDeque::new(),
+                inline_scroll_region_tracker: InlineScrollRegionTracker::new(rows),
                 bracketed_paste_active: false,
                 received_output: false,
             },
@@ -708,7 +879,7 @@ impl Session {
             self.scrollback_offset.saturating_sub((-delta) as usize)
         };
         self.scrollback_offset = new;
-        self.parser.screen_mut().set_scrollback(new);
+        self.apply_scrollback_offset();
     }
 
     /// Drop scrollback view, return to the live tail.
@@ -727,28 +898,68 @@ impl Session {
     pub fn clear_scrollback_and_request_screen_clear(&mut self) {
         self.scroll_to_live();
         self.parser.screen_mut().clear_scrollback();
+        self.inline_scrollback.clear();
         self.scrollback_offset = 0;
         self.send_input(b"\x0c");
     }
 
-    /// Number of scrollback lines currently filled in the primary
-    /// grid. Probed by setting the scrollback to `usize::MAX` — vt100
-    /// clamps it to the actual filled count, which we read back via
+    /// Number of scrollback lines currently retained for this pane:
+    /// native `vt100` scrollback plus the inline rows jackin' captures
+    /// from top-anchored scroll regions. The `vt100` portion is probed
+    /// by setting the scrollback to `usize::MAX`; vt100 clamps it to
+    /// the actual filled count, which we read back via
     /// `Screen::scrollback`. The saved offset is restored so this is
     /// safe to call from a render path.
-    ///
-    /// Returns `0` while the alternate screen is active, because alt
-    /// grid has no scrollback by design — the agent owns the whole
-    /// surface and there is nothing for the operator to scroll into.
     pub fn scrollback_filled(&mut self) -> usize {
-        if self.parser.screen().alternate_screen() {
-            return 0;
-        }
+        let (vt_filled, inline_filled) = self.scrollback_counts();
+        vt_filled.saturating_add(inline_filled)
+    }
+
+    pub fn scrollback_counts(&mut self) -> (usize, usize) {
+        (self.vt_scrollback_filled(), self.inline_scrollback.len())
+    }
+
+    fn vt_scrollback_filled(&mut self) -> usize {
         let saved = self.parser.screen().scrollback();
         self.parser.screen_mut().set_scrollback(usize::MAX);
         let filled = self.parser.screen().scrollback();
-        self.parser.screen_mut().set_scrollback(saved);
+        // saved.min(filled): vt100 rejects offsets above the actual fill
+        // count, so restoring `saved` verbatim would be wrong if the fill
+        // shrank between the read and the probe.
+        self.parser.screen_mut().set_scrollback(saved.min(filled));
         filled
+    }
+
+    fn apply_scrollback_offset(&mut self) {
+        let vt_filled = self.vt_scrollback_filled();
+        self.parser
+            .screen_mut()
+            .set_scrollback(self.scrollback_offset.min(vt_filled));
+    }
+
+    /// Inline scrollback rows that should be prepended above the
+    /// `vt100` visible rows for the current unified scrollback
+    /// offset. Rendering this prefix in the shared pane renderer
+    /// lets normal-screen panes with inline history use the same
+    /// scrollbar chrome as vt100-scrollback panes.
+    pub fn scrollback_render_prefix(&mut self, viewport_rows: u16) -> Vec<String> {
+        let vt_filled = self.vt_scrollback_filled();
+        self.parser
+            .screen_mut()
+            .set_scrollback(self.scrollback_offset.min(vt_filled));
+
+        let inline_offset = self.scrollback_offset.saturating_sub(vt_filled);
+        if inline_offset == 0 || viewport_rows == 0 {
+            return Vec::new();
+        }
+
+        let start = self.inline_scrollback.len().saturating_sub(inline_offset);
+        self.inline_scrollback
+            .iter()
+            .skip(start)
+            .take(usize::from(viewport_rows))
+            .cloned()
+            .collect()
     }
 
     pub fn send_input(&self, data: &[u8]) {
@@ -822,10 +1033,210 @@ impl Session {
         if !bytes.is_empty() {
             self.received_output = true;
         }
-        self.parser.process(bytes);
-        self.scrollback_offset = self.parser.screen().scrollback();
+        crate::cdebug!(
+            "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
+            self.agent,
+            self.label,
+            bytes.len(),
+            bytes
+        );
+        let was_alternate = self.parser.screen().alternate_screen();
+        let was_scrolled = self.scrollback_offset != 0;
+        for &byte in bytes {
+            let (screen_rows, _) = self.parser.screen().size();
+            let actions = self.inline_scroll_region_tracker.advance(byte, screen_rows);
+            self.capture_inline_scrollback_before_actions(actions);
+            self.capture_inline_scrollback_before_byte(byte);
+            self.parser.process(std::slice::from_ref(&byte));
+        }
+        let is_alternate = self.parser.screen().alternate_screen();
+        if was_alternate != is_alternate {
+            let (screen_rows, _) = self.parser.screen().size();
+            self.inline_scroll_region_tracker.reset(screen_rows);
+        }
+        if was_alternate && !is_alternate {
+            self.clear_transient_keyboard_modes();
+        }
+        if was_scrolled {
+            self.scrollback_offset = self.scrollback_offset.min(self.scrollback_filled());
+            self.apply_scrollback_offset();
+        } else {
+            self.scroll_to_live();
+        }
+        if crate::logging::debug_enabled() {
+            let (vt_filled, inline_filled) = self.scrollback_counts();
+            let screen = self.parser.screen();
+            let (screen_rows, screen_cols) = screen.size();
+            let (cursor_row, cursor_col) = screen.cursor_position();
+            crate::cdebug!(
+                "session feed_pty: agent={:?} label={} bytes={} alt_screen={} mouse_enabled={} screen={}x{} cursor={}x{} vt_scrollback={} inline_scrollback={} scrollback_offset={} inline_region={}..{}",
+                self.agent,
+                self.label,
+                bytes.len(),
+                screen.alternate_screen(),
+                self.mouse_enabled(),
+                screen_rows,
+                screen_cols,
+                cursor_row,
+                cursor_col,
+                vt_filled,
+                inline_filled,
+                self.scrollback_offset,
+                self.inline_scroll_region_tracker.region.top,
+                self.inline_scroll_region_tracker.region.bottom
+            );
+        }
         self.last_output_at = std::time::Instant::now();
         self.state = state_after_pty_output(self.state);
+    }
+
+    fn capture_inline_scrollback_before_actions(&mut self, actions: InlineScrollActions) {
+        if let Some(mode) = actions.erase_display {
+            self.capture_inline_scrollback_before_erase_display(mode);
+        }
+        if actions.scroll_up > 0 {
+            self.capture_inline_scrollback_before_scroll_up(actions.scroll_up);
+        }
+    }
+
+    fn capture_inline_scrollback_before_erase_display(&mut self, mode: u16) {
+        if self.parser.screen().alternate_screen() {
+            return;
+        }
+
+        match mode {
+            // ED0 (`CSI J`) only removes the whole visible screen when
+            // paired with a home cursor move, which is the normal-screen
+            // clear/redraw shape used by shells and agent TUIs.
+            0 => {
+                let (cursor_row, cursor_col) = self.parser.screen().cursor_position();
+                if cursor_row == 0 && cursor_col == 0 {
+                    self.capture_visible_inline_scrollback_rows("erase-display");
+                }
+            }
+            // ED2 (`CSI 2J`) clears the visible display. Preserve those
+            // rows as terminal scrollback; ED3 below is the explicit
+            // saved-lines clear and must not preserve them.
+            2 => self.capture_visible_inline_scrollback_rows("erase-display"),
+            3 => {
+                self.inline_scrollback.clear();
+                self.scrollback_offset = 0;
+                crate::cdebug!(
+                    "inline scrollback clear: agent={:?} label={} reason=erase-saved-lines",
+                    self.agent,
+                    self.label
+                );
+            }
+            _ => {}
+        }
+    }
+
+    fn capture_inline_scrollback_before_scroll_up(&mut self, count: usize) {
+        if self.parser.screen().alternate_screen() {
+            return;
+        }
+
+        let (screen_rows, screen_cols) = self.parser.screen().size();
+        let Some(scroll_bottom) = self
+            .inline_scroll_region_tracker
+            .top_anchored_bottom(screen_rows)
+        else {
+            return;
+        };
+
+        let removed_rows = usize::from(scroll_bottom).saturating_add(1).min(count);
+        let rows: Vec<_> = self
+            .parser
+            .screen()
+            .rows(0, screen_cols)
+            .take(removed_rows)
+            .collect();
+        for row in rows {
+            self.push_inline_scrollback_row(row, "scroll-up");
+        }
+    }
+
+    fn capture_visible_inline_scrollback_rows(&mut self, reason: &'static str) {
+        let (_, screen_cols) = self.parser.screen().size();
+        let rows: Vec<_> = self.parser.screen().rows(0, screen_cols).collect();
+        let Some(first) = rows.iter().position(|row| !row.trim_end().is_empty()) else {
+            return;
+        };
+        let Some(last) = rows.iter().rposition(|row| !row.trim_end().is_empty()) else {
+            return;
+        };
+
+        for row in rows[first..=last].iter().cloned() {
+            self.push_inline_scrollback_row(row, reason);
+        }
+    }
+
+    fn capture_inline_scrollback_before_byte(&mut self, byte: u8) {
+        if byte != b'\n' || self.parser.screen().alternate_screen() {
+            return;
+        }
+
+        let (screen_rows, screen_cols) = self.parser.screen().size();
+        let Some(scroll_bottom) = self
+            .inline_scroll_region_tracker
+            .top_anchored_bottom(screen_rows)
+        else {
+            return;
+        };
+        let (cursor_row, _) = self.parser.screen().cursor_position();
+        if cursor_row != scroll_bottom {
+            return;
+        }
+
+        let row = self
+            .parser
+            .screen()
+            .rows(0, screen_cols)
+            .next()
+            .unwrap_or_default();
+        if self.inline_scrollback.is_empty() && row.trim_end().is_empty() {
+            return;
+        }
+
+        self.push_inline_scrollback_row(row, "linefeed");
+    }
+
+    fn push_inline_scrollback_row(&mut self, row: String, reason: &'static str) {
+        if self.inline_scrollback.is_empty() && row.trim_end().is_empty() {
+            return;
+        }
+
+        let row_len = row.len();
+        self.inline_scrollback.push_back(row);
+        if self.scrollback_offset != 0 {
+            self.scrollback_offset = self.scrollback_offset.saturating_add(1);
+        }
+        while self.inline_scrollback.len() > SCROLLBACK_LEN {
+            self.inline_scrollback.pop_front();
+            self.scrollback_offset = self.scrollback_offset.saturating_sub(1);
+        }
+        crate::cdebug!(
+            "inline scrollback capture: agent={:?} label={} reason={} row_len={} inline_filled={} scrollback_offset={} region={}..{}",
+            self.agent,
+            self.label,
+            reason,
+            row_len,
+            self.inline_scrollback.len(),
+            self.scrollback_offset,
+            self.inline_scroll_region_tracker.region.top,
+            self.inline_scroll_region_tracker.region.bottom
+        );
+    }
+
+    fn clear_transient_keyboard_modes(&mut self) {
+        let callbacks = self.parser.callbacks_mut();
+        if !callbacks.kitty_kb_stack.is_empty() {
+            callbacks.kitty_kb_stack.clear();
+            callbacks.pending.push(b"\x1b[<u".to_vec());
+        }
+        if callbacks.modify_other_keys.take().is_some() {
+            callbacks.pending.push(b"\x1b[>4;0m".to_vec());
+        }
     }
 
     /// Drain the OSC / unhandled-CSI byte sequences the parser captured
@@ -902,9 +1313,13 @@ impl Session {
     /// Outer-terminal modes owned by the attach client, not by the
     /// focused pane. Reassert after attach and focus swaps so a pane
     /// that requested legacy X10 or press-only mouse tracking cannot
-    /// downgrade the multiplexer's own input channel.
+    /// downgrade the multiplexer's own input channel. Alternate-scroll
+    /// (`?1007`) is disabled because some terminals translate wheel
+    /// gestures in the alternate screen into cursor keys; jackin'
+    /// needs the wheel to stay as mouse input so the daemon can decide
+    /// whether scrollback, PTY mouse forwarding, or a no-op owns it.
     pub fn client_owned_mode_state() -> &'static [u8] {
-        b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
+        b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
     }
 
     /// Outer-terminal reset sequence applied just before a focus
@@ -967,6 +1382,9 @@ impl Session {
             Err(e) => crate::clog!("session resize: PTY mutex poisoned: {e}"),
         }
         self.parser.screen_mut().set_size(rows, cols);
+        self.inline_scroll_region_tracker.resize(rows);
+        self.scrollback_offset = self.scrollback_offset.min(self.scrollback_filled());
+        self.apply_scrollback_offset();
     }
 
     pub fn refresh_state(&mut self) {
@@ -978,6 +1396,40 @@ impl Session {
         // tab removal directly; no transient `○ Done` glyph.
         let elapsed = self.last_output_at.elapsed();
         self.state = state_after_refresh(self.state, elapsed);
+    }
+}
+
+#[cfg(test)]
+impl Session {
+    pub(crate) fn new_for_test(
+        label: String,
+        agent: Option<String>,
+        size: (u16, u16),
+        scrollback_len: usize,
+        input_tx: mpsc::UnboundedSender<Vec<u8>>,
+        pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+        child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+    ) -> Self {
+        Self {
+            label,
+            agent,
+            state: AgentState::Working,
+            parser: vt100::Parser::new_with_callbacks(
+                size.0,
+                size.1,
+                scrollback_len,
+                OscCapture::with_policy(OscPolicy::default()),
+            ),
+            input_tx,
+            pty_master,
+            child_killer,
+            last_output_at: std::time::Instant::now(),
+            scrollback_offset: 0,
+            inline_scrollback: VecDeque::new(),
+            inline_scroll_region_tracker: InlineScrollRegionTracker::new(size.0),
+            bracketed_paste_active: false,
+            received_output: true,
+        }
     }
 }
 
@@ -1120,18 +1572,35 @@ mod tests {
     }
 
     #[test]
+    fn client_owned_mode_state_captures_mouse_focus_and_alternate_scroll() {
+        let state = Session::client_owned_mode_state();
+        for needle in [
+            &b"\x1b[?1003h"[..],
+            &b"\x1b[?1006h"[..],
+            &b"\x1b[?1004h"[..],
+            &b"\x1b[?1007l"[..],
+        ] {
+            assert!(
+                state.windows(needle.len()).any(|w| w == needle),
+                "client_owned_mode_state missing {needle:?}; got {state:?}"
+            );
+        }
+    }
+
+    #[test]
     fn focus_swap_reset_leaves_client_owned_modes_alone() {
         // The attach client owns mouse reporting, focus reporting,
-        // and alt-screen. The reset must not touch them; clobbering
-        // them here drops the multiplexer's ability to receive tab
-        // clicks, drag-resize, and FocusIn/FocusOut events for the
-        // remainder of the session.
+        // alt-screen, and alternate-scroll suppression. The reset must
+        // not touch them; clobbering them here drops the multiplexer's
+        // ability to receive tab clicks, drag-resize, FocusIn/FocusOut,
+        // or wheel mouse events for the remainder of the session.
         let reset = Session::focus_swap_reset();
         for forbidden in [
             &b"\x1b[?1000l"[..],
             &b"\x1b[?1002l"[..],
             &b"\x1b[?1003l"[..],
             &b"\x1b[?1006l"[..],
+            &b"\x1b[?1007l"[..],
             &b"\x1b[?1004l"[..],
             &b"\x1b[?1049l"[..],
             &b"\x1b[?25l"[..],
