@@ -50,6 +50,10 @@ pub const MAX_HELLO_ENV_KEY: usize = 1024;
 /// should be tiny, but bounding them keeps the Hello frame shape explicit.
 pub const MAX_CLIENT_TERMINAL_FIELD: usize = 1024;
 
+const TERM_LABEL: &str = "TERM";
+const TERM_PROGRAM_LABEL: &str = "TERM_PROGRAM";
+const COLORTERM_LABEL: &str = "COLORTERM";
+
 /// Wall-clock cap for a single attach frame's read. Bounded so a peer
 /// that stalls between length prefix and payload — or trickles bytes
 /// slower than the bandwidth bound — cannot pin the per-connection
@@ -94,9 +98,9 @@ pub struct ClientTerminal {
 impl ClientTerminal {
     pub fn from_env() -> Self {
         Self {
-            term: non_empty_env("TERM"),
-            term_program: non_empty_env("TERM_PROGRAM"),
-            colorterm: non_empty_env("COLORTERM"),
+            term: non_empty_env(TERM_LABEL),
+            term_program: non_empty_env(TERM_PROGRAM_LABEL),
+            colorterm: non_empty_env(COLORTERM_LABEL),
         }
     }
 
@@ -134,10 +138,6 @@ pub enum ClientFrame {
         cols: u16,
         spawn: Option<SpawnRequest>,
         env: Vec<(String, String)>,
-        /// Terminal identity for the active attach client. This is refreshed
-        /// on every attach/takeover so daemon-owned output enhancements can
-        /// adapt when the operator switches terminal applications.
-        terminal: ClientTerminal,
         /// Optional pane-focus request: when `Some(session_id)` the
         /// daemon switches its active tab + that tab's `focused_id`
         /// to the leaf carrying this session id before forwarding any
@@ -148,6 +148,7 @@ pub enum ClientFrame {
         /// ignored — the daemon attaches at the current focus and
         /// the operator can navigate.
         focus_session: Option<u64>,
+        terminal: ClientTerminal,
     },
     Resize {
         rows: u16,
@@ -270,13 +271,17 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
                     payload.extend_from_slice(&id.to_be_bytes());
                 }
             }
-            write_terminal_field(&mut payload, terminal.term.as_deref(), "TERM")?;
+            write_terminal_field(&mut payload, terminal.term.as_deref(), TERM_LABEL)?;
             write_terminal_field(
                 &mut payload,
                 terminal.term_program.as_deref(),
-                "TERM_PROGRAM",
+                TERM_PROGRAM_LABEL,
             )?;
-            write_terminal_field(&mut payload, terminal.colorterm.as_deref(), "COLORTERM")?;
+            write_terminal_field(
+                &mut payload,
+                terminal.colorterm.as_deref(),
+                COLORTERM_LABEL,
+            )?;
             encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
@@ -310,6 +315,19 @@ fn write_terminal_field(payload: &mut Vec<u8>, value: Option<&str>, label: &str)
 
 fn optional_string(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
+}
+
+fn read_terminal_field(
+    cursor: &mut PayloadCursor<'_>,
+    label: &str,
+) -> Result<Option<String>> {
+    let len_label = format!("terminal {label} length");
+    let len = cursor.read_u16(&len_label)? as usize;
+    if len > MAX_CLIENT_TERMINAL_FIELD {
+        bail!("hello terminal {label} length {len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}");
+    }
+    let value_label = format!("terminal {label}");
+    Ok(optional_string(cursor.read_string(len, &value_label)?))
 }
 
 /// Read one length-prefixed payload from `stream` given the already-
@@ -443,35 +461,10 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 1 => Some(cursor.read_u64("focus session id")?),
                 other => bail!("unknown hello focus kind {other}"),
             };
-            let term_len = cursor.read_u16("terminal TERM length")? as usize;
-            if term_len > MAX_CLIENT_TERMINAL_FIELD {
-                bail!(
-                    "hello terminal TERM length {term_len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}"
-                );
-            }
-            let term = optional_string(cursor.read_string(term_len, "terminal TERM")?);
-
-            let term_program_len = cursor.read_u16("terminal TERM_PROGRAM length")? as usize;
-            if term_program_len > MAX_CLIENT_TERMINAL_FIELD {
-                bail!(
-                    "hello terminal TERM_PROGRAM length {term_program_len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}"
-                );
-            }
-            let term_program =
-                optional_string(cursor.read_string(term_program_len, "terminal TERM_PROGRAM")?);
-
-            let colorterm_len = cursor.read_u16("terminal COLORTERM length")? as usize;
-            if colorterm_len > MAX_CLIENT_TERMINAL_FIELD {
-                bail!(
-                    "hello terminal COLORTERM length {colorterm_len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}"
-                );
-            }
-            let colorterm =
-                optional_string(cursor.read_string(colorterm_len, "terminal COLORTERM")?);
             let terminal = ClientTerminal {
-                term,
-                term_program,
-                colorterm,
+                term: read_terminal_field(&mut cursor, TERM_LABEL)?,
+                term_program: read_terminal_field(&mut cursor, TERM_PROGRAM_LABEL)?,
+                colorterm: read_terminal_field(&mut cursor, COLORTERM_LABEL)?,
             };
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");
@@ -481,8 +474,8 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 cols,
                 spawn,
                 env,
-                terminal,
                 focus_session,
+                terminal,
             }
         }
         TAG_RESIZE => {
