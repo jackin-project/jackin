@@ -179,6 +179,15 @@ model = "gpt-5"
     assert!(run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
     assert!(run_cmd.contains("/home/agent/.codex"), "{run_cmd}");
     assert!(!run_cmd.contains("/home/agent/.jackin"), "{run_cmd}");
+    let codex_config = std::fs::read_to_string(
+        paths
+            .data_dir
+            .join(recorded_role_container_name(run_cmd))
+            .join("home/.codex/config.toml"),
+    )
+    .unwrap();
+    assert!(codex_config.contains("[projects.\"/workspace\"]"));
+    assert!(codex_config.contains("trust_level = \"trusted\""));
 }
 
 #[tokio::test]
