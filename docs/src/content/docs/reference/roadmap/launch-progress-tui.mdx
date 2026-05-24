@@ -15,8 +15,9 @@ The missing product model is a launch cockpit: a compact, recognizable, cyberpun
 
 - Digital rain is a boundary ritual. It appears when the operator starts the first active container owned by jackin', and when the last active container owned by jackin' exits. It does not appear between sequential launches while any container owned by jackin' is still running.
 - `jackin load` and console-triggered launches use the same launch visualization when the terminal supports it.
-- The default operator surface stays compact: lifecycle status, current stage, next stage, short failure diagnosis, and log location.
-- Debug output becomes more detailed in logs, not on screen. `--debug` should not turn the launch TUI into raw command output.
+- The default operator surface stays compact: lifecycle status, current stage, next stage, short failure diagnosis, and a diagnostics reference.
+- Debug output becomes more detailed in diagnostics, not on screen. `--debug` must not turn the launch TUI into raw command output.
+- No launch command should ever show log streams, command output dumps, Docker build logs, stack traces, or debug traces in the operator-facing progress surface. The launch surface is a product UI, not a terminal log viewer.
 - The launch UI is product-facing, but its internal event stream is contributor-facing and testable.
 - Startup speed matters. Work that is independent should run in parallel after prompts and trust barriers are satisfied.
 - All host-side writes remain explicit state owned by jackin'. The launch UI must not "fix" host Git, shell, Docker, `gh`, or agent configs behind the operator's back.
@@ -48,7 +49,7 @@ image         jackin/agent-smith:latest
 ○ hardline       queued
 
 status: pulling projectjackin/construct:trixie
-log: launch log available from `jackin logs` or failure dialog
+diagnostics: launch jk-lch-42f9
 ```
 
 Ad-hoc directory example:
@@ -73,7 +74,7 @@ image         jackin/agent-smith:latest
 ○ hardline       queued
 
 status: pulling projectjackin/construct:trixie
-log: launch log available from `jackin logs` or failure dialog
+diagnostics: launch jk-lch-42f9
 ```
 
 The identity panel should never label an ad-hoc directory as a workspace. For a saved workspace, show the workspace name first and then the configured workdir/mount summary. For a directory launch, show `directory` first and describe the direct mount shape. This keeps the TUI honest about whether jackin' is applying a saved workspace configuration or simply launching in the target directory the operator chose.
@@ -82,7 +83,7 @@ The main panel should use the same phosphor-green vocabulary as the console and 
 
 The renderer should start from jackin' console conventions: modal sizing, red-border error surfaces, footer-only key hints, phosphor palette, tight chrome, and one clear focused action at a time. It should still leave room for product experiments that make launch feel more distinctive, such as a stronger construct/derived-image visual split, a live rain strip that reacts to stage transitions, or a more cinematic hardline-opening moment, as long as those experiments keep the console's interaction rules intact.
 
-When the terminal is not interactive or cannot support the TUI, launch falls back to compact line output with the same event vocabulary. Scripts should still get deterministic stderr/stdout behavior and useful failure text.
+When the terminal is not interactive or cannot support the TUI, launch falls back to compact line output with the same event vocabulary. Scripts should still get deterministic stderr/stdout behavior and useful failure text, but the fallback must remain product-level: no raw logs, no streamed Docker output, and no debug firehose.
 
 ## Visual language
 
@@ -128,7 +129,7 @@ Use stronger verbs where they clarify the product story, but avoid theatrical wo
 | `capsule` | `starting Capsule`, `seeding agent home` |
 | `hardline` | `opening hardline`, `focusing Claude tab` |
 
-The footer acts as the stable status/control strip. During normal launch it can show the log retrieval command and any active non-destructive key. During fatal failure it shows only `Enter Close` plus the log retrieval command. Do not put key hints inside the main panel or inside error dialogs.
+The footer acts as the stable status/control strip. During normal launch it can show a short diagnostics reference and any active non-destructive key. During fatal failure it shows only `Enter Close` plus the diagnostics reference. Do not put key hints inside the main panel or inside error dialogs.
 
 Reduced-motion and low-capability terminals must keep the same information architecture. When motion is unavailable or disabled, render a static phosphor layout with stage accents and status text, no shimmer, no animated rain, and no cursor-control assumptions beyond the selected renderer's capability level. The visual identity should survive without animation.
 
@@ -143,7 +144,7 @@ The current launch code calls the intro animation before the launch and the outr
 | After foreground session exit, one or more active containers owned by jackin' remain | Skip full outro rain and show a compact return/remaining-sessions notice if needed. |
 | After foreground session exit, zero active containers owned by jackin' remain | Show full outro rain. |
 
-The count must use runtime discovery managed by jackin' rather than raw Docker process guesses. It should include containers preserved because active Capsule sessions remain, and it should exclude stale records that are not actually running. If discovery fails, the safe default is to skip the boundary animation and log the reason; a failed count should not block launch or exit.
+The count must use runtime discovery managed by jackin' rather than raw Docker process guesses. It should include containers preserved because active Capsule sessions remain, and it should exclude stale records that are not actually running. If discovery fails, the safe default is to skip the boundary animation and record the reason in diagnostics; a failed count should not block launch or exit.
 
 ## Stage vocabulary
 
@@ -183,7 +184,7 @@ Docker unavailable
 jackin' could not reach the Docker daemon.
 
 docker daemon is not responding
-details: run jackin logs or open the launch log shown in the footer
+diagnostics: launch jk-lch-42f9
 ```
 
 The dialog should show:
@@ -191,25 +192,26 @@ The dialog should show:
 - a short human diagnosis;
 - the failed public stage;
 - one actionable next move when obvious;
-- the log command or log path;
-- no stack trace unless no structured diagnosis exists.
+- the diagnostics reference for the failed launch/session;
+- no stack trace or raw log excerpt.
 
 The footer for a fatal launch failure should expose exactly one action: `Enter Close`. There should be no `Retry`, `Continue`, `Back`, secondary close button, or multi-button confirmation state unless a future failure class is explicitly recoverable without leaving the launch. Pressing `Enter` closes the dialog and exits the launch path immediately.
 
-The detailed error, command trace, Docker API trace, captured `docker logs`, and debug evidence belong in the launch log. When the TUI is not active, the fallback output should still print a short diagnosis and log location.
+The detailed error, command trace, Docker API trace, captured `docker logs`, build output, and debug evidence belong outside the launch UI. The operator-facing surface shows the short diagnosis and a stable diagnostics reference only. After the UI exits, an operator or agent can use that reference with the dedicated diagnostics/log command to inspect the detailed evidence for the specific launch/session. The exact shape of that reference still needs design — likely a launch ID or session ID that maps cleanly to the container/instance that failed.
 
-## Logging model
+## Diagnostics model
 
-The current `debug_log!` channel in <RepoFile path="src/tui/mod.rs" /> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable log destination:
+The current `debug_log!` channel in <RepoFile path="src/tui/mod.rs" /> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
 
 - Compact UI events go to the renderer.
-- Compact launch breadcrumbs go to the launch log even without `--debug`.
-- `--debug` enables detailed command, Docker, resolver, auth, cache, materialization, and cleanup traces in the launch log.
-- The TUI never streams the debug firehose directly.
+- Compact launch breadcrumbs go to the diagnostics artifact even without `--debug`.
+- `--debug` enables detailed command, Docker, resolver, auth, cache, materialization, cleanup, and build traces in the diagnostics artifact.
+- The TUI never streams the debug firehose, Docker build output, captured `docker logs`, or command stdout/stderr directly.
 - Secrets and token values remain redacted; source references are allowed only where existing auth diagnostics already permit them.
-- On launch failure before a container exists, the host-side launch log is the primary artifact. Once the Capsule multiplexer is running, `jackin logs` remains the primary in-container artifact.
+- On launch failure before a container exists, the host-side diagnostics artifact is the primary artifact. Once the Capsule multiplexer is running, diagnostics should point to the relevant in-container artifact for that instance/session instead of making the operator guess which container to inspect.
+- The progress surface should display only a compact diagnostics handle such as a launch ID, session ID, or future `jackin logs ...` selector. Designing that ID shape is follow-up work, but the UX requirement is fixed: one reference, no inline logs.
 
-The implementation should introduce one launch-scoped logging handle rather than sprinkling new `eprintln!` calls through launch code. Existing `debug_log!` sites should be routed into that handle while launch TUI buffering is active, then flushed to the durable log. This keeps `--debug` useful without making the user's terminal noisy.
+The implementation should introduce one launch-scoped diagnostics handle rather than sprinkling new `eprintln!` calls through launch code. Existing `debug_log!` sites should be routed into that handle while launch TUI buffering is active, then flushed to the durable diagnostics artifact. This keeps `--debug` useful without making the user's terminal noisy.
 
 ## Event model
 
@@ -223,7 +225,7 @@ enum LaunchEvent {
     StageSkipped { stage, reason },
     StageDone { stage, detail },
     StageFailed { stage, summary, detail },
-    LogHint { command_or_path },
+    DiagnosticsHint { launch_or_session_ref },
     OpeningHardline,
 }
 ```
@@ -241,7 +243,7 @@ This also gives future console integration a clean transition: `jackin console` 
 
 ## Parallelization plan
 
-Parallelization should come after the event/logging boundary, because concurrent tasks must report progress without interleaving terminal output. The dependency graph should be explicit:
+Parallelization should come after the event/diagnostics boundary, because concurrent tasks must report progress without interleaving terminal output. The dependency graph should be explicit:
 
 - Safe early parallel work: orphan cleanup, Docker connectivity probe, Git identity lookup, host identity lookup, terminal capability detection, and cached role metadata reads.
 - Prompt barriers: source trust, branch confirmation, sensitive mount confirmation, and interactive manifest env prompts remain sequential and must finish before irreversible work.
@@ -256,7 +258,7 @@ The first implementation should prioritize correctness and clean progress events
 
 ### Phase 0 — Roadmap and acceptance criteria
 
-Capture the product model, UX rules, event vocabulary, logging split, intro/outro lifecycle, and staged implementation plan. This page is that artifact.
+Capture the product model, UX rules, event vocabulary, diagnostics split, intro/outro lifecycle, and staged implementation plan. This page is that artifact.
 
 ### Phase 1 — Boundary animation gating
 
@@ -266,13 +268,13 @@ Replace launch-local intro/outro decisions with active container counting manage
 
 Add a launch-scoped progress sink and route current `StepCounter`, config-table, auth notices, Docker launch milestones, restore decisions, cleanup notices, and failure paths through structured events. Keep the compact renderer initially so behavior changes are small and testable. This phase should establish the public stage names (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even before the rich TUI exists.
 
-### Phase 3 — Durable launch log
+### Phase 3 — Durable launch diagnostics
 
-Introduce a launch log for pre-Capsule work and route debug traces into it while the launch progress renderer is active. Update failure messages to include the log retrieval path. Ensure secrets stay redacted and `--debug` changes log verbosity, not the TUI noise level.
+Introduce a launch diagnostics artifact for pre-Capsule work and route debug traces into it while the launch progress renderer is active. Update failure messages to include a compact diagnostics reference. Ensure secrets stay redacted and `--debug` changes diagnostics verbosity, not TUI noise level.
 
 ### Phase 4 — Rich TUI renderer
 
-Build the ratatui launch renderer using console-compatible palette, layout, footer, fatal error dialog, and bounded rain. Reuse the existing rain engine where practical instead of creating a parallel animation implementation. Prototype more distinctive launch visuals only inside those constraints: footer-only hints, tight modal geometry, one focused action, no hidden shortcuts, and no noisy debug stream. Add snapshot-style tests once the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) roadmap item or an equivalent minimal harness is in place.
+Build the ratatui launch renderer using console-compatible palette, layout, footer, fatal error dialog, and bounded rain. Reuse the existing rain engine where practical instead of creating a parallel animation implementation. Prototype more distinctive launch visuals only inside those constraints: footer-only hints, tight modal geometry, one focused action, no hidden shortcuts, no noisy debug stream, and no inline log output. Add snapshot-style tests once the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) roadmap item or an equivalent minimal harness is in place.
 
 ### Phase 5 — Console integration
 
@@ -280,7 +282,7 @@ Make console-triggered launches use the same renderer as `jackin load`. The cons
 
 ### Phase 6 — Parallel launch execution
 
-Refactor launch execution around explicit dependencies and add parallelism where it reduces wall-clock startup without moving prompts later or weakening cleanup. Add debug trace spans so startup regressions and race failures can be reconstructed from logs.
+Refactor launch execution around explicit dependencies and add parallelism where it reduces wall-clock startup without moving prompts later or weakening cleanup. Add debug trace spans so startup regressions and race failures can be reconstructed from diagnostics.
 
 ## Documentation impact
 
@@ -288,14 +290,15 @@ When implementation lands, update the operator-facing command docs for [`jackin 
 
 ## Host-side effects
 
-The design may add a host-side launch log under state owned by jackin' and may write launch progress metadata tied to an instance. That is acceptable only if it stays under the existing host state convention for paths owned by jackin', is surfaced in failure output or the launch summary, and is never used to mutate unrelated host state. The launch path must not edit host Git configuration, host remotes, shell rc files, `gh` config, agent homes, or terminal settings as part of making the TUI work.
+The design may add a host-side diagnostics artifact under state owned by jackin' and may write launch progress metadata tied to an instance. That is acceptable only if it stays under the existing host state convention for paths owned by jackin', is surfaced through a compact diagnostics reference, and is never used to mutate unrelated host state. The launch path must not edit host Git configuration, host remotes, shell rc files, `gh` config, agent homes, or terminal settings as part of making the TUI work.
 
 ## Acceptance criteria
 
 - Full digital rain appears only at first-container start and last-container exit.
 - `jackin load` and console-triggered launch share the same progress vocabulary native to jackin' and the same renderer selection.
 - Rich terminals get a full-screen launch progress TUI; non-rich and non-interactive environments get compact deterministic output.
-- `--debug` increases log detail without dumping raw debug text into the TUI.
-- Fatal failures show a short diagnosis plus log retrieval path, expose only `Enter Close`, and exit immediately after close; detailed evidence stays in logs.
+- `--debug` increases diagnostics detail without dumping raw debug text into the TUI.
+- No launch surface renders raw logs, Docker build output, command output, stack traces, or debug traces; those live only in diagnostics artifacts.
+- Fatal failures show a short diagnosis plus diagnostics reference, expose only `Enter Close`, and exit immediately after close; detailed evidence stays in diagnostics.
 - Launch stages are emitted as structured events and can be tested without a real terminal.
 - Startup parallelization is introduced only after evented progress and cleanup behavior are testable.
