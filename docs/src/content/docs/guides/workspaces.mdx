@@ -221,7 +221,7 @@ jackin workspace create secure-api \
 
 - `--allowed-role` — only these roles can load this workspace (repeatable)
 - `--default-role` — role highlighted first in the operator console picker, and used automatically by CLI context loading when no role is passed
-- `--default-agent` — default agent used by `jackin load` unless `--agent` is passed for that launch
+- `--default-agent` — default agent used by `jackin load` unless `--agent` is passed for that launch; when unset, a single-agent role uses its only runtime and a multi-agent role asks
 
 This is especially useful when one workspace should only be used with a very specific tool profile, such as a production-infra role or a security-review role.
 
@@ -243,7 +243,7 @@ jackin workspace edit secure-api --clear-default-role
 # Change default agent
 jackin workspace edit secure-api --default-agent codex
 
-# Clear default agent back to Claude fallback
+# Clear default agent back to role-based launch resolution
 jackin workspace edit secure-api --clear-default-agent
 ```
 

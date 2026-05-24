@@ -16,7 +16,7 @@ jackin' isolates agent containers from the host on purpose. That's the whole sec
 
 Both look like the same shape from the operator's seat: *"the agent needs a single piece of host help, and I want to authorize it without tearing down the session."*
 
-This roadmap item proposes a **host bridge** — a small request/approval channel between agents inside containers and the operator on the host, hosted by the [jackin daemon](/reference/roadmap/jackin-daemon/). Agents request a secret value or a host command; the operator gets a host-side prompt (touch confirmation, biometric, password); on approval the daemon does the work; the agent receives back exactly what it asked for and nothing more.
+This roadmap item proposes a **host bridge** — a small request/approval channel between agents inside containers and the operator on the host, hosted by the [jackin' daemon](/reference/roadmap/jackin-daemon/). Agents request a secret value or a host command; the operator gets a host-side prompt (touch confirmation, biometric, password); on approval the daemon does the work; the agent receives back exactly what it asked for and nothing more.
 
 The daemon owns the policy, audit log, and execution path. The jackin' Desktop
 Agent Hub is the preferred native macOS surface for viewing pending requests and
@@ -145,12 +145,12 @@ Tool surface (initial cut):
 
 Same shape as the other reactive features that depend on it. The bridge needs:
 
-- A long-running host process that the container's MCP server can call (per-container Unix domain socket through the bind-mount channel — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design).
+- A long-running host process that the container's MCP server can call (per-container Unix domain socket through the bind-mount channel — see [jackin' daemon](/reference/roadmap/jackin-daemon/) for the channel design).
 - A host-side process that has integrity to display approval prompts the operator trusts.
 - A central audit log that survives across CLI invocations and individual container lifetimes.
 - A policy engine (allowlist / blocklist / `disabled`) configured per workspace and queryable from the MCP server.
 
-None of these can run from a CLI that exits between commands. The daemon's lifecycle, install, security posture, and control-socket transport are decided in the [jackin daemon](/reference/roadmap/jackin-daemon/) item; this feature is one adapter against that base.
+None of these can run from a CLI that exits between commands. The daemon's lifecycle, install, security posture, and control-socket transport are decided in the [jackin' daemon](/reference/roadmap/jackin-daemon/) item; this feature is one adapter against that base.
 
 ## Host-side effects
 
@@ -233,7 +233,7 @@ The mechanism is also the right escape valve for the *"help, I forgot to set up 
 
 ## Related work
 
-- [jackin daemon](/reference/roadmap/jackin-daemon/) — host-side process this feature plugs into. Phase 1 daemon must ship before this adapter can.
+- [jackin' daemon](/reference/roadmap/jackin-daemon/) — host-side process this feature plugs into. Phase 1 daemon must ship before this adapter can.
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — sibling feature plugging into the same daemon; sets the precedent for per-axis adapters.
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — sibling MCP-server feature using the same auto-registration pattern; both flow through the daemon.
 - [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — native macOS surface that should eventually show host-bridge approvals and audit entries while keeping daemon policy/execution as the source of truth.

@@ -279,7 +279,7 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
-| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, or `opencode`; omitted defaults to Claude |
+| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, or `opencode`; omitted lets launch resolution use the role manifest or prompt |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `op_account` | string | No | `legacy` | 1Password account selector |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |

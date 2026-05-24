@@ -2,6 +2,16 @@
 
 This repository uses `main` as its primary branch. This file is the canonical home for rules and restrictions that apply only to AI agents. Rules that apply equally to human contributors and agents live in topic-specific files linked under **Shared conventions** below.
 
+## Branch discipline: stay on the active branch (hard rule, agent-only)
+
+**Never create a new branch when an existing feature branch or open PR is already in scope for the session.**
+
+- At session start, check `git branch --show-current` and `gh pr list --head <current-branch>`. If there is an open PR, all work goes on that branch for the entire session.
+- If the current branch is `main`, work must not be committed there. Before making any change, ask the operator: "This is on `main`. Should I create a branch for this work? If so, what should it be called?" Do not proceed until the operator names the branch.
+- If you believe a piece of work belongs on a *different* branch from the active one, stop and ask: "This feels like it belongs on a separate branch — should I create one, or keep it on `<current-branch>`?" Default to staying on the active branch unless the operator says otherwise.
+- Never push to a remote branch other than the one the active local branch should track. If the local branch name differs from the remote PR branch (e.g. local `pr-435` vs remote `fix/capsule-agent-wheel-scroll`), resolve the tracking with `git push origin HEAD:<remote-branch-name>` — do not create a new remote branch.
+- If you accidentally create a wrong remote branch, delete it with `git push origin --delete <wrong-branch>` immediately after correcting the push.
+
 ## Brand spelling (agent-only)
 
 In prose, the product and project are always spelled `jackin'`: lowercase with the trailing apostrophe. Do not write `Jackin`, `Jackin'`, or bare `jackin` when referring to the brand, the product, or the project in normal text. Use the no-apostrophe spelling only for literal commands, binaries, crates, packages, environment variables, config keys, file paths, labels, selectors, URLs, and code identifiers, such as `jackin`, `jackin-capsule`, `JACKIN_DEBUG`, `~/.jackin/`, and `jackin.role.toml`. If the apostrophe makes a possessive or sentence awkward, rewrite the sentence instead of dropping it.
@@ -121,6 +131,8 @@ The shape is two-tier:
 The flag is the same `JACKIN_DEBUG` the host's `--debug` flag sets — it flows into the container via `env_passthrough` in `daemon.rs` and is captured once at `logging::init()` time. New verbose telemetry sites should branch on `cdebug!`, not `clog!`. New compact telemetry sites should branch on `clog!`. Anything that fires more than ~10 times per minute under normal operation belongs on `cdebug!`.
 
 When you find yourself adding "TEMPORARY logging to triage a regression", stop and convert it to `cdebug!` instead — the next bug report needs the same telemetry, and removing-and-readding-it on every regression cycle is exactly the loop this rule exists to break. The same applies to any other surface that grows a telemetry / tracing layer (the host CLI's `tui::tprintln`, the docs site's render warnings, the `runtime::launch` path): two tiers, debug-gated firehose, default compact.
+
+When the current logs are insufficient to explain a complex or inconsistent behaviour, do not guess at the fix. First add durable `cdebug!` telemetry that captures the missing state, ask the operator to rerun the repro with `--debug`, and then make the fix from that new evidence. The only exception is when the missing state can be obtained safely from the live process or container without changing code; in that case inspect it directly and keep going.
 
 The reason: operators can rarely reproduce on demand. When they hit something weird, they need to be able to paste a log that already has the answer — without rebuilding, without enabling extra instrumentation we forgot to ship, and without an extra round of "now please run it again with this added line". The host's `--debug` flag is the single switch that turns the firehose on; everything downstream honours it.
 
