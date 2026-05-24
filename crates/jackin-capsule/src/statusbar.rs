@@ -266,16 +266,7 @@ impl StatusBar {
 
     fn button_text(&self) -> String {
         match self.prefix_mode {
-            PrefixMode::Idle => {
-                if self.prefix_enabled {
-                    format!(
-                        " ☰ Menu {} · prefix {} ",
-                        self.palette_label, self.prefix_label
-                    )
-                } else {
-                    format!(" ☰ Menu {} ", self.palette_label)
-                }
-            }
+            PrefixMode::Idle => " ☰ Menu ".to_string(),
             PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
@@ -539,8 +530,12 @@ mod tests {
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("Menu Ctrl+\\"), "menu hint missing: {s:?}");
-        assert!(bar.hint_at(1, 72), "menu hint should be clickable");
+        assert!(s.contains("☰ Menu"), "menu hint missing: {s:?}");
+        assert!(
+            !s.contains("Ctrl+\\"),
+            "menu hint should omit shortcut: {s:?}"
+        );
+        assert!(bar.hint_at(1, 75), "menu hint should be clickable");
     }
 
     #[test]
