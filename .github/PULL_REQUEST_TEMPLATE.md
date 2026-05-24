@@ -19,6 +19,8 @@ Rules in one line each:
 - No file-by-file changelog (use the diff). No full test list (use the runner output).
 - No deployed-docs URLs (they break post-merge). Refer to docs by name only.
 - No mechanical CI-shaped checks (sidebar diffs, link audits). Those belong in CI.
+  Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
+  copy-paste block — AGENTS.md requires docs authors run it before merge.
 - Verify-locally URLs use http://localhost:4321/... only — never deployed.
 - Each verify-locally docs page: bolded URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
@@ -112,16 +114,35 @@ cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-### Tests
+### Rust tests
 
 ```sh
 cargo nextest run -E '<SCOPED_TEST_FILTER>'
 cargo nextest run --all-features
 ```
 
-<One sentence describing what the tests cover — provisioning, parser, error
+<Drop this whole subsection when the PR has no Rust test coverage to run.
+One sentence describing what the tests cover — provisioning, parser, error
 paths, etc. Skip this paragraph when the test set is small enough that the
 filter speaks for itself.>
+
+### Docs checks
+
+<Drop this whole subsection when the PR does not touch `docs/` or docs tooling.
+Keep these automated docs checks separate from Rust tests so operator-facing
+docs validation does not get mixed into the Rust project test surface. The
+per-page localhost render walk still goes in `### Documentation` below.>
+
+```sh
+(
+  cd docs
+  bun install --frozen-lockfile
+  bun run build
+  bun run check:repo-links
+  bunx tsc --noEmit
+  bun test
+)
+```
 
 ### Build jackin-capsule
 
@@ -199,9 +220,11 @@ export JACKIN_PREFIX=C-b
 <Drop this whole subsection if the PR didn't touch `docs/`.>
 
 ```sh
-cd docs
-bun install --frozen-lockfile
-bun run dev
+(
+  cd docs
+  bun install --frozen-lockfile
+  bun run dev
+)
 ```
 
 Astro serves at `http://localhost:4321/`. Pages to walk:

@@ -22,7 +22,7 @@ Sections, in order (drop the optional ones when they don't apply — the templat
 1. **Summary** — one paragraph: what shipped, who benefits, how it changes their flow. No file list, no rationale narration. Cross-references to other docs by name (no `/reference/...` links).
 2. **Hard rule / impact callout** *(optional — only when the PR introduces or honours a non-trivial cross-cutting rule)* — one paragraph naming the rule, what it blocks, where the full rationale lives.
 3. **What's deferred** *(optional — only when the PR is the first slice of a longer plan)* — bulleted list of explicit follow-up items so reviewers know what's intentionally out of scope.
-4. **Verify locally** — copy-pasteable steps the operator runs, structured by intent (Checkout / Static checks / Tests / User smoke / Documentation). One block per intent, with the exact commands and the expected output.
+4. **Verify locally** — copy-pasteable steps the operator runs, structured by intent (Checkout / Static checks / Rust tests / Docs checks / User smoke / Documentation). One block per intent, with the exact commands and the expected output.
 5. **Migration notes** — short. "None" is a valid answer during pre-release; drop the section entirely when there's nothing to say.
 
 What the template deliberately omits:
@@ -31,7 +31,7 @@ What the template deliberately omits:
 - Full test list (visible in the test runner output).
 - Design rationale for every sub-decision (lives in the contributor doc the PR adds or updates).
 - Links to deployed docs URLs (those break post-merge; see "[Never link deployed docs from the PR body](#pr-body--keep-it-tight-let-github-flow-the-text)").
-- Mechanical CI-shaped checks (sidebar diffs, link audits, file-tree assertions belong in CI, not in the PR body).
+- Mechanical CI-shaped checks (sidebar diffs, link audits, file-tree assertions belong in CI, not in the PR body). The one exception is the docs verification gate (the **Docs Checks** block), which AGENTS.md requires docs authors run from `docs/` before merge.
 
 ## Include local checkout instructions in every PR
 
@@ -39,7 +39,7 @@ Every pull request must include a copy-pasteable "Verify locally" section in the
 
 Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
-Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command because it is the operator's most intuitive end-to-end validation path: `jackin console --debug`. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct commands such as `jackin load <role> <target> --debug` or narrower subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
+Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Rust tests only when there is a relevant `cargo` or `cargo nextest` command for the Rust project. Add Docs checks only when there is a relevant automated docs command, such as `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, or `bun test` from `docs/`. Keep Rust tests and Docs checks in separate blocks; docs tests validate the published documentation surface and docs tooling, not the Rust project itself. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command because it is the operator's most intuitive end-to-end validation path: `jackin console --debug`. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct commands such as `jackin load <role> <target> --debug` or narrower subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
 ### jackin-capsule PRs
 
@@ -68,10 +68,11 @@ The Files-changed tab shows raw MDX. It does not show how Starlight renders the 
 Required pattern for docs-only PRs:
 
 1. **Checkout block** — same as any other PR.
-2. **Run the docs site locally** — `cd docs && bun install --frozen-lockfile && bun run dev`. Astro serves at `http://localhost:4321/`.
-3. **Direct links to every changed page** — for each affected MDX file, include a localhost URL the operator can click straight into. Map `docs/src/content/docs/<path>.mdx` to `http://localhost:4321/<path>/`. For new pages, also tell the operator which sidebar group the entry should appear under, so they can confirm the navigation lands in the right place.
+2. **Docs checks** — run the automated docs verification gate (the `### Docs checks` block from the template): `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. These catch broken builds, dead repo links, type errors, and failing docs tests before the manual walk.
+3. **Run the docs site locally** — `cd docs && bun install --frozen-lockfile && bun run dev`. Astro serves at `http://localhost:4321/`.
+4. **Direct links to every changed page** — for each affected MDX file, include a localhost URL the operator can click straight into. Map `docs/src/content/docs/<path>.mdx` to `http://localhost:4321/<path>/`. For new pages, also tell the operator which sidebar group the entry should appear under, so they can confirm the navigation lands in the right place.
 
-A `.mdx`-only PR that omits the local-render step is incomplete. The Files-changed tab is the operator's last-resort fallback, not the primary review surface.
+A `.mdx`-only PR that omits the Docs checks gate or the local-render step is incomplete. The Files-changed tab is the operator's last-resort fallback, not the primary review surface.
 
 ### Template
 
@@ -116,10 +117,23 @@ cargo fmt --check
 cargo clippy --lib
 ```
 
-#### Tests
+#### Rust Tests
 
 ```sh
 cargo test <RELEVANT_TEST>
+```
+
+#### Docs Checks
+
+```sh
+(
+  cd docs
+  bun install --frozen-lockfile
+  bun run build
+  bun run check:repo-links
+  bunx tsc --noEmit
+  bun test
+)
 ```
 
 #### User Smoke
@@ -136,7 +150,8 @@ For non-trivial code changes, structure the PR's "Verify locally" section by int
 - **Checkout** — copy-pasteable commands to fetch and check out the PR.
 - **Isolation** — env vars that redirect state/config away from the operator's live data, when the PR touches code that reads or writes those paths.
 - **Static Checks** — only checks that are relevant and expected to be run locally.
-- **Tests** — focused or full test commands that validate the changed behavior.
+- **Rust Tests** — focused or full `cargo` / `cargo nextest` commands that validate the changed Rust behavior.
+- **Docs Checks** — automated `bun` commands from `docs/` that validate the rendered docs project, repo links, TypeScript, and docs test suite.
 - **User Smoke** — manual validation steps when behavior is visible in the CLI/TUI/runtime.
 
 Do not add generic commands that do not materially validate the PR. In particular, do not include `git diff --check` unless the PR is specifically about whitespace, patch hygiene, generated diffs, or another issue that command is meant to catch.
@@ -219,7 +234,7 @@ The PR body is read in GitHub's renderer, which already wraps long lines at the 
 - **Do not hard-wrap prose at ~70 columns.** Write each paragraph as a single long line in the source. GitHub will wrap it at display time. Source-side line breaks at column 70 produce output where every other line ends mid-sentence, which is much harder to read than a flowing paragraph. The exception is code fences and bullet contents that already encode meaningful line breaks.
 - **No verbosity, no duplication.** A PR body explains *what shipped* and *how to verify it*. It does not duplicate the design rationale (that lives in the contributor doc the PR adds or updates), the file-by-file changelog (visible in the PR diff), or the test list (visible in the test-runner output). Trim every sentence that exists in two places. Default to 100–200 lines for a substantial PR; 400+ lines is a smell.
 - **Never link deployed docs from the PR body.** Operator-facing docs URLs, roadmap pages, and any `https://jackin.example/...` link can move, rename, or 404 after the PR merges. The PR body becomes a permanent commit attribution after squash-merge, so a broken link is permanent. Use localhost render URLs (`http://localhost:4321/...`) inside the **Verify locally → Documentation** block — those are valid only at verification time and are obviously local. Refer to other docs by name, not URL: write *"the GitHub CLI authentication strategy roadmap doc"*, not a link to it.
-- **No mechanical / CI-shaped checks in the PR body.** Anything fully deterministic — sidebar diffs, link audits, file-tree assertions, "did you remember to update the changelog" greps — belongs in CI, not in a checklist the operator has to copy-paste. The PR body is for the operator-facing verification path: build, test, run the binary, render the docs. If a mechanical check is missing from CI today, file a follow-up to add it; do not promote it into every PR body in the meantime.
+- **No mechanical / CI-shaped checks in the PR body.** Anything fully deterministic — sidebar diffs, link audits, file-tree assertions, "did you remember to update the changelog" greps — belongs in CI, not in a checklist the operator has to copy-paste. The PR body is for the operator-facing verification path: build, test, run the binary, render the docs. If a mechanical check is missing from CI today, file a follow-up to add it; do not promote it into every PR body in the meantime. The one exception is the docs verification gate — the **Docs Checks** block (`bun install --frozen-lockfile`, then `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, `bun test` from `docs/`). It is the single sanctioned copy-paste mechanical check because `bunx tsc --noEmit` and `bun test` have no CI backstop today, so the operator running them locally is the only gate; AGENTS.md requires the gate before a docs-touching PR is merge-ready.
 - **Verify-locally documentation block: one block per page.** Each page operators should walk gets its own block: the URL bolded on its own line, the description on the next line with no blank line in between (use a trailing two-space line break for the soft break), and a blank line between blocks. Like:
 
   ```md
