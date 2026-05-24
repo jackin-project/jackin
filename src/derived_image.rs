@@ -759,14 +759,14 @@ mod tests {
             .unwrap();
         assert!(
             codex_section
-                .contains("codex --enable goals -c 'trust_level=\"trusted\"' --dangerously-bypass-approvals-and-sandbox")
+                .contains("codex --enable goals --dangerously-bypass-approvals-and-sandbox")
         );
         assert!(codex_section.contains("LAUNCH+=(\"$@\")"));
         assert!(!codex_section.contains("config.toml"));
     }
 
     #[test]
-    fn entrypoint_claude_branch_marks_container_runtime_trusted() {
+    fn entrypoint_claude_branch_skips_dangerous_mode_prompt() {
         let claude_section = ENTRYPOINT_SH
             .split("claude)")
             .nth(1)
@@ -774,7 +774,6 @@ mod tests {
             .split(";;")
             .next()
             .unwrap();
-        assert!(claude_section.contains("export CLAUDE_CODE_SANDBOXED=1"));
         assert!(
             claude_section
                 .contains("claude --settings '{\"skipDangerousModePermissionPrompt\":true}' --dangerously-skip-permissions --verbose")

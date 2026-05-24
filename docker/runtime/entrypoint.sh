@@ -38,14 +38,13 @@ run_hook() {
 # `source.sh` can mutate this shell's environment before `exec`.
 case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   claude)
-    export CLAUDE_CODE_SANDBOXED=1
     LAUNCH=(claude --settings '{"skipDangerousModePermissionPrompt":true}' --dangerously-skip-permissions --verbose)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
     ;;
   codex)
-    LAUNCH=(codex --enable goals -c 'trust_level="trusted"' --dangerously-bypass-approvals-and-sandbox)
+    LAUNCH=(codex --enable goals --dangerously-bypass-approvals-and-sandbox)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
