@@ -715,8 +715,16 @@ async fn launch_role_runtime(
         "{}={container_name}",
         crate::env_model::JACKIN_CONTAINER_NAME_ENV_NAME
     );
-    let instance_id = crate::instance::naming::instance_id_from_container_base(container_name)
-        .unwrap_or(container_name);
+    let instance_id = match crate::instance::naming::instance_id_from_container_base(container_name)
+    {
+        Some(id) => id,
+        None => {
+            eprintln!(
+                "warning: instance_id_from_container_base could not parse {container_name:?}; falling back to full container name as JACKIN_INSTANCE_ID — chrome chip will render the full name"
+            );
+            container_name
+        }
+    };
     let instance_id_env = format!(
         "{}={instance_id}",
         crate::env_model::JACKIN_INSTANCE_ID_ENV_NAME

@@ -15,21 +15,39 @@
 /// - **Hint footer** follows the console TUI's structured format:
 ///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
-///
-/// While a dialog is open, the multiplexer redraws the frame with
-/// background content dimmed before this overlay is painted. Keep that
-/// behavior in the shared overlay path so every dialog gets the same
-/// focus cue.
 use crate::session::PullRequestInfo;
 
-/// Live multiplexer state needed to render and dispatch a
-/// `Dialog::GitHubContext` instance without copying it into the
-/// dialog itself.
+/// Borrowed snapshot of multiplexer PR state, so `GitHubContext`
+/// rendering and dispatch stay live without copying the data into
+/// the dialog variant.
 #[derive(Clone, Copy)]
 pub struct GithubContextView<'a> {
     pub branch: Option<&'a str>,
-    pub pull_request: Option<&'a PullRequestInfo>,
-    pub loading: bool,
+    pub status: PullRequestStatus<'a>,
+}
+
+/// Resolution state of the multiplexer's PR lookup. Mirrors the
+/// daemon's `(in_flight, Option<PullRequestInfo>)` pair but rules
+/// out the impossible `Loaded + Resolving` combination at the type
+/// level — keeps every dialog branch a single exhaustive match.
+#[derive(Clone, Copy)]
+pub enum PullRequestStatus<'a> {
+    Loaded(&'a PullRequestInfo),
+    Resolving,
+    Idle,
+}
+
+impl<'a> PullRequestStatus<'a> {
+    pub fn loaded(&self) -> Option<&'a PullRequestInfo> {
+        match self {
+            Self::Loaded(pr) => Some(*pr),
+            _ => None,
+        }
+    }
+
+    pub fn is_loading(&self) -> bool {
+        matches!(self, Self::Resolving)
+    }
 }
 
 const PALETTE_WIDTH: u16 = 50;
@@ -372,7 +390,7 @@ impl Dialog {
             return match key {
                 b"\r" | b"\n" => {
                     let Some(url) = github
-                        .and_then(|view| view.pull_request)
+                        .and_then(|view| view.status.loaded())
                         .map(|pr| pr.url.clone())
                     else {
                         return DialogAction::Redraw;
@@ -649,7 +667,7 @@ impl Dialog {
             return DialogAction::CopyToClipboard(payload);
         }
         if let Self::GitHubContext { copied } = self {
-            let Some(pr) = github.and_then(|view| view.pull_request) else {
+            let Some(pr) = github.and_then(|view| view.status.loaded()) else {
                 return DialogAction::Consume;
             };
             if !info_box_value_row_clickable(
@@ -829,7 +847,7 @@ impl Dialog {
                 CONTAINER_INFO_ID_ROW,
             ),
             Self::GitHubContext { .. } => {
-                github.and_then(|view| view.pull_request).is_some()
+                github.and_then(|view| view.status.loaded()).is_some()
                     && info_box_value_row_clickable(
                         row,
                         col,
@@ -1022,8 +1040,8 @@ impl Dialog {
             }
             Self::GitHubContext { copied } => {
                 let branch = github.and_then(|view| view.branch);
-                let pull_request = github.and_then(|view| view.pull_request);
-                let loading = github.is_some_and(|view| view.loading);
+                let pull_request = github.and_then(|view| view.status.loaded());
+                let loading = github.is_some_and(|view| view.status.is_loading());
                 render_github_context(
                     buf,
                     box_row,
@@ -1073,7 +1091,7 @@ impl Dialog {
             Self::RenameTab { .. } => RENAME_HINT,
             Self::ContainerInfo { .. } => CONTAINER_INFO_HINT,
             Self::GitHubContext { .. } => {
-                if github.and_then(|view| view.pull_request).is_some() {
+                if github.and_then(|view| view.status.loaded()).is_some() {
                     GITHUB_CONTEXT_HINT
                 } else {
                     READ_ONLY_HINT
@@ -2799,30 +2817,23 @@ mod tests {
     fn github_view_for_fixture(pr: &PullRequestInfo) -> GithubContextView<'_> {
         GithubContextView {
             branch: Some(GITHUB_FIXTURE_BRANCH),
-            pull_request: Some(pr),
-            loading: false,
+            status: PullRequestStatus::Loaded(pr),
         }
     }
 
     fn github_view_loading() -> GithubContextView<'static> {
         GithubContextView {
             branch: Some(GITHUB_FIXTURE_BRANCH),
-            pull_request: None,
-            loading: true,
+            status: PullRequestStatus::Resolving,
         }
     }
 
     #[test]
     fn github_context_renders_branch_pr_url_and_ci_status() {
         let mut pr = pull_request_fixture();
-        pr.checks = Some(crate::session::PullRequestChecks {
-            passing: 4,
-            failing: 0,
-            pending: 0,
-            skipped: 1,
-            cancelled: 0,
-            total: 5,
-        });
+        pr.checks = Some(crate::session::PullRequestChecks::from_buckets([
+            "pass", "pass", "pass", "pass", "skipping",
+        ]));
         let view = github_view_for_fixture(&pr);
         let d = Dialog::GitHubContext { copied: false };
         let mut buf = Vec::new();
@@ -2970,5 +2981,81 @@ mod tests {
         assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
         assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
         assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
+    }
+
+    #[test]
+    fn info_box_value_row_clickable_honours_offset_and_inset() {
+        let box_row = 5;
+        let box_col = 10;
+        let width = 20;
+        let row_offset = 2;
+        let inside_row = box_row + row_offset;
+
+        assert!(!info_box_value_row_clickable(
+            inside_row, box_col, box_row, box_col, width, row_offset,
+        ));
+        assert!(!info_box_value_row_clickable(
+            inside_row,
+            box_col + 1,
+            box_row,
+            box_col,
+            width,
+            row_offset,
+        ));
+        assert!(info_box_value_row_clickable(
+            inside_row,
+            box_col + 2,
+            box_row,
+            box_col,
+            width,
+            row_offset,
+        ));
+        assert!(info_box_value_row_clickable(
+            inside_row,
+            box_col + width - 3,
+            box_row,
+            box_col,
+            width,
+            row_offset,
+        ));
+        assert!(!info_box_value_row_clickable(
+            inside_row,
+            box_col + width - 2,
+            box_row,
+            box_col,
+            width,
+            row_offset,
+        ));
+        assert!(!info_box_value_row_clickable(
+            inside_row + 1,
+            box_col + 2,
+            box_row,
+            box_col,
+            width,
+            row_offset,
+        ));
+    }
+
+    #[test]
+    fn info_box_value_row_clickable_tracks_alternate_offset() {
+        let box_row = 5;
+        let box_col = 10;
+        let width = 20;
+        assert!(info_box_value_row_clickable(
+            box_row + 5,
+            box_col + 4,
+            box_row,
+            box_col,
+            width,
+            5,
+        ));
+        assert!(!info_box_value_row_clickable(
+            box_row + 2,
+            box_col + 4,
+            box_row,
+            box_col,
+            width,
+            5,
+        ));
     }
 }

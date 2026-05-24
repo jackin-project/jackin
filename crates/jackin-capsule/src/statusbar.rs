@@ -593,20 +593,35 @@ fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
 /// in the `ContainerInfo` dialog opened from that row, not in the top
 /// chrome.
 fn resolve_container_name() -> String {
-    std::env::var(JACKIN_CONTAINER_NAME_ENV)
+    if let Some(value) = std::env::var(JACKIN_CONTAINER_NAME_ENV)
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| std::env::var("HOSTNAME").ok())
+    {
+        return value;
+    }
+    if let Some(value) = std::env::var("HOSTNAME")
+        .ok()
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            const ETC_HOSTNAME_MAX_BYTES: u64 = 256;
-            crate::util::read_text_bounded(
-                std::path::Path::new("/etc/hostname"),
-                ETC_HOSTNAME_MAX_BYTES,
-            )
-            .map(|value| value.trim().to_string())
-        })
-        .unwrap_or_default()
+    {
+        crate::clog!("statusbar: container name resolved from HOSTNAME");
+        return value;
+    }
+    const ETC_HOSTNAME_MAX_BYTES: u64 = 256;
+    if let Some(value) = crate::util::read_text_bounded(
+        "/etc/hostname",
+        std::path::Path::new("/etc/hostname"),
+        ETC_HOSTNAME_MAX_BYTES,
+    )
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+    {
+        crate::clog!("statusbar: container name resolved from /etc/hostname");
+        return value;
+    }
+    crate::clog!(
+        "statusbar: container name unresolved \u{2014} {JACKIN_CONTAINER_NAME_ENV}, HOSTNAME, and /etc/hostname all empty or unreadable; chrome chip will be blank"
+    );
+    String::new()
 }
 
 fn resolve_instance_id(container_name: &str) -> String {

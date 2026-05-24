@@ -70,10 +70,8 @@ pub struct TabCell<'a> {
 /// jackin-capsule both follow this spacing.
 pub const TAB_GAP: u16 = 1;
 
-/// One footer-hint span. Data type shared across the ratatui host
-/// console and the in-container multiplexer; each consumer renders
-/// the same hint list in its own format (ratatui `Line`/`Span` on
-/// the host, raw ANSI escapes inside the capsule).
+/// One footer-hint span. Each consumer renders the same hint list
+/// in its own format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HintSpan<'a> {
     /// Hotkey glyph(s) — white + bold in rendered output.

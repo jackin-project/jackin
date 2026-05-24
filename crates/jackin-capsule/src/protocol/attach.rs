@@ -82,12 +82,10 @@ impl SpawnRequest {
 }
 
 /// Terminal identity reported by the currently attached client.
-///
-/// This deliberately describes the outer terminal for one attach, not the
-/// long-lived pane PTY environment. A running container can be reattached from
-/// Ghostty, Kitty, iTerm, Warp, or a plain xterm-compatible terminal at
-/// different times; the daemon should gate outer-terminal enhancements on this
-/// value rather than on the daemon process environment inherited at launch.
+/// Per-attach, not container-lifetime: the daemon must gate
+/// outer-terminal enhancements on this value rather than on the
+/// daemon process environment inherited at launch, since a running
+/// container can be reattached from a different terminal later.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClientTerminal {
     pub term: Option<String>,

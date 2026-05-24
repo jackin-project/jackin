@@ -35,7 +35,7 @@ use portable_pty::CommandBuilder;
 
 use crate::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
-    PickerIntent, SplitDirection,
+    PickerIntent, PullRequestStatus, SplitDirection,
 };
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
@@ -162,13 +162,9 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
     workdir: PathBuf,
-    /// Static facts about the workdir resolved once at daemon construction:
-    /// `git` / `gh` binary availability, whether the workdir is a git
-    /// checkout, and the repo's default branch resolved from
-    /// `origin/HEAD`. Cached so the 1Hz state ticker does not fork
-    /// `git`/`gh` subprocesses for facts that cannot change while the
-    /// daemon is alive — a non-git workdir would otherwise pay 86,400
-    /// subprocess forks per day for the same negative verdict.
+    /// Cached at construction; tool availability and `origin/HEAD`
+    /// cannot change while the daemon is alive, and re-probing on
+    /// the 1Hz state tick would shell out for a stable verdict.
     workdir_context: WorkdirContext,
 }
 
@@ -199,7 +195,18 @@ impl WorkdirContext {
         // `.git/HEAD` directly, so a normal checkout can still update
         // chrome even if the subprocess probe fails or runs before the
         // shell has expanded PATH.
-        let has_git_metadata = workdir.join(".git").try_exists().ok().unwrap_or(false);
+        let git_metadata = workdir.join(".git");
+        let has_git_metadata = match git_metadata.try_exists() {
+            Ok(present) => present,
+            Err(e) => {
+                crate::clog!(
+                    "workdir-context: .git try_exists at {} failed: {e} (errno={:?}); treating as not-a-git-repo",
+                    git_metadata.display(),
+                    e.raw_os_error()
+                );
+                false
+            }
+        };
         let is_git_repo =
             has_git_metadata || (git_available && workdir_is_inside_git_tree(workdir));
         let default_branch = if is_git_repo {
@@ -242,7 +249,23 @@ fn command_in_path(name: &str) -> bool {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    matches!(cmd.status(), Ok(status) if status.success())
+    match cmd.status() {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            crate::cdebug!(
+                "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
+                status.code()
+            );
+            false
+        }
+        Err(e) => {
+            crate::clog!(
+                "command_in_path[{name}]: spawn failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
+                e.raw_os_error()
+            );
+            false
+        }
+    }
 }
 
 /// Bounded by `GIT_CONTEXT_COMMAND_TIMEOUT` so a stalled `git`
@@ -270,15 +293,12 @@ fn workdir_is_inside_git_tree(workdir: &Path) -> bool {
         .is_some_and(|value| value == "true")
 }
 
-/// Shared shape for the two background context lookups (git branch +
-/// gh PR). Wraps the three book-keeping fields that always travel
-/// together — bumping `request_id` on every spawn, flipping
-/// `in_flight` for the dedup gate, and stamping `last_run` for the
-/// optional cooldown check. Collapsing them into one struct prevents
-/// the symmetric-variant drift the project DRY rule warns about: a
-/// future change that bumps `request_id` without clearing
-/// `in_flight` on one side and not the other was the exact shape of
-/// the branch-flip race bug just fixed.
+/// Three book-keeping fields for a background context lookup. They
+/// MUST move together: `begin_spawn` bumps `request_id`, stamps
+/// `last_run`, and flips `in_flight`; `invalidate_in_flight` bumps
+/// `request_id` and clears `in_flight`. Open-coding any subset
+/// re-opens the race where a stale response carrying an old
+/// `request_id` overwrites a fresh branch's cache slot.
 #[derive(Default)]
 struct LookupState {
     request_id: u64,
@@ -287,9 +307,23 @@ struct LookupState {
 }
 
 impl LookupState {
-    fn next_request_id(&mut self) -> u64 {
+    /// Atomic spawn-state transition: bump `request_id`, stamp
+    /// `last_run`, set `in_flight=true`. The three fields move together
+    /// or not at all; open-coding any subset is the symmetric-variant
+    /// drift this struct exists to prevent.
+    fn begin_spawn(&mut self, now: Instant) -> u64 {
         self.request_id = self.request_id.wrapping_add(1);
+        self.last_run = Some(now);
+        self.in_flight = true;
         self.request_id
+    }
+
+    /// Invalidate any in-flight worker without consuming the spawn slot.
+    /// Used on branch flips so a stale response carrying the old
+    /// `request_id` fails the equality guard in the apply path.
+    fn invalidate_in_flight(&mut self) {
+        self.request_id = self.request_id.wrapping_add(1);
+        self.in_flight = false;
     }
 
     fn cooldown_active(&self, now: Instant, interval: Duration) -> bool {
@@ -302,6 +336,16 @@ impl LookupState {
 struct PullRequestContextCacheEntry {
     checked_at: Instant,
     pull_request: Option<Arc<PullRequestInfo>>,
+}
+
+impl PullRequestContextCacheEntry {
+    fn is_fresh(&self, now: Instant) -> bool {
+        now.duration_since(self.checked_at) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
+    }
+
+    fn is_expired(&self, now: Instant) -> bool {
+        now.duration_since(self.checked_at) >= PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL * 2
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -765,26 +809,43 @@ impl Multiplexer {
     fn github_context_view(&self) -> GithubContextView<'_> {
         GithubContextView {
             branch: self.pull_request_context_branch.as_deref(),
-            pull_request: self.pull_request_context.as_deref(),
-            loading: self.pull_request_context_loading(),
+            status: self.pull_request_status(),
         }
     }
 
-    /// Mutable counterpart to `github_context_view` plus a `&mut Dialog`
-    /// handle to the top of the stack. Combining the two into one helper
-    /// lets the call site name only its dispatch action; the borrow split
-    /// (immutable field refs for the view, mutable for `dialog_stack`)
-    /// happens once here instead of being open-coded at every dispatch site.
-    /// Returns `None` when no dialog is on the stack.
+    fn pull_request_status(&self) -> PullRequestStatus<'_> {
+        if let Some(pr) = self.pull_request_context.as_deref() {
+            return PullRequestStatus::Loaded(pr);
+        }
+        if self.pull_request_context_loading() {
+            return PullRequestStatus::Resolving;
+        }
+        PullRequestStatus::Idle
+    }
+
+    /// Single `&mut self.dialog_stack` borrow alongside a
+    /// `GithubContextView` snapshot. NLL can split the borrow only when
+    /// the immutable field reads and the mutable `dialog_stack` access
+    /// live in the same function — open-coding both at every dispatch
+    /// site triggers the borrow checker. Returns `None` when no dialog
+    /// is on the stack.
     fn dispatch_to_dialog_top<F, R>(&mut self, f: F) -> Option<R>
     where
         F: FnOnce(&mut Dialog, Option<&GithubContextView<'_>>) -> R,
     {
+        // Inline `pull_request_status` instead of calling the helper so
+        // the compiler splits the borrow into `pull_request_context*`
+        // (immutable) and `dialog_stack` (mutable) — disjoint fields
+        // that NLL accepts only through direct field access.
         let loading = self.pull_request_context_loading();
+        let status = match self.pull_request_context.as_deref() {
+            Some(pr) => PullRequestStatus::Loaded(pr),
+            None if loading => PullRequestStatus::Resolving,
+            None => PullRequestStatus::Idle,
+        };
         let view = GithubContextView {
             branch: self.pull_request_context_branch.as_deref(),
-            pull_request: self.pull_request_context.as_deref(),
-            loading,
+            status,
         };
         let dialog = self.dialog_stack.last_mut()?;
         Some(f(dialog, Some(&view)))
@@ -812,9 +873,7 @@ impl Multiplexer {
         {
             return;
         }
-        self.git_branch_lookup.last_run = Some(now);
-        let request_id = self.git_branch_lookup.next_request_id();
-        self.git_branch_lookup.in_flight = true;
+        let request_id = self.git_branch_lookup.begin_spawn(now);
         let workdir = self.workdir.clone();
         self.spawn_context_lookup(
             "git-branch-context",
@@ -838,8 +897,7 @@ impl Multiplexer {
         {
             return false;
         }
-        let request_id = self.pull_request_lookup.next_request_id();
-        self.pull_request_lookup.in_flight = true;
+        let request_id = self.pull_request_lookup.begin_spawn(now);
         let workdir = self.workdir.clone();
         let branch_for_event = branch.clone();
         self.spawn_context_lookup(
@@ -919,15 +977,18 @@ impl Multiplexer {
             .as_deref()
             .and_then(|branch| self.cached_pull_request_for_branch(branch, now));
 
-        // Invalidate any in-flight PR lookup against the previous
-        // branch by bumping the request_id token. A worker that fired
-        // off `gh pr list --head <old_branch>` could otherwise return
-        // ~16s later, pass the stale check, and overwrite the new
-        // branch's cache slot with the wrong branch's PR. Bumping the
-        // id makes the late-arrival response fail the equality guard
-        // in `apply_pull_request_context_loaded`.
-        self.pull_request_lookup.request_id = self.pull_request_lookup.request_id.wrapping_add(1);
-        self.pull_request_lookup.in_flight = false;
+        // Branch flip invalidates the in-flight `gh pr list --head <old>`
+        // worker; bumping the id makes its response fail the equality
+        // guard in `apply_pull_request_context_loaded`.
+        if self.pull_request_lookup.in_flight {
+            crate::cdebug!(
+                "pull-request-context: invalidating in-flight request_id={} on branch flip {:?} \u{2192} {:?}",
+                self.pull_request_lookup.request_id,
+                old_branch,
+                self.pull_request_context_branch
+            );
+        }
+        self.pull_request_lookup.invalidate_in_flight();
         crate::cdebug!(
             "git-branch-context: branch changed old={:?} new={:?}",
             old_branch,
@@ -948,18 +1009,26 @@ impl Multiplexer {
         now: Instant,
     ) -> bool {
         if request_id != self.pull_request_lookup.request_id {
-            // Stale response from a worker invalidated by a branch flip.
-            // `in_flight` belongs to the NEW lookup spawned in the
-            // interim, so we must NOT clear it here — that would cause
-            // the new spawn-gate to allow a third concurrent worker.
-            // No mux state changed, so the dialog (if open) does not
-            // need a redraw either.
+            crate::cdebug!(
+                "pull-request-context: dropping stale result request_id={request_id} (current={})",
+                self.pull_request_lookup.request_id
+            );
+            // `in_flight` belongs to the NEW lookup spawned during the
+            // branch flip — clearing it here lets the spawn-gate admit
+            // a third concurrent worker.
             return false;
         }
-        let github_dialog_open = self.has_github_context_dialog_open();
+        let pre_loading = self.pull_request_context_loading();
         self.pull_request_lookup.in_flight = false;
+        let post_loading = self.pull_request_context_loading();
+        // `in_flight` just flipped from true → false, which changes the
+        // `Resolving PR · …` ↔ `Branch · …` slot in the bottom bar even
+        // when the resolved value matches the prior cache. Track the
+        // transition explicitly so a non-`changed` exit still requests a
+        // redraw on the loading flip.
+        let loading_changed = pre_loading != post_loading;
         let Some(branch) = branch else {
-            return github_dialog_open;
+            return loading_changed;
         };
         // Transient gh failures (binary missing, auth not configured,
         // JSON parse, timeout) MUST NOT poison the 60s cache with a
@@ -969,7 +1038,7 @@ impl Multiplexer {
         let pull_request = match outcome {
             PullRequestLookupOutcome::Resolved(pr) => pr,
             PullRequestLookupOutcome::TransientFailure => {
-                return github_dialog_open;
+                return loading_changed;
             }
         };
         self.purge_expired_pull_request_cache_entries(now);
@@ -981,20 +1050,14 @@ impl Multiplexer {
             },
         );
         if self.pull_request_context_branch.as_deref() != Some(branch.as_str()) {
-            return github_dialog_open;
+            return loading_changed;
         }
         let changed = self.pull_request_context != pull_request;
         self.pull_request_context = pull_request;
         if self.reconcile_content_rows() {
             return true;
         }
-        changed || github_dialog_open
-    }
-
-    fn has_github_context_dialog_open(&self) -> bool {
-        self.dialog_stack
-            .iter()
-            .any(|d| matches!(d, Dialog::GitHubContext { .. }))
+        changed || loading_changed
     }
 
     /// Drop cache entries older than `2 * PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL`
@@ -1003,9 +1066,16 @@ impl Multiplexer {
     /// between two PRs" workflow keeps both warm, while monotonic growth
     /// across hundreds of branches gets pruned.
     fn purge_expired_pull_request_cache_entries(&mut self, now: Instant) {
-        let ttl = PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL * 2;
+        let before = self.pull_request_context_cache.len();
         self.pull_request_context_cache
-            .retain(|_, entry| now.duration_since(entry.checked_at) < ttl);
+            .retain(|_, entry| !entry.is_expired(now));
+        let dropped = before - self.pull_request_context_cache.len();
+        if dropped > 0 {
+            crate::cdebug!(
+                "pull-request-context: purged {dropped} expired cache entries (ttl=2x{:?})",
+                PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
+            );
+        }
     }
 
     fn cached_pull_request_for_branch(
@@ -1015,18 +1085,14 @@ impl Multiplexer {
     ) -> Option<Arc<PullRequestInfo>> {
         self.pull_request_context_cache
             .get(branch)
-            .filter(|entry| {
-                now.duration_since(entry.checked_at) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
-            })
+            .filter(|entry| entry.is_fresh(now))
             .and_then(|entry| entry.pull_request.clone())
     }
 
     fn pull_request_cache_is_fresh(&self, branch: &str, now: Instant) -> bool {
         self.pull_request_context_cache
             .get(branch)
-            .is_some_and(|entry| {
-                now.duration_since(entry.checked_at) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
-            })
+            .is_some_and(|entry| entry.is_fresh(now))
     }
 
     /// Current branch for the chrome bar, filtered to `None` when the
@@ -2792,10 +2858,14 @@ impl Multiplexer {
         );
 
         if let Some(dialog) = self.dialog_top() {
+            let status = match self.pull_request_context.as_deref() {
+                Some(pr) => PullRequestStatus::Loaded(pr),
+                None if pull_request_loading => PullRequestStatus::Resolving,
+                None => PullRequestStatus::Idle,
+            };
             let github = GithubContextView {
                 branch: self.pull_request_context_branch.as_deref(),
-                pull_request: self.pull_request_context.as_deref(),
-                loading: pull_request_loading,
+                status,
             };
             dialog.render_with_hover(
                 &mut buf,
@@ -3544,32 +3614,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 mux.refresh_tab_labels();
-                let mut sbuf = b"\x1b7".to_vec();
-                let states: Vec<(u64, AgentState)> = mux.sessions.iter()
-                    .map(|(&id, s)| (id, s.state))
-                    .collect();
-                mux.status_bar.render(
-                    &mut sbuf,
-                    mux.term_cols,
-                    &mux.tabs,
-                    mux.active_tab,
-                    &states,
-                    hovered_tab(mux.hover_target),
-                    hovered_menu(mux.hover_target),
-                    mux.dialog_open(),
-                );
-                render_branch_context_bar(
-                    &mut sbuf,
-                    mux.term_rows,
-                    mux.term_cols,
-                    mux.context_bar_branch(),
-                    mux.pull_request_context.as_deref(),
-                    mux.pull_request_context_loading(),
-                    mux.status_bar.instance_id_label(),
-                    mux.hover_target,
-                    mux.dialog_open(),
-                );
-                sbuf.extend_from_slice(b"\x1b8");
+                let sbuf = mux.compose_chrome_hover_frame();
                 mux.send_output(sbuf);
             }
         }
@@ -4155,8 +4200,8 @@ fn render_branch_context_bar(
     }
     buf.extend_from_slice(layout.left.as_bytes());
 
-    if let Some(container_start) = layout.container_start {
-        jackin_tui::ansi::move_to(buf, bar_row, container_start.saturating_sub(1));
+    if let Some(region) = layout.container_region {
+        jackin_tui::ansi::move_to(buf, bar_row, region.start.saturating_sub(1));
         let container_hovered = !dim && hover_target == Some(HoverTarget::Container);
         let bg = if dim {
             BRANCH_CONTEXT_BAR_BG_DIM
@@ -4182,12 +4227,30 @@ fn render_branch_context_bar(
     buf.extend_from_slice(RESET.as_bytes());
 }
 
+/// Half-open `[start, end)` column range. Constructor returns `None`
+/// when `end <= start` so the renderer / hit-tester can rely on
+/// `end > start` for every alive region without re-checking.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ColRange {
+    start: u16,
+    end: u16,
+}
+
+impl ColRange {
+    fn new(start: u16, end: u16) -> Option<Self> {
+        (end > start).then_some(Self { start, end })
+    }
+
+    fn contains(self, col: u16) -> bool {
+        col >= self.start && col < self.end
+    }
+}
+
 struct BranchContextBarLayout {
     left: String,
-    left_region: Option<(u16, u16)>,
+    left_region: Option<ColRange>,
     container: String,
-    container_region: Option<(u16, u16)>,
-    container_start: Option<u16>,
+    container_region: Option<ColRange>,
 }
 
 fn branch_context_bar_layout(
@@ -4227,31 +4290,27 @@ fn branch_context_bar_layout(
     let left_cols = display_cols(&left);
     let left_region = if left_clickable && left_cols > 0 {
         let end = u16::try_from(left_cols.saturating_add(1)).unwrap_or(u16::MAX);
-        Some((1, end))
+        ColRange::new(1, end)
     } else {
         None
     };
-    let (container_start, container_region) = if container_fits {
+    let container_region = if container_fits {
         let start = term_cols_usize
             .saturating_sub(container_cols)
             .saturating_add(1);
         let end = start.saturating_add(container_cols);
-        (
-            u16::try_from(start).ok(),
-            Some((
-                u16::try_from(start).unwrap_or(u16::MAX),
-                u16::try_from(end).unwrap_or(u16::MAX),
-            )),
+        ColRange::new(
+            u16::try_from(start).unwrap_or(u16::MAX),
+            u16::try_from(end).unwrap_or(u16::MAX),
         )
     } else {
-        (None, None)
+        None
     };
     Some(BranchContextBarLayout {
         left,
         left_region,
         container,
         container_region,
-        container_start,
     })
 }
 
@@ -4293,16 +4352,10 @@ fn branch_context_bar_hit(
         pull_request_loading,
         container_name,
     )?;
-    if let Some((start, end)) = layout.container_region
-        && col >= start
-        && col < end
-    {
+    if layout.container_region.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Container);
     }
-    if let Some((start, end)) = layout.left_region
-        && col >= start
-        && col < end
-    {
+    if layout.left_region.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Context);
     }
     None
@@ -4372,7 +4425,8 @@ fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
     let head_path = if git_path.is_dir() {
         git_path.join("HEAD")
     } else {
-        let git_file = crate::util::read_text_bounded(&git_path, GIT_METADATA_FILE_MAX_BYTES)?;
+        let git_file =
+            crate::util::read_text_bounded(".git", &git_path, GIT_METADATA_FILE_MAX_BYTES)?;
         let git_dir = git_file.trim().strip_prefix("gitdir:")?.trim();
         let git_dir = PathBuf::from(git_dir);
         let git_dir = if git_dir.is_absolute() {
@@ -4382,7 +4436,8 @@ fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
         };
         git_dir.join("HEAD")
     };
-    let head = crate::util::read_text_bounded(&head_path, GIT_METADATA_FILE_MAX_BYTES)?;
+    let head =
+        crate::util::read_text_bounded(".git/HEAD", &head_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let trimmed = head.trim();
     trimmed
         .strip_prefix("ref: refs/heads/")
@@ -4473,9 +4528,14 @@ fn gh_pull_request_info(
         .map_err(|e| crate::clog!("pull-request-context: gh pr checks failed: {e}"))
         .ok()
         .flatten();
+    // GitHub does not sanitize PR titles for terminal safety; strip
+    // control bytes here so the dialog body, the bottom bar, and the
+    // OSC 2 outer-terminal title can all consume the field directly.
+    // A crafted title like `bad\x1b[2J\x1b]2;evil\x07` would otherwise
+    // execute its escapes the first time an operator opens the dialog.
     Ok(Some(Arc::new(PullRequestInfo {
         number: pr.number,
-        title: pr.title,
+        title: sanitize_terminal_title(&pr.title),
         url: pr.url,
         is_draft: pr.is_draft,
         checks,
@@ -4505,30 +4565,20 @@ fn gh_pull_request_checks(
             json
         ))
     })?;
-    let mut summary = PullRequestChecks {
-        passing: 0,
-        failing: 0,
-        pending: 0,
-        skipped: 0,
-        cancelled: 0,
-        total: checks.len(),
-    };
-    for check in checks {
-        match check.bucket.as_str() {
-            "pass" => summary.passing += 1,
-            "fail" => summary.failing += 1,
-            "pending" => summary.pending += 1,
-            "skipping" => summary.skipped += 1,
-            "cancel" => summary.cancelled += 1,
-            other => {
-                crate::cdebug!(
-                    "pull-request-context: unknown gh pr checks bucket {:?}",
-                    other
-                );
-            }
+    for check in &checks {
+        if !matches!(
+            check.bucket.as_str(),
+            "pass" | "fail" | "pending" | "skipping" | "cancel"
+        ) {
+            crate::cdebug!(
+                "pull-request-context: unknown gh pr checks bucket {:?}",
+                check.bucket
+            );
         }
     }
-    Ok(Some(summary))
+    Ok(Some(PullRequestChecks::from_buckets(
+        checks.into_iter().map(|c| c.bucket),
+    )))
 }
 
 #[cfg(test)]
@@ -4578,8 +4628,10 @@ fn run_command_capturing_output(
         .stderr
         .take()
         .ok_or_else(|| LookupError::Failed(format!("{program}: stderr pipe missing")))?;
-    let stdout_reader = read_pipe_bounded(stdout, 64 * 1024);
-    let stderr_reader = read_pipe_bounded(stderr, 4 * 1024);
+    let stdout_label: &'static str = "stdout";
+    let stderr_label: &'static str = "stderr";
+    let stdout_reader = read_pipe_bounded(program.clone(), stdout_label, stdout, 64 * 1024);
+    let stderr_reader = read_pipe_bounded(program.clone(), stderr_label, stderr, 4 * 1024);
     let started = Instant::now();
     let status_success: Option<bool>;
     loop {
@@ -4660,12 +4712,15 @@ fn command_output_or_lookup_error(
 }
 
 fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
+    program: String,
+    stream: &'static str,
     mut pipe: R,
     cap: usize,
 ) -> std::thread::JoinHandle<std::io::Result<Vec<u8>>> {
     std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
         let mut bytes = Vec::with_capacity(cap.min(16 * 1024));
         let mut buf = [0u8; 4096];
+        let mut truncated = false;
         loop {
             let n = pipe.read(&mut buf)?;
             if n == 0 {
@@ -4676,9 +4731,15 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
             if bytes.len() >= cap {
                 // Cap reached; drain remaining bytes so the writer
                 // doesn't block on SIGPIPE waiting for us.
+                truncated = true;
                 while pipe.read(&mut buf)? > 0 {}
                 break;
             }
+        }
+        if truncated {
+            crate::cdebug!(
+                "read_pipe_bounded[{program} {stream}]: capped at {cap} bytes; downstream parsing may fail"
+            );
         }
         Ok(bytes)
     })
@@ -4756,6 +4817,10 @@ fn command_stdout_trimmed_with_timeout_and_statuses(
         std::thread::sleep(Duration::from_millis(25));
     }
     if status_success == Some(false) {
+        crate::cdebug!(
+            "command exited non-accepted status ({:?}); stderr was nulled so reason is unavailable",
+            command.get_program()
+        );
         return None;
     }
     let stdout = match stdout_reader.join() {
@@ -5607,7 +5672,9 @@ mod tests {
             branch_context_bar_layout(24, 120, Some("feature/x"), Some(&pr), false, "jk-test")
                 .expect("layout fits");
         // left_region covers exactly its declared range.
-        let (left_start, left_end) = layout.left_region.expect("left region present");
+        let region = layout.left_region.expect("left region present");
+        let left_start = region.start;
+        let left_end = region.end;
         assert_eq!(
             branch_context_bar_hit(
                 24,
@@ -6561,11 +6628,11 @@ mod tests {
         .and_then(|layout| layout.left_region)
         .expect("branch context should fit");
 
-        mux.update_pointer_shape_for_mouse(23, hit.0 - 1, SGR_NO_BUTTON_MOTION);
+        mux.update_pointer_shape_for_mouse(23, hit.start - 1, SGR_NO_BUTTON_MOTION);
         let first = rx.try_recv().expect("first pointer-shape update");
         assert!(first.ends_with(b"\x1b]22;pointer\x1b\\"));
 
-        mux.update_pointer_shape_for_mouse(23, hit.0, SGR_NO_BUTTON_MOTION);
+        mux.update_pointer_shape_for_mouse(23, hit.start, SGR_NO_BUTTON_MOTION);
         assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
     }
 
@@ -6647,7 +6714,7 @@ mod tests {
         let frame = mux
             .handle_input(InputEvent::MousePress {
                 row: mux.term_rows - 1,
-                col: hit.0 - 1,
+                col: hit.start - 1,
                 button: 0,
             })
             .expect("container click should redraw");
@@ -6693,7 +6760,7 @@ mod tests {
         let frame = mux
             .handle_input(InputEvent::MousePress {
                 row: mux.term_rows - 1,
-                col: hit.0 - 1,
+                col: hit.start - 1,
                 button: 0,
             })
             .expect("context click should redraw");

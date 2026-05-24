@@ -672,17 +672,67 @@ impl PullRequestInfo {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PullRequestChecks {
-    pub passing: usize,
-    pub failing: usize,
-    pub pending: usize,
-    pub skipped: usize,
-    pub cancelled: usize,
-    pub total: usize,
+    passing: usize,
+    failing: usize,
+    pending: usize,
+    skipped: usize,
+    cancelled: usize,
+    total: usize,
 }
 
 impl PullRequestChecks {
+    /// Build a check rollup from `gh pr checks` bucket strings.
+    /// Unknown buckets count toward `skipped` so the
+    /// `passing + failing + pending + skipped + cancelled == total`
+    /// invariant always holds; that lets the renderer trust the
+    /// counters and the summary text never reports a partial roll-up
+    /// for an unrecognised state.
+    pub fn from_buckets<I, S>(buckets: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut checks = Self::default();
+        for bucket in buckets {
+            checks.total += 1;
+            match bucket.as_ref() {
+                "pass" => checks.passing += 1,
+                "fail" => checks.failing += 1,
+                "pending" => checks.pending += 1,
+                "skipping" => checks.skipped += 1,
+                "cancel" => checks.cancelled += 1,
+                _ => checks.skipped += 1,
+            }
+        }
+        debug_assert_eq!(
+            checks.passing + checks.failing + checks.pending + checks.skipped + checks.cancelled,
+            checks.total,
+            "PullRequestChecks counters must sum to total"
+        );
+        checks
+    }
+
+    pub fn passing(&self) -> usize {
+        self.passing
+    }
+    pub fn failing(&self) -> usize {
+        self.failing
+    }
+    pub fn pending(&self) -> usize {
+        self.pending
+    }
+    pub fn skipped(&self) -> usize {
+        self.skipped
+    }
+    pub fn cancelled(&self) -> usize {
+        self.cancelled
+    }
+    pub fn total(&self) -> usize {
+        self.total
+    }
+
     pub fn summary(&self) -> String {
         if self.total == 0 {
             return "(none)".to_string();
@@ -1823,5 +1873,42 @@ mod tests {
             validate_agent_slug("codex", &supported).unwrap_err(),
             "not in launch config allowlist"
         );
+    }
+
+    #[test]
+    fn pull_request_checks_from_buckets_keeps_sum_equals_total_for_known_inputs() {
+        let checks = PullRequestChecks::from_buckets([
+            "pass", "pass", "fail", "pending", "skipping", "cancel",
+        ]);
+        assert_eq!(checks.total(), 6);
+        assert_eq!(checks.passing(), 2);
+        assert_eq!(checks.failing(), 1);
+        assert_eq!(checks.pending(), 1);
+        assert_eq!(checks.skipped(), 1);
+        assert_eq!(checks.cancelled(), 1);
+    }
+
+    #[test]
+    fn pull_request_checks_from_buckets_routes_unknown_into_skipped() {
+        let checks = PullRequestChecks::from_buckets(["pass", "unknown-bucket", "another-bucket"]);
+        assert_eq!(checks.total(), 3);
+        assert_eq!(checks.passing(), 1);
+        assert_eq!(checks.skipped(), 2, "unknown buckets fall into skipped");
+        assert_eq!(
+            checks.passing()
+                + checks.failing()
+                + checks.pending()
+                + checks.skipped()
+                + checks.cancelled(),
+            checks.total(),
+            "counters must always sum to total"
+        );
+    }
+
+    #[test]
+    fn pull_request_checks_from_buckets_empty_yields_zero_total() {
+        let checks = PullRequestChecks::from_buckets(std::iter::empty::<&str>());
+        assert_eq!(checks.total(), 0);
+        assert_eq!(checks.summary(), "(none)");
     }
 }
