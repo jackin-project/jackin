@@ -3989,7 +3989,9 @@ mod tests {
         expected_bytes: &[u8],
     ) {
         assert_eq!(
-            input_rx.try_recv().expect("wheel fallback should reach PTY"),
+            input_rx
+                .try_recv()
+                .expect("wheel fallback should reach PTY"),
             expected_bytes,
         );
         assert!(
