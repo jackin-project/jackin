@@ -2176,13 +2176,15 @@ impl Multiplexer {
             if let Some(session) = self.sessions.get_mut(&pane.id) {
                 scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(display_title(session));
+                let scrollback_prefix = session.scrollback_render_prefix(pane.inner.rows);
                 let before = buf.len();
                 let stats = self
                     .pane_body_caches
                     .entry(pane.id)
                     .or_default()
-                    .render_full(
+                    .render_full_with_scrollback_prefix(
                         session.screen(),
+                        &scrollback_prefix,
                         pane.inner.row,
                         pane.inner.col,
                         pane.inner.rows,
@@ -3584,7 +3586,7 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
             .and_then(|metrics| pane_synthetic_scroll_affordance_reason(session, metrics))
     };
     crate::cdebug!(
-        "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} scrollback_filled={} visible={} synthetic_reason={}",
+        "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} first_occupied_row={} last_occupied_row={} scrollback_filled={} visible={} synthetic_reason={}",
         session.agent,
         session.screen().alternate_screen(),
         session.mouse_enabled(),
@@ -3595,6 +3597,14 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
         metrics.as_ref().map_or(0, |m| m.cursor_row),
         metrics.as_ref().map_or(0, |m| m.cursor_col),
         metrics.as_ref().map_or(0, |m| m.occupied_rows),
+        metrics
+            .as_ref()
+            .and_then(|m| m.first_occupied_row)
+            .map_or(-1, i32::from),
+        metrics
+            .as_ref()
+            .and_then(|m| m.last_occupied_row)
+            .map_or(-1, i32::from),
         filled,
         scrollbar.visible() || synthetic_reason.is_some(),
         synthetic_reason.unwrap_or("none")
@@ -3616,6 +3626,8 @@ struct ScrollAffordanceMetrics {
     cursor_row: u16,
     cursor_col: u16,
     occupied_rows: usize,
+    first_occupied_row: Option<u16>,
+    last_occupied_row: Option<u16>,
 }
 
 fn screen_scroll_affordance_metrics(
@@ -3630,9 +3642,16 @@ fn screen_scroll_affordance_metrics(
         return None;
     }
 
-    let occupied_rows = (0..rows)
-        .filter(|&row| (0..cols).any(|col| screen.cell(row, col).is_some_and(|c| c.has_contents())))
-        .count();
+    let mut occupied_rows = 0usize;
+    let mut first_occupied_row = None;
+    let mut last_occupied_row = None;
+    for row in 0..rows {
+        if (0..cols).any(|col| screen.cell(row, col).is_some_and(|c| c.has_contents())) {
+            occupied_rows += 1;
+            first_occupied_row.get_or_insert(row);
+            last_occupied_row = Some(row);
+        }
+    }
     let (cursor_row, cursor_col) = screen.cursor_position();
 
     Some(ScrollAffordanceMetrics {
@@ -3642,6 +3661,8 @@ fn screen_scroll_affordance_metrics(
         cursor_row,
         cursor_col,
         occupied_rows,
+        first_occupied_row,
+        last_occupied_row,
     })
 }
 
@@ -3656,20 +3677,24 @@ fn pane_synthetic_scroll_affordance_reason(
     if screen_metrics_have_scroll_affordance(metrics) {
         return Some("occupied-grid");
     }
-    if normal_screen_cursor_suggests_scroll_affordance(session, metrics) {
-        return Some("normal-screen-cursor-floor");
+    if normal_screen_content_span_suggests_scroll_affordance(session, metrics) {
+        return Some("normal-screen-content-span");
     }
     None
 }
 
-fn normal_screen_cursor_suggests_scroll_affordance(
+fn normal_screen_content_span_suggests_scroll_affordance(
     session: &Session,
     metrics: &ScrollAffordanceMetrics,
 ) -> bool {
-    !session.screen().alternate_screen()
-        && !session.mouse_enabled()
-        && metrics.occupied_rows > 0
-        && metrics.cursor_row >= metrics.rows.saturating_sub(3)
+    if session.screen().alternate_screen() || session.mouse_enabled() || metrics.occupied_rows == 0
+    {
+        return false;
+    }
+    let (Some(first), Some(last)) = (metrics.first_occupied_row, metrics.last_occupied_row) else {
+        return false;
+    };
+    first <= metrics.rows / 4 && last >= metrics.rows.saturating_sub(3)
 }
 
 fn pane_wheel_cursor_fallback_reason(session: &Session) -> Option<&'static str> {
@@ -3963,6 +3988,14 @@ mod tests {
         );
     }
 
+    fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, lines: usize) {
+        session.feed_pty(format!("\x1b[1;{region_bottom}r\x1b[{region_bottom};1H").as_bytes());
+        for i in 0..lines {
+            session.feed_pty(format!("\r\n\x1b[2Khistory {i}").as_bytes());
+        }
+        session.feed_pty(b"\x1b[r");
+    }
+
     fn test_session_with_agent(
         rows: u16,
         cols: u16,
@@ -4229,15 +4262,52 @@ mod tests {
                 redraw.is_some(),
                 "{pane_kind} normal-screen transcript pane should redraw jackin'"
             );
-            assert_focused_scroll_chrome(
-                &redraw.expect("normal-screen wheel should redraw"),
-                &format!("normal-screen {pane_kind} transcript pane after wheel"),
+            let frame = redraw.expect("normal-screen wheel should redraw");
+            assert!(
+                !String::from_utf8_lossy(&frame).contains('█'),
+                "normal-screen {pane_kind} pane without retained history should not draw fake scrollback chrome"
             );
             assert!(
                 input_rx.try_recv().is_err(),
                 "normal-screen {pane_kind} transcript pane without vt100 scrollback must not receive cursor-key wheel fallback"
             );
             assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+        }
+    }
+
+    #[test]
+    fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux_with_size(12, 40);
+            let (mut session, mut input_rx) = test_pane_session(8, 38, agent);
+            feed_top_anchored_inline_history(&mut session, 5, 12);
+            session.feed_pty(b"\x1b[8;1Hlive prompt");
+            assert!(
+                session.scrollback_filled() >= 3,
+                "{pane_kind} pane should retain top-anchored inline history"
+            );
+            mux.sessions.insert(1, session);
+
+            let redraw = mux.handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            });
+
+            let frame = redraw.expect("inline history wheel should redraw");
+            assert!(
+                input_rx.try_recv().is_err(),
+                "{pane_kind} pane must not receive cursor-key wheel fallback"
+            );
+            assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+            assert_focused_scroll_chrome(
+                &frame,
+                &format!("normal-screen {pane_kind} pane with inline history"),
+            );
+            assert!(
+                String::from_utf8_lossy(&frame).contains("history 4"),
+                "normal-screen {pane_kind} wheel should render retained inline history"
+            );
         }
     }
 
@@ -4330,35 +4400,35 @@ mod tests {
     }
 
     #[test]
-    fn normal_screen_panes_draw_scroll_affordance_when_cursor_reaches_floor() {
+    fn normal_screen_panes_draw_scroll_affordance_when_content_spans_viewport() {
         for (agent, pane_kind) in pane_kind_cases() {
             let mut mux = single_pane_tab_mux();
             let (mut session, _input_rx) = test_pane_session(8, 20, agent);
-            session.feed_pty(b"\x1b[8;1Hcodex prompt");
+            session.feed_pty(b"\x1b[1;1Htop transcript\x1b[8;1Hbottom status");
             assert_eq!(session.scrollback_filled(), 0);
             mux.sessions.insert(1, session);
 
             let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
             assert_focused_scroll_chrome(
                 &frame,
-                &format!("normal-screen {pane_kind} pane with cursor at floor"),
+                &format!("normal-screen {pane_kind} pane with viewport-spanning content"),
             );
         }
     }
 
     #[test]
-    fn normal_screen_panes_draw_scroll_affordance_when_cursor_is_in_bottom_input_band() {
+    fn normal_screen_panes_keep_scroll_affordance_when_cursor_moves_above_bottom_band() {
         for (agent, pane_kind) in pane_kind_cases() {
             let mut mux = single_pane_tab_mux_with_size(55, 200);
             let (mut session, _input_rx) = test_pane_session(51, 198, agent);
-            session.feed_pty(b"\x1b[49;3Hcodex prompt");
+            session.feed_pty(b"\x1b[1;1Hrelease notes\x1b[51;1Hstatus line\x1b[48;3Hx");
             assert_eq!(session.scrollback_filled(), 0);
             mux.sessions.insert(1, session);
 
             let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
             assert_focused_scroll_chrome(
                 &frame,
-                &format!("normal-screen {pane_kind} transcript pane with bottom-band cursor"),
+                &format!("normal-screen {pane_kind} transcript pane after cursor moved up"),
             );
         }
     }

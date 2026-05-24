@@ -4,6 +4,7 @@
 
 use std::io::Write;
 
+use unicode_width::UnicodeWidthChar;
 use vt100::{Color, Screen};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -93,6 +94,34 @@ impl PaneBodyCache {
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
         let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
+        let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
+        render_snapshot_rows(&snapshot, &changed_rows, dest_row, dest_col, dim, buf);
+        self.rows = rect_rows;
+        self.cols = rect_cols;
+        self.dim = dim;
+        self.valid = true;
+        self.snapshot = snapshot;
+        PaneBodyRenderStats {
+            mode: PaneBodyRenderMode::Full,
+            rows_emitted: changed_rows.len(),
+            changed_rows,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_full_with_scrollback_prefix(
+        &mut self,
+        screen: &Screen,
+        scrollback_prefix: &[String],
+        dest_row: u16,
+        dest_col: u16,
+        rect_rows: u16,
+        rect_cols: u16,
+        dim: bool,
+        buf: &mut Vec<u8>,
+    ) -> PaneBodyRenderStats {
+        let snapshot =
+            pane_snapshot_with_scrollback_prefix(screen, scrollback_prefix, rect_rows, rect_cols);
         let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
         render_snapshot_rows(&snapshot, &changed_rows, dest_row, dest_col, dim, buf);
         self.rows = rect_rows;
@@ -244,12 +273,31 @@ fn cell_attrs(cell: &vt100::Cell) -> Attrs {
 }
 
 fn pane_snapshot(screen: &Screen, rect_rows: u16, rect_cols: u16) -> Vec<RowSnapshot> {
+    pane_snapshot_with_scrollback_prefix(screen, &[], rect_rows, rect_cols)
+}
+
+fn pane_snapshot_with_scrollback_prefix(
+    screen: &Screen,
+    scrollback_prefix: &[String],
+    rect_rows: u16,
+    rect_cols: u16,
+) -> Vec<RowSnapshot> {
     let (screen_rows, screen_cols) = screen.size();
     let rows_to_draw = rect_rows.min(screen_rows);
     let cols_to_draw = rect_cols.min(screen_cols);
-    (0..rows_to_draw)
-        .map(|row| snapshot_row(screen, row, cols_to_draw))
-        .collect()
+    let prefix_rows = scrollback_prefix.len().min(usize::from(rows_to_draw));
+    let mut snapshot = Vec::with_capacity(usize::from(rows_to_draw));
+    snapshot.extend(
+        scrollback_prefix
+            .iter()
+            .take(prefix_rows)
+            .map(|row| snapshot_plain_row(row, cols_to_draw)),
+    );
+    snapshot.extend(
+        (0..rows_to_draw.saturating_sub(prefix_rows as u16))
+            .map(|row| snapshot_row(screen, row, cols_to_draw)),
+    );
+    snapshot
 }
 
 fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
@@ -279,6 +327,34 @@ fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
         col += width;
     }
     RowSnapshot { cells }
+}
+
+fn snapshot_plain_row(text: &str, cols_to_draw: u16) -> RowSnapshot {
+    let mut contents = String::new();
+    let mut width = 0u16;
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0) as u16;
+        if ch_width == 0 {
+            contents.push(ch);
+            continue;
+        }
+        if width.saturating_add(ch_width) > cols_to_draw {
+            break;
+        }
+        contents.push(ch);
+        width += ch_width;
+    }
+    contents.extend(std::iter::repeat_n(
+        ' ',
+        usize::from(cols_to_draw.saturating_sub(width)),
+    ));
+    RowSnapshot {
+        cells: vec![CellSnapshot {
+            contents,
+            attrs: Attrs::default(),
+            width: cols_to_draw,
+        }],
+    }
 }
 
 fn render_snapshot_rows(
