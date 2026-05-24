@@ -21,13 +21,13 @@ Before the Capsule rewrite, the container supervisor was a bash wait loop (`dock
 
 **Last-session cleanup does not fire** *(resolved in Phase 1).* When a tmux session exits, the supervisor was keeping the container running. Because the container state is `Running` rather than `Stopped`, the host jackin cleanup path (`finalize_foreground_session`, container teardown, DinD/network/certs removal) would not fire automatically. The operator had to explicitly run `jackin eject` to clean up a container after all sessions end.
 
-**Session inventory requires shelling out.** Querying which sessions are active requires `docker exec <container> sh -c 'tmux list-sessions ...'` from the host. There is no structured interface for the host CLI or the future jackin daemon to ask "what is running in this container right now?"
+**Session inventory requires shelling out.** Querying which sessions are active requires `docker exec <container> sh -c 'tmux list-sessions ...'` from the host. There is no structured interface for the host CLI or the future jackin' daemon to ask "what is running in this container right now?"
 
 **tmux is not designed for the container-per-agent model.** tmux has no concept of agent state, no structured control plane, and no event stream. Every interaction requires `docker exec tmux ...` round-trips. jackin' cannot ask "is this agent blocked or still working?" without reading raw terminal output from the outside. This is the root reason observability, attention prompts, and desktop app integration are hard to build on top of the current architecture. A purpose-built process inside the container — one that owns the session lifecycle from the start — can expose exactly the information jackin' needs over a structured protocol.
 
 ## Vision
 
-Each Capsule-managed role container runs `jackin-capsule` as PID 1. It is the Capsule control plane: it manages PTY sessions directly (replacing tmux), tracks session state, renders the in-container multiplexer, and exposes a Unix socket API that the host CLI, the future jackin daemon, and the jackin' desktop app can drive.
+Each Capsule-managed role container runs `jackin-capsule` as PID 1. It is the Capsule control plane: it manages PTY sessions directly (replacing tmux), tracks session state, renders the in-container multiplexer, and exposes a Unix socket API that the host CLI, the future jackin' daemon, and the jackin' desktop app can drive.
 
 The container becomes a self-contained server. The operator's terminal, the console TUI, and the desktop companion all talk to the same control plane:
 
@@ -230,6 +230,7 @@ Default prefix bindings (subject to refinement during implementation):
 | `Space` or `:` | Open command palette |
 | `Ctrl+L` | Clear focused pane scrollback and send form-feed to request redraw |
 | `r` | Force redraw |
+| `u` | (Phase 4) Open usage and quota overlay for the focused pane |
 | Prefix again | Literal prefix byte to PTY |
 
 `Ctrl+J` is **not** a default binding. It is reserved as an opt-in alternate prefix that experienced operators may enable when they accept the `0x0A` collision risk; the default never assigns it.
@@ -262,6 +263,22 @@ The ` jackin' ` brand pill uses the bright-green background defined in <RepoFile
 The palette and prefix shortcuts remain active, but the top chrome does not render a menu or keybinding hint; those columns stay available for tabs.
 
 When the bar is wider than the host terminal, tabs past the right edge are clipped and an overflow indicator (`›`) is shown. Tab navigation via prefix bindings still works on clipped tabs.
+
+#### Usage and quota overlay
+
+**Phase 4 work documented under Phase 3.** The rendering contract is the status-chrome design (Phase 3 territory); the data source is the host daemon (Phase 4 territory). The subsection lives here so the status-bar layout decisions are colocated; nothing in this overlay ships in Phase 3.
+
+Phase 4 should add a read-only usage overlay fed by the host daemon's [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) cache. The Capsule does not poll providers and does not persist credentials. It asks the daemon only for the focused tab/pane's provider account quota and workspace/session spend, then renders that focused-agent result inside the multiplexer. The compact signal belongs in the same low-noise status chrome as the branch/repository detail line, not as a second standalone widget.
+
+Default shape:
+
+- Status line: compact always-visible quota glyph for the focused tab/pane's provider only, placed beside the branch/repository details when that line is present, e.g. `main · Codex 12%`, `feature/auth · Claude 80%`, `docs · Codex stale`, or `main · Amp login`. The multiplexer must not show a global account average or another agent's quota while the operator is focused on one agent.
+- Prefix `u` / palette `Usage`: modal dialog showing the focused agent's provider, account label, quota window, remaining percentage, reset countdown, source confidence, cache freshness, current session tokens/cost, workspace tokens/cost, and burn-rate projection when available. The dialog may mention other accounts only through explicit navigation out of the focused-agent view; the default view is focused-provider only.
+- Dialog rows must label provider-authoritative quota separately from locally estimated workspace spend. A local JSONL estimate must never be displayed as the enforced subscription limit.
+- If the daemon is disconnected, the overlay shows `usage unavailable: daemon disconnected` rather than falling back to in-container polling.
+- If the account needs authentication, the overlay shows `needs login` / `needs secret` with the repair action name, while the actual repair flow stays in `jackin console`, Desktop, CLI, or host bridge.
+
+This keeps the multiplexer useful while the operator is focused inside an agent: before starting an expensive run in a Codex tab, they see Codex headroom only; before starting work in a Claude tab, they see Claude headroom only. The operator opens the dialog only when they need reset timing, confidence, or workspace spend detail.
 
 #### Initial state
 
@@ -369,7 +386,7 @@ tmux set-option -g mouse on
 
 Mouse clicks, drags, and scroll events must reach agent TUIs that opt into mouse reporting via `\x1b[?1000h` through `\x1b[?1006h`.
 
-**jackin' equivalent.** The client sets the outer terminal to "any-event tracking + SGR mouse" (`\x1b[?1003h\x1b[?1006h`) on attach. The multiplexer parses each mouse event: top-chrome events hit-test against the tab strip, bottom context-row events open GitHub or container details, pane-border events drive resize, and pane-content events are re-encoded relative to the focused pane's rect origin and written to that pane's PTY only when the pane opted into mouse reporting. Mouse mode and encoding are tracked with `vt100::Screen::mouse_protocol_mode()` and `mouse_protocol_encoding()`, so SGR, default xterm/X10, and UTF-8 mouse modes are distinct on the PTY side.
+**jackin' equivalent.** The client sets the outer terminal to "any-event tracking + SGR mouse" (`\x1b[?1003h\x1b[?1006h`) on attach and disables alternate-scroll translation (`\x1b[?1007l`) so wheel gestures arrive as mouse input instead of prompt cursor keys. The multiplexer parses each mouse event: top-chrome events hit-test against the tab strip / menu button, bottom context-row events open GitHub or container details, pane-border events drive resize, and pane-content events are re-encoded relative to the focused pane's rect origin and written to that pane's PTY only when the pane opted into mouse reporting. Wheel events in mouse-disabled normal-screen panes drive jackin' scrollback when vt100 or inline-scroll capture has retained history, including rows preserved before normal-screen clear/redraw and top-anchored scroll-region movement; that same retained history is the only source for pane scroll chrome, for both agent-spawned and shell-spawned panes. Empty-history wheel input stays local to jackin' rather than becoming cursor-key input. Wheel events in mouse-disabled alternate-screen panes use cursor-key fallback so full-screen programs keep owning their interaction surface. Mouse mode and encoding are tracked with `vt100::Screen::mouse_protocol_mode()` and `mouse_protocol_encoding()`, so SGR, default xterm/X10, and UTF-8 mouse modes are distinct on the PTY side.
 
 The setting parity above is a regression contract: each tmux behaviour the operator pinned has a matching jackin-capsule behaviour. The tests under "Tests required" assert each contract separately so future refactors cannot drop one silently.
 
@@ -499,7 +516,7 @@ Phase 3 also keeps the control-channel work the first attempt completed:
 - Daemon connects to each running container's socket and maintains a live session index across all containers.
 - Desktop app reads from the daemon's aggregated view; each `jackin-capsule` socket is the per-container data source. The multiplexer IS the server; the desktop companion reads what is happening inside the container through it.
 - Advanced commands: session snapshots, resource usage per session, log streaming.
-- See [jackin daemon](/reference/roadmap/jackin-daemon/) and [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/).
+- See [jackin' daemon](/reference/roadmap/jackin-daemon/) and [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/).
 
 ## Relationship to other roadmap items
 
@@ -507,6 +524,6 @@ Phase 3 also keeps the control-channel work the first attempt completed:
 - **[Console agent session control](/reference/roadmap/console-agent-session-control/)** — Phase 4 of that item unblocks once Phase 2 of this item ships: the binary exposes live session state, eliminating manifest-snapshot reconciliation.
 - **[Agent runtime status authority](/reference/roadmap/agent-runtime-status/)** — the `agent-state-changed` event stream from Phase 3 is the delivery mechanism for blocked/working/done/idle/stuck indicators in the console and hardline.
 - **[Agent attention prompts](/reference/roadmap/agent-attention-prompts/)** — `blocked` events replace PTY polling from the host; `done` events trigger the "ready for review" notification path.
-- **[jackin daemon](/reference/roadmap/jackin-daemon/)** — `jackin-capsule` is the per-container endpoint the daemon subscribes to. Phase 4 of this item and the daemon's container-watch phase are designed together.
+- **[jackin' daemon](/reference/roadmap/jackin-daemon/)** — `jackin-capsule` is the per-container endpoint the daemon subscribes to. Phase 4 of this item and the daemon's container-watch phase are designed together.
 - **[jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)** — Phase 3 of this item is the prerequisite: the desktop app's live session view is driven by `jackin-capsule` socket events aggregated by the daemon.
 - **[jackin-remote](/reference/roadmap/jackin-remote/)** — remote containers will need a `jackin-capsule` socket accessible over the tunnel; the socket mount and auth model need to account for the remote path.

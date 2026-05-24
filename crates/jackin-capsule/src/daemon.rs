@@ -30,6 +30,7 @@ use unicode_width::UnicodeWidthChar;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use portable_pty::CommandBuilder;
 
 use crate::dialog::{
     ConfirmKind, Dialog, DialogAction, PaletteCloseLabel, PaletteCommand, PickerIntent,
@@ -49,6 +50,11 @@ use crate::session::{
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
+
+struct SessionLaunch {
+    label: String,
+    cmd: CommandBuilder,
+}
 
 pub struct Multiplexer {
     sessions: HashMap<u64, Session>,
@@ -1180,12 +1186,44 @@ impl Multiplexer {
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
 
-    pub fn spawn_initial(&mut self, agent: &str) -> Result<u64> {
-        self.spawn_session(Some(agent.to_string()), &[])
-    }
-
     fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.launch_config.model_for_agent(agent)
+    }
+
+    fn spawn_request(
+        &mut self,
+        request: SpawnRequest,
+        env_overrides: &[(String, String)],
+    ) -> Result<u64> {
+        match request {
+            SpawnRequest::Agent(agent_slug) => {
+                if let Err(reason) =
+                    crate::session::validate_agent_slug(&agent_slug, &self.available_agents)
+                {
+                    anyhow::bail!("rejected agent {agent_slug:?}: {reason}");
+                }
+                self.spawn_session(Some(agent_slug), env_overrides)
+            }
+            SpawnRequest::Shell => self.spawn_session(None, env_overrides),
+        }
+    }
+
+    fn session_launch(
+        &self,
+        agent: Option<&str>,
+        env_passthrough: &[(String, String)],
+    ) -> SessionLaunch {
+        let cwd = self.workdir.as_path();
+        match agent {
+            Some(slug) => SessionLaunch {
+                label: capitalize(slug),
+                cmd: build_agent_command(slug, self.model_for_agent(slug), env_passthrough, cwd),
+            },
+            None => SessionLaunch {
+                label: "Shell".to_string(),
+                cmd: build_shell_command(env_passthrough, cwd),
+            },
+        }
     }
 
     /// Single dispatch point for a `DialogAction`. Both the
@@ -1340,26 +1378,16 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let cwd = self.workdir.as_path();
-        let (label, cmd) = match &agent {
-            Some(slug) => (
-                capitalize(slug),
-                build_agent_command(slug, self.model_for_agent(slug), &env_passthrough, cwd),
-            ),
-            None => (
-                "Shell".to_string(),
-                build_shell_command(&env_passthrough, cwd),
-            ),
-        };
+        let launch = self.session_launch(agent.as_deref(), &env_passthrough);
         let (session, id) = Session::spawn(
-            &label,
+            &launch.label,
             agent.clone(),
-            cmd,
+            launch.cmd,
             self.content_rows.saturating_sub(2),
             self.term_cols.saturating_sub(2),
             self.event_tx.clone(),
         )?;
-        let tab_label = label.clone();
+        let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
         if self.tabs.is_empty() {
             self.tabs.push(Tab::new_single(tab_label, id));
@@ -1376,9 +1404,10 @@ impl Multiplexer {
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, Some(id));
         crate::clog!(
-            "action: spawn_session id={id} agent={:?} label={label} tab_idx={}",
+            "action: spawn_session id={id} agent={:?} label={label} tab_idx={tab_idx}",
             agent,
-            self.active_tab
+            label = launch.label,
+            tab_idx = self.active_tab
         );
         Ok(id)
     }
@@ -1438,22 +1467,12 @@ impl Multiplexer {
             ),
         };
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let cwd = self.workdir.as_path();
-        let (label, cmd) = match &agent_slug {
-            Some(slug) => (
-                capitalize(slug),
-                build_agent_command(slug, self.model_for_agent(slug), &env_passthrough, cwd),
-            ),
-            None => (
-                "Shell".to_string(),
-                build_shell_command(&env_passthrough, cwd),
-            ),
-        };
+        let launch = self.session_launch(agent_slug.as_deref(), &env_passthrough);
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
-            &label,
+            &launch.label,
             agent_slug,
-            cmd,
+            launch.cmd,
             spawn_rows,
             spawn_cols,
             self.event_tx.clone(),
@@ -1484,6 +1503,7 @@ impl Multiplexer {
         self.synthesise_focus_swap(Some(from_id), Some(new_id));
         crate::clog!(
             "action: split id={new_id} from={from_id} dir={direction:?} agent={agent_for_log:?} label={label}",
+            label = launch.label,
         );
         Ok(())
     }
@@ -1629,6 +1649,25 @@ impl Multiplexer {
         } else {
             None
         }
+    }
+
+    fn active_focused_outer_rect(&self) -> Option<Rect> {
+        let focused = self.active_focused_id()?;
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        if let Some(zoom_id) = self.active_zoomed_id() {
+            return (zoom_id == focused).then_some(content_rect);
+        }
+        self.tabs
+            .get(self.active_tab)?
+            .tree
+            .leaves(content_rect)
+            .into_iter()
+            .find(|(id, _)| *id == focused)
+            .map(|(_, rect)| rect)
+    }
+
+    fn active_focused_inner_rect(&self) -> Option<Rect> {
+        self.active_focused_outer_rect().map(|rect| rect.shrink(1))
     }
 
     /// Derive the label that should appear in the tab strip for `tab`
@@ -1953,27 +1992,89 @@ impl Multiplexer {
                 self.forward_mouse_to_focused_pane_with_kind(col, row, button, false);
                 None
             }
-            InputEvent::MousePress { button, .. } if is_wheel_button(button) => {
-                // SGR mouse wheel: bits 6/7 indicate wheel events, with
-                // low bits selecting direction (even = up, odd = down)
-                // and modifier flags possibly OR'd in (shift = +4, alt
-                // = +8, ctrl = +16). Buttons 64–95 cover every wheel
-                // variant — never forward any of them to the PTY,
-                // because shells and pre-mount agents never asked for
-                // mouse mode and the SGR bytes would surface as
-                // garbage text at the prompt. Dialog overlay swallows
-                // the wheel too so background pane scrollback does
-                // not move while the operator is interacting with
-                // the modal.
+            InputEvent::MousePress { col, row, button } if is_wheel_button(button) => {
+                // Panes that requested mouse reporting own their wheel
+                // events. Alternate-screen panes without mouse reporting
+                // get cursor-key fallback regardless of retained primary-
+                // screen scrollback — the pane controls the surface, not
+                // jackin'. Normal-screen panes without mouse reporting use
+                // jackin's scrollback when available; otherwise the wheel
+                // is silenced so it does not become prompt cursor keys.
+                // Routing is based on screen state, not spawn origin.
                 if self.dialog_open() {
                     return None;
                 }
-                let delta = if (button & 1) == 0 { 3 } else { -3 };
-                if let Some(focused) = self.active_focused_id()
-                    && let Some(session) = self.sessions.get_mut(&focused)
-                {
-                    session.scroll_by(delta);
+                if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {
+                    crate::cdebug!(
+                        "wheel dispatch: forwarded-to-pty row={} col={} button={}",
+                        row,
+                        col,
+                        button
+                    );
+                    return None;
                 }
+                let delta = if (button & 1) == 0 { 3 } else { -3 };
+                let focused = self.active_focused_id()?;
+                let session = self.sessions.get_mut(&focused)?;
+                let debug_enabled = crate::logging::debug_enabled();
+                let (filled, vt_filled, inline_filled) = if debug_enabled {
+                    let (vt_filled, inline_filled) = session.scrollback_counts();
+                    (
+                        vt_filled.saturating_add(inline_filled),
+                        vt_filled,
+                        inline_filled,
+                    )
+                } else {
+                    (session.scrollback_filled(), 0, 0)
+                };
+                if let Some(fallback_reason) = pane_wheel_cursor_fallback_reason(session)
+                    && let Some(buf) = encode_wheel_cursor_fallback(session, button)
+                {
+                    crate::cdebug!(
+                        "wheel dispatch: cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} reason={} bytes={:02x?}",
+                        focused,
+                        session.agent,
+                        row,
+                        col,
+                        button,
+                        filled,
+                        fallback_reason,
+                        buf
+                    );
+                    session.send_input(&buf);
+                    return None;
+                }
+                if filled == 0 {
+                    crate::cdebug!(
+                        "wheel dispatch: no-scrollback session={} agent={:?} row={} col={} button={} alt_screen={} mouse_enabled={} vt_scrollback={} inline_scrollback={}",
+                        focused,
+                        session.agent,
+                        row,
+                        col,
+                        button,
+                        session.screen().alternate_screen(),
+                        session.mouse_enabled(),
+                        vt_filled,
+                        inline_filled
+                    );
+                    return None;
+                }
+                crate::cdebug!(
+                    "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={} filled={}",
+                    focused,
+                    row,
+                    col,
+                    button,
+                    delta,
+                    session.scrollback_offset,
+                    filled
+                );
+                session.scroll_by(delta);
+                crate::cdebug!(
+                    "wheel dispatch: jackin-scrollback session={} after={}",
+                    focused,
+                    session.scrollback_offset
+                );
                 Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
             }
             InputEvent::MousePress {
@@ -2185,8 +2286,8 @@ impl Multiplexer {
         Some(self.compose_full_frame(full_redraw_reason))
     }
 
-    fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) {
-        self.forward_mouse_to_focused_pane_with_kind(col, row, button, true);
+    fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) -> bool {
+        self.forward_mouse_to_focused_pane_with_kind(col, row, button, true)
     }
 
     /// Re-encode an SGR mouse event in the focused pane's local
@@ -2202,57 +2303,34 @@ impl Multiplexer {
         row: u16,
         button: u8,
         press: bool,
-    ) {
+    ) -> bool {
         let Some(focused) = self.active_focused_id() else {
-            return;
+            return false;
         };
         let Some(session) = self.sessions.get(&focused) else {
-            return;
+            return false;
         };
-        let mouse_mode = session.mouse_protocol_mode();
-        if !mouse_event_allowed_for_mode(mouse_mode, button, press) {
-            return;
-        }
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-        let outer = if let Some(zoom_id) = self.active_zoomed_id() {
-            if zoom_id == focused {
-                Some(content_rect)
-            } else {
-                None
-            }
-        } else {
-            self.tabs
-                .get(self.active_tab)
-                .and_then(|tab| {
-                    tab.tree
-                        .leaves(content_rect)
-                        .into_iter()
-                        .find(|(id, _)| *id == focused)
-                })
-                .map(|(_, r)| r)
+        let Some(encoding) = mouse_event_encoding_for_session(session, button, press) else {
+            return false;
         };
-        let Some(outer) = outer else {
-            return;
+        let Some(inner) = self.active_focused_inner_rect() else {
+            return false;
         };
-        let inner = outer.shrink(1);
         if row < inner.row || row >= inner.row + inner.rows {
-            return;
+            return false;
         }
         if col < inner.col || col >= inner.col + inner.cols {
-            return;
+            return false;
         }
         let local_row = row - inner.row;
         let local_col = col - inner.col;
-        let Some(buf) = encode_mouse_for_protocol(
-            button,
-            local_col + 1,
-            local_row + 1,
-            press,
-            session.mouse_protocol_encoding(),
-        ) else {
-            return;
+        let Some(buf) =
+            encode_mouse_for_protocol(button, local_col + 1, local_row + 1, press, encoding)
+        else {
+            return false;
         };
         session.send_input(&buf);
+        true
     }
 
     /// Zoomed tabs never produce a drag — there are no shared
@@ -2560,20 +2638,20 @@ impl Multiplexer {
         let mut pane_body_bytes = 0usize;
 
         for pane in &panes {
-            let mut filled_for_scrollbar = 0usize;
-            let mut offset_for_scrollbar = 0usize;
+            let mut scrollbar = PaneScrollbar::default();
             let mut title = None;
             if let Some(session) = self.sessions.get_mut(&pane.id) {
-                offset_for_scrollbar = session.scrollback_offset;
-                filled_for_scrollbar = session.scrollback_filled();
+                scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(display_title(session));
+                let scrollback_prefix = session.scrollback_render_prefix(pane.inner.rows);
                 let before = buf.len();
                 let stats = self
                     .pane_body_caches
                     .entry(pane.id)
                     .or_default()
-                    .render_full(
+                    .render_full_with_scrollback_prefix(
                         session.screen(),
+                        &scrollback_prefix,
                         pane.inner.row,
                         pane.inner.col,
                         pane.inner.rows,
@@ -2593,9 +2671,9 @@ impl Multiplexer {
                 // convention and gives the operator a reliable place
                 // to read the live `OSC 2` title.
                 let highlight_focus = if zoomed {
-                    filled_for_scrollbar > 0
+                    scrollbar.visible()
                 } else {
-                    multi_pane || filled_for_scrollbar > 0
+                    multi_pane || scrollbar.visible()
                 };
                 draw_pane_box(
                     &mut buf,
@@ -2612,8 +2690,8 @@ impl Multiplexer {
                     pane.outer.col,
                     pane.outer.rows,
                     pane.outer.cols,
-                    offset_for_scrollbar,
-                    filled_for_scrollbar,
+                    scrollbar.offset,
+                    scrollbar.filled,
                     pane.focused && highlight_focus,
                 );
             }
@@ -2751,12 +2829,10 @@ impl Multiplexer {
         let multi_pane = panes.len() > 1;
         let zoomed = self.active_zoomed_id().is_some();
         for pane in panes.iter().filter(|pane| dirty_panes.contains(&pane.id)) {
-            let mut filled_for_scrollbar = 0usize;
-            let mut offset_for_scrollbar = 0usize;
+            let mut scrollbar = PaneScrollbar::default();
             let mut title = None;
             if let Some(session) = self.sessions.get_mut(&pane.id) {
-                offset_for_scrollbar = session.scrollback_offset;
-                filled_for_scrollbar = session.scrollback_filled();
+                scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(display_title(session));
                 let before = buf.len();
                 let stats = self
@@ -2783,9 +2859,9 @@ impl Multiplexer {
             }
             if let Some(title) = title {
                 let highlight_focus = if zoomed {
-                    filled_for_scrollbar > 0
+                    scrollbar.visible()
                 } else {
-                    multi_pane || filled_for_scrollbar > 0
+                    multi_pane || scrollbar.visible()
                 };
                 draw_pane_box(
                     &mut buf,
@@ -2802,8 +2878,8 @@ impl Multiplexer {
                     pane.outer.col,
                     pane.outer.rows,
                     pane.outer.cols,
-                    offset_for_scrollbar,
-                    filled_for_scrollbar,
+                    scrollbar.offset,
+                    scrollbar.filled,
                     pane.focused && highlight_focus,
                 );
             }
@@ -2977,19 +3053,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     );
 
     let mut mux = Multiplexer::new(rows, cols, launch_config);
-    // Spawn the first tab. Treat any spawn error as fatal at boot —
-    // it usually means the entrypoint binary is missing from the
-    // derived image, and silently degrading to an empty multiplexer
-    // would hide the real problem behind a blank screen.
-    if !initial_agent.is_empty() {
-        if let Err(err) = mux.spawn_initial(&initial_agent) {
-            crate::clog!("initial agent spawn failed (agent={initial_agent:?}): {err:?}");
-            return Err(err);
-        }
-    } else if let Err(err) = mux.spawn_session(None, &[]) {
-        crate::clog!("initial shell spawn failed: {err:?}");
-        return Err(err);
-    }
+    // Defer the first pane until the first attach Hello has supplied
+    // real outer-terminal dimensions. Later panes already spawn after
+    // attach-time resize; routing the first pane through the same
+    // path removes first-tab-only scrollback/chrome differences.
+    let mut pending_initial_spawn = Some(initial_spawn_request(&initial_agent));
 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
@@ -3100,6 +3168,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
                 mux.attached_terminal = terminal;
                 mux.pointer_shape = PointerShape::Default;
+                if mux.sessions.is_empty()
+                    && let Some(request) = pending_initial_spawn.take()
+                    && let Err(err) = mux.spawn_request(request.clone(), &[])
+                {
+                    crate::clog!(
+                        "initial spawn failed (request={}): {err:#}",
+                        spawn_request_label(&request)
+                    );
+                    return Err(err);
+                }
                 if let Some(target) = focus_session
                     && !mux.focus_session_globally(target)
                 {
@@ -3115,46 +3193,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // landing on an empty multiplexer would otherwise be
                 // indistinguishable from "no spawn requested".
                 let mut spawn_failure: Option<String> = None;
-                match spawn {
-                    Some(SpawnRequest::Agent(agent_slug)) => {
-                        // Re-validate the wire-decoded slug. The CLI argv
-                        // path validates via `validate_agent_slug`, but the
-                        // attach protocol carries a raw String — a peer
-                        // that wins the socket race could otherwise inject
-                        // an unallowlisted agent name (or a control byte)
-                        // straight into `build_agent_command`.
-                        match crate::session::validate_agent_slug(
-                            &agent_slug,
-                            &mux.available_agents,
-                        ) {
-                            Ok(_) => {
-                                if let Err(err) =
-                                    mux.spawn_session(Some(agent_slug.clone()), &env)
-                                {
-                                    crate::clog!(
-                                        "attach: spawn_session for {agent_slug:?} failed: {err:#}"
-                                    );
-                                    spawn_failure = Some(format!(
-                                        "spawn agent {agent_slug:?} failed: {err:#}"
-                                    ));
-                                }
-                            }
-                            Err(reason) => {
-                                crate::clog!(
-                                    "attach: rejected Hello.spawn.Agent {agent_slug:?}: {reason}"
-                                );
-                                spawn_failure =
-                                    Some(format!("rejected agent {agent_slug:?}: {reason}"));
-                            }
-                        }
+                if let Some(request) = spawn {
+                    let label = spawn_request_label(&request);
+                    if let Err(err) = mux.spawn_request(request, &env) {
+                        crate::clog!("attach: spawn {label} failed: {err:#}");
+                        spawn_failure = Some(format!("spawn {label} failed: {err:#}"));
                     }
-                    Some(SpawnRequest::Shell) => {
-                        if let Err(err) = mux.spawn_session(None, &env) {
-                            crate::clog!("attach: spawn_session (shell) failed: {err:#}");
-                            spawn_failure = Some(format!("spawn shell failed: {err:#}"));
-                        }
-                    }
-                    None => {}
                 }
                 // Take over from any existing attach client. The shared
                 // helper sends Shutdown, gives the writer side a brief
@@ -3507,7 +3551,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::FocusIn => {
             // Forward only when no dialog is intercepting input AND
             // the focused session actually asked for focus reports
-            // (`?1004h`). Without the gate, primary-screen shells
+            // (`?1004h`). Without the gate, normal-screen shells
             // surface `[I` as literal text at the prompt.
             if !mux.dialog_open()
                 && let Some(focused) = mux.active_focused_id()
@@ -3690,6 +3734,21 @@ async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
     }
     if let Some(handle) = mux.attached_task.take() {
         handle.abort();
+    }
+}
+
+fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
+    if initial_agent.is_empty() {
+        SpawnRequest::Shell
+    } else {
+        SpawnRequest::Agent(initial_agent.to_string())
+    }
+}
+
+fn spawn_request_label(request: &SpawnRequest) -> String {
+    match request {
+        SpawnRequest::Agent(agent) => format!("agent {agent:?}"),
+        SpawnRequest::Shell => "shell".to_string(),
     }
 }
 
@@ -4622,12 +4681,132 @@ fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
     }
 }
 
+#[derive(Default)]
+struct PaneScrollbar {
+    offset: usize,
+    filled: usize,
+}
+
+impl PaneScrollbar {
+    const fn visible(&self) -> bool {
+        self.filled > 0
+    }
+}
+
+fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16) -> PaneScrollbar {
+    let debug_enabled = crate::logging::debug_enabled();
+    let (filled, vt_filled, inline_filled) = if debug_enabled {
+        let (vt_filled, inline_filled) = session.scrollback_counts();
+        (
+            vt_filled.saturating_add(inline_filled),
+            vt_filled,
+            inline_filled,
+        )
+    } else {
+        (session.scrollback_filled(), 0, 0)
+    };
+    let scrollbar = PaneScrollbar {
+        offset: session.scrollback_offset,
+        filled,
+    };
+    let metrics = if debug_enabled {
+        screen_scroll_affordance_metrics(session.screen(), viewport_rows, viewport_cols)
+    } else {
+        None
+    };
+    crate::cdebug!(
+        "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} first_occupied_row={} last_occupied_row={} vt_scrollback={} inline_scrollback={} scrollback_filled={} visible={} reason={}",
+        session.agent,
+        session.screen().alternate_screen(),
+        session.mouse_enabled(),
+        viewport_rows,
+        viewport_cols,
+        metrics.as_ref().map_or(0, |m| m.screen_rows),
+        metrics.as_ref().map_or(0, |m| m.screen_cols),
+        metrics.as_ref().map_or(0, |m| m.cursor_row),
+        metrics.as_ref().map_or(0, |m| m.cursor_col),
+        metrics.as_ref().map_or(0, |m| m.occupied_rows),
+        metrics
+            .as_ref()
+            .and_then(|m| m.first_occupied_row)
+            .map_or(-1, i32::from),
+        metrics
+            .as_ref()
+            .and_then(|m| m.last_occupied_row)
+            .map_or(-1, i32::from),
+        vt_filled,
+        inline_filled,
+        filled,
+        scrollbar.visible(),
+        if scrollbar.visible() {
+            "retained-scrollback"
+        } else {
+            "none"
+        }
+    );
+    scrollbar
+}
+
+struct ScrollAffordanceMetrics {
+    screen_rows: u16,
+    screen_cols: u16,
+    cursor_row: u16,
+    cursor_col: u16,
+    occupied_rows: usize,
+    first_occupied_row: Option<u16>,
+    last_occupied_row: Option<u16>,
+}
+
+fn screen_scroll_affordance_metrics(
+    screen: &vt100::Screen,
+    viewport_rows: u16,
+    viewport_cols: u16,
+) -> Option<ScrollAffordanceMetrics> {
+    let (screen_rows, screen_cols) = screen.size();
+    let rows = viewport_rows.min(screen_rows);
+    let cols = viewport_cols.min(screen_cols);
+    if rows == 0 || cols == 0 {
+        return None;
+    }
+
+    let mut occupied_rows = 0usize;
+    let mut first_occupied_row = None;
+    let mut last_occupied_row = None;
+    for row in 0..rows {
+        if (0..cols).any(|col| screen.cell(row, col).is_some_and(|c| c.has_contents())) {
+            occupied_rows += 1;
+            first_occupied_row.get_or_insert(row);
+            last_occupied_row = Some(row);
+        }
+    }
+    let (cursor_row, cursor_col) = screen.cursor_position();
+
+    Some(ScrollAffordanceMetrics {
+        screen_rows,
+        screen_cols,
+        cursor_row,
+        cursor_col,
+        occupied_rows,
+        first_occupied_row,
+        last_occupied_row,
+    })
+}
+
+fn pane_wheel_cursor_fallback_reason(session: &Session) -> Option<&'static str> {
+    if session.mouse_enabled() {
+        return None;
+    }
+    if session.screen().alternate_screen() {
+        return Some("alternate-screen");
+    }
+    None
+}
+
 /// SGR mouse wheel events set bit 6 of the button byte. Every value in
 /// `64..=95` is a wheel event with some combination of modifier flags
-/// (shift = +4, alt = +8, ctrl = +16). Forwarding any of them to an
-/// agent or shell that did not request mouse mode dumps the raw SGR
-/// bytes at the prompt — so the multiplexer always intercepts the
-/// wheel for scrollback regardless of modifiers.
+/// (shift = +4, alt = +8, ctrl = +16). Panes that did not request
+/// mouse mode must not receive these bytes because they dump raw SGR at
+/// prompts or disappear into TUIs that never subscribed to mouse input.
 fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
@@ -4653,6 +4832,17 @@ fn mouse_event_allowed_for_mode(mode: vt100::MouseProtocolMode, button: u8, pres
     }
 }
 
+fn mouse_event_encoding_for_session(
+    session: &Session,
+    button: u8,
+    press: bool,
+) -> Option<vt100::MouseProtocolEncoding> {
+    if mouse_event_allowed_for_mode(session.mouse_protocol_mode(), button, press) {
+        return Some(session.mouse_protocol_encoding());
+    }
+    None
+}
+
 fn encode_mouse_for_protocol(
     button: u8,
     col: u16,
@@ -4675,6 +4865,28 @@ fn encode_mouse_for_protocol(
             Some(out)
         }
     }
+}
+
+fn encode_wheel_cursor_fallback(session: &Session, button: u8) -> Option<Vec<u8>> {
+    if !is_wheel_button(button) || session.mouse_enabled() {
+        return None;
+    }
+    let seq = if session.screen().application_cursor() {
+        if (button & 1) == 0 {
+            b"\x1bOA".as_slice()
+        } else {
+            b"\x1bOB".as_slice()
+        }
+    } else if (button & 1) == 0 {
+        b"\x1b[A".as_slice()
+    } else {
+        b"\x1b[B".as_slice()
+    };
+    let mut out = Vec::with_capacity(seq.len() * 3);
+    for _ in 0..3 {
+        out.extend_from_slice(seq);
+    }
+    Some(out)
 }
 
 fn push_xterm_mouse_number(
@@ -4725,6 +4937,62 @@ fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use portable_pty::{ChildKiller, MasterPty, PtySize};
+
+    #[derive(Debug)]
+    struct NullChildKiller;
+
+    impl ChildKiller for NullChildKiller {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn clone_killer(&self) -> Box<dyn ChildKiller + Send + Sync> {
+            Box::new(Self)
+        }
+    }
+
+    struct NullMasterPty;
+
+    impl MasterPty for NullMasterPty {
+        fn resize(&self, _size: PtySize) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn get_size(&self) -> anyhow::Result<PtySize> {
+            Ok(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+        }
+
+        fn try_clone_reader(&self) -> anyhow::Result<Box<dyn std::io::Read + Send>> {
+            Ok(Box::new(std::io::empty()))
+        }
+
+        fn take_writer(&self) -> anyhow::Result<Box<dyn std::io::Write + Send>> {
+            Ok(Box::new(std::io::sink()))
+        }
+
+        #[cfg(unix)]
+        fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+            None
+        }
+
+        #[cfg(unix)]
+        fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+            None
+        }
+
+        #[cfg(unix)]
+        fn tty_name(&self) -> Option<std::path::PathBuf> {
+            None
+        }
+    }
 
     #[test]
     fn spawn_failure_banner_wraps_in_save_restore_and_carries_reason() {
@@ -4758,7 +5026,12 @@ mod tests {
     }
 
     fn single_pane_tab_mux() -> Multiplexer {
+        single_pane_tab_mux_with_size(24, 80)
+    }
+
+    fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
         let mut mux = test_mux(24, 80);
+        mux.resize(rows, cols);
         mux.tabs.push(Tab::new_single("Shell", 1));
         mux
     }
@@ -4842,6 +5115,89 @@ mod tests {
         );
     }
 
+    fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        test_session_with_agent(rows, cols, Some("codex".to_string()))
+    }
+
+    fn test_shell_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        test_session_with_agent(rows, cols, None)
+    }
+
+    fn pane_kind_cases() -> [(Option<&'static str>, &'static str); 2] {
+        [(Some("codex"), "agent"), (None, "shell")]
+    }
+
+    fn test_pane_session(
+        rows: u16,
+        cols: u16,
+        agent: Option<&str>,
+    ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        test_session_with_agent(rows, cols, agent.map(ToString::to_string))
+    }
+
+    fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
+        let rendered = String::from_utf8_lossy(frame);
+        assert!(
+            rendered.contains("\x1b[0;38;2;0;255;65m"),
+            "focused {context} should use green chrome"
+        );
+        assert!(
+            rendered.contains('█'),
+            "focused {context} should draw a scrollbar thumb"
+        );
+    }
+
+    fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
+        assert!(
+            !String::from_utf8_lossy(frame).contains('█'),
+            "{context} should not draw fake scrollback chrome"
+        );
+    }
+
+    fn assert_wheel_cursor_fallback_sent(
+        input_rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
+        expected_bytes: &[u8],
+    ) {
+        assert_eq!(
+            input_rx
+                .try_recv()
+                .expect("wheel fallback should reach PTY"),
+            expected_bytes,
+        );
+        assert!(
+            input_rx.try_recv().is_err(),
+            "wheel should not produce extra PTY input"
+        );
+    }
+
+    fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, lines: usize) {
+        session.feed_pty(format!("\x1b[1;{region_bottom}r\x1b[{region_bottom};1H").as_bytes());
+        for i in 0..lines {
+            session.feed_pty(format!("\r\n\x1b[2Khistory {i}").as_bytes());
+        }
+        session.feed_pty(b"\x1b[r");
+    }
+
+    fn test_session_with_agent(
+        rows: u16,
+        cols: u16,
+        agent: Option<String>,
+    ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        let (input_tx, input_rx) = mpsc::unbounded_channel();
+        (
+            Session::new_for_test(
+                "Test".to_string(),
+                agent,
+                (rows, cols),
+                100,
+                input_tx,
+                Arc::new(Mutex::new(Box::new(NullMasterPty))),
+                Arc::new(Mutex::new(Box::new(NullChildKiller))),
+            ),
+            input_rx,
+        )
+    }
+
     fn split_tab_mux() -> Multiplexer {
         let mut mux = test_mux(24, 80);
         let mut tab = Tab::new_single("Shell", 1);
@@ -4865,6 +5221,28 @@ mod tests {
                 crate::terminal_geometry::DEFAULT_COLS
             )
         );
+    }
+
+    #[test]
+    fn initial_spawn_request_is_data_only_agent_or_shell() {
+        assert_eq!(
+            initial_spawn_request("codex"),
+            SpawnRequest::Agent("codex".to_string())
+        );
+        assert_eq!(initial_spawn_request(""), SpawnRequest::Shell);
+    }
+
+    #[test]
+    fn spawn_request_rejects_agent_outside_allowlist_before_pty_spawn() {
+        let mut mux = test_mux(24, 80);
+        mux.available_agents = vec!["codex".to_string()];
+
+        let err = mux
+            .spawn_request(SpawnRequest::Agent("claude".to_string()), &[])
+            .unwrap_err();
+
+        assert!(err.to_string().contains("rejected agent \"claude\""));
+        assert!(mux.sessions.is_empty());
     }
 
     #[test]
@@ -5537,6 +5915,367 @@ mod tests {
             SGR_NO_BUTTON_MOTION,
             true
         ));
+    }
+
+    #[test]
+    fn wheel_forwards_to_mouse_enabled_tui() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_session(20, 78);
+        session.feed_pty(b"\x1b[?1049h\x1b[?1003h\x1b[?1006h");
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "pane-owned wheel should not redraw jackin'"
+        );
+        assert_eq!(
+            input_rx.try_recv().expect("wheel should reach PTY"),
+            b"\x1b[<64;1;1M"
+        );
+        assert!(
+            input_rx.try_recv().is_err(),
+            "wheel should not produce extra PTY input"
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
+    fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux();
+            let (mut session, mut input_rx) = test_pane_session(20, 78, agent);
+            for i in 0..40 {
+                session.feed_pty(format!("line {i}\r\n").as_bytes());
+            }
+            assert_eq!(session.scrollback_offset, 0);
+            mux.sessions.insert(1, session);
+
+            let redraw = mux.handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            });
+
+            assert!(
+                redraw.is_some(),
+                "{pane_kind} pane scrollback should redraw jackin'"
+            );
+            assert!(
+                input_rx.try_recv().is_err(),
+                "mouse-disabled {pane_kind} panes must not receive raw wheel bytes"
+            );
+            assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+        }
+    }
+
+    #[test]
+    fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux_with_size(55, 200);
+            let (mut session, mut input_rx) = test_pane_session(51, 198, agent);
+            session.feed_pty(b"\x1b[49;3Hcodex prompt");
+            assert_eq!(session.scrollback_filled(), 0);
+            mux.sessions.insert(1, session);
+
+            let redraw = mux.handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 10,
+                col: 10,
+                button: 64,
+            });
+
+            assert!(
+                redraw.is_none(),
+                "{pane_kind} normal-screen pane without scrollback should not redraw jackin'"
+            );
+            assert!(
+                input_rx.try_recv().is_err(),
+                "normal-screen {pane_kind} pane without scrollback must not receive cursor-key wheel fallback"
+            );
+            assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+        }
+    }
+
+    #[test]
+    fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux_with_size(12, 40);
+            let (mut session, mut input_rx) = test_pane_session(8, 38, agent);
+            feed_top_anchored_inline_history(&mut session, 5, 12);
+            session.feed_pty(b"\x1b[8;1Hlive prompt");
+            assert!(
+                session.scrollback_filled() >= 3,
+                "{pane_kind} pane should retain top-anchored inline history"
+            );
+            mux.sessions.insert(1, session);
+
+            let redraw = mux.handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            });
+
+            let frame = redraw.expect("inline history wheel should redraw");
+            assert!(
+                input_rx.try_recv().is_err(),
+                "{pane_kind} pane must not receive cursor-key wheel fallback"
+            );
+            assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+            assert_focused_scroll_chrome(
+                &frame,
+                &format!("normal-screen {pane_kind} pane with inline history"),
+            );
+            assert!(
+                String::from_utf8_lossy(&frame).contains("history 4"),
+                "normal-screen {pane_kind} wheel should render retained inline history"
+            );
+        }
+    }
+
+    #[test]
+    fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux_with_size(12, 40);
+            let (mut session, mut input_rx) = test_pane_session(8, 38, agent);
+            for i in 0..5 {
+                session.feed_pty(format!("release note {i}\r\n").as_bytes());
+            }
+            assert_eq!(
+                session.scrollback_filled(),
+                0,
+                "{pane_kind} setup output fits without native scrollback before clear"
+            );
+
+            session.feed_pty(b"\x1b[1;1H\x1b[Jlive prompt");
+            assert!(
+                session.scrollback_filled() >= 5,
+                "{pane_kind} pane should preserve normal-screen rows erased by clear/redraw"
+            );
+            mux.sessions.insert(1, session);
+
+            let redraw = mux.handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            });
+
+            let frame = redraw.expect("clear-preserved history wheel should redraw");
+            assert!(
+                input_rx.try_recv().is_err(),
+                "{pane_kind} pane must not receive cursor-key wheel fallback"
+            );
+            assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+            assert_focused_scroll_chrome(
+                &frame,
+                &format!("normal-screen {pane_kind} pane with clear-preserved history"),
+            );
+            assert!(
+                String::from_utf8_lossy(&frame).contains("release note"),
+                "normal-screen {pane_kind} wheel should render rows preserved before clear"
+            );
+        }
+    }
+
+    #[test]
+    fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux_with_size(12, 40);
+            let (mut session, mut input_rx) = test_pane_session(8, 38, agent);
+            session.feed_pty(b"\x1b[1;5r\x1b[1;1Htop row\x1b[2;1Hsecond row\x1b[3;1Hthird row");
+            session.feed_pty(b"\x1b[2S\x1b[r\x1b[8;1Hlive prompt");
+            assert!(
+                session.scrollback_filled() >= 2,
+                "{pane_kind} pane should retain rows removed by top-anchored CSI S"
+            );
+            mux.sessions.insert(1, session);
+
+            let redraw = mux.handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            });
+
+            let frame = redraw.expect("CSI S inline history wheel should redraw");
+            assert!(
+                input_rx.try_recv().is_err(),
+                "{pane_kind} pane must not receive cursor-key wheel fallback"
+            );
+            assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 2);
+            assert_focused_scroll_chrome(
+                &frame,
+                &format!("normal-screen {pane_kind} pane with CSI S inline history"),
+            );
+            assert!(
+                String::from_utf8_lossy(&frame).contains("top row"),
+                "normal-screen {pane_kind} wheel should render CSI S retained history"
+            );
+        }
+    }
+
+    #[test]
+    fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_shell_session(20, 78);
+        session.feed_pty(b"\x1b[?1049h");
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "pane-owned fallback should not redraw jackin'"
+        );
+        assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
+    fn wheel_sends_cursor_fallback_to_alt_screen_tui_with_retained_primary_scrollback() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_shell_session(20, 78);
+        for i in 0..40 {
+            session.feed_pty(format!("line {i}\r\n").as_bytes());
+        }
+        assert!(
+            session.scrollback_filled() > 0,
+            "setup should leave retained primary-screen scrollback"
+        );
+        session.feed_pty(b"\x1b[?1049h");
+        assert!(
+            session.screen().alternate_screen(),
+            "setup should leave pane in the alternate screen"
+        );
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "alternate-screen fallback should not redraw jackin'"
+        );
+        assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
+    fn wheel_cursor_fallback_respects_application_cursor_mode() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_session(20, 78);
+        session.feed_pty(b"\x1b[?1049h\x1b[?1h");
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 65,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "pane-owned fallback should not redraw jackin'"
+        );
+        assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1bOB\x1bOB\x1bOB");
+    }
+
+    #[test]
+    fn alt_screen_overflow_does_not_draw_scrollbar_without_retained_scrollback() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, _input_rx) = test_session(8, 20);
+        session.feed_pty(b"\x1b[?1049h");
+        for i in 0..20 {
+            session.feed_pty(format!("line {i}\r\n").as_bytes());
+        }
+        assert_eq!(session.scrollback_filled(), 0);
+        mux.sessions.insert(1, session);
+
+        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        assert_no_scroll_thumb(&frame, "alt-screen pane without retained scrollback");
+    }
+
+    #[test]
+    fn normal_screen_panes_do_not_draw_scrollbar_when_grid_is_full_without_scrollback() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux();
+            let (mut session, _input_rx) = test_pane_session(8, 20, agent);
+            for row in 0..8 {
+                session.feed_pty(format!("\x1b[{};1Hrow {row}", row + 1).as_bytes());
+            }
+            mux.sessions.insert(1, session);
+
+            let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+            assert_no_scroll_thumb(
+                &frame,
+                &format!("normal-screen {pane_kind} pane with full grid but no scrollback"),
+            );
+        }
+    }
+
+    #[test]
+    fn normal_screen_panes_do_not_draw_scrollbar_when_content_spans_viewport_without_scrollback() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux();
+            let (mut session, _input_rx) = test_pane_session(8, 20, agent);
+            session.feed_pty(b"\x1b[1;1Htop transcript\x1b[8;1Hbottom status");
+            assert_eq!(session.scrollback_filled(), 0);
+            mux.sessions.insert(1, session);
+
+            let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+            assert_no_scroll_thumb(
+                &frame,
+                &format!(
+                    "normal-screen {pane_kind} pane with viewport-spanning content but no scrollback"
+                ),
+            );
+        }
+    }
+
+    #[test]
+    fn normal_screen_panes_do_not_keep_scrollbar_when_cursor_moves_without_scrollback() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux_with_size(55, 200);
+            let (mut session, _input_rx) = test_pane_session(51, 198, agent);
+            session.feed_pty(b"\x1b[1;1Hrelease notes\x1b[51;1Hstatus line\x1b[48;3Hx");
+            assert_eq!(session.scrollback_filled(), 0);
+            mux.sessions.insert(1, session);
+
+            let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+            assert_no_scroll_thumb(
+                &frame,
+                &format!("normal-screen {pane_kind} transcript pane after cursor moved up"),
+            );
+        }
+    }
+
+    #[test]
+    fn alt_screen_exit_resets_keyboard_modes_for_shell_prompt() {
+        let (mut session, _input_rx) = test_session(8, 20);
+        session.feed_pty(b"\x1b[?1049h\x1b[>1u\x1b[>4;2m");
+        let _ = session.drain_passthrough();
+
+        session.feed_pty(b"\x1b[?1049l");
+        let drained = session.drain_passthrough();
+
+        assert!(
+            drained.iter().any(|bytes| bytes == b"\x1b[<u"),
+            "kitty keyboard reset missing from {drained:?}"
+        );
+        assert!(
+            drained.iter().any(|bytes| bytes == b"\x1b[>4;0m"),
+            "modifyOtherKeys reset missing from {drained:?}"
+        );
     }
 
     #[test]

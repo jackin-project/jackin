@@ -74,8 +74,8 @@ export TIRITH=0
 Then paste the checkout block:
 
 ```sh
-mkdir -p "$HOME/Projects/jackin-project/test"
-cd "$HOME/Projects/jackin-project/test"
+mkdir -p "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+cd "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
 
 if [ ! -d jackin/.git ]; then
   git clone https://github.com/jackin-project/jackin.git
@@ -89,6 +89,9 @@ mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
 which jackin
+
+# Keep this final line for PRs touching crates/jackin-capsule/; drop it otherwise.
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
 ```
 
 ### Isolation
@@ -144,34 +147,6 @@ per-page localhost render walk still goes in `### Documentation` below.>
 )
 ```
 
-### Build jackin-capsule
-
-<Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
-Include it whenever daemon.rs, client.rs, session.rs, layout.rs,
-dialog.rs, statusbar.rs, input.rs, pid1.rs, or any other file under
-`crates/jackin-capsule/src/` is changed. THIS BLOCK MUST COME BEFORE
-`### User smoke` AND `### jackin-capsule smoke`: every `jackin console` and
-`jackin load` invocation below consumes whichever binary `ensure_available`
-resolves first. Without the eval below, the launches use the cached or
-preview-release binary and silently do not exercise the PR's container-side
-changes.>
-
-```sh
-eval "$(cargo run --bin build-jackin-capsule -- --export)"
-```
-
-`build-jackin-capsule` invokes `cargo zigbuild`, writes the cross-compiled
-Linux artifact to the host cache, and `--export` prints
-`export JACKIN_CAPSULE_BIN=<path>` for `eval` to consume. The eval form is
-required (not optional): hand-rolled `target/<triple>/release/jackin-capsule`
-exports silently break when the operator switches architectures. First build
-takes ~2-3 min via cargo-zigbuild; subsequent builds are incremental. Editing
-any file under `crates/jackin-capsule/src/` does NOT auto-invalidate the
-binary on disk — re-run the eval to rebuild. To purge the cache entirely:
-`rm -rf ~/.jackin/cache/jackin-capsule/`. If the build prints a
-`cargo zigbuild` error, install the toolchain via
-`mise install zig cargo:cargo-zigbuild`.
-
 ### User smoke
 
 ```sh
@@ -184,15 +159,15 @@ workspace state, in-container commands, and expected output that disambiguate a
 pass/fail. Add narrower repeat checks after the console flow when helpful, e.g.
 `jackin load <role> <target> --debug`. Replace the console
 command only when the changed behavior has no meaningful console route. For PRs
-touching `crates/jackin-capsule/`, the `### Build jackin-capsule` block above
-MUST run first — otherwise the console launches with a stale binary.>
+touching `crates/jackin-capsule/`, keep the capsule build eval at the end of
+the Checkout block — otherwise the console launches with a stale binary.>
 
 ### jackin-capsule smoke
 
 <Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
 Include it whenever any file under `crates/jackin-capsule/src/` is changed.
-This block assumes the `### Build jackin-capsule` block above has already
-run — do not repeat the eval here.>
+This block assumes the Checkout block's capsule build eval has already run — do
+not repeat the eval here.>
 
 ```sh
 jackin load the-architect . --debug

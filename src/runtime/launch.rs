@@ -57,8 +57,10 @@ pub struct LoadOptions {
     /// references are resolved by looking up `name` in `map`.
     pub host_env: Option<std::collections::BTreeMap<String, String>>,
 
-    /// CLI override for the agent. `None` means "use the workspace's
-    /// `default_agent` field, falling back to `Agent::Claude` when unset".
+    /// CLI override for the agent. `None` defers to (in order) workspace
+    /// `default_agent`, the role's single supported agent, or an
+    /// interactive prompt when stdin is a TTY. A non-interactive launch
+    /// against a multi-agent role with no resolved choice is an error.
     pub agent: Option<crate::agent::Agent>,
 
     /// When set, resolve this branch of the role repo instead of the default
@@ -1291,6 +1293,54 @@ pub fn load_role<'a>(
     ))
 }
 
+pub async fn resolve_supported_agents_for_console(
+    paths: &JackinPaths,
+    config: &AppConfig,
+    selector: &RoleSelector,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<Vec<crate::agent::Agent>> {
+    // Lookup-only: the actual launch path uses
+    // `AppConfig::resolve_role_source` which synthesizes + inserts a
+    // RoleSource for unregistered namespaced selectors. That mutation
+    // is for the launch (which persists trust), not for a transient
+    // agent-list query that discards the config.
+    let source = config
+        .roles
+        .get(&selector.key())
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("unknown role selector {}", selector.key()))?;
+    // Cached manifest is sufficient because the supported-agent set
+    // rarely changes between fetches; the real launch re-fetches and
+    // re-validates. Saves a git round trip per role-row Enter.
+    let cached = crate::repo::CachedRepo::new(paths, selector);
+    if cached.repo_dir.join(".git").is_dir() {
+        match crate::manifest::RoleManifest::load(&cached.repo_dir) {
+            Ok(manifest) => return Ok(manifest.supported_agents()),
+            Err(error) => crate::debug_log!(
+                "console",
+                "cached manifest for {} present but failed to parse ({error:#}); refetching",
+                selector.key()
+            ),
+        }
+    } else {
+        crate::debug_log!(
+            "console",
+            "no cached repo for {}; falling back to git fetch",
+            selector.key()
+        );
+    }
+    let (_, validated_repo, _repo_lock) = super::repo_cache::resolve_agent_repo_with(
+        paths,
+        selector,
+        &source.git,
+        runner,
+        super::repo_cache::RepoResolveOptions::non_interactive(),
+        || Ok(false),
+    )
+    .await?;
+    Ok(validated_repo.manifest.supported_agents())
+}
+
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn load_role_with(
     paths: &JackinPaths,
@@ -1368,13 +1418,15 @@ async fn load_role_with(
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
 
+    let supported_agents = validated_repo.manifest.supported_agents();
     let agent = match opts.agent.or(workspace.default_agent) {
         Some(a) => a,
-        None if std::io::stdin().is_terminal()
-            && validated_repo.manifest.supported_agents().len() >= 2 =>
-        {
-            let supported = validated_repo.manifest.supported_agents();
-            let labels: Vec<String> = supported.iter().map(|a| a.slug().to_string()).collect();
+        None if supported_agents.len() == 1 => supported_agents[0],
+        None if std::io::stdin().is_terminal() && supported_agents.len() >= 2 => {
+            let labels: Vec<String> = supported_agents
+                .iter()
+                .map(|a| a.slug().to_string())
+                .collect();
             let selection = dialoguer::Select::new()
                 .with_prompt(format!(
                     "Role \"{}\" supports multiple agents. Choose one",
@@ -1383,9 +1435,20 @@ async fn load_role_with(
                 .items(&labels)
                 .default(0)
                 .interact()?;
-            supported[selection]
+            supported_agents[selection]
         }
-        None => crate::agent::Agent::Claude,
+        None if supported_agents.is_empty() => anyhow::bail!(
+            "role \"{}\" declares no supported agents in its manifest",
+            selector.key()
+        ),
+        None => anyhow::bail!(
+            "role \"{}\" supports multiple agents ({:?}); pass --agent or set the workspace `default_agent` for non-interactive launches",
+            selector.key(),
+            supported_agents
+                .iter()
+                .map(|a| a.slug())
+                .collect::<Vec<_>>()
+        ),
     };
     validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
@@ -5279,6 +5342,362 @@ agents = ["codex"]
             "initial agent must be passed as container argv"
         );
         assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
+    }
+
+    struct LoadAgentFixture {
+        _temp: tempfile::TempDir,
+        paths: JackinPaths,
+        config: AppConfig,
+        selector: RoleSelector,
+        runner: FakeRunner,
+        workspace: crate::workspace::ResolvedWorkspace,
+        docker: crate::docker_client::FakeDockerClient,
+    }
+
+    fn load_agent_fixture(manifest_body: &str) -> LoadAgentFixture {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+        let config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let runner = FakeRunner::for_load_agent([String::new()]);
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(repo_dir.join("jackin.role.toml"), manifest_body).unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        LoadAgentFixture {
+            _temp: temp,
+            paths,
+            config,
+            selector,
+            runner,
+            workspace,
+            docker: crate::docker_client::FakeDockerClient::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn load_agent_uses_single_supported_agent_without_workspace_default() {
+        let mut f = load_agent_fixture(CODEX_ONLY_MANIFEST);
+        load_role(
+            &f.paths,
+            &mut f.config,
+            &f.selector,
+            &f.workspace,
+            &f.docker,
+            &mut f.runner,
+            &LoadOptions::default(),
+        )
+        .await
+        .unwrap();
+
+        let run_cmd = f
+            .runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+            .expect("role docker run should fire for single-agent role");
+        let last_positional = run_cmd
+            .split_whitespace()
+            .last()
+            .expect("docker run command must have at least one argument");
+        assert_eq!(
+            last_positional, "codex",
+            "single supported agent must become the initial runtime: {run_cmd}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_agent_bails_non_interactively_on_multi_agent_role_without_default() {
+        let mut f = load_agent_fixture(MULTI_AGENT_MANIFEST);
+        let error = load_role(
+            &f.paths,
+            &mut f.config,
+            &f.selector,
+            &f.workspace,
+            &f.docker,
+            &mut f.runner,
+            &LoadOptions::default(),
+        )
+        .await
+        .expect_err("multi-agent role without resolution must not silently fall back");
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains("agent-smith"),
+            "error must name the role: {rendered}"
+        );
+        assert!(
+            rendered.contains("pass --agent") || rendered.contains("default_agent"),
+            "error must name the operator-actionable fix: {rendered}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_agent_bails_when_manifest_declares_no_supported_agents() {
+        let mut f = load_agent_fixture(
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = []
+"#,
+        );
+        let error = load_role(
+            &f.paths,
+            &mut f.config,
+            &f.selector,
+            &f.workspace,
+            &f.docker,
+            &mut f.runner,
+            &LoadOptions::default(),
+        )
+        .await
+        .expect_err("role manifest with no agents must fail load");
+        let rendered = format!("{error:#}");
+        // Manifest validation rejects `agents = []` before reaching the
+        // launch-time bail. The defensive bail at the resolve site is
+        // unreachable in practice — pinned here so a future refactor
+        // that loosens manifest validation still surfaces the same
+        // operator-facing failure.
+        assert!(
+            rendered.contains("agents") && rendered.contains("empty"),
+            "error must name the empty-agents condition: {rendered}"
+        );
+    }
+
+    struct ConsoleResolutionFixture {
+        _temp: tempfile::TempDir,
+        paths: JackinPaths,
+        selector: RoleSelector,
+        repo_dir: std::path::PathBuf,
+        config: AppConfig,
+        runner: FakeRunner,
+    }
+
+    const MULTI_AGENT_MANIFEST: &str = r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#;
+    const CODEX_ONLY_MANIFEST: &str = r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#;
+
+    fn console_resolution_fixture() -> ConsoleResolutionFixture {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "agent-smith".to_string(),
+            crate::config::RoleSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+        ConsoleResolutionFixture {
+            _temp: temp,
+            paths,
+            selector,
+            repo_dir,
+            config,
+            runner: FakeRunner::default(),
+        }
+    }
+
+    fn write_role_repo(repo_dir: &std::path::Path, manifest: &str) {
+        std::fs::create_dir_all(repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(repo_dir.join("jackin.role.toml"), manifest).unwrap();
+    }
+
+    fn seed_cached_repo(repo_dir: &std::path::Path, manifest: &str) {
+        write_role_repo(repo_dir, manifest);
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+    }
+
+    fn materialize_on_clone(
+        runner: &mut FakeRunner,
+        repo_dir: std::path::PathBuf,
+        manifest: String,
+    ) {
+        runner.side_effects.push((
+            "clone".to_string(),
+            Box::new(move || {
+                write_role_repo(&repo_dir, &manifest);
+                std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+            }),
+        ));
+    }
+
+    #[tokio::test]
+    async fn console_agent_resolution_fast_paths_cached_manifest() {
+        // When the role repo + manifest are already on disk, the
+        // console must skip git entirely — the actual launch path
+        // re-fetches and re-validates anyway.
+        let mut f = console_resolution_fixture();
+        seed_cached_repo(&f.repo_dir, MULTI_AGENT_MANIFEST);
+
+        let agents =
+            resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            agents,
+            vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+        );
+        assert!(
+            f.runner.recorded.is_empty(),
+            "fast path must not invoke any git command: {:?}",
+            f.runner.recorded
+        );
+    }
+
+    #[tokio::test]
+    async fn console_agent_resolution_falls_through_when_manifest_present_but_git_absent() {
+        // Orphan manifest (jackin.role.toml without `.git/`) must not
+        // be trusted as a cache hit — the `.git/` guard forces a fresh
+        // clone so half-cleaned caches never serve stale data.
+        let mut f = console_resolution_fixture();
+        write_role_repo(&f.repo_dir, CODEX_ONLY_MANIFEST);
+        // Deliberately no `.git/` directory.
+        let materialize_dir = f.repo_dir.clone();
+        f.runner.side_effects.push((
+            "clone".to_string(),
+            Box::new(move || {
+                std::fs::create_dir_all(materialize_dir.join(".git")).unwrap();
+            }),
+        ));
+
+        let _ =
+            resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
+                .await
+                .unwrap();
+
+        assert!(
+            f.runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("git clone")),
+            "orphan manifest must trigger a fresh clone, not a cache hit: {:?}",
+            f.runner.run_recorded
+        );
+    }
+
+    #[tokio::test]
+    async fn console_agent_resolution_falls_through_when_cached_manifest_unparseable() {
+        // `.git/` present but manifest body cannot be parsed →
+        // fast-path must defer to the real fetch instead of returning
+        // a stale or partial agent list. The downstream fetch itself
+        // may legitimately fail in the test harness; what matters is
+        // that the runner is invoked at all.
+        let mut f = console_resolution_fixture();
+        std::fs::create_dir_all(f.repo_dir.join(".git")).unwrap();
+        std::fs::write(f.repo_dir.join("jackin.role.toml"), "this is not toml = =").unwrap();
+
+        let _ =
+            resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
+                .await;
+
+        assert!(
+            !f.runner.recorded.is_empty(),
+            "unparseable cached manifest must trigger fall-through to git: {:?}",
+            f.runner.recorded
+        );
+    }
+
+    #[tokio::test]
+    async fn console_agent_resolution_falls_through_to_git_when_uncached() {
+        // No cached repo on disk → must fetch via non-interactive git
+        // (null stdin, GIT_TERMINAL_PROMPT=0, quiet) so a hanging
+        // credential helper cannot freeze the TUI.
+        let mut f = console_resolution_fixture();
+        materialize_on_clone(
+            &mut f.runner,
+            f.repo_dir.clone(),
+            MULTI_AGENT_MANIFEST.to_string(),
+        );
+
+        let agents =
+            resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            agents,
+            vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+        );
+        assert!(
+            f.runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("git clone")),
+            "fall-through path must clone: {:?}",
+            f.runner.run_recorded
+        );
+        assert!(
+            !f.runner.run_options.is_empty(),
+            "fall-through must record git RunOptions"
+        );
+        assert!(
+            f.runner
+                .run_options
+                .iter()
+                .all(|opts| opts.quiet && !opts.capture_stderr),
+            "console role resolution must not stream git output over the TUI"
+        );
+        assert!(
+            f.runner.run_options.iter().all(|opts| opts.null_stdin
+                && opts
+                    .extra_env
+                    .contains(&("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()))),
+            "console role resolution must make git non-interactive"
+        );
+    }
+
+    #[tokio::test]
+    async fn console_agent_resolution_propagates_git_failure() {
+        let mut f = console_resolution_fixture();
+        f.runner.fail_with.push((
+            "git clone".to_string(),
+            "Could not resolve host: github.com".to_string(),
+        ));
+
+        let error =
+            resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
+                .await
+                .expect_err("git clone failure must surface to caller");
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains("Could not resolve host"),
+            "wrapped error must preserve git failure cause: {rendered}"
+        );
     }
 
     #[tokio::test]

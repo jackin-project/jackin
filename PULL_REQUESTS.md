@@ -37,27 +37,27 @@ What the template deliberately omits:
 
 Every pull request must include a copy-pasteable "Verify locally" section in the PR body. Agents creating PRs must also repeat the same commands in their final response after sharing the PR URL (agent-specific rule — see [`.github/AGENTS.md`](.github/AGENTS.md)).
 
-Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
+Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a PR-specific test directory (`$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>`) so the operator can inspect multiple PRs at once without checkout collisions. Use the PR number instead of the branch name for this directory: PR numbers are unique and stable, while branch names can contain slashes, be reused, or change during iteration. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
 Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Rust tests only when there is a relevant `cargo` or `cargo nextest` command for the Rust project. Add Docs checks only when there is a relevant automated docs command, such as `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, or `bun test` from `docs/`. Keep Rust tests and Docs checks in separate blocks; docs tests validate the published documentation surface and docs tooling, not the Rust project itself. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command because it is the operator's most intuitive end-to-end validation path: `jackin console --debug`. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct commands such as `jackin load <role> <target> --debug` or narrower subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
 ### jackin-capsule PRs
 
-Any PR touching `crates/jackin-capsule/` requires **two** Verify-locally blocks, in this order:
+Any PR touching `crates/jackin-capsule/` requires the Checkout block to build and export the capsule binary before any `jackin` smoke command, plus a dedicated `### jackin-capsule smoke` block:
 
-1. `### Build jackin-capsule` — leads with the canonical eval one-shot:
+1. The Checkout block keeps the canonical eval one-shot at the end, after the local `jackin` binary build and `PATH` guardrail:
 
    ```sh
    eval "$(cargo run --bin build-jackin-capsule -- --export)"
    ```
 
-   **Must come before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
+   **Must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
 
-2. `### jackin-capsule smoke` — runs `jackin load the-architect . --debug` and the in-container verify checklist. Does NOT repeat the eval; the build block above already exported `JACKIN_CAPSULE_BIN`.
+2. `### jackin-capsule smoke` — runs `jackin load the-architect . --debug` and the in-container verify checklist. Does NOT repeat the eval; the Checkout block already exported `JACKIN_CAPSULE_BIN`.
 
-The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships both blocks in the correct order; copy them rather than rewriting the build invocation.
+The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the checkout eval and smoke block in the correct order; copy them rather than rewriting the build invocation.
 
-A `crates/jackin-capsule/` PR that puts the launch before the build, or that omits the build block entirely, is incomplete. Unit tests passing is necessary but not sufficient.
+A `crates/jackin-capsule/` PR that puts a `jackin` launch before the Checkout block's capsule build eval, or omits the eval entirely, is incomplete. Unit tests passing is necessary but not sufficient.
 
 ### Documentation-only PRs
 
@@ -89,8 +89,8 @@ export TIRITH=0
 Then paste the checkout block:
 
 ```sh
-mkdir -p "$HOME/Projects/jackin-project/test"
-cd "$HOME/Projects/jackin-project/test"
+mkdir -p "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+cd "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
 
 if [ ! -d jackin/.git ]; then
   git clone https://github.com/jackin-project/jackin.git
@@ -104,11 +104,14 @@ mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
 which jackin
+
+# Keep this final line for PRs touching crates/jackin-capsule/; drop it otherwise.
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
 ```
 
 The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches may have been force-pushed after explicit operator approval (DCO amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at - so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
 
-The `cargo build --bin jackin` plus `PATH` export is also required for PR verification that runs jackin' itself. The runtime entrypoint and other `include_str!` assets are embedded into the Rust binary at compile time, so a Homebrew-installed `jackin` can silently launch old embedded content even when the checkout contains the PR changes. Prepending `target/debug` makes every later `jackin ...` command in the same terminal exercise the PR-built binary while leaving the operator's installed binary untouched. The `which jackin` line is the guardrail; it should print the checkout's `target/debug/jackin`, not a Homebrew path.
+The `cargo build --bin jackin` plus `PATH` export is also required for PR verification that runs jackin' itself. The runtime entrypoint and other `include_str!` assets are embedded into the Rust binary at compile time, so a Homebrew-installed `jackin` can silently launch old embedded content even when the checkout contains the PR changes. Prepending `target/debug` makes every later `jackin ...` command in the same terminal exercise the PR-built binary while leaving the operator's installed binary untouched. The `which jackin` line is the guardrail; it should print the checkout's `target/debug/jackin`, not a Homebrew path. For `crates/jackin-capsule/` PRs, keep the final `eval "$(cargo run --bin build-jackin-capsule -- --export)"` line so every later `jackin console` / `jackin load` uses the freshly built capsule binary through `JACKIN_CAPSULE_BIN`; drop that line for non-capsule PRs.
 
 #### Static Checks
 

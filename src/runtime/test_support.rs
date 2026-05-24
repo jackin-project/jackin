@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub run_recorded: Vec<String>,
+    pub run_options: Vec<RunOptions>,
     pub fail_on: Vec<String>,
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
@@ -69,9 +70,10 @@ impl CommandRunner for FakeRunner {
         program: &str,
         args: &[&str],
         _cwd: Option<&std::path::Path>,
-        _opts: &RunOptions,
+        opts: &RunOptions,
     ) -> anyhow::Result<()> {
         let command = format!("{} {}", program, args.join(" "));
+        self.run_options.push(opts.clone());
         self.run_recorded.push(command.clone());
         self.recorded.push(command.clone());
         self.check_command(&command)
