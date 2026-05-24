@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, process::Command};
 
 use anyhow::Context;
 use bollard::Docker;
@@ -137,9 +137,44 @@ pub struct BollardDockerClient {
 impl BollardDockerClient {
     pub fn connect() -> anyhow::Result<Self> {
         let inner =
-            Docker::connect_with_local_defaults().context("failed to connect to Docker daemon")?;
+            connect_to_cli_docker_context().context("failed to connect to Docker daemon")?;
         Ok(Self { inner })
     }
+}
+
+fn connect_to_cli_docker_context() -> Result<Docker, bollard::errors::Error> {
+    if std::env::var_os("DOCKER_HOST").is_some() {
+        return Docker::connect_with_defaults();
+    }
+
+    if let Some(host) = active_docker_context_host() {
+        crate::debug_log!("docker", "connect context host {host}");
+        return Docker::connect_with_host(&host);
+    }
+
+    Docker::connect_with_defaults()
+}
+
+fn active_docker_context_host() -> Option<String> {
+    let output = Command::new("docker")
+        .args([
+            "context",
+            "inspect",
+            "--format",
+            "{{json .Endpoints.docker.Host}}",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_docker_context_host(&output.stdout)
+}
+
+fn parse_docker_context_host(stdout: &[u8]) -> Option<String> {
+    let host: String = serde_json::from_slice(stdout).ok()?;
+    let host = host.trim();
+    (!host.is_empty()).then(|| host.to_string())
 }
 
 const fn is_http_status(err: &bollard::errors::Error, code: u16) -> bool {
@@ -785,6 +820,24 @@ impl DockerApi for FakeDockerClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_docker_context_host_accepts_json_string() {
+        assert_eq!(
+            parse_docker_context_host(b"\"unix:///Users/me/.orbstack/run/docker.sock\"\n"),
+            Some("unix:///Users/me/.orbstack/run/docker.sock".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_docker_context_host_rejects_empty_or_non_string_output() {
+        assert_eq!(parse_docker_context_host(br#""""#), None);
+        assert_eq!(parse_docker_context_host(b"null"), None);
+        assert_eq!(
+            parse_docker_context_host(b"unix:///var/run/docker.sock"),
+            None
+        );
+    }
 
     #[test]
     fn container_state_short_label() {
