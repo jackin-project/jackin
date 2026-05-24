@@ -107,10 +107,10 @@ pub enum Dialog {
         tab_idx: usize,
         input: jackin_tui::TextField,
     },
-    /// Read-only modal opened when the operator clicks the status-bar
-    /// container-name label. Surfaces role key, focused-agent runtime,
-    /// full container ID, and workspace path
-    /// with a one-key "copy to clipboard" shortcut.
+    /// Read-only modal opened when the operator clicks the
+    /// container-name segment of the bottom branch/PR context bar.
+    /// Surfaces role key, focused-agent runtime, full container ID,
+    /// and workspace path with a one-key "copy to clipboard" shortcut.
     /// Enter or a click on the Container ID row emits OSC 52 with
     /// the container name AND keeps the dialog open — `copied` flips
     /// to `true` so the renderer shows a visible "Copied!" indicator
@@ -875,13 +875,9 @@ impl Dialog {
                 let items = picker_filtered_rows(agents, filter).len() as u16;
                 items + 4
             }
-            // Rename modal: top border + blank pad + input row + blank pad + bottom border.
             Self::RenameTab { .. } => 5,
-            // ContainerInfo: top + pad + 4 detail rows + pad + bottom.
             Self::ContainerInfo { .. } => 8,
-            // GitHubContext: top + pad + 5 detail rows + pad + bottom.
             Self::GitHubContext { .. } => 9,
-            // ConfirmAction: top + pad + 2 message rows + pad + button + pad + bottom.
             Self::ConfirmAction { .. } => 9,
         };
         let max_height = term_rows
@@ -1782,9 +1778,7 @@ fn render_filter_input(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, filter
 /// empty state; an inline `(no matches)` placeholder breaks that
 /// visual contract. Operator dismisses with Esc or pops filter
 /// characters with Backspace until items reappear.
-fn render_no_matches_row(_buf: &mut Vec<u8>, _row: u16, _col: u16, _width: u16) {
-    // Intentionally blank. See doc-comment.
-}
+fn render_no_matches_row(_buf: &mut Vec<u8>, _row: u16, _col: u16, _width: u16) {}
 
 /// Render one row of a palette/picker list at `(row, col)` spanning
 /// `width-2` columns. Mirrors the console TUI sidebar style: selected

@@ -68,24 +68,11 @@ pub enum PrefixMode {
 
 pub struct StatusBar {
     pub tab_regions: Vec<(u16, u16)>,
-    /// Former click region for the visible menu hint. The shortcut is
-    /// still parsed, but the top-bar hint is no longer painted.
-    pub hint_region: Option<(u16, u16)>,
-    /// Click region (1-based, inclusive-exclusive) covering the
-    /// right-side container-name label on row 1. A mouse press inside
-    /// opens the `ContainerInfo` dialog: full container ID copy +
-    /// role/focused-agent details kept off the status bar so the tab
-    /// strip can spend columns on tabs.
-    pub identity_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
-    pub prefix_label: String,
-    pub palette_label: String,
-    pub prefix_enabled: bool,
-    /// Container name (`jk-<short>-<workspace>-<role>`) displayed on
-    /// the right side of row 1. Role is inferable from the suffix and
-    /// surfaced explicitly by the `ContainerInfo` modal, so the status
-    /// bar omits it to preserve tab-strip columns. Resolved from
-    /// `HOSTNAME`.
+    /// Container name (`jk-<short>-<workspace>-<role>`) resolved from
+    /// `HOSTNAME` at construction. Consumed by the bottom branch/PR
+    /// context bar and the `ContainerInfo` modal — the status bar
+    /// itself no longer paints it.
     pub identity_label: String,
     /// The role key from Capsule launch config. Stored separately so
     /// the `ContainerInfo` modal can name it explicitly without
@@ -109,23 +96,10 @@ impl StatusBar {
     pub fn new_with_role(role: String) -> Self {
         Self {
             tab_regions: Vec::new(),
-            hint_region: None,
-            identity_region: None,
             prefix_mode: PrefixMode::Idle,
-            prefix_label: "Ctrl+B".to_string(),
-            palette_label: "Ctrl+\\".to_string(),
-            prefix_enabled: false,
             identity_label: resolve_container_name(),
             role,
         }
-    }
-
-    /// Container identity now lives on the bottom branch/PR bar. Keep
-    /// this method as a stable no-op for older call sites while new
-    /// routing uses the bottom-bar hit-test helpers in the daemon.
-    pub fn identity_at(&self, row: u16, col: u16) -> bool {
-        let _ = (row, col);
-        false
     }
 
     pub fn container_name(&self) -> &str {
@@ -136,19 +110,8 @@ impl StatusBar {
         &self.role
     }
 
-    /// The palette shortcut is still parsed by input.rs, but the
-    /// top-bar hint is intentionally not displayed.
-    pub fn hint_at(&self, row: u16, col: u16) -> bool {
-        let _ = (row, col);
-        false
-    }
-
     pub fn set_prefix_mode(&mut self, mode: PrefixMode) {
         self.prefix_mode = mode;
-    }
-
-    pub fn set_prefix_enabled(&mut self, enabled: bool) {
-        self.prefix_enabled = enabled;
     }
 
     /// Render the status bar at rows 0–1 of the host terminal.
@@ -162,8 +125,6 @@ impl StatusBar {
         hovered_tab: Option<usize>,
     ) {
         self.tab_regions.clear();
-        self.hint_region = None;
-        self.identity_region = None;
 
         // ── Row 0: brand pill + tabs ────────────────────────────────
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
@@ -515,21 +476,6 @@ mod tests {
         bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
         assert!(!s.contains("Menu"), "menu hint should be hidden: {s:?}");
-        assert!(bar.hint_region.is_none());
-    }
-
-    #[test]
-    fn prefix_hint_is_not_rendered_when_enabled() {
-        let mut bar = StatusBar::new();
-        bar.set_prefix_enabled(true);
-        let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None);
-        let s = String::from_utf8_lossy(&buf);
-        assert!(!s.contains("Menu"), "menu hint should be hidden: {s:?}");
-        assert!(
-            !s.contains("prefix Ctrl+B"),
-            "prefix hint should be hidden: {s:?}"
-        );
     }
 
     #[test]

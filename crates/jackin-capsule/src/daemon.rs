@@ -126,10 +126,12 @@ pub struct Multiplexer {
     /// follow the terminal the operator is using now rather than the
     /// terminal that launched the container.
     attached_terminal: ClientTerminal,
-    /// Last multiplexer-owned title sent to the outer terminal. Pane
-    /// OSC titles are still forwarded for focused sessions, but every
-    /// redraw reasserts the workspace/PR title so Ghostty-style tab
-    /// lists show the operator's current workspace context.
+    /// Hash of the last multiplexer-owned OSC 2 title sent to the
+    /// outer terminal. Gates re-emission on inequality: without the
+    /// diff, every full frame would reassert the workspace/PR title
+    /// and override per-pane agent-set titles in the outer terminal's
+    /// tab list on every redraw. Reset to `None` when a child pane
+    /// updates its own title so the next full frame re-asserts.
     last_outer_terminal_title: Option<String>,
     hover_target: Option<HoverTarget>,
     /// Deadline for hiding the transient "Copied!" badge in whichever
@@ -433,11 +435,18 @@ const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_milli
 const SGR_NO_BUTTON_MOTION: u8 = 35;
 
 const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::from_secs(2);
+/// Bottom branch/PR context bar is a single chrome row. Centralising
+/// the constant keeps the content-row math and renderer in sync; if
+/// the bar ever grows to two rows the change happens in one place.
 const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
+/// 1 s feels instant after `git checkout` while staying cheap enough
+/// for a cold `git symbolic-ref` (or, with the `.git/HEAD` fast-path,
+/// a single file read). Faster polling would not be perceptibly
+/// fresher; slower polling would visibly lag operator actions.
 const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_secs(1);
-// GitHub context is operator-facing chrome, not a live feed. Keep the
-// branch/PR/CI cache warm without polling `gh` aggressively enough to
-// waste API quota or trip secondary rate limits.
+/// 60 s keeps the CI-status freshness within one PR turn while
+/// staying well under `gh`'s default secondary-rate-limit budget.
+/// The bar is operator-facing chrome, not a live feed.
 const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: Duration = Duration::from_secs(60);
 
 impl Multiplexer {
@@ -462,8 +471,7 @@ impl Multiplexer {
             workdir_context.is_git_repo,
             workdir_context.default_branch
         );
-        let mut status_bar = StatusBar::new_with_role(launch_config.role.clone());
-        status_bar.set_prefix_enabled(input_parser.prefix_enabled());
+        let status_bar = StatusBar::new_with_role(launch_config.role.clone());
 
         Self {
             sessions: HashMap::new(),
@@ -2013,34 +2021,6 @@ impl Multiplexer {
                     }
                     return None;
                 }
-                // 2) Click on the right-side hint acts as a
-                //    palette-key gesture — gives the operator a
-                //    mouse fallback when the keyboard shortcut
-                //    isn't reaching the parser.
-                if self.status_bar.hint_at(1, col + 1) {
-                    if self.dialog_open() {
-                        self.dialog_clear();
-                    } else {
-                        self.open_command_palette();
-                    }
-                    return Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay));
-                }
-                None
-            }
-            InputEvent::MousePress {
-                row: 1,
-                col,
-                button: 0,
-            } => {
-                // Click on the right-side container-name label opens
-                // the read-only `ContainerInfo` modal. Copying is an
-                // explicit second action on the Container ID row.
-                // Clicks elsewhere on row 1 (the underline strip) are
-                // no-ops.
-                if self.status_bar.identity_at(2, col + 1) {
-                    self.open_container_info_dialog();
-                    return Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange));
-                }
                 None
             }
             InputEvent::MousePress { col, row, button } => {
@@ -3459,9 +3439,6 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                     mux.send_output(redraw);
                 }
             }
-            // Keep prefix-await state reflected in the status bar model.
-            // The hint is hidden today, but the mode remains part of the
-            // chrome state for future renderers and tests.
             let mode = if mux.input_parser.is_awaiting_prefix() {
                 crate::statusbar::PrefixMode::Awaiting
             } else {
@@ -5011,6 +4988,145 @@ mod tests {
             mux.pull_request_context.as_ref(),
         ));
         assert_eq!(mux.content_rows, 21);
+    }
+
+    #[test]
+    fn apply_pull_request_context_loaded_drops_stale_request() {
+        let mut mux = test_mux(24, 100);
+        mux.pull_request_context_request_id = 5;
+        mux.pull_request_context_lookup_in_flight = true;
+        mux.pull_request_context_branch = Some("feat/x".to_string());
+        let pr = pull_request_fixture(99);
+        let changed = mux.apply_pull_request_context_loaded(
+            3,
+            Some("feat/x".to_string()),
+            PullRequestLookupOutcome::Resolved(Some(pr)),
+            Instant::now(),
+        );
+        assert!(!changed, "stale request must not mutate state");
+        assert!(
+            mux.pull_request_context_lookup_in_flight,
+            "stale request must leave in_flight untouched"
+        );
+        assert!(
+            mux.pull_request_context.is_none(),
+            "stale request must not write PR"
+        );
+    }
+
+    #[test]
+    fn apply_pull_request_context_loaded_transient_failure_preserves_prior_cache() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_context_request_id = 7;
+        mux.pull_request_context_lookup_in_flight = true;
+        mux.pull_request_context_branch = Some("feat/x".to_string());
+        mux.pull_request_context = Some(pull_request_fixture(123));
+        mux.pull_request_context_cache.insert(
+            "feat/x".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now - Duration::from_secs(5),
+                pull_request: Some(pull_request_fixture(123)),
+            },
+        );
+        let changed = mux.apply_pull_request_context_loaded(
+            7,
+            Some("feat/x".to_string()),
+            PullRequestLookupOutcome::TransientFailure,
+            now,
+        );
+        assert!(!changed, "transient failure must not mutate visible state");
+        assert!(
+            !mux.pull_request_context_lookup_in_flight,
+            "transient failure must clear in_flight so next tick retries"
+        );
+        assert_eq!(
+            mux.pull_request_context_cache
+                .get("feat/x")
+                .and_then(|e| e.pull_request.as_ref().map(|p| p.number)),
+            Some(123),
+            "cache must be untouched by transient failure"
+        );
+    }
+
+    #[test]
+    fn apply_git_branch_context_loaded_drops_stale_request() {
+        let mut mux = test_mux(24, 100);
+        mux.git_branch_context_request_id = 4;
+        mux.git_branch_context_lookup_in_flight = true;
+        let changed = mux.apply_git_branch_context_loaded(
+            2,
+            Some("feat/x".to_string()),
+            Instant::now(),
+        );
+        assert!(!changed);
+        assert!(
+            mux.git_branch_context_lookup_in_flight,
+            "stale id leaves in_flight"
+        );
+        assert!(mux.pull_request_context_branch.is_none());
+    }
+
+    #[test]
+    fn apply_git_branch_context_bumps_pr_request_id_on_branch_change() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_context_branch = Some("feat/a".to_string());
+        let id_before = mux.pull_request_context_request_id;
+        let _ = mux.apply_git_branch_context(Some("feat/b".to_string()), now);
+        assert_eq!(
+            mux.pull_request_context_request_id,
+            id_before.wrapping_add(1),
+            "branch change must bump request_id so stale gh worker responses are rejected"
+        );
+    }
+
+    #[test]
+    fn purge_expired_pull_request_cache_entries_drops_old_entries() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        let ttl = PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL * 2;
+        mux.pull_request_context_cache.insert(
+            "feat/fresh".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now - Duration::from_secs(10),
+                pull_request: Some(pull_request_fixture(1)),
+            },
+        );
+        mux.pull_request_context_cache.insert(
+            "feat/old".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now - ttl - Duration::from_secs(1),
+                pull_request: Some(pull_request_fixture(2)),
+            },
+        );
+        mux.purge_expired_pull_request_cache_entries(now);
+        assert!(mux.pull_request_context_cache.contains_key("feat/fresh"));
+        assert!(!mux.pull_request_context_cache.contains_key("feat/old"));
+    }
+
+    #[test]
+    fn pull_request_cache_fresh_at_strict_boundary() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        // Just-fresh: at the boundary minus 1 ms.
+        mux.pull_request_context_cache.insert(
+            "branch-a".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL + Duration::from_millis(1),
+                pull_request: None,
+            },
+        );
+        // Just-stale: at the boundary plus 1 ms.
+        mux.pull_request_context_cache.insert(
+            "branch-b".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL - Duration::from_millis(1),
+                pull_request: None,
+            },
+        );
+        assert!(mux.pull_request_cache_is_fresh("branch-a", now));
+        assert!(!mux.pull_request_cache_is_fresh("branch-b", now));
     }
 
     #[test]

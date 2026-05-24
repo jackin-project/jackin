@@ -35,7 +35,6 @@ fn brand_pill_renders_without_menu_hint() {
     let s = render(&mut bar, 80, &[], 0, &[]);
     assert!(s.contains("jackin'"));
     assert!(!s.contains("Menu"));
-    assert!(bar.hint_region.is_none());
 }
 
 #[test]
@@ -95,7 +94,6 @@ fn prefix_mode_swap_does_not_render_hint() {
     let mut bar = StatusBar::new();
     let s = render(&mut bar, 80, &[], 0, &[]);
     assert!(!s.contains("Menu"));
-    bar.set_prefix_enabled(true);
     bar.set_prefix_mode(PrefixMode::Awaiting);
     let s = render(&mut bar, 80, &[], 0, &[]);
     assert!(!s.contains("prefix"));
