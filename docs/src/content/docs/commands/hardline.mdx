@@ -77,9 +77,9 @@ The palette's close action is context-aware. On a one-pane tab it appears as **C
 
 When the workspace workdir is on a branch with an open GitHub pull request, the multiplexer shows a bottom pull-request bar. The left side shows the PR number and title; the right side shows the container ID. On a non-`main` / non-`master` branch without an open PR, the same line shows the branch name instead. Hovering either clickable side changes the pointer and slightly lifts the color, matching the top tab strip. Capsule refreshes that context periodically, so switching back to `main` or `master` removes the bar.
 
-Click the container ID on the right side of that bar to open **Container info**. The modal shows the full container ID, role, active pane's agent, and current workdir. Press `Enter` on the modal to copy the container ID.
+Click the container ID on the right side of that bar to open **Container info**. The modal shows the full container ID, role, active pane's agent, and current workdir. Its footer hints that `Enter` copies the container ID, and a copied badge appears after the clipboard write.
 
-Click the PR or branch text on the left side of the bar to open **GitHub context**. The modal shows the branch, GitHub pull request URL, pull request title, and best-effort CI status from `gh pr checks` when a pull request exists.
+Click the PR or branch text on the left side of the bar to open **GitHub context**. The modal shows the branch, GitHub pull request URL, pull request title, and best-effort CI status from `gh pr checks` when a pull request exists. Its footer hints that `Enter` copies the GitHub URL when a pull request is available.
 
 ## Examples
 

@@ -16,9 +16,10 @@
 ///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
 ///
-/// While a dialog is open, panes behind it render with the ANSI dim
-/// attribute so the operator sees a clear "focus is inside the
-/// dialog" cue (see `render_pane`'s `dim` parameter).
+/// While a dialog is open, the multiplexer redraws the frame with
+/// background content dimmed before this overlay is painted. Keep that
+/// behavior in the shared overlay path so every dialog gets the same
+/// focus cue.
 use crate::session::PullRequestInfo;
 
 const PALETTE_WIDTH: u16 = 50;
@@ -130,6 +131,7 @@ pub enum Dialog {
     GitHubContext {
         branch: Option<String>,
         pull_request: Option<PullRequestInfo>,
+        copied: bool,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
@@ -351,11 +353,25 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
-        if let Self::GitHubContext { .. } = self {
+        if let Self::GitHubContext {
+            pull_request,
+            copied,
+            ..
+        } = self
+        {
             if is_dismiss_key(key) {
                 return DialogAction::Dismiss;
             }
-            return DialogAction::Redraw;
+            return match key {
+                b"\r" | b"\n" => {
+                    let Some(pr) = pull_request else {
+                        return DialogAction::Redraw;
+                    };
+                    *copied = true;
+                    DialogAction::CopyToClipboard(pr.url.clone())
+                }
+                _ => DialogAction::Redraw,
+            };
         }
         // ConfirmAction has its own dispatch — Y/N shortcuts toggle
         // the selection or confirm directly, Enter acts on the
@@ -943,6 +959,7 @@ impl Dialog {
             Self::GitHubContext {
                 branch,
                 pull_request,
+                copied,
             } => {
                 render_github_context(
                     buf,
@@ -952,8 +969,13 @@ impl Dialog {
                     width,
                     branch.as_deref(),
                     pull_request.as_ref(),
+                    *copied,
                 );
-                render_bottom_hint(buf, term_rows, term_cols, READ_ONLY_HINT);
+                if pull_request.is_some() {
+                    render_bottom_hint(buf, term_rows, term_cols, GITHUB_CONTEXT_HINT);
+                } else {
+                    render_bottom_hint(buf, term_rows, term_cols, READ_ONLY_HINT);
+                }
             }
             Self::CloseTargetPicker { selected, filter } => {
                 render_close_target_picker(buf, box_row, box_col, height, width, *selected, filter);
@@ -969,14 +991,21 @@ impl Dialog {
     /// Clear transient copy feedback after the daemon-side timer
     /// expires. Returns true only when the visible dialog changed.
     pub fn clear_copy_feedback(&mut self) -> bool {
-        let Self::ContainerInfo { copied, .. } = self else {
-            return false;
-        };
-        if !*copied {
-            return false;
+        match self {
+            Self::ContainerInfo { copied, .. } | Self::GitHubContext { copied, .. } => {
+                let was = *copied;
+                *copied = false;
+                was
+            }
+            _ => false,
         }
-        *copied = false;
-        true
+    }
+
+    pub fn has_copy_feedback(&self) -> bool {
+        matches!(
+            self,
+            Self::ContainerInfo { copied: true, .. } | Self::GitHubContext { copied: true, .. }
+        )
     }
 }
 
@@ -1306,6 +1335,14 @@ const RENAME_HINT: &[HintSpan<'static>] = &[
 const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Enter"),
     HintSpan::Text("copy container ID"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("dismiss"),
+];
+
+const GITHUB_CONTEXT_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("copy GitHub URL"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
     HintSpan::Text("dismiss"),
@@ -1752,6 +1789,7 @@ fn render_container_info(
     render_info_rows(buf, box_row, box_col, width, &rows, copied);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_github_context(
     buf: &mut Vec<u8>,
     box_row: u16,
@@ -1760,6 +1798,7 @@ fn render_github_context(
     width: u16,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
+    copied: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "GitHub context");
     let pull_request_number = pull_request
@@ -1784,6 +1823,31 @@ fn render_github_context(
         ContainerInfoRow::new("CI Status", ci_status),
     ];
     render_info_rows(buf, box_row, box_col, width, &rows, false);
+    if copied {
+        render_info_row_badge(buf, box_row, box_col, width, 3, "✓ Copied!");
+    }
+}
+
+fn render_info_row_badge(
+    buf: &mut Vec<u8>,
+    box_row: u16,
+    box_col: u16,
+    width: u16,
+    row_idx: u16,
+    badge: &str,
+) {
+    let interior_max_cols = (width as usize).saturating_sub(4);
+    let badge_cols = badge.chars().count();
+    if badge_cols > interior_max_cols {
+        return;
+    }
+    let row = box_row + 2 + row_idx;
+    let col = box_col + width.saturating_sub(badge_cols as u16 + 2);
+    move_to(buf, row, col);
+    buf.extend_from_slice(BG_DARK.as_bytes());
+    buf.extend_from_slice(FG_GREEN.as_bytes());
+    buf.extend_from_slice(BOLD.as_bytes());
+    buf.extend_from_slice(badge.as_bytes());
 }
 
 fn render_info_rows(
@@ -2620,6 +2684,7 @@ mod tests {
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
             pull_request: Some(pr),
+            copied: false,
         };
         let mut buf = Vec::new();
         d.render(&mut buf, 40, 120);
@@ -2638,6 +2703,29 @@ mod tests {
         );
         assert!(rendered.contains("CI Status"));
         assert!(rendered.contains("passing (4/5)"));
+        assert!(rendered.contains("copy GitHub URL"));
+    }
+
+    #[test]
+    fn github_context_enter_copies_pr_url_and_shows_feedback() {
+        let mut d = Dialog::GitHubContext {
+            branch: Some("feature/container-info".to_string()),
+            pull_request: Some(pull_request_fixture()),
+            copied: false,
+        };
+
+        match d.handle_key(b"\r") {
+            DialogAction::CopyToClipboard(payload) => {
+                assert_eq!(payload, "https://github.com/jackin-project/jackin/pull/123");
+            }
+            other => panic!("Enter must request PR URL copy, got {other:?}"),
+        }
+        assert!(d.has_copy_feedback());
+
+        let mut buf = Vec::new();
+        d.render(&mut buf, 40, 120);
+        let rendered = String::from_utf8_lossy(&buf);
+        assert!(rendered.contains("Copied!"));
     }
 
     #[test]

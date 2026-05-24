@@ -122,9 +122,9 @@ pub struct Multiplexer {
     /// pointer names. Unsupported terminals keep normal cursor behavior.
     pointer_shapes_supported: bool,
     hover_target: Option<HoverTarget>,
-    /// Deadline for hiding the transient "Copied!" badge in the
-    /// container-info dialog after a jackin-owned OSC 52 copy.
-    container_info_copy_deadline: Option<Instant>,
+    /// Deadline for hiding the transient "Copied!" badge in whichever
+    /// dialog most recently performed a jackin-owned OSC 52 copy.
+    dialog_copy_feedback_deadline: Option<Instant>,
     /// Current branch / PR context rendered in the bottom status line.
     pull_request_context_branch: Option<String>,
     pull_request_context: Option<PullRequestInfo>,
@@ -311,8 +311,7 @@ const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_milli
 /// button code 35 (`32` motion bit + `3` no-button code).
 const SGR_NO_BUTTON_MOTION: u8 = 35;
 
-const CONTAINER_INFO_COPY_FEEDBACK_DURATION: std::time::Duration =
-    std::time::Duration::from_secs(2);
+const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::from_secs(2);
 const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
 const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -362,7 +361,7 @@ impl Multiplexer {
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: pointer_shapes_supported_from_env(),
             hover_target: None,
-            container_info_copy_deadline: None,
+            dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
             pull_request_context: None,
             pull_request_context_request_id: 0,
@@ -522,9 +521,7 @@ impl Multiplexer {
     /// again — the standard sub-dialog opening path (Menu → New tab
     /// pushes AgentPicker on top of Menu, not a replacement).
     fn dialog_push(&mut self, d: Dialog) {
-        if matches!(d, Dialog::ContainerInfo { .. }) {
-            self.container_info_copy_deadline = None;
-        }
+        self.dialog_copy_feedback_deadline = None;
         self.dialog_stack.push(d);
     }
 
@@ -547,6 +544,7 @@ impl Multiplexer {
         self.dialog_push(Dialog::GitHubContext {
             branch: self.pull_request_context_branch.clone(),
             pull_request: self.pull_request_context.clone(),
+            copied: false,
         });
     }
 
@@ -618,11 +616,12 @@ impl Multiplexer {
     /// dismissing the whole flow.
     fn dialog_pop_one(&mut self) -> Option<Dialog> {
         let popped = self.dialog_stack.pop();
-        if !matches!(
-            self.dialog_stack.last(),
-            Some(Dialog::ContainerInfo { copied: true, .. })
-        ) {
-            self.container_info_copy_deadline = None;
+        if !self
+            .dialog_stack
+            .last()
+            .is_some_and(Dialog::has_copy_feedback)
+        {
+            self.dialog_copy_feedback_deadline = None;
         }
         popped
     }
@@ -633,7 +632,7 @@ impl Multiplexer {
     /// operator returns straight to the focused pane.
     fn dialog_clear(&mut self) {
         self.dialog_stack.clear();
-        self.container_info_copy_deadline = None;
+        self.dialog_copy_feedback_deadline = None;
     }
 
     fn active_tab_pane_count(&self) -> usize {
@@ -744,7 +743,7 @@ impl Multiplexer {
         self.zoomed = None;
         self.pane_body_caches.clear();
         self.dirty_panes.clear();
-        self.container_info_copy_deadline = None;
+        self.dialog_copy_feedback_deadline = None;
         self.hover_target = None;
     }
 
@@ -891,16 +890,16 @@ impl Multiplexer {
                 // forwards it byte-for-byte to the operator's outer
                 // terminal.
                 //
-                // The ContainerInfo dialog stays on the stack — the
+                // Copy-capable dialogs stay on the stack — the
                 // operator's "did it actually copy?" question is
-                // answered by the green "✓ Copied!" badge the
-                // renderer paints on the Container ID row now that
-                // `copied = true` (flipped by the dialog's handle_key
-                // or row-click handler before this action returned).
+                // answered by the green "✓ Copied!" badge the renderer
+                // paints now that `copied = true` (flipped by the
+                // dialog's handle_key or row-click handler before this
+                // action returned).
                 // The badge expires from the daemon's tick loop.
                 self.send_output(encode_osc52_clipboard_write(&payload));
-                self.container_info_copy_deadline =
-                    Some(Instant::now() + CONTAINER_INFO_COPY_FEEDBACK_DURATION);
+                self.dialog_copy_feedback_deadline =
+                    Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
                 return self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
             }
             DialogAction::SplitDirection(direction) => {
@@ -1355,14 +1354,14 @@ impl Multiplexer {
         self.pending_full_redraw.is_some() || !self.dirty_panes.is_empty()
     }
 
-    fn expire_container_info_copy_feedback(&mut self, now: Instant) -> bool {
-        let Some(deadline) = self.container_info_copy_deadline else {
+    fn expire_dialog_copy_feedback(&mut self, now: Instant) -> bool {
+        let Some(deadline) = self.dialog_copy_feedback_deadline else {
             return false;
         };
         if now < deadline {
             return false;
         }
-        self.container_info_copy_deadline = None;
+        self.dialog_copy_feedback_deadline = None;
         self.dialog_top_mut()
             .is_some_and(Dialog::clear_copy_feedback)
     }
@@ -2287,10 +2286,6 @@ impl Multiplexer {
             }
         }
 
-        if let Some(dialog) = self.dialog_top() {
-            dialog.render(&mut buf, self.term_rows, self.term_cols);
-        }
-
         render_branch_context_bar(
             &mut buf,
             self.term_rows,
@@ -2300,6 +2295,10 @@ impl Multiplexer {
             self.status_bar.container_name(),
             self.hover_target,
         );
+
+        if let Some(dialog) = self.dialog_top() {
+            dialog.render(&mut buf, self.term_rows, self.term_cols);
+        }
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
 
@@ -2316,32 +2315,11 @@ impl Multiplexer {
         buf
     }
 
-    fn compose_dialog_overlay_frame(&self, reason: FullRedrawReason) -> Vec<u8> {
-        let started = Instant::now();
-        let mut buf = Vec::with_capacity(8192);
-        buf.extend_from_slice(b"\x1b[?25l");
-
-        if let Some(dialog) = self.dialog_top() {
-            dialog.render(&mut buf, self.term_rows, self.term_cols);
-        }
-        render_branch_context_bar(
-            &mut buf,
-            self.term_rows,
-            self.term_cols,
-            self.pull_request_context_branch.as_deref(),
-            self.pull_request_context.as_ref(),
-            self.status_bar.container_name(),
-            self.hover_target,
-        );
-
-        crate::cdebug!(
-            "render: kind=dialog-overlay reason={} bytes={} duration_us={}",
-            reason.as_str(),
-            buf.len(),
-            started.elapsed().as_micros()
-        );
-
-        buf
+    fn compose_dialog_overlay_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
+        // Dialog overlays always go through the full compositor so the
+        // background dim cue, status chrome, branch bar, and dialog hint
+        // row stay consistent for every dialog type.
+        self.compose_full_frame(reason)
     }
 
     fn compose_chrome_hover_frame(&mut self) -> Vec<u8> {
@@ -3054,7 +3032,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
                 }
-                if mux.expire_container_info_copy_feedback(Instant::now()) {
+                if mux.expire_dialog_copy_feedback(Instant::now()) {
                     let frame_data =
                         mux.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
                     mux.send_output(frame_data);
@@ -4484,12 +4462,18 @@ mod tests {
             })
             .expect("context click should redraw");
 
-        assert!(String::from_utf8_lossy(&frame).contains("GitHub context"));
+        let rendered = String::from_utf8_lossy(&frame);
+        assert!(rendered.contains("GitHub context"));
+        assert!(
+            rendered.contains("copy GitHub URL"),
+            "dialog hint must render above the branch context bar: {rendered:?}"
+        );
         assert!(matches!(
             mux.dialog_top(),
             Some(Dialog::GitHubContext {
                 branch: Some(branch),
                 pull_request: Some(pr),
+                copied: false,
             }) if branch == "feature/context" && pr.number == 434
         ));
     }
@@ -4505,9 +4489,9 @@ mod tests {
             copied: true,
         });
         let now = Instant::now();
-        mux.container_info_copy_deadline = Some(now);
+        mux.dialog_copy_feedback_deadline = Some(now);
 
-        assert!(mux.expire_container_info_copy_feedback(now));
+        assert!(mux.expire_dialog_copy_feedback(now));
         assert!(matches!(
             mux.dialog_top(),
             Some(Dialog::ContainerInfo { copied: false, .. })
