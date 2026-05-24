@@ -1074,18 +1074,14 @@ pub fn build_shell_command(env_passthrough: &[(String, String)], cwd: &Path) -> 
     cmd
 }
 
-/// Inherit the daemon's terminal-shape environment (TERM, COLORTERM,
-/// LANG, LC_ALL) into a child PTY. `portable_pty::CommandBuilder` starts
-/// with empty env, so without this the host's host-propagated
-/// `TERM=xterm-ghostty` (or any other exotic terminal jackin imported
-/// via `--mount` of a compiled terminfo entry) is lost the moment the
-/// daemon spawns a session — every child would otherwise see the
-/// hardcoded `xterm-256color`, degrading any TUI that branches on
-/// terminal capability (notably Amp's truecolor logo splash).
+/// Apply the stable pane terminal environment. The active outer terminal is
+/// reported per attach through the Capsule protocol; pane PTYs keep a
+/// conservative baseline so a running session can be reattached from Ghostty,
+/// Kitty, iTerm, Warp, or any other xterm-compatible client without retaining
+/// assumptions from the terminal that launched the container.
 fn apply_terminal_env(cmd: &mut CommandBuilder) {
-    let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string());
-    cmd.env("TERM", term);
-    for key in ["COLORTERM", "LANG", "LC_ALL"] {
+    cmd.env("TERM", "xterm-256color");
+    for key in ["LANG", "LC_ALL"] {
         if let Ok(value) = std::env::var(key) {
             cmd.env(key, value);
         }
@@ -1152,6 +1148,17 @@ mod tests {
         assert_eq!(
             cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
             Some("codex")
+        );
+    }
+
+    #[test]
+    fn build_agent_command_uses_stable_pane_term() {
+        let env = vec![("TERM".to_string(), "xterm-ghostty".to_string())];
+        let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"));
+
+        assert_eq!(
+            cmd.get_env("TERM").and_then(|value| value.to_str()),
+            Some("xterm-256color")
         );
     }
 

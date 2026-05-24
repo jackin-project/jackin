@@ -5,8 +5,8 @@
 /// shape so a future refactor can't sneak base64 or JSON back into
 /// the hot path.
 use jackin_capsule::protocol::attach::{
-    ClientFrame, MAX_HELLO_ENV, ServerFrame, SpawnRequest, TAG_HELLO, TAG_OUTPUT, TAG_RESIZE,
-    TAG_SHUTDOWN, TAG_WELCOME, decode_client, encode_client, encode_server,
+    ClientFrame, ClientTerminal, MAX_HELLO_ENV, ServerFrame, SpawnRequest, TAG_HELLO, TAG_OUTPUT,
+    TAG_RESIZE, TAG_SHUTDOWN, TAG_WELCOME, decode_client, encode_client, encode_server,
 };
 
 #[test]
@@ -38,6 +38,7 @@ fn hello_first_byte_never_collides_with_control_channel() {
         cols: 80,
         spawn: None,
         env: Vec::new(),
+        terminal: ClientTerminal::default(),
         focus_session: None,
     })
     .expect("encode Hello");
@@ -125,6 +126,7 @@ fn hello_env_count_over_cap_is_rejected_by_encoder() {
         cols: 80,
         spawn: None,
         env,
+        terminal: ClientTerminal::default(),
         focus_session: None,
     })
     .expect_err("over-cap env must bail");

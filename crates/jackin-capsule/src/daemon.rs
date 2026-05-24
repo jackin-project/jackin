@@ -36,7 +36,7 @@ use crate::dialog::{
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
 use crate::protocol::attach::{
-    ClientFrame, ServerFrame, SpawnRequest, encode_server, read_client_frame,
+    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server, read_client_frame,
 };
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{PaneBodyCache, PaneBodyRenderMode, draw_scrollbar};
@@ -118,6 +118,10 @@ pub struct Multiplexer {
     /// True only for outer terminals known to support OSC 22 with CSS
     /// pointer names. Unsupported terminals keep normal cursor behavior.
     pointer_shapes_supported: bool,
+    /// Terminal identity for the currently attached client. Refreshed on every
+    /// attach/takeover so terminal-specific enhancements follow the terminal
+    /// the operator is using now, not the terminal that launched the container.
+    attached_terminal: ClientTerminal,
     /// Deadline for hiding the transient "Copied!" badge in the
     /// container-info dialog after a jackin-owned OSC 52 copy.
     container_info_copy_deadline: Option<Instant>,
@@ -345,7 +349,8 @@ impl Multiplexer {
             dirty_panes: HashSet::new(),
             pending_full_redraw: None,
             pointer_shape: PointerShape::Default,
-            pointer_shapes_supported: pointer_shapes_supported_from_env(),
+            pointer_shapes_supported: false,
+            attached_terminal: ClientTerminal::default(),
             container_info_copy_deadline: None,
             container_info_request_id: 0,
             pending_container_info_lookup: None,
@@ -2615,10 +2620,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     cols,
                     spawn,
                     env,
+                    terminal,
                     focus_session,
                     client_permit,
                 } = ready;
                 mux.resize(rows, cols);
+                mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
+                mux.attached_terminal = terminal;
+                mux.pointer_shape = PointerShape::Default;
                 if let Some(target) = focus_session
                     && !mux.focus_session_globally(target)
                 {
@@ -3033,6 +3042,7 @@ struct AttachHandshake {
     cols: u16,
     spawn: Option<SpawnRequest>,
     env: Vec<(String, String)>,
+    terminal: ClientTerminal,
     /// `Some(session_id)` when the client (typically the host
     /// console picking out of the snapshot preview) wants the daemon
     /// to focus a specific pane before forwarding content. The main
@@ -3123,6 +3133,7 @@ async fn perform_handshake(
         cols,
         spawn,
         env,
+        terminal,
         focus_session,
     } = initial_frame
     else {
@@ -3136,6 +3147,7 @@ async fn perform_handshake(
         cols,
         spawn,
         env,
+        terminal,
         focus_session,
         client_permit,
     };
@@ -3600,21 +3612,6 @@ fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
 
 fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
     format!("\x1b]22;{}\x1b\\", shape.as_osc22_name()).into_bytes()
-}
-
-fn pointer_shapes_supported_from_env() -> bool {
-    let term = std::env::var("TERM")
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let term_program = std::env::var("TERM_PROGRAM")
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    term.contains("ghostty")
-        || term.contains("kitty")
-        || term.contains("foot")
-        || term_program.contains("ghostty")
-        || term_program.contains("kitty")
-        || term_program.contains("iterm")
 }
 
 #[cfg(test)]

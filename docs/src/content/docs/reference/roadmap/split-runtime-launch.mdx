@@ -24,7 +24,6 @@ The file has grown significantly since the original analysis due to new agent ru
 src/runtime/
   launch.rs          ← thin public API: `load_agent`, `LoadOptions`
   launch_pipeline.rs ← fn load_agent_with, LaunchContext, StepCounter, LoadCleanup, workspace materialization / finalize flow
-  terminfo.rs        ← `resolve_terminal_setup`, `export_host_terminfo`
   trust.rs           ← `confirm_agent_trust` — already isolated via FnOnce injection
   launch_slot.rs     ← claim_container_name + verify_token_env_present
   launch_dind.rs     ← DinD sidecar launch, Docker network creation (shared with attach.rs)
@@ -44,11 +43,10 @@ fn load_agent_with(..., confirm_trust: impl FnOnce(...) -> anyhow::Result<()>)
 
 ## Import chain safety (verified)
 
-- `terminfo.rs`: only imports from `std` — zero crate dependencies
 - `trust.rs`: imports from `std`, `owo_colors`, `dialoguer`, `crate::config` — no runtime dependency
 - `launch_pipeline.rs`: imports from `crate::config`, `crate::instance`, `crate::tui`, `crate::operator_env`, and isolation helpers
 - `launch_dind.rs`: imports from `crate::runtime::naming` — no dependency on launch_pipeline
-- `launch.rs` (thin API): imports from `launch_pipeline`, `trust`, `terminfo`, `launch_slot`, `launch_dind`
+- `launch.rs` (thin API): imports from `launch_pipeline`, `trust`, `launch_slot`, `launch_dind`
 
 ## What needs confirmation
 

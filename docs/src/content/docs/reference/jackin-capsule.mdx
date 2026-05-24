@@ -310,7 +310,7 @@ OSC 7 (current working directory) is never forwarded — it would tell the opera
 
 ### Pointer shape feedback
 
-The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion and the outer terminal advertises a known OSC 22-capable identity (`xterm-ghostty`, `xterm-kitty`, Foot, or iTerm via `TERM` / `TERM_PROGRAM`), it emits OSC 22 pointer-shape updates:
+The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion and the active attach client advertises a known OSC 22-capable identity (`xterm-ghostty`, `xterm-kitty`, Foot, or iTerm via `TERM` / `TERM_PROGRAM`), it emits OSC 22 pointer-shape updates:
 
 - `pointer` over clickable chrome owned by jackin', such as tabs, the menu button, the container-info entry point, and clickable dialog rows such as the Container ID copy target.
 - `text` over pane bodies where mouse selection owned by jackin' is available because the focused program did not request mouse reporting.

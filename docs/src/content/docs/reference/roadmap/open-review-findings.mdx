@@ -64,7 +64,7 @@ record of what was reviewed and when.
    global mounts.** Mount validation still checks only for exact
    duplicate destinations. A workspace or configured mount can still
    target a parent or overlapping path such as `/home/claude` or
-   `/certs`, breaking runtime-managed auth, plugin, terminfo, or DinD
+   `/certs`, breaking runtime-managed auth, plugin, or DinD
    TLS mounts.
 
 9. **Config persistence is still race-prone.** Config writes still
