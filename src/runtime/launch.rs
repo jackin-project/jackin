@@ -167,35 +167,6 @@ impl StepCounter {
         tui::set_terminal_title(&self.role_name);
     }
 }
-
-// ── Terminal / terminfo resolution ────────────────────────────────────────
-//
-// Modern terminals (Ghostty, Kitty, WezTerm) define custom TERM values
-// whose terminfo entries don't ship in Debian's ncurses-base.  Rather
-// than falling back to xterm-256color (which loses terminal-specific
-// capabilities), we export the host's terminfo entry, compile it into a
-// cache directory, and mount it read-only into the container.
-
-/// Terminal types that ship with Debian's `ncurses-base` package and can
-/// be forwarded into the container without an extra terminfo mount.
-const STANDARD_TERMS: &[&str] = &[
-    "ansi",
-    "dumb",
-    "linux",
-    "rxvt",
-    "rxvt-unicode",
-    "rxvt-unicode-256color",
-    "screen",
-    "screen-256color",
-    "tmux",
-    "tmux-256color",
-    "vt100",
-    "vt220",
-    "xterm",
-    "xterm-256color",
-    "xterm-color",
-];
-
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
 /// idiom for `docker run -v`.
 ///
@@ -446,196 +417,6 @@ fn seed_codex_project_trust(
     Ok(())
 }
 
-/// Resolve the TERM value and an optional terminfo bind-mount for the
-/// container.
-///
-/// Returns `(term_value, Some(mount_string))` when the host's terminfo
-/// was exported, or `(term_value, None)` when the TERM is standard or
-/// export failed (in which case `term_value` is the safe fallback).
-fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String>) {
-    let host_term = std::env::var("TERM").unwrap_or_default();
-
-    if host_term.is_empty() {
-        return ("xterm-256color".to_string(), None);
-    }
-
-    if STANDARD_TERMS.contains(&host_term.as_str()) {
-        return (host_term, None);
-    }
-
-    // Exotic terminal — try to export and compile the terminfo entry.
-    // Errors here are recoverable: fall back to xterm-256color so the
-    // session still launches. A single-line warning surfaces the
-    // degradation without breaking up the StepCounter-driven launch
-    // sequence; the verbose cause stays under `--debug`.
-    match export_host_terminfo(&host_term, cache_dir) {
-        Ok(terminfo_dir) => {
-            let mount = format!("{}:/home/agent/.terminfo:ro", terminfo_dir.display());
-            (host_term, Some(mount))
-        }
-        Err(e) => {
-            eprintln!(
-                "jackin: warning: TERM={host_term} terminfo unavailable, falling back to xterm-256color"
-            );
-            crate::debug_log!("terminfo", "export failed for TERM={host_term}: {e:#}");
-            ("xterm-256color".to_string(), None)
-        }
-    }
-}
-
-/// Export the host's terminfo entry for `term` into `cache_dir/terminfo/`.
-///
-/// Uses `infocmp -x` to dump the source and `tic -x -o` to compile it.
-/// The compiled output is a small architecture-independent binary that
-/// can be mounted directly into any container.
-fn export_host_terminfo(
-    term: &str,
-    cache_dir: &std::path::Path,
-) -> anyhow::Result<std::path::PathBuf> {
-    anyhow::ensure!(!term.is_empty(), "terminal name is empty");
-    let terminfo_dir = cache_dir.join("terminfo");
-
-    let linux_entry_path = linux_terminfo_entry_path(&terminfo_dir, term);
-    if linux_entry_path.exists() {
-        return Ok(terminfo_dir);
-    }
-
-    // A cache built by an earlier jackin on macOS lives only under the
-    // hex-byte dir; relocate it instead of re-running infocmp+tic.
-    let hex_entry_path = macos_terminfo_entry_path(&terminfo_dir, term);
-    if hex_entry_path.exists() {
-        copy_to_linux_layout(&hex_entry_path, &linux_entry_path)?;
-        return Ok(terminfo_dir);
-    }
-
-    // Export the source from the host.
-    crate::debug_log!("terminfo", "infocmp -x {term}");
-    let infocmp = std::process::Command::new("infocmp")
-        .args(["-x", term])
-        .output()?;
-    anyhow::ensure!(
-        infocmp.status.success(),
-        "infocmp failed for {term}: {}",
-        String::from_utf8_lossy(&infocmp.stderr).trim()
-    );
-
-    std::fs::create_dir_all(&terminfo_dir)?;
-
-    // Compile into the cache directory. Capture (don't suppress) stderr
-    // so a non-zero `tic` exit surfaces the real cause instead of the
-    // generic "tic failed" message; `tic`'s harmless success-time
-    // warnings (e.g. Ghostty's "alias multiply defined") are dropped on
-    // the success branch below.
-    crate::debug_log!("terminfo", "tic -x -o {} -", terminfo_dir.display());
-    let mut tic = std::process::Command::new("tic")
-        .args(["-x", "-o"])
-        .arg(&terminfo_dir)
-        .arg("-")
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()?;
-    {
-        use std::io::Write;
-        let mut stdin = tic
-            .stdin
-            .take()
-            .expect("tic stdin was configured as Stdio::piped");
-        stdin.write_all(&infocmp.stdout)?;
-    }
-    let output = tic.wait_with_output()?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "tic failed to compile terminfo for {term}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    normalize_terminfo_entry_path(&terminfo_dir, term)?;
-
-    Ok(terminfo_dir)
-}
-
-/// Path Linux ncurses (inside the role container) reads to resolve
-/// `term`: `<first-char>/<term>`, e.g. `x/xterm-ghostty`. Caller
-/// guarantees `term` is non-empty; ASCII first char is assumed (every
-/// real terminfo name follows that — `xterm-*`, `ghostty`, `screen-*`,
-/// `kitty`, ...).
-fn linux_terminfo_entry_path(terminfo_dir: &std::path::Path, term: &str) -> std::path::PathBuf {
-    let first = term
-        .chars()
-        .next()
-        .expect("non-empty term checked by caller");
-    terminfo_dir.join(first.to_string()).join(term)
-}
-
-/// Path macOS BSD `tic` writes to: `<hex-byte>/<term>`, e.g.
-/// `78/xterm-ghostty` (since `'x' == 0x78`). Hex is lowercase to match
-/// what BSD `tic` actually emits. Caller guarantees `term` is
-/// non-empty.
-fn macos_terminfo_entry_path(terminfo_dir: &std::path::Path, term: &str) -> std::path::PathBuf {
-    let first_byte = term
-        .bytes()
-        .next()
-        .expect("non-empty term checked by caller");
-    terminfo_dir.join(format!("{first_byte:x}")).join(term)
-}
-
-/// Reconcile macOS-`tic`'s hex-byte directory layout with the
-/// first-char layout Linux ncurses expects so the mounted cache
-/// resolves inside containers. No-op on Linux hosts (where `tic`
-/// already wrote the Linux layout) and on caches normalized by a
-/// previous run.
-fn normalize_terminfo_entry_path(terminfo_dir: &std::path::Path, term: &str) -> anyhow::Result<()> {
-    anyhow::ensure!(!term.is_empty(), "terminal name is empty");
-
-    let linux_entry_path = linux_terminfo_entry_path(terminfo_dir, term);
-    if linux_entry_path.exists() {
-        return Ok(());
-    }
-
-    let hex_entry_path = macos_terminfo_entry_path(terminfo_dir, term);
-    anyhow::ensure!(
-        hex_entry_path.exists(),
-        "compiled terminfo entry for {term} not found at {} or {}",
-        linux_entry_path.display(),
-        hex_entry_path.display()
-    );
-
-    copy_to_linux_layout(&hex_entry_path, &linux_entry_path)
-}
-
-/// Copy a terminfo entry from `hex_entry_path` into `linux_entry_path`
-/// atomically: write to a sibling temp file then `rename` so a
-/// concurrent jackin reader on the same cache never observes a partial
-/// or truncated entry. Both paths must live on the same filesystem
-/// (caller already routes them under a single `terminfo_dir`, so
-/// `rename` stays cross-device-safe).
-fn copy_to_linux_layout(
-    hex_entry_path: &std::path::Path,
-    linux_entry_path: &std::path::Path,
-) -> anyhow::Result<()> {
-    let parent = linux_entry_path.parent().ok_or_else(|| {
-        anyhow::anyhow!(
-            "linux terminfo entry path {} has no parent directory",
-            linux_entry_path.display()
-        )
-    })?;
-    std::fs::create_dir_all(parent)?;
-
-    let file_name = linux_entry_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "linux terminfo entry path {} has no file name",
-                linux_entry_path.display()
-            )
-        })?;
-    let tmp_path = parent.join(format!(".{file_name}.tmp.{}", std::process::id()));
-    std::fs::copy(hex_entry_path, &tmp_path)?;
-    std::fs::rename(&tmp_path, linux_entry_path)?;
-    Ok(())
-}
-
 // ── Role source trust ───────────────────────────────────────────────────
 
 /// Branch-specific trust confirmation. Aborts when stdin is not a terminal
@@ -783,7 +564,6 @@ struct LaunchContext<'a> {
     /// `GH_ENTERPRISE_TOKEN` are forwarded as-is when set so GHE
     /// targets work end to end.
     github_env: &'a std::collections::BTreeMap<String, String>,
-    cache_dir: &'a std::path::Path,
     /// Required so `launch_role_runtime` can fire the `keep_awake`
     /// reconciler between `docker run -d` and the foreground `docker
     /// attach`. Without that mid-flight call, caffeinate would never
@@ -857,7 +637,6 @@ async fn launch_role_runtime(
         capsule_config,
         resolved_env,
         github_env,
-        cache_dir,
         paths,
     } = ctx;
 
@@ -932,6 +711,24 @@ async fn launch_role_runtime(
     let display_label = format!("jackin.display_name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
     let dind_hostname = format!("{}={dind}", crate::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME);
+    let role_container_name_env = format!(
+        "{}={container_name}",
+        crate::env_model::JACKIN_CONTAINER_NAME_ENV_NAME
+    );
+    let instance_id = if let Some(id) =
+        crate::instance::naming::instance_id_from_container_base(container_name)
+    {
+        id
+    } else {
+        eprintln!(
+            "warning: instance_id_from_container_base could not parse {container_name:?}; falling back to full container name as JACKIN_INSTANCE_ID — chrome chip will render the full name"
+        );
+        container_name
+    };
+    let instance_id_env = format!(
+        "{}={instance_id}",
+        crate::env_model::JACKIN_INSTANCE_ID_ENV_NAME
+    );
     let testcontainers_host_override = format!(
         "{}={dind}",
         crate::env_model::TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME
@@ -941,17 +738,6 @@ async fn launch_role_runtime(
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
-
-    // Forward the host TERM so the container's terminal type matches what the
-    // terminal emulator actually supports.  Docker defaults to TERM=xterm which
-    // can cause input handling issues (e.g. paste not working) in applications
-    // that adjust behaviour based on terminal capabilities.
-    //
-    // For exotic terminals (Ghostty, Kitty, WezTerm, etc.) whose terminfo
-    // entries don't ship in Debian's ncurses-base, we export and compile the
-    // host's terminfo into a cache directory and mount it into the container.
-    let (resolved_term, terminfo_mount) = resolve_terminal_setup(cache_dir);
-    let container_term = format!("TERM={resolved_term}");
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -1010,13 +796,15 @@ async fn launch_role_runtime(
         "-e",
         &dind_hostname,
         "-e",
+        &role_container_name_env,
+        "-e",
+        &instance_id_env,
+        "-e",
         &testcontainers_host_override,
         "-e",
         &git_author_name,
         "-e",
         &git_author_email,
-        "-e",
-        &container_term,
     ]);
     if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
@@ -1132,10 +920,6 @@ async fn launch_role_runtime(
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
-    }
-
-    if let Some(ref ti_mount) = terminfo_mount {
-        run_args.extend_from_slice(&["-v", ti_mount]);
     }
 
     let mount_strings = build_workspace_mount_strings(workspace);
@@ -2179,7 +1963,6 @@ async fn load_role_with(
             capsule_config: &launch_config,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
-            cache_dir: &paths.cache_dir,
             paths,
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
@@ -3746,67 +3529,6 @@ mod tests {
         )
         .await
     }
-
-    #[tokio::test]
-    async fn normalize_terminfo_entry_path_copies_macos_hex_dir_to_linux_char_dir() {
-        let tmp = tempdir().unwrap();
-        let terminfo_dir = tmp.path().join("terminfo");
-        let macos_dir = terminfo_dir.join("78");
-        std::fs::create_dir_all(&macos_dir).unwrap();
-        std::fs::write(macos_dir.join("xterm-ghostty"), b"compiled-entry").unwrap();
-
-        normalize_terminfo_entry_path(&terminfo_dir, "xterm-ghostty").unwrap();
-
-        let linux_entry = terminfo_dir.join("x").join("xterm-ghostty");
-        assert_eq!(
-            std::fs::read(linux_entry).unwrap(),
-            b"compiled-entry",
-            "Linux ncurses must be able to find macOS-compiled Ghostty terminfo"
-        );
-    }
-
-    #[tokio::test]
-    async fn normalize_terminfo_entry_path_accepts_existing_linux_char_dir() {
-        let tmp = tempdir().unwrap();
-        let terminfo_dir = tmp.path().join("terminfo");
-        let linux_dir = terminfo_dir.join("g");
-        std::fs::create_dir_all(&linux_dir).unwrap();
-        std::fs::write(linux_dir.join("ghostty"), b"compiled-entry").unwrap();
-
-        normalize_terminfo_entry_path(&terminfo_dir, "ghostty").unwrap();
-
-        assert_eq!(
-            std::fs::read(linux_dir.join("ghostty")).unwrap(),
-            b"compiled-entry"
-        );
-        assert!(
-            !terminfo_dir.join("67").exists(),
-            "no-op normalize must not create the macOS hex dir"
-        );
-    }
-
-    #[tokio::test]
-    async fn normalize_terminfo_entry_path_errors_when_neither_layout_present() {
-        let tmp = tempdir().unwrap();
-        let terminfo_dir = tmp.path().join("terminfo");
-
-        let err = normalize_terminfo_entry_path(&terminfo_dir, "xterm-ghostty").unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("not found"), "got: {msg}");
-        assert!(msg.contains("x/xterm-ghostty"), "got: {msg}");
-        assert!(msg.contains("78/xterm-ghostty"), "got: {msg}");
-    }
-
-    #[tokio::test]
-    async fn normalize_terminfo_entry_path_errors_on_empty_term() {
-        let tmp = tempdir().unwrap();
-        let err = normalize_terminfo_entry_path(&tmp.path().join("terminfo"), "").unwrap_err();
-        assert!(
-            err.to_string().contains("terminal name is empty"),
-            "got: {err}"
-        );
-    }
-
     #[test]
     fn capsule_config_serializes_manifest_models() {
         let temp = tempdir().unwrap();
@@ -3854,100 +3576,6 @@ model = "zai/glm"
         assert_eq!(config.models.get("opencode").unwrap(), "zai/glm");
         assert!(!config.models.contains_key("amp"));
     }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn normalize_terminfo_entry_path_resolves_alias_symlink_in_hex_dir() {
-        // Ghostty terminfo source has `xterm-ghostty|ghostty,...`; BSD
-        // `tic` writes one file plus alias symlinks. `fs::copy` follows
-        // symlinks, so the Linux destination ends up with the file
-        // content rather than a dangling link.
-        let tmp = tempdir().unwrap();
-        let terminfo_dir = tmp.path().join("terminfo");
-        let primary_dir = terminfo_dir.join("78");
-        let alias_dir = terminfo_dir.join("67");
-        std::fs::create_dir_all(&primary_dir).unwrap();
-        std::fs::create_dir_all(&alias_dir).unwrap();
-        let primary = primary_dir.join("xterm-ghostty");
-        std::fs::write(&primary, b"compiled-entry").unwrap();
-        std::os::unix::fs::symlink(&primary, alias_dir.join("ghostty")).unwrap();
-
-        normalize_terminfo_entry_path(&terminfo_dir, "ghostty").unwrap();
-
-        assert_eq!(
-            std::fs::read(terminfo_dir.join("g").join("ghostty")).unwrap(),
-            b"compiled-entry",
-            "alias symlink in hex dir must resolve to the primary entry's content"
-        );
-    }
-
-    #[tokio::test]
-    async fn macos_terminfo_entry_path_lowercase_hex_letter_for_kitty() {
-        // 'k' = 0x6b. BSD `tic` formats the byte as lowercase hex; an
-        // accidental {:X} (uppercase) would silently break lookups.
-        let dir = std::path::Path::new("/tmp/test-cache");
-        assert_eq!(
-            macos_terminfo_entry_path(dir, "kitty"),
-            dir.join("6b").join("kitty"),
-        );
-        assert_eq!(
-            linux_terminfo_entry_path(dir, "kitty"),
-            dir.join("k").join("kitty"),
-        );
-    }
-
-    #[tokio::test]
-    async fn export_host_terminfo_returns_cached_linux_entry_without_invoking_subprocess() {
-        // Pre-populated linux entry → early return before infocmp/tic.
-        // Test passes on hosts without infocmp/tic installed because the
-        // happy path never reaches the subprocess fork.
-        let tmp = tempdir().unwrap();
-        let cache_dir = tmp.path();
-        let terminfo_dir = cache_dir.join("terminfo");
-        let linux_dir = terminfo_dir.join("x");
-        std::fs::create_dir_all(&linux_dir).unwrap();
-        std::fs::write(linux_dir.join("xterm-ghostty"), b"pre-existing").unwrap();
-
-        let result = export_host_terminfo("xterm-ghostty", cache_dir).unwrap();
-        assert_eq!(result, terminfo_dir);
-        assert_eq!(
-            std::fs::read(linux_dir.join("xterm-ghostty")).unwrap(),
-            b"pre-existing",
-            "cache-hit must not rewrite the existing entry"
-        );
-    }
-
-    #[tokio::test]
-    async fn export_host_terminfo_relocates_macos_hex_layout_without_invoking_subprocess() {
-        // Pre-populated hex entry → upgrade-path branch fires before
-        // infocmp/tic. Operators who built the cache before this PR
-        // should not pay the subprocess cost on every launch.
-        let tmp = tempdir().unwrap();
-        let cache_dir = tmp.path();
-        let terminfo_dir = cache_dir.join("terminfo");
-        let hex_dir = terminfo_dir.join("78");
-        std::fs::create_dir_all(&hex_dir).unwrap();
-        std::fs::write(hex_dir.join("xterm-ghostty"), b"stale-cache").unwrap();
-
-        let result = export_host_terminfo("xterm-ghostty", cache_dir).unwrap();
-        assert_eq!(result, terminfo_dir);
-        assert_eq!(
-            std::fs::read(terminfo_dir.join("x").join("xterm-ghostty")).unwrap(),
-            b"stale-cache",
-            "upgrade-path must relocate the hex entry into the linux layout"
-        );
-    }
-
-    #[tokio::test]
-    async fn export_host_terminfo_errors_on_empty_term() {
-        let tmp = tempdir().unwrap();
-        let err = export_host_terminfo("", tmp.path()).unwrap_err();
-        assert!(
-            err.to_string().contains("terminal name is empty"),
-            "got: {err}"
-        );
-    }
-
     #[tokio::test]
     async fn diagnose_premature_exit_returns_none_when_container_running() {
         use crate::docker_client::{ContainerState, FakeDockerClient};
@@ -7338,6 +6966,8 @@ plugins = []
         let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("-e JACKIN=1"));
         assert!(run_cmd.contains(&format!("-e JACKIN_DIND_HOSTNAME={dind}")));
+        assert!(run_cmd.contains("-e JACKIN_CONTAINER_NAME="));
+        assert!(run_cmd.contains("-e JACKIN_INSTANCE_ID="));
         assert!(run_cmd.contains(&format!("-e TESTCONTAINERS_HOST_OVERRIDE={dind}")));
         assert!(!run_cmd.contains("JACKIN_DEBUG"));
     }

@@ -278,6 +278,14 @@ When you flag a possible violation, surface it like this:
 
 The operator's call decides the outcome — the agent's job is to make sure the question is asked, not to silently approve or block. New principles or principle changes happen at design-principles-page level (with a PR), not inside an unrelated feature PR.
 
+### Always check TUI changes against the TUI design decisions
+
+Every PR review that touches console, capsule, or any other terminal UI surface must explicitly verify the change against the jackin' [TUI design decisions](docs/src/content/docs/reference/tui-design-decisions.mdx). Read that page before producing review output. Reviewers must reject or flag TUI changes that miss the documented interaction cues: clickable targets need a distinct resting style, a visible hover style change, and pointer-shape feedback where supported; active keys need footer hints; focus and scroll geometry must use the shared rules.
+
+Surface TUI issues like this:
+
+> **TUI design-decision check:** *<rule name>* — *<one-sentence summary of what the diff does that risks the rule>*. Required fix: align the implementation with the TUI design decisions page, or update that page first if the design contract is intentionally changing.
+
 ## Retire fully-resolved roadmap items in the same PR
 
 When a PR ships the last remaining piece of a roadmap item — every feature, sub-phase, and follow-up tracked by the page is now implemented — delete the roadmap `.mdx` file in that same PR rather than leaving it behind as a `Status: Resolved` page. The retirement steps:

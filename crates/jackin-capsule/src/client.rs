@@ -10,7 +10,7 @@ use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
 
 use crate::protocol::attach::{
-    ClientFrame, ServerFrame, SpawnRequest, encode_client, read_server_frame,
+    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
 use crate::protocol::control::{ClientMsg, ServerMsg, frame as control_frame};
 use crate::session::{SESSION_ENV_PASSTHROUGH, Session};
@@ -64,6 +64,7 @@ pub async fn run_client(
         cols,
         env: collect_session_env(spawn_request.is_some()),
         spawn: spawn_request,
+        terminal: ClientTerminal::from_env(),
         focus_session,
     })
     .context("encoding attach Hello frame")?;

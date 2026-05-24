@@ -54,6 +54,14 @@ pub enum PaneBodyRenderMode {
     Partial,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PaneBodyDim {
+    #[default]
+    Normal,
+    Inactive,
+    Backdrop,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PaneBodyRenderStats {
     pub mode: PaneBodyRenderMode,
@@ -67,7 +75,7 @@ pub struct PaneBodyRenderStats {
 pub struct PaneBodyCache {
     rows: u16,
     cols: u16,
-    dim: bool,
+    dim: PaneBodyDim,
     valid: bool,
     snapshot: Vec<RowSnapshot>,
 }
@@ -78,7 +86,7 @@ impl PaneBodyCache {
         self.snapshot.clear();
     }
 
-    pub fn is_valid_for(&self, rect_rows: u16, rect_cols: u16, dim: bool) -> bool {
+    pub fn is_valid_for(&self, rect_rows: u16, rect_cols: u16, dim: PaneBodyDim) -> bool {
         self.valid && self.rows == rect_rows && self.cols == rect_cols && self.dim == dim
     }
 
@@ -90,22 +98,11 @@ impl PaneBodyCache {
         dest_col: u16,
         rect_rows: u16,
         rect_cols: u16,
-        dim: bool,
+        dim: PaneBodyDim,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
         let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
-        let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
-        render_snapshot_rows(&snapshot, &changed_rows, dest_row, dest_col, dim, buf);
-        self.rows = rect_rows;
-        self.cols = rect_cols;
-        self.dim = dim;
-        self.valid = true;
-        self.snapshot = snapshot;
-        PaneBodyRenderStats {
-            mode: PaneBodyRenderMode::Full,
-            rows_emitted: changed_rows.len(),
-            changed_rows,
-        }
+        self.render_full_from_snapshot(snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, buf)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -117,11 +114,25 @@ impl PaneBodyCache {
         dest_col: u16,
         rect_rows: u16,
         rect_cols: u16,
-        dim: bool,
+        dim: PaneBodyDim,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
         let snapshot =
             pane_snapshot_with_scrollback_prefix(screen, scrollback_prefix, rect_rows, rect_cols);
+        self.render_full_from_snapshot(snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, buf)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_full_from_snapshot(
+        &mut self,
+        snapshot: Vec<RowSnapshot>,
+        dest_row: u16,
+        dest_col: u16,
+        rect_rows: u16,
+        rect_cols: u16,
+        dim: PaneBodyDim,
+        buf: &mut Vec<u8>,
+    ) -> PaneBodyRenderStats {
         let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
         render_snapshot_rows(&snapshot, &changed_rows, dest_row, dest_col, dim, buf);
         self.rows = rect_rows;
@@ -144,7 +155,7 @@ impl PaneBodyCache {
         dest_col: u16,
         rect_rows: u16,
         rect_cols: u16,
-        dim: bool,
+        dim: PaneBodyDim,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
         if !self.valid || self.rows != rect_rows || self.cols != rect_cols || self.dim != dim {
@@ -174,17 +185,16 @@ impl PaneBodyCache {
 }
 
 /// Render the screen at `(dest_row, dest_col)` into `buf`, clipped to
-/// `(rect_rows, rect_cols)`. Coordinates are 0-based. When `dim` is
-/// true every emitted SGR carries the ANSI dim (`;2`) attribute, used
-/// as a backdrop for the modal dialog overlay so the operator sees an
-/// obvious "background is paused, focus is on the dialog" cue.
+/// `(rect_rows, rect_cols)`. Coordinates are 0-based. Inactive panes
+/// get a light ANSI-dim cue; modal backdrops use the stronger darkened
+/// color treatment so dialogs clearly own the whole terminal.
 pub fn render_pane(
     screen: &Screen,
     dest_row: u16,
     dest_col: u16,
     rect_rows: u16,
     rect_cols: u16,
-    dim: bool,
+    dim: PaneBodyDim,
     buf: &mut Vec<u8>,
 ) {
     let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
@@ -362,7 +372,7 @@ fn render_snapshot_rows(
     rows: &[u16],
     dest_row: u16,
     dest_col: u16,
-    dim: bool,
+    dim: PaneBodyDim,
     buf: &mut Vec<u8>,
 ) {
     if rows.is_empty() {
@@ -392,16 +402,16 @@ fn write_cursor(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
 }
 
-fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dialog_dim: bool) {
+fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dim: PaneBodyDim) {
     buf.extend_from_slice(b"\x1b[0");
-    // Cell-level dim (Amp uses this for its animated bottom-bar) and
-    // dialog-backdrop dim (when a modal is open) both produce the
-    // same ANSI `;2` attribute — they OR together so neither shadows
-    // the other.
-    if a.dim || dialog_dim {
+    // Cell-level dim (Amp uses this for its animated bottom-bar) uses
+    // ANSI dim. Dialog backdrop dim is intentionally stronger: ANSI dim
+    // is subtle in many terminals, so modal background cells also get
+    // darkened foreground/background colors below.
+    if a.dim || dim != PaneBodyDim::Normal {
         buf.extend_from_slice(b";2");
     }
-    if a.bold {
+    if a.bold && dim != PaneBodyDim::Backdrop {
         buf.extend_from_slice(b";1");
     }
     if a.italic {
@@ -413,37 +423,119 @@ fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dialog_dim: bool) {
     if a.inverse {
         buf.extend_from_slice(b";7");
     }
-    match a.fg {
-        ColorKey::Default => {}
-        ColorKey::Idx(n) if n < 8 => {
-            let _ = write!(buf, ";3{}", n);
-        }
-        ColorKey::Idx(n) if n < 16 => {
-            let _ = write!(buf, ";9{}", n - 8);
-        }
-        ColorKey::Idx(n) => {
-            let _ = write!(buf, ";38;5;{n}");
-        }
-        ColorKey::Rgb(r, g, b) => {
-            let _ = write!(buf, ";38;2;{r};{g};{b}");
-        }
-    }
-    match a.bg {
-        ColorKey::Default => {}
-        ColorKey::Idx(n) if n < 8 => {
-            let _ = write!(buf, ";4{}", n);
-        }
-        ColorKey::Idx(n) if n < 16 => {
-            let _ = write!(buf, ";10{}", n - 8);
-        }
-        ColorKey::Idx(n) => {
-            let _ = write!(buf, ";48;5;{n}");
-        }
-        ColorKey::Rgb(r, g, b) => {
-            let _ = write!(buf, ";48;2;{r};{g};{b}");
-        }
+    if dim == PaneBodyDim::Backdrop {
+        emit_backdrop_fg(buf, a.fg);
+        emit_backdrop_bg(buf, a.bg);
+    } else {
+        emit_fg(buf, a.fg);
+        emit_bg(buf, a.bg);
     }
     buf.push(b'm');
+}
+
+/// Which SGR plane an emit targets. `Fg` uses the `3x`/`9x`/`38;…`
+/// family; `Bg` uses `4x`/`10x`/`48;…`. The two emit functions are
+/// parameterised over this so a future palette change moves once.
+#[derive(Clone, Copy)]
+enum SgrLayer {
+    Fg,
+    Bg,
+}
+
+impl SgrLayer {
+    const fn low(self) -> u8 {
+        match self {
+            Self::Fg => 3,
+            Self::Bg => 4,
+        }
+    }
+    const fn bright(self) -> u8 {
+        match self {
+            Self::Fg => 9,
+            Self::Bg => 10,
+        }
+    }
+    const fn truecolor(self) -> u8 {
+        match self {
+            Self::Fg => 38,
+            Self::Bg => 48,
+        }
+    }
+    const fn backdrop_default_rgb(self) -> (u8, u8, u8) {
+        match self {
+            Self::Fg => (58, 58, 58),
+            Self::Bg => (0, 0, 0),
+        }
+    }
+}
+
+fn emit_color(buf: &mut Vec<u8>, layer: SgrLayer, color: ColorKey) {
+    match color {
+        ColorKey::Default => {}
+        ColorKey::Idx(n) if n < 8 => {
+            let _ = write!(buf, ";{}{n}", layer.low());
+        }
+        ColorKey::Idx(n) if n < 16 => {
+            let _ = write!(buf, ";{}{}", layer.bright(), n - 8);
+        }
+        ColorKey::Idx(n) => {
+            let _ = write!(buf, ";{};5;{n}", layer.truecolor());
+        }
+        ColorKey::Rgb(r, g, b) => {
+            let _ = write!(buf, ";{};2;{r};{g};{b}", layer.truecolor());
+        }
+    }
+}
+
+fn emit_fg(buf: &mut Vec<u8>, color: ColorKey) {
+    emit_color(buf, SgrLayer::Fg, color);
+}
+
+fn emit_bg(buf: &mut Vec<u8>, color: ColorKey) {
+    emit_color(buf, SgrLayer::Bg, color);
+}
+
+fn emit_backdrop(buf: &mut Vec<u8>, layer: SgrLayer, color: ColorKey) {
+    let (r, g, b) = match color {
+        ColorKey::Default => layer.backdrop_default_rgb(),
+        ColorKey::Idx(n) => dim_indexed_color(n),
+        ColorKey::Rgb(r, g, b) => (strong_dim(r), strong_dim(g), strong_dim(b)),
+    };
+    let _ = write!(buf, ";{};2;{r};{g};{b}", layer.truecolor());
+}
+
+fn emit_backdrop_fg(buf: &mut Vec<u8>, color: ColorKey) {
+    emit_backdrop(buf, SgrLayer::Fg, color);
+}
+
+fn emit_backdrop_bg(buf: &mut Vec<u8>, color: ColorKey) {
+    emit_backdrop(buf, SgrLayer::Bg, color);
+}
+
+const fn strong_dim(value: u8) -> u8 {
+    value / 5
+}
+
+const fn dim_indexed_color(idx: u8) -> (u8, u8, u8) {
+    let (r, g, b) = match idx & 0x0f {
+        0 => (0, 0, 0),
+        1 => (170, 0, 0),
+        2 => (0, 170, 0),
+        3 => (170, 85, 0),
+        4 => (0, 0, 170),
+        5 => (170, 0, 170),
+        6 => (0, 170, 170),
+        7 => (170, 170, 170),
+        8 => (85, 85, 85),
+        9 => (255, 85, 85),
+        10 => (85, 255, 85),
+        11 => (255, 255, 85),
+        12 => (85, 85, 255),
+        13 => (255, 85, 255),
+        14 => (85, 255, 255),
+        _ => (255, 255, 255),
+    };
+    (strong_dim(r), strong_dim(g), strong_dim(b))
 }
 
 #[cfg(test)]
@@ -477,7 +569,7 @@ mod tests {
         let mut parser = Parser::new(3, 10, 0);
         parser.process(b"hi");
         let mut buf = Vec::new();
-        render_pane(parser.screen(), 4, 2, 3, 10, false, &mut buf);
+        render_pane(parser.screen(), 4, 2, 3, 10, PaneBodyDim::Normal, &mut buf);
         let s = String::from_utf8_lossy(&buf);
         // Render must start by writing to row 5 col 3 (1-based after the
         // dest_row=4, dest_col=2 offset) — not row 1 col 1 which would
@@ -489,13 +581,62 @@ mod tests {
     }
 
     #[test]
+    fn dialog_backdrop_dim_uses_strong_darkened_colors() {
+        let mut parser = Parser::new(1, 10, 0);
+        parser.process(b"\x1b[31mred");
+        let mut buf = Vec::new();
+        render_pane(
+            parser.screen(),
+            0,
+            0,
+            1,
+            10,
+            PaneBodyDim::Backdrop,
+            &mut buf,
+        );
+        let out = String::from_utf8_lossy(&buf);
+
+        assert!(
+            out.contains(";2;38;2;34;0;0;48;2;0;0;0m"),
+            "dialog backdrop should darken colors, not rely on ANSI dim alone: {out:?}"
+        );
+    }
+
+    #[test]
+    fn inactive_pane_dim_uses_light_ansi_dim_only() {
+        let mut parser = Parser::new(1, 10, 0);
+        parser.process(b"\x1b[31mred");
+        let mut buf = Vec::new();
+        render_pane(
+            parser.screen(),
+            0,
+            0,
+            1,
+            10,
+            PaneBodyDim::Inactive,
+            &mut buf,
+        );
+        let out = String::from_utf8_lossy(&buf);
+
+        assert!(
+            out.contains("\x1b[0;2;31mred"),
+            "inactive pane should keep normal color codes with ANSI dim: {out:?}"
+        );
+        assert!(
+            !out.contains(";38;2;34;0;0"),
+            "inactive pane should not use the strong dialog-backdrop darkening: {out:?}"
+        );
+    }
+
+    #[test]
     fn pane_cache_first_render_is_full_and_tracks_every_visible_row() {
         let mut parser = Parser::new(3, 8, 0);
         parser.process(b"one\r\ntwo");
         let mut cache = PaneBodyCache::default();
         let mut buf = Vec::new();
 
-        let stats = cache.render_partial(parser.screen(), 10, 20, 3, 8, false, &mut buf);
+        let stats =
+            cache.render_partial(parser.screen(), 10, 20, 3, 8, PaneBodyDim::Normal, &mut buf);
 
         assert_eq!(stats.mode, PaneBodyRenderMode::Full);
         assert_eq!(stats.changed_rows, vec![0, 1, 2]);
@@ -511,11 +652,12 @@ mod tests {
         parser.process(b"alpha\r\nbeta\r\ngamma");
         let mut cache = PaneBodyCache::default();
         let mut buf = Vec::new();
-        cache.render_full(parser.screen(), 0, 0, 3, 12, false, &mut buf);
+        cache.render_full(parser.screen(), 0, 0, 3, 12, PaneBodyDim::Normal, &mut buf);
         buf.clear();
 
         parser.process(b"\x1b[2;1Hbravo");
-        let stats = cache.render_partial(parser.screen(), 0, 0, 3, 12, false, &mut buf);
+        let stats =
+            cache.render_partial(parser.screen(), 0, 0, 3, 12, PaneBodyDim::Normal, &mut buf);
 
         assert_eq!(stats.mode, PaneBodyRenderMode::Partial);
         assert_eq!(stats.changed_rows, vec![1]);
@@ -532,11 +674,12 @@ mod tests {
         parser.process(b"\x1b[31mred\x1b[0m\r\nplain");
         let mut cache = PaneBodyCache::default();
         let mut buf = Vec::new();
-        cache.render_full(parser.screen(), 0, 0, 2, 16, false, &mut buf);
+        cache.render_full(parser.screen(), 0, 0, 2, 16, PaneBodyDim::Normal, &mut buf);
         buf.clear();
 
         parser.process(b"\x1b[1;1H\x1b[32mgreen\x1b[0m");
-        let stats = cache.render_partial(parser.screen(), 0, 0, 2, 16, false, &mut buf);
+        let stats =
+            cache.render_partial(parser.screen(), 0, 0, 2, 16, PaneBodyDim::Normal, &mut buf);
 
         assert_eq!(stats.changed_rows, vec![0]);
         let s = String::from_utf8_lossy(&buf);
@@ -551,11 +694,12 @@ mod tests {
         parser.process("表x\r\nsame".as_bytes());
         let mut cache = PaneBodyCache::default();
         let mut buf = Vec::new();
-        cache.render_full(parser.screen(), 0, 0, 2, 10, false, &mut buf);
+        cache.render_full(parser.screen(), 0, 0, 2, 10, PaneBodyDim::Normal, &mut buf);
         buf.clear();
 
         parser.process("\x1b[1;3Hy".as_bytes());
-        let stats = cache.render_partial(parser.screen(), 0, 0, 2, 10, false, &mut buf);
+        let stats =
+            cache.render_partial(parser.screen(), 0, 0, 2, 10, PaneBodyDim::Normal, &mut buf);
 
         assert_eq!(stats.changed_rows, vec![0]);
         let s = String::from_utf8_lossy(&buf);
@@ -569,11 +713,12 @@ mod tests {
         parser.process(b"plain");
         let mut cache = PaneBodyCache::default();
         let mut buf = Vec::new();
-        cache.render_full(parser.screen(), 0, 0, 1, 8, false, &mut buf);
+        cache.render_full(parser.screen(), 0, 0, 1, 8, PaneBodyDim::Normal, &mut buf);
         buf.clear();
 
         parser.process(b"\x1b[1;1H\x1b[38;2;1;2;3;48;5;4;1mX");
-        let stats = cache.render_partial(parser.screen(), 0, 0, 1, 8, false, &mut buf);
+        let stats =
+            cache.render_partial(parser.screen(), 0, 0, 1, 8, PaneBodyDim::Normal, &mut buf);
 
         assert_eq!(stats.changed_rows, vec![0]);
         let s = String::from_utf8_lossy(&buf);

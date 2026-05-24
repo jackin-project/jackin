@@ -65,7 +65,7 @@ To stop the whole container from inside the multiplexer, use the command palette
 
 ## Terminal tab title
 
-`jackin hardline` sets the terminal tab title to the role's display name (e.g. `jackin' · The Architect`) before connecting, matching the behavior of `jackin load`. This applies to all three paths: reconnect, `--new`, and `--shell`.
+`jackin hardline` sets the terminal tab title before connecting, matching the behavior of `jackin load`. Once attached, `jackin-capsule` owns the title so Ghostty-style tab and window lists show the active workspace plus the current GitHub context. On a pull request branch it uses the workspace directory name and pull request title, for example `jackin · PR #436 · feat(capsule): show branch and PR context`; on a non-default branch without an open pull request it uses the workspace plus branch name.
 
 ## Attached multiplexer shortcuts
 
@@ -75,7 +75,11 @@ Clear pane drops scrollback saved by jackin' for the focused pane and sends the 
 
 The palette's close action is context-aware. On a one-pane tab it appears as **Close tab** and opens the confirmation directly. On a split tab it appears as **Close**, then asks whether to close the focused pane or the whole tab; **Close pane** is highlighted first.
 
-Click the container name in the identity strip to open **Container info**. The modal appears immediately, shows loading placeholders for git metadata, then fills in the container ID, role, active pane's agent, current workdir, git branch when the workdir is a repository, and the GitHub pull request URL when `gh pr list --head` can resolve an open PR for the current branch. Press `Enter` on the modal to copy the container ID.
+The multiplexer always reserves the bottom row for session context. The right side shows the short jackin instance ID, such as `spamcw91` from `jk-spamcw91-jackin-thearchitect`, and it is available on the first rendered frame. The left side is reserved for branch or pull request context only: on a branch with an open GitHub pull request, it shows the PR number and title. While `gh` is still resolving the branch's pull request, it says `Resolving PR · <branch>` so the pending lookup is visible. On a non-`main` / non-`master` branch without an open PR, the same line shows the branch name instead. On `main`, `master`, or a directory without a recognizable branch, the left side stays empty and only the instance ID remains visible. Hovering either clickable side changes the pointer and slightly lifts the color, matching the top tab strip. Capsule polls the local Git branch several times per second so branch switches surface immediately, while GitHub PR and CI metadata stays cached per branch and refreshes on a conservative cadence so `gh` is not polled aggressively.
+
+Click the instance ID on the right side of that bar to open **Container info**. The modal shows the full container name, role, active pane's agent, and current workdir. The bottom footer hints that `Enter` copies the full container name, the Container ID value is emphasized as the copy target, and clicking that value performs the same copy action.
+
+Click the PR or branch text on the left side of the bar to open **GitHub context**. The modal shows the branch, GitHub pull request URL, pull request title, and best-effort CI status from `gh pr checks` when a pull request exists. The empty left side on the default branch is not a GitHub-context target. The bottom footer hints that `Enter` copies the GitHub URL when a pull request is available, the GitHub URL value is emphasized as the copy target, and clicking that value performs the same copy action.
 
 ## Examples
 

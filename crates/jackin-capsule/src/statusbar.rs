@@ -3,17 +3,17 @@
 /// Mirrors the jackin console TUI's tab strip (`render_tab_strip` in
 /// `src/console/manager/render/editor.rs`):
 ///
-/// - Row 0: ` jackin' ` brand pill, then tab cells, then a
-///   right-aligned hint.
+/// - Row 0: ` jackin' ` brand pill, then tab cells.
 /// - Row 1: a thick `━` underline beneath the active tab cell only;
 ///   blank elsewhere. The underline carries the operator's focus
 ///   signal — the same pattern the console uses below "General /
 ///   Mounts / Roles / Environments / Auth."
 ///
-/// Inactive tab cells get a `PHOSPHOR_DARK` background so they stand
-/// out against the terminal's default-black background. Active tab
-/// has the same dark-green background with a white bold label, plus
-/// the row-1 underline.
+/// Inactive tab cells get a subtle dark-grey background so they stand
+/// out against the terminal's default-black background. The active tab
+/// uses a slightly lifted graphite background instead of the brand
+/// green, so it stays distinct from the ` jackin' ` brand pill, plus
+/// the row-1 white underline.
 ///
 /// Layout columns come from `jackin_tui::lay_out_tabs`, so the
 /// console TUI and the multiplexer cannot drift on cell sizing /
@@ -21,7 +21,6 @@
 use std::io::Write as _;
 
 use jackin_tui::{TAB_GAP, TabCell, lay_out_tabs};
-use unicode_width::UnicodeWidthStr;
 
 use crate::layout::Tab;
 
@@ -32,32 +31,43 @@ use crate::layout::Tab;
 /// the click-region maths from drifting on CJK / emoji / combining
 /// marks.
 fn display_cols(s: &str) -> u16 {
-    u16::try_from(UnicodeWidthStr::width(s)).unwrap_or(u16::MAX)
+    u16::try_from(jackin_tui::display_cols(s)).unwrap_or(u16::MAX)
 }
 use crate::protocol::AgentState;
+
+const JACKIN_CONTAINER_NAME_ENV: &str = "JACKIN_CONTAINER_NAME";
+const JACKIN_INSTANCE_ID_ENV: &str = "JACKIN_INSTANCE_ID";
 
 const BRAND_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
 const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
 const BRAND_BOLD: &str = "\x1b[1m";
+const BRAND_BG_DIM: &str = "\x1b[48;2;0;51;13m";
+const BRAND_FG_DIM: &str = "\x1b[38;2;0;0;0m";
 
 const TAB_BG_INACTIVE: &str = "\x1b[48;2;30;30;30m"; // subtle dark grey
-const TAB_BG_ACTIVE: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN (brand)
+const TAB_BG_INACTIVE_HOVER: &str = "\x1b[48;2;48;48;48m"; // hover lift for clickable tabs
+const TAB_BG_ACTIVE: &str = "\x1b[48;2;42;42;42m"; // graphite, distinct from brand
+const TAB_BG_ACTIVE_HOVER: &str = "\x1b[48;2;58;58;58m"; // active tab hover lift
 const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const TAB_FG_ACTIVE: &str = "\x1b[38;2;0;0;0m"; // BLACK on bright green
+const TAB_FG_ACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE on graphite
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waiting for operator"
-const BOLD: &str = "\x1b[1m";
+const TAB_BG_DIM: &str = "\x1b[48;2;8;8;8m";
+const TAB_FG_DIM: &str = "\x1b[38;2;51;51;51m";
+const TAB_UNDERLINE_FG_DIM: &str = "\x1b[38;2;51;51;51m";
+const GLYPH_BLOCKED_FG_DIM: &str = "\x1b[38;2;51;12;12m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
-// Right-hand menu button: dark phosphor-green pill with white bold
-// text. Matches the brand pill's visual register so the operator
-// reads it as "this is a clickable jackin' control", not "this is
-// a hint string."
-const BUTTON_BG_IDLE: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK
+const BUTTON_BG_IDLE: &str = "\x1b[48;2;18;70;130m"; // restrained blue
+const BUTTON_BG_IDLE_HOVER: &str = "\x1b[48;2;32;92;158m"; // hover lift
 const BUTTON_FG_IDLE: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const BUTTON_BG_AWAITING: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN (highlight)
+const BUTTON_BG_AWAITING: &str = "\x1b[48;2;96;180;255m"; // active blue
+const BUTTON_BG_AWAITING_HOVER: &str = "\x1b[48;2;132;202;255m"; // active hover lift
 const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
-const RESET: &str = "\x1b[0m";
+const HINT_FG_DIM: &str = "\x1b[38;2;0;28;6m";
+const BUTTON_BG_DIM: &str = "\x1b[48;2;4;14;26m";
+const BUTTON_FG_DIM: &str = "\x1b[38;2;51;51;51m";
+use jackin_tui::ansi::{BOLD, RESET};
 
 const BRAND_TEXT: &str = " jackin' ";
 const BRAND_PAD_COLS: u16 = 1; // single space between brand pill and first tab
@@ -74,27 +84,16 @@ pub enum PrefixMode {
 
 pub struct StatusBar {
     pub tab_regions: Vec<(u16, u16)>,
-    /// Click region (1-based, inclusive-exclusive) covering the
-    /// right-side `menu: …` hint. A mouse press in this region acts
-    /// as a clickable shortcut for the palette key — useful when the
-    /// keyboard shortcut isn't reaching the parser for any reason.
     pub hint_region: Option<(u16, u16)>,
-    /// Click region (1-based, inclusive-exclusive) covering the
-    /// right-side container-name label on row 1. A mouse press inside
-    /// opens the `ContainerInfo` dialog: full container ID copy +
-    /// role/focused-agent details kept off the status bar so the tab
-    /// strip can spend columns on tabs.
-    pub identity_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
+    pub prefix_enabled: bool,
     pub prefix_label: String,
     pub palette_label: String,
-    pub prefix_enabled: bool,
-    /// Container name (`jk-<short>-<workspace>-<role>`) displayed on
-    /// the right side of row 1. Role is inferable from the suffix and
-    /// surfaced explicitly by the `ContainerInfo` modal, so the status
-    /// bar omits it to preserve tab-strip columns. Resolved from
-    /// `HOSTNAME`.
+    /// Full role-container name (`jk-<short>-<workspace>-<role>`).
+    /// Consumed by the `ContainerInfo` modal and copy action.
     pub identity_label: String,
+    /// Short instance id rendered in the bottom context row.
+    pub instance_id_label: String,
     /// The role key from Capsule launch config. Stored separately so
     /// the `ContainerInfo` modal can name it explicitly without
     /// re-deriving it from the container-name suffix (which is the
@@ -115,30 +114,32 @@ impl StatusBar {
     }
 
     pub fn new_with_role(role: String) -> Self {
+        let identity_label = resolve_container_name();
+        let instance_id_label = resolve_instance_id(&identity_label);
+        Self::new_with_role_container_and_instance(role, identity_label, instance_id_label)
+    }
+
+    pub fn new_with_role_and_container(role: String, identity_label: String) -> Self {
+        let instance_id_label = instance_id_from_container_name(&identity_label)
+            .map_or_else(|| identity_label.clone(), str::to_string);
+        Self::new_with_role_container_and_instance(role, identity_label, instance_id_label)
+    }
+
+    fn new_with_role_container_and_instance(
+        role: String,
+        identity_label: String,
+        instance_id_label: String,
+    ) -> Self {
         Self {
             tab_regions: Vec::new(),
             hint_region: None,
-            identity_region: None,
             prefix_mode: PrefixMode::Idle,
+            prefix_enabled: false,
             prefix_label: "Ctrl+B".to_string(),
             palette_label: "Ctrl+\\".to_string(),
-            prefix_enabled: false,
-            identity_label: resolve_container_name(),
+            identity_label,
+            instance_id_label,
             role,
-        }
-    }
-
-    /// Return `true` when the (1-based) click at `(row, col)` falls
-    /// inside the identity-label region on row 1. The daemon treats
-    /// that as "open ContainerInfo dialog" so the operator can copy
-    /// the full container ID and see role / focused-agent details.
-    pub fn identity_at(&self, row: u16, col: u16) -> bool {
-        if row != 2 {
-            return false;
-        }
-        match self.identity_region {
-            Some((start, end)) => col >= start && col < end,
-            None => false,
         }
     }
 
@@ -146,23 +147,12 @@ impl StatusBar {
         &self.identity_label
     }
 
-    pub fn role(&self) -> &str {
-        &self.role
+    pub fn instance_id_label(&self) -> &str {
+        &self.instance_id_label
     }
 
-    /// Return `true` when the (1-based) click at `(row, col)` falls
-    /// inside the menu hint region. The daemon treats that as an
-    /// alternate-path "open palette" gesture so the operator never
-    /// loses access to the menu when the keyboard shortcut isn't
-    /// reaching the parser.
-    pub fn hint_at(&self, row: u16, col: u16) -> bool {
-        if row != 1 {
-            return false;
-        }
-        match self.hint_region {
-            Some((start, end)) => col >= start && col < end,
-            None => false,
-        }
+    pub fn role(&self) -> &str {
+        &self.role
     }
 
     pub fn set_prefix_mode(&mut self, mode: PrefixMode) {
@@ -173,6 +163,18 @@ impl StatusBar {
         self.prefix_enabled = enabled;
     }
 
+    /// Return `true` when the (1-based) click at `(row, col)` falls
+    /// inside the right-side menu button.
+    pub fn hint_at(&self, row: u16, col: u16) -> bool {
+        if row != 1 {
+            return false;
+        }
+        match self.hint_region {
+            Some((start, end)) => col >= start && col < end,
+            None => false,
+        }
+    }
+
     /// Render the status bar at rows 0–1 of the host terminal.
     pub fn render(
         &mut self,
@@ -181,18 +183,22 @@ impl StatusBar {
         tabs: &[Tab],
         active_tab: usize,
         sessions_state: &[(u64, AgentState)],
+        hovered_tab: Option<usize>,
+        menu_hovered: bool,
+        dim: bool,
     ) {
         self.tab_regions.clear();
         self.hint_region = None;
-        self.identity_region = None;
 
-        // ── Row 0: brand pill + tabs + hint ─────────────────────────
+        // ── Row 0: brand pill + tabs ────────────────────────────────
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
 
         // Brand pill.
-        buf.extend_from_slice(BRAND_BG.as_bytes());
-        buf.extend_from_slice(BRAND_FG.as_bytes());
-        buf.extend_from_slice(BRAND_BOLD.as_bytes());
+        buf.extend_from_slice(if dim { BRAND_BG_DIM } else { BRAND_BG }.as_bytes());
+        buf.extend_from_slice(if dim { BRAND_FG_DIM } else { BRAND_FG }.as_bytes());
+        if !dim {
+            buf.extend_from_slice(BRAND_BOLD.as_bytes());
+        }
         buf.extend_from_slice(BRAND_TEXT.as_bytes());
         buf.extend_from_slice(RESET.as_bytes());
         for _ in 0..BRAND_PAD_COLS {
@@ -230,35 +236,41 @@ impl StatusBar {
         let max_tab_col = cols.saturating_sub(reserve_right);
 
         let mut clipped_at: Option<u16> = None;
-        for (cell, (_, glyph, _)) in cells.iter().zip(padded.iter()) {
+        for (idx, (cell, (_, glyph, _))) in cells.iter().zip(padded.iter()).enumerate() {
             let cell_end_0based = cell.start_col + cell.cell_cols;
             if cell_end_0based > max_tab_col {
                 clipped_at = Some(cell.start_col);
                 break;
             }
-            self.emit_tab_row0(buf, cell, *glyph);
+            self.emit_tab_row0(buf, cell, *glyph, hovered_tab == Some(idx), dim);
             let region_start = cell.start_col + 1;
             let region_end = region_start + cell.cell_cols;
             self.tab_regions.push((region_start, region_end));
         }
 
-        // Right-side menu button. Only render when there is room to
-        // the right of the brand pill — otherwise the hint paints on
-        // top of the brand and the operator sees an overlapping mash.
         let brand_end_1based = start_col_0based.saturating_add(1);
+
+        // Right-side menu button. Keep it on row 0 so the operator
+        // always has a visible pointer/click target for the palette.
         let hint_start = cols.saturating_sub(hint_cols);
         if hint_start > brand_end_1based {
             move_to(buf, 1, hint_start);
-            let (bg, fg) = match self.prefix_mode {
-                PrefixMode::Idle => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
-                PrefixMode::Awaiting => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
+            let (bg, fg) = match (dim, self.prefix_mode, menu_hovered) {
+                (true, _, _) => (BUTTON_BG_DIM, BUTTON_FG_DIM),
+                (false, PrefixMode::Idle, false) => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
+                (false, PrefixMode::Idle, true) => (BUTTON_BG_IDLE_HOVER, BUTTON_FG_IDLE),
+                (false, PrefixMode::Awaiting, false) => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
+                (false, PrefixMode::Awaiting, true) => {
+                    (BUTTON_BG_AWAITING_HOVER, BUTTON_FG_AWAITING)
+                }
             };
             buf.extend_from_slice(bg.as_bytes());
             buf.extend_from_slice(fg.as_bytes());
-            buf.extend_from_slice(BOLD.as_bytes());
+            if !dim {
+                buf.extend_from_slice(BOLD.as_bytes());
+            }
             buf.extend_from_slice(hint.as_bytes());
             buf.extend_from_slice(RESET.as_bytes());
-            // 1-based, inclusive-exclusive — matches `tab_regions`.
             self.hint_region = Some((hint_start, hint_start + hint_cols));
         }
 
@@ -270,13 +282,13 @@ impl StatusBar {
             let pos = cols.saturating_sub(reserve_right);
             if pos > brand_end_1based {
                 move_to(buf, 1, pos);
-                buf.extend_from_slice(HINT_FG.as_bytes());
+                buf.extend_from_slice(if dim { HINT_FG_DIM } else { HINT_FG }.as_bytes());
                 buf.extend_from_slice("›".as_bytes());
                 buf.extend_from_slice(RESET.as_bytes());
             }
         }
 
-        // ── Row 1: active-tab underline + identity label ────────────
+        // ── Row 1: active-tab underline ─────────────────────────────
         buf.extend_from_slice(b"\x1b[2;1H\x1b[2K");
         for cell in &cells {
             let cell_end_0based = cell.start_col + cell.cell_cols;
@@ -285,8 +297,17 @@ impl StatusBar {
             }
             if cell.active {
                 move_to(buf, 2, cell.start_col + 1);
-                buf.extend_from_slice(TAB_UNDERLINE_FG.as_bytes());
-                buf.extend_from_slice(BOLD.as_bytes());
+                buf.extend_from_slice(
+                    if dim {
+                        TAB_UNDERLINE_FG_DIM
+                    } else {
+                        TAB_UNDERLINE_FG
+                    }
+                    .as_bytes(),
+                );
+                if !dim {
+                    buf.extend_from_slice(BOLD.as_bytes());
+                }
                 for _ in 0..cell.cell_cols {
                     buf.extend_from_slice("━".as_bytes());
                 }
@@ -294,37 +315,46 @@ impl StatusBar {
                 break;
             }
         }
-        // Identity label (role · container name) sits on the right
-        // side of row 1 so the operator can always tell which
-        // container they are attached to. Truncate when it would
-        // collide with the active-tab underline; skip entirely when
-        // the terminal is too narrow.
-        if !self.identity_label.is_empty() {
-            let label_cols = display_cols(&self.identity_label);
-            let trailing_pad: u16 = 1;
-            if cols > label_cols + trailing_pad {
-                let start = cols.saturating_sub(label_cols + trailing_pad);
-                move_to(buf, 2, start + 1);
-                buf.extend_from_slice(HINT_FG.as_bytes());
-                buf.extend_from_slice(self.identity_label.as_bytes());
-                buf.extend_from_slice(RESET.as_bytes());
-                // 1-based, inclusive-exclusive click region.
-                self.identity_region = Some((start + 1, start + 1 + label_cols));
-            }
+    }
+
+    fn button_text(&self) -> String {
+        match self.prefix_mode {
+            PrefixMode::Idle => " ☰Menu ".to_string(),
+            PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
 
-    fn emit_tab_row0(&self, buf: &mut Vec<u8>, cell: &TabCell<'_>, glyph: TabGlyph) {
+    fn emit_tab_row0(
+        &self,
+        buf: &mut Vec<u8>,
+        cell: &TabCell<'_>,
+        glyph: TabGlyph,
+        hovered: bool,
+        dim: bool,
+    ) {
         // Position cursor at the cell's first column (1-based).
         move_to(buf, 1, cell.start_col + 1);
         // Apply tab bg + fg first; the Blocked glyph overrides fg
         // locally and restores it before the trailing pad.
-        if cell.active {
-            buf.extend_from_slice(TAB_BG_ACTIVE.as_bytes());
+        if dim {
+            buf.extend_from_slice(TAB_BG_DIM.as_bytes());
+            buf.extend_from_slice(TAB_FG_DIM.as_bytes());
+        } else if cell.active {
+            let bg = if hovered {
+                TAB_BG_ACTIVE_HOVER
+            } else {
+                TAB_BG_ACTIVE
+            };
+            buf.extend_from_slice(bg.as_bytes());
             buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
             buf.extend_from_slice(BOLD.as_bytes());
         } else {
-            buf.extend_from_slice(TAB_BG_INACTIVE.as_bytes());
+            let bg = if hovered {
+                TAB_BG_INACTIVE_HOVER
+            } else {
+                TAB_BG_INACTIVE
+            };
+            buf.extend_from_slice(bg.as_bytes());
             buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
         }
         // Cell layout: ` <name> <glyph> `.
@@ -350,12 +380,23 @@ impl StatusBar {
             TabGlyph::None => buf.push(b' '),
             TabGlyph::Done => buf.extend_from_slice("○".as_bytes()),
             TabGlyph::Blocked => {
-                buf.extend_from_slice(GLYPH_BLOCKED_FG.as_bytes());
-                buf.extend_from_slice(BOLD.as_bytes());
+                buf.extend_from_slice(
+                    if dim {
+                        GLYPH_BLOCKED_FG_DIM
+                    } else {
+                        GLYPH_BLOCKED_FG
+                    }
+                    .as_bytes(),
+                );
+                if !dim {
+                    buf.extend_from_slice(BOLD.as_bytes());
+                }
                 buf.extend_from_slice("●".as_bytes());
                 // Restore tab fg so any trailing padding inside the
                 // cell stays the right colour.
-                if cell.active {
+                if dim {
+                    buf.extend_from_slice(TAB_FG_DIM.as_bytes());
+                } else if cell.active {
                     buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
                 } else {
                     buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
@@ -368,26 +409,6 @@ impl StatusBar {
         // default background, naturally separating adjacent cells.
         for _ in 0..TAB_GAP {
             buf.push(b' ');
-        }
-    }
-
-    /// Render the right-hand menu **button**. The hamburger glyph
-    /// (`☰`) + label + key combo, with a dark-green pill background
-    /// in idle state and an inverted bright-green highlight when the
-    /// optional prefix gesture is mid-way through.
-    fn button_text(&self) -> String {
-        match self.prefix_mode {
-            PrefixMode::Idle => {
-                if self.prefix_enabled {
-                    format!(
-                        " ☰ Menu {} · prefix {} ",
-                        self.palette_label, self.prefix_label
-                    )
-                } else {
-                    format!(" ☰ Menu {} ", self.palette_label)
-                }
-            }
-            PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
 
@@ -458,6 +479,8 @@ const BORDER_ACTIVE: &str = "\x1b[38;2;0;255;65m"; // PHOSPHOR_GREEN
 const BORDER_INACTIVE: &str = "\x1b[38;2;80;80;80m"; // dim gray
 const TITLE_ACTIVE: &str = "\x1b[1;38;2;255;255;255m"; // bright white, bold
 const TITLE_INACTIVE: &str = "\x1b[38;2;160;160;160m"; // mid gray
+const BORDER_DIM: &str = "\x1b[38;2;48;48;48m";
+const TITLE_DIM: &str = "\x1b[38;2;58;58;58m";
 
 /// Draw a full bordered box around a pane: `┌─ title ─┐` top, `│` sides,
 /// `└──┘` bottom. The pane's PTY content renders into the box
@@ -474,31 +497,42 @@ pub fn draw_pane_box(
     cols: u16,
     title: &str,
     active: bool,
+    dim: bool,
 ) {
     if rows < 2 || cols < 2 {
         return;
     }
-    let border = if active {
+    let border = if dim {
+        BORDER_DIM
+    } else if active {
         BORDER_ACTIVE
     } else {
         BORDER_INACTIVE
     };
-    let title_color = if active { TITLE_ACTIVE } else { TITLE_INACTIVE };
+    let title_color = if dim {
+        TITLE_DIM
+    } else if active {
+        TITLE_ACTIVE
+    } else {
+        TITLE_INACTIVE
+    };
     let interior_cols = cols.saturating_sub(2);
-    let title_cols = display_cols(title);
-    // Top border: `┌─ title ─` then dashes filling to `┐`. Title is
-    // omitted entirely when the pane is too narrow to fit the
-    // `┌─ X ─┐` minimum (8 cols of chrome).
+    let max_title_cols = interior_cols.saturating_sub(4);
+    let display_title = take_display_cols(title, max_title_cols);
+    let title_cols = display_cols(&display_title);
+    // Top border: `┌─ title ─` then dashes filling to `┐`. Long titles
+    // are truncated by display width instead of being omitted entirely,
+    // so a shell prompt title cannot make the pane title disappear.
     move_to(buf, row + 1, col + 1);
     buf.extend_from_slice(border.as_bytes());
     buf.extend_from_slice("┌".as_bytes());
-    let title_fits = title_cols + 4 <= interior_cols;
+    let title_fits = !display_title.is_empty() && title_cols + 4 <= interior_cols;
     let mut consumed: u16 = 0;
     if title_fits {
         buf.extend_from_slice("─".as_bytes());
         buf.push(b' ');
         buf.extend_from_slice(title_color.as_bytes());
-        buf.extend_from_slice(title.as_bytes());
+        buf.extend_from_slice(display_title.as_bytes());
         buf.extend_from_slice(RESET.as_bytes());
         buf.extend_from_slice(border.as_bytes());
         buf.push(b' ');
@@ -532,17 +566,60 @@ pub fn draw_pane_box(
     buf.extend_from_slice(RESET.as_bytes());
 }
 
+fn take_display_cols(s: &str, max_cols: u16) -> String {
+    jackin_tui::take_display_cols(s, usize::from(max_cols))
+}
+
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row, col);
 }
 
-/// Row 1 identity label = container name only (`HOSTNAME`). The role
-/// is shown in the `ContainerInfo` dialog opened by clicking the
-/// label, not on the status bar itself — duplicating it on every
-/// frame burned columns the tab strip needs.
+/// Container name used by the bottom context row. The role is shown
+/// in the `ContainerInfo` dialog opened from that row, not in the top
+/// chrome.
 fn resolve_container_name() -> String {
-    std::env::var("HOSTNAME").unwrap_or_default()
+    if let Some(value) = std::env::var(JACKIN_CONTAINER_NAME_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return value;
+    }
+    if let Some(value) = std::env::var("HOSTNAME")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    {
+        crate::clog!("statusbar: container name resolved from HOSTNAME");
+        return value;
+    }
+    const ETC_HOSTNAME_MAX_BYTES: u64 = 256;
+    if let Some(value) = crate::util::read_text_bounded(
+        "/etc/hostname",
+        std::path::Path::new("/etc/hostname"),
+        ETC_HOSTNAME_MAX_BYTES,
+    )
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+    {
+        crate::clog!("statusbar: container name resolved from /etc/hostname");
+        return value;
+    }
+    crate::clog!(
+        "statusbar: container name unresolved \u{2014} {JACKIN_CONTAINER_NAME_ENV}, HOSTNAME, and /etc/hostname all empty or unreadable; chrome chip will be blank"
+    );
+    String::new()
 }
+
+fn resolve_instance_id(container_name: &str) -> String {
+    std::env::var(JACKIN_INSTANCE_ID_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| {
+            instance_id_from_container_name(container_name)
+                .map_or_else(|| container_name.to_string(), str::to_string)
+        })
+}
+
+use jackin_protocol::instance_id_from_container_base as instance_id_from_container_name;
 
 #[cfg(test)]
 mod tests {
@@ -560,12 +637,12 @@ mod tests {
         let tabs = vec![tab];
         let states = vec![(1u64, AgentState::Blocked)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &states);
+        bar.render(&mut buf, 80, &tabs, 0, &states, None, false, false);
         let (start, end) = bar.tab_regions[0];
         assert_eq!(end - start, 10);
         // Re-rendering with no state must keep the same width.
         let mut buf2 = Vec::new();
-        bar.render(&mut buf2, 80, &tabs, 0, &[]);
+        bar.render(&mut buf2, 80, &tabs, 0, &[], None, false, false);
         let (s2, e2) = bar.tab_regions[0];
         assert_eq!(e2 - s2, 10);
         assert_eq!((s2, e2), (start, end));
@@ -579,35 +656,88 @@ mod tests {
     }
 
     #[test]
-    fn idle_hint_renders_palette_label() {
-        let mut bar = StatusBar::new();
-        let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[]);
-        let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("Menu Ctrl+\\"), "missing idle hint: {s:?}");
+    fn status_bar_keeps_full_container_name_and_short_instance_id() {
+        let bar = StatusBar::new_with_role_and_container(
+            "the-architect".to_string(),
+            "jk-spamcw91-jackin-thearchitect".to_string(),
+        );
+
+        assert_eq!(bar.container_name(), "jk-spamcw91-jackin-thearchitect");
+        assert_eq!(bar.instance_id_label(), "spamcw91");
     }
 
     #[test]
-    fn idle_hint_includes_prefix_when_enabled() {
-        let mut bar = StatusBar::new();
-        bar.set_prefix_enabled(true);
+    fn pane_box_truncates_long_titles_instead_of_omitting_them() {
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[]);
-        let s = String::from_utf8_lossy(&buf);
+        draw_pane_box(
+            &mut buf,
+            0,
+            0,
+            4,
+            16,
+            "Shell title that is too long",
+            false,
+            false,
+        );
+        let out = String::from_utf8_lossy(&buf);
+
         assert!(
-            s.contains("Menu Ctrl+\\") && s.contains("prefix Ctrl+B"),
-            "missing combined hint: {s:?}"
+            out.contains("Shell"),
+            "long pane title should still render a truncated prefix: {out:?}"
+        );
+        assert!(
+            !out.contains("Shell title that is too long"),
+            "long pane title should not overflow the box: {out:?}"
         );
     }
 
     #[test]
-    fn awaiting_hint_swaps_label() {
+    fn idle_hint_is_rendered() {
+        let mut bar = StatusBar::new();
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 80, &[], 0, &[], None, false, false);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("☰Menu"), "menu hint missing: {s:?}");
+        assert!(
+            !s.contains("☰ Menu"),
+            "menu hint should not pad between icon and label: {s:?}"
+        );
+        assert!(
+            !s.contains("Ctrl+\\"),
+            "menu hint should omit shortcut: {s:?}"
+        );
+        assert!(
+            s.contains(BUTTON_BG_IDLE),
+            "menu hint should use blue button chrome: {s:?}"
+        );
+        assert!(bar.hint_at(1, 75), "menu hint should be clickable");
+    }
+
+    #[test]
+    fn idle_hint_hover_uses_lifted_button_chrome() {
+        let mut bar = StatusBar::new();
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 80, &[], 0, &[], None, true, false);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains(" ☰Menu "), "menu hint should be padded: {s:?}");
+        assert!(
+            s.contains(BUTTON_BG_IDLE_HOVER),
+            "hovered menu hint should use lifted blue chrome: {s:?}"
+        );
+    }
+
+    #[test]
+    fn awaiting_prefix_hint_is_rendered() {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[]);
+        bar.render(&mut buf, 80, &[], 0, &[], None, false, false);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("prefix…"), "missing awaiting hint: {s:?}");
+        assert!(s.contains("prefix…"), "prefix hint missing: {s:?}");
+        assert!(
+            s.contains(BUTTON_BG_AWAITING),
+            "awaiting prefix hint should use active blue chrome: {s:?}"
+        );
     }
 
     #[test]
@@ -615,7 +745,7 @@ mod tests {
         let mut bar = StatusBar::new();
         let tabs = vec![Tab::new_single("Claude", 1)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &[]);
+        bar.render(&mut buf, 80, &tabs, 0, &[], None, false, false);
         let s = String::from_utf8_lossy(&buf);
         // Row 1 = ANSI row 2 (1-based). Underline uses `━`.
         assert!(s.contains("\x1b[2;"), "row 2 cursor move missing: {s:?}");

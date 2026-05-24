@@ -633,14 +633,139 @@ pub enum SessionEvent {
     Exited {
         session_id: u64,
     },
-    ContainerInfoBranchLoaded {
+    GitBranchContextLoaded {
         request_id: u64,
         branch: Option<String>,
     },
-    ContainerInfoPullRequestLoaded {
+    PullRequestContextLoaded {
         request_id: u64,
-        pull_request_url: Option<String>,
+        branch: Option<String>,
+        outcome: PullRequestLookupOutcome,
     },
+}
+
+/// Outcome of a background `gh pr` lookup. The `Resolved` variant carries
+/// the authoritative answer from `gh` — either the PR shape or `None`
+/// meaning "no open PR on this head". `TransientFailure` means the
+/// lookup itself failed (gh missing, auth not configured, timeout, JSON
+/// parse error) and the previous cached value should be preserved.
+/// Without this distinction every transient gh hiccup poisoned the
+/// 60s cache with a fake "no PR" answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PullRequestLookupOutcome {
+    Resolved(Option<Arc<PullRequestInfo>>),
+    TransientFailure,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestInfo {
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    pub is_draft: bool,
+    pub checks: Option<PullRequestChecks>,
+}
+
+impl PullRequestInfo {
+    pub fn number_label(&self) -> String {
+        format!("#{}", self.number)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PullRequestChecks {
+    passing: usize,
+    failing: usize,
+    pending: usize,
+    skipped: usize,
+    cancelled: usize,
+    total: usize,
+}
+
+impl PullRequestChecks {
+    /// Build a check rollup from `gh pr checks` bucket strings.
+    /// Unknown buckets count toward `skipped` so the
+    /// `passing + failing + pending + skipped + cancelled == total`
+    /// invariant always holds; that lets the renderer trust the
+    /// counters and the summary text never reports a partial roll-up
+    /// for an unrecognised state.
+    pub fn from_buckets<I, S>(buckets: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut checks = Self::default();
+        for bucket in buckets {
+            checks.total += 1;
+            match bucket.as_ref() {
+                "pass" => checks.passing += 1,
+                "fail" => checks.failing += 1,
+                "pending" => checks.pending += 1,
+                "skipping" => checks.skipped += 1,
+                "cancel" => checks.cancelled += 1,
+                _ => checks.skipped += 1,
+            }
+        }
+        debug_assert_eq!(
+            checks.passing + checks.failing + checks.pending + checks.skipped + checks.cancelled,
+            checks.total,
+            "PullRequestChecks counters must sum to total"
+        );
+        checks
+    }
+
+    #[cfg(test)]
+    pub fn passing(&self) -> usize {
+        self.passing
+    }
+    #[cfg(test)]
+    pub fn failing(&self) -> usize {
+        self.failing
+    }
+    #[cfg(test)]
+    pub fn pending(&self) -> usize {
+        self.pending
+    }
+    #[cfg(test)]
+    pub fn skipped(&self) -> usize {
+        self.skipped
+    }
+    #[cfg(test)]
+    pub fn cancelled(&self) -> usize {
+        self.cancelled
+    }
+    #[cfg(test)]
+    pub fn total(&self) -> usize {
+        self.total
+    }
+
+    pub fn summary(&self) -> String {
+        if self.total == 0 {
+            return "(none)".to_string();
+        }
+        if self.failing > 0 {
+            return format!(
+                "failing ({} fail, {} pass, {} pending)",
+                self.failing, self.passing, self.pending
+            );
+        }
+        if self.cancelled > 0 {
+            return format!(
+                "cancelled ({} cancel, {} pass, {} pending)",
+                self.cancelled, self.passing, self.pending
+            );
+        }
+        if self.pending > 0 {
+            return format!("pending ({} pending, {} pass)", self.pending, self.passing);
+        }
+        if self.passing == self.total || self.passing + self.skipped == self.total {
+            return format!("passing ({}/{})", self.passing, self.total);
+        }
+        format!(
+            "{} pass, {} skip, {} total",
+            self.passing, self.skipped, self.total
+        )
+    }
 }
 
 impl Session {
@@ -1526,18 +1651,14 @@ pub fn build_shell_command(env_passthrough: &[(String, String)], cwd: &Path) -> 
     cmd
 }
 
-/// Inherit the daemon's terminal-shape environment (TERM, COLORTERM,
-/// LANG, LC_ALL) into a child PTY. `portable_pty::CommandBuilder` starts
-/// with empty env, so without this the host's host-propagated
-/// `TERM=xterm-ghostty` (or any other exotic terminal jackin imported
-/// via `--mount` of a compiled terminfo entry) is lost the moment the
-/// daemon spawns a session — every child would otherwise see the
-/// hardcoded `xterm-256color`, degrading any TUI that branches on
-/// terminal capability (notably Amp's truecolor logo splash).
+/// Apply the stable pane terminal environment. The active outer terminal is
+/// reported per attach through the Capsule protocol; pane PTYs keep a
+/// conservative baseline so a running session can be reattached from Ghostty,
+/// Kitty, iTerm, Warp, or any other xterm-compatible client without retaining
+/// assumptions from the terminal that launched the container.
 fn apply_terminal_env(cmd: &mut CommandBuilder) {
-    let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string());
-    cmd.env("TERM", term);
-    for key in ["COLORTERM", "LANG", "LC_ALL"] {
+    cmd.env("TERM", "xterm-256color");
+    for key in ["LANG", "LC_ALL"] {
         if let Ok(value) = std::env::var(key) {
             cmd.env(key, value);
         }
@@ -1621,6 +1742,17 @@ mod tests {
         assert_eq!(
             cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
             Some("codex")
+        );
+    }
+
+    #[test]
+    fn build_agent_command_uses_stable_pane_term() {
+        let env = vec![("TERM".to_string(), "xterm-ghostty".to_string())];
+        let cmd = build_agent_command("codex", None, &env, Path::new("/workspace"));
+
+        assert_eq!(
+            cmd.get_env("TERM").and_then(|value| value.to_str()),
+            Some("xterm-256color")
         );
     }
 
@@ -1747,5 +1879,42 @@ mod tests {
             validate_agent_slug("codex", &supported).unwrap_err(),
             "not in launch config allowlist"
         );
+    }
+
+    #[test]
+    fn pull_request_checks_from_buckets_keeps_sum_equals_total_for_known_inputs() {
+        let checks = PullRequestChecks::from_buckets([
+            "pass", "pass", "fail", "pending", "skipping", "cancel",
+        ]);
+        assert_eq!(checks.total(), 6);
+        assert_eq!(checks.passing(), 2);
+        assert_eq!(checks.failing(), 1);
+        assert_eq!(checks.pending(), 1);
+        assert_eq!(checks.skipped(), 1);
+        assert_eq!(checks.cancelled(), 1);
+    }
+
+    #[test]
+    fn pull_request_checks_from_buckets_routes_unknown_into_skipped() {
+        let checks = PullRequestChecks::from_buckets(["pass", "unknown-bucket", "another-bucket"]);
+        assert_eq!(checks.total(), 3);
+        assert_eq!(checks.passing(), 1);
+        assert_eq!(checks.skipped(), 2, "unknown buckets fall into skipped");
+        assert_eq!(
+            checks.passing()
+                + checks.failing()
+                + checks.pending()
+                + checks.skipped()
+                + checks.cancelled(),
+            checks.total(),
+            "counters must always sum to total"
+        );
+    }
+
+    #[test]
+    fn pull_request_checks_from_buckets_empty_yields_zero_total() {
+        let checks = PullRequestChecks::from_buckets(std::iter::empty::<&str>());
+        assert_eq!(checks.total(), 0);
+        assert_eq!(checks.summary(), "(none)");
     }
 }

@@ -125,22 +125,13 @@ Each agent gets an isolated Docker network:
 
 The DinD sidecar auto-generates TLS certificates at startup into a shared Docker volume. The agent container mounts the client certificates read-only and sets `DOCKER_TLS_VERIFY=1` so all Docker CLI commands are authenticated.
 
-## Terminal forwarding
+## Terminal capability model
 
-jackin' forwards the host's `$TERM` environment variable into the agent container so that terminal capabilities (colors, keyboard protocols, mouse support) work correctly.
+Pane PTYs run with a stable `TERM=xterm-256color` baseline. jackin' does not copy the host terminal's `$TERM` into the long-lived container environment, because a preserved instance can be reattached later from a different terminal app. A pane that started while the operator used Ghostty must still be safe to reattach from Kitty, iTerm, Warp, SSH, or a plain xterm-compatible terminal.
 
-Standard terminal types like `xterm-256color`, `screen-256color`, and `tmux-256color` ship with Debian's `ncurses-base` and are forwarded as-is.
+Terminal-specific enhancements are attached-client state instead. Every foreground attach (`jackin load`, `jackin hardline`, and console attach) runs a short-lived Capsule client through `docker exec`; that client reports its current `TERM`, `TERM_PROGRAM`, and `COLORTERM` in the attach handshake. The PID 1 daemon stores that identity only for the active client and refreshes it on every takeover, so jackin-owned output enhancements follow the terminal the operator is using now.
 
-Modern terminals — Ghostty (`xterm-ghostty`), Kitty (`xterm-kitty`), WezTerm, and others — define custom `$TERM` values whose terminfo entries are not included in the container's base image. For these terminals, jackin' automatically:
-
-1. Exports the host's terminfo entry using `infocmp -x`
-2. Compiles it into a cache directory (`~/.jackin/cache/terminfo/`) using `tic -x`
-3. Mounts the compiled terminfo read-only at `/home/agent/.terminfo` inside the container
-4. Forwards the original `$TERM` value
-
-This means terminal-specific features (such as Ghostty's Kitty keyboard protocol or extended color support) work inside the container without any manual setup. The compiled terminfo is cached and reused across agent launches.
-
-If the export fails (e.g. `infocmp` is not installed or the terminfo entry is missing), jackin' falls back to `xterm-256color`.
+Ghostty, Kitty, and iTerm get native enhancements through that active-client capability path. Features that are raw terminal protocols, such as extended-key sequences, OSC 52 clipboard writes, OSC 8 hyperlinks, OSC 9 notifications, and focused-pane title updates, continue to travel over the attach stream when allowed. Enhancements that require known outer-terminal support, such as OSC 22 pointer-shape feedback, are enabled only when the active client advertises a compatible identity.
 
 ## Capsule terminal capability model
 
@@ -149,7 +140,7 @@ The container no longer runs tmux for agent sessions. The Capsule owns the PTYs 
 | Former tmux concern | Capsule behavior |
 |---|---|
 | Modified keys | Client-side input parsing preserves xterm/Kitty/CSI-u key sequences and forwards pane input unmodified unless it is a jackin'-owned palette or prefix command. |
-| Terminal feature advertisement | Pane PTYs run with `TERM=xterm-256color`; host-specific terminfo is mounted separately when the outer terminal needs it. |
+| Terminal feature advertisement | Pane PTYs run with `TERM=xterm-256color`; outer-terminal identity is reported per attach and used only for client-side enhancements. |
 | Focus events | The attach client enables focus reporting on the outer terminal and forwards focus-in/focus-out only to panes that requested it. |
 | OSC passthrough | Focused-pane OSC 0/1/2 titles, OSC 8 hyperlinks, OSC 9 notifications, and OSC 52 clipboard writes are forwarded with per-family opt-outs. OSC 7 is captured for pane titles and not forwarded to the host. |
 | Escape timing | The input parser treats Escape as data for the pane except when a jackin' dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |
@@ -218,8 +209,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │   ├── agent-smith/               # Flat role (no namespace)
 │   └── chainargos/                # Namespace directory
 │       └── agent-brown/           # Namespaced role
-├── cache/                         # Shared caches (terminfo, version checks)
-│   └── terminfo/
+├── cache/                         # Shared caches (version checks and other rebuildable data)
 ├── data/
 │   ├── instances.json             # Rebuildable index of all known instances
 │   └── <container-base>/          # Persisted state per instance

@@ -9,6 +9,8 @@ This document is the **canonical record of every binding TUI design decision** �
 
 If a proposed implementation conflicts with a rule here, fix the implementation, not the rule (or open a discussion to amend the rule first). Violations are bugs and must be fixed before a PR lands.
 
+Every PR review that touches a TUI surface must verify the diff against this page before producing review output. Reviewers must call out any mismatch as a TUI design-decision violation, especially missing clickable affordances, missing footer hints, focusability drift, or layout geometry that diverges from the shared helpers.
+
 ---
 
 ## Navigation conventions
@@ -61,6 +63,12 @@ Rules:
 - `Tab switch tab`, `S save`, and `Esc back/discard` are always shown in the global footer.
 - Keep each hint concise: one symbol or key name, one word label. Use `·` separators between hints.
 
+### Clickable targets must look clickable
+
+Any jackin' TUI element that performs an action on click must expose three matching cues: a distinct resting style, a hover style change, and pointer-shape feedback where the terminal supports it. The hover change must be visible but modest — a lifted background, brighter foreground, or equivalent cue that matches the website's "this is interactive" clarity without overpowering the surrounding chrome. The visual target must be the exact value or control that will act. For copy dialogs, only the value copied by `Enter` is rendered as the emphasized clickable value; informational rows stay in the normal value color.
+
+When a footer says `Enter copy <value>`, clicking that same emphasized value must perform the same copy action and show visible feedback. Do not make a whole dialog row look actionable if only one value is copied, and do not add click handlers without a visible hover/resting affordance.
+
 This rule applies to every TUI surface: list view, workspace editor (all tabs), settings (all tabs), all modals and overlays.
 
 ### Space vs Enter — W3C semantic distinction
@@ -87,6 +95,10 @@ Enforcement:
 - `render_editor` checks `state.modal` first; if a modal is open it calls `modal_footer_items(modal)` and skips the normal contextual items.
 - `render_settings` checks the three settings modal chains (`auth.modal`, `env.modal`, `mounts.modal`) in priority order; if any is `Some`, calls the corresponding `*_modal_footer_items` function.
 - No `Constraint::Length` row for a hint line may remain inside any widget layout.
+
+### Modals dim the full surface behind them
+
+Every modal or dialog is global to the TUI surface, not scoped to one pane, tab, list row, or content block. Opening a modal must redraw the whole background in backdrop colors before painting the modal: top chrome, bottom chrome, pane/list/card borders, focused-state accents, scrollbars, and content all dim together. Do not leave active green borders, selected scrollbars, or bright clickable chrome visible behind a modal. Those focus cues belong to the surface behind the dialog and return only after the modal closes.
 
 ---
 

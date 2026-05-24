@@ -70,6 +70,112 @@ pub struct TabCell<'a> {
 /// jackin-capsule both follow this spacing.
 pub const TAB_GAP: u16 = 1;
 
+/// One footer-hint span. Each consumer renders the same hint list
+/// in its own format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HintSpan<'a> {
+    /// Hotkey glyph(s) — white + bold in rendered output.
+    Key(&'a str),
+    /// Action label following a key — phosphor green in rendered output.
+    Text(&'a str),
+    /// Single dot separator (`" · "`) between two related items in
+    /// the same group.
+    Sep,
+    /// Three-space gap between hint groups.
+    GroupSep,
+}
+
+impl HintSpan<'_> {
+    /// Display-column width contribution of a single span. Mirrors
+    /// the rendering rule that `Text` spans render with a leading
+    /// space and `Sep`/`GroupSep` each occupy three columns.
+    #[must_use]
+    pub fn display_cols(&self) -> usize {
+        match self {
+            Self::Key(k) => k.chars().count(),
+            Self::Text(t) => 1 + t.chars().count(),
+            Self::Sep | Self::GroupSep => 3,
+        }
+    }
+}
+
+/// Total display-column width of a hint-span sequence. Used by
+/// renderers to compute centring and to decide whether the hint
+/// fits inside the current terminal width.
+#[must_use]
+pub fn hint_row_cols(spans: &[HintSpan<'_>]) -> usize {
+    spans.iter().map(HintSpan::display_cols).sum()
+}
+
+/// True for any C0 / C1 control byte or DEL (`0x7f`). These bytes
+/// are what terminal-injection attacks (`\x1b[…m`, `\x9b…`, OSC,
+/// BEL) build their sequences from; stripping them eliminates the
+/// class.
+#[must_use]
+pub fn is_terminal_control_char(c: char) -> bool {
+    let code = c as u32;
+    code < 0x20 || c == '\x7f' || (0x80..0xa0).contains(&code)
+}
+
+/// Display-column width of `s` measured with `unicode-width`,
+/// excluding C0 / C1 control bytes. Stripping controls here makes
+/// the result safe to feed to width-budget callers regardless of
+/// upstream input.
+#[must_use]
+pub fn display_cols(s: &str) -> usize {
+    use unicode_width::UnicodeWidthChar;
+    s.chars()
+        .filter(|c| !is_terminal_control_char(*c))
+        .map(|c| c.width().unwrap_or(0))
+        .sum()
+}
+
+/// Take the longest prefix of `s` whose display width fits inside
+/// `max_cols`, skipping control bytes.
+#[must_use]
+pub fn take_display_cols(s: &str, max_cols: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+    let mut out = String::new();
+    let mut used = 0usize;
+    for c in s.chars() {
+        if is_terminal_control_char(c) {
+            continue;
+        }
+        let width = c.width().unwrap_or(0);
+        if used + width > max_cols {
+            break;
+        }
+        out.push(c);
+        used += width;
+    }
+    out
+}
+
+/// Collapse a terminal-window title to a single line of printable
+/// characters: control bytes become spaces, runs of whitespace
+/// collapse to one space, and leading / trailing whitespace is
+/// trimmed. Safe to embed in an OSC 2 string regardless of source.
+#[must_use]
+pub fn sanitize_terminal_title(title: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    let mut prev_space = true;
+    for ch in title.chars() {
+        if ch.is_control() || ch == '\u{7f}' || ch.is_whitespace() {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+        } else {
+            out.push(ch);
+            prev_space = false;
+        }
+    }
+    if out.ends_with(' ') {
+        out.pop();
+    }
+    out
+}
+
 /// Title-case display name for an agent slug. Mirrors the console
 /// TUI's `agent_picker_label` so both surfaces use the same casing.
 /// Returns `None` for unrecognised slugs so callers can fall back to
@@ -549,5 +655,35 @@ mod tests {
         assert_eq!(cells[1].start_col, 9 + 1);
         assert_eq!(cells[1].cell_cols, 8); // " Mounts "
         assert!(!cells[1].active);
+    }
+
+    #[test]
+    fn hint_span_display_cols_match_render_contract() {
+        // Key spans render the glyph(s) unchanged.
+        assert_eq!(HintSpan::Key("Enter").display_cols(), 5);
+        // Text spans render with a leading space.
+        assert_eq!(HintSpan::Text("save").display_cols(), 5);
+        // Separators occupy three columns each.
+        assert_eq!(HintSpan::Sep.display_cols(), 3);
+        assert_eq!(HintSpan::GroupSep.display_cols(), 3);
+        // Multi-byte / wide glyphs use char count, not byte len.
+        assert_eq!(HintSpan::Key("↑↓").display_cols(), 2);
+    }
+
+    #[test]
+    fn hint_row_cols_sums_spans() {
+        let spans = [
+            HintSpan::Key("Enter"),
+            HintSpan::Text("save"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
+        ];
+        assert_eq!(hint_row_cols(&spans), 5 + 5 + 3 + 3 + 7);
+    }
+
+    #[test]
+    fn hint_row_cols_handles_empty_slice() {
+        assert_eq!(hint_row_cols(&[]), 0);
     }
 }

@@ -13,8 +13,8 @@ pub enum PruneCommand {
     Roles,
     /// Delete shared caches
     ///
-    /// Removes the shared cache directory. Includes the compiled terminfo
-    /// cache and version-check results. All caches regenerate automatically.
+    /// Removes the shared cache directory. Includes version-check results and
+    /// other rebuildable data. All caches regenerate automatically.
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Cache,
     /// Remove unused jackin-managed Docker images
