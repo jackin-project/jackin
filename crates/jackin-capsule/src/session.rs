@@ -100,6 +100,12 @@ struct InlineScrollRegionTracker {
     region: InlineScrollRegion,
 }
 
+#[derive(Default)]
+struct InlineScrollActions {
+    scroll_up: usize,
+    erase_display: Option<u16>,
+}
+
 impl InlineScrollRegionTracker {
     fn new(rows: u16) -> Self {
         Self {
@@ -120,19 +126,39 @@ impl InlineScrollRegionTracker {
         self.region.top_anchored_bottom(rows)
     }
 
-    fn advance(&mut self, byte: u8, screen_rows: u16) {
+    fn advance(&mut self, byte: u8, screen_rows: u16) -> InlineScrollActions {
+        let mut actions = InlineScrollActions::default();
         let mut performer = InlineScrollRegionPerformer {
             region: &mut self.region,
             screen_rows,
+            actions: &mut actions,
         };
         self.parser
             .advance(&mut performer, std::slice::from_ref(&byte));
+        actions
     }
 }
 
 struct InlineScrollRegionPerformer<'a> {
     region: &'a mut InlineScrollRegion,
     screen_rows: u16,
+    actions: &'a mut InlineScrollActions,
+}
+
+fn first_csi_value(params: &vte::Params) -> Option<u16> {
+    params
+        .iter()
+        .next()
+        .and_then(|param| param.first())
+        .copied()
+}
+
+fn csi_count(params: &vte::Params) -> usize {
+    usize::from(
+        first_csi_value(params)
+            .filter(|&value| value != 0)
+            .unwrap_or(1),
+    )
 }
 
 impl vte::Perform for InlineScrollRegionPerformer<'_> {
@@ -143,19 +169,30 @@ impl vte::Perform for InlineScrollRegionPerformer<'_> {
         ignore: bool,
         action: char,
     ) {
-        if ignore || action != 'r' || !intermediates.is_empty() {
+        if ignore || !intermediates.is_empty() {
             return;
         }
 
-        let mut values = params
-            .iter()
-            .map(|param| param.first().copied().unwrap_or(0));
-        let top = values.next().filter(|&value| value != 0).unwrap_or(1);
-        let bottom = values
-            .next()
-            .filter(|&value| value != 0)
-            .unwrap_or(self.screen_rows);
-        self.region.set_decstbm(self.screen_rows, top, bottom);
+        match action {
+            'J' => {
+                self.actions.erase_display = Some(first_csi_value(params).unwrap_or(0));
+            }
+            'S' => {
+                self.actions.scroll_up = csi_count(params);
+            }
+            'r' => {
+                let mut values = params
+                    .iter()
+                    .map(|param| param.first().copied().unwrap_or(0));
+                let top = values.next().filter(|&value| value != 0).unwrap_or(1);
+                let bottom = values
+                    .next()
+                    .filter(|&value| value != 0)
+                    .unwrap_or(self.screen_rows);
+                self.region.set_decstbm(self.screen_rows, top, bottom);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -999,13 +1036,21 @@ impl Session {
         if !bytes.is_empty() {
             self.received_output = true;
         }
+        crate::cdebug!(
+            "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
+            self.agent,
+            self.label,
+            bytes.len(),
+            bytes
+        );
         let was_alternate = self.parser.screen().alternate_screen();
         let was_scrolled = self.scrollback_offset != 0;
         for &byte in bytes {
+            let (screen_rows, _) = self.parser.screen().size();
+            let actions = self.inline_scroll_region_tracker.advance(byte, screen_rows);
+            self.capture_inline_scrollback_before_actions(actions);
             self.capture_inline_scrollback_before_byte(byte);
             self.parser.process(std::slice::from_ref(&byte));
-            let (screen_rows, _) = self.parser.screen().size();
-            self.inline_scroll_region_tracker.advance(byte, screen_rows);
         }
         let is_alternate = self.parser.screen().alternate_screen();
         if was_alternate != is_alternate {
@@ -1048,6 +1093,87 @@ impl Session {
         self.state = state_after_pty_output(self.state);
     }
 
+    fn capture_inline_scrollback_before_actions(&mut self, actions: InlineScrollActions) {
+        if let Some(mode) = actions.erase_display {
+            self.capture_inline_scrollback_before_erase_display(mode);
+        }
+        if actions.scroll_up > 0 {
+            self.capture_inline_scrollback_before_scroll_up(actions.scroll_up);
+        }
+    }
+
+    fn capture_inline_scrollback_before_erase_display(&mut self, mode: u16) {
+        if self.parser.screen().alternate_screen() {
+            return;
+        }
+
+        match mode {
+            // ED0 (`CSI J`) only removes the whole visible screen when
+            // paired with a home cursor move, which is the normal-screen
+            // clear/redraw shape used by shells and agent TUIs.
+            0 => {
+                let (cursor_row, cursor_col) = self.parser.screen().cursor_position();
+                if cursor_row == 0 && cursor_col == 0 {
+                    self.capture_visible_inline_scrollback_rows("erase-display");
+                }
+            }
+            // ED2 (`CSI 2J`) clears the visible display. Preserve those
+            // rows as terminal scrollback; ED3 below is the explicit
+            // saved-lines clear and must not preserve them.
+            2 => self.capture_visible_inline_scrollback_rows("erase-display"),
+            3 => {
+                self.inline_scrollback.clear();
+                self.scrollback_offset = 0;
+                crate::cdebug!(
+                    "inline scrollback clear: agent={:?} label={} reason=erase-saved-lines",
+                    self.agent,
+                    self.label
+                );
+            }
+            _ => {}
+        }
+    }
+
+    fn capture_inline_scrollback_before_scroll_up(&mut self, count: usize) {
+        if self.parser.screen().alternate_screen() {
+            return;
+        }
+
+        let (screen_rows, screen_cols) = self.parser.screen().size();
+        let Some(scroll_bottom) = self
+            .inline_scroll_region_tracker
+            .top_anchored_bottom(screen_rows)
+        else {
+            return;
+        };
+
+        let removed_rows = usize::from(scroll_bottom).saturating_add(1).min(count);
+        let rows: Vec<_> = self
+            .parser
+            .screen()
+            .rows(0, screen_cols)
+            .take(removed_rows)
+            .collect();
+        for row in rows {
+            self.push_inline_scrollback_row(row, "scroll-up");
+        }
+    }
+
+    fn capture_visible_inline_scrollback_rows(&mut self, reason: &'static str) {
+        let (_, screen_cols) = self.parser.screen().size();
+        let rows: Vec<_> = self.parser.screen().rows(0, screen_cols).collect();
+        let Some(first) = rows.iter().position(|row| !row.trim_end().is_empty()) else {
+            return;
+        };
+        let Some(last) = rows.iter().rposition(|row| !row.trim_end().is_empty()) else {
+            return;
+        };
+
+        for row in rows[first..=last].iter().cloned() {
+            self.push_inline_scrollback_row(row, reason);
+        }
+    }
+
     fn capture_inline_scrollback_before_byte(&mut self, byte: u8) {
         if byte != b'\n' || self.parser.screen().alternate_screen() {
             return;
@@ -1075,6 +1201,14 @@ impl Session {
             return;
         }
 
+        self.push_inline_scrollback_row(row, "linefeed");
+    }
+
+    fn push_inline_scrollback_row(&mut self, row: String, reason: &'static str) {
+        if self.inline_scrollback.is_empty() && row.trim_end().is_empty() {
+            return;
+        }
+
         let row_len = row.len();
         self.inline_scrollback.push_back(row);
         if self.scrollback_offset != 0 {
@@ -1085,9 +1219,10 @@ impl Session {
             self.scrollback_offset = self.scrollback_offset.saturating_sub(1);
         }
         crate::cdebug!(
-            "inline scrollback capture: agent={:?} label={} row_len={} inline_filled={} scrollback_offset={} region={}..{}",
+            "inline scrollback capture: agent={:?} label={} reason={} row_len={} inline_filled={} scrollback_offset={} region={}..{}",
             self.agent,
             self.label,
+            reason,
             row_len,
             self.inline_scrollback.len(),
             self.scrollback_offset,

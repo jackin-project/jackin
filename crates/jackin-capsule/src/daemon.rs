@@ -4327,6 +4327,86 @@ mod tests {
     }
 
     #[test]
+    fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux_with_size(12, 40);
+            let (mut session, mut input_rx) = test_pane_session(8, 38, agent);
+            for i in 0..5 {
+                session.feed_pty(format!("release note {i}\r\n").as_bytes());
+            }
+            assert_eq!(
+                session.scrollback_filled(),
+                0,
+                "{pane_kind} setup output fits without native scrollback before clear"
+            );
+
+            session.feed_pty(b"\x1b[1;1H\x1b[Jlive prompt");
+            assert!(
+                session.scrollback_filled() >= 5,
+                "{pane_kind} pane should preserve normal-screen rows erased by clear/redraw"
+            );
+            mux.sessions.insert(1, session);
+
+            let redraw = mux.handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            });
+
+            let frame = redraw.expect("clear-preserved history wheel should redraw");
+            assert!(
+                input_rx.try_recv().is_err(),
+                "{pane_kind} pane must not receive cursor-key wheel fallback"
+            );
+            assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+            assert_focused_scroll_chrome(
+                &frame,
+                &format!("normal-screen {pane_kind} pane with clear-preserved history"),
+            );
+            assert!(
+                String::from_utf8_lossy(&frame).contains("release note"),
+                "normal-screen {pane_kind} wheel should render rows preserved before clear"
+            );
+        }
+    }
+
+    #[test]
+    fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
+        for (agent, pane_kind) in pane_kind_cases() {
+            let mut mux = single_pane_tab_mux_with_size(12, 40);
+            let (mut session, mut input_rx) = test_pane_session(8, 38, agent);
+            session.feed_pty(b"\x1b[1;5r\x1b[1;1Htop row\x1b[2;1Hsecond row\x1b[3;1Hthird row");
+            session.feed_pty(b"\x1b[2S\x1b[r\x1b[8;1Hlive prompt");
+            assert!(
+                session.scrollback_filled() >= 2,
+                "{pane_kind} pane should retain rows removed by top-anchored CSI S"
+            );
+            mux.sessions.insert(1, session);
+
+            let redraw = mux.handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            });
+
+            let frame = redraw.expect("CSI S inline history wheel should redraw");
+            assert!(
+                input_rx.try_recv().is_err(),
+                "{pane_kind} pane must not receive cursor-key wheel fallback"
+            );
+            assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 2);
+            assert_focused_scroll_chrome(
+                &frame,
+                &format!("normal-screen {pane_kind} pane with CSI S inline history"),
+            );
+            assert!(
+                String::from_utf8_lossy(&frame).contains("top row"),
+                "normal-screen {pane_kind} wheel should render CSI S retained history"
+            );
+        }
+    }
+
+    #[test]
     fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
         let mut mux = single_pane_tab_mux();
         let (mut session, mut input_rx) = test_shell_session(20, 78);
