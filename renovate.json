@@ -43,7 +43,7 @@
   "prHourlyLimit": 0,
   "prConcurrentLimit": 20,
   "commitBody": "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>",
-  "recreateClosed": true,
+  "recreateWhen": "always",
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["at any time"]
