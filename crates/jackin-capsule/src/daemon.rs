@@ -43,8 +43,8 @@ use crate::protocol::attach::{
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{PaneBodyCache, PaneBodyRenderMode, draw_scrollbar};
 use crate::session::{
-    PullRequestChecks, PullRequestInfo, SESSION_ENV_PASSTHROUGH, Session, SessionEvent,
-    build_agent_command, build_shell_command,
+    PullRequestChecks, PullRequestInfo, PullRequestLookupOutcome, SESSION_ENV_PASSTHROUGH, Session,
+    SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
@@ -144,6 +144,101 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
     workdir: PathBuf,
+    /// Static facts about the workdir resolved once at daemon construction:
+    /// `git` / `gh` binary availability, whether the workdir is a git
+    /// checkout, and the repo's default branch resolved from
+    /// `origin/HEAD`. Cached so the 1Hz state ticker does not fork
+    /// `git`/`gh` subprocesses for facts that cannot change while the
+    /// daemon is alive — a non-git workdir would otherwise pay 86,400
+    /// subprocess forks per day for the same negative verdict.
+    workdir_context: WorkdirContext,
+}
+
+/// One-shot resolution of workdir + tool facts. The daemon never
+/// re-probes; if `git` or `gh` is installed mid-session the operator
+/// must restart the container to pick it up (a non-event for an
+/// orchestrator that already discards containers per launch).
+struct WorkdirContext {
+    is_git_repo: bool,
+    git_available: bool,
+    gh_available: bool,
+    /// `origin/HEAD` resolved to a short branch name (`main`, `master`,
+    /// `trunk`, `develop`, …). `None` when the workdir is not a git
+    /// checkout, when `origin/HEAD` is not set, or when `git
+    /// symbolic-ref` fails. Falls back to a `main`/`master` literal
+    /// match for branches that look like defaults when this is `None`.
+    default_branch: Option<String>,
+}
+
+impl WorkdirContext {
+    fn resolve(workdir: &Path) -> Self {
+        let git_available = command_in_path("git");
+        let gh_available = command_in_path("gh");
+        // `.git` may be a regular directory (normal checkout) or a
+        // file containing `gitdir: …` (worktree / submodule).
+        // `try_exists` covers both. False when `workdir` is not a git
+        // checkout at all — no point probing branch lookups in that
+        // case.
+        let is_git_repo = git_available
+            && workdir
+                .join(".git")
+                .try_exists()
+                .ok()
+                .unwrap_or(false);
+        let default_branch = if is_git_repo {
+            resolve_default_branch(workdir)
+        } else {
+            None
+        };
+        Self {
+            is_git_repo,
+            git_available,
+            gh_available,
+            default_branch,
+        }
+    }
+
+    /// True when `branch` is the repo's default branch (the chrome bar
+    /// stays hidden in that case). Falls back to a literal
+    /// `main`/`master`/empty match when `origin/HEAD` is not set so
+    /// freshly-cloned-but-not-`gh-repo-set-default`ed repos still
+    /// suppress the bar.
+    fn is_default_branch(&self, branch: &str) -> bool {
+        if branch.is_empty() {
+            return true;
+        }
+        if let Some(default) = self.default_branch.as_deref() {
+            return branch == default;
+        }
+        matches!(branch, "main" | "master")
+    }
+}
+
+/// Probe `name --version` once at construction. Stdin/stdout/stderr
+/// are nulled so a misbehaving subprocess cannot leak output into the
+/// daemon's logs and cannot block on stdin. A `false` verdict
+/// short-circuits all later lookup spawns for the duration of the
+/// daemon process.
+fn command_in_path(name: &str) -> bool {
+    let mut cmd = Command::new(name);
+    cmd.arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    matches!(cmd.status(), Ok(status) if status.success())
+}
+
+/// `git symbolic-ref --short refs/remotes/origin/HEAD` returns
+/// `origin/main` (or whatever the default branch is). Strip the
+/// `origin/` so it can compare directly against `git branch
+/// --show-current` output.
+fn resolve_default_branch(workdir: &Path) -> Option<String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(workdir)
+        .args(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+    let raw = command_stdout_trimmed_with_timeout(&mut cmd, GIT_CONTEXT_COMMAND_TIMEOUT)?;
+    raw.strip_prefix("origin/").map(|s| s.to_string())
 }
 
 struct PullRequestContextLookupRequest {
@@ -354,6 +449,14 @@ impl Multiplexer {
 
         let input_parser = InputParser::default();
         let workdir = PathBuf::from(&launch_config.workdir);
+        let workdir_context = WorkdirContext::resolve(&workdir);
+        crate::clog!(
+            "workdir-context: git_available={} gh_available={} is_git_repo={} default_branch={:?}",
+            workdir_context.git_available,
+            workdir_context.gh_available,
+            workdir_context.is_git_repo,
+            workdir_context.default_branch
+        );
         let mut status_bar = StatusBar::new_with_role(launch_config.role.clone());
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
 
@@ -397,6 +500,7 @@ impl Multiplexer {
             pull_request_context_lookup_in_flight: false,
             pull_request_context_cache: HashMap::new(),
             workdir,
+            workdir_context,
         }
     }
 
@@ -466,7 +570,7 @@ impl Multiplexer {
             col_1based,
             self.term_rows,
             self.term_cols,
-            self.pull_request_context_branch.as_deref(),
+            self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.status_bar.container_name(),
         ) {
@@ -500,7 +604,7 @@ impl Multiplexer {
             col_1based,
             self.term_rows,
             self.term_cols,
-            self.pull_request_context_branch.as_deref(),
+            self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.status_bar.container_name(),
         )
@@ -587,6 +691,9 @@ impl Multiplexer {
     }
 
     fn maybe_spawn_git_branch_context_lookup(&mut self, now: Instant) {
+        if !self.workdir_context.is_git_repo {
+            return;
+        }
         if self.git_branch_context_lookup_in_flight {
             return;
         }
@@ -625,13 +732,18 @@ impl Multiplexer {
     }
 
     fn maybe_spawn_pull_request_context_lookup(&mut self, now: Instant) {
+        if !self.workdir_context.gh_available || !self.workdir_context.is_git_repo {
+            return;
+        }
         if self.pull_request_context_lookup_in_flight {
             return;
         }
         let Some(branch) = self.pull_request_context_branch.clone() else {
             return;
         };
-        if is_default_branch_name(&branch) || self.pull_request_cache_is_fresh(&branch, now) {
+        if self.workdir_context.is_default_branch(&branch)
+            || self.pull_request_cache_is_fresh(&branch, now)
+        {
             return;
         }
         self.pull_request_context_request_id = self.pull_request_context_request_id.wrapping_add(1);
@@ -647,12 +759,21 @@ impl Multiplexer {
     fn spawn_pull_request_context_lookup(&self, request: PullRequestContextLookupRequest) {
         let event_tx = self.event_tx.clone();
         std::thread::spawn(move || {
-            let pull_request = gh_pull_request_info(&request.workdir, &request.branch);
+            let outcome = match gh_pull_request_info(&request.workdir, &request.branch) {
+                Ok(pr) => PullRequestLookupOutcome::Resolved(pr),
+                Err(err) => {
+                    crate::clog!(
+                        "pull-request-context: gh lookup failed for branch {:?}: {err}",
+                        request.branch
+                    );
+                    PullRequestLookupOutcome::TransientFailure
+                }
+            };
             if event_tx
                 .send(SessionEvent::PullRequestContextLoaded {
                     request_id: request.request_id,
                     branch: Some(request.branch),
-                    pull_request,
+                    outcome,
                 })
                 .is_err()
             {
@@ -688,6 +809,15 @@ impl Multiplexer {
             .as_deref()
             .and_then(|branch| self.cached_pull_request_for_branch(branch, now));
 
+        // Invalidate any in-flight PR lookup against the previous
+        // branch by bumping the request_id token. A worker that fired
+        // off `gh pr list --head <old_branch>` could otherwise return
+        // ~16s later, pass the stale check, and overwrite the new
+        // branch's cache slot with the wrong branch's PR. Bumping the
+        // id makes the late-arrival response fail the equality guard
+        // in `apply_pull_request_context_loaded`.
+        self.pull_request_context_request_id =
+            self.pull_request_context_request_id.wrapping_add(1);
         self.pull_request_context_lookup_in_flight = false;
         crate::cdebug!(
             "git-branch-context: branch changed old={:?} new={:?}",
@@ -705,7 +835,7 @@ impl Multiplexer {
         &mut self,
         request_id: u64,
         branch: Option<String>,
-        pull_request: Option<PullRequestInfo>,
+        outcome: PullRequestLookupOutcome,
         now: Instant,
     ) -> bool {
         if request_id != self.pull_request_context_request_id {
@@ -715,6 +845,16 @@ impl Multiplexer {
         let Some(branch) = branch else {
             return false;
         };
+        // Transient gh failures (binary missing, auth not configured,
+        // JSON parse, timeout) MUST NOT poison the 60s cache with a
+        // synthetic "no PR" answer — operators would lose a real PR
+        // for a full minute after every blip. Preserve the previous
+        // cached value; the next state-ticker tick retries.
+        let pull_request = match outcome {
+            PullRequestLookupOutcome::Resolved(pr) => pr,
+            PullRequestLookupOutcome::TransientFailure => return false,
+        };
+        self.purge_expired_pull_request_cache_entries(now);
         self.pull_request_context_cache.insert(
             branch.clone(),
             PullRequestContextCacheEntry {
@@ -731,6 +871,17 @@ impl Multiplexer {
             return true;
         }
         changed
+    }
+
+    /// Drop cache entries older than `2 * PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL`
+    /// so a session that visits many feature branches does not grow the
+    /// cache without bound. Two intervals = enough that an "I'm flipping
+    /// between two PRs" workflow keeps both warm, while monotonic growth
+    /// across hundreds of branches gets pruned.
+    fn purge_expired_pull_request_cache_entries(&mut self, now: Instant) {
+        let ttl = PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL * 2;
+        self.pull_request_context_cache
+            .retain(|_, entry| now.duration_since(entry.checked_at) < ttl);
     }
 
     fn cached_pull_request_for_branch(
@@ -752,6 +903,21 @@ impl Multiplexer {
             .is_some_and(|entry| {
                 now.duration_since(entry.checked_at) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
             })
+    }
+
+    /// Current branch for the chrome bar, filtered to `None` when the
+    /// operator is on the repo's default branch (resolved at startup
+    /// from `origin/HEAD`). Centralising the filter at the render
+    /// callsite means the renderer / layout / hit-test helpers can
+    /// stay default-branch-agnostic and remain straightforward to
+    /// unit-test with literal branch names.
+    fn context_bar_branch(&self) -> Option<&str> {
+        let branch = self.pull_request_context_branch.as_deref()?;
+        if self.workdir_context.is_default_branch(branch) {
+            None
+        } else {
+            Some(branch)
+        }
     }
 
     /// Pop the top dialog. Returns `Some(prev)` when something was on
@@ -1373,7 +1539,7 @@ impl Multiplexer {
 
     fn bottom_chrome_rows(&self) -> u16 {
         if branch_context_bar_visible(
-            self.pull_request_context_branch.as_deref(),
+            self.context_bar_branch(),
             self.pull_request_context.as_ref(),
         ) {
             BRANCH_CONTEXT_BAR_ROWS
@@ -1777,7 +1943,7 @@ impl Multiplexer {
                 col + 1,
                 self.term_rows,
                 self.term_cols,
-                self.pull_request_context_branch.as_deref(),
+                self.context_bar_branch(),
                 self.pull_request_context.as_ref(),
                 self.status_bar.container_name(),
             )
@@ -1788,7 +1954,7 @@ impl Multiplexer {
                     col + 1,
                     self.term_rows,
                     self.term_cols,
-                    self.pull_request_context_branch.as_deref(),
+                    self.context_bar_branch(),
                     self.pull_request_context.as_ref(),
                     self.status_bar.container_name(),
                 ) {
@@ -2448,7 +2614,7 @@ impl Multiplexer {
             &mut buf,
             self.term_rows,
             self.term_cols,
-            self.pull_request_context_branch.as_deref(),
+            self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.status_bar.container_name(),
             self.hover_target,
@@ -2502,7 +2668,7 @@ impl Multiplexer {
             &mut buf,
             self.term_rows,
             self.term_cols,
-            self.pull_request_context_branch.as_deref(),
+            self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.status_bar.container_name(),
             self.hover_target,
@@ -3147,12 +3313,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     SessionEvent::PullRequestContextLoaded {
                         request_id,
                         branch,
-                        pull_request,
+                        outcome,
                     } => {
                         if mux.apply_pull_request_context_loaded(
                             request_id,
                             branch,
-                            pull_request,
+                            outcome,
                             Instant::now(),
                         ) {
                             mux.request_full_redraw(FullRedrawReason::StatusChange);
@@ -3236,7 +3402,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     &mut sbuf,
                     mux.term_rows,
                     mux.term_cols,
-                    mux.pull_request_context_branch.as_deref(),
+                    mux.context_bar_branch(),
                     mux.pull_request_context.as_ref(),
                     mux.status_bar.container_name(),
                     mux.hover_target,
@@ -3921,14 +4087,27 @@ fn is_default_branch_name(branch: &str) -> bool {
     matches!(branch, "main" | "master" | "")
 }
 
+/// Width of `s` measured in terminal cells, ignoring ASCII control
+/// bytes / OSC / CSI bytes. Control bytes report width 0 from
+/// `unicode-width`, which would let a PR title like `\x1b[2J` slip
+/// through the bar-truncation budget — and into the rendered output —
+/// without consuming columns. Stripping them here makes the chrome
+/// bar safe for arbitrary upstream strings (PR titles, branch names)
+/// without each caller re-implementing the same guard.
 fn display_cols(s: &str) -> usize {
-    s.chars().map(|c| c.width().unwrap_or(0)).sum()
+    s.chars()
+        .filter(|c| !is_control_char(*c))
+        .map(|c| c.width().unwrap_or(0))
+        .sum()
 }
 
 fn take_display_cols(s: &str, max_cols: usize) -> String {
     let mut out = String::new();
     let mut used = 0usize;
     for c in s.chars() {
+        if is_control_char(c) {
+            continue;
+        }
         let width = c.width().unwrap_or(0);
         if used + width > max_cols {
             break;
@@ -3939,10 +4118,30 @@ fn take_display_cols(s: &str, max_cols: usize) -> String {
     out
 }
 
+/// True for any C0 / C1 control byte or DEL (`0x7f`). These bytes are
+/// what terminal injection attacks (`\x1b[…m`, `\x9b…`, OSC, BEL)
+/// build their sequences from; stripping them eliminates the class.
+fn is_control_char(c: char) -> bool {
+    (c as u32) < 0x20 || c == '\x7f' || ((c as u32) >= 0x80 && (c as u32) < 0xa0)
+}
+
 const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
 
 fn git_current_branch(workdir: &Path) -> Option<String> {
+    // Try the cheap path first: read `.git/HEAD` and parse the symref.
+    // For a normal checkout on a branch the file is one line of
+    // `ref: refs/heads/<name>\n` (no subprocess fork, ~50µs vs ~3-15ms
+    // for `git branch --show-current`). Detached HEAD writes the raw
+    // SHA which we treat as "no branch" — the bar slot stays hidden,
+    // matching `git branch --show-current` which prints empty.
+    //
+    // Falls back to the subprocess path for worktrees (where `.git`
+    // is a file, not a directory) and for any other unusual layout
+    // the file-read approach cannot handle.
+    if let Some(branch) = read_branch_from_git_head(workdir) {
+        return Some(branch);
+    }
     command_stdout_trimmed_with_timeout(
         Command::new("git")
             .arg("-C")
@@ -3952,7 +4151,43 @@ fn git_current_branch(workdir: &Path) -> Option<String> {
     )
 }
 
-fn gh_pull_request_info(workdir: &Path, branch: &str) -> Option<PullRequestInfo> {
+fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
+    let head = std::fs::read_to_string(workdir.join(".git/HEAD")).ok()?;
+    let trimmed = head.trim();
+    trimmed
+        .strip_prefix("ref: refs/heads/")
+        .map(|s| s.to_string())
+}
+
+/// Distinguishes "lookup succeeded but command was unavailable / failed
+/// in a way that means we should not cache" from "lookup succeeded with
+/// data (or with no data)". The string carries an operator-readable
+/// reason for the daemon log; callers should not parse it.
+#[derive(Debug)]
+enum LookupError {
+    Failed(String),
+}
+
+impl std::fmt::Display for LookupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LookupError::Failed(reason) => f.write_str(reason),
+        }
+    }
+}
+
+fn build_gh_command(workdir: &Path) -> Command {
+    let mut cmd = Command::new("gh");
+    cmd.current_dir(workdir)
+        .env("GH_PROMPT_DISABLED", "1")
+        .env("GH_NO_UPDATE_NOTIFIER", "1");
+    cmd
+}
+
+fn gh_pull_request_info(
+    workdir: &Path,
+    branch: &str,
+) -> Result<Option<PullRequestInfo>, LookupError> {
     #[derive(Deserialize)]
     struct GhPullRequest {
         number: u64,
@@ -3962,56 +4197,84 @@ fn gh_pull_request_info(workdir: &Path, branch: &str) -> Option<PullRequestInfo>
         is_draft: bool,
     }
 
-    let json = command_stdout_trimmed_with_timeout(
-        Command::new("gh")
-            .current_dir(workdir)
-            .env("GH_PROMPT_DISABLED", "1")
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
-            .args([
-                "pr",
-                "list",
-                "--head",
-                branch,
-                "--state",
-                "open",
-                "--limit",
-                "1",
-                "--json",
-                "number,title,url,isDraft",
-            ]),
-        GH_PULL_REQUEST_COMMAND_TIMEOUT,
-    )?;
-    let mut prs: Vec<GhPullRequest> = serde_json::from_str(&json).ok()?;
-    let pr = prs.pop()?;
-    if !(pr.url.starts_with("https://") || pr.url.starts_with("http://")) {
-        return None;
+    let mut cmd = build_gh_command(workdir);
+    cmd.args([
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--state",
+        "open",
+        "--limit",
+        "1",
+        "--json",
+        "number,title,url,isDraft",
+    ]);
+    let json = run_command_capturing_output(&mut cmd, GH_PULL_REQUEST_COMMAND_TIMEOUT, &[0])?;
+    // `gh pr list` with no matching PR prints an empty JSON array `[]`,
+    // which `run_command_capturing_output` returns as `Some("[]")`. An
+    // empty stdout indicates an authoritative "no rows" only when
+    // `gh` chose to print nothing — accept either shape as "no PR".
+    let Some(json) = json else {
+        return Ok(None);
+    };
+    let prs: Vec<GhPullRequest> = serde_json::from_str(&json).map_err(|e| {
+        LookupError::Failed(format!(
+            "gh pr list JSON parse failed: {e}; payload prefix: {:.200?}",
+            json
+        ))
+    })?;
+    let Some(pr) = prs.into_iter().next() else {
+        return Ok(None);
+    };
+    if url::Url::parse(&pr.url)
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https"))
+        .is_none()
+    {
+        return Err(LookupError::Failed(format!(
+            "gh pr list returned non-http(s) url: {:?}",
+            pr.url
+        )));
     }
-    let checks = gh_pull_request_checks(workdir, &pr.url);
-    Some(PullRequestInfo {
+    // Checks lookup is best-effort — a parse failure on checks should
+    // not poison the PR cache. Demote any error to `None` checks.
+    let checks = gh_pull_request_checks(workdir, &pr.url)
+        .map_err(|e| crate::clog!("pull-request-context: gh pr checks failed: {e}"))
+        .ok()
+        .flatten();
+    Ok(Some(PullRequestInfo {
         number: pr.number,
         title: pr.title,
         url: pr.url,
         is_draft: pr.is_draft,
         checks,
-    })
+    }))
 }
 
-fn gh_pull_request_checks(workdir: &Path, url: &str) -> Option<PullRequestChecks> {
+fn gh_pull_request_checks(
+    workdir: &Path,
+    url: &str,
+) -> Result<Option<PullRequestChecks>, LookupError> {
     #[derive(Deserialize)]
     struct GhCheck {
         bucket: String,
     }
 
-    let json = command_stdout_trimmed_with_timeout_and_statuses(
-        Command::new("gh")
-            .current_dir(workdir)
-            .env("GH_PROMPT_DISABLED", "1")
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
-            .args(["pr", "checks", url, "--json", "bucket"]),
-        GH_PULL_REQUEST_COMMAND_TIMEOUT,
-        &[0, 8],
-    )?;
-    let checks: Vec<GhCheck> = serde_json::from_str(&json).ok()?;
+    let mut cmd = build_gh_command(workdir);
+    cmd.args(["pr", "checks", url, "--json", "bucket"]);
+    // `gh pr checks` exits with `8` when checks are pending and `0`
+    // otherwise; both are accepted statuses.
+    let json = run_command_capturing_output(&mut cmd, GH_PULL_REQUEST_COMMAND_TIMEOUT, &[0, 8])?;
+    let Some(json) = json else {
+        return Ok(None);
+    };
+    let checks: Vec<GhCheck> = serde_json::from_str(&json).map_err(|e| {
+        LookupError::Failed(format!(
+            "gh pr checks JSON parse failed: {e}; payload prefix: {:.200?}",
+            json
+        ))
+    })?;
     let mut summary = PullRequestChecks {
         passing: 0,
         failing: 0,
@@ -4027,10 +4290,15 @@ fn gh_pull_request_checks(workdir: &Path, url: &str) -> Option<PullRequestChecks
             "pending" => summary.pending += 1,
             "skipping" => summary.skipped += 1,
             "cancel" => summary.cancelled += 1,
-            _ => {}
+            other => {
+                crate::cdebug!(
+                    "pull-request-context: unknown gh pr checks bucket {:?}",
+                    other
+                );
+            }
         }
     }
-    Some(summary)
+    Ok(Some(summary))
 }
 
 #[cfg(test)]
@@ -4040,6 +4308,131 @@ fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
 
 fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration) -> Option<String> {
     command_stdout_trimmed_with_timeout_and_statuses(command, timeout, &[0])
+}
+
+/// Result-returning command runner that distinguishes success (returns
+/// `Ok(Some(stdout))` or `Ok(None)` for empty stdout) from genuine
+/// failure (returns `Err(LookupError::Failed)`). Used by the gh
+/// helpers so cache-poisoning can be avoided.
+///
+/// Differences from `command_stdout_trimmed_with_timeout_and_statuses`:
+/// - stdin is set to `Stdio::null()` so a misbehaving subprocess never
+///   blocks reading from the daemon's stdin awaiting a prompt.
+/// - stderr is captured into a bounded buffer and surfaced in the error
+///   reason — the operator can see "gh: not logged in" / "HTTP 401"
+///   when triaging via `multiplexer.log`.
+fn run_command_capturing_output(
+    command: &mut Command,
+    timeout: Duration,
+    accepted_statuses: &[i32],
+) -> Result<Option<String>, LookupError> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let program = format!("{:?}", command.get_program());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            return Err(LookupError::Failed(format!(
+                "{program}: spawn failed: {e} (errno={:?})",
+                e.raw_os_error()
+            )));
+        }
+    };
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| LookupError::Failed(format!("{program}: stdout pipe missing")))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| LookupError::Failed(format!("{program}: stderr pipe missing")))?;
+    let stdout_reader = read_pipe_bounded(stdout, 64 * 1024);
+    let stderr_reader = read_pipe_bounded(stderr, 4 * 1024);
+    let started = Instant::now();
+    let status_success: Option<bool>;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                status_success = Some(
+                    status
+                        .code()
+                        .is_some_and(|code| accepted_statuses.contains(&code)),
+                );
+                break;
+            }
+            Ok(None) => {}
+            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+                // PID 1 / sibling waitpid reaped the child; trust the
+                // stdout pipe. Stderr is still read for the caller's
+                // diagnostic context.
+                status_success = None;
+                break;
+            }
+            Err(e) => {
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(LookupError::Failed(format!(
+                    "{program}: try_wait failed: {e} (errno={:?})",
+                    e.raw_os_error()
+                )));
+            }
+        }
+        if started.elapsed() >= timeout {
+            if let Err(e) = child.kill() {
+                crate::clog!(
+                    "{program}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
+                    e.raw_os_error()
+                );
+            }
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(LookupError::Failed(format!(
+                "{program}: timed out after {timeout:?}"
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let stdout_bytes = stdout_reader
+        .join()
+        .map_err(|_| LookupError::Failed(format!("{program}: stdout reader panicked")))?
+        .map_err(|e| LookupError::Failed(format!("{program}: stdout read failed: {e}")))?;
+    let stderr_bytes = stderr_reader.join().unwrap_or(Ok(Vec::new())).unwrap_or_default();
+    if status_success == Some(false) {
+        let stderr_text = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
+        return Err(LookupError::Failed(format!(
+            "{program}: non-accepted status; stderr: {stderr_text}"
+        )));
+    }
+    let value = String::from_utf8_lossy(&stdout_bytes).trim().to_string();
+    if value.is_empty() { Ok(None) } else { Ok(Some(value)) }
+}
+
+fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
+    mut pipe: R,
+    cap: usize,
+) -> std::thread::JoinHandle<std::io::Result<Vec<u8>>> {
+    std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(cap.min(16 * 1024));
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = pipe.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            let take = (cap - bytes.len()).min(n);
+            bytes.extend_from_slice(&buf[..take]);
+            if bytes.len() >= cap {
+                // Cap reached; drain remaining bytes so the writer
+                // doesn't block on SIGPIPE waiting for us.
+                while pipe.read(&mut buf)? > 0 {}
+                break;
+            }
+        }
+        Ok(bytes)
+    })
 }
 
 fn command_stdout_trimmed_with_timeout_and_statuses(

@@ -471,8 +471,21 @@ pub enum SessionEvent {
     PullRequestContextLoaded {
         request_id: u64,
         branch: Option<String>,
-        pull_request: Option<PullRequestInfo>,
+        outcome: PullRequestLookupOutcome,
     },
+}
+
+/// Outcome of a background `gh pr` lookup. The `Resolved` variant carries
+/// the authoritative answer from `gh` — either the PR shape or `None`
+/// meaning "no open PR on this head". `TransientFailure` means the
+/// lookup itself failed (gh missing, auth not configured, timeout, JSON
+/// parse error) and the previous cached value should be preserved.
+/// Without this distinction every transient gh hiccup poisoned the
+/// 60s cache with a fake "no PR" answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PullRequestLookupOutcome {
+    Resolved(Option<PullRequestInfo>),
+    TransientFailure,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
