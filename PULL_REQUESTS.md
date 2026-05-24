@@ -39,7 +39,7 @@ Every pull request must include a copy-pasteable "Verify locally" section in the
 
 Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
-Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command because it is the operator's most intuitive end-to-end validation path: `cargo run --bin jackin -- console --debug`. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct commands such as `cargo run --bin jackin -- load <role> <target> --debug` or narrower subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
+Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command because it is the operator's most intuitive end-to-end validation path: `jackin console --debug`. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct commands such as `jackin load <role> <target> --debug` or narrower subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
 ### jackin-capsule PRs
 
@@ -53,7 +53,7 @@ Any PR touching `crates/jackin-capsule/` requires **two** Verify-locally blocks,
 
    **Must come before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
 
-2. `### jackin-capsule smoke` — runs `cargo run --bin jackin -- load the-architect . --debug` and the in-container verify checklist. Does NOT repeat the eval; the build block above already exported `JACKIN_CAPSULE_BIN`.
+2. `### jackin-capsule smoke` — runs `jackin load the-architect . --debug` and the in-container verify checklist. Does NOT repeat the eval; the build block above already exported `JACKIN_CAPSULE_BIN`.
 
 The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships both blocks in the correct order; copy them rather than rewriting the build invocation.
 
@@ -99,9 +99,15 @@ cd jackin
 mise trust
 git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
+mise install
+cargo build --bin jackin
+export PATH="$PWD/target/debug:$PATH"
+which jackin
 ```
 
 The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches may have been force-pushed after explicit operator approval (DCO amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at - so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
+
+The `cargo build --bin jackin` plus `PATH` export is also required for PR verification that runs jackin' itself. The runtime entrypoint and other `include_str!` assets are embedded into the Rust binary at compile time, so a Homebrew-installed `jackin` can silently launch old embedded content even when the checkout contains the PR changes. Prepending `target/debug` makes every later `jackin ...` command in the same terminal exercise the PR-built binary while leaving the operator's installed binary untouched. The `which jackin` line is the guardrail; it should print the checkout's `target/debug/jackin`, not a Homebrew path.
 
 #### Static Checks
 
@@ -120,10 +126,10 @@ cargo test <RELEVANT_TEST>
 
 ```sh
 # Adapt this to the behavior changed by the PR.
-cargo run --bin jackin -- console --debug
+jackin console --debug
 ```
 
-If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation" in `AGENTS.md`.
+If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. Use plain `jackin ...` after the Checkout block's `PATH` export so the smoke path matches the operator's normal command shape while still running the PR-built binary. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation" in `AGENTS.md`.
 
 For non-trivial code changes, structure the PR's "Verify locally" section by intent:
 
@@ -138,7 +144,7 @@ Do not add generic commands that do not materially validate the PR. In particula
 For console/TUI changes, workspace flows, and runtime behavior that can be manually verified through jackin' itself, put the console smoke first and then list the keys/clicks the operator should walk. Prefer:
 
 ```sh
-cargo run --bin jackin -- console --debug
+jackin console --debug
 ```
 
 When the TUI change depends on config or workspace state, seed that state in the PR body before the console command. Use a disposable `HOME` when the smoke test writes jackin-owned config, so the operator can verify save flows without mutating their real `~/.config/jackin`:
@@ -152,13 +158,13 @@ version = "v1alpha2"
 # Add the smallest config that makes the changed UI visible.
 TOML
 
-HOME="$JACKIN_VERIFY_HOME" cargo run --bin jackin -- console --debug
+HOME="$JACKIN_VERIFY_HOME" jackin console --debug
 ```
 
 For CLI subcommand changes, include the exact subcommand invocation and the expected output or persisted file change, for example:
 
 ```sh
-cargo run --bin jackin -- config mount list --debug
+jackin config mount list --debug
 ```
 
 #### Isolation env vars

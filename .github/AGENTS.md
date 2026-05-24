@@ -59,7 +59,7 @@ The canonical body shape, intent-split block list, and isolation-env-var decisio
 `jackin-capsule` is the in-container Capsule control-plane binary at `crates/jackin-capsule/`. Any PR that touches any file under `crates/jackin-capsule/` requires **two** blocks in the Verify-locally section, in this order:
 
 1. `### Build jackin-capsule` — runs `eval "$(cargo run --bin build-jackin-capsule -- --export)"`. **MUST come before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes. Reviewers must reject any `crates/jackin-capsule/` PR whose Verify-locally puts a `jackin console` / `jackin load` step before the build, regardless of how the body is otherwise structured.
-2. `### jackin-capsule smoke` — runs `cargo run --bin jackin -- load the-architect . --debug` and the in-container verify checklist. Unit tests and CI alone are not sufficient — the multiplexer only works end-to-end when running as PID 1 inside a container, and the only way to verify the status bar, input routing, pane splits, and session switching is a live `jackin load`. Do not repeat the eval here; it already ran in block 1.
+2. `### jackin-capsule smoke` — runs `jackin load the-architect . --debug` and the in-container verify checklist. Unit tests and CI alone are not sufficient — the multiplexer only works end-to-end when running as PID 1 inside a container, and the only way to verify the status bar, input routing, pane splits, and session switching is a live `jackin load`. Do not repeat the eval here; it already ran in block 1.
 
 ### How `ensure_available` picks the binary
 
@@ -90,10 +90,10 @@ This block is positionally load-bearing: it must come **before** `### User smoke
 The launch command must hit the changed surface — usually:
 
 ```sh
-cargo run --bin jackin -- load the-architect . --debug
+jackin load the-architect . --debug
 ```
 
-or `cargo run --bin jackin -- console --debug` for console-side changes. Do not repeat the eval here; the `### Build jackin-capsule` block above has already exported `JACKIN_CAPSULE_BIN`.
+or `jackin console --debug` for console-side changes. Do not repeat the eval here; the `### Build jackin-capsule` block above has already exported `JACKIN_CAPSULE_BIN`.
 
 Inside the container, the operator must verify:
 

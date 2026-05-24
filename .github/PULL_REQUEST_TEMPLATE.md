@@ -84,6 +84,9 @@ mise trust
 git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 mise install
+cargo build --bin jackin
+export PATH="$PWD/target/debug:$PATH"
+which jackin
 ```
 
 ### Isolation
@@ -151,14 +154,14 @@ binary on disk — re-run the eval to rebuild. To purge the cache entirely:
 ### User smoke
 
 ```sh
-cargo run --bin jackin -- console --debug
+jackin console --debug
 ```
 
 <Keep the console command first whenever the changed behavior is reachable from
 jackin' console; it is the preferred operator smoke path. List the clicks, keys,
 workspace state, in-container commands, and expected output that disambiguate a
 pass/fail. Add narrower repeat checks after the console flow when helpful, e.g.
-`cargo run --bin jackin -- load <role> <target> --debug`. Replace the console
+`jackin load <role> <target> --debug`. Replace the console
 command only when the changed behavior has no meaningful console route. For PRs
 touching `crates/jackin-capsule/`, the `### Build jackin-capsule` block above
 MUST run first — otherwise the console launches with a stale binary.>
@@ -171,7 +174,7 @@ This block assumes the `### Build jackin-capsule` block above has already
 run — do not repeat the eval here.>
 
 ```sh
-cargo run --bin jackin -- load the-architect . --debug
+jackin load the-architect . --debug
 ```
 
 Inside the container, verify:
