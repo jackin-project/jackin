@@ -362,9 +362,64 @@ pub(super) async fn resolve_agent_repo_with(
     branch_override: Option<&str>,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
+    resolve_agent_repo_with_options(
+        paths,
+        selector,
+        git_url,
+        runner,
+        RepoResolveOptions {
+            debug,
+            branch_override,
+            non_interactive_git: false,
+        },
+        confirm_removal,
+    )
+    .await
+}
+
+pub(super) async fn resolve_agent_repo_non_interactive_with(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    git_url: &str,
+    runner: &mut impl CommandRunner,
+    debug: bool,
+    branch_override: Option<&str>,
+    confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
+    resolve_agent_repo_with_options(
+        paths,
+        selector,
+        git_url,
+        runner,
+        RepoResolveOptions {
+            debug,
+            branch_override,
+            non_interactive_git: true,
+        },
+        confirm_removal,
+    )
+    .await
+}
+
+#[derive(Clone, Copy)]
+struct RepoResolveOptions<'a> {
+    debug: bool,
+    branch_override: Option<&'a str>,
+    non_interactive_git: bool,
+}
+
+#[allow(clippy::too_many_lines)]
+async fn resolve_agent_repo_with_options(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    git_url: &str,
+    runner: &mut impl CommandRunner,
+    opts: RepoResolveOptions<'_>,
+    confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
     let normalized = normalize_github_url(git_url);
     let git_url = normalized.as_str();
-    let cached_repo = branch_override.map_or_else(
+    let cached_repo = opts.branch_override.map_or_else(
         || CachedRepo::new(paths, selector),
         |branch| CachedRepo::for_branch(paths, selector, branch),
     );
@@ -411,11 +466,17 @@ pub(super) async fn resolve_agent_repo_with(
         .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
 
     let git_run_opts = RunOptions {
-        quiet: !debug,
+        quiet: !opts.debug,
+        extra_env: if opts.non_interactive_git {
+            vec![("GIT_TERMINAL_PROMPT".to_string(), "0".to_string())]
+        } else {
+            Vec::new()
+        },
+        null_stdin: opts.non_interactive_git,
         ..RunOptions::default()
     };
 
-    if branch_override.is_none() {
+    if opts.branch_override.is_none() {
         migrate_legacy_default_cache(paths, selector, &cached_repo)?;
     }
 
@@ -442,7 +503,7 @@ pub(super) async fn resolve_agent_repo_with(
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
-                let clone_args = clone_args(git_url, &repo_path, branch_override);
+                let clone_args = clone_args(git_url, &repo_path, opts.branch_override);
                 runner
                     .run("git", &clone_args, None, &git_run_opts)
                     .await
@@ -480,7 +541,7 @@ pub(super) async fn resolve_agent_repo_with(
         // remote has multiple branches. When a branch is pinned via
         // `--branch`, use it directly; otherwise derive from HEAD.
         let branch_val = git_branch(&cached_repo.repo_dir, runner).await;
-        let branch = branch_override.map_or_else(
+        let branch = opts.branch_override.map_or_else(
             || {
                 branch_val.ok_or_else(|| {
                     anyhow::anyhow!(
@@ -521,7 +582,7 @@ pub(super) async fn resolve_agent_repo_with(
                 .await?;
         }
     } else {
-        let clone_args = clone_args(git_url, &repo_path, branch_override);
+        let clone_args = clone_args(git_url, &repo_path, opts.branch_override);
         runner
             .run("git", &clone_args, None, &git_run_opts)
             .await

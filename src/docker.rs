@@ -8,6 +8,7 @@ pub struct RunOptions {
     pub capture_stderr: bool,
     pub quiet: bool,
     pub extra_env: Vec<(String, String)>,
+    pub null_stdin: bool,
 }
 
 pub trait CommandRunner {
@@ -102,6 +103,9 @@ impl CommandRunner for ShellRunner {
 
         if opts.quiet {
             let mut cmd = Self::build_command(program, args, cwd);
+            if opts.null_stdin {
+                cmd.stdin(std::process::Stdio::null());
+            }
             if !opts.extra_env.is_empty() {
                 cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             }
@@ -118,6 +122,9 @@ impl CommandRunner for ShellRunner {
             );
         } else if opts.capture_stderr {
             let mut cmd = Self::build_command(program, args, cwd);
+            if opts.null_stdin {
+                cmd.stdin(std::process::Stdio::null());
+            }
             if !opts.extra_env.is_empty() {
                 cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             }
@@ -158,6 +165,9 @@ impl CommandRunner for ShellRunner {
             }
         } else {
             let mut cmd = Self::build_command(program, args, cwd);
+            if opts.null_stdin {
+                cmd.stdin(std::process::Stdio::null());
+            }
             if !opts.extra_env.is_empty() {
                 cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             }

@@ -1538,16 +1538,17 @@ pub(super) async fn resolve_supported_agents_for_console(
 ) -> anyhow::Result<Vec<crate::agent::Agent>> {
     let mut config = config.clone();
     let (source, _, _) = resolve_launch_role_source(&mut config, selector, None)?;
-    let (_, validated_repo, _repo_lock) = super::repo_cache::resolve_agent_repo_with(
-        paths,
-        selector,
-        &source.git,
-        runner,
-        false,
-        None,
-        || Ok(false),
-    )
-    .await?;
+    let (_, validated_repo, _repo_lock) =
+        super::repo_cache::resolve_agent_repo_non_interactive_with(
+            paths,
+            selector,
+            &source.git,
+            runner,
+            false,
+            None,
+            || Ok(false),
+        )
+        .await?;
     Ok(validated_repo.manifest.supported_agents())
 }
 
@@ -5820,6 +5821,13 @@ plugins = []
                 .iter()
                 .all(|opts| opts.quiet && !opts.capture_stderr),
             "console role resolution must not stream git clone/fetch output over the TUI"
+        );
+        assert!(
+            runner.run_options.iter().all(|opts| opts.null_stdin
+                && opts
+                    .extra_env
+                    .contains(&("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()))),
+            "console role resolution must make git clone/fetch non-interactive"
         );
     }
 
