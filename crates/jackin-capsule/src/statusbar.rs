@@ -297,7 +297,7 @@ impl StatusBar {
 
     fn button_text(&self) -> String {
         match self.prefix_mode {
-            PrefixMode::Idle => " ☰ Menu ".to_string(),
+            PrefixMode::Idle => " ☰Menu ".to_string(),
             PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
@@ -593,8 +593,11 @@ mod tests {
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[], None, false, false);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("☰ Menu"), "menu hint missing: {s:?}");
-        assert!(!s.contains("☰  Menu"), "menu hint spacing drifted: {s:?}");
+        assert!(s.contains("☰Menu"), "menu hint missing: {s:?}");
+        assert!(
+            !s.contains("☰ Menu"),
+            "menu hint should not pad between icon and label: {s:?}"
+        );
         assert!(
             !s.contains("Ctrl+\\"),
             "menu hint should omit shortcut: {s:?}"
@@ -612,7 +615,7 @@ mod tests {
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[], None, true, false);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains(" ☰ Menu "), "menu hint should be padded: {s:?}");
+        assert!(s.contains(" ☰Menu "), "menu hint should be padded: {s:?}");
         assert!(
             s.contains(BUTTON_BG_IDLE_HOVER),
             "hovered menu hint should use lifted blue chrome: {s:?}"
