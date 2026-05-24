@@ -277,11 +277,7 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
                 terminal.term_program.as_deref(),
                 TERM_PROGRAM_LABEL,
             )?;
-            write_terminal_field(
-                &mut payload,
-                terminal.colorterm.as_deref(),
-                COLORTERM_LABEL,
-            )?;
+            write_terminal_field(&mut payload, terminal.colorterm.as_deref(), COLORTERM_LABEL)?;
             encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
@@ -317,10 +313,7 @@ fn optional_string(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-fn read_terminal_field(
-    cursor: &mut PayloadCursor<'_>,
-    label: &str,
-) -> Result<Option<String>> {
+fn read_terminal_field(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Option<String>> {
     let len_label = format!("terminal {label} length");
     let len = cursor.read_u16(&len_label)? as usize;
     if len > MAX_CLIENT_TERMINAL_FIELD {

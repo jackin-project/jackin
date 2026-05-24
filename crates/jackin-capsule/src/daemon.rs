@@ -140,7 +140,7 @@ pub struct Multiplexer {
     /// Current branch / PR context rendered in the bottom status line.
     pull_request_context_branch: Option<String>,
     pull_request_context: Option<PullRequestInfo>,
-    /// State of the 1 Hz git branch lookup (`git_current_branch`):
+    /// State of the fast local git branch lookup (`git_current_branch`):
     /// monotonic request id, in-flight gate, last-run instant for the
     /// cooldown check. The result lands on `pull_request_context_branch`.
     git_branch_lookup: LookupState,
@@ -190,12 +190,7 @@ impl WorkdirContext {
         // `try_exists` covers both. False when `workdir` is not a git
         // checkout at all — no point probing branch lookups in that
         // case.
-        let is_git_repo = git_available
-            && workdir
-                .join(".git")
-                .try_exists()
-                .ok()
-                .unwrap_or(false);
+        let is_git_repo = git_available && workdir.join(".git").try_exists().ok().unwrap_or(false);
         let default_branch = if is_git_repo {
             resolve_default_branch(workdir)
         } else {
@@ -460,11 +455,11 @@ const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::
 /// the constant keeps the content-row math and renderer in sync; if
 /// the bar ever grows to two rows the change happens in one place.
 const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
-/// 1 s feels instant after `git checkout` while staying cheap enough
-/// for a cold `git symbolic-ref` (or, with the `.git/HEAD` fast-path,
-/// a single file read). Faster polling would not be perceptibly
-/// fresher; slower polling would visibly lag operator actions.
-const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_secs(1);
+/// 100 ms keeps the branch bar inside the "immediate" threshold after
+/// `git checkout`. The hot path is a direct `.git/HEAD` read (including
+/// worktree-style `.git` files), so this does not put `git` subprocesses
+/// on the normal render path.
+const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// 60 s keeps the CI-status freshness within one PR turn while
 /// staying well under `gh`'s default secondary-rate-limit budget.
 /// The bar is operator-facing chrome, not a live feed.
@@ -802,9 +797,7 @@ impl Multiplexer {
         std::thread::spawn(move || {
             let value = work();
             if event_tx.send(to_event(value)).is_err() {
-                crate::clog!(
-                    "{label}: event channel closed before result reached main loop"
-                );
+                crate::clog!("{label}: event channel closed before result reached main loop");
             }
         });
     }
@@ -841,8 +834,7 @@ impl Multiplexer {
         // branch's cache slot with the wrong branch's PR. Bumping the
         // id makes the late-arrival response fail the equality guard
         // in `apply_pull_request_context_loaded`.
-        self.pull_request_lookup.request_id =
-            self.pull_request_lookup.request_id.wrapping_add(1);
+        self.pull_request_lookup.request_id = self.pull_request_lookup.request_id.wrapping_add(1);
         self.pull_request_lookup.in_flight = false;
         crate::cdebug!(
             "git-branch-context: branch changed old={:?} new={:?}",
@@ -4153,7 +4145,21 @@ fn git_current_branch(workdir: &Path) -> Option<String> {
 }
 
 fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
-    let head = std::fs::read_to_string(workdir.join(".git/HEAD")).ok()?;
+    let git_path = workdir.join(".git");
+    let head_path = if git_path.is_dir() {
+        git_path.join("HEAD")
+    } else {
+        let git_file = std::fs::read_to_string(&git_path).ok()?;
+        let git_dir = git_file.trim().strip_prefix("gitdir:")?.trim();
+        let git_dir = PathBuf::from(git_dir);
+        let git_dir = if git_dir.is_absolute() {
+            git_dir
+        } else {
+            workdir.join(git_dir)
+        };
+        git_dir.join("HEAD")
+    };
+    let head = std::fs::read_to_string(head_path).ok()?;
     let trimmed = head.trim();
     trimmed
         .strip_prefix("ref: refs/heads/")
@@ -4400,7 +4406,10 @@ fn run_command_capturing_output(
         .join()
         .map_err(|_| LookupError::Failed(format!("{program}: stdout reader panicked")))?
         .map_err(|e| LookupError::Failed(format!("{program}: stdout read failed: {e}")))?;
-    let stderr_bytes = stderr_reader.join().unwrap_or(Ok(Vec::new())).unwrap_or_default();
+    let stderr_bytes = stderr_reader
+        .join()
+        .unwrap_or(Ok(Vec::new()))
+        .unwrap_or_default();
     if status_success == Some(false) {
         let stderr_text = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
         return Err(LookupError::Failed(format!(
@@ -4408,7 +4417,11 @@ fn run_command_capturing_output(
         )));
     }
     let value = String::from_utf8_lossy(&stdout_bytes).trim().to_string();
-    if value.is_empty() { Ok(None) } else { Ok(Some(value)) }
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(value))
+    }
 }
 
 fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
@@ -4883,8 +4896,8 @@ mod tests {
         // region must drop entirely rather than overlap the left
         // chunk. No panic from `u16::try_from` overflow.
         let mut pr = pull_request_fixture(999);
-        pr.title = "Implement enormous feature with very long title that exceeds the bar"
-            .to_string();
+        pr.title =
+            "Implement enormous feature with very long title that exceeds the bar".to_string();
         let mut buf = Vec::new();
         render_branch_context_bar(
             &mut buf,
@@ -4910,51 +4923,53 @@ mod tests {
     fn branch_context_bar_layout_returns_none_for_zero_dimensions() {
         let pr = pull_request_fixture(1);
         assert!(
-            branch_context_bar_layout(
-                0,
-                80,
-                Some("feature/x"),
-                Some(&pr),
-                "jk-test"
-            )
-            .is_none()
+            branch_context_bar_layout(0, 80, Some("feature/x"), Some(&pr), "jk-test").is_none()
         );
         assert!(
-            branch_context_bar_layout(
-                24,
-                0,
-                Some("feature/x"),
-                Some(&pr),
-                "jk-test"
-            )
-            .is_none()
+            branch_context_bar_layout(24, 0, Some("feature/x"), Some(&pr), "jk-test").is_none()
         );
     }
 
     #[test]
     fn branch_context_bar_hit_rejects_columns_outside_region() {
         let pr = pull_request_fixture(7);
-        let layout = branch_context_bar_layout(
+        let layout = branch_context_bar_layout(24, 120, Some("feature/x"), Some(&pr), "jk-test")
+            .expect("layout fits");
+        // left_region covers exactly its declared range.
+        let (left_start, left_end) = layout.left_region.expect("left region present");
+        assert_eq!(
+            branch_context_bar_hit(
+                24,
+                left_start,
+                24,
+                120,
+                Some("feature/x"),
+                Some(&pr),
+                "jk-test"
+            ),
+            Some(BranchContextBarHit::Context)
+        );
+        assert_eq!(
+            branch_context_bar_hit(
+                24,
+                left_end - 1,
+                24,
+                120,
+                Some("feature/x"),
+                Some(&pr),
+                "jk-test"
+            ),
+            Some(BranchContextBarHit::Context)
+        );
+        // `end` is exclusive — `col == end` is outside the region.
+        let outside_left = branch_context_bar_hit(
+            24,
+            left_end,
             24,
             120,
             Some("feature/x"),
             Some(&pr),
             "jk-test",
-        )
-        .expect("layout fits");
-        // left_region covers exactly its declared range.
-        let (left_start, left_end) = layout.left_region.expect("left region present");
-        assert_eq!(
-            branch_context_bar_hit(24, left_start, 24, 120, Some("feature/x"), Some(&pr), "jk-test"),
-            Some(BranchContextBarHit::Context)
-        );
-        assert_eq!(
-            branch_context_bar_hit(24, left_end - 1, 24, 120, Some("feature/x"), Some(&pr), "jk-test"),
-            Some(BranchContextBarHit::Context)
-        );
-        // `end` is exclusive — `col == end` is outside the region.
-        let outside_left = branch_context_bar_hit(
-            24, left_end, 24, 120, Some("feature/x"), Some(&pr), "jk-test",
         );
         // The column may belong to the container region if it abuts.
         assert!(matches!(
@@ -4964,7 +4979,13 @@ mod tests {
         // Wrong row — never a hit.
         assert_eq!(
             branch_context_bar_hit(
-                23, left_start, 24, 120, Some("feature/x"), Some(&pr), "jk-test"
+                23,
+                left_start,
+                24,
+                120,
+                Some("feature/x"),
+                Some(&pr),
+                "jk-test"
             ),
             None
         );
@@ -5159,16 +5180,10 @@ mod tests {
         let mut mux = test_mux(24, 100);
         mux.git_branch_lookup.request_id = 4;
         mux.git_branch_lookup.in_flight = true;
-        let changed = mux.apply_git_branch_context_loaded(
-            2,
-            Some("feat/x".to_string()),
-            Instant::now(),
-        );
+        let changed =
+            mux.apply_git_branch_context_loaded(2, Some("feat/x".to_string()), Instant::now());
         assert!(!changed);
-        assert!(
-            mux.git_branch_lookup.in_flight,
-            "stale id leaves in_flight"
-        );
+        assert!(mux.git_branch_lookup.in_flight, "stale id leaves in_flight");
         assert!(mux.pull_request_context_branch.is_none());
     }
 
@@ -5253,6 +5268,39 @@ mod tests {
         assert_eq!(
             mux.pull_request_context.as_ref().map(|pr| pr.number),
             Some(436)
+        );
+    }
+
+    #[test]
+    fn read_branch_from_git_head_reads_normal_checkout() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/feat/context\n").unwrap();
+
+        assert_eq!(
+            read_branch_from_git_head(temp.path()).as_deref(),
+            Some("feat/context")
+        );
+    }
+
+    #[test]
+    fn read_branch_from_git_head_reads_worktree_gitdir_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir = temp.path().join("workdir");
+        let git_dir = temp.path().join("repo/.git/worktrees/workdir");
+        std::fs::create_dir_all(&workdir).unwrap();
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(
+            workdir.join(".git"),
+            "gitdir: ../repo/.git/worktrees/workdir\n",
+        )
+        .unwrap();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/feat/worktree\n").unwrap();
+
+        assert_eq!(
+            read_branch_from_git_head(&workdir).as_deref(),
+            Some("feat/worktree")
         );
     }
 
