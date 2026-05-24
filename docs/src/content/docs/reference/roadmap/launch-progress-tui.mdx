@@ -84,6 +84,54 @@ The renderer should start from jackin' console conventions: modal sizing, red-bo
 
 When the terminal is not interactive or cannot support the TUI, launch falls back to compact line output with the same event vocabulary. Scripts should still get deterministic stderr/stdout behavior and useful failure text.
 
+## Visual language
+
+The launch surface should be colorful enough to feel recognizable, but disciplined enough to stay readable during a real failure. Phosphor green remains the base identity color; secondary accents should be sparse and stage-specific:
+
+| Stage family | Accent direction | Why |
+|---|---|---|
+| `identity`, `role`, `credentials` | phosphor green / dim green | Resolution and trust are jackin' control-plane work. |
+| `construct` | cyan-green | The shared base world is coming online. |
+| `derived image` | amber | Image builds are the slow transformation stage; amber signals active work without implying failure. |
+| `network`, `sidecar` | blue-cyan | Infrastructure wiring and private daemon startup should read as system-level connectivity. |
+| `capsule` | white + green | The control plane is awake and ready. |
+| `hardline` | bright white pulse into green | The final connection should feel like the direct line opening, then settle back into normal jackin' chrome. |
+
+Motion should communicate state rather than decorate the screen. Good candidates:
+
+- A narrow rain strip or side column that brightens when a stage starts, dims when queued, and briefly pulses when a stage completes.
+- A signal-strength motif for hardline opening, for example `hardline ▂▄▆█ opening primary session`.
+- A compact progress bar only for stages with meaningful progress signals; otherwise prefer stage status words over fake percentages.
+- Micro-completion labels that are more product-native than `done`: `online`, `ready`, `isolated`, `awake`, `open`.
+
+The `construct` and `derived image` stages should have a visible layer split. This can be a small stack panel:
+
+```text
+construct      projectjackin/construct:trixie       online
+derived image  agent-smith + claude runtime          building
+capsule        jackin-capsule                        staged
+```
+
+This teaches the launch model while work is running: jackin' pulls or verifies the base world, layers the role and runtime on top, starts Capsule, then opens the hardline. The TUI should not expose raw Docker command streams as the primary visual model.
+
+Use stronger verbs where they clarify the product story, but avoid theatrical wording that hides what is happening. Good candidate status lines:
+
+| Stage | Candidate wording |
+|---|---|
+| `identity` | `resolving operator`, `claiming instance identity` |
+| `role` | `trusting role`, `validating role contract` |
+| `construct` | `pulling construct`, `construct already online` |
+| `derived image` | `building derived image`, `refreshing agent runtime layer` |
+| `workspace` | `materializing workspace`, `mounting directory` |
+| `network` | `wiring private network` |
+| `sidecar` | `waking sidecar` |
+| `capsule` | `starting Capsule`, `seeding agent home` |
+| `hardline` | `opening hardline`, `focusing Claude tab` |
+
+The footer acts as the stable status/control strip. During normal launch it can show the log retrieval command and any active non-destructive key. During fatal failure it shows only `Enter Close` plus the log retrieval command. Do not put key hints inside the main panel or inside error dialogs.
+
+Reduced-motion and low-capability terminals must keep the same information architecture. When motion is unavailable or disabled, render a static phosphor layout with stage accents and status text, no shimmer, no animated rain, and no cursor-control assumptions beyond the selected renderer's capability level. The visual identity should survive without animation.
+
 ## Digital rain lifecycle
 
 The current launch code calls the intro animation before the launch and the outro renderer after the foreground session exits. The new rule should be keyed to the active count of containers owned by jackin':
