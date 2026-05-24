@@ -172,7 +172,7 @@ Rules:
 - Containers receive read-only access through the Capsule/daemon control channel, not by bind-mounting writable host cache directories into every container. A narrow read-only materialized file under `/jackin/run/usage/` is acceptable for agents that can only read files, but the daemon remains authoritative and writes the file.
 - Cache TTL is provider-specific. Server-side quota endpoints get conservative refresh intervals and backoff on errors; local session samples can update on session events.
 - The cache stores tokens, costs, percentages, reset times, source metadata, and opaque account labels. It never stores prompts, completions, raw conversation text, provider cookies, or bearer tokens.
-- If an account requires authentication, the daemon requests it through existing jackin auth mechanisms: forwarded CLI auth, 1Password references, macOS Keychain integration, or an explicit host-bridge approval. Failed auth is a first-class `needs_login` / `needs_secret` state.
+- If an account requires authentication, the daemon requests it through existing jackin' auth mechanisms: forwarded CLI auth, 1Password references, macOS Keychain integration, or an explicit host-bridge approval. Failed auth is a first-class `needs_login` / `needs_secret` state.
 
 ### Host-side effects
 

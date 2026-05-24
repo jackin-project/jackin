@@ -129,9 +129,34 @@ CREATE TABLE usage_samples (
     cost_usd_micros INTEGER                  -- $cost * 1e6, integer-safe
 );
 
--- Provider account quota cache. This is daemon-global in the future
--- Desktop/usage program; keep the shape here so token telemetry does
--- not invent a parallel state file.
+-- Tool fire audit. Rolling N=1000 entries.
+CREATE TABLE tool_history (
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,
+    tool_key TEXT NOT NULL,
+    exit_code INTEGER,
+    duration_ms INTEGER
+);
+
+-- Schema version. One row.
+CREATE TABLE _meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+```
+
+Future leaves add more tables; the migration framework handles upgrades.
+
+### Daemon-global account cache
+
+Provider account quota snapshots do **not** belong in each per-instance
+database. The [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/)
+plan makes the host daemon the single owner of provider refresh, then fans
+read-only account state out to Desktop, `jackin console`, Capsule, and CLI
+surfaces. The daemon-global cache keeps that state from diverging across role
+containers.
+
+```sql
 CREATE TABLE account_usage_snapshots (
     id INTEGER PRIMARY KEY,
     provider TEXT NOT NULL,
@@ -151,24 +176,7 @@ CREATE TABLE account_usage_snapshots (
     last_error TEXT,
     UNIQUE(provider, account_key_hash, source, window_kind)
 );
-
--- Tool fire audit. Rolling N=1000 entries.
-CREATE TABLE tool_history (
-    id INTEGER PRIMARY KEY,
-    occurred_at INTEGER NOT NULL,
-    tool_key TEXT NOT NULL,
-    exit_code INTEGER,
-    duration_ms INTEGER
-);
-
--- Schema version. One row.
-CREATE TABLE _meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
 ```
-
-Future leaves add more tables; the migration framework handles upgrades.
 
 ### Lifecycle
 
