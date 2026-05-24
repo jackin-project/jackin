@@ -16,6 +16,7 @@ operator config is a single TOML file. There's no way to store:
   busy?")
 - Cached GitHub link state (refresh windows, last-fetched, last-error)
 - Token / cost samples over time
+- Provider account quota snapshots and stale/error metadata
 - Tool fire history (audit log)
 - The autonomous queue's pending and completed tasks
 
@@ -116,11 +117,39 @@ CREATE TABLE github_link_statuses (
 -- Token / cost samples. Rolling N=86400 entries (~1/sec for 24h).
 CREATE TABLE usage_samples (
     occurred_at INTEGER PRIMARY KEY,
+    instance TEXT,
+    session_id INTEGER,
+    workspace TEXT,
+    provider TEXT,
+    model TEXT,
     token_input INTEGER,
     token_output INTEGER,
     token_cache_read INTEGER,
     token_cache_write INTEGER,
     cost_usd_micros INTEGER                  -- $cost * 1e6, integer-safe
+);
+
+-- Provider account quota cache. This is daemon-global in the future
+-- Desktop/usage program; keep the shape here so token telemetry does
+-- not invent a parallel state file.
+CREATE TABLE account_usage_snapshots (
+    id INTEGER PRIMARY KEY,
+    provider TEXT NOT NULL,
+    account_key_hash TEXT NOT NULL,
+    account_label TEXT NOT NULL,
+    source TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    window_kind TEXT NOT NULL,
+    used_amount INTEGER,
+    used_unit TEXT,
+    limit_amount INTEGER,
+    limit_unit TEXT,
+    resets_at INTEGER,
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    last_error TEXT,
+    UNIQUE(provider, account_key_hash, source, window_kind)
 );
 
 -- Tool fire audit. Rolling N=1000 entries.
@@ -170,6 +199,9 @@ observing real footprint.
 ## Scope (V1)
 
 - One SQLite DB per `~/.jackin/data/<container>/`, at `jackin.db`.
+- One daemon-global cache for account quota snapshots once the host
+  daemon owns provider refresh; per-instance databases remain the
+  source for workspace/session token attribution.
 - Schema above; migrations embedded in the binary via the chosen
   toolkit.
 - WAL mode enabled at creation.
