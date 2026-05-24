@@ -38,7 +38,7 @@ run_hook() {
 # `source.sh` can mutate this shell's environment before `exec`.
 case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   claude)
-    LAUNCH=(claude --dangerously-skip-permissions --verbose)
+    LAUNCH=(claude --settings '{"skipDangerousModePermissionPrompt":true}' --dangerously-skip-permissions --verbose)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
@@ -61,6 +61,7 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     ;;
   opencode)
+    export OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'
     LAUNCH=(opencode)
     if [ $# -gt 0 ]; then
         LAUNCH+=("$@")

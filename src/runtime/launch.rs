@@ -341,9 +341,9 @@ fn build_workspace_mount_strings(
     out
 }
 
-fn workspace_mise_trusted_config_paths(
+fn workspace_trusted_project_paths(
     workspace: &crate::workspace::ResolvedWorkspace,
-) -> Option<String> {
+) -> std::collections::BTreeSet<String> {
     let mut paths = std::collections::BTreeSet::new();
     if !workspace.workdir.trim().is_empty() {
         paths.insert(workspace.workdir.clone());
@@ -353,7 +353,13 @@ fn workspace_mise_trusted_config_paths(
             paths.insert(mount.dst.clone());
         }
     }
+    paths
+}
 
+fn workspace_mise_trusted_config_paths(
+    workspace: &crate::workspace::ResolvedWorkspace,
+) -> Option<String> {
+    let paths = workspace_trusted_project_paths(workspace);
     (!paths.is_empty()).then(|| paths.into_iter().collect::<Vec<_>>().join(":"))
 }
 
@@ -371,6 +377,71 @@ fn inject_workspace_mise_env(
     if let Some(value) = workspace_mise_trusted_config_paths(workspace) {
         vars.push((MISE_TRUSTED_CONFIG_PATHS_ENV.to_string(), value));
     }
+}
+
+/// Coerce `key` to a table, overwriting any non-table value — the trailing
+/// `as_table_mut` is infallible only because of this normalization.
+fn ensure_table<'a>(table: &'a mut toml_edit::Table, key: &str) -> &'a mut toml_edit::Table {
+    let item = table
+        .entry(key)
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()));
+    if !item.is_table() {
+        *item = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    item.as_table_mut()
+        .expect("item was just normalized to a table")
+}
+
+/// Codex's per-folder trust prompt is separate from approval/sandbox bypass,
+/// so the launch flag alone does not suppress it — each workspace path is
+/// marked `trusted` in the container's `config.toml`.
+fn seed_codex_project_trust(
+    state: &crate::instance::RoleState,
+    workspace: &crate::workspace::ResolvedWorkspace,
+) -> anyhow::Result<()> {
+    if state.auth.codex.is_none() {
+        return Ok(());
+    }
+
+    let trusted_paths = workspace_trusted_project_paths(workspace);
+    if trusted_paths.is_empty() {
+        return Ok(());
+    }
+
+    let config_path = state.root.join("home/.codex/config.toml");
+    let raw = match std::fs::read_to_string(&config_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("reading Codex config at {}", config_path.display()));
+        }
+    };
+    let mut doc: toml_edit::DocumentMut = if raw.trim().is_empty() {
+        toml_edit::DocumentMut::new()
+    } else {
+        raw.parse()
+            .with_context(|| format!("parsing Codex config at {}", config_path.display()))?
+    };
+
+    crate::debug_log!(
+        "codex-trust",
+        "seeding trust_level=trusted for {} workspace path(s) in {}",
+        trusted_paths.len(),
+        config_path.display()
+    );
+    let projects = ensure_table(doc.as_table_mut(), "projects");
+    for path in trusted_paths {
+        ensure_table(projects, &path).insert("trust_level", toml_edit::value("trusted"));
+    }
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating Codex config directory at {}", parent.display()))?;
+    }
+    std::fs::write(&config_path, doc.to_string())
+        .with_context(|| format!("writing Codex config at {}", config_path.display()))?;
+    Ok(())
 }
 
 /// Resolve the TERM value and an optional terminfo bind-mount for the
@@ -1946,6 +2017,7 @@ async fn load_role_with(
             &paths.home_dir,
             agent,
         )?;
+        seed_codex_project_trust(&state, workspace)?;
 
         // Diagnostic line: surface the active auth mode and, for token
         // mode, the source reference of CLAUDE_CODE_OAUTH_TOKEN drawn
@@ -4771,6 +4843,137 @@ agents = ["amp"]
         );
     }
 
+    /// A Codex-authed role state rooted at `root` plus a workspace whose
+    /// workdir (`/workspace`) and single mount (`/workspace/repo`) are the two
+    /// paths `seed_codex_project_trust` should mark trusted.
+    fn codex_trust_fixture(
+        root: &std::path::Path,
+    ) -> (
+        crate::instance::RoleState,
+        crate::workspace::ResolvedWorkspace,
+    ) {
+        let state = crate::instance::RoleState {
+            root: root.to_path_buf(),
+            gh_config_dir: root.join("gh"),
+            gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
+            agent_runtime: crate::instance::AgentRuntimeState::Codex { model: None },
+            auth: crate::instance::ProvisionedAuth {
+                codex: Some(crate::instance::CodexAuth::default()),
+                ..Default::default()
+            },
+        };
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: "sample-workspace".to_string(),
+            workdir: "/workspace".to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: "/host/repo".to_string(),
+                dst: "/workspace/repo".to_string(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            default_agent: None,
+            keep_awake_enabled: false,
+            git_pull_on_entry: false,
+        };
+        (state, workspace)
+    }
+
+    #[test]
+    fn seed_codex_project_trust_preserves_existing_config() {
+        let temp = tempdir().unwrap();
+        let root = temp.path().join("state");
+        std::fs::create_dir_all(root.join("home/.codex")).unwrap();
+        std::fs::write(
+            root.join("home/.codex/config.toml"),
+            "model = \"gpt-5\"\n\n[projects.\"/existing\"]\ntrust_level = \"trusted\"\n",
+        )
+        .unwrap();
+        let (state, workspace) = codex_trust_fixture(&root);
+
+        seed_codex_project_trust(&state, &workspace).unwrap();
+
+        let codex_config = std::fs::read_to_string(root.join("home/.codex/config.toml")).unwrap();
+        assert!(codex_config.contains("model = \"gpt-5\""));
+        assert!(codex_config.contains("[projects.\"/existing\"]"));
+        assert!(codex_config.contains("[projects.\"/workspace\"]"));
+        assert!(codex_config.contains("[projects.\"/workspace/repo\"]"));
+        assert_eq!(codex_config.matches("trust_level = \"trusted\"").count(), 3);
+    }
+
+    #[test]
+    fn seed_codex_project_trust_replaces_non_table_projects_value() {
+        let temp = tempdir().unwrap();
+        let root = temp.path().join("state");
+        std::fs::create_dir_all(root.join("home/.codex")).unwrap();
+        std::fs::write(root.join("home/.codex/config.toml"), "projects = 5\n").unwrap();
+        let (state, workspace) = codex_trust_fixture(&root);
+
+        seed_codex_project_trust(&state, &workspace).unwrap();
+
+        let codex_config = std::fs::read_to_string(root.join("home/.codex/config.toml")).unwrap();
+        assert!(!codex_config.contains("projects = 5"));
+        assert!(codex_config.contains("[projects.\"/workspace\"]"));
+        assert!(codex_config.contains("trust_level = \"trusted\""));
+    }
+
+    #[test]
+    fn seed_codex_project_trust_replaces_non_table_project_entry() {
+        let temp = tempdir().unwrap();
+        let root = temp.path().join("state");
+        std::fs::create_dir_all(root.join("home/.codex")).unwrap();
+        std::fs::write(
+            root.join("home/.codex/config.toml"),
+            "[projects]\n\"/workspace\" = \"oops\"\n",
+        )
+        .unwrap();
+        let (state, workspace) = codex_trust_fixture(&root);
+
+        seed_codex_project_trust(&state, &workspace).unwrap();
+
+        let codex_config = std::fs::read_to_string(root.join("home/.codex/config.toml")).unwrap();
+        assert!(!codex_config.contains("\"oops\""));
+        let doc: toml_edit::DocumentMut = codex_config.parse().unwrap();
+        let projects = doc.get("projects").and_then(|i| i.as_table_like()).unwrap();
+        let workspace_entry = projects.get("/workspace").and_then(|i| i.as_table_like());
+        assert_eq!(
+            workspace_entry
+                .and_then(|t| t.get("trust_level"))
+                .and_then(|i| i.as_str()),
+            Some("trusted")
+        );
+    }
+
+    #[test]
+    fn seed_codex_project_trust_is_idempotent_across_relaunches() {
+        let temp = tempdir().unwrap();
+        let root = temp.path().join("state");
+        std::fs::create_dir_all(root.join("home/.codex")).unwrap();
+        let (state, workspace) = codex_trust_fixture(&root);
+
+        seed_codex_project_trust(&state, &workspace).unwrap();
+        let first = std::fs::read_to_string(root.join("home/.codex/config.toml")).unwrap();
+        seed_codex_project_trust(&state, &workspace).unwrap();
+        let second = std::fs::read_to_string(root.join("home/.codex/config.toml")).unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(second.matches("trust_level = \"trusted\"").count(), 2);
+    }
+
+    #[test]
+    fn seed_codex_project_trust_errors_on_invalid_toml_without_clobbering() {
+        let temp = tempdir().unwrap();
+        let root = temp.path().join("state");
+        std::fs::create_dir_all(root.join("home/.codex")).unwrap();
+        let original = "[unterminated\n";
+        std::fs::write(root.join("home/.codex/config.toml"), original).unwrap();
+        let (state, workspace) = codex_trust_fixture(&root);
+
+        let err = seed_codex_project_trust(&state, &workspace).unwrap_err();
+        assert!(err.to_string().contains("parsing Codex config"));
+        let after = std::fs::read_to_string(root.join("home/.codex/config.toml")).unwrap();
+        assert_eq!(after, original);
+    }
+
     #[tokio::test]
     async fn git_pull_on_entry_starts_all_repo_pulls_before_waiting() {
         let temp = tempdir().unwrap();
@@ -5416,14 +5619,16 @@ model = "gpt-5"
         // but Claude's mounts must be present.
         assert!(run_cmd.contains("/home/agent/.claude"));
         assert!(run_cmd.contains("/home/agent/.codex"));
-        assert!(
-            !paths
+        let container_name = launched_role_container_name(&runner);
+        let codex_config = std::fs::read_to_string(
+            paths
                 .data_dir
-                .join("jk-agent-smith")
-                .join("codex")
-                .join("config.toml")
-                .exists()
-        );
+                .join(container_name)
+                .join("home/.codex/config.toml"),
+        )
+        .unwrap();
+        assert!(codex_config.contains("[projects.\"/workspace\"]"));
+        assert!(codex_config.contains("trust_level = \"trusted\""));
     }
 
     /// Codex CLI drives interactive `ChatGPT` login when no API key is
