@@ -16,7 +16,7 @@ jackin prune <SUBCOMMAND>
 | Subcommand | What it removes |
 |---|---|
 | `roles` | Cached role repositories |
-| `cache` | Shared caches (terminfo, version-check results) |
+| `cache` | Shared caches (version-check results and other rebuildable data) |
 | `images` | Unused jackin-managed Docker images |
 | `instances` | On-disk state for terminated instances |
 | `system` | All of the above, in order |
@@ -35,7 +35,7 @@ Removes the local role-repo cache. Role repos are re-cloned automatically the ne
 jackin prune cache
 ```
 
-Removes the shared cache directory, including compiled terminfo entries and version-check results. All caches regenerate automatically on the next jackin invocation that needs them.
+Removes the shared cache directory, including version-check results and other rebuildable data. All caches regenerate automatically on the next jackin invocation that needs them.
 
 ## `jackin prune images`
 

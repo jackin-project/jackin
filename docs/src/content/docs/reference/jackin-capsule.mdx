@@ -316,7 +316,7 @@ The multiplexer also emits its own OSC 2 title from the compositor. That title i
 
 ### Pointer shape feedback
 
-The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion and the outer terminal advertises a known OSC 22-capable identity (`xterm-ghostty`, `xterm-kitty`, Foot, or iTerm via `TERM` / `TERM_PROGRAM`), it emits OSC 22 pointer-shape updates:
+The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion and the active attach client advertises a known OSC 22-capable identity (`xterm-ghostty`, `xterm-kitty`, Foot, or iTerm via `TERM` / `TERM_PROGRAM`), it emits OSC 22 pointer-shape updates:
 
 - `pointer` over clickable chrome owned by jackin', such as tabs, the bottom-row GitHub and container-info entry points, and clickable dialog values such as the Container ID and GitHub URL copy targets.
 - `text` over pane bodies where mouse selection owned by jackin' is available because the focused program did not request mouse reporting.

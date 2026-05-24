@@ -45,6 +45,10 @@ pub const MAX_HELLO_ENV_VALUE: usize = 8 * 1024;
 /// MAX_HELLO_ENV_VALUE; env-var names should be even shorter than
 /// values, but the wire field is still u16-sized so we bound it.
 pub const MAX_HELLO_ENV_KEY: usize = 1024;
+/// Per terminal-identity field cap. These values come from the active
+/// attach client's environment (`TERM`, `TERM_PROGRAM`, `COLORTERM`) and
+/// should be tiny, but bounding them keeps the Hello frame shape explicit.
+pub const MAX_CLIENT_TERMINAL_FIELD: usize = 1024;
 
 /// Wall-clock cap for a single attach frame's read. Bounded so a peer
 /// that stalls between length prefix and payload — or trickles bytes
@@ -73,6 +77,50 @@ impl SpawnRequest {
     }
 }
 
+/// Terminal identity reported by the currently attached client.
+///
+/// This deliberately describes the outer terminal for one attach, not the
+/// long-lived pane PTY environment. A running container can be reattached from
+/// Ghostty, Kitty, iTerm, Warp, or a plain xterm-compatible terminal at
+/// different times; the daemon should gate outer-terminal enhancements on this
+/// value rather than on the daemon process environment inherited at launch.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClientTerminal {
+    pub term: Option<String>,
+    pub term_program: Option<String>,
+    pub colorterm: Option<String>,
+}
+
+impl ClientTerminal {
+    pub fn from_env() -> Self {
+        Self {
+            term: non_empty_env("TERM"),
+            term_program: non_empty_env("TERM_PROGRAM"),
+            colorterm: non_empty_env("COLORTERM"),
+        }
+    }
+
+    pub fn pointer_shapes_supported(&self) -> bool {
+        let term = self.term.as_deref().unwrap_or("").to_ascii_lowercase();
+        let term_program = self
+            .term_program
+            .as_deref()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        term.contains("ghostty")
+            || term.contains("kitty")
+            || term.contains("foot")
+            || term_program.contains("ghostty")
+            || term_program.contains("kitty")
+            || term_program.contains("iterm")
+    }
+}
+
+fn non_empty_env(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|value| !value.is_empty())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
@@ -86,6 +134,10 @@ pub enum ClientFrame {
         cols: u16,
         spawn: Option<SpawnRequest>,
         env: Vec<(String, String)>,
+        /// Terminal identity for the active attach client. This is refreshed
+        /// on every attach/takeover so daemon-owned output enhancements can
+        /// adapt when the operator switches terminal applications.
+        terminal: ClientTerminal,
         /// Optional pane-focus request: when `Some(session_id)` the
         /// daemon switches its active tab + that tab's `focused_id`
         /// to the leaf carrying this session id before forwarding any
@@ -149,6 +201,7 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             spawn,
             env,
             focus_session,
+            terminal,
         } => {
             // Layout:
             //   rows(2) cols(2) spawn_kind(1)
@@ -156,6 +209,9 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             //   env_count(2)
             //   repeated key_len(2) value_len(4) key_bytes value_bytes
             //   focus_kind(1) [focus_session_id(8) if focus_kind == 1]
+            //   term_len(2) term_bytes
+            //   term_program_len(2) term_program_bytes
+            //   colorterm_len(2) colorterm_bytes
             let (spawn_kind, agent_bytes) = match spawn.as_ref() {
                 None => (0u8, b"".as_slice()),
                 Some(SpawnRequest::Shell) => (1u8, b"".as_slice()),
@@ -214,6 +270,13 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
                     payload.extend_from_slice(&id.to_be_bytes());
                 }
             }
+            write_terminal_field(&mut payload, terminal.term.as_deref(), "TERM")?;
+            write_terminal_field(
+                &mut payload,
+                terminal.term_program.as_deref(),
+                "TERM_PROGRAM",
+            )?;
+            write_terminal_field(&mut payload, terminal.colorterm.as_deref(), "COLORTERM")?;
             encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
@@ -228,6 +291,25 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
         ClientFrame::FocusIn => encode(TAG_FOCUS_IN, &[]),
         ClientFrame::FocusOut => encode(TAG_FOCUS_OUT, &[]),
     })
+}
+
+fn write_terminal_field(payload: &mut Vec<u8>, value: Option<&str>, label: &str) -> Result<()> {
+    let bytes = value.unwrap_or("").as_bytes();
+    if bytes.len() > MAX_CLIENT_TERMINAL_FIELD {
+        bail!(
+            "hello terminal field {label} length {} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}",
+            bytes.len()
+        );
+    }
+    let len = u16::try_from(bytes.len())
+        .map_err(|_| anyhow::anyhow!("hello terminal field {label} exceeds u16::MAX bytes"))?;
+    payload.extend_from_slice(&len.to_be_bytes());
+    payload.extend_from_slice(bytes);
+    Ok(())
+}
+
+fn optional_string(value: String) -> Option<String> {
+    (!value.is_empty()).then_some(value)
 }
 
 /// Read one length-prefixed payload from `stream` given the already-
@@ -361,6 +443,36 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 1 => Some(cursor.read_u64("focus session id")?),
                 other => bail!("unknown hello focus kind {other}"),
             };
+            let term_len = cursor.read_u16("terminal TERM length")? as usize;
+            if term_len > MAX_CLIENT_TERMINAL_FIELD {
+                bail!(
+                    "hello terminal TERM length {term_len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}"
+                );
+            }
+            let term = optional_string(cursor.read_string(term_len, "terminal TERM")?);
+
+            let term_program_len = cursor.read_u16("terminal TERM_PROGRAM length")? as usize;
+            if term_program_len > MAX_CLIENT_TERMINAL_FIELD {
+                bail!(
+                    "hello terminal TERM_PROGRAM length {term_program_len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}"
+                );
+            }
+            let term_program =
+                optional_string(cursor.read_string(term_program_len, "terminal TERM_PROGRAM")?);
+
+            let colorterm_len = cursor.read_u16("terminal COLORTERM length")? as usize;
+            if colorterm_len > MAX_CLIENT_TERMINAL_FIELD {
+                bail!(
+                    "hello terminal COLORTERM length {colorterm_len} exceeds cap {MAX_CLIENT_TERMINAL_FIELD}"
+                );
+            }
+            let colorterm =
+                optional_string(cursor.read_string(colorterm_len, "terminal COLORTERM")?);
+            let terminal = ClientTerminal {
+                term,
+                term_program,
+                colorterm,
+            };
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");
             }
@@ -369,6 +481,7 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 cols,
                 spawn,
                 env,
+                terminal,
                 focus_session,
             }
         }
@@ -497,6 +610,7 @@ mod tests {
             cols: 100,
             spawn: None,
             env: Vec::new(),
+            terminal: ClientTerminal::default(),
             focus_session: None,
         })
         .unwrap();
@@ -513,6 +627,7 @@ mod tests {
             cols: 200,
             spawn: Some(SpawnRequest::Shell),
             env: Vec::new(),
+            terminal: ClientTerminal::default(),
             focus_session: None,
         })
         .unwrap();
@@ -525,6 +640,7 @@ mod tests {
                 cols: 200,
                 spawn: Some(SpawnRequest::Shell),
                 env: Vec::new(),
+                terminal: ClientTerminal::default(),
                 focus_session: None,
             }
         );
@@ -540,6 +656,7 @@ mod tests {
                 ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
                 ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
             ],
+            terminal: ClientTerminal::default(),
             focus_session: None,
         })
         .unwrap();
@@ -557,6 +674,7 @@ mod tests {
                     ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
                     ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
                 ],
+                terminal: ClientTerminal::default(),
                 focus_session: None,
             }
         );
@@ -614,6 +732,7 @@ mod tests {
             cols: 80,
             spawn: None,
             env: Vec::new(),
+            terminal: ClientTerminal::default(),
             focus_session: None,
         })
         .expect("encode_client for a valid Hello must succeed");
@@ -721,6 +840,7 @@ mod tests {
             cols: 80,
             spawn: None,
             env,
+            terminal: ClientTerminal::default(),
             focus_session: None,
         })
         .expect_err("over-cap env must be rejected at encode");
@@ -797,6 +917,7 @@ mod tests {
             cols: 80,
             spawn: None,
             env: env.clone(),
+            terminal: ClientTerminal::default(),
             focus_session: None,
         })
         .expect("at-cap env must encode");
@@ -822,6 +943,7 @@ mod tests {
             cols: 80,
             spawn: None,
             env: Vec::new(),
+            terminal: ClientTerminal::default(),
             focus_session: Some(target),
         })
         .expect("focus_session encode");
@@ -836,6 +958,55 @@ mod tests {
     }
 
     #[test]
+    fn hello_with_client_terminal_round_trips() {
+        let terminal = ClientTerminal {
+            term: Some("xterm-ghostty".to_string()),
+            term_program: Some("ghostty".to_string()),
+            colorterm: Some("truecolor".to_string()),
+        };
+        let bytes = encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn: None,
+            env: Vec::new(),
+            terminal: terminal.clone(),
+            focus_session: None,
+        })
+        .expect("terminal identity encode");
+        let payload = bytes[5..].to_vec();
+        let decoded = decode_client(TAG_HELLO, payload).expect("terminal identity decode");
+        match decoded {
+            ClientFrame::Hello { terminal: out, .. } => assert_eq!(out, terminal),
+            other => panic!("expected Hello, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn client_terminal_detects_known_pointer_shape_support() {
+        let ghostty = ClientTerminal {
+            term: Some("xterm-ghostty".to_string()),
+            ..ClientTerminal::default()
+        };
+        let kitty = ClientTerminal {
+            term: Some("xterm-kitty".to_string()),
+            ..ClientTerminal::default()
+        };
+        let iterm = ClientTerminal {
+            term_program: Some("iTerm.app".to_string()),
+            ..ClientTerminal::default()
+        };
+        let warp = ClientTerminal {
+            term_program: Some("WarpTerminal".to_string()),
+            ..ClientTerminal::default()
+        };
+
+        assert!(ghostty.pointer_shapes_supported());
+        assert!(kitty.pointer_shapes_supported());
+        assert!(iterm.pointer_shapes_supported());
+        assert!(!warp.pointer_shapes_supported());
+    }
+
+    #[test]
     fn hello_env_value_over_cap_rejected_by_encoder() {
         // Encoder gate must reject a single env value larger than
         // MAX_HELLO_ENV_VALUE so a buggy producer cannot smuggle a
@@ -846,6 +1017,7 @@ mod tests {
             cols: 80,
             spawn: None,
             env: vec![("PWD".into(), big)],
+            terminal: ClientTerminal::default(),
             focus_session: None,
         })
         .expect_err("over-cap env value must be rejected at encode");

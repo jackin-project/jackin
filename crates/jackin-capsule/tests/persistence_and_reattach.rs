@@ -8,7 +8,8 @@
 /// attach dispatch by first byte, control-channel JSON shape, and
 /// attach-channel binary roundtrip.
 use jackin_capsule::protocol::attach::{
-    ClientFrame, ServerFrame, encode_client, encode_server, read_client_frame, read_server_frame,
+    ClientFrame, ClientTerminal, ServerFrame, encode_client, encode_server, read_client_frame,
+    read_server_frame,
 };
 use jackin_capsule::protocol::control::{ClientMsg, ServerMsg, frame};
 use std::path::PathBuf;
@@ -43,6 +44,7 @@ async fn attach_hello_roundtrips_over_socket() {
                 cols: 80,
                 spawn: None,
                 env: Vec::new(),
+                terminal: ClientTerminal::default(),
                 focus_session: None,
             }
         );
@@ -63,6 +65,7 @@ async fn attach_hello_roundtrips_over_socket() {
         cols: 80,
         spawn: None,
         env: Vec::new(),
+        terminal: ClientTerminal::default(),
         focus_session: None,
     })
     .expect("encode Hello");
@@ -164,6 +167,7 @@ async fn second_attach_takes_over_first() {
             cols: 80,
             spawn: None,
             env: Vec::new(),
+            terminal: ClientTerminal::default(),
             focus_session: None,
         })
         .expect("encode Hello")
