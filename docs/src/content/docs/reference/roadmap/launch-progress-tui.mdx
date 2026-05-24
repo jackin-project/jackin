@@ -49,6 +49,8 @@ log: launch log available from `jackin logs` or failure dialog
 
 The main panel should use the same phosphor-green vocabulary as the console and landing page. A bounded rain strip or subtle background panel can provide motion without forcing the full intro animation. The visual language should remain terminal-native: thin lines, strong monospace rhythm, compact labels, and bright state changes. It should avoid marketing copy, large empty hero layouts, or a wall of command output.
 
+The renderer should start from jackin' console conventions: modal sizing, red-border error surfaces, footer-only key hints, phosphor palette, tight chrome, and one clear focused action at a time. It should still leave room for product experiments that make launch feel more distinctive, such as a stronger construct/derived-image visual split, a live rain strip that reacts to stage transitions, or a more cinematic hardline-opening moment, as long as those experiments keep the console's interaction rules intact.
+
 When the terminal is not interactive or cannot support the TUI, launch falls back to compact line output with the same event vocabulary. Scripts should still get deterministic stderr/stdout behavior and useful failure text.
 
 ## Digital rain lifecycle
@@ -94,7 +96,7 @@ The `construct` and `derived image` stages should expose precise substatus becau
 
 ## Failure model
 
-Failures should open a compact error dialog in the TUI:
+Fatal launch failures should open a compact error dialog in the TUI:
 
 ```text
 Docker unavailable
@@ -102,9 +104,7 @@ Docker unavailable
 jackin' could not reach the Docker daemon.
 
 docker daemon is not responding
-details: run jackin logs or open the launch log shown below
-
-Enter close
+details: run jackin logs or open the launch log shown in the footer
 ```
 
 The dialog should show:
@@ -114,6 +114,8 @@ The dialog should show:
 - one actionable next move when obvious;
 - the log command or log path;
 - no stack trace unless no structured diagnosis exists.
+
+The footer for a fatal launch failure should expose exactly one action: `Enter Close`. There should be no `Retry`, `Continue`, `Back`, secondary close button, or multi-button confirmation state unless a future failure class is explicitly recoverable without leaving the launch. Pressing `Enter` closes the dialog and exits the launch path immediately.
 
 The detailed error, command trace, Docker API trace, captured `docker logs`, and debug evidence belong in the launch log. When the TUI is not active, the fallback output should still print a short diagnosis and log location.
 
@@ -191,7 +193,7 @@ Introduce a launch log for pre-Capsule work and route debug traces into it while
 
 ### Phase 4 — Rich TUI renderer
 
-Build the ratatui launch renderer using console-compatible palette, layout, footer, error dialog, and bounded rain. Reuse the existing rain engine where practical instead of creating a parallel animation implementation. Add snapshot-style tests once the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) roadmap item or an equivalent minimal harness is in place.
+Build the ratatui launch renderer using console-compatible palette, layout, footer, fatal error dialog, and bounded rain. Reuse the existing rain engine where practical instead of creating a parallel animation implementation. Prototype more distinctive launch visuals only inside those constraints: footer-only hints, tight modal geometry, one focused action, no hidden shortcuts, and no noisy debug stream. Add snapshot-style tests once the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) roadmap item or an equivalent minimal harness is in place.
 
 ### Phase 5 — Console integration
 
@@ -215,6 +217,6 @@ The design may add a host-side launch log under state owned by jackin' and may w
 - `jackin load` and console-triggered launch share the same progress vocabulary native to jackin' and the same renderer selection.
 - Rich terminals get a full-screen launch progress TUI; non-rich and non-interactive environments get compact deterministic output.
 - `--debug` increases log detail without dumping raw debug text into the TUI.
-- Failures show a short diagnosis plus log retrieval path, with detailed evidence in logs.
+- Fatal failures show a short diagnosis plus log retrieval path, expose only `Enter Close`, and exit immediately after close; detailed evidence stays in logs.
 - Launch stages are emitted as structured events and can be tested without a real terminal.
 - Startup parallelization is introduced only after evented progress and cleanup behavior are testable.
