@@ -1,5 +1,5 @@
 /// Status bar layout regressions: brand pill, tab click regions,
-/// hidden menu hint, overflow indicator.
+/// menu hint, overflow indicator.
 use jackin_capsule::layout::Tab;
 use jackin_capsule::protocol::AgentState;
 use jackin_capsule::statusbar::{PrefixMode, StatusBar};
@@ -30,11 +30,12 @@ fn render_with_hover(
 }
 
 #[test]
-fn brand_pill_renders_without_menu_hint() {
+fn brand_pill_renders_before_menu_hint() {
     let mut bar = StatusBar::new();
     let s = render(&mut bar, 80, &[], 0, &[]);
-    assert!(s.contains("jackin'"));
-    assert!(!s.contains("Menu"));
+    let brand = s.find("jackin'").expect("brand text missing");
+    let menu = s.find("Menu").expect("menu button missing");
+    assert!(brand < menu);
 }
 
 #[test]
@@ -90,13 +91,14 @@ fn tab_click_region_includes_state_glyph_width() {
 }
 
 #[test]
-fn prefix_mode_swap_does_not_render_hint() {
+fn prefix_mode_swap_changes_menu_hint() {
     let mut bar = StatusBar::new();
     let s = render(&mut bar, 80, &[], 0, &[]);
-    assert!(!s.contains("Menu"));
+    assert!(s.contains("Menu Ctrl+\\"));
+    bar.set_prefix_enabled(true);
     bar.set_prefix_mode(PrefixMode::Awaiting);
     let s = render(&mut bar, 80, &[], 0, &[]);
-    assert!(!s.contains("prefix"));
+    assert!(s.contains("prefix…"));
 }
 
 #[test]

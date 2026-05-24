@@ -363,6 +363,7 @@ enum PointerShape {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HoverTarget {
     Tab(usize),
+    Menu,
     BranchContext,
     Container,
     DialogCopyTarget,
@@ -487,7 +488,8 @@ impl Multiplexer {
             workdir_context.is_git_repo,
             workdir_context.default_branch
         );
-        let status_bar = StatusBar::new_with_role(launch_config.role.clone());
+        let mut status_bar = StatusBar::new_with_role(launch_config.role.clone());
+        status_bar.set_prefix_enabled(input_parser.prefix_enabled());
 
         Self {
             sessions: HashMap::new(),
@@ -592,6 +594,9 @@ impl Multiplexer {
         {
             return Some(HoverTarget::Tab(tab_idx));
         }
+        if self.status_bar.hint_at(row_1based, col_1based) {
+            return Some(HoverTarget::Menu);
+        }
         match branch_context_bar_hit(
             row_1based,
             col_1based,
@@ -599,6 +604,7 @@ impl Multiplexer {
             self.term_cols,
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
+            self.pull_request_context_loading(),
             self.status_bar.container_name(),
         ) {
             Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
@@ -626,6 +632,9 @@ impl Multiplexer {
         if row_1based == 1 && self.status_bar.tab_at_col(col_1based).is_some() {
             return PointerShape::Pointer;
         }
+        if self.status_bar.hint_at(row_1based, col_1based) {
+            return PointerShape::Pointer;
+        }
         if branch_context_bar_hit(
             row_1based,
             col_1based,
@@ -633,6 +642,7 @@ impl Multiplexer {
             self.term_cols,
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
+            self.pull_request_context_loading(),
             self.status_bar.container_name(),
         )
         .is_some()
@@ -713,8 +723,18 @@ impl Multiplexer {
         self.dialog_push(Dialog::GitHubContext {
             branch: self.pull_request_context_branch.clone(),
             pull_request: self.pull_request_context.clone(),
+            pull_request_loading: self.pull_request_context_loading(),
             copied: false,
         });
+    }
+
+    fn pull_request_context_loading(&self) -> bool {
+        let Some(branch) = self.pull_request_context_branch.as_deref() else {
+            return false;
+        };
+        self.pull_request_lookup.in_flight
+            && !self.workdir_context.is_default_branch(branch)
+            && self.pull_request_context.is_none()
     }
 
     fn maybe_spawn_git_branch_context_lookup(&mut self, now: Instant) {
@@ -1968,6 +1988,7 @@ impl Multiplexer {
                 self.term_cols,
                 self.context_bar_branch(),
                 self.pull_request_context.as_ref(),
+                self.pull_request_context_loading(),
                 self.status_bar.container_name(),
             )
             .is_some() =>
@@ -1979,6 +2000,7 @@ impl Multiplexer {
                     self.term_cols,
                     self.context_bar_branch(),
                     self.pull_request_context.as_ref(),
+                    self.pull_request_context_loading(),
                     self.status_bar.container_name(),
                 ) {
                     Some(BranchContextBarHit::Context) => self.open_github_context_dialog(),
@@ -2029,6 +2051,10 @@ impl Multiplexer {
                         return Some(self.compose_full_frame(FullRedrawReason::TabSwitch));
                     }
                     return None;
+                }
+                if self.status_bar.hint_at(1, col + 1) {
+                    self.open_command_palette();
+                    return Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay));
                 }
                 None
             }
@@ -2611,6 +2637,7 @@ impl Multiplexer {
             self.term_cols,
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
+            self.pull_request_context_loading(),
             self.status_bar.container_name(),
             self.hover_target,
         );
@@ -2665,6 +2692,7 @@ impl Multiplexer {
             self.term_cols,
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
+            self.pull_request_context_loading(),
             self.status_bar.container_name(),
             self.hover_target,
         );
@@ -3411,6 +3439,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.term_cols,
                     mux.context_bar_branch(),
                     mux.pull_request_context.as_ref(),
+                    mux.pull_request_context_loading(),
                     mux.status_bar.container_name(),
                     mux.hover_target,
                 );
@@ -3918,12 +3947,18 @@ fn render_branch_context_bar(
     term_cols: u16,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
+    pull_request_loading: bool,
     container_name: &str,
     hover_target: Option<HoverTarget>,
 ) {
-    let Some(layout) =
-        branch_context_bar_layout(term_rows, term_cols, branch, pull_request, container_name)
-    else {
+    let Some(layout) = branch_context_bar_layout(
+        term_rows,
+        term_cols,
+        branch,
+        pull_request,
+        pull_request_loading,
+        container_name,
+    ) else {
         return;
     };
 
@@ -3987,6 +4022,7 @@ fn branch_context_bar_layout(
     term_cols: u16,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
+    pull_request_loading: bool,
     container_name: &str,
 ) -> Option<BranchContextBarLayout> {
     if !branch_context_bar_visible(branch, pull_request) || term_rows == 0 || term_cols == 0 {
@@ -3994,6 +4030,7 @@ fn branch_context_bar_layout(
     }
     let left = match pull_request {
         Some(pr) => format!(" PR {} · {} ", pr.number_label(), pr.title),
+        None if pull_request_loading => format!(" Resolving PR · {} ", branch.unwrap_or_default()),
         None => format!(" Branch · {} ", branch.unwrap_or_default()),
     };
     let container = if container_name.is_empty() {
@@ -4061,13 +4098,20 @@ fn branch_context_bar_hit(
     term_cols: u16,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
+    pull_request_loading: bool,
     container_name: &str,
 ) -> Option<BranchContextBarHit> {
     if row != term_rows {
         return None;
     }
-    let layout =
-        branch_context_bar_layout(term_rows, term_cols, branch, pull_request, container_name)?;
+    let layout = branch_context_bar_layout(
+        term_rows,
+        term_cols,
+        branch,
+        pull_request,
+        pull_request_loading,
+        container_name,
+    )?;
     if let Some((start, end)) = layout.container_region
         && col >= start
         && col < end
@@ -4869,6 +4913,7 @@ mod tests {
             120,
             Some("asa/pr-context"),
             Some(&pr),
+            false,
             "jk-test-container",
             None,
         );
@@ -4893,6 +4938,7 @@ mod tests {
             80,
             Some("feature/no-pr"),
             None,
+            false,
             "jk-test-container",
             None,
         );
@@ -4901,6 +4947,25 @@ mod tests {
         assert!(rendered.contains("Branch · feature/no-pr"));
         assert!(rendered.contains("jk-test-container"));
         assert!(!rendered.contains("\x1b]8;;"));
+    }
+
+    #[test]
+    fn branch_context_bar_shows_pr_lookup_in_progress() {
+        let mut buf = Vec::new();
+        render_branch_context_bar(
+            &mut buf,
+            24,
+            100,
+            Some("feature/slow-gh"),
+            None,
+            true,
+            "jk-test-container",
+            None,
+        );
+        let rendered = String::from_utf8_lossy(&buf);
+
+        assert!(rendered.contains("Resolving PR · feature/slow-gh"));
+        assert!(!rendered.contains("Branch · feature/slow-gh"));
     }
 
     #[test]
@@ -4919,6 +4984,7 @@ mod tests {
             20,
             Some("feature/x"),
             Some(&pr),
+            false,
             "jk-test-container-with-extra-long-suffix",
             None,
         );
@@ -4937,18 +5003,21 @@ mod tests {
     fn branch_context_bar_layout_returns_none_for_zero_dimensions() {
         let pr = pull_request_fixture(1);
         assert!(
-            branch_context_bar_layout(0, 80, Some("feature/x"), Some(&pr), "jk-test").is_none()
+            branch_context_bar_layout(0, 80, Some("feature/x"), Some(&pr), false, "jk-test")
+                .is_none()
         );
         assert!(
-            branch_context_bar_layout(24, 0, Some("feature/x"), Some(&pr), "jk-test").is_none()
+            branch_context_bar_layout(24, 0, Some("feature/x"), Some(&pr), false, "jk-test")
+                .is_none()
         );
     }
 
     #[test]
     fn branch_context_bar_hit_rejects_columns_outside_region() {
         let pr = pull_request_fixture(7);
-        let layout = branch_context_bar_layout(24, 120, Some("feature/x"), Some(&pr), "jk-test")
-            .expect("layout fits");
+        let layout =
+            branch_context_bar_layout(24, 120, Some("feature/x"), Some(&pr), false, "jk-test")
+                .expect("layout fits");
         // left_region covers exactly its declared range.
         let (left_start, left_end) = layout.left_region.expect("left region present");
         assert_eq!(
@@ -4959,6 +5028,7 @@ mod tests {
                 120,
                 Some("feature/x"),
                 Some(&pr),
+                false,
                 "jk-test"
             ),
             Some(BranchContextBarHit::Context)
@@ -4971,6 +5041,7 @@ mod tests {
                 120,
                 Some("feature/x"),
                 Some(&pr),
+                false,
                 "jk-test"
             ),
             Some(BranchContextBarHit::Context)
@@ -4983,6 +5054,7 @@ mod tests {
             120,
             Some("feature/x"),
             Some(&pr),
+            false,
             "jk-test",
         );
         // The column may belong to the container region if it abuts.
@@ -4999,6 +5071,7 @@ mod tests {
                 120,
                 Some("feature/x"),
                 Some(&pr),
+                false,
                 "jk-test"
             ),
             None
@@ -5015,6 +5088,7 @@ mod tests {
             120,
             Some("asa/pr-context"),
             Some(&pr),
+            false,
             "jk-test-container",
             Some(HoverTarget::BranchContext),
         );
@@ -5029,6 +5103,7 @@ mod tests {
             120,
             Some("asa/pr-context"),
             Some(&pr),
+            false,
             "jk-test-container",
             Some(HoverTarget::Container),
         );
@@ -5046,6 +5121,7 @@ mod tests {
             80,
             Some("main"),
             None,
+            false,
             "jk-test-container",
             None,
         );
@@ -5058,6 +5134,7 @@ mod tests {
             80,
             Some("master"),
             None,
+            false,
             "jk-test-container",
             None,
         );
@@ -5464,6 +5541,7 @@ mod tests {
             mux.term_cols,
             mux.pull_request_context_branch.as_deref(),
             mux.pull_request_context.as_ref(),
+            mux.pull_request_context_loading(),
             mux.status_bar.container_name(),
         )
         .and_then(|layout| layout.container_region)
@@ -5527,6 +5605,7 @@ mod tests {
             Some(Dialog::GitHubContext {
                 branch: Some(branch),
                 pull_request: Some(pr),
+                pull_request_loading: false,
                 copied: false,
             }) if branch == "feature/context" && pr.number == 434
         ));

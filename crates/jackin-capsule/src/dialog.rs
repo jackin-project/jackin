@@ -132,6 +132,7 @@ pub enum Dialog {
     GitHubContext {
         branch: Option<String>,
         pull_request: Option<PullRequestInfo>,
+        pull_request_loading: bool,
         copied: bool,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -981,6 +982,7 @@ impl Dialog {
             Self::GitHubContext {
                 branch,
                 pull_request,
+                pull_request_loading,
                 copied,
             } => {
                 render_github_context(
@@ -991,6 +993,7 @@ impl Dialog {
                     width,
                     branch.as_deref(),
                     pull_request.as_ref(),
+                    *pull_request_loading,
                     *copied,
                     copy_target_hovered,
                 );
@@ -1860,23 +1863,48 @@ fn render_github_context(
     width: u16,
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
+    pull_request_loading: bool,
     copied: bool,
     copy_target_hovered: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "GitHub context");
     let pull_request_number = pull_request
         .map(PullRequestInfo::number_label)
-        .unwrap_or_else(|| "(none)".to_string());
+        .unwrap_or_else(|| {
+            if pull_request_loading {
+                "resolving…".to_string()
+            } else {
+                "(none)".to_string()
+            }
+        });
     let pull_request_title = pull_request
         .map(|pr| non_empty_or_dim(&pr.title))
-        .unwrap_or_else(|| "(none)".to_string());
+        .unwrap_or_else(|| {
+            if pull_request_loading {
+                "resolving…".to_string()
+            } else {
+                "(none)".to_string()
+            }
+        });
     let (pull_request_link, pull_request_href) = pull_request
         .map(|pr| (non_empty_or_dim(&pr.url), Some(pr.url.as_str())))
-        .unwrap_or_else(|| ("(none)".to_string(), None));
+        .unwrap_or_else(|| {
+            if pull_request_loading {
+                ("resolving…".to_string(), None)
+            } else {
+                ("(none)".to_string(), None)
+            }
+        });
     let ci_status = pull_request
         .and_then(|pr| pr.checks.as_ref())
         .map(|checks| checks.summary())
-        .unwrap_or_else(|| "(unknown)".to_string());
+        .unwrap_or_else(|| {
+            if pull_request_loading {
+                "resolving…".to_string()
+            } else {
+                "(unknown)".to_string()
+            }
+        });
 
     let rows: [ContainerInfoRow; 5] = [
         ContainerInfoRow::new("Branch", non_empty_or_dim(branch.unwrap_or(""))),
@@ -2769,6 +2797,7 @@ mod tests {
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
             pull_request: Some(pr),
+            pull_request_loading: false,
             copied: false,
         };
         let mut buf = Vec::new();
@@ -2795,10 +2824,30 @@ mod tests {
     }
 
     #[test]
+    fn github_context_renders_pr_lookup_in_progress() {
+        let d = Dialog::GitHubContext {
+            branch: Some("feature/container-info".to_string()),
+            pull_request: None,
+            pull_request_loading: true,
+            copied: false,
+        };
+        let mut buf = Vec::new();
+        d.render(&mut buf, 40, 120);
+        let rendered = String::from_utf8_lossy(&buf);
+
+        assert!(rendered.contains("Branch"));
+        assert!(rendered.contains("feature/container-info"));
+        assert!(rendered.contains("Pull Request"));
+        assert!(rendered.contains("resolving…"));
+        assert!(!rendered.contains("(none)"));
+    }
+
+    #[test]
     fn github_context_enter_copies_pr_url_and_shows_feedback() {
         let mut d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
             pull_request: Some(pull_request_fixture()),
+            pull_request_loading: false,
             copied: false,
         };
 
@@ -2821,6 +2870,7 @@ mod tests {
         let mut d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
             pull_request: Some(pull_request_fixture()),
+            pull_request_loading: false,
             copied: false,
         };
         let (row, col, _, _) = d.box_rect(40, 120);
@@ -2840,6 +2890,7 @@ mod tests {
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
             pull_request: Some(pull_request_fixture()),
+            pull_request_loading: false,
             copied: false,
         };
         let mut buf = Vec::new();
@@ -2857,6 +2908,7 @@ mod tests {
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
             pull_request: Some(pull_request_fixture()),
+            pull_request_loading: false,
             copied: false,
         };
         let term_rows = 40;

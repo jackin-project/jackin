@@ -51,6 +51,10 @@ const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waitin
 const BOLD: &str = "\x1b[1m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
+const BUTTON_BG_IDLE: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK
+const BUTTON_FG_IDLE: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const BUTTON_BG_AWAITING: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN
+const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
 const RESET: &str = "\x1b[0m";
 
 const BRAND_TEXT: &str = " jackin' ";
@@ -68,7 +72,11 @@ pub enum PrefixMode {
 
 pub struct StatusBar {
     pub tab_regions: Vec<(u16, u16)>,
+    pub hint_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
+    pub prefix_enabled: bool,
+    pub prefix_label: String,
+    pub palette_label: String,
     /// Container name (`jk-<short>-<workspace>-<role>`) resolved from
     /// `HOSTNAME` at construction. Consumed by the bottom branch/PR
     /// context bar and the `ContainerInfo` modal — the status bar
@@ -96,7 +104,11 @@ impl StatusBar {
     pub fn new_with_role(role: String) -> Self {
         Self {
             tab_regions: Vec::new(),
+            hint_region: None,
             prefix_mode: PrefixMode::Idle,
+            prefix_enabled: false,
+            prefix_label: "Ctrl+B".to_string(),
+            palette_label: "Ctrl+\\".to_string(),
             identity_label: resolve_container_name(),
             role,
         }
@@ -114,6 +126,22 @@ impl StatusBar {
         self.prefix_mode = mode;
     }
 
+    pub fn set_prefix_enabled(&mut self, enabled: bool) {
+        self.prefix_enabled = enabled;
+    }
+
+    /// Return `true` when the (1-based) click at `(row, col)` falls
+    /// inside the right-side menu button.
+    pub fn hint_at(&self, row: u16, col: u16) -> bool {
+        if row != 1 {
+            return false;
+        }
+        match self.hint_region {
+            Some((start, end)) => col >= start && col < end,
+            None => false,
+        }
+    }
+
     /// Render the status bar at rows 0–1 of the host terminal.
     pub fn render(
         &mut self,
@@ -125,6 +153,7 @@ impl StatusBar {
         hovered_tab: Option<usize>,
     ) {
         self.tab_regions.clear();
+        self.hint_region = None;
 
         // ── Row 0: brand pill + tabs ────────────────────────────────
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
@@ -139,7 +168,9 @@ impl StatusBar {
             buf.push(b' ');
         }
 
-        let reserve_right: u16 = 1;
+        let hint = self.button_text();
+        let hint_cols = display_cols(&hint);
+        let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
         // Resolve names + glyphs first, then reserve a stable glyph
         // slot per tab. The text starts after the same short one-cell
@@ -182,6 +213,23 @@ impl StatusBar {
 
         let brand_end_1based = start_col_0based.saturating_add(1);
 
+        // Right-side menu button. Keep it on row 0 so the operator
+        // always has a visible pointer/click target for the palette.
+        let hint_start = cols.saturating_sub(hint_cols);
+        if hint_start > brand_end_1based {
+            move_to(buf, 1, hint_start);
+            let (bg, fg) = match self.prefix_mode {
+                PrefixMode::Idle => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
+                PrefixMode::Awaiting => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
+            };
+            buf.extend_from_slice(bg.as_bytes());
+            buf.extend_from_slice(fg.as_bytes());
+            buf.extend_from_slice(BOLD.as_bytes());
+            buf.extend_from_slice(hint.as_bytes());
+            buf.extend_from_slice(RESET.as_bytes());
+            self.hint_region = Some((hint_start, hint_start + hint_cols));
+        }
+
         // Overflow indicator before the hint when at least one tab got
         // clipped past the right edge. Same brand-overlap guard as the
         // hint — a `›` painted on top of " jackin' " is worse than no
@@ -213,6 +261,22 @@ impl StatusBar {
                 buf.extend_from_slice(RESET.as_bytes());
                 break;
             }
+        }
+    }
+
+    fn button_text(&self) -> String {
+        match self.prefix_mode {
+            PrefixMode::Idle => {
+                if self.prefix_enabled {
+                    format!(
+                        " ☰ Menu {} · prefix {} ",
+                        self.palette_label, self.prefix_label
+                    )
+                } else {
+                    format!(" ☰ Menu {} ", self.palette_label)
+                }
+            }
+            PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
 
@@ -470,22 +534,23 @@ mod tests {
     }
 
     #[test]
-    fn idle_hint_is_not_rendered() {
+    fn idle_hint_is_rendered() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
-        assert!(!s.contains("Menu"), "menu hint should be hidden: {s:?}");
+        assert!(s.contains("Menu Ctrl+\\"), "menu hint missing: {s:?}");
+        assert!(bar.hint_at(1, 72), "menu hint should be clickable");
     }
 
     #[test]
-    fn awaiting_prefix_hint_is_not_rendered() {
+    fn awaiting_prefix_hint_is_rendered() {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
-        assert!(!s.contains("prefix"), "prefix hint should be hidden: {s:?}");
+        assert!(s.contains("prefix…"), "prefix hint missing: {s:?}");
     }
 
     #[test]
