@@ -317,14 +317,14 @@ The multiplexer also emits its own OSC 2 title from the compositor. That title i
 
 ### Pointer shape feedback
 
-The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion and the active attach client advertises a known OSC 22-capable identity (`xterm-ghostty`, `xterm-kitty`, Foot, or iTerm via `TERM` / `TERM_PROGRAM`), it emits OSC 22 pointer-shape updates:
+The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion, it emits OSC 22 pointer-shape hints for interactive chrome when the client reports a real terminal identity through `TERM_PROGRAM` or a known OSC 22-capable `TERM` family. Clearly non-interactive terminals (`TERM=dumb`, `TERM=linux`), generic PTYs that only report `xterm-256color`, and known terminals that mishandle the sequence stay on the default pointer:
 
 - `pointer` over clickable chrome owned by jackin', such as tabs, the top menu button, the bottom-row GitHub and container-info entry points, and clickable dialog values such as the Container ID and GitHub URL copy targets.
 - `text` over pane bodies where mouse selection owned by jackin' is available because the focused program did not request mouse reporting.
 - `ew-resize` / `ns-resize` over split borders and `grabbing` during an active resize drag.
 - `default` everywhere else, and again during attach cleanup.
 
-Unsupported terminals ignore the feature because jackin' does not emit OSC 22 unless the environment matches a known implementation. The visual behavior is therefore an enhancement for Ghostty/Kitty-style terminals, not a dependency for mouse input or copy/select behavior.
+Terminals that do not implement OSC 22 should ignore the sequence, while terminals that do implement it get the same cursor affordance the web UI uses for clickable elements. The visual behavior is still an enhancement rather than a dependency for mouse input or copy/select behavior.
 
 Clickable Capsule chrome also repaints on hover when passive mouse motion identifies a known target. Tabs, the top menu button, the bottom GitHub context target, the bottom container-info target, and dialog copy values use a slightly brighter background or link color so clickability is visible even when pointer-shape escapes are unsupported.
 

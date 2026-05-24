@@ -112,12 +112,18 @@ impl ClientTerminal {
             .unwrap_or("")
             .to_ascii_lowercase();
 
-        term.contains("ghostty")
+        if (term.is_empty() && term_program.is_empty()) || matches!(term.as_str(), "dumb" | "linux")
+        {
+            return false;
+        }
+        if term_program.contains("warp") {
+            return false;
+        }
+
+        !term_program.is_empty()
+            || term.contains("ghostty")
             || term.contains("kitty")
             || term.contains("foot")
-            || term_program.contains("ghostty")
-            || term_program.contains("kitty")
-            || term_program.contains("iterm")
     }
 }
 
@@ -985,11 +991,27 @@ mod tests {
             term_program: Some("WarpTerminal".to_string()),
             ..ClientTerminal::default()
         };
+        let apple_terminal = ClientTerminal {
+            term: Some("xterm-256color".to_string()),
+            term_program: Some("Apple_Terminal".to_string()),
+            ..ClientTerminal::default()
+        };
+        let generic_xterm = ClientTerminal {
+            term: Some("xterm-256color".to_string()),
+            ..ClientTerminal::default()
+        };
+        let dumb = ClientTerminal {
+            term: Some("dumb".to_string()),
+            ..ClientTerminal::default()
+        };
 
         assert!(ghostty.pointer_shapes_supported());
         assert!(kitty.pointer_shapes_supported());
         assert!(iterm.pointer_shapes_supported());
+        assert!(apple_terminal.pointer_shapes_supported());
+        assert!(!generic_xterm.pointer_shapes_supported());
         assert!(!warp.pointer_shapes_supported());
+        assert!(!dumb.pointer_shapes_supported());
     }
 
     #[test]

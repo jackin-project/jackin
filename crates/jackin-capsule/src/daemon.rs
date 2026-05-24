@@ -124,8 +124,8 @@ pub struct Multiplexer {
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
     pointer_shape: PointerShape,
-    /// True only for outer terminals known to support OSC 22 with CSS
-    /// pointer names. Unsupported terminals keep normal cursor behavior.
+    /// True only for outer terminals eligible for OSC 22 pointer-shape
+    /// hints. Unsupported terminals keep normal cursor behavior.
     pointer_shapes_supported: bool,
     /// Terminal identity reported by the active attach client. Refreshed
     /// on every attach/takeover so daemon-owned output enhancements can
@@ -6444,6 +6444,60 @@ mod tests {
 
         mux.update_pointer_shape_for_mouse(23, hit.0, SGR_NO_BUTTON_MOTION);
         assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
+    }
+
+    #[test]
+    fn pointer_shape_updates_for_clickable_top_chrome() {
+        let mut mux = single_pane_tab_mux();
+        mux.pointer_shapes_supported = true;
+        let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        mux.attached_out = Some(tx);
+        let tab_col = mux
+            .status_bar
+            .tab_regions
+            .first()
+            .map(|(start, _)| start.saturating_sub(1))
+            .expect("tab region should render");
+
+        mux.update_pointer_shape_for_mouse(0, tab_col, SGR_NO_BUTTON_MOTION);
+        let tab_shape = rx.try_recv().expect("tab pointer-shape update");
+        assert!(tab_shape.ends_with(b"\x1b]22;pointer\x1b\\"));
+
+        let mut mux = single_pane_tab_mux();
+        mux.pointer_shapes_supported = true;
+        let _ = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        mux.attached_out = Some(tx);
+        let menu_col = mux
+            .status_bar
+            .hint_region
+            .map(|(start, _)| start.saturating_sub(1))
+            .expect("menu region should render");
+
+        mux.update_pointer_shape_for_mouse(0, menu_col, SGR_NO_BUTTON_MOTION);
+        let menu_shape = rx.try_recv().expect("menu pointer-shape update");
+        assert!(menu_shape.ends_with(b"\x1b]22;pointer\x1b\\"));
+    }
+
+    #[test]
+    fn pointer_shape_updates_for_clickable_dialog_copy_target() {
+        let mut mux = single_pane_tab_mux();
+        mux.pointer_shapes_supported = true;
+        mux.status_bar.identity_label = "jk-test-container".to_string();
+        mux.open_container_info_dialog();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        mux.attached_out = Some(tx);
+        let dialog = mux.dialog_top().expect("container info dialog should open");
+        let (row, col, _, _) = dialog.box_rect(mux.term_rows, mux.term_cols);
+
+        mux.update_pointer_shape_for_mouse(
+            row.saturating_add(1),
+            col.saturating_add(1),
+            SGR_NO_BUTTON_MOTION,
+        );
+        let shape = rx.try_recv().expect("dialog pointer-shape update");
+        assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
     }
 
     #[test]
