@@ -19,8 +19,7 @@ parallel agents on different projects, it's expensive ignorance:
 - The cost model can't be optimized — operators don't see when prompt
   caching is saving them money vs. when it isn't.
 
-multicode tracks this per-workspace and renders it in their TUI. The
-telemetry primitives are simple; the value is high.
+multicode tracks this per-workspace and renders it in their TUI. CodexBar and OpenUsage show the adjacent desktop-account version of the same problem: operators do not only care about per-session tokens, they care about subscription windows, reset times, weekly caps, provider health, and whether starting one more agent will burn through an account limit.
 
 ## Why It Matters
 
@@ -60,6 +59,49 @@ The cost table is hardcoded per model. Re-using their per-1000-token
 prices and approach is fine; the more interesting work is making
 jackin' pricing pluggable across runtimes.
 
+## Inspiration in CodexBar and OpenUsage
+
+**Sources**:
+- CodexBar — https://github.com/steipete/CodexBar
+- CodexBar provider / refresh documentation — https://github.com/steipete/CodexBar/tree/main/docs
+- OpenUsage — https://github.com/robinebers/openusage
+- OpenUsage plugin API — https://github.com/robinebers/openusage/blob/main/docs/PLUGIN_API.md
+
+CodexBar and OpenUsage are better references for account-limit telemetry than for jackin' session telemetry. Both are menu-bar-first tools that collect provider usage from existing local state or provider APIs, then render quota bars, reset countdowns, and stale/error states. CodexBar is broader and deeper on local/provider source handling: it supports Codex, Claude, Amp, Kimi, OpenCode, and many providers outside jackin'; exposes configurable refresh cadences; renders reset windows; ships a CLI for local cost scans; and treats browser cookies / API keys / OAuth / local CLI state as provider-specific source strategies. OpenUsage is the cleaner product reference: a lightweight menu-bar panel, automatic refresh, global shortcut, local HTTP API on `127.0.0.1`, proxy support, and an explicit plugin direction for adding providers.
+
+Useful ideas:
+
+- Track **account quota snapshots** separately from per-session token samples. A Claude weekly limit, Codex session window, Amp free-tier usage bucket, or OpenCode workspace subscription window is not the same entity as a single assistant-message token sample.
+- Store reset-window metadata: provider, account label, plan/source, usage amount, limit amount when known, reset time, stale/error state, and provenance.
+- Keep refresh state resilient: background refresh, stale-but-usable cached values, throttled errors when prior data exists, and a clear repair/login state when no data can be trusted.
+- Provide a small local read API eventually, but make the jackin' daemon the owner rather than adding a second always-on HTTP server in the first cut.
+- Treat provider adapters as a small, typed set for the built-in jackin' runtimes (`claude`, `codex`, `amp`, `kimi`, `opencode`) instead of inheriting CodexBar/OpenUsage's generic provider marketplace shape.
+- Prefer runtime-owned credentials or credentials forwarded by jackin' over host-wide browser-cookie scraping. Cookie import can exist as an explicit diagnostic or fallback, but it must not become the primary path for account state jackin' already launched.
+- Preserve the host-mutation rule: reading host-side auth/config is allowed when surfaced; writing provider config, Keychain entries, browser profiles, or host dotfiles is not part of telemetry refresh.
+
+What not to copy:
+
+- Do not build a generic subscription tracker. jackin' should monitor the accounts and runtimes it launches, plus explicit operator opt-ins, not every AI provider installed on the host.
+- Do not make hidden browser-cookie scraping the happy path. It increases permissions, fragility, and trust cost.
+- Do not expose broad host filesystem scans. Saved workspaces, running role containers, known agent auth locations, and explicit provider settings are enough.
+
+## Better accuracy references
+
+CodexBar and OpenUsage remain useful UI references, but they are not the reliability baseline. The better roadmap inputs are:
+
+- **Tokemon** — https://github.com/richyparr/tokemon and https://www.tokemon.ai/. Best reference for Claude-specific accuracy: OAuth / provider usage endpoint as primary truth for 5-hour and rolling-week quota, JSONL logs as fallback for local token/cost estimation, multi-profile support, burn-rate projection, warning thresholds, and a terminal statusline export. The main caution is scope: it is Claude-first and small-community, so jackin' should borrow the source-priority model rather than treat the implementation as canonical.
+- **Token Tracker** — https://github.com/mm7894215/TokenTracker and https://www.tokentracker.cc/. Best reference for local-first project attribution across many agent CLIs: hooks where available, passive log readers where hooks are not available, normalized buckets keyed by source/model/time, local dashboard, menu bar app, widgets, `status --json`, and explicit “token counts only, never prompts” positioning. The main caution is that auto-installing hooks into host tool configs would violate the jackin' host-mutation rule unless the operator explicitly opts in; jackin' already owns role launch and can install container-side hooks without touching host configs.
+- **Brim** — https://getbrim.tech/. Best reference for trust-minimized UX: narrow provider scope, native menu bar rings, manual refresh for server quota, local log reads for token/cost breakdown, no background network traffic unless requested. The main caution is that manual refresh alone is too passive for the jackin' daemon-backed status bar; jackin' should use a bounded cache TTL with a visible freshness label.
+- **MeterBar** — https://github.com/shipshitdev/meterbar.app and https://meterbar.app/. Useful reference for a simple native account dashboard, Keychain-local credentials, CLI JSON output, and provider API source mapping. The caution is that direct host credential-file access must be surfaced and scoped; jackin' should prefer daemon-owned account connectors and 1Password / Keychain / existing forwarded auth sources over app-level ad hoc reads.
+- **Control Tower** — https://github.com/krishcdbry/ControlTower and https://control-tower.dev/. Useful as a product comparison for multi-account, alerts, usage history, quiet hours, and provider detail pages, but the public project appears much less mature than Tokemon, Token Tracker, or CodexBar. Treat it as UI comparison only.
+
+The design conclusion is that jackin' needs **two truth channels**, not one:
+
+1. **Quota availability** comes from the provider's server-side usage/quota source whenever available. This is the number that answers “will this account hit a subscription or session limit?” Local JSONL token totals are not authoritative for this question because providers can apply hidden weighting, cache accounting, model-specific quotas, or server-side resets.
+2. **Workspace/project cost** comes from jackin'-owned session attribution: runtime hooks, structured transcripts, local logs, and Capsule/session metadata. This is the number that answers “which workspace burned the tokens?” Provider quota pages usually cannot answer that at jackin' workspace granularity.
+
+Any UI that mixes these numbers must label them separately: **Account availability** and **Workspace spend**. A single percentage without provenance is a bug.
+
 ## Recommended Shape
 
 A small **usage adapter** per runtime, parallel to (and consuming the
@@ -86,6 +128,54 @@ pub struct UsageSample {
 
 `cost_usd_micros` is integer to avoid floating-point summation drift
 across thousands of samples. Renderers divide by 1e6 for display.
+
+### Account quota snapshots
+
+```rust
+pub struct AccountUsageSnapshot {
+    pub at: SystemTime,
+    pub provider: AgentKind,              // claude, codex, amp, kimi, opencode
+    pub account_label: String,            // operator-facing, never a raw token
+    pub source: UsageSource,              // runtime_api, local_log, cli_auth, browser_cookie, manual
+    pub window: UsageWindow,              // session, daily, weekly, monthly, credits
+    pub used: Option<UsageAmount>,
+    pub limit: Option<UsageAmount>,
+    pub resets_at: Option<SystemTime>,
+    pub status: UsageSnapshotStatus,      // fresh, stale, needs_login, unsupported, error
+}
+```
+
+This model intentionally stays separate from `UsageSample`. Per-message samples answer "what did this agent session cost?" Account snapshots answer "can I safely start more work on this account before the next reset?"
+
+### Host-owned telemetry cache
+
+The jackin' daemon owns a host-side telemetry cache so every container and UI surface reads the same account state instead of each role container polling providers independently. The cache is a small persistent store under the daemon's data directory and is keyed by account identity, provider, source, window, and workspace/session attribution where applicable.
+
+Rules:
+
+- The daemon is the only component that refreshes provider quota snapshots by default. Containers can request a refresh through the daemon, but they do not hold independent polling loops.
+- Each snapshot carries `fetched_at`, `expires_at`, `source`, `confidence`, and `last_error`. UI surfaces must show stale data as stale rather than silently hiding it.
+- Containers receive read-only access through the Capsule/daemon control channel, not by bind-mounting writable host cache directories into every container. A narrow read-only materialized file under `/jackin/run/usage/` is acceptable for agents that can only read files, but the daemon remains authoritative and writes the file.
+- Cache TTL is provider-specific. Server-side quota endpoints get conservative refresh intervals and backoff on errors; local session samples can update on session events.
+- The cache stores tokens, costs, percentages, reset times, source metadata, and opaque account labels. It never stores prompts, completions, raw conversation text, provider cookies, or bearer tokens.
+- If an account requires authentication, the daemon requests it through existing jackin auth mechanisms: forwarded CLI auth, 1Password references, macOS Keychain integration, or an explicit host-bridge approval. Failed auth is a first-class `needs_login` / `needs_secret` state.
+
+### UI surfaces
+
+The same cached telemetry feeds four surfaces:
+
+- **macOS status bar.** Shows the most constrained active account by default: provider glyph/name plus remaining percentage or “stale/login” state. The menu expands to all accounts with reset timers, confidence/source labels, and repair actions. Operators can choose a compact mode, but the default must make the quota risk visible without opening a browser.
+- **`jackin console` account screen.** A new Accounts / Usage view lists every known account, provider, source, current availability, reset time, last refresh, and which workspaces currently use it. It also links to workspace spend summaries and exposes authentication repair actions.
+- **Capsule multiplexer quota drawer.** Inside `jackin-capsule`, prefix `u` (or a palette command) opens a read-only dialog for the focused agent: account availability, reset countdown, today/session/workspace tokens, burn rate, and cache freshness. The top chrome can show a compact quota glyph for the active account, but detailed numbers belong in the dialog to avoid noisy chrome.
+- **CLI / automation.** `jackin usage` exposes account, workspace, and session views with `--json`, including freshness and provenance fields so scripts do not mistake local estimates for provider-enforced limits.
+
+The operator questions this must answer:
+
+- Which Claude/Codex/Amp/Kimi/OpenCode accounts does jackin' know about?
+- Which account is the focused agent using?
+- How much quota remains on that account, and when does it reset?
+- How much did this workspace/session burn today, this week, and lifetime?
+- Is the displayed account limit provider-authoritative, locally estimated, stale, or unavailable?
 
 ### Per-runtime adapters
 
@@ -146,12 +236,15 @@ $ jackin usage the-architect --json
 
 ## Scope (V1)
 
-- Per-runtime usage adapter consuming the runtime's structured output
-  stream.
-- `UsageSample` events appended to the storage layer's `usage_samples`
-  table.
+- Per-runtime usage adapter consuming the runtime's structured output stream.
+- Per-provider account snapshot adapter for the built-in jackin' runtimes, starting with Codex and Claude where local sources are most mature.
+- `UsageSample` events appended to the storage layer's `usage_samples` table.
+- `AccountUsageSnapshot` events appended to storage and exposed through the daemon for the Desktop Agent Hub, `jackin console`, Capsule multiplexer, and CLI.
+- Host-owned telemetry cache with TTL, stale/error states, and provider-specific refresh backoff.
 - Pricing table with operator override; ship sensible defaults.
 - Console "Cost (today)" column when the resource panel is open.
+- Console / Desktop account panel showing all accounts, quota windows, reset time, workspace attribution, and stale/login-needed state.
+- Capsule multiplexer quota dialog for the focused agent.
 - `jackin usage <selector>` CLI with `--json` and human-readable
   formatting.
 - Cost computed at sample time and stored, not recomputed on render —
@@ -165,6 +258,8 @@ $ jackin usage the-architect --json
 - Multi-currency. USD only in V1; the internal representation is
   micros-of-USD, conversion is a render-time concern.
 - Org-level aggregation across operators. Out of scope.
+- Generic provider marketplace / third-party plugin API. Useful later, but first-class support should stay scoped to the built-in jackin' agent runtimes.
+- Browser-cookie import as the primary source for supported runtime accounts. Keep it explicit and fallback-only.
 - Token-savings reporting from prompt caching. Tracked as a column;
   not separately summarized in V1.
 - Per-tool-call cost attribution (which tool call cost the most).
@@ -201,7 +296,6 @@ $ jackin usage the-architect --json
   required (sample storage)
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) —
   parallel consumer of the same input stream
-- [Console resource panel](/reference/roadmap/console-resource-panel/) —
-  rendering home
-- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) —
-  future budget-gating consumer
+- [Console resource panel](/reference/roadmap/console-resource-panel/) — rendering home
+- [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — desktop account/quota rendering home
+- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) — future budget-gating consumer
