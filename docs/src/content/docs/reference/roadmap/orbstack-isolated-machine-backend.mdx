@@ -1,0 +1,402 @@
+---
+title: "OrbStack Isolated Machine Backend"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open - research and design proposal
+
+## Problem
+
+jackin' works well on macOS through Docker-compatible backends, and many macOS operators already use OrbStack as their Docker engine. OrbStack now also exposes isolated Linux machines that are useful for AI agent sandboxing. That creates a pragmatic path between today's Docker container boundary and a future Kubernetes or true microVM backend.
+
+The question is not "should jackin' stop using Docker?" The desired backend is:
+
+> run the jackin' role environment inside an OrbStack isolated machine, while
+> preserving Docker workflows inside that machine when the role needs them.
+
+This matters because jackin' roles often expect Docker-in-Docker style behavior: the agent may build sibling containers, run Compose, use Testcontainers, or inspect Docker state while working. An OrbStack backend that cannot provide a private Docker-compatible engine would not satisfy the current role contract.
+
+## What OrbStack Provides
+
+Official OrbStack documentation describes:
+
+- [Architecture](https://docs.orbstack.dev/architecture): OrbStack uses a lightweight Linux virtual machine with a shared kernel. Its Linux machines are not independent VMs in the strict sense, even though they behave like traditional Linux machines for most development workflows.
+- [Linux machines](https://docs.orbstack.dev/machines/): machines run full Linux distros with init systems such as systemd, OpenRC, or runit; commands can be executed through the `orb` CLI.
+- [Machine commands](https://docs.orbstack.dev/machines/commands): `orb` can create, start, stop, delete, inspect, run commands in, push files to, and pull files from machines.
+- [Cloud-init](https://docs.orbstack.dev/machines/cloud-init): `orb create` supports `-c` / `--user-data` cloud-init files.
+- [File sharing](https://docs.orbstack.dev/machines/file-sharing): normal machines expose Mac files under the same `/Users/...` path and `/mnt/mac`.
+- [Machine networking](https://docs.orbstack.dev/machines/network): services in machines are reachable from macOS at `localhost`, and machines also receive `*.orb.local` names.
+- [Release notes](https://docs.orbstack.dev/release-notes): v2.1.0 added isolated machines without filesystem integration, explicitly called useful for AI agent sandboxing; v2.1.1 added selective file sharing mounts in isolated machines; v2.1.2 added a setting to block network connections to host/machines and opt-in SSH agent forwarding.
+
+Important correction: this roadmap item should not call OrbStack isolated machines "microVMs" in jackin' product language. OrbStack itself says machines share a kernel and are not strictly independent VMs. The right label is `orbstack-isolated` or `OrbStack isolated machine backend`.
+
+## Goal
+
+Add an experimental macOS backend that:
+
+1. Creates one OrbStack isolated machine per jackin' instance.
+2. Shares only the operator-approved workspace/global mounts into that machine.
+3. Installs or starts a Docker-compatible engine inside the machine when the role needs Docker workflows.
+4. Runs the jackin' role container inside the machine-owned Docker engine, with jackin-capsule as PID 1 exactly as the Docker backend does today.
+5. Preserves attach, reconnect, inspect, eject, purge, and state-recovery semantics.
+6. Reports the exact boundary and residual risks in the launch/session contract.
+
+## Non-Goals
+
+- Do not replace Docker hardening as the near-term default.
+- Do not claim Docker Sandboxes parity. OrbStack does not provide jackin' with Docker Sandboxes' host-side credential proxy or per-domain egress policy by itself.
+- Do not call this backend a true microVM boundary.
+- Do not silently enable global Mac filesystem integration. The provider must use isolated machines with explicit shares only.
+- Do not mutate OrbStack global settings, macOS firewall settings, SSH config, or host Docker context silently.
+- Do not pursue Kubernetes support in this item. Kubernetes remains future platform expansion.
+
+## Backend Shape
+
+Use a backend name that reflects the actual provider:
+
+```text
+docker
+orbstack-isolated
+```
+
+Example future CLI:
+
+```sh
+jackin load the-architect . --backend orbstack-isolated
+jackin load reviewer . --backend auto --docker-profile hardened
+```
+
+Example future config:
+
+```toml
+[runtime]
+default_backend = "docker"
+
+[runtime.orbstack]
+enabled = true
+default_distro = "ubuntu"
+require_isolated = true
+block_host_network = true
+ssh_agent = "off" # off | ask | on
+
+[workspaces.my-service.runtime]
+backend = "orbstack-isolated"
+```
+
+The exact schema must be designed with the backend abstraction. If it touches versioned config files, it must ship with the required migrations and fixtures.
+
+## Proposed Runtime Flow
+
+Current Docker flow:
+
+```text
+host Docker -> build role image
+host Docker -> create per-agent network
+host Docker -> start docker:dind sidecar
+host Docker -> start role container
+role container -> talks to DinD over TLS
+```
+
+Proposed OrbStack isolated flow:
+
+```text
+host Docker or selected builder -> build role image
+host -> export image artifact or push to local registry
+host -> orb create --isolated jackin-<instance> -c cloud-init.yml
+host -> share only approved mount sources into the machine
+machine -> install/start Docker engine if needed
+host -> transfer/import role image into machine Docker
+machine Docker -> start role container with jackin-capsule
+role container -> talks to machine-local Docker when required
+host -> attach via orb command/SSH/tunnel to jackin-capsule
+```
+
+The key property: Docker remains inside the isolated machine boundary for agent workflows. The host Docker daemon is only a build/export helper unless a later phase moves builds into the machine.
+
+## Why Still Run Docker Inside OrbStack?
+
+jackin' role environments are Docker-shaped:
+
+- roles are authored as Dockerfiles
+- the construct image provides the common base environment
+- agents expect Docker CLI and Compose in many workflows
+- Testcontainers and local service stacks need a Docker-compatible daemon
+- operators want to inspect what the agent built and ran
+
+Running Docker inside the isolated machine preserves that model while moving the runtime daemon out of the host Docker engine.
+
+There are two possible modes:
+
+| Mode | Description | When useful |
+|---|---|---|
+| `containerized-role` | Import the role image and run it as a container inside machine Docker. | Best fit for current jackin' architecture. |
+| `machine-native-role` | Provision the role environment directly in the machine without an outer role container. | Future research only; breaks more assumptions. |
+
+Start with `containerized-role`.
+
+## Image Build and Transfer Options
+
+| Option | Flow | Pros | Cons |
+|---|---|---|---|
+| Host build + `docker save`/`orb push` + machine `docker load` | Build with current host Docker, export archive, import inside machine. | Smallest change to existing build path. | Image archives can be large; transfer cost on every rebuild. |
+| Host build + local registry + machine `docker pull` | Push image to a host-local or OrbStack-reachable registry. | Better layer reuse; aligns with future workspace registry cache. | Requires registry lifecycle and network policy design. |
+| Machine-local build | Copy role repo/build context into machine and run Docker build there. | Strongest boundary for build-time code execution. | Slower first implementation; more file-sync complexity. |
+
+Recommended phased path:
+
+1. V1: host build + image archive import.
+2. V2: workspace registry cache integration for layer reuse.
+3. V3: machine-local builds for roles where build-time isolation matters.
+
+This is intentionally honest: V1 improves runtime isolation but still trusts the host build path to execute role Dockerfiles.
+
+## Machine Provisioning
+
+Use cloud-init because OrbStack supports it directly with `orb create -c`.
+
+Provisioning responsibilities:
+
+- create a `jackin` user or use the OrbStack-created user with explicit sudo policy
+- install Docker engine and Compose where the selected distro does not include them
+- create `/jackin/` directories for runtime, state, run, host, and agent state
+- install or copy `jackin-capsule`
+- configure the machine-local Docker daemon
+- install basic debugging tools needed for `hardline --inspect`
+- write a backend marker so support logs can identify the instance
+
+All jackin'-owned paths inside the role container still follow the `/jackin/` container convention. Inside the OrbStack machine itself, jackin'-owned machine state should also live under `/jackin/` unless a third-party package forces a standard path.
+
+## Mount Transport
+
+OrbStack isolated machines are useful only if jackin' uses selective file sharing instead of default full macOS filesystem integration.
+
+Design requirements:
+
+- Every workspace/global mount must become an explicit machine share.
+- Read-only workspace mounts should remain read-only if OrbStack share controls expose that; otherwise the backend must report degraded enforcement and may need to enforce read-only at the inner Docker layer.
+- Mount destination control remains a jackin' feature. If OrbStack can only expose a host path at the same path, jackin' must map that path into the role container at the requested `dst`.
+- Sensitive mount warnings still apply before launch.
+- Worktree/clone isolation still materializes on the host first unless a later phase moves that into the machine.
+
+Potential path model:
+
+```text
+host source:      /Users/operator/Projects/app
+machine share:   /Users/operator/Projects/app
+role container:  /workspace/app
+```
+
+For same-path mounts:
+
+```text
+host source:      /Users/operator/Projects/app
+machine share:   /Users/operator/Projects/app
+role container:  /Users/operator/Projects/app
+```
+
+## Docker Engine Inside The Machine
+
+The backend must decide when to install/start Docker.
+
+Suggested capability flag:
+
+```toml
+[runtime.docker]
+requires_inner_engine = true
+```
+
+If absent, use today's compatibility default: true for existing roles until role authors can opt out.
+
+Engine options:
+
+| Option | Fit |
+|---|---|
+| distro `docker.io` package | Good first prototype; simple cloud-init install. |
+| Docker CE apt repo | More current engine, but more bootstrap complexity. |
+| rootless Docker inside machine | Stronger defense in depth, but needs testing with role workflows. |
+| containerd-only | Future research; less compatible with current role expectations. |
+
+The machine Docker daemon should be private to the machine and role. Do not forward its socket to macOS by default.
+
+## Attach and Lifecycle
+
+The Docker backend currently relies on Docker container state for much of launch, reconnect, and cleanup behavior. OrbStack requires a backend-neutral instance registry.
+
+Per-instance metadata should include:
+
+```text
+instance_id
+backend = "orbstack-isolated"
+machine_name
+machine_distro
+role_container_name
+role_image_ref
+workspace_name or ad-hoc path
+mounts and share handles
+agent state handles
+inner_engine_enabled
+created_at
+last_seen_at
+cleanup_state
+```
+
+Lifecycle mapping:
+
+| jackin' operation | OrbStack action |
+|---|---|
+| launch | create/start machine, provision, import image, run role container. |
+| attach | connect to jackin-capsule inside the role container through `orb` or SSH. |
+| inspect | `orb info`, machine Docker inspect, capsule status, mount/share summary. |
+| stop | stop role container, then optionally stop machine. |
+| eject | stop role container and machine, remove transient resources. |
+| purge | delete machine, remove state, remove imported images if owned by jackin. |
+| hardline | restart machine if needed, verify role container, reconnect capsule. |
+
+Open design question: whether one machine maps to one jackin' instance, one workspace, or one workspace plus many instances. V1 should use one machine per instance because it is easier to reason about cleanup and containment.
+
+## Network Policy
+
+OrbStack release notes say isolated machines can block network connections to host/machines as of v2.1.2. jackin' should use that when the operator requests it, but it is not enough for full egress policy.
+
+Network requirements:
+
+- Services started in the machine may be reachable from macOS at `localhost`; the session contract must list exposed ports.
+- `{machine}.orb.local` names exist; jackin' should not assume they are private.
+- `host.orb.internal` can reach Mac services in normal machine networking; a strict profile should block or report this path.
+- The backend should enable the isolated-machine "block host/machines" setting when `block_host_network = true`, if OrbStack exposes it through CLI/config.
+- Domain allowlists and request logs still belong to
+  [Network egress policy](/reference/roadmap/network-egress-policy/).
+
+Do not claim `host-enforced` egress policy until jackin' owns a host-side proxy or OrbStack exposes a policy surface that can be inspected and controlled per machine.
+
+## Authentication and Host Integration
+
+OrbStack normal machines forward SSH agent access by default, but v2.1.2 release notes say isolated machines have opt-in SSH agent forwarding. jackin' must keep that opt-in.
+
+Rules:
+
+- SSH agent forwarding defaults to off for this backend.
+- If an operator enables SSH agent forwarding, surface it in the launch summary.
+- Do not rely on OrbStack's default Mac command integration for agent workflows.
+- Do not let the machine run arbitrary macOS commands through `mac` as part of normal role execution.
+- Existing jackin' auth forwarding modes still apply to the role container, but stricter profiles should prefer future brokered credentials.
+
+## Security Contract
+
+Launch output should say:
+
+```text
+backend: orbstack-isolated
+provider: OrbStack
+machine: jackin-abcd1234
+isolation: OrbStack isolated machine, shared-kernel architecture
+host filesystem: explicit shares only
+inner Docker: enabled, machine-local daemon
+host Docker socket: not mounted
+host/machine network: blocked | open | unknown
+SSH agent forwarding: off | on
+network egress policy: open | deny | allowlist | partial
+residual risk:
+  OrbStack machines share a Linux kernel; this is not hypervisor-per-agent
+  isolation. Runtime build may still happen on host Docker in V1.
+```
+
+The "shared-kernel" line is important. It avoids using microVM language for a backend that OrbStack itself documents differently.
+
+## Comparison With Docker Backend
+
+| Concern | Docker backend | OrbStack isolated backend |
+|---|---|---|
+| Default platform | macOS/Linux Docker contexts | macOS only |
+| Packaging | Dockerfile/OCI image | Dockerfile/OCI image |
+| Runtime boundary | role container on selected Docker engine | role container inside an isolated OrbStack machine |
+| Inner Docker | DinD sidecar | machine-local Docker daemon |
+| Host filesystem | explicit Docker bind mounts | explicit isolated-machine shares, then inner Docker mounts |
+| Host Docker socket | not mounted | not mounted |
+| Kernel boundary | shared with Docker VM/Linux host | shared OrbStack Linux kernel |
+| Network policy | per-agent network today; egress policy future | isolated-machine host/machine blocking plus future egress policy |
+| Startup complexity | low | higher: machine provisioning plus image import |
+| Best use | default local dev | stronger macOS local containment without leaving Docker workflows |
+
+## Implementation Phases
+
+### Phase 0 - discovery prototype
+
+- Verify exact `orb create --isolated` CLI flags and selective share flags.
+- Verify whether the "block host/machines" setting is scriptable per machine.
+- Verify isolated-machine SSH agent forwarding defaults and CLI control.
+- Create a machine manually, install Docker, import a jackin' role image, and run `jackin-capsule` inside the role container.
+- Record cold-start, warm-start, image import, and attach latency.
+
+### Phase 1 - backend-neutral instance registry
+
+- Extract backend kind/provider fields from Docker-specific naming.
+- Persist OrbStack machine handles separately from Docker container names.
+- Teach `hardline --inspect` to report local manifest state even when the backend is not Docker.
+
+### Phase 2 - experimental launch path
+
+- Add `orbstack-isolated` as a hidden or experimental backend.
+- Shell out to `orb` for machine lifecycle.
+- Use cloud-init to install Docker and create `/jackin/` directories.
+- Use host-build + image archive import for role images.
+- Run the role container inside the machine Docker engine.
+
+### Phase 3 - attach, reconnect, eject, purge
+
+- Attach to capsule inside the role container.
+- Reconnect to stopped/running machines.
+- Cleanly stop/delete machines on eject/purge.
+- Preserve isolated worktree cleanup behavior.
+
+### Phase 4 - security controls and contract output
+
+- Add launch/session contract output for machine isolation, shares, inner Docker, network host/machine blocking, SSH agent forwarding, and residual risk.
+- Connect Docker profile selection to the role container running inside the machine.
+- Fail closed when the operator requests isolated behavior but OrbStack cannot enforce it.
+
+### Phase 5 - performance and caching
+
+- Integrate with [Workspace registry cache](/reference/roadmap/workspace-registry-cache/) or a machine-local image cache.
+- Reuse provisioned base machines if doing so does not blur containment.
+- Add disk/resource visibility to the console resource panel.
+
+## Open Questions
+
+1. Does OrbStack expose selective isolated-machine shares and host/machine network blocking through stable CLI flags, config files, or only UI settings?
+2. Should V1 build role images on host Docker, or is build-time role code execution important enough to require machine-local builds from the start?
+3. Should the backend use one machine per jackin' instance or one machine per workspace?
+4. Can Docker rootless inside an OrbStack isolated machine support the common role workflows, or should V1 use rootful machine-local Docker?
+5. How should jackin' attach to capsule: `orb -m ... docker exec`, SSH, or a forwarded Unix/TCP control channel?
+6. Can read-only mount intent be enforced at the OrbStack share layer, or only at the inner Docker layer?
+7. How should imported role images and machine Docker state be pruned without deleting operator-created machine content?
+
+## Risks and Design Traps
+
+- Accidentally using a normal OrbStack machine and exposing the full Mac filesystem instead of isolated selective shares.
+- Calling OrbStack isolated machines "microVMs" and overstating the boundary.
+- Forwarding SSH agent or Mac command integration by default.
+- Forwarding the machine Docker socket back to macOS and recreating the host Docker socket problem.
+- Building images on host Docker while presenting the whole flow as isolated.
+- Reusing one machine across unrelated instances and making cleanup/state ownership unclear.
+- Treating OrbStack support as a substitute for Linux/Kubernetes backend work.
+
+## Related Files
+
+- <RepoFile path="src/runtime/launch.rs" /> - launch orchestration that needs a backend split.
+- <RepoFile path="src/runtime/image.rs" /> - role image build path.
+- <RepoFile path="src/docker_client.rs" /> - current Docker lifecycle boundary.
+- <RepoFile path="src/instance/manifest.rs" /> - instance metadata that needs backend/provider fields.
+- <RepoFile path="docker/runtime/entrypoint.sh" /> - capsule startup inside the role container.
+- <RepoFile path="docker/construct/Dockerfile" /> - role base image that should remain reusable.
+
+## Related Roadmap Items
+
+| Item | Relationship |
+|---|---|
+| [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) | The Docker profile still applies to the role container inside the OrbStack machine. |
+| [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) | Umbrella for backend selection. |
+| [Network egress policy](/reference/roadmap/network-egress-policy/) | Required for real domain allowlists and connection logs. |
+| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | Required to explain OrbStack's actual boundary. |
+| [Workspace registry cache](/reference/roadmap/workspace-registry-cache/) | Potential image-transfer optimization for machine-local Docker. |
+| [Declarative resource limits](/reference/roadmap/declarative-resource-limits/) | Needs translation to OrbStack machine and inner Docker limits. |

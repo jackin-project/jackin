@@ -325,15 +325,17 @@ export default defineConfig({
                   ],
                 },
                 {
-                  label: 'Isolation & security',
-                  collapsed: true,
-                  items: [
-                    { label: 'Process-level sandboxing', slug: 'reference/roadmap/process-level-sandboxing' },
-                    { label: 'Rootless DinD', slug: 'reference/roadmap/rootless-dind' },
-                    { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
-                    { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
-                    { label: 'Devcontainer parity', slug: 'reference/roadmap/devcontainer-parity' },
-                    { label: 'Open review findings', slug: 'reference/roadmap/open-review-findings' },
+	                  label: 'Isolation & security',
+	                  collapsed: true,
+	                  items: [
+	                    { label: 'Process-level sandboxing', slug: 'reference/roadmap/process-level-sandboxing' },
+	                    { label: 'Docker runtime hardening contract', slug: 'reference/roadmap/docker-runtime-hardening-contract' },
+	                    { label: 'OrbStack isolated machine backend', slug: 'reference/roadmap/orbstack-isolated-machine-backend' },
+	                    { label: 'smolvm backend research', slug: 'reference/roadmap/smolvm-backend-research' },
+	                    { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
+	                    { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
+	                    { label: 'Devcontainer parity', slug: 'reference/roadmap/devcontainer-parity' },
+	                    { label: 'Open review findings', slug: 'reference/roadmap/open-review-findings' },
                   ],
                 },
                 {

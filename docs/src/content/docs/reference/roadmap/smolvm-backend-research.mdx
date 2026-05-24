@@ -1,0 +1,442 @@
+---
+title: "smolvm Backend Research"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open - research and design proposal
+
+## Problem
+
+Docker hardening and OrbStack isolated machines cover the two most practical near-term paths for jackin': improve the runtime that works today, and use a macOS backend that many operators already have installed. smolvm is a third path worth researching because it changes the tradeoff: it is open source, Rust-heavy, true VM-per-workload oriented, OCI-image based, and potentially embeddable instead of only scriptable.
+
+The question for jackin' is:
+
+> Can smolvm become the small, open, Rust-native VM backend for workloads that need a stronger boundary than hardened Docker but should still keep jackin' role/image ergonomics?
+
+This item is not a commitment to implement smolvm support. It is the research track that decides whether smolvm is mature and compatible enough to become a jackin' backend.
+
+## Source Material
+
+Primary source: [smol-machines/smolvm](https://github.com/smol-machines/smolvm).
+
+Comparison sources:
+
+- [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) - Docker's productized agent sandbox runtime.
+- [Docker Sandboxes architecture](https://docs.docker.com/ai/sandboxes/architecture/) - workspace mounting, persistence, networking, lifecycle, and alternatives.
+- [Docker Sandboxes security model](https://docs.docker.com/ai/sandboxes/security/) and [isolation layers](https://docs.docker.com/ai/sandboxes/security/isolation/) - hypervisor, network, private Docker Engine, and credential proxy boundaries.
+- [OrbStack architecture](https://docs.orbstack.dev/architecture), [machines](https://docs.orbstack.dev/machines/), and [release notes](https://docs.orbstack.dev/release-notes) - shared-kernel machine model, isolated machines, selective sharing, and host/machine network controls.
+
+Current repository signals as of May 24, 2026:
+
+- Apache-2.0 repository with roughly 3.4k GitHub stars and active releases.
+- Latest GitHub release observed during this research: `v0.7.2` on May 21, 2026.
+- README describes smolvm as a CLI for portable, lightweight, self-contained virtual machines.
+- README claims sub-second cold start, cross-platform macOS/Linux support, elastic memory, OCI image input, `.smolmachine` portable artifacts, network off by default, allow-host egress, SSH agent forwarding, persistent machines, and an embeddable SDK.
+- README says each workload gets its own kernel through Hypervisor.framework on macOS or KVM on Linux, using libkrun with a custom kernel.
+- README says Docker Hub, GHCR, and other OCI registry images can be booted as microVMs with no Docker daemon required.
+- Known limitations include opt-in TCP/UDP networking only, no ICMP, directory-only volume mounts, Hypervisor.framework signing entitlements on macOS, host SSH agent requirement for `--ssh-agent`, and GPU requirements.
+- Release notes for `v0.7.0` mention "enabling docker within smolvm through TSI", which is directly relevant to jackin' Docker-workflow compatibility and needs hands-on validation.
+- Development docs show a Rust build with cargo-make, git-lfs, libkrun/libkrunfw binaries, a smolvm agent rootfs, and macOS codesigning.
+
+## Comparison Target
+
+This research should compare only three post-Docker-hardening options:
+
+1. **OrbStack isolated machines** - pragmatic macOS backend for operators already using OrbStack.
+2. **smolvm** - open-source Rust/libkrun VM backend candidate.
+3. **Docker Sandboxes** - Docker's productized microVM agent sandbox with a private Docker Engine, policy proxy, and credential proxy.
+
+Do not expand this item into Firecracker research. Firecracker can remain a later server-side or hosted-runtime candidate if a separate problem demands it, but it is not the useful comparison for the current jackin' local-backend decision.
+
+## Why smolvm Is Different From OrbStack And Docker Sandboxes
+
+| Concern | OrbStack isolated machine | smolvm | Docker Sandboxes |
+|---|---|---|---|
+| Product shape | Polished macOS app and CLI | Open-source CLI/library-oriented runtime | Productized Docker CLI/service for agent sandboxes |
+| License/control | Proprietary | Apache-2.0 | Commercial Docker product surface around a proprietary service/runtime |
+| Implementation fit | Shell out to `orb` | Shell out first, potentially embed later | Shell out to `sbx` or integrate around Docker's sandbox workflow if APIs allow |
+| Boundary wording | Isolated machine, shared kernel per OrbStack docs | VM per workload with its own kernel per smolvm README | Dedicated microVM per sandbox per Docker docs |
+| Platform | macOS only | macOS and Linux with KVM | macOS, Windows, and Linux per Docker docs |
+| Docker compatibility | Install/start Docker inside machine | OCI images boot without Docker daemon; Docker-in-guest needs research | Private Docker Engine is a core feature |
+| File sharing | OrbStack selective shares | Directory volume mounts | Workspace mounted directly at the same absolute host path |
+| Network policy | Isolated-machine host/machine blocking plus future jackin policy | Network off by default, `--allow-host` allowlist | Host-side proxy, allow/deny policy, raw TCP/UDP/ICMP blocked by default per docs |
+| Credential posture | jackin must provide its own credential model | jackin must provide its own credential model | Host-side credential proxy injects selected outbound API auth per docs |
+| Maturity risk | Mature operator product | Pre-1.0 fast-moving runtime | New product surface but backed by Docker's ecosystem |
+| Strategic value | Best macOS user experience | Best open Rust-native backend candidate | Best benchmark for the private-Docker-in-VM agent UX |
+
+All three are useful, but they solve different problems. OrbStack is the practical macOS path, Docker Sandboxes is the polished reference for "agent gets a private Docker daemon inside a VM boundary", and smolvm is the open Rust-native path jackin' can study, prototype, and maybe integrate more deeply.
+
+## Docker Sandboxes Baseline
+
+Docker Sandboxes is the most important product benchmark for smolvm, because it targets the same agent problem jackin' cares about:
+
+- each agent session runs in a dedicated microVM
+- each sandbox has its own filesystem, network, and private Docker daemon
+- the agent can run `docker build`, `docker run`, and `docker compose` without touching the host Docker daemon
+- workspace access is explicit, same-path, and live back to the host
+- HTTP/HTTPS traffic goes through a host-side policy and credential proxy
+- raw TCP, UDP, ICMP, private network access, host localhost, and non-allowed domains are blocked by default per Docker docs
+- organization governance can centrally manage network and filesystem policy on paid plans
+
+For jackin', Docker Sandboxes answers the "what should excellent look like?" question:
+
+```text
+agent freedom inside boundary:
+  sudo + packages + Docker Engine + writable workspace
+
+host boundary:
+  no host Docker socket
+  no broad host filesystem access
+  no raw network by default
+  credentials mediated outside the VM
+```
+
+smolvm should be compared against that shape, not against generic "microVM" claims.
+
+## What smolvm Could Do Better Than Docker Sandboxes
+
+Potential advantages to validate:
+
+- Open-source runtime that can be audited, patched, forked, and discussed in jackin' roadmap terms without depending on vendor APIs.
+- Rust-heavy implementation and claimed SDK path, which may eventually fit jackin' better than a black-box CLI integration.
+- Direct OCI-image boot without requiring Docker as the outer runtime.
+- Network-off-by-default posture that maps naturally to jackin' deny-by-default egress goals.
+- Linux/KVM and macOS Hypervisor.framework support in one project, giving jackin' a possible non-OrbStack local VM backend beyond macOS.
+- `.smolmachine` artifacts might become a portable, inspectable snapshot primitive if they map cleanly to jackin' eject/purge semantics.
+
+## What Docker Sandboxes Currently Does Better
+
+Expected advantages unless smolvm proves otherwise:
+
+- Private Docker Engine is a product-level feature, not a research question.
+- Network policy and credential proxy are documented first-class controls.
+- Same-path workspace mount behavior aligns strongly with jackin' existing same-path design.
+- Agent workflow is explicit: agents get a real development environment, including package installation and Docker workflows.
+- Team/enterprise governance has a built-in story.
+- Cross-platform story includes Windows, where smolvm is not currently a jackin' candidate.
+
+## What OrbStack Currently Does Better
+
+Expected advantages unless smolvm proves otherwise:
+
+- Best macOS developer experience for operators already using OrbStack as their Docker backend.
+- Full Linux machine lifecycle with `orb` commands, cloud-init, and polished file/network integration.
+- Easier operator mental model for long-lived machines.
+- Selective shares and host/machine blocking are already in the product surface.
+- Docker inside an OrbStack machine should be straightforward Linux-machine work, though jackin' must still validate the full role flow.
+
+## Decision Frame
+
+The comparison should produce separate conclusions, not a single winner:
+
+| Desired capability | Likely best first path |
+|---|---|
+| Improve today's local default | Docker runtime hardening |
+| macOS isolated backend with strong UX | OrbStack isolated machine |
+| Open source Rust-native VM backend | smolvm |
+| Private Docker daemon inside a VM with policy proxy | Docker Sandboxes as benchmark, smolvm/OrbStack as prototypes |
+| Team-managed policy and paid enterprise controls | Docker Sandboxes benchmark only unless jackin' builds its own governance |
+| Cross-platform local VM backend beyond macOS | smolvm research |
+| Hosted hostile multi-tenant execution | Out of scope for this item |
+
+## Goal
+
+Research whether smolvm can support one or more jackin' backend modes:
+
+1. **Ephemeral command sandbox**: run one agent/tool command in a short-lived microVM for high-risk operations.
+2. **Docker-free role backend**: boot a role OCI image directly as a smolvm workload without a Docker daemon.
+3. **Persistent machine backend**: create one smolvm machine per jackin' instance, preserve agent state, and reconnect later.
+4. **Docker-capable VM backend**: run Docker-compatible workflows inside the smolvm boundary if the `v0.7.0` Docker-in-smolvm work is usable.
+5. **Embedded backend**: eventually integrate through a Rust SDK or library boundary instead of shelling out to the CLI.
+
+The research should produce a go/no-go recommendation for each mode.
+
+## Non-Goals
+
+- Do not replace Docker runtime hardening with smolvm research.
+- Do not block OrbStack isolated-machine work on smolvm.
+- Do not claim smolvm can run current jackin' roles until Docker workflow compatibility is tested.
+- Do not vendor or fork smolvm unless the operator explicitly chooses that maintenance burden.
+- Do not require smolvm for normal local jackin' usage.
+- Do not silently install smolvm or its host dependencies.
+
+## Backend Vocabulary
+
+Use a name that distinguishes this from OrbStack:
+
+```text
+smolvm
+```
+
+Possible future CLI:
+
+```sh
+jackin load reviewer . --backend smolvm
+jackin load reviewer . --backend smolvm --vm-mode ephemeral
+jackin load the-architect . --backend smolvm --vm-mode persistent
+```
+
+Possible future config:
+
+```toml
+[runtime.smolvm]
+enabled = false
+mode = "persistent" # ephemeral | direct-image | persistent | docker-capable
+network = "deny"    # deny | allowlist | open
+allow_hosts = ["github.com", "api.openai.com"]
+ssh_agent = "ask"   # off | ask | on
+cpus = 4
+memory = "8 GiB"
+```
+
+This schema is intentionally speculative. If it lands in versioned config, it must follow the migration rules.
+
+## Implementation Hypotheses
+
+### Mode A - ephemeral operation sandbox
+
+Run a single command or classified high-risk operation inside smolvm:
+
+```text
+jackin role container -> asks host/capsule bridge for sandboxed command
+host jackin -> smolvm machine run --image <tool-image> -- <command>
+smolvm -> exits and deletes state
+```
+
+Best for:
+
+- untrusted scripts
+- package install probes
+- generated code execution
+- quick network-denied checks
+
+Risk:
+
+- Integrating per-command smolvm from inside an existing agent session may need a host bridge, not only the current container runtime.
+- It overlaps with [Process-level sandboxing](/reference/roadmap/process-level-sandboxing/), which is likely lower overhead for routine commands.
+
+### Mode B - direct role image backend
+
+Boot the role OCI image directly as the smolvm workload:
+
+```text
+host builder -> role OCI image
+smolvm -> boot role image as VM
+jackin-capsule -> runs inside VM
+host jackin -> attaches to capsule
+```
+
+Best for:
+
+- Docker-free roles
+- read-only review roles
+- short-lived agent tasks
+- cases where Docker-in-Docker is unnecessary
+
+Risk:
+
+- Current jackin' roles assume a container entrypoint and Docker-style mounts, not necessarily a VM init model.
+- `jackin-capsule` as PID 1 inside a smolvm-booted OCI image needs validation.
+
+### Mode C - persistent smolvm instance
+
+Create one smolvm persistent machine per jackin' instance:
+
+```text
+smolvm machine create --net? <instance>
+smolvm machine start --name <instance>
+smolvm machine exec --name <instance> -- <jackin bootstrap>
+```
+
+Best for:
+
+- agent sessions that need reconnect
+- durable package installs inside the VM
+- `.smolmachine` export/import experiments
+
+Risk:
+
+- Persistence can become invisible bloat unless jackin' owns cleanup and disk reporting.
+- Current jackin' state model deliberately separates agent state from mutable runtime filesystems.
+
+### Mode D - Docker-capable smolvm backend
+
+Validate whether Docker inside smolvm is good enough for current jackin' roles. This is the important compatibility gate.
+
+Questions:
+
+- What does "enabling docker within smolvm through TSI" provide in `v0.7.0`?
+- Can the agent run `docker build`, `docker run`, Docker Compose, and Java Testcontainers?
+- Does Docker-in-smolvm require privileged guest setup, custom kernel features, or special storage?
+- How are Docker images cached across machine restarts?
+- Can the Docker daemon stay private to the VM?
+- Can jackin' inspect and clean the inner Docker state?
+
+Decision rule:
+
+- If Docker workflows pass, smolvm can compete with OrbStack as an open cross-platform VM backend.
+- If Docker workflows do not pass, smolvm is still valuable for Docker-free roles and ephemeral high-risk operations, but not as a default replacement for the current Docker backend.
+
+## Network Policy
+
+smolvm's network posture is interesting because the README says network is off by default and egress can be limited with `--allow-host`.
+
+Mapping to jackin':
+
+| jackin policy | smolvm mapping to validate |
+|---|---|
+| deny | omit `--net` |
+| allowlist | `--net --allow-host <host>` for each allowed host |
+| open | `--net` without allow-host restriction |
+| private network blocked | validate default host/machine reachability and add explicit denial if supported |
+| connection logs | not provided by README; jackin may need its own proxy/log layer |
+
+This may make smolvm a useful implementation path for early network egress policy, but only after confirming how DNS, redirects, package managers, and registry auth behave under `--allow-host`.
+
+## Filesystem And Mounts
+
+Known limitation: README says volume mounts are directories only, not single files.
+
+Implications for jackin':
+
+- Workspace and global directory mounts fit.
+- Single-file secret/config mounts would need a parent directory mount, a generated staging directory, or a different credential mechanism.
+- Mount destination control must be validated: jackin' supports arbitrary `dst`, while smolvm examples use `-v /host/dir:/workspace`.
+- Read-only mount support must be checked.
+- Worktree/clone isolation can still materialize on the host before the directory is mounted into smolvm.
+
+## Authentication
+
+The README says `--ssh-agent` can forward the host SSH agent so private keys do not enter the guest.
+
+Rules for jackin':
+
+- SSH agent forwarding must default to off or ask.
+- The launch contract must show whether SSH agent forwarding is enabled.
+- This does not solve API-token forwarding for Claude, Codex, Amp, Kimi, OpenCode, or `gh`.
+- Future brokered credential work should remain backend-neutral.
+
+## Packaging And Embedding
+
+smolvm is attractive because it is Rust-heavy and claims an embeddable SDK. That creates a possible sequence:
+
+1. Shell out to `smolvm` CLI for research and prototypes.
+2. Build a backend adapter around stable CLI output and instance handles.
+3. Evaluate SDK embedding only after the CLI prototype proves the product value.
+4. Embed only if it materially improves launch latency, logs, lifecycle control, or packaging.
+
+Embedding risks:
+
+- smolvm is pre-1.0 and moving quickly.
+- libkrun/libkrunfw binaries and git-lfs assets complicate distribution.
+- macOS Hypervisor.framework entitlements require signing.
+- Linux requires KVM.
+- Owning a library integration makes jackin' part of the VM-runtime update path.
+
+## Comparison With The Other Two Tracks
+
+| Question | Docker hardening | OrbStack isolated | smolvm |
+|---|---|---|---|
+| Best near-term default? | Yes | No | No |
+| Keeps current role Docker workflows? | Yes | Likely, via machine-local Docker | Unknown, must test |
+| Stronger kernel boundary than Docker? | No | Shared OrbStack kernel, not true per-agent VM | Yes per README |
+| Works on macOS? | Yes through Docker backend | Yes | Yes |
+| Works on Linux? | Yes | No | Yes with KVM |
+| Open source? | Docker stack mostly open; Desktop/OrbStack contexts vary | No | Yes |
+| Rust-native integration potential? | Low | Low | High |
+| Mature operator UX? | High | High on macOS | Unknown |
+| Network deny by default? | No | Depends on isolated settings | Yes per README |
+
+## Implementation Phases
+
+### Phase 0 - hands-on smoke
+
+- Install smolvm explicitly in a disposable test environment.
+- Run `smolvm machine run --image alpine -- uname -a` without network.
+- Run `--net --allow-host` tests for package registries and blocked hosts.
+- Mount a jackin' workspace directory and validate read/write behavior.
+- Test read-only mount behavior if available.
+- Test SSH agent forwarding with a non-sensitive key.
+- Record the same smoke matrix against Docker Sandboxes where licensing/access permits: workspace path, network deny/allow, private Docker Engine, credential behavior, attach/restart, and cleanup.
+
+### Phase 1 - role-image compatibility
+
+- Build a jackin' role image with the current Docker path.
+- Try to boot that OCI image directly through smolvm.
+- Verify `jackin-capsule` can run, expose a control channel, and attach.
+- Document entrypoint, init, UID/GID, and `/jackin/` path gaps.
+
+### Phase 2 - Docker workflow compatibility
+
+- Validate the `v0.7.0` Docker-in-smolvm capability.
+- Run `docker build`, `docker run`, Compose, and Testcontainers inside smolvm.
+- Compare with current DinD behavior.
+- Compare with Docker Sandboxes as the benchmark for a private Docker daemon inside a VM boundary.
+- Decide whether smolvm can support normal jackin' roles or only Docker-free roles.
+
+### Phase 3 - policy and credential parity
+
+- Prototype network-deny, allow-host, package-manager, and registry-auth behavior.
+- Decide whether jackin' can add a host-side proxy layer comparable to Docker Sandboxes without making smolvm support too complex.
+- Prototype credential delivery without raw token files or environment variables where possible.
+- Decide whether SSH agent forwarding is enough for Git-only workflows and how model-provider credentials should be brokered.
+
+### Phase 4 - backend adapter prototype
+
+- Add an experimental `smolvm` backend behind a feature flag or hidden config.
+- Shell out to `smolvm`.
+- Persist smolvm machine handles in the backend-neutral instance registry.
+- Implement inspect/eject/purge before general launch support.
+- Keep the adapter honest about whether it is `direct-image`, `persistent`, or `docker-capable`.
+
+### Phase 5 - SDK and packaging decision
+
+- Evaluate SDK/API stability.
+- Decide whether embedding beats shell-out.
+- Document distribution requirements for macOS signing and Linux KVM.
+- Keep CLI shell-out if embedding would make jackin' own too much VM-runtime maintenance.
+
+## Open Questions
+
+1. Can smolvm boot current jackin' role OCI images without rebuilding them into a special VM image shape?
+2. Can `jackin-capsule` be PID 1 in a smolvm workload, or does smolvm require its own agent/init path?
+3. Does smolvm support read-only mounts and arbitrary destination paths well enough for jackin' workspace mounts?
+4. Does Docker inside smolvm support Compose and Testcontainers?
+5. Can smolvm expose a stable attach channel for long-running interactive TUI sessions?
+6. How stable is the claimed SDK, and is it Rust-consumable in a way that fits jackin' release/distribution needs?
+7. How should `.smolmachine` artifacts map to jackin' state and purge semantics?
+8. Does smolvm's network allowlist cover DNS, redirects, registry auth, and package-manager mirrors predictably?
+9. How close can smolvm get to Docker Sandboxes' host-side policy and credential proxy model without jackin' building a full proxy subsystem first?
+10. Is Docker Sandboxes an integration backend jackin' should support directly, or only a reference model for what smolvm and OrbStack should approximate?
+11. Does Docker Sandboxes expose enough local API/CLI surface for jackin' lifecycle control, or is it intentionally agent-runner focused rather than backend-provider focused?
+
+## Risks and Design Traps
+
+- Treating a promising README as implementation proof before running jackin' roles inside it.
+- Letting embeddability distract from the product question: does it run agent sessions better?
+- Shipping a pre-1.0 runtime as a default dependency.
+- Building a Docker-free VM backend that cannot run the roles operators already use.
+- Hiding macOS signing and Linux KVM requirements until launch time.
+- Creating a second persistence model that conflicts with jackin' purge/eject/recovery semantics.
+- Claiming Docker Sandboxes parity without a host-side credential proxy and auditable network logs.
+- Treating Docker Sandboxes as a reason to stop improving the Docker backend. It is a benchmark and possible later integration target, not a replacement for the near-term Docker hardening contract.
+- Collapsing smolvm, OrbStack, and Docker Sandboxes into one generic "microVM" label. Their boundaries, APIs, product shape, and integration risks are different.
+
+## Related Files
+
+- <RepoFile path="src/runtime/launch.rs" /> - launch orchestration that needs a backend split.
+- <RepoFile path="src/runtime/image.rs" /> - role image build path and OCI artifact source.
+- <RepoFile path="src/instance/manifest.rs" /> - future backend/provider handles.
+- <RepoFile path="docker/runtime/entrypoint.sh" /> - capsule startup assumptions.
+- <RepoFile path="docker/construct/Dockerfile" /> - role base image to test as a smolvm workload.
+
+## Related Roadmap Items
+
+| Item | Relationship |
+|---|---|
+| [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) | Near-term default and compatibility baseline. |
+| [OrbStack isolated machine backend](/reference/roadmap/orbstack-isolated-machine-backend/) | macOS polished provider track to compare against smolvm. |
+| [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) | Umbrella for backend selection. |
+| [Network egress policy](/reference/roadmap/network-egress-policy/) | smolvm allow-host behavior may implement part of the policy. |
+| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | Needed to report whether smolvm, OrbStack, or Docker Sandboxes is enforcing each boundary. |
+| [Process-level sandboxing](/reference/roadmap/process-level-sandboxing/) | Lower-overhead alternative for per-operation isolation inside existing Docker sessions. |

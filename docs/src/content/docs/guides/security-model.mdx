@@ -13,8 +13,10 @@ Containers are where jackin' starts because the team building it has years of op
 
 That doesn't mean jackin' has to stop there. Stronger boundaries — microVMs, hypervisor-backed sandboxes, and selectable backends — are explicit research items on the roadmap:
 
-- [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) — let the operator pick `Docker`, microVM, or another backend per workspace, instead of forcing one for everyone. Not every workload needs a microVM, and forcing one would cost startup time, build cache, and parallelism.
-- [Rootless `DinD`](/reference/roadmap/rootless-dind/) — shrink the privileged surface inside the current container model.
+- [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) — keep the Docker-first model while making profiles, DinD hardening, resource budgets, network posture, and launch-contract reporting explicit.
+- [OrbStack isolated machine backend](/reference/roadmap/orbstack-isolated-machine-backend/) — research a macOS backend that preserves Docker workflows inside an OrbStack isolated machine with explicit shares.
+- [smolvm backend research](/reference/roadmap/smolvm-backend-research/) — research an open Rust/libkrun VM backend for true VM-per-workload isolation, OCI-image execution, and network-off-by-default operation.
+- [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) — keep Docker, OrbStack, Kubernetes, and later true microVM providers under one backend-selection umbrella without forcing one boundary on every workload.
 - [Reproducibility & provenance pinning](/reference/roadmap/reproducibility-pinning/) — tighten what gets into the image to begin with.
 
 The plan is to keep iterating on UX, ergonomics, and operator workflows until jackin' is no longer in the *experimenting and figuring it out* phase, and then research and add stronger isolation boundaries as a configurable option. We constantly look at adjacent projects (microVM-based agent sandboxes, devcontainer setups, remote sandbox products) and borrow good ideas — see [Comparison with Alternatives](/guides/comparison/) for a current snapshot.
