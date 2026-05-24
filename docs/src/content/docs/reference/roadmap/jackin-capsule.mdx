@@ -269,13 +269,13 @@ Phase 4 should add a read-only usage overlay fed by the host daemon's [Token & C
 
 Default shape:
 
-- Top chrome: optional compact quota glyph for the focused account, e.g. `Claude 36% left`, `Codex stale`, or `Amp login`. This should be short enough not to crowd tabs.
+- Top chrome: compact always-visible quota glyph for the focused account, e.g. `Claude 80%`, `Codex 12%`, `Codex stale`, or `Amp login`. This should be short enough not to crowd tabs and should prioritize warning states over decorative detail.
 - Prefix `u` / palette `Usage`: modal dialog showing the focused agent's provider, account label, quota window, remaining percentage, reset countdown, source confidence, cache freshness, current session tokens/cost, workspace tokens/cost, and burn-rate projection when available.
 - Dialog rows must label provider-authoritative quota separately from locally estimated workspace spend. A local JSONL estimate must never be displayed as the enforced subscription limit.
 - If the daemon is disconnected, the overlay shows `usage unavailable: daemon disconnected` rather than falling back to in-container polling.
 - If the account needs authentication, the overlay shows `needs login` / `needs secret` with the repair action name, while the actual repair flow stays in `jackin console`, Desktop, CLI, or host bridge.
 
-This keeps the multiplexer useful while the operator is focused inside an agent: before starting an expensive run, they can check whether the focused account still has enough subscription headroom and how much the current workspace has already burned.
+This keeps the multiplexer useful while the operator is focused inside an agent: before starting an expensive run, they can see the account headroom in the chrome, then open the dialog only when they need reset timing, confidence, or workspace spend detail.
 
 #### Initial state
 

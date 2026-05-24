@@ -209,8 +209,9 @@ Proposed states:
 The menu bar label should be conservative:
 
 - Icon only by default.
-- Optional text: `3` active sessions, `2 wait` when attention is required, or the most constrained active account when quota display is enabled.
-- Quota display mode should be first-class, not hidden: `Claude 36%`, `Codex 18%`, `Amp login`, or a compact ring/gauge icon. The popover must explain the provider, account, quota window, reset time, freshness, and source before the operator trusts the number.
+- Optional text: `3` active sessions, `2 wait` when attention is required, or the most constrained active account when quota is the highest-risk status.
+- Quota visibility is first-class and on by default for active sessions: `Claude 36%`, `Codex 18%`, `Amp login`, or a compact ring/gauge icon. The status item can stay visually quiet, but the operator must be able to see low quota, stale quota, or auth failure from the menu bar without opening the full Desktop window.
+- The popover must explain the provider, account, quota window, reset time, freshness, and source before the operator trusts the number.
 
 ### Main menu
 
@@ -317,6 +318,8 @@ Recommended layout:
 - Running Agents: current role containers grouped by workspace/project, with agent runtime, role, branch, PR, attention state, focused-account quota, workspace spend, and stop/hardline/open actions.
 - Accounts: Claude/Codex/Amp/Kimi/OpenCode account cards with source, plan/quota, reset time, confidence, last refresh, stale/error state, and repair/login actions.
 - Usage: workspace/session spend view showing tokens and cost by workspace, role, agent, model, and time window.
+
+Compact visibility rule: every Desktop view that can start, focus, or stop an agent should show the active account quota beside that agent. The full Accounts and Usage screens are for inspection; the Running Agents, Workspaces, and menu-bar surfaces are for immediate “can I safely keep working?” decisions.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
