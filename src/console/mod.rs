@@ -523,8 +523,7 @@ where
     B: ratatui::backend::Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
-    match try_prompt_for_agent(terminal, state, paths, config, cwd, runner, role, workspace)
-        .await?
+    match try_prompt_for_agent(terminal, state, paths, config, cwd, runner, role, workspace).await?
     {
         AgentPickerResolution::Opened => {
             state.pending_launch = Some(input);
@@ -1160,8 +1159,7 @@ mod quit_confirm_tests {
 
     #[tokio::test]
     async fn prompt_agent_for_launch_restore_pending_keeps_input_for_retry() {
-        let (state, outcome) =
-            run_prompt_for_unknown_role(OnPromptFailure::RestorePending).await;
+        let (state, outcome) = run_prompt_for_unknown_role(OnPromptFailure::RestorePending).await;
         assert!(matches!(outcome, PromptOutcome::Defer));
         assert!(
             state.pending_launch.is_some(),

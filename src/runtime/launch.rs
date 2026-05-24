@@ -5935,7 +5935,11 @@ agents = ["codex"]
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
     }
 
-    fn materialize_on_clone(runner: &mut FakeRunner, repo_dir: std::path::PathBuf, manifest: String) {
+    fn materialize_on_clone(
+        runner: &mut FakeRunner,
+        repo_dir: std::path::PathBuf,
+        manifest: String,
+    ) {
         runner.side_effects.push((
             "clone".to_string(),
             Box::new(move || {
@@ -5985,12 +5989,16 @@ agents = ["codex"]
             }),
         ));
 
-        let _ = resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
-            .await
-            .unwrap();
+        let _ =
+            resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
+                .await
+                .unwrap();
 
         assert!(
-            f.runner.run_recorded.iter().any(|c| c.contains("git clone")),
+            f.runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("git clone")),
             "orphan manifest must trigger a fresh clone, not a cache hit: {:?}",
             f.runner.run_recorded
         );
@@ -6007,8 +6015,9 @@ agents = ["codex"]
         std::fs::create_dir_all(f.repo_dir.join(".git")).unwrap();
         std::fs::write(f.repo_dir.join("jackin.role.toml"), "this is not toml = =").unwrap();
 
-        let _ = resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
-            .await;
+        let _ =
+            resolve_supported_agents_for_console(&f.paths, &f.config, &f.selector, &mut f.runner)
+                .await;
 
         assert!(
             !f.runner.recorded.is_empty(),
@@ -6039,7 +6048,10 @@ agents = ["codex"]
             vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
         );
         assert!(
-            f.runner.run_recorded.iter().any(|c| c.contains("git clone")),
+            f.runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("git clone")),
             "fall-through path must clone: {:?}",
             f.runner.run_recorded
         );
