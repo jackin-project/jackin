@@ -886,6 +886,7 @@ impl Dialog {
         };
         let max_height = term_rows
             .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
+            .saturating_sub(1)
             .max(3);
         let height = natural_height.min(max_height);
         let row = crate::statusbar::STATUS_BAR_ROWS + (max_height.saturating_sub(height)) / 2;
@@ -900,9 +901,9 @@ impl Dialog {
     /// both the renderer AND `handle_click` use it, so paint and
     /// hit-test cannot drift. The free-function `render_*` helpers
     /// take the `(row, col, height, width)` tuple from `box_rect`
-    /// instead of recomputing the centring; bottom-hint placement is
-    /// still relative to `term_rows` because the hint lives outside
-    /// the box.
+    /// instead of recomputing the centring. Footer hints are rendered
+    /// by the multiplexer compositor on the bottom status row so every
+    /// dialog follows the same bottom-screen hint contract.
     pub fn render(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
         self.render_with_hover(buf, term_rows, term_cols, false);
     }
@@ -941,13 +942,11 @@ impl Dialog {
                     filter,
                     *close_label,
                 );
-                render_dialog_hint(buf, box_row, height, term_rows, term_cols, PALETTE_HINT);
             }
             Self::SplitDirectionPicker { selected, filter } => {
                 render_split_direction_picker(
                     buf, box_row, box_col, height, width, *selected, filter,
                 );
-                render_dialog_hint(buf, box_row, height, term_rows, term_cols, PICKER_HINT);
             }
             Self::AgentPicker {
                 agents,
@@ -958,11 +957,9 @@ impl Dialog {
                 render_agent_picker(
                     buf, box_row, box_col, height, width, agents, *selected, *intent, filter,
                 );
-                render_dialog_hint(buf, box_row, height, term_rows, term_cols, PICKER_HINT);
             }
             Self::RenameTab { input, .. } => {
                 render_rename_tab(buf, term_rows, term_cols, input.value());
-                render_dialog_hint(buf, box_row, height, term_rows, term_cols, RENAME_HINT);
             }
             Self::ContainerInfo {
                 container_name,
@@ -984,14 +981,6 @@ impl Dialog {
                     *copied,
                     copy_target_hovered,
                 );
-                render_dialog_hint(
-                    buf,
-                    box_row,
-                    height,
-                    term_rows,
-                    term_cols,
-                    CONTAINER_INFO_HINT,
-                );
             }
             Self::GitHubContext {
                 branch,
@@ -1009,27 +998,40 @@ impl Dialog {
                     *copied,
                     copy_target_hovered,
                 );
-                if pull_request.is_some() {
-                    render_dialog_hint(
-                        buf,
-                        box_row,
-                        height,
-                        term_rows,
-                        term_cols,
-                        GITHUB_CONTEXT_HINT,
-                    );
-                } else {
-                    render_dialog_hint(buf, box_row, height, term_rows, term_cols, READ_ONLY_HINT);
-                }
             }
             Self::CloseTargetPicker { selected, filter } => {
                 render_close_target_picker(buf, box_row, box_col, height, width, *selected, filter);
-                render_dialog_hint(buf, box_row, height, term_rows, term_cols, PICKER_HINT);
             }
             Self::ConfirmAction { kind, selected_yes } => {
                 render_confirm_action(buf, box_row, box_col, height, width, *kind, *selected_yes);
-                render_dialog_hint(buf, box_row, height, term_rows, term_cols, CONFIRM_HINT);
             }
+        }
+    }
+
+    pub fn render_footer_hint(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
+        if term_rows == 0 {
+            return;
+        }
+        let spans = self.footer_hint_spans();
+        render_hint_row(buf, term_rows - 1, term_cols, spans);
+    }
+
+    fn footer_hint_spans(&self) -> &'static [HintSpan<'static>] {
+        match self {
+            Self::CommandPalette { .. } => PALETTE_HINT,
+            Self::SplitDirectionPicker { .. }
+            | Self::AgentPicker { .. }
+            | Self::CloseTargetPicker { .. } => PICKER_HINT,
+            Self::RenameTab { .. } => RENAME_HINT,
+            Self::ContainerInfo { .. } => CONTAINER_INFO_HINT,
+            Self::GitHubContext { pull_request, .. } => {
+                if pull_request.is_some() {
+                    GITHUB_CONTEXT_HINT
+                } else {
+                    READ_ONLY_HINT
+                }
+            }
+            Self::ConfirmAction { .. } => CONFIRM_HINT,
         }
     }
 
@@ -2139,30 +2141,6 @@ fn hint_span_cols(spans: &[HintSpan<'_>]) -> usize {
         .sum()
 }
 
-/// Paint the hint row directly under the dialog when space allows.
-/// Falling back to the second-to-last terminal row keeps hints above the
-/// branch/PR context bar, which owns the last row when visible.
-fn render_dialog_hint(
-    buf: &mut Vec<u8>,
-    box_row: u16,
-    height: u16,
-    term_rows: u16,
-    term_cols: u16,
-    spans: &[HintSpan<'_>],
-) {
-    if term_rows == 0 {
-        return;
-    }
-    let row_below_box = box_row.saturating_add(height);
-    let fallback_row = term_rows.saturating_sub(2);
-    let row = if row_below_box < term_rows.saturating_sub(1) {
-        row_below_box
-    } else {
-        fallback_row
-    };
-    render_hint_row(buf, row, term_cols, spans);
-}
-
 fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
     let total = hint_span_cols(spans);
     let padded_total = total.saturating_add(4);
@@ -2170,6 +2148,11 @@ fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpa
         return;
     }
     let start_col = ((term_cols as usize).saturating_sub(padded_total) / 2) as u16;
+    move_to(buf, row, 0);
+    buf.extend_from_slice(BG_DARK.as_bytes());
+    for _ in 0..term_cols {
+        buf.push(b' ');
+    }
     move_to(buf, row, start_col);
     buf.extend_from_slice(BG_DARK.as_bytes());
     buf.extend_from_slice(FG_BORDER.as_bytes());
@@ -2811,7 +2794,10 @@ mod tests {
         );
         assert!(rendered.contains("CI Status"));
         assert!(rendered.contains("passing (4/5)"));
-        assert!(rendered.contains("copy GitHub URL"));
+        assert!(
+            !rendered.contains("copy GitHub URL"),
+            "modal body should not render footer hints: {rendered:?}"
+        );
     }
 
     #[test]
@@ -2873,7 +2859,7 @@ mod tests {
     }
 
     #[test]
-    fn github_context_hint_renders_below_dialog_not_terminal_footer() {
+    fn github_context_hint_renders_on_bottom_footer_row() {
         let d = Dialog::GitHubContext {
             branch: Some("feature/container-info".to_string()),
             pull_request: Some(pull_request_fixture()),
@@ -2881,19 +2867,18 @@ mod tests {
         };
         let term_rows = 40;
         let term_cols = 120;
-        let (box_row, _, height, _) = d.box_rect(term_rows, term_cols);
-        let expected_row = box_row + height;
         let padded_cols = hint_span_cols(GITHUB_CONTEXT_HINT) + 4;
         let expected_col = ((term_cols as usize).saturating_sub(padded_cols) / 2) as u16;
 
         let mut buf = Vec::new();
         d.render(&mut buf, term_rows, term_cols);
+        d.render_footer_hint(&mut buf, term_rows, term_cols);
         let rendered = String::from_utf8_lossy(&buf);
-        let cursor = format!("\x1b[{};{}H", expected_row + 1, expected_col + 1);
+        let cursor = format!("\x1b[{};{}H", term_rows, expected_col + 1);
 
         assert!(
             rendered.contains(&cursor),
-            "hint should render directly below the dialog at {cursor:?}: {rendered:?}"
+            "hint should render on the bottom footer row at {cursor:?}: {rendered:?}"
         );
         assert!(rendered.contains("copy GitHub URL"));
     }

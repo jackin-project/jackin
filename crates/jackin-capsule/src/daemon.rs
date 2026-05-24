@@ -2461,6 +2461,7 @@ impl Multiplexer {
                 self.term_cols,
                 self.hover_target == Some(HoverTarget::DialogCopyTarget),
             );
+            dialog.render_footer_hint(&mut buf, self.term_rows, self.term_cols);
         }
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
@@ -2480,8 +2481,8 @@ impl Multiplexer {
 
     fn compose_dialog_overlay_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
         // Dialog overlays always go through the full compositor so the
-        // background dim cue, status chrome, branch bar, and dialog hint
-        // row stay consistent for every dialog type.
+        // background dim cue, status chrome, branch bar, and bottom
+        // footer hint stay consistent for every dialog type.
         self.compose_full_frame(reason)
     }
 
@@ -4841,7 +4842,11 @@ mod tests {
         assert!(rendered.contains("GitHub context"));
         assert!(
             rendered.contains("copy GitHub URL"),
-            "dialog hint must render above the branch context bar: {rendered:?}"
+            "dialog hint must render in the bottom footer row: {rendered:?}"
+        );
+        assert!(
+            rendered.rfind("copy GitHub URL") > rendered.rfind("jk-test-container"),
+            "dialog footer should be painted after the bottom branch/context bar: {rendered:?}"
         );
         assert!(matches!(
             mux.dialog_top(),
