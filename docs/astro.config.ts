@@ -214,6 +214,7 @@ export default defineConfig({
                       collapsed: true,
                       items: [
                         { label: 'Task source abstraction', slug: 'reference/roadmap/task-source-abstraction' },
+                        { label: 'Agent workflow orchestration', slug: 'reference/roadmap/agent-workflow-orchestration' },
                         { label: 'Autonomous task queue', slug: 'reference/roadmap/autonomous-task-queue' },
                         { label: 'Idle runtime cleanup', slug: 'reference/roadmap/idle-runtime-cleanup' },
                       ],
@@ -329,7 +330,9 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Process-level sandboxing', slug: 'reference/roadmap/process-level-sandboxing' },
-                    { label: 'Rootless DinD', slug: 'reference/roadmap/rootless-dind' },
+                    { label: 'Docker runtime hardening contract', slug: 'reference/roadmap/docker-runtime-hardening-contract' },
+                    { label: 'OrbStack isolated machine backend', slug: 'reference/roadmap/orbstack-isolated-machine-backend' },
+                    { label: 'smolvm backend research', slug: 'reference/roadmap/smolvm-backend-research' },
                     { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
                     { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
                     { label: 'Devcontainer parity', slug: 'reference/roadmap/devcontainer-parity' },
