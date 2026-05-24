@@ -20,11 +20,12 @@ needs.
 
 <ArchitectureDiagram />
 
-jackin' deliberately uses your existing Docker engine as the operator control plane.
+jackin' deliberately uses your existing Docker engine as the operator control plane. For host-side Docker API calls, jackin' honors `DOCKER_HOST` when the operator sets it to a non-empty value (matching Docker CLI's own treatment of an empty `DOCKER_HOST=` as unset). Otherwise it inspects the active Docker CLI context — including any per-shell `DOCKER_CONTEXT` override — and connects to that context's Docker host when the context is a local socket or plain HTTP/TCP endpoint, so API calls such as network creation land on the same daemon that later `docker run` commands use. SSH and TLS Docker contexts are rejected for now because the current Bollard dependency build cannot reproduce the Docker CLI's SSH transport or context TLS material.
 
 That creates an important split:
 
 - **build time** happens on the host Docker engine
+- **runtime orchestration** creates the role container, DinD sidecar, certs volume, and per-instance network on that same selected host Docker engine
 - **runtime Docker commands issued by the agent** go to the per-instance DinD sidecar
 
 So jackin' gets host-side cache reuse for building agent images, while still keeping the agent away from your host Docker daemon during runtime.
