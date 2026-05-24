@@ -88,7 +88,7 @@ jackin load the-architect --role-branch feat/my-pr
 13. Starts the selected agent CLI
 
 <Aside type="note">
-Host-side Docker work follows the operator's selected Docker daemon. If `DOCKER_HOST` is set to a non-empty value, jackin' uses it. Otherwise jackin' follows the active Docker CLI context (honouring a per-shell `DOCKER_CONTEXT` override), so the image build, per-agent network, DinD sidecar, and role container are created on the same Docker backend.
+Host-side Docker work follows the operator's selected Docker daemon. If `DOCKER_HOST` is set to a non-empty value, jackin' uses it. Otherwise jackin' follows the active Docker CLI context (honouring a per-shell `DOCKER_CONTEXT` override) for local-socket and plain HTTP/TCP contexts, so the image build, per-agent network, DinD sidecar, and role container are created on the same Docker backend. SSH and TLS Docker contexts currently fail with an explicit error instead of silently dropping connection settings.
 </Aside>
 <Aside type="note">
 If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.

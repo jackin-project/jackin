@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ffi::OsStr, process::Command, sync::OnceLock};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use bollard::Docker;
 use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
@@ -146,43 +146,111 @@ impl BollardDockerClient {
 enum ConnectionChoice {
     Defaults,
     Host(String),
+    Unsupported(String),
 }
 
-impl ConnectionChoice {
-    /// Collapses the empty/whitespace-only host invariant into a single place:
-    /// even if a caller forwards an unfiltered string, an effectively empty host
-    /// can never reach `Docker::connect_with_host("")`.
-    fn host(value: String) -> Self {
-        if value.trim().is_empty() {
-            Self::Defaults
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DockerContextEndpoint {
+    host: String,
+    skip_tls_verify: bool,
+    has_tls_material: bool,
+}
+
+impl DockerContextEndpoint {
+    fn connection_choice(self) -> ConnectionChoice {
+        let host = self.host.trim();
+        if host.is_empty() {
+            return ConnectionChoice::Defaults;
+        }
+
+        if host.starts_with("ssh://") {
+            return ConnectionChoice::Unsupported(format!(
+                "active Docker context uses SSH transport ({host}); this jackin build cannot mirror SSH Docker contexts for Bollard API calls"
+            ));
+        }
+        if host.starts_with("https://") {
+            return ConnectionChoice::Unsupported(format!(
+                "active Docker context uses TLS transport ({host}); this jackin build cannot mirror TLS Docker contexts for Bollard API calls"
+            ));
+        }
+        if self.skip_tls_verify || self.has_tls_material {
+            return ConnectionChoice::Unsupported(format!(
+                "active Docker context for {host} includes TLS settings; this jackin build cannot mirror Docker context TLS material for Bollard API calls"
+            ));
+        }
+
+        if context_host_supported_without_extra_settings(host) {
+            ConnectionChoice::Host(host.to_string())
         } else {
-            Self::Host(value)
+            ConnectionChoice::Unsupported(format!(
+                "active Docker context uses unsupported Docker host URI {host}"
+            ))
         }
     }
+}
+
+fn context_host_supported_without_extra_settings(host: &str) -> bool {
+    host.starts_with("unix://")
+        || host.starts_with("tcp://")
+        || host.starts_with("http://")
+        || cfg!(windows) && host.starts_with("npipe://")
+}
+
+#[derive(serde::Deserialize)]
+struct DockerContextInspect {
+    #[serde(rename = "Endpoints")]
+    endpoints: DockerContextEndpoints,
+    #[serde(rename = "TLSMaterial", default)]
+    tls_material: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+struct DockerContextEndpoints {
+    #[serde(rename = "docker")]
+    docker: Option<DockerContextEndpointInspect>,
+}
+
+#[derive(serde::Deserialize)]
+struct DockerContextEndpointInspect {
+    #[serde(rename = "Host", default)]
+    host: String,
+    #[serde(rename = "SkipTLSVerify", default)]
+    skip_tls_verify: bool,
 }
 
 /// Deliberately uses `std::process::Command` instead of `ShellRunner::capture`:
 /// `connect()` is sync and called before any tokio runtime exists
 /// (`src/app/mod.rs:1703` runs inside `std::thread::scope`), while `ShellRunner`
 /// wraps `tokio::process::Command`.
-fn connect_to_cli_docker_context() -> Result<Docker, bollard::errors::Error> {
+fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
     let env_set = docker_host_env_is_set();
     // Skip the subprocess when DOCKER_HOST already wins per Docker CLI precedence.
-    let ctx_host = if env_set { None } else { cached_context_host() };
-    match choose_connection(env_set, ctx_host) {
-        ConnectionChoice::Defaults => Docker::connect_with_defaults(),
+    let ctx_endpoint = if env_set {
+        None
+    } else {
+        cached_context_endpoint()
+    };
+    match choose_connection(env_set, ctx_endpoint) {
+        ConnectionChoice::Defaults => Ok(Docker::connect_with_defaults()?),
         ConnectionChoice::Host(host) => {
             crate::debug_log!("docker", "connect context host {host}");
-            Docker::connect_with_host(&host)
+            Ok(Docker::connect_with_host(&host)?)
         }
+        ConnectionChoice::Unsupported(reason) => bail!("{reason}"),
     }
 }
 
-fn choose_connection(docker_host_env_set: bool, ctx_host: Option<String>) -> ConnectionChoice {
+fn choose_connection(
+    docker_host_env_set: bool,
+    ctx_endpoint: Option<DockerContextEndpoint>,
+) -> ConnectionChoice {
     if docker_host_env_set {
         return ConnectionChoice::Defaults;
     }
-    ctx_host.map_or(ConnectionChoice::Defaults, ConnectionChoice::host)
+    ctx_endpoint.map_or(
+        ConnectionChoice::Defaults,
+        DockerContextEndpoint::connection_choice,
+    )
 }
 
 fn docker_host_env_is_set() -> bool {
@@ -199,19 +267,14 @@ fn docker_host_env_is_set_from(value: Option<&OsStr>) -> bool {
 /// `currentContext` are both read once at startup), so cache the
 /// `docker context inspect` result across repeated `connect()` calls
 /// (the console drift checks at `console/manager/input/save.rs` connect on each save).
-fn cached_context_host() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE.get_or_init(active_docker_context_host).clone()
+fn cached_context_endpoint() -> Option<DockerContextEndpoint> {
+    static CACHE: OnceLock<Option<DockerContextEndpoint>> = OnceLock::new();
+    CACHE.get_or_init(active_docker_context_endpoint).clone()
 }
 
-fn active_docker_context_host() -> Option<String> {
+fn active_docker_context_endpoint() -> Option<DockerContextEndpoint> {
     let mut cmd = Command::new("docker");
-    cmd.args([
-        "context",
-        "inspect",
-        "--format",
-        "{{json .Endpoints.docker.Host}}",
-    ]);
+    cmd.args(["context", "inspect", "--format", "{{json .}}"]);
     // Belt-and-suspenders: `docker context inspect` already resolves the current
     // context via Docker CLI's `DOCKER_CONTEXT` lookup, but pinning the arg makes
     // the resolution explicit and survives any future CLI behaviour drift.
@@ -237,12 +300,12 @@ fn active_docker_context_host() -> Option<String> {
         );
         return None;
     }
-    parse_docker_context_host(&output.stdout)
+    parse_docker_context_endpoint(&output.stdout)
 }
 
-fn parse_docker_context_host(stdout: &[u8]) -> Option<String> {
-    let host: String = match serde_json::from_slice(stdout) {
-        Ok(host) => host,
+fn parse_docker_context_endpoint(stdout: &[u8]) -> Option<DockerContextEndpoint> {
+    let context: DockerContextInspect = match serde_json::from_slice(stdout) {
+        Ok(context) => context,
         Err(err) => {
             crate::debug_log!(
                 "docker",
@@ -252,12 +315,28 @@ fn parse_docker_context_host(stdout: &[u8]) -> Option<String> {
             return None;
         }
     };
-    let host = host.trim();
-    if host.is_empty() {
-        crate::debug_log!("docker", "context inspect produced empty host");
-        return None;
+    let endpoint = context.endpoints.docker?;
+    let host = endpoint.host.trim();
+    let has_tls_material = context
+        .tls_material
+        .get("docker")
+        .is_some_and(tls_material_present);
+    Some(DockerContextEndpoint {
+        host: host.to_string(),
+        skip_tls_verify: endpoint.skip_tls_verify,
+        has_tls_material,
+    })
+}
+
+fn tls_material_present(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Array(items) => !items.is_empty(),
+        serde_json::Value::Object(entries) => !entries.is_empty(),
+        serde_json::Value::String(value) => !value.trim().is_empty(),
+        serde_json::Value::Bool(value) => *value,
+        serde_json::Value::Number(_) => true,
     }
-    Some(host.to_string())
 }
 
 const fn is_http_status(err: &bollard::errors::Error, code: u16) -> bool {
@@ -905,35 +984,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_docker_context_host_accepts_json_string() {
-        assert_eq!(
-            parse_docker_context_host(b"\"unix:///Users/me/.orbstack/run/docker.sock\"\n"),
-            Some("unix:///Users/me/.orbstack/run/docker.sock".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_docker_context_host_rejects_empty_or_non_string_output() {
-        assert_eq!(parse_docker_context_host(br#""""#), None);
-        assert_eq!(parse_docker_context_host(b"null"), None);
-        assert_eq!(
-            parse_docker_context_host(b"unix:///var/run/docker.sock"),
-            None
-        );
-    }
-
-    #[test]
-    fn parse_docker_context_host_rejects_whitespace_only_string() {
-        assert_eq!(parse_docker_context_host(b"\"   \""), None);
-    }
-
-    #[test]
-    fn parse_docker_context_host_rejects_malformed_json() {
-        assert_eq!(parse_docker_context_host(b"\"abc"), None);
-        assert_eq!(parse_docker_context_host(b""), None);
-    }
-
-    #[test]
     fn choose_connection_env_only_returns_defaults() {
         assert_eq!(choose_connection(true, None), ConnectionChoice::Defaults);
     }
@@ -941,7 +991,7 @@ mod tests {
     #[test]
     fn choose_connection_env_overrides_context() {
         assert_eq!(
-            choose_connection(true, Some("unix:///ignored".to_string())),
+            choose_connection(true, Some(context_endpoint("unix:///ignored"))),
             ConnectionChoice::Defaults
         );
     }
@@ -949,9 +999,45 @@ mod tests {
     #[test]
     fn choose_connection_uses_context_when_env_unset() {
         assert_eq!(
-            choose_connection(false, Some("unix:///ctx".to_string())),
+            choose_connection(false, Some(context_endpoint("unix:///ctx"))),
             ConnectionChoice::Host("unix:///ctx".to_string())
         );
+    }
+
+    #[test]
+    fn choose_connection_rejects_ssh_context() {
+        assert!(matches!(
+            choose_connection(false, Some(context_endpoint("ssh://me@docker-host"))),
+            ConnectionChoice::Unsupported(reason) if reason.contains("SSH transport")
+        ));
+    }
+
+    #[test]
+    fn choose_connection_rejects_https_context() {
+        assert!(matches!(
+            choose_connection(false, Some(context_endpoint("https://docker-host:2376"))),
+            ConnectionChoice::Unsupported(reason) if reason.contains("TLS transport")
+        ));
+    }
+
+    #[test]
+    fn choose_connection_rejects_context_with_tls_material() {
+        let mut endpoint = context_endpoint("tcp://docker-host:2376");
+        endpoint.has_tls_material = true;
+        assert!(matches!(
+            choose_connection(false, Some(endpoint)),
+            ConnectionChoice::Unsupported(reason) if reason.contains("TLS settings")
+        ));
+    }
+
+    #[test]
+    fn choose_connection_rejects_context_with_tls_skip_verify() {
+        let mut endpoint = context_endpoint("tcp://docker-host:2376");
+        endpoint.skip_tls_verify = true;
+        assert!(matches!(
+            choose_connection(false, Some(endpoint)),
+            ConnectionChoice::Unsupported(reason) if reason.contains("TLS settings")
+        ));
     }
 
     #[test]
@@ -976,23 +1062,40 @@ mod tests {
     }
 
     #[test]
-    fn connection_choice_host_maps_blank_strings_to_defaults() {
-        assert_eq!(
-            ConnectionChoice::host(String::new()),
-            ConnectionChoice::Defaults
-        );
-        assert_eq!(
-            ConnectionChoice::host("   ".to_string()),
-            ConnectionChoice::Defaults
-        );
+    fn parse_docker_context_endpoint_reads_host_and_tls_flags() {
+        let endpoint = parse_docker_context_endpoint(
+            br#"{
+                "Endpoints": {
+                    "docker": {
+                        "Host": "tcp://docker-host:2376",
+                        "SkipTLSVerify": true
+                    }
+                },
+                "TLSMaterial": {
+                    "docker": ["ca.pem", "cert.pem", "key.pem"]
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(endpoint.host, "tcp://docker-host:2376");
+        assert!(endpoint.skip_tls_verify);
+        assert!(endpoint.has_tls_material);
     }
 
     #[test]
-    fn connection_choice_host_preserves_non_blank_strings() {
+    fn parse_docker_context_endpoint_returns_none_without_docker_endpoint() {
         assert_eq!(
-            ConnectionChoice::host("unix:///ctx".to_string()),
-            ConnectionChoice::Host("unix:///ctx".to_string())
+            parse_docker_context_endpoint(br#"{"Endpoints": {}, "TLSMaterial": {}}"#),
+            None
         );
+    }
+
+    fn context_endpoint(host: &str) -> DockerContextEndpoint {
+        DockerContextEndpoint {
+            host: host.to_string(),
+            skip_tls_verify: false,
+            has_tls_material: false,
+        }
     }
 
     #[test]
