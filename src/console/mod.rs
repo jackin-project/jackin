@@ -581,6 +581,69 @@ where
     }
 }
 
+async fn prompt_committed_role<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    paths: &JackinPaths,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    runner: &mut impl crate::docker::CommandRunner,
+    role: RoleSelector,
+) -> anyhow::Result<Option<ConsoleOutcome>>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    // Rebuild the choice now so edits between open and commit take
+    // effect. `take()` clears the pin even on concurrent delete.
+    let Some(input) = state.pending_launch.take() else {
+        return Ok(None);
+    };
+    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
+    match prompt_agent_for_launch(
+        terminal,
+        state,
+        paths,
+        config,
+        cwd,
+        runner,
+        &role,
+        &workspace,
+        input,
+        OnPromptFailure::RestorePending,
+    )
+    .await?
+    {
+        PromptOutcome::Launch => {
+            state.pending_launch_role = None;
+            Ok(Some(ConsoleOutcome::Launch(role, workspace, None)))
+        }
+        PromptOutcome::Defer => Ok(None),
+    }
+}
+
+fn launch_with_committed_agent(
+    state: &mut ConsoleState,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    agent: crate::agent::Agent,
+) -> anyhow::Result<Option<ConsoleOutcome>> {
+    let (Some(input), Some(role)) = (
+        state.pending_launch.take(),
+        state.pending_launch_role.take(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
+    Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent))))
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn run_console(
     mut config: AppConfig,
@@ -739,61 +802,25 @@ pub async fn run_console(
                             }
                         }
                         manager::InputOutcome::LaunchWithAgent(role) => {
-                            // Rebuild the choice now so edits between
-                            // open and commit take effect. `take()`
-                            // clears the pin even on concurrent delete.
-                            if let Some(input) = state.pending_launch.take()
-                                && let Some(choice) = build_workspace_choice(&config, cwd, &input)?
+                            if let Some(outcome) = prompt_committed_role(
+                                &mut terminal,
+                                &mut state,
+                                paths,
+                                &config,
+                                cwd,
+                                runner,
+                                role,
+                            )
+                            .await?
                             {
-                                match preview::resolve_selected_workspace(
-                                    &config, cwd, &choice, &role,
-                                ) {
-                                    Ok(workspace) => {
-                                        match prompt_agent_for_launch(
-                                            &mut terminal,
-                                            &mut state,
-                                            paths,
-                                            &config,
-                                            cwd,
-                                            runner,
-                                            &role,
-                                            &workspace,
-                                            input,
-                                            OnPromptFailure::RestorePending,
-                                        )
-                                        .await?
-                                        {
-                                            PromptOutcome::Launch => {
-                                                state.pending_launch_role = None;
-                                                break 'main Ok(Some(ConsoleOutcome::Launch(
-                                                    role, workspace, None,
-                                                )));
-                                            }
-                                            PromptOutcome::Defer => {}
-                                        }
-                                    }
-                                    Err(e) => break 'main Err(e),
-                                }
+                                break 'main Ok(Some(outcome));
                             }
                         }
                         manager::InputOutcome::LaunchWithRuntimeAgent(agent) => {
-                            if let (Some(input), Some(role)) = (
-                                state.pending_launch.take(),
-                                state.pending_launch_role.take(),
-                            ) && let Some(choice) = build_workspace_choice(&config, cwd, &input)?
+                            if let Some(outcome) =
+                                launch_with_committed_agent(&mut state, &config, cwd, agent)?
                             {
-                                match preview::resolve_selected_workspace(
-                                    &config, cwd, &choice, &role,
-                                ) {
-                                    Ok(workspace) => {
-                                        break 'main Ok(Some(ConsoleOutcome::Launch(
-                                            role,
-                                            workspace,
-                                            Some(agent),
-                                        )));
-                                    }
-                                    Err(e) => break 'main Err(e),
-                                }
+                                break 'main Ok(Some(outcome));
                             }
                         }
                         manager::InputOutcome::InstanceAction { container, action } => {
