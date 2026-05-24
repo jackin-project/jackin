@@ -136,8 +136,8 @@ impl InputParser {
     }
 
     /// `true` while the parser is between the prefix byte and its
-    /// next command key. Used by the status bar to swap the right-side
-    /// hint to `prefix…` for the duration of the prefix gesture.
+    /// next command key. Exposed so UI layers can react to prefix
+    /// state without peeking into the parser state machine.
     pub fn is_awaiting_prefix(&self) -> bool {
         matches!(self.state, State::PrefixAwait)
     }

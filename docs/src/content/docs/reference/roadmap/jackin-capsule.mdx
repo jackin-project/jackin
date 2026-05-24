@@ -3,7 +3,7 @@ title: "jackin' Capsule: In-Container Control Plane"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed the jackin' Capsule: an in-container PTY control plane built on the `vt100` crate with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`, including prefix `Ctrl+L` clear-pane), a persistent PID 1 daemon that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, OSC passthrough (52/9/2/8) gated to the focused pane, top chrome with a brand pill, tab strip, and identity row, and a bottom branch/PR context bar for non-default branches.
+**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed the jackin' Capsule: an in-container PTY control plane built on the `vt100` crate with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`, including prefix `Ctrl+L` clear-pane), a persistent PID 1 daemon that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, OSC passthrough (52/9/2/8) gated to the focused pane, top chrome with a brand pill and tab strip, and a bottom branch/PR context bar for non-default branches with click targets for GitHub context and container details.
 
 The shipped-Phase-3 design and operator-visible behaviour now live in:
 
@@ -150,7 +150,7 @@ Zellij carries scope jackin explicitly does not need (multi-client collaboration
 
 The [Herdr](https://github.com/ogulcancelik/herdr) study under "Prior art: Herdr" below lists the conceptual borrows for the agent-state model, status roll-up, notification suppression, sound escalation, blocking `wait` semantics, foreground-process ownership, screen heuristics, and semantic integration reports. The multiplexer rewrite adds three structural borrows on top of those — drawn from Herdr's UI shape, not its code:
 
-- **Top-of-screen chrome.** The top chrome renders ` jackin' ` on the left followed by one tab per active jackin session, plus an identity row for container/role context. Active tab gets a distinct amber background plus underline/bold treatment; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance without confusing it for the selected tab.
+- **Top-of-screen chrome.** The top chrome renders ` jackin' ` on the left followed by one tab per active jackin session. Active tab gets a distinct amber background plus underline/bold treatment; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance without confusing it for the selected tab.
 - **Empty initial state when no agent is preselected.** When no initial agent argv is provided at daemon launch, the multiplexer can come up with the brand header, zero tabs, and a centred hint listing the agents from `/jackin/run/agent.toml` plus `Shell`. The operator picks one with the prefix key and the first tab spawns into that selection. When the host passes an initial agent argv, the daemon spawns the first tab with that agent automatically — matching the historical direct-into-agent UX.
 - **Per-tab "most urgent" state roll-up.** A tab containing any `blocked` pane is `blocked`; otherwise any `done` pane makes it `done`; otherwise `working`; otherwise `idle`. Same urgency order herdr uses. This drives the tab-strip glyph and feeds the future `agent-state-changed` event stream. Once a pane reaches `blocked`, the attention glyph stays visible until explicit operator keyboard input reaches that pane; incidental PTY output is not enough to clear it.
 
@@ -254,12 +254,12 @@ The hand-rolled base64 in `crates/jackin-capsule/src/protocol.rs` (split during 
 The top rows of the host terminal are owned by the multiplexer. Layout left to right:
 
 ```
- jackin'   [Claude ●]  [Codex]  [Shell]                                 detach: Ctrl+B d
+ jackin'   [Claude ●]  [Codex]  [Shell]
 ```
 
 The ` jackin' ` brand pill uses the bright-green background defined in <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> (kept from the first attempt). Each tab is rendered as ` Label ` with the rolled-up state glyph appended *before* the click-region width is computed (the existing bug appends it after, so click regions drift on `●`/`○`). The active tab uses bold text on a warm amber background so it does not visually merge with the brand pill; inactive tabs use dimmed grey.
 
-The right side of the bar shows the current prefix-mode hint (`detach: Ctrl+B d` in Idle state, `prefix…` in Prefix-awaiting state). The hint is the only piece of the bar that updates on prefix key transitions; the tab strip updates on session lifecycle and state-change events.
+The palette and prefix shortcuts remain active, but the top chrome does not render a menu or keybinding hint; those columns stay available for tabs.
 
 When the bar is wider than the host terminal, tabs past the right edge are clipped and an overflow indicator (`›`) is shown. Tab navigation via prefix bindings still works on clipped tabs.
 
@@ -289,7 +289,7 @@ The rewrite produces this layout under `crates/jackin-capsule/src/`:
 | `session.rs` | One PTY + one `vt100::Screen` + state-inference timer; `Session::spawn`, `Session::feed_pty`, mode/OSC passthrough state |
 | `layout.rs` | Pane tree (kept, border math fixed) |
 | `tab.rs` | Tab struct + tab strip ordering |
-| `statusbar.rs` | Top-chrome renderer (brand pill, tabs, identity row, prefix-mode hint) |
+| `statusbar.rs` | Top-chrome renderer (brand pill, tabs, active-tab underline) |
 | `input.rs` | Prefix-key state machine + mouse SGR re-encoder |
 | `dialog.rs` | Command palette + agent picker (kept; revisit ergonomics in Phase 3b) |
 
@@ -302,7 +302,7 @@ The rewrite lands as one cohesive PR (this one) because the defects are interloc
 - **Phase 3a — Replace VT.** Drop `crates/jackin-capsule/src/terminal.rs`. Add `vt100` to <RepoFile path="crates/jackin-capsule/Cargo.toml" />. Wire each `Session` to its own `vt100::Parser` + `Screen`. Replace the old per-byte terminal emulator with a compositor-aware row serializer over `vt100` cells. Tab switch and reattach replay from the saved screen instead of `force_redraw`'s PTY-resize hack.
 - **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept and the standalone Alt+arrow shortcut with the prefix-key state machine described above. Default prefix `Ctrl+B`. The command palette still exists, opened by `prefix + Space`. Update <RepoFile path="crates/jackin-capsule/src/input.rs" /> and the dialog dispatch in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />.
 - **Phase 3c — Persistent server + binary attach channel.** Remove the `process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the `Screen` for replay, allow `prefix + r` to respawn. Replace the JSON + base64 attach-channel output frames with the tag-plus-length binary frames defined above. Keep the existing control channel for `status`. Remove the hand-rolled base64 helper. Fix the reattach outbound-channel bug.
-- **Phase 3d — Resize, mouse, status bar polish.** Add client-side `SIGWINCH` listener and `resize` frame. Fix the mouse passthrough no-op (re-encode in SGR mouse form and write to the focused PTY). Fix the status bar tab-label width drift. Add the right-side prefix-mode hint.
+- **Phase 3d — Resize, mouse, status bar polish.** Add client-side `SIGWINCH` listener and `resize` frame. Fix the mouse passthrough no-op (re-encode in SGR mouse form and write to the focused PTY). Fix the status bar tab-label width drift. Keep command-palette shortcuts active without rendering a top-bar hint.
 
 Phase 3a is the load-bearing one — it unblocks every TUI agent. Phase 3b removes the worst input bug (Enter being swallowed). Phase 3c makes the daemon robust enough to live inside a long-running container. Phase 3d is polish that the rewrite cannot ship without but that doesn't change the architecture.
 
@@ -369,7 +369,7 @@ tmux set-option -g mouse on
 
 Mouse clicks, drags, and scroll events must reach agent TUIs that opt into mouse reporting via `\x1b[?1000h` through `\x1b[?1006h`.
 
-**jackin' equivalent.** The client sets the outer terminal to "any-event tracking + SGR mouse" (`\x1b[?1003h\x1b[?1006h`) on attach. The multiplexer parses each mouse event: top-chrome events hit-test against the tab strip / identity row, pane-border events drive resize, and pane-content events are re-encoded relative to the focused pane's rect origin and written to that pane's PTY only when the pane opted into mouse reporting. Mouse mode and encoding are tracked with `vt100::Screen::mouse_protocol_mode()` and `mouse_protocol_encoding()`, so SGR, default xterm/X10, and UTF-8 mouse modes are distinct on the PTY side.
+**jackin' equivalent.** The client sets the outer terminal to "any-event tracking + SGR mouse" (`\x1b[?1003h\x1b[?1006h`) on attach. The multiplexer parses each mouse event: top-chrome events hit-test against the tab strip, bottom context-row events open GitHub or container details, pane-border events drive resize, and pane-content events are re-encoded relative to the focused pane's rect origin and written to that pane's PTY only when the pane opted into mouse reporting. Mouse mode and encoding are tracked with `vt100::Screen::mouse_protocol_mode()` and `mouse_protocol_encoding()`, so SGR, default xterm/X10, and UTF-8 mouse modes are distinct on the PTY side.
 
 The setting parity above is a regression contract: each tmux behaviour the operator pinned has a matching jackin-capsule behaviour. The tests under "Tests required" assert each contract separately so future refactors cannot drop one silently.
 
@@ -478,7 +478,7 @@ The first Phase 3 attempt landed PID 1 ownership, the PTY layer, a binary pane t
 - **Phase 3a — Replace the VT.** Delete `crates/jackin-capsule/src/terminal.rs` (deleted in the Phase 3 rewrite — replaced by `session.rs`). Add `vt100` to <RepoFile path="crates/jackin-capsule/Cargo.toml" />. Hold one `vt100::Parser` plus `vt100::Screen` per `Session`. Switch the tab/pane switch and reattach paths to full replay from the saved screen. Honour `Screen::hide_cursor` and `Screen::cursor_position` when positioning the host cursor.
 - **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept with the prefix-key state machine. Default prefix `Ctrl+B`. Default bindings as listed in "Input model: prefix key" above. Add the "Escape forwards immediately" rule (zero-delay disambiguation).
 - **Phase 3c — Persistent server + binary attach channel.** Remove the `std::process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the screen for replay, allow respawn via prefix bindings. Replace the JSON-plus-base64 attach-channel output with the tag-plus-length binary format defined in "Wire protocol". Drop the hand-rolled base64 from `crates/jackin-capsule/src/protocol.rs` (split during the Phase 3 rewrite into `protocol/attach.rs` and `protocol/control.rs`). Fix the reattach outbound-channel drop.
-- **Phase 3d — Resize, mouse, terminal compatibility, status bar polish.** Add the client-side `SIGWINCH` listener and `resize` frames. Fix the mouse passthrough no-op. Wire focus events, OSC/APC passthrough rules, BSU/ESU, kitty-keyboard pass-through, and OSC 52 routing per "Terminal compatibility: tmux setting parity" and "Ghostty compatibility" above. Fix the status bar tab-label width drift. Add the right-side prefix-mode hint.
+- **Phase 3d — Resize, mouse, terminal compatibility, status bar polish.** Add the client-side `SIGWINCH` listener and `resize` frames. Fix the mouse passthrough no-op. Wire focus events, OSC/APC passthrough rules, BSU/ESU, kitty-keyboard pass-through, and OSC 52 routing per "Terminal compatibility: tmux setting parity" and "Ghostty compatibility" above. Fix the status bar tab-label width drift. Keep command-palette shortcuts active without rendering a top-bar hint.
 
 Phase 3 also keeps the control-channel work the first attempt completed:
 

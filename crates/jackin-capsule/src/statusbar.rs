@@ -3,8 +3,7 @@
 /// Mirrors the jackin console TUI's tab strip (`render_tab_strip` in
 /// `src/console/manager/render/editor.rs`):
 ///
-/// - Row 0: ` jackin' ` brand pill, then tab cells, then a
-///   right-aligned hint.
+/// - Row 0: ` jackin' ` brand pill, then tab cells.
 /// - Row 1: a thick `━` underline beneath the active tab cell only;
 ///   blank elsewhere. The underline carries the operator's focus
 ///   signal — the same pattern the console uses below "General /
@@ -49,14 +48,6 @@ const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waitin
 const BOLD: &str = "\x1b[1m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
-// Right-hand menu button: dark phosphor-green pill with white bold
-// text. Matches the brand pill's visual register so the operator
-// reads it as "this is a clickable jackin' control", not "this is
-// a hint string."
-const BUTTON_BG_IDLE: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK
-const BUTTON_FG_IDLE: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const BUTTON_BG_AWAITING: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN (highlight)
-const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
 const RESET: &str = "\x1b[0m";
 
 const BRAND_TEXT: &str = " jackin' ";
@@ -74,10 +65,8 @@ pub enum PrefixMode {
 
 pub struct StatusBar {
     pub tab_regions: Vec<(u16, u16)>,
-    /// Click region (1-based, inclusive-exclusive) covering the
-    /// right-side `menu: …` hint. A mouse press in this region acts
-    /// as a clickable shortcut for the palette key — useful when the
-    /// keyboard shortcut isn't reaching the parser for any reason.
+    /// Former click region for the visible menu hint. The shortcut is
+    /// still parsed, but the top-bar hint is no longer painted.
     pub hint_region: Option<(u16, u16)>,
     /// Click region (1-based, inclusive-exclusive) covering the
     /// right-side container-name label on row 1. A mouse press inside
@@ -128,18 +117,12 @@ impl StatusBar {
         }
     }
 
-    /// Return `true` when the (1-based) click at `(row, col)` falls
-    /// inside the identity-label region on row 1. The daemon treats
-    /// that as "open ContainerInfo dialog" so the operator can copy
-    /// the full container ID and see role / focused-agent details.
+    /// Container identity now lives on the bottom branch/PR bar. Keep
+    /// this method as a stable no-op for older call sites while new
+    /// routing uses the bottom-bar hit-test helpers in the daemon.
     pub fn identity_at(&self, row: u16, col: u16) -> bool {
-        if row != 2 {
-            return false;
-        }
-        match self.identity_region {
-            Some((start, end)) => col >= start && col < end,
-            None => false,
-        }
+        let _ = (row, col);
+        false
     }
 
     pub fn container_name(&self) -> &str {
@@ -150,19 +133,11 @@ impl StatusBar {
         &self.role
     }
 
-    /// Return `true` when the (1-based) click at `(row, col)` falls
-    /// inside the menu hint region. The daemon treats that as an
-    /// alternate-path "open palette" gesture so the operator never
-    /// loses access to the menu when the keyboard shortcut isn't
-    /// reaching the parser.
+    /// The palette shortcut is still parsed by input.rs, but the
+    /// top-bar hint is intentionally not displayed.
     pub fn hint_at(&self, row: u16, col: u16) -> bool {
-        if row != 1 {
-            return false;
-        }
-        match self.hint_region {
-            Some((start, end)) => col >= start && col < end,
-            None => false,
-        }
+        let _ = (row, col);
+        false
     }
 
     pub fn set_prefix_mode(&mut self, mode: PrefixMode) {
@@ -186,7 +161,7 @@ impl StatusBar {
         self.hint_region = None;
         self.identity_region = None;
 
-        // ── Row 0: brand pill + tabs + hint ─────────────────────────
+        // ── Row 0: brand pill + tabs ────────────────────────────────
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
 
         // Brand pill.
@@ -199,9 +174,7 @@ impl StatusBar {
             buf.push(b' ');
         }
 
-        let hint = self.button_text();
-        let hint_cols = display_cols(&hint);
-        let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
+        let reserve_right: u16 = 1;
 
         // Resolve names + glyphs first, then reserve a stable glyph
         // slot per tab. The text starts after the same short one-cell
@@ -242,25 +215,7 @@ impl StatusBar {
             self.tab_regions.push((region_start, region_end));
         }
 
-        // Right-side menu button. Only render when there is room to
-        // the right of the brand pill — otherwise the hint paints on
-        // top of the brand and the operator sees an overlapping mash.
         let brand_end_1based = start_col_0based.saturating_add(1);
-        let hint_start = cols.saturating_sub(hint_cols);
-        if hint_start > brand_end_1based {
-            move_to(buf, 1, hint_start);
-            let (bg, fg) = match self.prefix_mode {
-                PrefixMode::Idle => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
-                PrefixMode::Awaiting => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
-            };
-            buf.extend_from_slice(bg.as_bytes());
-            buf.extend_from_slice(fg.as_bytes());
-            buf.extend_from_slice(BOLD.as_bytes());
-            buf.extend_from_slice(hint.as_bytes());
-            buf.extend_from_slice(RESET.as_bytes());
-            // 1-based, inclusive-exclusive — matches `tab_regions`.
-            self.hint_region = Some((hint_start, hint_start + hint_cols));
-        }
 
         // Overflow indicator before the hint when at least one tab got
         // clipped past the right edge. Same brand-overlap guard as the
@@ -276,7 +231,7 @@ impl StatusBar {
             }
         }
 
-        // ── Row 1: active-tab underline + identity label ────────────
+        // ── Row 1: active-tab underline ─────────────────────────────
         buf.extend_from_slice(b"\x1b[2;1H\x1b[2K");
         for cell in &cells {
             let cell_end_0based = cell.start_col + cell.cell_cols;
@@ -292,24 +247,6 @@ impl StatusBar {
                 }
                 buf.extend_from_slice(RESET.as_bytes());
                 break;
-            }
-        }
-        // Identity label (role · container name) sits on the right
-        // side of row 1 so the operator can always tell which
-        // container they are attached to. Truncate when it would
-        // collide with the active-tab underline; skip entirely when
-        // the terminal is too narrow.
-        if !self.identity_label.is_empty() {
-            let label_cols = display_cols(&self.identity_label);
-            let trailing_pad: u16 = 1;
-            if cols > label_cols + trailing_pad {
-                let start = cols.saturating_sub(label_cols + trailing_pad);
-                move_to(buf, 2, start + 1);
-                buf.extend_from_slice(HINT_FG.as_bytes());
-                buf.extend_from_slice(self.identity_label.as_bytes());
-                buf.extend_from_slice(RESET.as_bytes());
-                // 1-based, inclusive-exclusive click region.
-                self.identity_region = Some((start + 1, start + 1 + label_cols));
             }
         }
     }
@@ -368,26 +305,6 @@ impl StatusBar {
         // default background, naturally separating adjacent cells.
         for _ in 0..TAB_GAP {
             buf.push(b' ');
-        }
-    }
-
-    /// Render the right-hand menu **button**. The hamburger glyph
-    /// (`☰`) + label + key combo, with a dark-green pill background
-    /// in idle state and an inverted bright-green highlight when the
-    /// optional prefix gesture is mid-way through.
-    fn button_text(&self) -> String {
-        match self.prefix_mode {
-            PrefixMode::Idle => {
-                if self.prefix_enabled {
-                    format!(
-                        " ☰ Menu {} · prefix {} ",
-                        self.palette_label, self.prefix_label
-                    )
-                } else {
-                    format!(" ☰ Menu {} ", self.palette_label)
-                }
-            }
-            PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
 
@@ -536,10 +453,9 @@ fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row, col);
 }
 
-/// Row 1 identity label = container name only (`HOSTNAME`). The role
-/// is shown in the `ContainerInfo` dialog opened by clicking the
-/// label, not on the status bar itself — duplicating it on every
-/// frame burned columns the tab strip needs.
+/// Container name used by the bottom context row. The role is shown
+/// in the `ContainerInfo` dialog opened from that row, not in the top
+/// chrome.
 fn resolve_container_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_default()
 }
@@ -579,35 +495,37 @@ mod tests {
     }
 
     #[test]
-    fn idle_hint_renders_palette_label() {
+    fn idle_hint_is_not_rendered() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("Menu Ctrl+\\"), "missing idle hint: {s:?}");
+        assert!(!s.contains("Menu"), "menu hint should be hidden: {s:?}");
+        assert!(bar.hint_region.is_none());
     }
 
     #[test]
-    fn idle_hint_includes_prefix_when_enabled() {
+    fn prefix_hint_is_not_rendered_when_enabled() {
         let mut bar = StatusBar::new();
         bar.set_prefix_enabled(true);
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
+        assert!(!s.contains("Menu"), "menu hint should be hidden: {s:?}");
         assert!(
-            s.contains("Menu Ctrl+\\") && s.contains("prefix Ctrl+B"),
-            "missing combined hint: {s:?}"
+            !s.contains("prefix Ctrl+B"),
+            "prefix hint should be hidden: {s:?}"
         );
     }
 
     #[test]
-    fn awaiting_hint_swaps_label() {
+    fn awaiting_prefix_hint_is_not_rendered() {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("prefix…"), "missing awaiting hint: {s:?}");
+        assert!(!s.contains("prefix"), "prefix hint should be hidden: {s:?}");
     }
 
     #[test]

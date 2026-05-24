@@ -464,14 +464,6 @@ pub enum SessionEvent {
     Exited {
         session_id: u64,
     },
-    ContainerInfoBranchLoaded {
-        request_id: u64,
-        branch: Option<String>,
-    },
-    ContainerInfoPullRequestLoaded {
-        request_id: u64,
-        pull_request: Option<PullRequestInfo>,
-    },
     PullRequestContextLoaded {
         request_id: u64,
         branch: Option<String>,
@@ -485,6 +477,7 @@ pub struct PullRequestInfo {
     pub title: String,
     pub url: String,
     pub is_draft: bool,
+    pub checks: Option<PullRequestChecks>,
 }
 
 impl PullRequestInfo {
@@ -498,6 +491,46 @@ impl PullRequestInfo {
 
     pub fn number_label(&self) -> String {
         format!("#{}", self.number)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestChecks {
+    pub passing: usize,
+    pub failing: usize,
+    pub pending: usize,
+    pub skipped: usize,
+    pub cancelled: usize,
+    pub total: usize,
+}
+
+impl PullRequestChecks {
+    pub fn summary(&self) -> String {
+        if self.total == 0 {
+            return "(none)".to_string();
+        }
+        if self.failing > 0 {
+            return format!(
+                "failing ({} fail, {} pass, {} pending)",
+                self.failing, self.passing, self.pending
+            );
+        }
+        if self.cancelled > 0 {
+            return format!(
+                "cancelled ({} cancel, {} pass, {} pending)",
+                self.cancelled, self.passing, self.pending
+            );
+        }
+        if self.pending > 0 {
+            return format!("pending ({} pending, {} pass)", self.pending, self.passing);
+        }
+        if self.passing == self.total || self.passing + self.skipped == self.total {
+            return format!("passing ({}/{})", self.passing, self.total);
+        }
+        format!(
+            "{} pass, {} skip, {} total",
+            self.passing, self.skipped, self.total
+        )
     }
 }
 

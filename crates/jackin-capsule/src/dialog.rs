@@ -107,7 +107,7 @@ pub enum Dialog {
     },
     /// Read-only modal opened when the operator clicks the status-bar
     /// container-name label. Surfaces role key, focused-agent runtime,
-    /// full container ID, workspace path, and best-effort git context
+    /// full container ID, and workspace path
     /// with a one-key "copy to clipboard" shortcut.
     /// Enter or a click on the Container ID row emits OSC 52 with
     /// the container name AND keeps the dialog open — `copied` flips
@@ -122,11 +122,14 @@ pub enum Dialog {
         role: String,
         focused_agent: Option<String>,
         workdir: String,
-        git_loading: bool,
-        git_branch: Option<String>,
-        pull_request_loading: bool,
-        pull_request: Option<PullRequestInfo>,
         copied: bool,
+    },
+    /// Read-only modal opened from the bottom branch/PR context.
+    /// Keeps GitHub metadata out of the container details modal while
+    /// still making the PR URL, branch, title, and CI status available.
+    GitHubContext {
+        branch: Option<String>,
+        pull_request: Option<PullRequestInfo>,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
@@ -348,6 +351,12 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
+        if let Self::GitHubContext { .. } = self {
+            if is_dismiss_key(key) {
+                return DialogAction::Dismiss;
+            }
+            return DialogAction::Redraw;
+        }
         // ConfirmAction has its own dispatch — Y/N shortcuts toggle
         // the selection or confirm directly, Enter acts on the
         // current selection, Esc cancels. Routed before the type-to-
@@ -407,6 +416,7 @@ impl Dialog {
                 }
                 Self::RenameTab { .. }
                 | Self::ContainerInfo { .. }
+                | Self::GitHubContext { .. }
                 | Self::ConfirmAction { .. } => DialogAction::Redraw,
             };
         }
@@ -449,6 +459,7 @@ impl Dialog {
                 }
                 Self::RenameTab { .. }
                 | Self::ContainerInfo { .. }
+                | Self::GitHubContext { .. }
                 | Self::ConfirmAction { .. } => DialogAction::Redraw,
             };
         }
@@ -661,7 +672,10 @@ impl Dialog {
             Self::AgentPicker { agents, filter, .. } => {
                 picker_filtered_rows(agents, filter).len() as u16
             }
-            Self::RenameTab { .. } | Self::ContainerInfo { .. } | Self::ConfirmAction { .. } => 0,
+            Self::RenameTab { .. }
+            | Self::ContainerInfo { .. }
+            | Self::GitHubContext { .. }
+            | Self::ConfirmAction { .. } => 0,
         };
         if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
@@ -728,9 +742,10 @@ impl Dialog {
             // by early returns above. ConfirmAction has no row list —
             // every inside-box click is dispatched by the early
             // return below the inside_box check.
-            Self::RenameTab { .. } | Self::ContainerInfo { .. } | Self::ConfirmAction { .. } => {
-                DialogAction::Consume
-            }
+            Self::RenameTab { .. }
+            | Self::ContainerInfo { .. }
+            | Self::GitHubContext { .. }
+            | Self::ConfirmAction { .. } => DialogAction::Consume,
         }
     }
 
@@ -749,6 +764,7 @@ impl Dialog {
             Self::ContainerInfo { .. } => {
                 container_info_id_row_clickable(row, col, box_row, box_col, width)
             }
+            Self::GitHubContext { .. } => false,
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
                 filter,
@@ -795,7 +811,7 @@ impl Dialog {
     /// stays in a recoverable state regardless.
     pub(crate) fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
         let width = match self {
-            Self::ContainerInfo { .. } => CONTAINER_INFO_WIDTH
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. } => CONTAINER_INFO_WIDTH
                 .min(term_cols.saturating_sub(4))
                 .max(PALETTE_WIDTH),
             _ => PALETTE_WIDTH,
@@ -827,8 +843,10 @@ impl Dialog {
             }
             // Rename modal: top border + blank pad + input row + blank pad + bottom border.
             Self::RenameTab { .. } => 5,
-            // ContainerInfo: top + pad + 9 detail rows + pad + bottom.
-            Self::ContainerInfo { .. } => 13,
+            // ContainerInfo: top + pad + 4 detail rows + pad + bottom.
+            Self::ContainerInfo { .. } => 8,
+            // GitHubContext: top + pad + 5 detail rows + pad + bottom.
+            Self::GitHubContext { .. } => 9,
             // ConfirmAction: top + pad + 2 message rows + pad + button + pad + bottom.
             Self::ConfirmAction { .. } => 9,
         };
@@ -906,10 +924,6 @@ impl Dialog {
                 role,
                 focused_agent,
                 workdir,
-                git_loading,
-                git_branch,
-                pull_request_loading,
-                pull_request,
                 copied,
             } => {
                 render_container_info(
@@ -922,13 +936,24 @@ impl Dialog {
                     role,
                     focused_agent.as_deref(),
                     workdir,
-                    *git_loading,
-                    git_branch.as_deref(),
-                    *pull_request_loading,
-                    pull_request.as_ref(),
                     *copied,
                 );
                 render_bottom_hint(buf, term_rows, term_cols, CONTAINER_INFO_HINT);
+            }
+            Self::GitHubContext {
+                branch,
+                pull_request,
+            } => {
+                render_github_context(
+                    buf,
+                    box_row,
+                    box_col,
+                    height,
+                    width,
+                    branch.as_deref(),
+                    pull_request.as_ref(),
+                );
+                render_bottom_hint(buf, term_rows, term_cols, READ_ONLY_HINT);
             }
             Self::CloseTargetPicker { selected, filter } => {
                 render_close_target_picker(buf, box_row, box_col, height, width, *selected, filter);
@@ -1285,6 +1310,8 @@ const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Esc"),
     HintSpan::Text("dismiss"),
 ];
+
+const READ_ONLY_HINT: &[HintSpan<'static>] = &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
 
 const CONFIRM_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Y"),
@@ -1713,49 +1740,70 @@ fn render_container_info(
     role: &str,
     focused_agent: Option<&str>,
     workdir: &str,
-    git_loading: bool,
-    git_branch: Option<&str>,
-    pull_request_loading: bool,
-    pull_request: Option<&PullRequestInfo>,
     copied: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "Container info");
-    // Label column width — keep the label/value gutter aligned across
-    // all rows. "Container ID" and "Pull Request" are the longest labels.
-    let label_col_width = "Container ID".chars().count();
+    let rows: [ContainerInfoRow; 4] = [
+        ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
+        ContainerInfoRow::new("Role", non_empty_or_dim(role)),
+        ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
+        ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
+    ];
+    render_info_rows(buf, box_row, box_col, width, &rows, copied);
+}
+
+fn render_github_context(
+    buf: &mut Vec<u8>,
+    box_row: u16,
+    box_col: u16,
+    height: u16,
+    width: u16,
+    branch: Option<&str>,
+    pull_request: Option<&PullRequestInfo>,
+) {
+    render_box(buf, box_row, box_col, height, width, "GitHub context");
+    let pull_request_number = pull_request
+        .map(PullRequestInfo::number_label)
+        .unwrap_or_else(|| "(none)".to_string());
+    let pull_request_title = pull_request
+        .map(|pr| non_empty_or_dim(&pr.title))
+        .unwrap_or_else(|| "(none)".to_string());
+    let (pull_request_link, pull_request_href) = pull_request
+        .map(|pr| (non_empty_or_dim(&pr.url), Some(pr.url.as_str())))
+        .unwrap_or_else(|| ("(none)".to_string(), None));
+    let ci_status = pull_request
+        .and_then(|pr| pr.checks.as_ref())
+        .map(|checks| checks.summary())
+        .unwrap_or_else(|| "(unknown)".to_string());
+
+    let rows: [ContainerInfoRow; 5] = [
+        ContainerInfoRow::new("Branch", non_empty_or_dim(branch.unwrap_or(""))),
+        ContainerInfoRow::new("Pull Request", pull_request_number).emphasised(),
+        ContainerInfoRow::new("PR Title", pull_request_title),
+        ContainerInfoRow::new("GitHub URL", pull_request_link).hyperlink(pull_request_href),
+        ContainerInfoRow::new("CI Status", ci_status),
+    ];
+    render_info_rows(buf, box_row, box_col, width, &rows, false);
+}
+
+fn render_info_rows(
+    buf: &mut Vec<u8>,
+    box_row: u16,
+    box_col: u16,
+    width: u16,
+    rows: &[ContainerInfoRow<'_>],
+    copied: bool,
+) {
+    let label_col_width = rows
+        .iter()
+        .map(|row| row.label.chars().count())
+        .max()
+        .unwrap_or(0);
     let interior_left = box_col + 2;
     let interior_max_cols = (width as usize).saturating_sub(4);
     let value_col_offset = label_col_width + 2; // 2 = ": "
     let value_max_cols = interior_max_cols.saturating_sub(value_col_offset);
 
-    let branch_type = if let Some(pr) = pull_request {
-        pr.branch_type_label().to_string()
-    } else if git_branch.is_some() && !pull_request_loading {
-        "local branch".to_string()
-    } else {
-        git_context_value(None, pull_request_loading)
-    };
-    let pull_request_number = pull_request
-        .map(PullRequestInfo::number_label)
-        .unwrap_or_else(|| git_context_value(None, pull_request_loading));
-    let pull_request_title = pull_request
-        .map(|pr| non_empty_or_dim(&pr.title))
-        .unwrap_or_else(|| git_context_value(None, pull_request_loading));
-    let (pull_request_link, pull_request_href) = pull_request
-        .map(|pr| (non_empty_or_dim(&pr.url), Some(pr.url.as_str())))
-        .unwrap_or_else(|| (git_context_value(None, pull_request_loading), None));
-
-    let rows: [ContainerInfoRow; 9] = [
-        ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
-        ContainerInfoRow::new("Role", non_empty_or_dim(role)),
-        ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
-        ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
-        ContainerInfoRow::new("Branch", git_context_value(git_branch, git_loading)),
-        ContainerInfoRow::new("Branch Type", branch_type),
-        ContainerInfoRow::new("Pull Request", pull_request_number),
-        ContainerInfoRow::new("PR Title", pull_request_title),
-        ContainerInfoRow::new("PR Link", pull_request_link).hyperlink(pull_request_href),
-    ];
     for (i, row) in rows.iter().enumerate() {
         let r = box_row + 2 + i as u16;
         move_to(buf, r, interior_left);
@@ -1854,14 +1902,6 @@ fn non_empty_or_dim(s: &str) -> String {
         "(none)".to_string()
     } else {
         s.to_string()
-    }
-}
-
-fn git_context_value(value: Option<&str>, loading: bool) -> String {
-    if loading {
-        "⠋ loading".to_string()
-    } else {
-        non_empty_or_dim(value.unwrap_or(""))
     }
 }
 
@@ -2433,10 +2473,6 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
-            git_loading: false,
-            git_branch: Some("feature/container-info".to_string()),
-            pull_request_loading: false,
-            pull_request: Some(pull_request_fixture()),
             copied: false,
         }
     }
@@ -2447,6 +2483,7 @@ mod tests {
             title: "Surface PR context in Capsule".to_string(),
             url: "https://github.com/jackin-project/jackin/pull/123".to_string(),
             is_draft: false,
+            checks: None,
         }
     }
 
@@ -2524,10 +2561,6 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
-            git_loading: false,
-            git_branch: Some("feature/container-info".to_string()),
-            pull_request_loading: false,
-            pull_request: Some(pull_request_fixture()),
             copied: true,
         };
         assert!(d.clear_copy_feedback());
@@ -2544,10 +2577,6 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
-            git_loading: false,
-            git_branch: Some("feature/container-info".to_string()),
-            pull_request_loading: false,
-            pull_request: Some(pull_request_fixture()),
             copied: true,
         };
         let mut buf = Vec::new();
@@ -2560,47 +2589,55 @@ mod tests {
     }
 
     #[test]
-    fn container_info_renders_workdir_branch_and_pr_url() {
+    fn container_info_renders_container_details_only() {
         let d = container_info_fixture();
         let mut buf = Vec::new();
         d.render(&mut buf, 40, 120);
         let rendered = String::from_utf8_lossy(&buf);
 
+        assert!(rendered.contains("Container ID"));
+        assert!(rendered.contains("Role"));
+        assert!(rendered.contains("the-architect"));
+        assert!(rendered.contains("Agent"));
+        assert!(rendered.contains("claude"));
         assert!(rendered.contains("Workdir"));
         assert!(rendered.contains("/workspace/jackin"));
-        assert!(rendered.contains("Branch"));
-        assert!(rendered.contains("feature/container-info"));
-        assert!(rendered.contains("Pull Request"));
-        assert!(rendered.contains("#123"));
-        assert!(rendered.contains("PR Title"));
-        assert!(rendered.contains("Surface PR context in Capsule"));
-        assert!(rendered.contains("PR Link"));
-        assert!(rendered.contains("https://github.com/jackin-project/jackin/pull/123"));
-        assert!(
-            rendered.contains("\x1b]8;;https://github.com/jackin-project/jackin/pull/123\x1b\\")
-        );
+        assert!(!rendered.contains("GitHub URL"));
+        assert!(!rendered.contains("Pull Request"));
     }
 
     #[test]
-    fn container_info_renders_git_context_loading_state() {
-        let d = Dialog::ContainerInfo {
-            container_name: "jk-abc123-thearchitect".to_string(),
-            role: "the-architect".to_string(),
-            focused_agent: Some("claude".to_string()),
-            workdir: "/workspace/jackin".to_string(),
-            git_loading: true,
-            git_branch: None,
-            pull_request_loading: true,
-            pull_request: None,
-            copied: false,
+    fn github_context_renders_branch_pr_url_and_ci_status() {
+        let mut pr = pull_request_fixture();
+        pr.checks = Some(crate::session::PullRequestChecks {
+            passing: 4,
+            failing: 0,
+            pending: 0,
+            skipped: 1,
+            cancelled: 0,
+            total: 5,
+        });
+        let d = Dialog::GitHubContext {
+            branch: Some("feature/container-info".to_string()),
+            pull_request: Some(pr),
         };
         let mut buf = Vec::new();
         d.render(&mut buf, 40, 120);
         let rendered = String::from_utf8_lossy(&buf);
 
         assert!(rendered.contains("Branch"));
+        assert!(rendered.contains("feature/container-info"));
         assert!(rendered.contains("Pull Request"));
-        assert_eq!(rendered.matches("⠋ loading").count(), 5);
+        assert!(rendered.contains("#123"));
+        assert!(rendered.contains("PR Title"));
+        assert!(rendered.contains("Surface PR context in Capsule"));
+        assert!(rendered.contains("GitHub URL"));
+        assert!(rendered.contains("https://github.com/jackin-project/jackin/pull/123"));
+        assert!(
+            rendered.contains("\x1b]8;;https://github.com/jackin-project/jackin/pull/123\x1b\\")
+        );
+        assert!(rendered.contains("CI Status"));
+        assert!(rendered.contains("passing (4/5)"));
     }
 
     #[test]
