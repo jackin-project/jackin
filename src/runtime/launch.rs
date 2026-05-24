@@ -711,6 +711,16 @@ async fn launch_role_runtime(
     let display_label = format!("jackin.display_name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
     let dind_hostname = format!("{}={dind}", crate::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME);
+    let role_container_name_env = format!(
+        "{}={container_name}",
+        crate::env_model::JACKIN_CONTAINER_NAME_ENV_NAME
+    );
+    let instance_id = crate::instance::naming::instance_id_from_container_base(&container_name)
+        .unwrap_or(&container_name);
+    let instance_id_env = format!(
+        "{}={instance_id}",
+        crate::env_model::JACKIN_INSTANCE_ID_ENV_NAME
+    );
     let testcontainers_host_override = format!(
         "{}={dind}",
         crate::env_model::TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME
@@ -777,6 +787,10 @@ async fn launch_role_runtime(
         "DOCKER_CERT_PATH=/certs/client",
         "-e",
         &dind_hostname,
+        "-e",
+        &role_container_name_env,
+        "-e",
+        &instance_id_env,
         "-e",
         &testcontainers_host_override,
         "-e",
@@ -6944,6 +6958,8 @@ plugins = []
         let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("-e JACKIN=1"));
         assert!(run_cmd.contains(&format!("-e JACKIN_DIND_HOSTNAME={dind}")));
+        assert!(run_cmd.contains("-e JACKIN_CONTAINER_NAME="));
+        assert!(run_cmd.contains("-e JACKIN_INSTANCE_ID="));
         assert!(run_cmd.contains(&format!("-e TESTCONTAINERS_HOST_OVERRIDE={dind}")));
         assert!(!run_cmd.contains("JACKIN_DEBUG"));
     }

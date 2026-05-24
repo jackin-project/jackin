@@ -613,7 +613,7 @@ impl Multiplexer {
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
-            self.status_bar.container_name(),
+            self.status_bar.instance_id_label(),
         ) {
             Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
             Some(BranchContextBarHit::Container) => Some(HoverTarget::Container),
@@ -651,7 +651,7 @@ impl Multiplexer {
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
-            self.status_bar.container_name(),
+            self.status_bar.instance_id_label(),
         )
         .is_some()
         {
@@ -2089,7 +2089,7 @@ impl Multiplexer {
                 self.context_bar_branch(),
                 self.pull_request_context.as_ref(),
                 self.pull_request_context_loading(),
-                self.status_bar.container_name(),
+                self.status_bar.instance_id_label(),
             )
             .is_some() =>
             {
@@ -2101,7 +2101,7 @@ impl Multiplexer {
                     self.context_bar_branch(),
                     self.pull_request_context.as_ref(),
                     self.pull_request_context_loading(),
-                    self.status_bar.container_name(),
+                    self.status_bar.instance_id_label(),
                 ) {
                     Some(BranchContextBarHit::Context) => self.open_github_context_dialog(),
                     Some(BranchContextBarHit::Container) => self.open_container_info_dialog(),
@@ -2719,7 +2719,7 @@ impl Multiplexer {
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
-            self.status_bar.container_name(),
+            self.status_bar.instance_id_label(),
             self.hover_target,
             dialog_dim,
         );
@@ -2777,7 +2777,7 @@ impl Multiplexer {
             self.context_bar_branch(),
             self.pull_request_context.as_ref(),
             self.pull_request_context_loading(),
-            self.status_bar.container_name(),
+            self.status_bar.instance_id_label(),
             self.hover_target,
             self.dialog_open(),
         );
@@ -3494,7 +3494,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.context_bar_branch(),
                     mux.pull_request_context.as_ref(),
                     mux.pull_request_context_loading(),
-                    mux.status_bar.container_name(),
+                    mux.status_bar.instance_id_label(),
                     mux.hover_target,
                     mux.dialog_open(),
                 );
@@ -6389,6 +6389,7 @@ mod tests {
         let mut mux = test_mux(24, 80);
         mux.pointer_shapes_supported = true;
         mux.status_bar.identity_label = "jk-test-container".to_string();
+        mux.status_bar.instance_id_label = "test".to_string();
         mux.pull_request_context_branch = Some("feature/context".to_string());
         let (tx, mut rx) = mpsc::unbounded_channel();
         mux.attached_out = Some(tx);
@@ -6398,7 +6399,7 @@ mod tests {
             mux.pull_request_context_branch.as_deref(),
             mux.pull_request_context.as_ref(),
             mux.pull_request_context_loading(),
-            mux.status_bar.container_name(),
+            mux.status_bar.instance_id_label(),
         )
         .and_then(|layout| layout.left_region)
         .expect("branch context should fit");
@@ -6416,6 +6417,7 @@ mod tests {
         let mut mux = test_mux(24, 80);
         mux.pointer_shapes_supported = false;
         mux.status_bar.identity_label = "jk-test-container".to_string();
+        mux.status_bar.instance_id_label = "test".to_string();
         mux.status_bar.role = "the-architect".to_string();
         mux.pull_request_context_branch = Some("feature/context".to_string());
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -6426,7 +6428,7 @@ mod tests {
             mux.pull_request_context_branch.as_deref(),
             mux.pull_request_context.as_ref(),
             mux.pull_request_context_loading(),
-            mux.status_bar.container_name(),
+            mux.status_bar.instance_id_label(),
         )
         .and_then(|layout| layout.container_region)
         .expect("container should fit");
@@ -6463,6 +6465,7 @@ mod tests {
     fn bottom_context_click_opens_github_context_dialog() {
         let mut mux = test_mux(24, 100);
         mux.status_bar.identity_label = "jk-test-container".to_string();
+        mux.status_bar.instance_id_label = "test".to_string();
         mux.pull_request_context_branch = Some("feature/context".to_string());
         mux.pull_request_context = Some(pull_request_fixture(434));
         let hit = branch_context_bar_layout(
@@ -6471,7 +6474,7 @@ mod tests {
             mux.pull_request_context_branch.as_deref(),
             mux.pull_request_context.as_ref(),
             mux.pull_request_context_loading(),
-            mux.status_bar.container_name(),
+            mux.status_bar.instance_id_label(),
         )
         .and_then(|layout| layout.left_region)
         .expect("GitHub context should fit");
@@ -6491,7 +6494,7 @@ mod tests {
             "dialog hint must render above the bottom branch/context bar: {rendered:?}"
         );
         assert!(
-            rendered.rfind("copy GitHub URL") > rendered.rfind("jk-test-container"),
+            rendered.rfind("copy GitHub URL") > rendered.rfind("test"),
             "dialog footer should be painted after the bottom branch/context bar so it clears its own rows: {rendered:?}"
         );
         let hint_row = mux.term_rows - 2;

@@ -36,6 +36,9 @@ fn display_cols(s: &str) -> u16 {
 }
 use crate::protocol::AgentState;
 
+const JACKIN_CONTAINER_NAME_ENV: &str = "JACKIN_CONTAINER_NAME";
+const JACKIN_INSTANCE_ID_ENV: &str = "JACKIN_INSTANCE_ID";
+
 const BRAND_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
 const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
 const BRAND_BOLD: &str = "\x1b[1m";
@@ -88,11 +91,11 @@ pub struct StatusBar {
     pub prefix_enabled: bool,
     pub prefix_label: String,
     pub palette_label: String,
-    /// Container name (`jk-<short>-<workspace>-<role>`) resolved from
-    /// `HOSTNAME` at construction. Consumed by the bottom branch/PR
-    /// context bar and the `ContainerInfo` modal — the status bar
-    /// itself no longer paints it.
+    /// Full role-container name (`jk-<short>-<workspace>-<role>`).
+    /// Consumed by the `ContainerInfo` modal and copy action.
     pub identity_label: String,
+    /// Short instance id rendered in the bottom context row.
+    pub instance_id_label: String,
     /// The role key from Capsule launch config. Stored separately so
     /// the `ContainerInfo` modal can name it explicitly without
     /// re-deriving it from the container-name suffix (which is the
@@ -113,6 +116,22 @@ impl StatusBar {
     }
 
     pub fn new_with_role(role: String) -> Self {
+        let identity_label = resolve_container_name();
+        let instance_id_label = resolve_instance_id(&identity_label);
+        Self::new_with_role_container_and_instance(role, identity_label, instance_id_label)
+    }
+
+    pub fn new_with_role_and_container(role: String, identity_label: String) -> Self {
+        let instance_id_label = instance_id_from_container_name(&identity_label)
+            .unwrap_or_else(|| identity_label.clone());
+        Self::new_with_role_container_and_instance(role, identity_label, instance_id_label)
+    }
+
+    fn new_with_role_container_and_instance(
+        role: String,
+        identity_label: String,
+        instance_id_label: String,
+    ) -> Self {
         Self {
             tab_regions: Vec::new(),
             hint_region: None,
@@ -120,13 +139,18 @@ impl StatusBar {
             prefix_enabled: false,
             prefix_label: "Ctrl+B".to_string(),
             palette_label: "Ctrl+\\".to_string(),
-            identity_label: resolve_container_name(),
+            identity_label,
+            instance_id_label,
             role,
         }
     }
 
     pub fn container_name(&self) -> &str {
         &self.identity_label
+    }
+
+    pub fn instance_id_label(&self) -> &str {
+        &self.instance_id_label
     }
 
     pub fn role(&self) -> &str {
@@ -550,7 +574,33 @@ fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
 /// in the `ContainerInfo` dialog opened from that row, not in the top
 /// chrome.
 fn resolve_container_name() -> String {
-    std::env::var("HOSTNAME").unwrap_or_default()
+    std::env::var(JACKIN_CONTAINER_NAME_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|value| value.trim().to_string())
+        })
+        .unwrap_or_default()
+}
+
+fn resolve_instance_id(container_name: &str) -> String {
+    std::env::var(JACKIN_INSTANCE_ID_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| {
+            instance_id_from_container_name(container_name)
+                .unwrap_or_else(|| container_name.to_string())
+        })
+}
+
+fn instance_id_from_container_name(name: &str) -> Option<String> {
+    let rest = name.strip_prefix("jk-")?;
+    let id = rest.split('-').next()?;
+    (!id.is_empty()).then(|| id.to_string())
 }
 
 #[cfg(test)]
@@ -585,6 +635,17 @@ mod tests {
         assert_eq!(tab_display_label("Kimi"), "Kimi X");
         assert_eq!(tab_display_label("OpenCode"), "OpenCode X");
         assert!(!tab_display_label("Kimi").starts_with(' '));
+    }
+
+    #[test]
+    fn status_bar_keeps_full_container_name_and_short_instance_id() {
+        let bar = StatusBar::new_with_role_and_container(
+            "the-architect".to_string(),
+            "jk-spamcw91-jackin-thearchitect".to_string(),
+        );
+
+        assert_eq!(bar.container_name(), "jk-spamcw91-jackin-thearchitect");
+        assert_eq!(bar.instance_id_label(), "spamcw91");
     }
 
     #[test]

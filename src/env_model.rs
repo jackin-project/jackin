@@ -30,6 +30,21 @@ pub const JACKIN_ENV_VALUE: &str = "1";
 pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
 pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVERRIDE";
 
+/// Env var that carries the stable role-container name into the container.
+///
+/// Docker's `--hostname` sets kernel hostname, but the `HOSTNAME`
+/// environment variable is not a reliable first-frame data source for
+/// long-running processes. jackin injects this value explicitly so in-container
+/// chrome can render the instance identity immediately.
+pub const JACKIN_CONTAINER_NAME_ENV_NAME: &str = "JACKIN_CONTAINER_NAME";
+
+/// Env var that carries the short jackin instance id into the role container.
+///
+/// For `jk-spamcw91-jackin-thearchitect`, this is `spamcw91`. Capsule uses
+/// this compact value in the always-visible status row while keeping the full
+/// container name available for details and copy actions.
+pub const JACKIN_INSTANCE_ID_ENV_NAME: &str = "JACKIN_INSTANCE_ID";
+
 /// Env var that carries the AI agent slug into each agent session.
 ///
 /// The entrypoint and in-container tooling use this to dispatch on which
@@ -101,6 +116,8 @@ pub const GH_ENTERPRISE_TOKEN_ENV_NAME: &str = "GH_ENTERPRISE_TOKEN";
 pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_ENV_NAME, Some(JACKIN_ENV_VALUE)),
     (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
+    (JACKIN_CONTAINER_NAME_ENV_NAME, None),
+    (JACKIN_INSTANCE_ID_ENV_NAME, None),
     (JACKIN_AGENT_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),
     (JACKIN_WORKDIR_ENV_NAME, None),
@@ -232,8 +249,10 @@ mod tests {
         for sentinel in &[
             "JACKIN",               // in-container sentinel (was JACKIN)
             "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
-            "JACKIN_AGENT",         // injected per agent session — agent slug (claude/codex/amp)
-            "JACKIN_ROLE",          // runtime-owned role selector key
+            "JACKIN_CONTAINER_NAME",
+            "JACKIN_INSTANCE_ID",
+            "JACKIN_AGENT", // injected per agent session — agent slug (claude/codex/amp)
+            "JACKIN_ROLE",  // runtime-owned role selector key
             "JACKIN_GIT_COAUTHOR_TRAILER",
             "JACKIN_GIT_DCO",
             "DOCKER_HOST",
@@ -253,6 +272,8 @@ mod tests {
         for sentinel in &[
             "JACKIN",
             "JACKIN_DIND_HOSTNAME",
+            "JACKIN_CONTAINER_NAME",
+            "JACKIN_INSTANCE_ID",
             "JACKIN_AGENT",
             "JACKIN_ROLE",
             "JACKIN_GIT_COAUTHOR_TRAILER",
