@@ -23,15 +23,19 @@ The missing product model is a launch cockpit: a compact, recognizable, cyberpun
 
 ## Target experience
 
-When the terminal supports a rich TUI, `jackin load` and console launches should enter a full-screen progress surface after any required prompts. The screen should be operationally dense but quiet:
+When the terminal supports a rich TUI, `jackin load` and console launches should enter a full-screen progress surface after any required prompts. The screen should be operationally dense but quiet. Saved workspaces and ad-hoc directory launches should render as different target identities because they mean different things: a workspace is a configured project boundary, while a directory launch is a one-off target.
+
+Saved workspace example:
 
 ```text
-jackin' / loading agent-smith
+jackin' / loading agent-smith into workspace
 
-workspace    ~/Projects/app
-container    jk-k7p9m2xq-agentsmith
-agent        claude
-image        jackin/agent-smith:latest
+workspace     big-monorepo
+workdir       ~/Projects/app
+mounts        3 configured
+container     jk-k7p9m2xq-bigmonorepo-agentsmith
+agent         claude
+image         jackin/agent-smith:latest
 
 ● identity       resolved role + operator
 ● role           trusted source
@@ -46,6 +50,33 @@ image        jackin/agent-smith:latest
 status: pulling projectjackin/construct:trixie
 log: launch log available from `jackin logs` or failure dialog
 ```
+
+Ad-hoc directory example:
+
+```text
+jackin' / loading agent-smith in directory
+
+directory     ~/Projects/app
+mount         same path
+container     jk-k7p9m2xq-agentsmith
+agent         claude
+image         jackin/agent-smith:latest
+
+● identity       resolved role + operator
+● role           trusted source
+◐ construct      pulling base world
+○ derived image  queued
+○ workspace      queued
+○ network        queued
+○ sidecar        queued
+○ capsule        queued
+○ hardline       queued
+
+status: pulling projectjackin/construct:trixie
+log: launch log available from `jackin logs` or failure dialog
+```
+
+The identity panel should never label an ad-hoc directory as a workspace. For a saved workspace, show the workspace name first and then the configured workdir/mount summary. For a directory launch, show `directory` first and describe the direct mount shape. This keeps the TUI honest about whether jackin' is applying a saved workspace configuration or simply launching in the target directory the operator chose.
 
 The main panel should use the same phosphor-green vocabulary as the console and landing page. A bounded rain strip or subtle background panel can provide motion without forcing the full intro animation. The visual language should remain terminal-native: thin lines, strong monospace rhythm, compact labels, and bright state changes. It should avoid marketing copy, large empty hero layouts, or a wall of command output.
 
