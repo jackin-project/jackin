@@ -1367,87 +1367,10 @@ fn step_selectable(rows: &[PickerRow], from: usize, forward: bool) -> usize {
     }
 }
 
-/// One footer-hint span.
-#[allow(dead_code)] // `Sep` reserved for future hints
-enum HintSpan<'a> {
-    /// Hotkey glyph(s) — white + bold.
-    Key(&'a str),
-    /// Action label after a key — phosphor green.
-    Text(&'a str),
-    /// Dot separator between key+label pairs in the same group.
-    Sep,
-    /// Three-space group separator.
-    GroupSep,
-}
-
-// Footer vocabulary stays identical to the host picker so the
-// operator reads the same hints in either dialog. `type filter` is a
-// textual hint (no key glyph) because the action is "any printable
-// keystroke," not a specific key.
-const PALETTE_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Enter"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
-
-const PICKER_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Enter"),
-    HintSpan::Text("launch"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
-
-const RENAME_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
-    HintSpan::Text("save"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-    HintSpan::GroupSep,
-    HintSpan::Text("empty = auto name"),
-];
-
-const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
-    HintSpan::Text("copy container ID"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("dismiss"),
-];
-
-const GITHUB_CONTEXT_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
-    HintSpan::Text("copy GitHub URL"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("dismiss"),
-];
-
-const READ_ONLY_HINT: &[HintSpan<'static>] = &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
-
-const CONFIRM_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Y"),
-    HintSpan::Text("confirm"),
-    HintSpan::GroupSep,
-    HintSpan::Key("N"),
-    HintSpan::Text("cancel"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("back"),
-];
+use jackin_tui::{
+    CONFIRM_HINT, CONTAINER_INFO_HINT, GITHUB_CONTEXT_HINT, HintSpan, PALETTE_HINT, PICKER_HINT,
+    READ_ONLY_HINT, RENAME_HINT, hint_row_cols,
+};
 
 /// Render the tab-rename modal. One text-input row showing the current
 /// buffer plus a blinking-style trailing `▌` caret.
@@ -2166,20 +2089,8 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
 
 /// Compute the visual column width of a hint span row. Matches the
 /// formatting in `render_hint_row` so centring is exact.
-fn hint_span_cols(spans: &[HintSpan<'_>]) -> usize {
-    spans
-        .iter()
-        .map(|s| match s {
-            HintSpan::Key(k) => k.chars().count(),
-            HintSpan::Text(t) => 1 /* leading space */ + t.chars().count(),
-            HintSpan::Sep => 3,
-            HintSpan::GroupSep => 3,
-        })
-        .sum()
-}
-
 fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
-    let total = hint_span_cols(spans);
+    let total = hint_row_cols(spans);
     let padded_total = total.saturating_add(4);
     if padded_total > term_cols as usize {
         return;
@@ -2933,7 +2844,7 @@ mod tests {
         let d = Dialog::GitHubContext { copied: false };
         let term_rows = 40;
         let term_cols = 120;
-        let padded_cols = hint_span_cols(GITHUB_CONTEXT_HINT) + 4;
+        let padded_cols = hint_row_cols(GITHUB_CONTEXT_HINT) + 4;
         let expected_col = ((term_cols as usize).saturating_sub(padded_cols) / 2) as u16;
         let hint_row = term_rows - 2;
         let spacer_row = term_rows - 1;
