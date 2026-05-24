@@ -146,10 +146,48 @@ impl BollardDockerClient {
 enum ConnectionChoice {
     Defaults,
     Host(String),
-    Unsupported(String),
+    Unsupported {
+        reason: UnsupportedReason,
+        host: String,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
+enum UnsupportedReason {
+    SshTransport,
+    TlsTransport,
+    ContextTlsMaterial,
+    UnsupportedUri,
+}
+
+impl ConnectionChoice {
+    fn unsupported(reason: UnsupportedReason, host: impl Into<String>) -> Self {
+        Self::Unsupported {
+            reason,
+            host: host.into(),
+        }
+    }
+
+    fn unsupported_message(reason: &UnsupportedReason, host: &str) -> String {
+        let detail = match reason {
+            UnsupportedReason::SshTransport => format!(
+                "active Docker context uses SSH transport ({host}); this jackin build cannot mirror SSH Docker contexts for Bollard API calls"
+            ),
+            UnsupportedReason::TlsTransport => format!(
+                "active Docker context uses TLS transport ({host}); this jackin build cannot mirror TLS Docker contexts for Bollard API calls"
+            ),
+            UnsupportedReason::ContextTlsMaterial => format!(
+                "active Docker context for {host} includes TLS settings; this jackin build cannot mirror Docker context TLS material for Bollard API calls"
+            ),
+            UnsupportedReason::UnsupportedUri => {
+                format!("active Docker context uses unsupported Docker host URI {host}")
+            }
+        };
+        format!("{detail}. {OVERRIDE_HINT}")
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct DockerContextEndpoint {
     host: String,
     skip_tls_verify: bool,
@@ -158,33 +196,26 @@ struct DockerContextEndpoint {
 
 impl DockerContextEndpoint {
     fn connection_choice(self) -> ConnectionChoice {
-        let host = self.host.trim();
+        // `host` is trimmed by `parse_docker_context_endpoint` before this struct is built.
+        let host = self.host.as_str();
         if host.is_empty() {
             return ConnectionChoice::Defaults;
         }
 
         if host.starts_with("ssh://") {
-            return ConnectionChoice::Unsupported(format!(
-                "active Docker context uses SSH transport ({host}); this jackin build cannot mirror SSH Docker contexts for Bollard API calls. {OVERRIDE_HINT}"
-            ));
+            return ConnectionChoice::unsupported(UnsupportedReason::SshTransport, host);
         }
         if host.starts_with("https://") {
-            return ConnectionChoice::Unsupported(format!(
-                "active Docker context uses TLS transport ({host}); this jackin build cannot mirror TLS Docker contexts for Bollard API calls. {OVERRIDE_HINT}"
-            ));
+            return ConnectionChoice::unsupported(UnsupportedReason::TlsTransport, host);
         }
         if self.skip_tls_verify || self.has_tls_material {
-            return ConnectionChoice::Unsupported(format!(
-                "active Docker context for {host} includes TLS settings; this jackin build cannot mirror Docker context TLS material for Bollard API calls. {OVERRIDE_HINT}"
-            ));
+            return ConnectionChoice::unsupported(UnsupportedReason::ContextTlsMaterial, host);
         }
 
         if context_host_supported_without_extra_settings(host) {
-            ConnectionChoice::Host(host.to_string())
+            ConnectionChoice::Host(self.host)
         } else {
-            ConnectionChoice::Unsupported(format!(
-                "active Docker context uses unsupported Docker host URI {host}. {OVERRIDE_HINT}"
-            ))
+            ConnectionChoice::unsupported(UnsupportedReason::UnsupportedUri, host)
         }
     }
 }
@@ -239,7 +270,9 @@ fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
             crate::debug_log!("docker", "connect context host {host}");
             Ok(Docker::connect_with_host(&host)?)
         }
-        ConnectionChoice::Unsupported(reason) => bail!(reason),
+        ConnectionChoice::Unsupported { reason, host } => {
+            bail!(ConnectionChoice::unsupported_message(&reason, &host))
+        }
     }
 }
 
@@ -1009,38 +1042,70 @@ mod tests {
 
     #[test]
     fn choose_connection_rejects_ssh_context() {
-        assert!(matches!(
+        assert_eq!(
             choose_connection(false, Some(context_endpoint("ssh://me@docker-host"))),
-            ConnectionChoice::Unsupported(reason) if reason.contains("SSH transport")
-        ));
+            ConnectionChoice::unsupported(UnsupportedReason::SshTransport, "ssh://me@docker-host")
+        );
     }
 
     #[test]
     fn choose_connection_rejects_https_context() {
-        assert!(matches!(
+        assert_eq!(
             choose_connection(false, Some(context_endpoint("https://docker-host:2376"))),
-            ConnectionChoice::Unsupported(reason) if reason.contains("TLS transport")
-        ));
+            ConnectionChoice::unsupported(
+                UnsupportedReason::TlsTransport,
+                "https://docker-host:2376"
+            )
+        );
     }
 
     #[test]
     fn choose_connection_rejects_context_with_tls_material() {
-        let mut endpoint = context_endpoint("tcp://docker-host:2376");
-        endpoint.has_tls_material = true;
-        assert!(matches!(
+        let endpoint = DockerContextEndpoint {
+            has_tls_material: true,
+            ..context_endpoint("tcp://docker-host:2376")
+        };
+        assert_eq!(
             choose_connection(false, Some(endpoint)),
-            ConnectionChoice::Unsupported(reason) if reason.contains("TLS settings")
-        ));
+            ConnectionChoice::unsupported(
+                UnsupportedReason::ContextTlsMaterial,
+                "tcp://docker-host:2376"
+            )
+        );
     }
 
     #[test]
     fn choose_connection_rejects_context_with_tls_skip_verify() {
-        let mut endpoint = context_endpoint("tcp://docker-host:2376");
-        endpoint.skip_tls_verify = true;
-        assert!(matches!(
+        let endpoint = DockerContextEndpoint {
+            skip_tls_verify: true,
+            ..context_endpoint("tcp://docker-host:2376")
+        };
+        assert_eq!(
             choose_connection(false, Some(endpoint)),
-            ConnectionChoice::Unsupported(reason) if reason.contains("TLS settings")
-        ));
+            ConnectionChoice::unsupported(
+                UnsupportedReason::ContextTlsMaterial,
+                "tcp://docker-host:2376"
+            )
+        );
+    }
+
+    #[test]
+    fn choose_connection_rejects_context_with_unknown_uri() {
+        assert_eq!(
+            choose_connection(false, Some(context_endpoint("fd://0"))),
+            ConnectionChoice::unsupported(UnsupportedReason::UnsupportedUri, "fd://0")
+        );
+    }
+
+    #[test]
+    fn unsupported_message_appends_override_hint() {
+        let msg = ConnectionChoice::unsupported_message(
+            &UnsupportedReason::SshTransport,
+            "ssh://me@docker-host",
+        );
+        assert!(msg.contains("SSH transport"));
+        assert!(msg.contains("ssh://me@docker-host"));
+        assert!(msg.ends_with(OVERRIDE_HINT));
     }
 
     #[test]
@@ -1127,8 +1192,7 @@ mod tests {
     fn context_endpoint(host: &str) -> DockerContextEndpoint {
         DockerContextEndpoint {
             host: host.to_string(),
-            skip_tls_verify: false,
-            has_tls_material: false,
+            ..DockerContextEndpoint::default()
         }
     }
 
