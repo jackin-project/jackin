@@ -42,7 +42,7 @@ use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server, read_client_frame,
 };
 use crate::protocol::control::{AgentState, SessionInfo};
-use crate::render::{PaneBodyCache, PaneBodyRenderMode, draw_scrollbar};
+use crate::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, draw_scrollbar};
 use crate::session::{
     PullRequestChecks, PullRequestInfo, PullRequestLookupOutcome, SESSION_ENV_PASSTHROUGH, Session,
     SessionEvent, build_agent_command, build_shell_command,
@@ -394,7 +394,7 @@ struct VisiblePane {
     outer: Rect,
     inner: Rect,
     focused: bool,
-    dim: bool,
+    body_dim: PaneBodyDim,
 }
 
 #[derive(Debug, Clone)]
@@ -1760,7 +1760,7 @@ impl Multiplexer {
     fn visible_panes(&self) -> Vec<VisiblePane> {
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
-        let dim_panes = self.dialog_open();
+        let dialog_open = self.dialog_open();
         if let Some(zoom_id) = self.active_zoomed_id() {
             let outer = content_rect;
             return vec![VisiblePane {
@@ -1768,7 +1768,11 @@ impl Multiplexer {
                 outer,
                 inner: outer.shrink(1),
                 focused: Some(zoom_id) == focused_id,
-                dim: dim_panes,
+                body_dim: if dialog_open {
+                    PaneBodyDim::Backdrop
+                } else {
+                    PaneBodyDim::Normal
+                },
             }];
         }
         let Some(tab) = self.tabs.get(self.active_tab) else {
@@ -1785,7 +1789,13 @@ impl Multiplexer {
                     outer,
                     inner: outer.shrink(1),
                     focused,
-                    dim: dim_panes || (multi_pane && !focused),
+                    body_dim: if dialog_open {
+                        PaneBodyDim::Backdrop
+                    } else if multi_pane && !focused {
+                        PaneBodyDim::Inactive
+                    } else {
+                        PaneBodyDim::Normal
+                    },
                 }
             })
             .collect()
@@ -2658,7 +2668,7 @@ impl Multiplexer {
                         pane.inner.col,
                         pane.inner.rows,
                         pane.inner.cols,
-                        pane.dim,
+                        pane.body_dim,
                         &mut buf,
                     );
                 pane_rows_emitted += stats.rows_emitted;
@@ -2817,11 +2827,9 @@ impl Multiplexer {
             if session.scrollback_offset != 0 {
                 return self.compose_full_frame(FullRedrawReason::ScrollbackMovement);
             }
-            if !self
-                .pane_body_caches
-                .get(&pane.id)
-                .is_some_and(|cache| cache.is_valid_for(pane.inner.rows, pane.inner.cols, pane.dim))
-            {
+            if !self.pane_body_caches.get(&pane.id).is_some_and(|cache| {
+                cache.is_valid_for(pane.inner.rows, pane.inner.cols, pane.body_dim)
+            }) {
                 return self.compose_full_frame(FullRedrawReason::PaneCacheMiss);
             }
         }
@@ -2851,7 +2859,7 @@ impl Multiplexer {
                         pane.inner.col,
                         pane.inner.rows,
                         pane.inner.cols,
-                        pane.dim,
+                        pane.body_dim,
                         &mut buf,
                     );
                 if stats.mode == PaneBodyRenderMode::Full {
@@ -3930,13 +3938,23 @@ fn capitalize(s: &str) -> String {
 }
 
 fn display_title(session: &Session) -> String {
-    if let Some(title) = session.title() {
-        title.to_string()
-    } else if let Some(cwd) = session.cwd() {
-        jackin_tui::shorten_home(cwd)
-    } else {
-        session.label.clone()
+    let title = session.title().filter(|title| !title.trim().is_empty());
+    let cwd = session.cwd().map(jackin_tui::shorten_home);
+    if session.agent.is_none() {
+        return match title {
+            Some(title) if title == session.label => session.label.clone(),
+            Some(title) => format!("{} · {title}", session.label),
+            None => cwd.map_or_else(
+                || session.label.clone(),
+                |cwd| format!("{} · {cwd}", session.label),
+            ),
+        };
     }
+
+    title
+        .map(str::to_string)
+        .or(cwd)
+        .unwrap_or_else(|| session.label.clone())
 }
 
 const OUTER_TERMINAL_TITLE_MAX_CHARS: usize = 180;
@@ -5118,6 +5136,22 @@ mod tests {
             compose_outer_terminal_title(Path::new("/workspace/jackin"), None, Some(&pull_request));
 
         assert_eq!(title, "jackin · PR #436 · bad ]2;owned title");
+    }
+
+    #[test]
+    fn display_title_falls_back_when_shell_sets_empty_title() {
+        let (mut session, _rx) = test_shell_session(20, 80);
+        session.feed_pty(b"\x1b]2;\x07");
+
+        assert_eq!(display_title(&session), "Test");
+    }
+
+    #[test]
+    fn display_title_keeps_shell_label_with_shell_title() {
+        let (mut session, _rx) = test_shell_session(20, 80);
+        session.feed_pty(b"\x1b]2;prompt title\x07");
+
+        assert_eq!(display_title(&session), "Test · prompt title");
     }
 
     #[test]

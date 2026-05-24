@@ -21,7 +21,7 @@
 use std::io::Write as _;
 
 use jackin_tui::{TAB_GAP, TabCell, lay_out_tabs};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::layout::Tab;
 
@@ -519,20 +519,22 @@ pub fn draw_pane_box(
         TITLE_INACTIVE
     };
     let interior_cols = cols.saturating_sub(2);
-    let title_cols = display_cols(title);
-    // Top border: `┌─ title ─` then dashes filling to `┐`. Title is
-    // omitted entirely when the pane is too narrow to fit the
-    // `┌─ X ─┐` minimum (8 cols of chrome).
+    let max_title_cols = interior_cols.saturating_sub(4);
+    let display_title = take_display_cols(title, max_title_cols);
+    let title_cols = display_cols(&display_title);
+    // Top border: `┌─ title ─` then dashes filling to `┐`. Long titles
+    // are truncated by display width instead of being omitted entirely,
+    // so a shell prompt title cannot make the pane title disappear.
     move_to(buf, row + 1, col + 1);
     buf.extend_from_slice(border.as_bytes());
     buf.extend_from_slice("┌".as_bytes());
-    let title_fits = title_cols + 4 <= interior_cols;
+    let title_fits = !display_title.is_empty() && title_cols + 4 <= interior_cols;
     let mut consumed: u16 = 0;
     if title_fits {
         buf.extend_from_slice("─".as_bytes());
         buf.push(b' ');
         buf.extend_from_slice(title_color.as_bytes());
-        buf.extend_from_slice(title.as_bytes());
+        buf.extend_from_slice(display_title.as_bytes());
         buf.extend_from_slice(RESET.as_bytes());
         buf.extend_from_slice(border.as_bytes());
         buf.push(b' ');
@@ -564,6 +566,23 @@ pub fn draw_pane_box(
     }
     buf.extend_from_slice("┘".as_bytes());
     buf.extend_from_slice(RESET.as_bytes());
+}
+
+fn take_display_cols(s: &str, max_cols: u16) -> String {
+    let mut out = String::new();
+    let mut used = 0u16;
+    for c in s.chars() {
+        if c.is_control() {
+            continue;
+        }
+        let width = u16::try_from(c.width().unwrap_or(0)).unwrap_or(u16::MAX);
+        if used.saturating_add(width) > max_cols {
+            break;
+        }
+        out.push(c);
+        used = used.saturating_add(width);
+    }
+    out
 }
 
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
@@ -646,6 +665,31 @@ mod tests {
 
         assert_eq!(bar.container_name(), "jk-spamcw91-jackin-thearchitect");
         assert_eq!(bar.instance_id_label(), "spamcw91");
+    }
+
+    #[test]
+    fn pane_box_truncates_long_titles_instead_of_omitting_them() {
+        let mut buf = Vec::new();
+        draw_pane_box(
+            &mut buf,
+            0,
+            0,
+            4,
+            16,
+            "Shell title that is too long",
+            false,
+            false,
+        );
+        let out = String::from_utf8_lossy(&buf);
+
+        assert!(
+            out.contains("Shell"),
+            "long pane title should still render a truncated prefix: {out:?}"
+        );
+        assert!(
+            !out.contains("Shell title that is too long"),
+            "long pane title should not overflow the box: {out:?}"
+        );
     }
 
     #[test]
