@@ -40,7 +40,9 @@ const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
 const BRAND_BOLD: &str = "\x1b[1m";
 
 const TAB_BG_INACTIVE: &str = "\x1b[48;2;30;30;30m"; // subtle dark grey
+const TAB_BG_INACTIVE_HOVER: &str = "\x1b[48;2;48;48;48m"; // hover lift for clickable tabs
 const TAB_BG_ACTIVE: &str = "\x1b[48;2;242;184;75m"; // warm amber, distinct from brand
+const TAB_BG_ACTIVE_HOVER: &str = "\x1b[48;2;255;205;105m"; // active tab hover lift
 const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const TAB_FG_ACTIVE: &str = "\x1b[38;2;0;0;0m"; // BLACK on amber
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
@@ -156,6 +158,7 @@ impl StatusBar {
         tabs: &[Tab],
         active_tab: usize,
         sessions_state: &[(u64, AgentState)],
+        hovered_tab: Option<usize>,
     ) {
         self.tab_regions.clear();
         self.hint_region = None;
@@ -203,13 +206,13 @@ impl StatusBar {
         let max_tab_col = cols.saturating_sub(reserve_right);
 
         let mut clipped_at: Option<u16> = None;
-        for (cell, (_, glyph, _)) in cells.iter().zip(padded.iter()) {
+        for (idx, (cell, (_, glyph, _))) in cells.iter().zip(padded.iter()).enumerate() {
             let cell_end_0based = cell.start_col + cell.cell_cols;
             if cell_end_0based > max_tab_col {
                 clipped_at = Some(cell.start_col);
                 break;
             }
-            self.emit_tab_row0(buf, cell, *glyph);
+            self.emit_tab_row0(buf, cell, *glyph, hovered_tab == Some(idx));
             let region_start = cell.start_col + 1;
             let region_end = region_start + cell.cell_cols;
             self.tab_regions.push((region_start, region_end));
@@ -251,17 +254,27 @@ impl StatusBar {
         }
     }
 
-    fn emit_tab_row0(&self, buf: &mut Vec<u8>, cell: &TabCell<'_>, glyph: TabGlyph) {
+    fn emit_tab_row0(&self, buf: &mut Vec<u8>, cell: &TabCell<'_>, glyph: TabGlyph, hovered: bool) {
         // Position cursor at the cell's first column (1-based).
         move_to(buf, 1, cell.start_col + 1);
         // Apply tab bg + fg first; the Blocked glyph overrides fg
         // locally and restores it before the trailing pad.
         if cell.active {
-            buf.extend_from_slice(TAB_BG_ACTIVE.as_bytes());
+            let bg = if hovered {
+                TAB_BG_ACTIVE_HOVER
+            } else {
+                TAB_BG_ACTIVE
+            };
+            buf.extend_from_slice(bg.as_bytes());
             buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
             buf.extend_from_slice(BOLD.as_bytes());
         } else {
-            buf.extend_from_slice(TAB_BG_INACTIVE.as_bytes());
+            let bg = if hovered {
+                TAB_BG_INACTIVE_HOVER
+            } else {
+                TAB_BG_INACTIVE
+            };
+            buf.extend_from_slice(bg.as_bytes());
             buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
         }
         // Cell layout: ` <name> <glyph> `.
@@ -476,12 +489,12 @@ mod tests {
         let tabs = vec![tab];
         let states = vec![(1u64, AgentState::Blocked)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &states);
+        bar.render(&mut buf, 80, &tabs, 0, &states, None);
         let (start, end) = bar.tab_regions[0];
         assert_eq!(end - start, 10);
         // Re-rendering with no state must keep the same width.
         let mut buf2 = Vec::new();
-        bar.render(&mut buf2, 80, &tabs, 0, &[]);
+        bar.render(&mut buf2, 80, &tabs, 0, &[], None);
         let (s2, e2) = bar.tab_regions[0];
         assert_eq!(e2 - s2, 10);
         assert_eq!((s2, e2), (start, end));
@@ -498,7 +511,7 @@ mod tests {
     fn idle_hint_is_not_rendered() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[]);
+        bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
         assert!(!s.contains("Menu"), "menu hint should be hidden: {s:?}");
         assert!(bar.hint_region.is_none());
@@ -509,7 +522,7 @@ mod tests {
         let mut bar = StatusBar::new();
         bar.set_prefix_enabled(true);
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[]);
+        bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
         assert!(!s.contains("Menu"), "menu hint should be hidden: {s:?}");
         assert!(
@@ -523,7 +536,7 @@ mod tests {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[]);
+        bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
         assert!(!s.contains("prefix"), "prefix hint should be hidden: {s:?}");
     }
@@ -533,7 +546,7 @@ mod tests {
         let mut bar = StatusBar::new();
         let tabs = vec![Tab::new_single("Claude", 1)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &[]);
+        bar.render(&mut buf, 80, &tabs, 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
         // Row 1 = ANSI row 2 (1-based). Underline uses `━`.
         assert!(s.contains("\x1b[2;"), "row 2 cursor move missing: {s:?}");

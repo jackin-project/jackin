@@ -121,6 +121,7 @@ pub struct Multiplexer {
     /// True only for outer terminals known to support OSC 22 with CSS
     /// pointer names. Unsupported terminals keep normal cursor behavior.
     pointer_shapes_supported: bool,
+    hover_target: Option<HoverTarget>,
     /// Deadline for hiding the transient "Copied!" badge in the
     /// container-info dialog after a jackin-owned OSC 52 copy.
     container_info_copy_deadline: Option<Instant>,
@@ -219,6 +220,13 @@ enum PointerShape {
     EwResize,
     NsResize,
     Grabbing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HoverTarget {
+    Tab(usize),
+    BranchContext,
+    Container,
 }
 
 impl PointerShape {
@@ -353,6 +361,7 @@ impl Multiplexer {
             pending_full_redraw: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: pointer_shapes_supported_from_env(),
+            hover_target: None,
             container_info_copy_deadline: None,
             pull_request_context_branch: None,
             pull_request_context: None,
@@ -393,6 +402,41 @@ impl Multiplexer {
         }
         let shape = self.pointer_shape_at(row, col, button);
         self.set_pointer_shape(shape);
+    }
+
+    fn update_hover_for_mouse(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        let next = self.hover_target_at(row, col);
+        if self.hover_target == next {
+            return None;
+        }
+        self.hover_target = next;
+        Some(self.compose_chrome_hover_frame())
+    }
+
+    fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
+        if self.drag.is_some() || self.selection.is_some() || self.dialog_open() {
+            return None;
+        }
+        let row_1based = row + 1;
+        let col_1based = col + 1;
+        if row_1based == 1
+            && let Some(tab_idx) = self.status_bar.tab_at_col(col_1based)
+        {
+            return Some(HoverTarget::Tab(tab_idx));
+        }
+        match branch_context_bar_hit(
+            row_1based,
+            col_1based,
+            self.term_rows,
+            self.term_cols,
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_ref(),
+            self.status_bar.container_name(),
+        ) {
+            Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
+            Some(BranchContextBarHit::Container) => Some(HoverTarget::Container),
+            None => None,
+        }
     }
 
     fn pointer_shape_at(&self, row: u16, col: u16, button: u8) -> PointerShape {
@@ -701,6 +745,7 @@ impl Multiplexer {
         self.pane_body_caches.clear();
         self.dirty_panes.clear();
         self.container_info_copy_deadline = None;
+        self.hover_target = None;
     }
 
     /// Drop the session whose PTY just exited. Removes the pane from
@@ -1448,6 +1493,9 @@ impl Multiplexer {
         if let InputEvent::MousePress { col, row, button }
         | InputEvent::MouseRelease { col, row, button } = &event
         {
+            if let Some(frame) = self.update_hover_for_mouse(*row, *col) {
+                self.send_output(frame);
+            }
             self.update_pointer_shape_for_mouse(*row, *col, *button);
         }
         match event {
@@ -2156,6 +2204,7 @@ impl Multiplexer {
             &self.tabs,
             self.active_tab,
             &states,
+            hovered_tab(self.hover_target),
         );
 
         let focused_id = self.active_focused_id();
@@ -2249,6 +2298,7 @@ impl Multiplexer {
             self.pull_request_context_branch.as_deref(),
             self.pull_request_context.as_ref(),
             self.status_bar.container_name(),
+            self.hover_target,
         );
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
@@ -2281,6 +2331,7 @@ impl Multiplexer {
             self.pull_request_context_branch.as_deref(),
             self.pull_request_context.as_ref(),
             self.status_bar.container_name(),
+            self.hover_target,
         );
 
         crate::cdebug!(
@@ -2290,6 +2341,31 @@ impl Multiplexer {
             started.elapsed().as_micros()
         );
 
+        buf
+    }
+
+    fn compose_chrome_hover_frame(&mut self) -> Vec<u8> {
+        let mut buf = b"\x1b7".to_vec();
+        let states: Vec<(u64, AgentState)> =
+            self.sessions.iter().map(|(&id, s)| (id, s.state)).collect();
+        self.status_bar.render(
+            &mut buf,
+            self.term_cols,
+            &self.tabs,
+            self.active_tab,
+            &states,
+            hovered_tab(self.hover_target),
+        );
+        render_branch_context_bar(
+            &mut buf,
+            self.term_rows,
+            self.term_cols,
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_ref(),
+            self.status_bar.container_name(),
+            self.hover_target,
+        );
+        buf.extend_from_slice(b"\x1b8");
         buf
     }
 
@@ -2989,7 +3065,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let states: Vec<(u64, AgentState)> = mux.sessions.iter()
                     .map(|(&id, s)| (id, s.state))
                     .collect();
-                mux.status_bar.render(&mut sbuf, mux.term_cols, &mux.tabs, mux.active_tab, &states);
+                mux.status_bar.render(
+                    &mut sbuf,
+                    mux.term_cols,
+                    &mux.tabs,
+                    mux.active_tab,
+                    &states,
+                    hovered_tab(mux.hover_target),
+                );
                 render_branch_context_bar(
                     &mut sbuf,
                     mux.term_rows,
@@ -2997,6 +3080,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.pull_request_context_branch.as_deref(),
                     mux.pull_request_context.as_ref(),
                     mux.status_bar.container_name(),
+                    mux.hover_target,
                 );
                 sbuf.extend_from_slice(b"\x1b8");
                 mux.send_output(sbuf);
@@ -3425,8 +3509,10 @@ fn display_title(session: &Session) -> String {
 }
 
 const BRANCH_CONTEXT_BAR_BG: &str = "\x1b[48;2;255;255;255m";
+const BRANCH_CONTEXT_BAR_HOVER_BG: &str = "\x1b[48;2;225;245;255m";
 const BRANCH_CONTEXT_BAR_FG: &str = "\x1b[38;2;0;0;0m";
 const BRANCH_CONTEXT_BAR_LINK_FG: &str = "\x1b[38;2;0;80;180m";
+const BRANCH_CONTEXT_BAR_HOVER_FG: &str = "\x1b[38;2;0;55;140m";
 const BRANCH_CONTEXT_BAR_BOLD: &str = "\x1b[1m";
 const RESET: &str = "\x1b[0m";
 
@@ -3437,6 +3523,7 @@ fn render_branch_context_bar(
     branch: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     container_name: &str,
+    hover_target: Option<HoverTarget>,
 ) {
     let Some(layout) =
         branch_context_bar_layout(term_rows, term_cols, branch, pull_request, container_name)
@@ -3452,15 +3539,40 @@ fn render_branch_context_bar(
     }
 
     buf.extend_from_slice(format!("\x1b[{};1H", term_rows).as_bytes());
-    buf.extend_from_slice(BRANCH_CONTEXT_BAR_BG.as_bytes());
-    buf.extend_from_slice(BRANCH_CONTEXT_BAR_FG.as_bytes());
+    let left_hovered = hover_target == Some(HoverTarget::BranchContext);
+    let left_bg = if left_hovered {
+        BRANCH_CONTEXT_BAR_HOVER_BG
+    } else {
+        BRANCH_CONTEXT_BAR_BG
+    };
+    let left_fg = if left_hovered {
+        BRANCH_CONTEXT_BAR_HOVER_FG
+    } else {
+        BRANCH_CONTEXT_BAR_FG
+    };
+    buf.extend_from_slice(left_bg.as_bytes());
+    buf.extend_from_slice(left_fg.as_bytes());
     buf.extend_from_slice(BRANCH_CONTEXT_BAR_BOLD.as_bytes());
     buf.extend_from_slice(layout.left.as_bytes());
 
     if let Some(container_start) = layout.container_start {
         buf.extend_from_slice(format!("\x1b[{};{}H", term_rows, container_start).as_bytes());
-        buf.extend_from_slice(BRANCH_CONTEXT_BAR_BG.as_bytes());
-        buf.extend_from_slice(BRANCH_CONTEXT_BAR_LINK_FG.as_bytes());
+        let container_hovered = hover_target == Some(HoverTarget::Container);
+        let bg = if container_hovered {
+            BRANCH_CONTEXT_BAR_HOVER_BG
+        } else {
+            BRANCH_CONTEXT_BAR_BG
+        };
+        let fg = if container_hovered {
+            BRANCH_CONTEXT_BAR_HOVER_FG
+        } else {
+            BRANCH_CONTEXT_BAR_LINK_FG
+        };
+        buf.extend_from_slice(bg.as_bytes());
+        buf.extend_from_slice(fg.as_bytes());
+        if container_hovered {
+            buf.extend_from_slice(BRANCH_CONTEXT_BAR_BOLD.as_bytes());
+        }
         buf.extend_from_slice(layout.container.as_bytes());
     }
     buf.extend_from_slice(RESET.as_bytes());
@@ -3537,6 +3649,13 @@ fn branch_context_bar_layout(
 enum BranchContextBarHit {
     Context,
     Container,
+}
+
+const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
+    match target {
+        Some(HoverTarget::Tab(idx)) => Some(idx),
+        _ => None,
+    }
 }
 
 fn branch_context_bar_hit(
@@ -4053,6 +4172,7 @@ mod tests {
             Some("asa/pr-context"),
             Some(&pr),
             "jk-test-container",
+            None,
         );
         let rendered = String::from_utf8_lossy(&buf);
 
@@ -4076,12 +4196,45 @@ mod tests {
             Some("feature/no-pr"),
             None,
             "jk-test-container",
+            None,
         );
         let rendered = String::from_utf8_lossy(&buf);
 
         assert!(rendered.contains("Branch · feature/no-pr"));
         assert!(rendered.contains("jk-test-container"));
         assert!(!rendered.contains("\x1b]8;;"));
+    }
+
+    #[test]
+    fn branch_context_bar_hover_highlights_click_targets() {
+        let pr = pull_request_fixture(434);
+        let mut context_buf = Vec::new();
+        render_branch_context_bar(
+            &mut context_buf,
+            24,
+            120,
+            Some("asa/pr-context"),
+            Some(&pr),
+            "jk-test-container",
+            Some(HoverTarget::BranchContext),
+        );
+        let context_rendered = String::from_utf8_lossy(&context_buf);
+        assert!(context_rendered.contains(BRANCH_CONTEXT_BAR_HOVER_BG));
+        assert!(context_rendered.contains(BRANCH_CONTEXT_BAR_HOVER_FG));
+
+        let mut container_buf = Vec::new();
+        render_branch_context_bar(
+            &mut container_buf,
+            24,
+            120,
+            Some("asa/pr-context"),
+            Some(&pr),
+            "jk-test-container",
+            Some(HoverTarget::Container),
+        );
+        let container_rendered = String::from_utf8_lossy(&container_buf);
+        assert!(container_rendered.contains(BRANCH_CONTEXT_BAR_HOVER_BG));
+        assert!(container_rendered.contains("jk-test-container"));
     }
 
     #[test]
@@ -4094,6 +4247,7 @@ mod tests {
             Some("main"),
             None,
             "jk-test-container",
+            None,
         );
         assert!(main_buf.is_empty());
 
@@ -4105,6 +4259,7 @@ mod tests {
             Some("master"),
             None,
             "jk-test-container",
+            None,
         );
         assert!(master_buf.is_empty());
     }
@@ -4294,10 +4449,14 @@ mod tests {
             })
             .expect("container click should redraw");
 
-        assert!(
-            rx.try_recv().is_err(),
-            "opening container info must not send OSC 52"
-        );
+        while let Ok(output) = rx.try_recv() {
+            assert!(
+                !output
+                    .windows(b"\x1b]52;c;".len())
+                    .any(|w| w == b"\x1b]52;c;"),
+                "opening container info must not send OSC 52"
+            );
+        }
         assert!(!String::from_utf8_lossy(&frame).contains("Copied!"));
         let Some(Dialog::ContainerInfo {
             copied: false,

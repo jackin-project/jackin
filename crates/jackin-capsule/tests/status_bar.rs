@@ -12,7 +12,20 @@ fn render(
     states: &[(u64, AgentState)],
 ) -> String {
     let mut buf = Vec::new();
-    bar.render(&mut buf, cols, tabs, active, states);
+    bar.render(&mut buf, cols, tabs, active, states, None);
+    String::from_utf8_lossy(&buf).to_string()
+}
+
+fn render_with_hover(
+    bar: &mut StatusBar,
+    cols: u16,
+    tabs: &[Tab],
+    active: usize,
+    states: &[(u64, AgentState)],
+    hovered_tab: Option<usize>,
+) -> String {
+    let mut buf = Vec::new();
+    bar.render(&mut buf, cols, tabs, active, states, hovered_tab);
     String::from_utf8_lossy(&buf).to_string()
 }
 
@@ -40,6 +53,17 @@ fn active_tab_background_differs_from_brand_pill() {
     assert!(
         s.contains(active_tab_amber_bg),
         "active tab should use distinct amber bg: {s:?}"
+    );
+}
+
+#[test]
+fn hovered_tab_uses_lifted_background() {
+    let mut bar = StatusBar::new();
+    let tabs = vec![Tab::new_single("Codex", 7), Tab::new_single("Shell", 8)];
+    let s = render_with_hover(&mut bar, 80, &tabs, 0, &[], Some(1));
+    assert!(
+        s.contains("\x1b[48;2;48;48;48m"),
+        "hovered inactive tab should use lifted bg: {s:?}"
     );
 }
 
