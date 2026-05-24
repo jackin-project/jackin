@@ -193,10 +193,14 @@ impl WorkdirContext {
         let gh_available = command_in_path("gh");
         // `.git` may be a regular directory (normal checkout) or a
         // file containing `gitdir: …` (worktree / submodule).
-        // `try_exists` covers both. False when `workdir` is not a git
-        // checkout at all — no point probing branch lookups in that
-        // case.
-        let is_git_repo = git_available && workdir.join(".git").try_exists().ok().unwrap_or(false);
+        // `try_exists` covers both. Keep this independent of the
+        // startup `git --version` probe: the hot branch path can read
+        // `.git/HEAD` directly, so a normal checkout can still update
+        // chrome even if the subprocess probe fails or runs before the
+        // shell has expanded PATH.
+        let has_git_metadata = workdir.join(".git").try_exists().ok().unwrap_or(false);
+        let is_git_repo =
+            has_git_metadata || (git_available && workdir_is_inside_git_tree(workdir));
         let default_branch = if is_git_repo {
             resolve_default_branch(workdir)
         } else {
@@ -251,6 +255,15 @@ fn resolve_default_branch(workdir: &Path) -> Option<String> {
         .args(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
     let raw = command_stdout_trimmed_with_timeout(&mut cmd, GIT_CONTEXT_COMMAND_TIMEOUT)?;
     raw.strip_prefix("origin/").map(|s| s.to_string())
+}
+
+fn workdir_is_inside_git_tree(workdir: &Path) -> bool {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(workdir)
+        .args(["rev-parse", "--is-inside-work-tree"]);
+    command_stdout_trimmed_with_timeout(&mut cmd, GIT_CONTEXT_COMMAND_TIMEOUT)
+        .is_some_and(|value| value == "true")
 }
 
 /// Shared shape for the two background context lookups (git branch +
@@ -746,7 +759,7 @@ impl Multiplexer {
     }
 
     fn maybe_spawn_git_branch_context_lookup(&mut self, now: Instant) {
-        if !self.workdir_context.git_available {
+        if !self.workdir_context.git_available && !self.workdir_context.is_git_repo {
             return;
         }
         if self.git_branch_lookup.in_flight {
@@ -3943,11 +3956,8 @@ fn display_title(session: &Session) -> String {
     if session.agent.is_none() {
         return match title {
             Some(title) if title == session.label => session.label.clone(),
-            Some(title) => format!("{} · {title}", session.label),
-            None => cwd.map_or_else(
-                || session.label.clone(),
-                |cwd| format!("{} · {cwd}", session.label),
-            ),
+            Some(title) => title.to_string(),
+            None => cwd.unwrap_or_else(|| session.label.clone()),
         };
     }
 
@@ -5147,11 +5157,19 @@ mod tests {
     }
 
     #[test]
-    fn display_title_keeps_shell_label_with_shell_title() {
+    fn display_title_uses_shell_title_without_repeating_shell_label() {
         let (mut session, _rx) = test_shell_session(20, 80);
         session.feed_pty(b"\x1b]2;prompt title\x07");
 
-        assert_eq!(display_title(&session), "Test · prompt title");
+        assert_eq!(display_title(&session), "prompt title");
+    }
+
+    #[test]
+    fn display_title_uses_shell_cwd_without_repeating_shell_label() {
+        let (mut session, _rx) = test_shell_session(20, 80);
+        session.feed_pty(b"\x1b]7;file:///workspace/project\x07");
+
+        assert_eq!(display_title(&session), "/workspace/project");
     }
 
     #[test]
@@ -5920,6 +5938,18 @@ mod tests {
             read_branch_from_git_head(temp.path()).as_deref(),
             Some("feat/context")
         );
+    }
+
+    #[test]
+    fn workdir_context_recognizes_direct_git_metadata_without_default_branch() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/feat/context\n").unwrap();
+
+        let context = WorkdirContext::resolve(temp.path());
+
+        assert!(context.is_git_repo);
     }
 
     #[test]
