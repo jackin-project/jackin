@@ -134,24 +134,30 @@ Every backend must eventually implement the same high-level jackin' operations:
 
 ## Backend-Neutral Instance Registry
 
-Docker container names cannot remain the source of truth once multiple backend families exist. A future registry should persist:
+Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="src/instance/manifest.rs" /> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
 
 ```text
 instance_id
-backend_kind
-provider_kind
+backend_kind         (docker | orbstack-isolated | smolvm | kubernetes | ...)
+provider_kind        (e.g. "docker-desktop" | "orbstack-context" | "linux-rootful" | "linux-rootless")
 workspace identity or ad-hoc path
 role selector
 agent runtime
 mount materialization handles
 auth/state handles
-backend-specific resource handles
+backend-specific resource handles (tagged union, one shape per backend_kind)
 created_at
 last_seen_at
 cleanup status
 ```
 
-Docker-specific handles, OrbStack machine names, and Kubernetes pod names should be implementation details below that registry.
+Concrete file layout decision:
+
+- Per-instance manifest stays at `~/.jackin/data/<instance>/manifest.json` (current location). The `DockerResources` field becomes `backend_resources: BackendResources` where `BackendResources` is a tagged union — `DockerResources`, `OrbstackResources { machine_name, machine_distro, role_container_name, role_image_ref, ... }`, `SmolvmResources { machine_name, mode, ... }`.
+- A top-level index at `~/.jackin/data/instances.json` (new) lists `{ instance_id, backend_kind, workspace, last_seen_at }` so `jackin inspect` / `jackin list` does not have to walk every per-instance directory. Index is rebuilt from per-instance manifests if missing or stale.
+- `InstanceManifest` is per-instance ephemeral metadata, not a versioned schema in the <RepoFile path="AGENTS.md" /> sense. It does not need a `CURRENT_INSTANCE_VERSION` constant or migration fixtures because it represents live runtime state — operators do not edit it, and old instances die with the runtime they describe. Add a `manifest_version: u32` field anyway so future shape changes can fall back gracefully when a stale instance manifest is read.
+
+Docker-specific handles, OrbStack machine names, Kubernetes pod names, and smolvm machine IDs are tagged-union variants below this registry, not first-class concepts at the registry level.
 
 ## Runtime Capability Contract
 
@@ -218,6 +224,64 @@ Each experiment must answer two questions:
 | [Network egress policy](/reference/roadmap/network-egress-policy/) | Backend-neutral egress config and enforcement-quality reporting. |
 | [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | The operator-visible explanation layer every backend must feed. |
 | [Declarative resource limits](/reference/roadmap/declarative-resource-limits/) | Resource budget schema and backend translators. |
+
+## Backend Selection And `--backend auto`
+
+The `--backend` flag introduces a selection surface jackin' has never had. The precedence rule below is non-negotiable; ambiguity here will produce silent surprises in production launches.
+
+Precedence (highest wins):
+
+1. **CLI flag** — `jackin load … --backend orbstack-isolated`. Operator-explicit always wins over defaults.
+2. **Workspace override** — `[workspaces.X.runtime] backend = "..."` in the workspace config.
+3. **Role manifest hint** — `[runtime] backend_preference = "..."` in `jackin.role.toml` (advisory, not a constraint; the operator can always override).
+4. **Global default** — `[runtime] default_backend = "..."` in `config.toml`. Ships as `"docker"`.
+
+**Role manifests cannot force a backend.** A role can hint that it prefers Docker (because it needs DinD), or hint that it prefers smolvm (because it is Docker-free and faster to boot in a VM), but the operator's CLI or workspace setting always wins. A separate `min_profile` field in the role manifest handles "this role refuses to run under `locked`" — see the [Docker hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) for that vocabulary.
+
+`--backend auto` decision rule (deterministic, must match this exactly):
+
+```text
+1. If JACKIN_BACKEND env var is set, use it.
+2. Else if a workspace override is set, use it.
+3. Else if a global default is set in config.toml, use it.
+4. Else:
+   - macOS host + OrbStack CLI present + orb-isolated supported on installed version
+     → orbstack-isolated
+   - Linux host + KVM available + smolvm CLI present
+     → smolvm (only if [runtime.smolvm] enabled = true; else fall through)
+   - Any host with Docker available
+     → docker (the safe default)
+   - Otherwise: error with "no backend available" and list what was probed.
+```
+
+The probe results and the chosen backend must be reported in the launch contract with one `debug_log!("backend", ...)` line per probe step and one compact line for the final choice. `auto` is never a backend identity at runtime; the launch contract always names the resolved backend (`docker`, `orbstack-isolated`, etc.).
+
+## TUI / Operator Console Surface
+
+Multi-backend changes what `jackin console` shows per instance. Today the per-instance details pane at <RepoFile path="src/console/manager/render/list.rs" /> renders Docker-specific state (container name, network, DinD). The pane needs a backend-aware variant:
+
+```text
+backend:   orbstack-isolated
+provider:  OrbStack 2.1.3
+machine:   jackin-abcd1234 (debian, isolated)
+shares:    3 explicit, 0 read-only enforced at host
+inner:     docker.io 27.x inside machine
+network:   allowlist (4 hosts), partial enforcement
+attach:    orb-exec, vsock-6000
+```
+
+vs the current Docker shape:
+
+```text
+backend:   docker
+provider:  Docker Desktop 27.x on macOS
+role:      jackin-the-architect-abc
+dind:      jackin-dind-abc (privileged, TLS)
+network:   per-agent bridge, open egress
+attach:    docker exec
+```
+
+Per the docs split rules (no on-disk paths in user-facing pages), the operator console must show backend + provider in plain language without exposing internal struct names or `~/.jackin/` paths. This page is the right place to capture the contract; the actual UI labels live with the TUI design decisions doc.
 
 ## Later Provider Research
 

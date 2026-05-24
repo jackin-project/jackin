@@ -30,6 +30,25 @@ Official OrbStack documentation describes:
 
 Important correction: this roadmap item should not call OrbStack isolated machines "microVMs" in jackin' product language. OrbStack itself says machines share a kernel and are not strictly independent VMs. The right label is `orbstack-isolated` or `OrbStack isolated machine backend`.
 
+### Verified CLI surface (May 2026)
+
+A research pass against the OrbStack release notes, settings docs, and the orbstack/orbstack issue tracker established what is documented and what is not. Current stable is **v2.1.3 (May 10, 2026)** per the release notes; v2.1.3 fixed proxy support and rseq compatibility but did not change the isolated-machine surface.
+
+| Flag / capability | Confirmed | Source |
+|---|---|---|
+| `orb create --isolated <distro> <name>` creates an isolated machine | ✅ | [orbstack/orbstack#2409](https://github.com/orbstack/orbstack/issues/2409) (maintainer kdrag0n showed `orbctl create -a arm64 ubuntu:questing isolated-too --isolated --mount ...` invocation) and [v2.1.0 release notes](https://docs.orbstack.dev/release-notes) |
+| Selective shares use `--mount "host_abs_path:container_path"`, repeatable | ✅ | same issue thread (error path "mount source must be an absolute path" confirms the syntax) and [v2.1.1 release notes](https://docs.orbstack.dev/release-notes) |
+| Read-only enforcement at the share layer (`:ro` suffix or equivalent) | ❌ undocumented | Release notes, settings page, file-sharing docs, and issue tracker have no mention. Treat as unsupported until verified with `orb create --help` on an installed 2.1.3 |
+| Network host/machine blocking (v2.1.2 setting) | ⚠️ unspecified CLI | Release notes call it "Added setting to block network connections to host/machines". No documented `orb config set` key. Likely GUI-only as of 2.1.3 |
+| SSH agent forwarding per-machine opt-in (v2.1.2) | ⚠️ unspecified CLI | Release notes describe the opt-in but do not name the flag. Needs `orb create --help` verification |
+| OrbStack auto-update can be disabled | ❌ not possible | [orbstack/orbstack#577](https://github.com/orbstack/orbstack/issues/577) — maintainer kdrag0n: "no plans to allow manually disabling update checks for now." Installing the update is the operator's choice, but the check runs unconditionally |
+| Resource limits per-machine | ❌ global only | [Settings docs](https://docs.orbstack.dev/settings): `orb config set memory_mib` and `orb config set cpu` are documented as global percentages |
+| `orb push` / `orb pull` work on isolated machines | ❌ broken in 2.1.3 | [orbstack/orbstack#2469](https://github.com/orbstack/orbstack/issues/2469) — pull/push route through `/mnt/mac` which isolated machines block. kdrag0n: "Fixed for the next version" (post-2.1.3) |
+| `orb -m <name> <cmd>` PTY / SIGWINCH / detach-key behavior | ❌ undocumented | OrbStack docs page `/machines/` shows the invocation but says nothing about PTY allocation, window-resize forwarding, or detach. No issues mention SIGWINCH or PTY behavior in the orbstack/orbstack tracker. Empirical test required before committing to this as the interactive-session transport |
+| Multi-user / multi-operator on one host | ❌ undocumented | OrbStack is a per-user macOS app; multi-user concurrency is not documented as supported |
+
+The CLI-verified facts shift several design decisions in this roadmap from "research" to "build against" or "block on workaround". See Decided In This Pass and Open Before Implementation Can Start below.
+
 ## Goal
 
 Add an experimental macOS backend that:
@@ -138,17 +157,18 @@ Start with `containerized-role`.
 
 | Option | Flow | Pros | Cons |
 |---|---|---|---|
-| Host build + `docker save`/`orb push` + machine `docker load` | Build with current host Docker, export archive, import inside machine. | Smallest change to existing build path. | Image archives can be large; transfer cost on every rebuild. |
-| Host build + local registry + machine `docker pull` | Push image to a host-local or OrbStack-reachable registry. | Better layer reuse; aligns with future workspace registry cache. | Requires registry lifecycle and network policy design. |
-| Machine-local build | Copy role repo/build context into machine and run Docker build there. | Strongest boundary for build-time code execution. | Slower first implementation; more file-sync complexity. |
+| Host build + `docker save` + stream into machine via `orb -m ... sh -c 'cat > /tmp/img.tar'` + `docker load` | Build with current host Docker, export archive, stream-import inside machine. | Smallest change to existing build path. Avoids the broken `orb push` path on isolated machines. | Image archives can be large; transfer cost on every rebuild. Stream path is awkward but works today. |
+| Host build + `orb push` + machine `docker load` | Build with current host Docker, push tarball, import inside machine. | Simpler than stream. | **Broken on isolated machines in v2.1.3** per [orbstack/orbstack#2469](https://github.com/orbstack/orbstack/issues/2469). Available once OrbStack ships the fix. |
+| Host build + local registry + machine `docker pull` | Push image to a host-local or OrbStack-reachable registry. | Better layer reuse; aligns with future workspace registry cache. | Requires registry lifecycle and network policy design. Registry must be reachable from inside the isolated machine — needs network-block setting awareness. |
+| Machine-local build | Copy role repo/build context into machine and run Docker build there. | Strongest boundary for build-time code execution. | Slower first implementation; more file-sync complexity. Same `orb push` workaround needed for the build context. |
 
 Recommended phased path:
 
-1. V1: host build + image archive import.
-2. V2: workspace registry cache integration for layer reuse.
-3. V3: machine-local builds for roles where build-time isolation matters.
+1. **V1: host build + stream-import** via `docker save <img> | orb -m <machine> sh -c 'cat > /tmp/img.tar && docker load -i /tmp/img.tar && rm /tmp/img.tar'`. Works today on v2.1.3. Latency cost: full image archive transferred per rebuild. Acceptance budget: **first-launch import under 60 s for a typical 1.5-2 GB role image; subsequent reattach should not re-import**.
+2. **V2: workspace registry cache integration** for layer reuse once [Workspace registry cache](/reference/roadmap/workspace-registry-cache/) lands. Image transfer cost should drop to changed layers only.
+3. **V3: machine-local builds** for roles where build-time isolation matters. Build context still needs the stream workaround until `orb push` is fixed for isolated machines.
 
-This is intentionally honest: V1 improves runtime isolation but still trusts the host build path to execute role Dockerfiles.
+V1 is intentionally honest: runtime isolation improves but the host build path still executes role Dockerfiles, and the stream-import path is awkward enough that operators should expect noticeable first-launch latency. Document both honestly in the launch contract.
 
 ## Machine Provisioning
 
@@ -172,11 +192,11 @@ OrbStack isolated machines are useful only if jackin' uses selective file sharin
 
 Design requirements:
 
-- Every workspace/global mount must become an explicit machine share.
-- Read-only workspace mounts should remain read-only if OrbStack share controls expose that; otherwise the backend must report degraded enforcement and may need to enforce read-only at the inner Docker layer.
-- Mount destination control remains a jackin' feature. If OrbStack can only expose a host path at the same path, jackin' must map that path into the role container at the requested `dst`.
+- Every workspace/global mount must become an explicit machine share (`orb create --isolated <name> --mount "<host_abs_path>:<container_path>"`, repeatable).
+- **Read-only enforcement at the share layer is unconfirmed.** The OrbStack docs and release notes are silent on a `:ro` modifier for `--mount`. Until verified on a real 2.1.3 install, jackin' must enforce read-only at the inner Docker layer (`docker run -v src:dst:ro`) and report enforcement as `guest-enforced` in the launch contract. If OrbStack adds host-layer enforcement later, the contract upgrades to `host-enforced`.
+- Mount destination control remains a jackin' feature. OrbStack's `--mount "host_abs:container_path"` allows a different container-side path, so jackin' can map at the requested `dst` directly.
 - Sensitive mount warnings still apply before launch.
-- Worktree/clone isolation still materializes on the host first unless a later phase moves that into the machine.
+- Worktree/clone isolation materializes on the host first today. The machine share then exposes the materialized worktree path. **Tension**: an isolated-machine premise of "only declared shares" is partly defeated if the worktree's host-side directory leaks structural information (sibling directories, parent path). Resolution: jackin' should materialize worktrees inside `~/.jackin/data/<instance>/worktrees/` (already the convention) and only share that specific subdirectory, not its parents. Moving worktree materialization inside the machine (V3+) tightens this further.
 
 Potential path model:
 
@@ -361,15 +381,61 @@ The "shared-kernel" line is important. It avoids using microVM language for a ba
 - Reuse provisioned base machines if doing so does not blur containment.
 - Add disk/resource visibility to the console resource panel.
 
-## Open Questions
+## Telemetry Surface
 
-1. Does OrbStack expose selective isolated-machine shares and host/machine network blocking through stable CLI flags, config files, or only UI settings?
-2. Should V1 build role images on host Docker, or is build-time role code execution important enough to require machine-local builds from the start?
-3. Should the backend use one machine per jackin' instance or one machine per workspace?
-4. Can Docker rootless inside an OrbStack isolated machine support the common role workflows, or should V1 use rootful machine-local Docker?
-5. How should jackin' attach to capsule: `orb -m ... docker exec`, SSH, or a forwarded Unix/TCP control channel?
-6. Can read-only mount intent be enforced at the OrbStack share layer, or only at the inner Docker layer?
-7. How should imported role images and machine Docker state be pruned without deleting operator-created machine content?
+Backend operations should emit `debug_log!("orbstack", …)` (the existing macro in <RepoFile path="src/tui/mod.rs" />) so the firehose under `JACKIN_DEBUG=1` reconstructs the full machine lifecycle. Minimum required lines:
+
+- `orbstack version=<orb --version> isolated_supported=<yes|no>` (probed at launch)
+- `machine_create name=<name> distro=<distro> isolated=<yes|no> shares=<count>`
+- `machine_share host=<abs_path> guest=<path> mode=<rw|ro> enforcement=<host|guest>`
+- `cloud_init source=<path> bytes=<n>`
+- `image_transfer mode=<stream|orb-push|registry> bytes=<n> elapsed_ms=<n>`
+- `inner_docker installed=<yes|no> version=<v>`
+- `network_block host_machines=<on|off|unknown>` (when CLI control becomes available)
+- `ssh_agent_forward=<on|off>`
+- `attach transport=<orb-exec|ssh|tunnel> pty=<yes|no>`
+- `machine_state action=<stop|delete|gc> result=<ok|failure> reason=<…>`
+
+Compact line per launch (future `clog!` tier):
+
+```text
+orbstack launch machine=jackin-<id> isolated=yes shares=3 inner_docker=yes block_host_network=on image_import_ms=44230
+```
+
+## Schema Migration Footprint
+
+This backend introduces these versioned-config additions; each lands with a `CURRENT_*_VERSION` bump per <RepoFile path="AGENTS.md" />:
+
+| Surface | File kind | Type touched | Action |
+|---|---|---|---|
+| `[runtime.orbstack] enabled / default_distro / require_isolated / block_host_network / ssh_agent` | `config.toml` | `AppConfig` | bump `CURRENT_CONFIG_VERSION`, add fixture under `tests/fixtures/migrations/config/from-<predecessor>/`. |
+| `[workspaces.X.runtime] backend = "orbstack-isolated"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bump `CURRENT_WORKSPACE_VERSION`. |
+| `[runtime.docker] requires_inner_engine = false` (shared with hardening contract) | `jackin.role.toml` | `RoleManifest` | bump `CURRENT_MANIFEST_VERSION`. |
+
+All three are additive. The instance manifest at <RepoFile path="src/instance/manifest.rs" /> also needs a `backend_kind`/`provider_kind` axis split, which is per-instance metadata (not a versioned schema in the AGENTS.md sense) but still needs a forward-compatible default for existing Docker-only instances.
+
+## Decided In This Pass
+
+- Backend name is `orbstack-isolated`, not `microvm-orbstack` (OrbStack documents shared-kernel architecture).
+- One machine per jackin' instance for V1 (easier cleanup and containment than per-workspace).
+- V1 image flow: host build + `docker save | orb -m <name> sh -c 'cat > /tmp/img.tar && docker load && rm'`. Avoids broken `orb push` on isolated machines.
+- Mount transport: `--mount "host_abs:container_path"`. Read-only enforced at the inner Docker layer (`-v src:dst:ro`) and reported as `guest-enforced` until OrbStack documents share-layer enforcement.
+- SSH agent forwarding default `off`; `block_host_network` default `on` once the CLI surface is verified (until then, GUI-set only).
+- Inner Docker engine: distro `docker.io` package via cloud-init for V1; rootless Docker is a V2+ research item.
+- Acceptance: first-launch image import under 60 s for ~1.5-2 GB images; reattach must not re-import.
+- Worktree materialization stays at `~/.jackin/data/<instance>/worktrees/` on the host; only that specific directory is shared into the machine — sibling/parent directories are not exposed.
+
+## Open Before Implementation Can Start
+
+These need answers before Phase 1 code work begins. Several can be resolved in under an hour with an OrbStack 2.1.3 install:
+
+1. **`orb create --help` and `orb config --help` verification** (under 5 minutes on a real install): confirm the exact flag names for `--mount` ro modifier (if any), SSH agent forwarding opt-in, and the `block_host_network` config key. Until verified, the design has to assume each is GUI-only.
+2. **`orb -m <name> <cmd>` PTY behavior** (under 30 minutes empirical test): does `orb exec` allocate a real PTY? Does it forward SIGWINCH on terminal resize? Does Ctrl+P,Q detach pass through, or get consumed by `orb`? This is the make-or-break UX question for using `orb exec` as the attach transport. If PTY behavior is broken or partial, fall back to SSH tunneling.
+3. **Attach transport decision** (depends on PTY answer): `orb -m ... docker exec`, SSH into the machine + `docker exec`, or a forwarded Unix/TCP control channel for jackin-capsule. SSH gives the most control but adds a `sshd` requirement to the cloud-init.
+4. **Image-import latency budget on real hardware**: measure 60 s acceptance against a typical role image on an M-series Mac with v2.1.3 stream-import. If the budget fails, V2 (registry cache) becomes a precondition for shipping rather than a follow-up.
+5. **OrbStack auto-update mid-session behavior**: not documented. Empirical test: trigger an in-app update while a jackin' machine is running. Document what happens (machine pause, kill, survive) and add a launch-time `clog!` warning if a pending update is detected.
+6. **GC of orphaned machines**: design the failure-mode GC. If `purge` is interrupted, does the next `jackin inspect` discover and offer to clean orphaned `jackin-<id>` machines via `orb list`?
+7. **Per-arch role image strategy**: if a role image is amd64-only and the operator is on Apple Silicon, OrbStack runs it under Rosetta or Linux/aarch64 emulation. Decide whether jackin' warns, refuses, or transparently uses Rosetta.
 
 ## Risks and Design Traps
 
