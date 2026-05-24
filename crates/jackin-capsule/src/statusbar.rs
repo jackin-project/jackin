@@ -51,9 +51,9 @@ const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waitin
 const BOLD: &str = "\x1b[1m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
-const BUTTON_BG_IDLE: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK
+const BUTTON_BG_IDLE: &str = "\x1b[48;2;18;70;130m"; // restrained blue
 const BUTTON_FG_IDLE: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const BUTTON_BG_AWAITING: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN
+const BUTTON_BG_AWAITING: &str = "\x1b[48;2;96;180;255m"; // active blue
 const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
 const RESET: &str = "\x1b[0m";
 
@@ -266,7 +266,7 @@ impl StatusBar {
 
     fn button_text(&self) -> String {
         match self.prefix_mode {
-            PrefixMode::Idle => " ☰ Menu ".to_string(),
+            PrefixMode::Idle => "☰ Menu".to_string(),
             PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
@@ -531,9 +531,14 @@ mod tests {
         bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("☰ Menu"), "menu hint missing: {s:?}");
+        assert!(!s.contains("☰  Menu"), "menu hint spacing drifted: {s:?}");
         assert!(
             !s.contains("Ctrl+\\"),
             "menu hint should omit shortcut: {s:?}"
+        );
+        assert!(
+            s.contains(BUTTON_BG_IDLE),
+            "menu hint should use blue button chrome: {s:?}"
         );
         assert!(bar.hint_at(1, 75), "menu hint should be clickable");
     }
@@ -546,6 +551,10 @@ mod tests {
         bar.render(&mut buf, 80, &[], 0, &[], None);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("prefix…"), "prefix hint missing: {s:?}");
+        assert!(
+            s.contains(BUTTON_BG_AWAITING),
+            "awaiting prefix hint should use active blue chrome: {s:?}"
+        );
     }
 
     #[test]
