@@ -1,4 +1,4 @@
-use std::{collections::HashMap, process::Command};
+use std::{collections::HashMap, ffi::OsStr, process::Command, sync::OnceLock};
 
 use anyhow::Context;
 use bollard::Docker;
@@ -142,39 +142,122 @@ impl BollardDockerClient {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ConnectionChoice {
+    Defaults,
+    Host(String),
+}
+
+impl ConnectionChoice {
+    /// Collapses the empty/whitespace-only host invariant into a single place:
+    /// even if a caller forwards an unfiltered string, an effectively empty host
+    /// can never reach `Docker::connect_with_host("")`.
+    fn host(value: String) -> Self {
+        if value.trim().is_empty() {
+            Self::Defaults
+        } else {
+            Self::Host(value)
+        }
+    }
+}
+
+/// Deliberately uses `std::process::Command` instead of `ShellRunner::capture`:
+/// `connect()` is sync and called before any tokio runtime exists
+/// (`src/app/mod.rs:1703` runs inside `std::thread::scope`), while `ShellRunner`
+/// wraps `tokio::process::Command`.
 fn connect_to_cli_docker_context() -> Result<Docker, bollard::errors::Error> {
-    if std::env::var_os("DOCKER_HOST").is_some() {
-        return Docker::connect_with_defaults();
+    let env_set = docker_host_env_is_set();
+    // Skip the subprocess when DOCKER_HOST already wins per Docker CLI precedence.
+    let ctx_host = if env_set { None } else { cached_context_host() };
+    match choose_connection(env_set, ctx_host) {
+        ConnectionChoice::Defaults => Docker::connect_with_defaults(),
+        ConnectionChoice::Host(host) => {
+            crate::debug_log!("docker", "connect context host {host}");
+            Docker::connect_with_host(&host)
+        }
     }
+}
 
-    if let Some(host) = active_docker_context_host() {
-        crate::debug_log!("docker", "connect context host {host}");
-        return Docker::connect_with_host(&host);
+fn choose_connection(docker_host_env_set: bool, ctx_host: Option<String>) -> ConnectionChoice {
+    if docker_host_env_set {
+        return ConnectionChoice::Defaults;
     }
+    ctx_host.map_or(ConnectionChoice::Defaults, ConnectionChoice::host)
+}
 
-    Docker::connect_with_defaults()
+fn docker_host_env_is_set() -> bool {
+    docker_host_env_is_set_from(std::env::var_os("DOCKER_HOST").as_deref())
+}
+
+/// Docker CLI treats an empty `DOCKER_HOST=` as unset and falls through to the
+/// active context. Match that here so an empty value still consults `docker context inspect`.
+fn docker_host_env_is_set_from(value: Option<&OsStr>) -> bool {
+    value.is_some_and(|v| !v.is_empty())
+}
+
+/// Active Docker CLI context cannot change mid-process (`DOCKER_CONTEXT` and
+/// `currentContext` are both read once at startup), so cache the
+/// `docker context inspect` result across repeated `connect()` calls
+/// (the console drift checks at `console/manager/input/save.rs` connect on each save).
+fn cached_context_host() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE.get_or_init(active_docker_context_host).clone()
 }
 
 fn active_docker_context_host() -> Option<String> {
-    let output = Command::new("docker")
-        .args([
-            "context",
-            "inspect",
-            "--format",
-            "{{json .Endpoints.docker.Host}}",
-        ])
-        .output()
-        .ok()?;
+    let mut cmd = Command::new("docker");
+    cmd.args([
+        "context",
+        "inspect",
+        "--format",
+        "{{json .Endpoints.docker.Host}}",
+    ]);
+    // Belt-and-suspenders: `docker context inspect` already resolves the current
+    // context via Docker CLI's `DOCKER_CONTEXT` lookup, but pinning the arg makes
+    // the resolution explicit and survives any future CLI behaviour drift.
+    if let Some(ctx) = std::env::var("DOCKER_CONTEXT")
+        .ok()
+        .filter(|v| !v.is_empty())
+    {
+        cmd.arg(ctx);
+    }
+    let output = match cmd.output() {
+        Ok(output) => output,
+        Err(err) => {
+            crate::debug_log!("docker", "context inspect spawn failed: {err}");
+            return None;
+        }
+    };
     if !output.status.success() {
+        crate::debug_log!(
+            "docker",
+            "context inspect exit={:?} stderr={}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
         return None;
     }
     parse_docker_context_host(&output.stdout)
 }
 
 fn parse_docker_context_host(stdout: &[u8]) -> Option<String> {
-    let host: String = serde_json::from_slice(stdout).ok()?;
+    let host: String = match serde_json::from_slice(stdout) {
+        Ok(host) => host,
+        Err(err) => {
+            crate::debug_log!(
+                "docker",
+                "context inspect json parse failed: {err} stdout={}",
+                String::from_utf8_lossy(stdout).trim()
+            );
+            return None;
+        }
+    };
     let host = host.trim();
-    (!host.is_empty()).then(|| host.to_string())
+    if host.is_empty() {
+        crate::debug_log!("docker", "context inspect produced empty host");
+        return None;
+    }
+    Some(host.to_string())
 }
 
 const fn is_http_status(err: &bollard::errors::Error, code: u16) -> bool {
@@ -836,6 +919,79 @@ mod tests {
         assert_eq!(
             parse_docker_context_host(b"unix:///var/run/docker.sock"),
             None
+        );
+    }
+
+    #[test]
+    fn parse_docker_context_host_rejects_whitespace_only_string() {
+        assert_eq!(parse_docker_context_host(b"\"   \""), None);
+    }
+
+    #[test]
+    fn parse_docker_context_host_rejects_malformed_json() {
+        assert_eq!(parse_docker_context_host(b"\"abc"), None);
+        assert_eq!(parse_docker_context_host(b""), None);
+    }
+
+    #[test]
+    fn choose_connection_env_only_returns_defaults() {
+        assert_eq!(choose_connection(true, None), ConnectionChoice::Defaults);
+    }
+
+    #[test]
+    fn choose_connection_env_overrides_context() {
+        assert_eq!(
+            choose_connection(true, Some("unix:///ignored".to_string())),
+            ConnectionChoice::Defaults
+        );
+    }
+
+    #[test]
+    fn choose_connection_uses_context_when_env_unset() {
+        assert_eq!(
+            choose_connection(false, Some("unix:///ctx".to_string())),
+            ConnectionChoice::Host("unix:///ctx".to_string())
+        );
+    }
+
+    #[test]
+    fn choose_connection_falls_back_to_defaults_when_no_context() {
+        assert_eq!(choose_connection(false, None), ConnectionChoice::Defaults);
+    }
+
+    #[test]
+    fn docker_host_env_is_set_from_recognises_unset_and_empty_as_unset() {
+        assert!(!docker_host_env_is_set_from(None));
+        assert!(!docker_host_env_is_set_from(Some(OsStr::new(""))));
+    }
+
+    #[test]
+    fn docker_host_env_is_set_from_recognises_non_empty_as_set() {
+        assert!(docker_host_env_is_set_from(Some(OsStr::new(
+            "tcp://127.0.0.1:2375"
+        ))));
+        assert!(docker_host_env_is_set_from(Some(OsStr::new(
+            "unix:///var/run/docker.sock"
+        ))));
+    }
+
+    #[test]
+    fn connection_choice_host_maps_blank_strings_to_defaults() {
+        assert_eq!(
+            ConnectionChoice::host(String::new()),
+            ConnectionChoice::Defaults
+        );
+        assert_eq!(
+            ConnectionChoice::host("   ".to_string()),
+            ConnectionChoice::Defaults
+        );
+    }
+
+    #[test]
+    fn connection_choice_host_preserves_non_blank_strings() {
+        assert_eq!(
+            ConnectionChoice::host("unix:///ctx".to_string()),
+            ConnectionChoice::Host("unix:///ctx".to_string())
         );
     }
 
