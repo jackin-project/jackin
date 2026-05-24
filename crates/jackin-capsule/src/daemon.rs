@@ -740,7 +740,7 @@ impl Multiplexer {
     }
 
     fn maybe_spawn_git_branch_context_lookup(&mut self, now: Instant) {
-        if !self.workdir_context.is_git_repo {
+        if !self.workdir_context.git_available {
             return;
         }
         if self.git_branch_lookup.in_flight {
@@ -764,7 +764,7 @@ impl Multiplexer {
     }
 
     fn maybe_spawn_pull_request_context_lookup(&mut self, now: Instant) {
-        if !self.workdir_context.gh_available || !self.workdir_context.is_git_repo {
+        if !self.workdir_context.gh_available {
             return;
         }
         if self.pull_request_lookup.in_flight {
@@ -851,6 +851,10 @@ impl Multiplexer {
         }
         let old_pull_request = self.pull_request_context.clone();
         self.pull_request_context_branch = branch.clone();
+        if branch.is_some() && !self.workdir_context.is_git_repo {
+            self.workdir_context.is_git_repo = true;
+            self.workdir_context.default_branch = resolve_default_branch(&self.workdir);
+        }
         self.pull_request_context = branch
             .as_deref()
             .and_then(|branch| self.cached_pull_request_for_branch(branch, now));
@@ -5220,6 +5224,23 @@ mod tests {
     }
 
     #[test]
+    fn git_branch_context_recognizes_repo_after_startup() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.workdir_context.is_git_repo = false;
+        mux.workdir_context.gh_available = false;
+
+        assert!(mux.apply_git_branch_context(Some("feat/capsule-pr-context-bar".to_string()), now));
+
+        assert!(mux.workdir_context.is_git_repo);
+        assert_eq!(
+            mux.context_bar_branch(),
+            Some("feat/capsule-pr-context-bar")
+        );
+        assert!(mux.pull_request_context.is_none());
+    }
+
+    #[test]
     fn apply_pull_request_context_loaded_drops_stale_request() {
         let mut mux = test_mux(24, 100);
         mux.pull_request_lookup.request_id = 5;
@@ -5295,6 +5316,7 @@ mod tests {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
         mux.pull_request_context_branch = Some("feat/a".to_string());
+        mux.workdir_context.gh_available = false;
         let id_before = mux.pull_request_lookup.request_id;
         let _ = mux.apply_git_branch_context(Some("feat/b".to_string()), now);
         assert_eq!(
