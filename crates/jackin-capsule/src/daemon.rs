@@ -1551,10 +1551,11 @@ impl Multiplexer {
                 // get the same cursor-key fallback a terminal normally
                 // provides when the app owns the interaction but not
                 // the mouse. Primary-screen panes without mouse reporting
-                // fall back to the scrollback owned by jackin' so raw
-                // SGR bytes never surface as prompt garbage, including
-                // agent panes such as Codex that render a transcript in
-                // the primary grid.
+                // first use scrollback owned by jackin'. Agent panes
+                // such as Codex can also render a TUI-like transcript
+                // in the primary grid without leaving vt100 scrollback;
+                // when that scrollback is empty, send cursor fallback
+                // keys instead of eating the wheel.
                 // Dialog overlay swallows the wheel so background
                 // pane scrollback does not move while the operator is
                 // interacting with the modal.
@@ -1592,14 +1593,33 @@ impl Multiplexer {
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
                 {
+                    let filled = session.scrollback_filled();
+                    if filled == 0
+                        && session.agent.is_some()
+                        && let Some(buf) = encode_wheel_cursor_fallback(session, button)
+                    {
+                        crate::cdebug!(
+                            "wheel dispatch: primary-agent-cursor-fallback session={} agent={:?} row={} col={} button={} scrollback_filled={} bytes={:02x?}",
+                            focused,
+                            session.agent,
+                            row,
+                            col,
+                            button,
+                            filled,
+                            buf
+                        );
+                        session.send_input(&buf);
+                        return None;
+                    }
                     crate::cdebug!(
-                        "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={}",
+                        "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={} filled={}",
                         focused,
                         row,
                         col,
                         button,
                         delta,
-                        session.scrollback_offset
+                        session.scrollback_offset,
+                        filled
                     );
                     session.scroll_by(delta);
                     crate::cdebug!(
@@ -3560,14 +3580,51 @@ impl PaneScrollbar {
 }
 
 fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16) -> PaneScrollbar {
+    let filled = session.scrollback_filled();
     let scrollbar = PaneScrollbar {
         offset: session.scrollback_offset,
-        filled: session.scrollback_filled(),
+        filled,
     };
-    if scrollbar.visible()
-        || !pane_owns_scroll_affordance(session)
-        || !screen_has_scroll_affordance(session.screen(), viewport_rows, viewport_cols)
+    let owns_affordance = pane_owns_scroll_affordance(session);
+    let needs_synthetic = !scrollbar.visible() && owns_affordance;
+    let metrics = if needs_synthetic || crate::logging::debug_enabled() {
+        screen_scroll_affordance_metrics(session.screen(), viewport_rows, viewport_cols)
+    } else {
+        None
+    };
+    let synthetic_reason = if scrollbar.visible() || !owns_affordance {
+        None
+    } else if metrics
+        .as_ref()
+        .is_some_and(screen_metrics_have_scroll_affordance)
     {
+        Some("occupied-grid")
+    } else if metrics
+        .as_ref()
+        .is_some_and(|metrics| agent_cursor_suggests_scroll_affordance(session, metrics))
+    {
+        Some("agent-cursor-floor")
+    } else {
+        None
+    };
+    crate::cdebug!(
+        "scrollbar decision: agent={:?} alt_screen={} mouse_enabled={} viewport={}x{} screen={}x{} cursor={}x{} occupied_rows={} scrollback_filled={} visible={} owns_affordance={} synthetic_reason={}",
+        session.agent,
+        session.screen().alternate_screen(),
+        session.mouse_enabled(),
+        viewport_rows,
+        viewport_cols,
+        metrics.as_ref().map_or(0, |m| m.screen_rows),
+        metrics.as_ref().map_or(0, |m| m.screen_cols),
+        metrics.as_ref().map_or(0, |m| m.cursor_row),
+        metrics.as_ref().map_or(0, |m| m.cursor_col),
+        metrics.as_ref().map_or(0, |m| m.occupied_rows),
+        filled,
+        scrollbar.visible() || synthetic_reason.is_some(),
+        owns_affordance,
+        synthetic_reason.unwrap_or("none")
+    );
+    if scrollbar.visible() || synthetic_reason.is_none() {
         return scrollbar;
     }
 
@@ -3581,23 +3638,55 @@ fn pane_owns_scroll_affordance(session: &Session) -> bool {
     session.agent.is_some() || session.screen().alternate_screen() || session.mouse_enabled()
 }
 
-fn screen_has_scroll_affordance(
+struct ScrollAffordanceMetrics {
+    screen_rows: u16,
+    screen_cols: u16,
+    rows: u16,
+    cursor_row: u16,
+    cursor_col: u16,
+    occupied_rows: usize,
+}
+
+fn screen_scroll_affordance_metrics(
     screen: &vt100::Screen,
     viewport_rows: u16,
     viewport_cols: u16,
-) -> bool {
+) -> Option<ScrollAffordanceMetrics> {
     let (screen_rows, screen_cols) = screen.size();
     let rows = viewport_rows.min(screen_rows);
     let cols = viewport_cols.min(screen_cols);
     if rows == 0 || cols == 0 {
-        return false;
+        return None;
     }
 
     let occupied_rows = (0..rows)
         .filter(|&row| (0..cols).any(|col| screen.cell(row, col).is_some_and(|c| c.has_contents())))
         .count();
+    let (cursor_row, cursor_col) = screen.cursor_position();
 
-    occupied_rows >= usize::from(rows.saturating_sub(1).max(1))
+    Some(ScrollAffordanceMetrics {
+        screen_rows,
+        screen_cols,
+        rows,
+        cursor_row,
+        cursor_col,
+        occupied_rows,
+    })
+}
+
+fn screen_metrics_have_scroll_affordance(metrics: &ScrollAffordanceMetrics) -> bool {
+    metrics.occupied_rows >= usize::from(metrics.rows.saturating_sub(1).max(1))
+}
+
+fn agent_cursor_suggests_scroll_affordance(
+    session: &Session,
+    metrics: &ScrollAffordanceMetrics,
+) -> bool {
+    session.agent.is_some()
+        && !session.screen().alternate_screen()
+        && !session.mouse_enabled()
+        && metrics.occupied_rows > 0
+        && metrics.cursor_row >= metrics.rows.saturating_sub(2)
 }
 
 /// SGR mouse wheel events set bit 6 of the button byte. Every value in
@@ -4121,6 +4210,33 @@ mod tests {
     }
 
     #[test]
+    fn wheel_falls_back_to_agent_when_primary_screen_has_no_scrollback() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, mut input_rx) = test_session(20, 78);
+        session.feed_pty(b"\x1b[20;1Hcodex prompt");
+        assert_eq!(session.scrollback_filled(), 0);
+        mux.sessions.insert(1, session);
+
+        let redraw = mux.handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+
+        assert!(
+            redraw.is_none(),
+            "primary-screen agents without vt100 scrollback should receive wheel fallback"
+        );
+        assert_eq!(
+            input_rx
+                .try_recv()
+                .expect("wheel fallback should reach agent"),
+            b"\x1b[A\x1b[A\x1b[A"
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
     fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
         let mut mux = single_pane_tab_mux();
         let (mut session, mut input_rx) = test_shell_session(20, 78);
@@ -4221,6 +4337,27 @@ mod tests {
         assert!(
             rendered.contains('█'),
             "focused primary-screen agent with a full grid should draw a scrollbar thumb"
+        );
+    }
+
+    #[test]
+    fn primary_screen_agent_draws_scroll_affordance_when_cursor_reaches_floor() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, _input_rx) = test_session(8, 20);
+        session.feed_pty(b"\x1b[8;1Hcodex prompt");
+        assert_eq!(session.scrollback_filled(), 0);
+        mux.sessions.insert(1, session);
+
+        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        let rendered = String::from_utf8_lossy(&frame);
+
+        assert!(
+            rendered.contains("\x1b[0;38;2;0;255;65m"),
+            "focused primary-screen agent with cursor at the floor should use green chrome"
+        );
+        assert!(
+            rendered.contains('█'),
+            "focused primary-screen agent with cursor at the floor should draw a scrollbar thumb"
         );
     }
 
