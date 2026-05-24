@@ -14,6 +14,7 @@ This roadmap item captures the proposed terminal-native identity. It should beco
 ## Research Inputs
 
 - The live site at [jackin.tailrocks.com](https://jackin.tailrocks.com/) already has the right world: dark terminal surfaces, phosphor green, digital rain, the Operator/Construct vocabulary, and copy centered on the boundary between host and agent. The brand work should sharpen those signals, not replace them with a generic SaaS mark.
+- The [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) roadmap is the product-surface foundation for future launch work. It defines the compact launch cockpit, stage vocabulary, digital-rain lifecycle, diagnostics boundary, and shared `jackin load` / console launch visualization. Brand identity work should layer onto that surface after it lands; it must not redesign or displace the launch experience.
 - GitHub says the README is often the first thing a repository visitor sees and supports relative image paths that resolve per branch. That makes a committed README hero banner a high-value brand surface, not decoration: it can carry the same lockup and frozen-rain treatment as the website without remote asset dependencies.
 - Mature brand systems separate a wordmark, iconmark, product/partner lockups, clear-space rules, typography, and color. Ory's public brand guidelines are a useful software-company reference because they explicitly define wordmark/iconmark roles, clear space, product lockups, and a technical typography split.
 - Textless marks usually earn recognition over time. Even Apple, Nike, and Mastercard-style logo shorthand started or lived alongside a word/name lockup until the mark alone carried enough memory. jackin❯ should therefore ship a wordmark/lockup first, then let `j❯` become the standalone sigil as repeated terminal exposure builds recognition.
@@ -77,6 +78,12 @@ TERMINAL
 ```
 
 The exact website composition is still open. The invariant is that the large visual mark, the README hero, the favicon, and the shell prompt must be recognizably the same inline `j❯` object at different levels of detail.
+
+## Launch Surface Relationship
+
+The brand identity system is sequenced after the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) work. Launch progress owns the operator's live launch experience: compact stage layout, identity panel, diagnostics handle, failure dialog rules, reduced-motion behavior, and the boundary-rain lifecycle. Branding should supply the mark, color tokens, wordmark/byline rules, prompt sigil, static help/README/OG treatments, and reusable visual assets on top of that foundation.
+
+The implementation must not turn the launch cockpit into a logo splash, marketing hero, full-screen brand animation, or generic digital-rain scene. In live launch flows, brand changes are limited to consistent wordmark/sigil rendering, phosphor token alignment, and any launch-progress-approved rain strip or hardline motif. The launch TUI remains operational first: stages, status, diagnostics, and failure clarity outrank brand decoration.
 
 ## Candidate Directions
 
@@ -201,7 +208,7 @@ j❯ Building derived image         OK
 
 The `j` and agent name use the terminal default foreground. The chevron uses phosphor green or the user's terminal-theme green when the terminal exposes one. For boxes and progress, Unicode box-drawing characters and block characters are preferred, with `--no-unicode` as the explicit fallback path.
 
-The shared Clap `--help` banner should use frozen brand rain, not animation. The rain field should be built from the brand vocabulary (`j`, `a`, `c`, `k`, `i`, `n`, `❯`, and the box/block drawing glyphs the CLI already uses) and should frame the `jackin❯` / `by tailrocks` lockup without overwhelming the command list. This is the static equivalent of the interactive digital rain already used in TUI launch/exit moments: recognizably jackin❯, but still copyable terminal text.
+The shared Clap `--help` banner should use frozen brand rain, not animation. The rain field should be built from the brand vocabulary (`j`, `a`, `c`, `k`, `i`, `n`, `❯`, and the box/block drawing glyphs the CLI already uses) and should frame the `jackin❯` / `by tailrocks` lockup without overwhelming the command list. This is a static documentation/help surface, not the live launch progress rain. The live launch rain behavior remains owned by the Launch Progress TUI lifecycle.
 
 The optional first-run or `--version` banner may use a short ASCII wordmark with a right-side green chevron rail, but it must stay under six lines and must not appear on routine command output.
 
@@ -250,14 +257,15 @@ After the rebrand lands, prose should use the new wordmark where rich text relia
 ## Implementation Plan
 
 1. Research and sketch: prototype the candidate directions above as terminal text, website SVG/HTML, favicon-size raster previews, and README/OG-size static banners.
-2. Choose the system: decide which direction owns the standalone website/icon mark, which owns the prompt, and which owns environmental treatments such as frozen rain.
-3. Freeze the final spec: confirm the mark, chevron character, colors, typography, prohibited treatments, prompt shape, byline lockup, and asset list.
-4. Update repository rules and published docs together: agent spelling policy, README, docs navigation, landing page, public docs references, and any user-facing pages that describe the product name or terminal output.
-5. Run the global brand text sweep: find every prose occurrence of `jackin'`, `Jackin`, `Jackin'`, and `JACKIN` and replace product/project mentions with `jackin❯`. Use `jackin>` only after confirming the target surface cannot render `❯`. Do not rewrite literal commands, code identifiers, paths, package names, env vars, URLs, or examples where the operator must type `jackin`.
-6. Replace docs/site visual assets: Starlight title, landing hero, README hero banner, favicons, app/PWA icons, Open Graph card, and any social-card generation code.
-7. Update CLI and terminal output: frozen `--help` banner, version/splash treatment, jackin-owned status prefixes, Capsule chrome, prompt setup inside role containers, and tests for ANSI color output where practical.
-8. Update package/distribution surfaces: Homebrew metadata, release artifacts, GitHub social preview, and any future desktop/mobile icon source files.
-9. Sweep old assets and screenshots: remove or replace apostrophe-era images, stale docs snippets, and vendor-facing material. Do not leave both brands active except inside historical changelog/release context after the first release.
+2. Align with the Launch Progress TUI: treat its launch cockpit, rain lifecycle, stage vocabulary, diagnostics model, and reduced-motion behavior as the live launch surface the brand must fit into rather than replace.
+3. Choose the system: decide which direction owns the standalone website/icon mark, which owns the prompt, and which owns environmental treatments such as frozen rain.
+4. Freeze the final spec: confirm the mark, chevron character, colors, typography, prohibited treatments, prompt shape, byline lockup, and asset list.
+5. Update repository rules and published docs together: agent spelling policy, README, docs navigation, landing page, public docs references, and any user-facing pages that describe the product name or terminal output.
+6. Run the global brand text sweep: find every prose occurrence of `jackin'`, `Jackin`, `Jackin'`, and `JACKIN` and replace product/project mentions with `jackin❯`. Use `jackin>` only after confirming the target surface cannot render `❯`. Do not rewrite literal commands, code identifiers, paths, package names, env vars, URLs, or examples where the operator must type `jackin`.
+7. Replace docs/site visual assets: Starlight title, landing hero, README hero banner, favicons, app/PWA icons, Open Graph card, and any social-card generation code.
+8. Update CLI and terminal output: frozen `--help` banner, version/splash treatment, jackin-owned status prefixes, Capsule chrome, prompt setup inside role containers, and tests for ANSI color output where practical.
+9. Update package/distribution surfaces: Homebrew metadata, release artifacts, GitHub social preview, and any future desktop/mobile icon source files.
+10. Sweep old assets and screenshots: remove or replace apostrophe-era images, stale docs snippets, and vendor-facing material. Do not leave both brands active except inside historical changelog/release context after the first release.
 
 ## Host-Side Effects
 
@@ -275,6 +283,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 - Public docs, README, docs chrome, landing page, favicons, Open Graph assets, and CLI-visible surfaces agree on the same wordmark and monogram.
 - At least three candidate directions have been sketched across terminal, website, README hero, and favicon constraints before the final mark is chosen.
 - The chosen standalone mark visibly reduces to the terminal prompt mark.
+- Live launch flows still follow the Launch Progress TUI roadmap: compact cockpit first, bounded rain lifecycle, stable stage vocabulary, diagnostics handle, and no logo splash replacing the launch UI.
 - The global text sweep has no stale apostrophe-era brand prose except historical references that are explicitly intentional.
 - The chevron/letter color relationship is represented in reusable tokens or helpers rather than duplicated ad hoc styling.
 - CLI and container prompt changes are tested or snapshot-covered enough to prevent accidental same-color marks and apostrophe regressions.
@@ -311,6 +320,10 @@ If any future implementation offers to update host-side prompt snippets, shell t
 - <RepoFile path="src/tui/output.rs" /> — CLI output helpers and terminal title
 - <RepoFile path="src/tui/animation.rs" /> — current TUI logo animation
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — role-container shell/runtime setup surface
+
+## Related Roadmap
+
+- [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — product-surface foundation for launch visualization, rain lifecycle, stage vocabulary, and diagnostics boundaries.
 
 ## External References
 
