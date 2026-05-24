@@ -41,10 +41,12 @@ use crate::protocol::attach::{
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{PaneBodyCache, PaneBodyRenderMode, draw_scrollbar};
 use crate::session::{
-    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
+    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, StatusPullRequest, build_agent_command,
+    build_shell_command,
 };
 use crate::socket;
-use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
+use crate::statusbar::{BranchPrState, STATUS_BAR_ROWS, StatusBar, draw_pane_box};
+use notify::Watcher as _;
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 
 pub struct Multiplexer {
@@ -116,12 +118,10 @@ pub struct Multiplexer {
     /// pointer-shape updates.
     pointer_shape: PointerShape,
     /// True only for outer terminals known to support OSC 22 with CSS
-    /// pointer names. Unsupported terminals keep normal cursor behavior.
+    /// pointer names. Recomputed from the attach client's reported
+    /// terminal identity on every attach/takeover so a reattach from a
+    /// different terminal app picks up the right capability set.
     pointer_shapes_supported: bool,
-    /// Terminal identity for the currently attached client. Refreshed on every
-    /// attach/takeover so terminal-specific enhancements follow the terminal
-    /// the operator is using now, not the terminal that launched the container.
-    attached_terminal: ClientTerminal,
     /// Deadline for hiding the transient "Copied!" badge in the
     /// container-info dialog after a jackin-owned OSC 52 copy.
     container_info_copy_deadline: Option<Instant>,
@@ -136,6 +136,17 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
     workdir: PathBuf,
+    /// Monotonic token bumped on every kicked status-bar branch lookup.
+    /// Late-arriving results from a previous lookup carry the older
+    /// token and are dropped, so a fast `git checkout` followed by a
+    /// slow `gh pr list` cannot land on the wrong branch state.
+    status_branch_request_id: u64,
+    /// notify-rs watcher keeping `.git/HEAD` (via its parent `.git/`)
+    /// under observation. RAII: dropped when the daemon shuts down so
+    /// the inotify/fsevents subscription closes cleanly. Held for its
+    /// side effect of feeding `SessionEvent::WorkdirBranchChanged`
+    /// through the daemon's event channel.
+    _status_branch_watcher: Option<notify::RecommendedWatcher>,
 }
 
 struct ContainerInfoLookupRequest {
@@ -319,8 +330,7 @@ impl Multiplexer {
 
         let input_parser = InputParser::default();
         let workdir = PathBuf::from(&launch_config.workdir);
-        let mut status_bar = StatusBar::new_with_role(launch_config.role.clone());
-        status_bar.set_prefix_enabled(input_parser.prefix_enabled());
+        let status_bar = StatusBar::new_with_role(launch_config.role.clone());
 
         Self {
             sessions: HashMap::new(),
@@ -350,11 +360,12 @@ impl Multiplexer {
             pending_full_redraw: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
-            attached_terminal: ClientTerminal::default(),
             container_info_copy_deadline: None,
             container_info_request_id: 0,
             pending_container_info_lookup: None,
             workdir,
+            status_branch_request_id: 0,
+            _status_branch_watcher: None,
         }
     }
 
@@ -521,13 +532,13 @@ impl Multiplexer {
                 );
                 return;
             }
-            let pull_request_url = branch
+            let pull_request = branch
                 .as_deref()
-                .and_then(|branch| gh_pull_request_url(&request.workdir, branch));
+                .and_then(|branch| gh_pull_request(&request.workdir, branch));
             if event_tx
                 .send(SessionEvent::ContainerInfoPullRequestLoaded {
                     request_id: request.request_id,
-                    pull_request_url,
+                    pull_request_url: pull_request.map(|pr| pr.url),
                 })
                 .is_err()
             {
@@ -577,6 +588,193 @@ impl Multiplexer {
         };
         *pull_request_loading = false;
         *current_pull_request_url = pull_request_url;
+        true
+    }
+
+    /// Install the `.git/HEAD` watcher once. Idempotent: subsequent
+    /// attaches reuse the existing subscription so the daemon doesn't
+    /// stack multiple watchers per workdir. A workdir that is not a
+    /// git checkout (no `.git/` directory) leaves the watcher slot
+    /// empty; the status-bar slot stays `Unknown` and the chrome
+    /// renders without it.
+    fn ensure_status_branch_watcher(&mut self) {
+        if self._status_branch_watcher.is_some() {
+            return;
+        }
+        let git_dir = self.workdir.join(".git");
+        if !git_dir.exists() {
+            return;
+        }
+        let event_tx = self.event_tx.clone();
+        let handler = move |res: notify::Result<notify::Event>| {
+            let Ok(event) = res else {
+                return;
+            };
+            // Filter to events whose path basename is `HEAD`. Other
+            // entries in `.git/` (refs, index, packed-refs) churn
+            // constantly during normal git operations and would
+            // otherwise flood the kick path. HEAD changes only on
+            // checkout / branch switch which is exactly what the
+            // status-bar slot tracks.
+            let head_touched = event
+                .paths
+                .iter()
+                .any(|p| p.file_name().is_some_and(|n| n == "HEAD"));
+            if !head_touched {
+                return;
+            }
+            use notify::EventKind;
+            if matches!(
+                event.kind,
+                EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_)
+            ) {
+                let _ = event_tx.send(SessionEvent::WorkdirBranchChanged);
+            }
+        };
+        match notify::recommended_watcher(handler) {
+            Ok(mut watcher) => {
+                // Watch the `.git/` directory rather than `HEAD`
+                // directly: many `git` operations replace HEAD via
+                // atomic rename, which detaches per-file inotify
+                // watches. Watching the parent dir keeps the
+                // subscription alive across rename rotations.
+                if let Err(e) =
+                    watcher.watch(&git_dir, notify::RecursiveMode::NonRecursive)
+                {
+                    crate::clog!(
+                        "status-branch: watch failed for {}: {e}",
+                        git_dir.display()
+                    );
+                    return;
+                }
+                self._status_branch_watcher = Some(watcher);
+            }
+            Err(e) => crate::clog!("status-branch: notify create failed: {e}"),
+        }
+    }
+
+    /// Bump the request_id and spawn a background lookup. Two events
+    /// fire back through the daemon channel: `StatusBranchResolved`
+    /// with the current branch + base branch, followed by
+    /// `StatusPullRequestResolved` when (and only when) the branch
+    /// resolved to a non-base value.
+    fn kick_status_branch_lookup(&mut self) {
+        self.status_branch_request_id =
+            self.status_branch_request_id.wrapping_add(1);
+        let request_id = self.status_branch_request_id;
+        let workdir = self.workdir.clone();
+        let event_tx = self.event_tx.clone();
+        std::thread::spawn(move || {
+            let branch = git_current_branch(&workdir);
+            let base_branch = git_default_branch(&workdir);
+            let branch_for_pr = branch.clone();
+            let base_for_pr = base_branch.clone();
+            if event_tx
+                .send(SessionEvent::StatusBranchResolved {
+                    request_id,
+                    branch: branch.clone(),
+                    base_branch: base_branch.clone(),
+                })
+                .is_err()
+            {
+                crate::clog!(
+                    "status-branch: event channel closed before branch reached the main loop"
+                );
+                return;
+            }
+            // Only run the gh lookup when the branch is non-base and
+            // non-empty. On the default branch the status-bar slot
+            // stays hidden (`OnBase`); off-branch with no remote PR
+            // surfaces as `NoPullRequest`.
+            let is_base = match (branch_for_pr.as_deref(), base_for_pr.as_deref()) {
+                (Some(b), Some(base)) => b == base,
+                _ => false,
+            };
+            let pull_request = match branch_for_pr {
+                Some(ref b) if !b.is_empty() && !is_base => {
+                    gh_pull_request(&workdir, b).map(|pr| StatusPullRequest {
+                        url: pr.url,
+                        title: pr.title,
+                        number: pr.number,
+                    })
+                }
+                _ => None,
+            };
+            // Skip the PR event when we never started one (on base or
+            // missing branch). `apply_status_branch_resolved` already
+            // resolved the visible state to `OnBase` / `Unknown`.
+            if is_base || branch_for_pr.is_none() {
+                return;
+            }
+            if event_tx
+                .send(SessionEvent::StatusPullRequestResolved {
+                    request_id,
+                    pull_request,
+                })
+                .is_err()
+            {
+                crate::clog!(
+                    "status-branch: event channel closed before PR reached the main loop"
+                );
+            }
+        });
+    }
+
+    /// Transition the status-bar slot from `Unknown`/`Loading` to the
+    /// state implied by the resolved branch + base. Returns `true`
+    /// when the slot actually changed so the caller can request a
+    /// chrome redraw. Stale results (a `request_id` older than the
+    /// current token) drop on the floor.
+    fn apply_status_branch_resolved(
+        &mut self,
+        request_id: u64,
+        branch: Option<String>,
+        base_branch: Option<String>,
+    ) -> bool {
+        if request_id != self.status_branch_request_id {
+            return false;
+        }
+        let next = match branch {
+            None => BranchPrState::Unknown,
+            Some(b) if b.is_empty() => BranchPrState::Unknown,
+            Some(b) => match base_branch {
+                Some(base) if base == b => BranchPrState::OnBase,
+                _ => BranchPrState::Loading { branch: b },
+            },
+        };
+        if self.status_bar.branch_pr == next {
+            return false;
+        }
+        self.status_bar.set_branch_pr(next);
+        true
+    }
+
+    /// Land the PR lookup result onto the slot. Loading → either
+    /// `HasPullRequest` or `NoPullRequest`. A stale or off-branch
+    /// result is ignored.
+    fn apply_status_pull_request_resolved(
+        &mut self,
+        request_id: u64,
+        pull_request: Option<StatusPullRequest>,
+    ) -> bool {
+        if request_id != self.status_branch_request_id {
+            return false;
+        }
+        let BranchPrState::Loading { branch } = self.status_bar.branch_pr.clone() else {
+            return false;
+        };
+        let next = match pull_request {
+            Some(pr) => BranchPrState::HasPullRequest {
+                number: pr.number,
+                title: pr.title,
+                url: pr.url,
+            },
+            None => BranchPrState::NoPullRequest { branch },
+        };
+        if self.status_bar.branch_pr == next {
+            return false;
+        }
+        self.status_bar.set_branch_pr(next);
         true
     }
 
@@ -1633,6 +1831,18 @@ impl Multiplexer {
                     self.open_container_info_dialog();
                     return Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange));
                 }
+                // Branch / PR slot click. Only the `HasPullRequest`
+                // state has a URL to copy — `Loading` and
+                // `NoPullRequest` are no-ops so the operator can
+                // safely click without firing spurious clipboard
+                // sequences.
+                if self.status_bar.branch_at(2, col + 1)
+                    && let Some(url) = self.status_bar.branch_pr_url()
+                {
+                    let url = url.to_string();
+                    self.send_output(encode_osc52_clipboard_write(&url));
+                    return None;
+                }
                 None
             }
             InputEvent::MousePress { col, row, button } => {
@@ -2626,8 +2836,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 } = ready;
                 mux.resize(rows, cols);
                 mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
-                mux.attached_terminal = terminal;
+                // Takeover lands a new outer terminal: reset the cached
+                // "last sent" pointer shape so the next set_pointer_shape
+                // diff is against the new client's actual cursor state,
+                // not the previous client's.
                 mux.pointer_shape = PointerShape::Default;
+                mux.ensure_status_branch_watcher();
+                mux.kick_status_branch_lookup();
                 if let Some(target) = focus_session
                     && !mux.focus_session_globally(target)
                 {
@@ -2878,6 +3093,26 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             let frame =
                                 mux.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
                             mux.send_output(frame);
+                        }
+                    }
+                    SessionEvent::WorkdirBranchChanged => {
+                        mux.kick_status_branch_lookup();
+                    }
+                    SessionEvent::StatusBranchResolved {
+                        request_id,
+                        branch,
+                        base_branch,
+                    } => {
+                        if mux.apply_status_branch_resolved(request_id, branch, base_branch) {
+                            mux.request_full_redraw(FullRedrawReason::ExplicitRedraw);
+                        }
+                    }
+                    SessionEvent::StatusPullRequestResolved {
+                        request_id,
+                        pull_request,
+                    } => {
+                        if mux.apply_status_pull_request_resolved(request_id, pull_request) {
+                            mux.request_full_redraw(FullRedrawReason::ExplicitRedraw);
                         }
                     }
                 }
@@ -3388,23 +3623,64 @@ fn git_current_branch(workdir: &Path) -> Option<String> {
     )
 }
 
-fn gh_pull_request_url(workdir: &Path, branch: &str) -> Option<String> {
-    let url = command_stdout_trimmed_with_timeout(
+/// Open pull request for `branch` as reported by `gh pr list`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequest {
+    pub url: String,
+    pub title: String,
+    pub number: u64,
+}
+
+fn gh_pull_request(workdir: &Path, branch: &str) -> Option<PullRequest> {
+    let json = command_stdout_trimmed_with_timeout(
         Command::new("gh")
             .current_dir(workdir)
             .env("GH_PROMPT_DISABLED", "1")
             .env("GH_NO_UPDATE_NOTIFIER", "1")
             .args([
-                "pr", "list", "--head", branch, "--state", "open", "--limit", "1", "--json", "url",
-                "--jq", ".[0].url",
+                "pr",
+                "list",
+                "--head",
+                branch,
+                "--state",
+                "open",
+                "--limit",
+                "1",
+                "--json",
+                "url,title,number",
             ]),
         GH_PULL_REQUEST_COMMAND_TIMEOUT,
     )?;
-    if url == "null" || !(url.starts_with("https://") || url.starts_with("http://")) {
-        None
-    } else {
-        Some(url)
+    let value: serde_json::Value = serde_json::from_str(&json).ok()?;
+    let first = value.as_array()?.first()?;
+    let url = first.get("url")?.as_str()?.to_string();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return None;
     }
+    let title = first.get("title")?.as_str()?.to_string();
+    let number = first.get("number")?.as_u64()?;
+    Some(PullRequest { url, title, number })
+}
+
+/// Repo default branch resolved from `refs/remotes/origin/HEAD`. The
+/// status bar uses this to decide whether a non-base branch (and its
+/// pull-request lookup) should occupy the chrome slot. `gh repo view`
+/// would be more authoritative but requires the network; the local
+/// symbolic-ref is set whenever the operator cloned with `gh repo
+/// clone` or ran `gh repo set-default`, which covers the path the
+/// operator typically uses to bring a repo into the workspace.
+fn git_default_branch(workdir: &Path) -> Option<String> {
+    let raw = command_stdout_trimmed_with_timeout(
+        Command::new("git")
+            .arg("-C")
+            .arg(workdir)
+            .args(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]),
+        GIT_CONTEXT_COMMAND_TIMEOUT,
+    )?;
+    // `git symbolic-ref --short refs/remotes/origin/HEAD` returns e.g.
+    // `origin/main`; strip the `origin/` so the comparison with the
+    // current-branch helper output is direct.
+    raw.strip_prefix("origin/").map(|s| s.to_string())
 }
 
 #[cfg(test)]
@@ -4088,5 +4364,134 @@ mod tests {
         command.args(["-c", "printf branch-name; sleep 0.05; exit 1"]);
 
         assert_eq!(command_stdout_trimmed(&mut command), None);
+    }
+
+    #[test]
+    fn apply_status_branch_resolved_drops_stale_request() {
+        let mut mux = test_mux(24, 80);
+        mux.status_branch_request_id = 5;
+        let applied = mux.apply_status_branch_resolved(
+            3,
+            Some("feat/x".to_string()),
+            Some("main".to_string()),
+        );
+        assert!(!applied);
+        assert_eq!(mux.status_bar.branch_pr, BranchPrState::Unknown);
+    }
+
+    #[test]
+    fn apply_status_branch_resolved_unknown_when_branch_missing() {
+        let mut mux = test_mux(24, 80);
+        mux.status_branch_request_id = 1;
+        mux.status_bar.set_branch_pr(BranchPrState::Loading {
+            branch: "feat/x".to_string(),
+        });
+        assert!(mux.apply_status_branch_resolved(1, None, None));
+        assert_eq!(mux.status_bar.branch_pr, BranchPrState::Unknown);
+    }
+
+    #[test]
+    fn apply_status_branch_resolved_on_base_when_branch_matches_default() {
+        let mut mux = test_mux(24, 80);
+        mux.status_branch_request_id = 7;
+        assert!(mux.apply_status_branch_resolved(
+            7,
+            Some("main".to_string()),
+            Some("main".to_string()),
+        ));
+        assert_eq!(mux.status_bar.branch_pr, BranchPrState::OnBase);
+    }
+
+    #[test]
+    fn apply_status_branch_resolved_loading_when_off_base() {
+        let mut mux = test_mux(24, 80);
+        mux.status_branch_request_id = 2;
+        assert!(mux.apply_status_branch_resolved(
+            2,
+            Some("feat/status-bar".to_string()),
+            Some("main".to_string()),
+        ));
+        assert_eq!(
+            mux.status_bar.branch_pr,
+            BranchPrState::Loading {
+                branch: "feat/status-bar".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn apply_status_branch_resolved_loading_when_base_unknown() {
+        let mut mux = test_mux(24, 80);
+        mux.status_branch_request_id = 4;
+        // No origin/HEAD known. Treat as off-base so the operator
+        // still sees a branch name + PR lookup happens.
+        assert!(mux.apply_status_branch_resolved(4, Some("trunk".to_string()), None));
+        assert_eq!(
+            mux.status_bar.branch_pr,
+            BranchPrState::Loading {
+                branch: "trunk".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn apply_status_pull_request_resolved_transitions_to_has_pr() {
+        let mut mux = test_mux(24, 80);
+        mux.status_branch_request_id = 9;
+        mux.status_bar.set_branch_pr(BranchPrState::Loading {
+            branch: "feat/x".to_string(),
+        });
+        assert!(mux.apply_status_pull_request_resolved(
+            9,
+            Some(StatusPullRequest {
+                url: "https://github.com/jackin-project/jackin/pull/42".to_string(),
+                title: "Add slot".to_string(),
+                number: 42,
+            }),
+        ));
+        assert_eq!(
+            mux.status_bar.branch_pr,
+            BranchPrState::HasPullRequest {
+                number: 42,
+                title: "Add slot".to_string(),
+                url: "https://github.com/jackin-project/jackin/pull/42".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn apply_status_pull_request_resolved_transitions_to_no_pr() {
+        let mut mux = test_mux(24, 80);
+        mux.status_branch_request_id = 11;
+        mux.status_bar.set_branch_pr(BranchPrState::Loading {
+            branch: "feat/y".to_string(),
+        });
+        assert!(mux.apply_status_pull_request_resolved(11, None));
+        assert_eq!(
+            mux.status_bar.branch_pr,
+            BranchPrState::NoPullRequest {
+                branch: "feat/y".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn apply_status_pull_request_resolved_ignored_when_not_loading() {
+        // If the watcher fires again mid-PR-lookup, the daemon may
+        // have already kicked a fresh request whose
+        // StatusBranchResolved bumped the slot out of Loading. A
+        // stale PR result must not corrupt the new state.
+        let mut mux = test_mux(24, 80);
+        mux.status_branch_request_id = 3;
+        mux.status_bar.set_branch_pr(BranchPrState::OnBase);
+        assert!(!mux.apply_status_pull_request_resolved(
+            3,
+            Some(StatusPullRequest {
+                url: "https://example.invalid/pr/1".to_string(),
+                title: "x".to_string(),
+                number: 1,
+            }),
+        ));
+        assert_eq!(mux.status_bar.branch_pr, BranchPrState::OnBase);
     }
 }

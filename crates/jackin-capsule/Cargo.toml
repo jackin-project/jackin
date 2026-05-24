@@ -42,6 +42,11 @@ base64 = "0.22"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 jackin-tui = { path = "../jackin-tui" }
+# Filesystem watcher for the workspace `.git/HEAD` file. Lets the
+# status-bar branch slot refresh automatically when the operator runs
+# `git checkout` from any pane. Default `macro_only` feature would drop
+# the inotify/fsevents backend; `default` keeps the platform watcher.
+notify = "8"
 
 [build-dependencies]
 jackin-build-meta = { path = "../jackin-build-meta" }

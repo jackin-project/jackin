@@ -21,7 +21,7 @@ fn brand_pill_renders_first() {
     let mut bar = StatusBar::new();
     let s = render(&mut bar, 80, &[], 0, &[]);
     let brand = s.find("jackin'").expect("brand text missing");
-    let menu = s.find("Menu").expect("menu button missing");
+    let menu = s.find('☰').expect("menu button glyph missing");
     assert!(brand < menu);
 }
 
@@ -38,14 +38,21 @@ fn tab_click_region_includes_state_glyph_width() {
 }
 
 #[test]
-fn prefix_mode_swap_changes_hint() {
+fn prefix_mode_swap_keeps_glyph_and_toggles_background() {
+    // Idle and Awaiting both render the hamburger glyph; only the
+    // background colour changes so the operator sees the prefix
+    // gesture is mid-way through without losing the click target.
     let mut bar = StatusBar::new();
     let s = render(&mut bar, 80, &[], 0, &[]);
-    assert!(s.contains("Menu Ctrl+\\"));
-    bar.set_prefix_enabled(true);
+    assert!(s.contains("☰"), "idle menu button missing: {s:?}");
+    assert!(s.contains("\x1b[48;2;0;80;18m"), "idle bg missing: {s:?}");
     bar.set_prefix_mode(PrefixMode::Awaiting);
     let s = render(&mut bar, 80, &[], 0, &[]);
-    assert!(s.contains("prefix…"));
+    assert!(s.contains("☰"), "awaiting menu button missing: {s:?}");
+    assert!(
+        s.contains("\x1b[48;2;0;255;65m"),
+        "awaiting bg missing: {s:?}"
+    );
 }
 
 #[test]

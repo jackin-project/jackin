@@ -99,6 +99,13 @@ The multiplexer chrome occupies the top `STATUS_BAR_ROWS` rows of the host termi
 
 The status/identity chrome draws independently from pane content where possible and the renderer coalesces dirty pane frames at roughly 30 fps. Timer-driven state refreshes save and restore the cursor so they cannot leave the cursor parked inside the chrome.
 
+### Branch / pull-request slot
+
+- The branch slot left of the identity label is the first chrome surface dropped when the terminal is too narrow to fit both. The operator can recover the same data from the container-info modal, so suppressing the slot beats overlapping the identity label.
+- The slot is hidden when the workspace's git checkout is on the repo default branch (`origin/HEAD`, with `main` / `master` as the fallback when no `origin/HEAD` exists). Showing the operator their default branch name on every screen is noise.
+- The lookup runs off the daemon's main loop on a background thread. The chrome must never block on `git` or `gh` subprocesses; results arrive through `SessionEvent` and the renderer transitions the slot state on the next dirty tick.
+- A monotonic request-id pattern discards stale results so a fast `git checkout` followed by a slow `gh pr list` cannot land the previous branch's PR on the new branch.
+
 ---
 
 ## Pane coordinate contract
@@ -116,8 +123,8 @@ When a pane outputs cursor-positioning sequences (CSI H, CSI A/B/C/D, etc.), tho
 ```
 Input byte arrives from client terminal
   │
-  ├─ Row 0 mouse click → tab strip / palette hint handler
-  ├─ Row 1 mouse click → identity strip handler
+  ├─ Row 0 mouse click → tab strip / menu-button handler
+  ├─ Row 1 mouse click → identity strip handler; branch slot click copies the PR URL via OSC 52
   ├─ Direct palette key (default `Ctrl+\`; override via JACKIN_PALETTE_KEY; `none` disables) → open / close command palette
   ├─ Prefix key (Ctrl+B by default when JACKIN_PREFIX is set) → tmux-style prefix-command state machine
   │       ├─ Space / `:` → palette

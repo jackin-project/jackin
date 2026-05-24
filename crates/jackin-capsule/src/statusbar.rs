@@ -72,6 +72,53 @@ pub enum PrefixMode {
     Awaiting,
 }
 
+/// Render state for the workspace-branch slot left of the identity label.
+///
+/// The daemon walks `Unknown` → `Loading{branch}` → either `NoPullRequest`
+/// or `HasPullRequest` for the current `git` checkout. `OnBase` is the
+/// "stay invisible" state used when the checkout is on the repo's
+/// `origin/HEAD` default branch (typically `main` / `master`) where
+/// surfacing the branch name would be noise.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BranchPrState {
+    /// No branch information has been resolved yet. Slot renders empty.
+    Unknown,
+    /// Operator is on the repo's default branch. Branch slot hides.
+    OnBase,
+    /// Branch known, `gh pr list` lookup is in flight. Slot shows
+    /// `branch ⟳` until the lookup completes.
+    Loading { branch: String },
+    /// Branch known, no open PR. Slot shows `branch` only.
+    NoPullRequest { branch: String },
+    /// Branch known, an open PR exists. Slot shows `PR #N: title` and
+    /// the click region resolves to the PR URL.
+    HasPullRequest {
+        number: u64,
+        title: String,
+        url: String,
+    },
+}
+
+impl BranchPrState {
+    /// Should the slot occupy chrome columns? `Unknown` / `OnBase` hide.
+    fn visible(&self) -> bool {
+        !matches!(self, BranchPrState::Unknown | BranchPrState::OnBase)
+    }
+
+    /// Text the slot paints. Empty string when hidden so the renderer
+    /// can short-circuit without measuring.
+    fn text(&self) -> String {
+        match self {
+            BranchPrState::Unknown | BranchPrState::OnBase => String::new(),
+            BranchPrState::Loading { branch } => format!(" {branch} ⟳ "),
+            BranchPrState::NoPullRequest { branch } => format!(" {branch} "),
+            BranchPrState::HasPullRequest { number, title, .. } => {
+                format!(" PR #{number}: {title} ")
+            }
+        }
+    }
+}
+
 pub struct StatusBar {
     pub tab_regions: Vec<(u16, u16)>,
     /// Click region (1-based, inclusive-exclusive) covering the
@@ -85,10 +132,12 @@ pub struct StatusBar {
     /// role/focused-agent details kept off the status bar so the tab
     /// strip can spend columns on tabs.
     pub identity_region: Option<(u16, u16)>,
+    /// Click region (1-based, inclusive-exclusive) covering the
+    /// branch-or-PR slot left of the identity label on row 2. A mouse
+    /// press triggers an OSC 52 copy of the PR URL when the slot is in
+    /// `HasPullRequest` state and is ignored otherwise.
+    pub branch_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
-    pub prefix_label: String,
-    pub palette_label: String,
-    pub prefix_enabled: bool,
     /// Container name (`jk-<short>-<workspace>-<role>`) displayed on
     /// the right side of row 1. Role is inferable from the suffix and
     /// surfaced explicitly by the `ContainerInfo` modal, so the status
@@ -101,6 +150,10 @@ pub struct StatusBar {
     /// lossy short form `thearchitect`, not the canonical
     /// `the-architect` selector the operator typed).
     pub role: String,
+    /// Workspace-branch slot state painted left of the identity label.
+    /// Daemon mutates this on attach, on watcher-fired branch changes,
+    /// and on `gh pr list` completion.
+    pub branch_pr: BranchPrState,
 }
 
 impl Default for StatusBar {
@@ -119,12 +172,37 @@ impl StatusBar {
             tab_regions: Vec::new(),
             hint_region: None,
             identity_region: None,
+            branch_region: None,
             prefix_mode: PrefixMode::Idle,
-            prefix_label: "Ctrl+B".to_string(),
-            palette_label: "Ctrl+\\".to_string(),
-            prefix_enabled: false,
             identity_label: resolve_container_name(),
             role,
+            branch_pr: BranchPrState::Unknown,
+        }
+    }
+
+    pub fn set_branch_pr(&mut self, state: BranchPrState) {
+        self.branch_pr = state;
+    }
+
+    /// PR URL when the slot is in `HasPullRequest` state. Used by the
+    /// daemon's click handler to feed OSC 52.
+    pub fn branch_pr_url(&self) -> Option<&str> {
+        match &self.branch_pr {
+            BranchPrState::HasPullRequest { url, .. } => Some(url.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Return `true` when the (1-based) click at `(row, col)` falls
+    /// inside the branch/PR slot on row 2. The daemon resolves to an
+    /// OSC 52 copy of the PR URL when applicable.
+    pub fn branch_at(&self, row: u16, col: u16) -> bool {
+        if row != 2 {
+            return false;
+        }
+        match self.branch_region {
+            Some((start, end)) => col >= start && col < end,
+            None => false,
         }
     }
 
@@ -169,10 +247,6 @@ impl StatusBar {
         self.prefix_mode = mode;
     }
 
-    pub fn set_prefix_enabled(&mut self, enabled: bool) {
-        self.prefix_enabled = enabled;
-    }
-
     /// Render the status bar at rows 0–1 of the host terminal.
     pub fn render(
         &mut self,
@@ -185,6 +259,7 @@ impl StatusBar {
         self.tab_regions.clear();
         self.hint_region = None;
         self.identity_region = None;
+        self.branch_region = None;
 
         // ── Row 0: brand pill + tabs + hint ─────────────────────────
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
@@ -299,6 +374,7 @@ impl StatusBar {
         // container they are attached to. Truncate when it would
         // collide with the active-tab underline; skip entirely when
         // the terminal is too narrow.
+        let mut right_edge = cols;
         if !self.identity_label.is_empty() {
             let label_cols = display_cols(&self.identity_label);
             let trailing_pad: u16 = 1;
@@ -310,6 +386,41 @@ impl StatusBar {
                 buf.extend_from_slice(RESET.as_bytes());
                 // 1-based, inclusive-exclusive click region.
                 self.identity_region = Some((start + 1, start + 1 + label_cols));
+                right_edge = start;
+            }
+        }
+
+        // Branch / PR slot. Sits immediately left of the identity label
+        // (or, when there is no identity label, hugs the right edge).
+        // Truncated to whatever room remains after tabs and identity
+        // already claimed their columns; the slot is the first chrome
+        // surface dropped when the terminal is too narrow because the
+        // operator can recover the same data from the ContainerInfo
+        // modal opened off the identity label.
+        if self.branch_pr.visible() {
+            let slot_text = self.branch_pr.text();
+            let slot_cols = display_cols(&slot_text);
+            let trailing_pad: u16 = 1;
+            // Reserve a single space between the slot and the identity
+            // label so the two chrome regions read as distinct buttons
+            // instead of one wide blob.
+            let needed = slot_cols.saturating_add(trailing_pad);
+            if right_edge > brand_end_1based.saturating_add(needed) {
+                let start = right_edge.saturating_sub(needed);
+                move_to(buf, 2, start + 1);
+                let (bg, fg) = match self.branch_pr {
+                    BranchPrState::HasPullRequest { .. } => {
+                        (BUTTON_BG_IDLE, BUTTON_FG_IDLE)
+                    }
+                    _ => ("", HINT_FG),
+                };
+                if !bg.is_empty() {
+                    buf.extend_from_slice(bg.as_bytes());
+                }
+                buf.extend_from_slice(fg.as_bytes());
+                buf.extend_from_slice(slot_text.as_bytes());
+                buf.extend_from_slice(RESET.as_bytes());
+                self.branch_region = Some((start + 1, start + 1 + slot_cols));
             }
         }
     }
@@ -371,24 +482,14 @@ impl StatusBar {
         }
     }
 
-    /// Render the right-hand menu **button**. The hamburger glyph
-    /// (`☰`) + label + key combo, with a dark-green pill background
-    /// in idle state and an inverted bright-green highlight when the
-    /// optional prefix gesture is mid-way through.
+    /// Right-hand menu **button**. Compressed to just the hamburger
+    /// glyph (`☰`) so the button always fits regardless of tab count
+    /// or terminal width. Hotkeys live in the palette itself, not the
+    /// chrome. Awaiting state keeps the same glyph but flips to the
+    /// bright-green highlight background so the operator sees the
+    /// prefix gesture is mid-way through.
     fn button_text(&self) -> String {
-        match self.prefix_mode {
-            PrefixMode::Idle => {
-                if self.prefix_enabled {
-                    format!(
-                        " ☰ Menu {} · prefix {} ",
-                        self.palette_label, self.prefix_label
-                    )
-                } else {
-                    format!(" ☰ Menu {} ", self.palette_label)
-                }
-            }
-            PrefixMode::Awaiting => " prefix… ".to_string(),
-        }
+        " ☰ ".to_string()
     }
 
     /// Return the tab index clicked at column `c` (1-based), if any.
@@ -579,35 +680,51 @@ mod tests {
     }
 
     #[test]
-    fn idle_hint_renders_palette_label() {
+    fn idle_menu_button_renders_hamburger_glyph_only() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("Menu Ctrl+\\"), "missing idle hint: {s:?}");
-    }
-
-    #[test]
-    fn idle_hint_includes_prefix_when_enabled() {
-        let mut bar = StatusBar::new();
-        bar.set_prefix_enabled(true);
-        let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[]);
-        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("☰"), "missing hamburger glyph: {s:?}");
         assert!(
-            s.contains("Menu Ctrl+\\") && s.contains("prefix Ctrl+B"),
-            "missing combined hint: {s:?}"
+            !s.contains("Ctrl+\\") && !s.contains("Menu "),
+            "menu button must omit hotkey label: {s:?}"
         );
     }
 
     #[test]
-    fn awaiting_hint_swaps_label() {
+    fn awaiting_menu_button_keeps_glyph_with_highlight_background() {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("prefix…"), "missing awaiting hint: {s:?}");
+        assert!(s.contains("☰"), "awaiting menu button missing glyph: {s:?}");
+        assert!(
+            s.contains("\x1b[48;2;0;255;65m"),
+            "awaiting menu button must use PHOSPHOR_GREEN highlight bg: {s:?}"
+        );
+    }
+
+    #[test]
+    fn menu_button_renders_at_narrow_widths() {
+        // Regression: previous label " ☰ Menu Ctrl+\ " (~17 cols) got
+        // clipped by the brand-overlap guard on narrow terminals. The
+        // compressed ` ☰ ` (3 cols) must fit even with several tabs.
+        let mut bar = StatusBar::new();
+        let tabs = vec![
+            Tab::new_single("Claude", 1),
+            Tab::new_single("Codex", 2),
+            Tab::new_single("Amp", 3),
+        ];
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 40, &tabs, 0, &[]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("☰"), "menu button missing at 40 cols: {s:?}");
+        assert!(
+            bar.hint_region.is_some(),
+            "click region must be registered for menu button"
+        );
     }
 
     #[test]
@@ -620,5 +737,141 @@ mod tests {
         // Row 1 = ANSI row 2 (1-based). Underline uses `━`.
         assert!(s.contains("\x1b[2;"), "row 2 cursor move missing: {s:?}");
         assert!(s.contains("━"), "underline glyph missing: {s:?}");
+    }
+
+    #[test]
+    fn branch_pr_state_visibility_matches_state() {
+        assert!(!BranchPrState::Unknown.visible());
+        assert!(!BranchPrState::OnBase.visible());
+        assert!(
+            BranchPrState::Loading {
+                branch: "feat/x".to_string()
+            }
+            .visible()
+        );
+        assert!(
+            BranchPrState::NoPullRequest {
+                branch: "feat/x".to_string()
+            }
+            .visible()
+        );
+        assert!(
+            BranchPrState::HasPullRequest {
+                number: 42,
+                title: "title".to_string(),
+                url: "https://example.invalid/pr/42".to_string()
+            }
+            .visible()
+        );
+    }
+
+    #[test]
+    fn branch_slot_hidden_on_base_or_unknown() {
+        let mut bar = StatusBar::new();
+        bar.identity_label = "jk-test".to_string();
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 80, &[], 0, &[]);
+        assert!(bar.branch_region.is_none());
+        bar.set_branch_pr(BranchPrState::OnBase);
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 80, &[], 0, &[]);
+        assert!(bar.branch_region.is_none());
+    }
+
+    #[test]
+    fn branch_slot_renders_loading_with_spinner_glyph() {
+        let mut bar = StatusBar::new();
+        bar.identity_label = "jk-test".to_string();
+        bar.set_branch_pr(BranchPrState::Loading {
+            branch: "feat/status-bar".to_string(),
+        });
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 120, &[], 0, &[]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("feat/status-bar"), "branch missing: {s:?}");
+        assert!(s.contains("⟳"), "loading glyph missing: {s:?}");
+        assert!(bar.branch_region.is_some());
+    }
+
+    #[test]
+    fn branch_slot_renders_no_pr_state() {
+        let mut bar = StatusBar::new();
+        bar.identity_label = "jk-test".to_string();
+        bar.set_branch_pr(BranchPrState::NoPullRequest {
+            branch: "feat/foo".to_string(),
+        });
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 120, &[], 0, &[]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("feat/foo"), "branch missing: {s:?}");
+        assert!(!s.contains("⟳"), "no-PR state must not show spinner: {s:?}");
+        assert!(!s.contains("PR #"), "no-PR state must not show PR text: {s:?}");
+    }
+
+    #[test]
+    fn branch_slot_renders_pr_text_and_url_accessor() {
+        let mut bar = StatusBar::new();
+        bar.identity_label = "jk-test".to_string();
+        bar.set_branch_pr(BranchPrState::HasPullRequest {
+            number: 123,
+            title: "Add slot".to_string(),
+            url: "https://github.com/jackin-project/jackin/pull/123".to_string(),
+        });
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 200, &[], 0, &[]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("PR #123: Add slot"), "PR text missing: {s:?}");
+        assert_eq!(
+            bar.branch_pr_url(),
+            Some("https://github.com/jackin-project/jackin/pull/123")
+        );
+    }
+
+    #[test]
+    fn branch_slot_drops_first_when_terminal_too_narrow() {
+        // At 30 cols with identity "jk-very-long-name" eating most of
+        // the row, the slot should hide rather than overlap the
+        // identity label.
+        let mut bar = StatusBar::new();
+        bar.identity_label = "jk-very-long-container-name".to_string();
+        bar.set_branch_pr(BranchPrState::NoPullRequest {
+            branch: "some-feature-branch".to_string(),
+        });
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 30, &[], 0, &[]);
+        assert!(
+            bar.branch_region.is_none(),
+            "narrow terminal must drop the branch slot before clipping over identity"
+        );
+    }
+
+    #[test]
+    fn branch_at_only_matches_row_2_inside_region() {
+        let mut bar = StatusBar::new();
+        bar.identity_label = "jk-test".to_string();
+        bar.set_branch_pr(BranchPrState::NoPullRequest {
+            branch: "feat/x".to_string(),
+        });
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 120, &[], 0, &[]);
+        let (start, end) = bar.branch_region.expect("region set after render");
+        assert!(bar.branch_at(2, start));
+        assert!(bar.branch_at(2, end - 1));
+        assert!(!bar.branch_at(2, end));
+        assert!(!bar.branch_at(1, start));
+    }
+
+    #[test]
+    fn branch_pr_url_returns_none_when_no_pr() {
+        let mut bar = StatusBar::new();
+        assert_eq!(bar.branch_pr_url(), None);
+        bar.set_branch_pr(BranchPrState::Loading {
+            branch: "feat/x".to_string(),
+        });
+        assert_eq!(bar.branch_pr_url(), None);
+        bar.set_branch_pr(BranchPrState::NoPullRequest {
+            branch: "feat/x".to_string(),
+        });
+        assert_eq!(bar.branch_pr_url(), None);
     }
 }

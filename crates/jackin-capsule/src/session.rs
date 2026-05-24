@@ -472,6 +472,43 @@ pub enum SessionEvent {
         request_id: u64,
         pull_request_url: Option<String>,
     },
+    /// File-system watcher saw `.git/HEAD` change. The daemon
+    /// re-resolves the current branch and kicks a fresh `gh pr list`
+    /// lookup so the status-bar slot follows the operator's checkout.
+    /// Coalesced by debounce inside the watcher thread so a single
+    /// `git checkout` does not fan out into many events.
+    WorkdirBranchChanged,
+    /// Background status-bar branch lookup completed. `branch` is `None`
+    /// when the workdir is not a git repo or `git` failed; otherwise it
+    /// is the current checkout and `base_branch` is `origin/HEAD` (or
+    /// `None` if there is no remote). `request_id` ties the response
+    /// to its issuing watcher tick so stale results from a slow lookup
+    /// cannot overwrite a fresher branch state.
+    StatusBranchResolved {
+        request_id: u64,
+        branch: Option<String>,
+        base_branch: Option<String>,
+    },
+    /// Background status-bar PR lookup completed. `pull_request` is
+    /// `None` when no open PR matches `branch`; otherwise carries the
+    /// number/title/url tuple. `request_id` mirrors
+    /// `StatusBranchResolved` so stale lookups are dropped.
+    StatusPullRequestResolved {
+        request_id: u64,
+        pull_request: Option<StatusPullRequest>,
+    },
+}
+
+/// Open pull request payload the daemon's status-bar branch flow
+/// receives back through `SessionEvent::StatusPullRequestResolved`.
+/// Mirrors `daemon::PullRequest` (kept structurally identical) so the
+/// public crate surface does not have to re-export the daemon's
+/// internal struct.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusPullRequest {
+    pub url: String,
+    pub title: String,
+    pub number: u64,
 }
 
 impl Session {
