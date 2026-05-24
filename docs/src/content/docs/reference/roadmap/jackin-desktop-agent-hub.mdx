@@ -133,7 +133,7 @@ Source priorities, confidence labels, and accuracy reasoning for these apps live
 - Tokemon — terminal statusline export shape, burn-rate projection display.
 - Token Tracker — menu bar + widget split for at-a-glance vs. detail views.
 
-The data model and confidence-labeling rules (`provider-authoritative`, `local estimate`, `stale`, `needs login`, `unsupported`) are the telemetry roadmap's contract; Desktop renders them.
+The data model and confidence + status labels (confidence: `provider_authoritative` / `local_estimate` / `fallback`; status: `fresh` / `stale` / `needs_login` / `unsupported` / `error`) are the telemetry roadmap's contract; Desktop renders them.
 
 ### RepoBar
 
@@ -206,7 +206,7 @@ The main menu should be PR-first, then workspace-aware. The fastest path should 
 3. Active projects: repositories recently touched by jackin' work, grouped by owner/org and filterable later in the app window.
 4. Active workspaces: each row shows workspace name, repo/branch, role, agent, container state, last event, and primary action.
 5. Ready for review: PR rows promoted to the top when an agent explicitly reports a PR as ready.
-6. Accounts: Claude Enterprise, Claude Personal, Codex Personal, Amp Personal.
+6. Accounts: cards for the configured built-in jackin' runtimes (Claude, Codex, Amp, Kimi, OpenCode), one or more accounts each.
 7. Recent / saved workspaces: launch shortcuts for jackin' workspaces not currently running.
 8. Footer: Open Desktop, Refresh, Open Console, Settings, Quit.
 
@@ -303,7 +303,7 @@ Recommended layout:
 - Accounts: Claude/Codex/Amp/Kimi/OpenCode account cards with source, plan/quota, reset time, confidence, last refresh, stale/error state, and repair/login actions.
 - Usage: workspace/session spend view showing tokens and cost by workspace, role, agent, model, and time window.
 
-Compact visibility rule: every Desktop view that can start, focus, or stop an agent should show the active account quota beside that agent. The full Accounts and Usage screens are for inspection; the Running Agents, Workspaces, and menu-bar surfaces are for immediate “can I safely keep working?” decisions.
+Compact visibility rule: every Desktop view that can start, focus, or stop an agent should show the active account quota beside that agent. The full Accounts and Usage screens are for inspection; the Running Agents, Workspaces, and menu-bar surfaces are for immediate "can I safely keep working?" decisions.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
@@ -318,7 +318,7 @@ statuses warm and reactive. Direct CLI calls from the app are reserved for
 one-shot actions or fallback cases where the daemon is unavailable, broken, or
 would make the UI/UX worse.
 
-The Desktop account UI should not try to reconcile conflicting numbers silently. If provider quota says “64% used” and local logs imply “31% used,” the row shows provider quota as the enforced availability and local logs as workspace/session attribution. This is the core accuracy distinction from the [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) roadmap item.
+The Desktop account UI should not try to reconcile conflicting numbers silently. If provider quota says "64% used" and local logs imply "31% used," the row shows provider quota as the enforced availability and local logs as workspace/session attribution. This is the core accuracy distinction from the [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) roadmap item.
 
 ## Architecture proposal
 
