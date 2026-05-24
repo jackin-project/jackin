@@ -73,6 +73,12 @@ These projects are worth tracking and testing. The table intentionally excludes 
 | [Forge MCP](https://forgemcp.dev/) and terminal MCP projects such as [terminal-mcp](https://github.com/ianks/terminal-mcp) | Varies by project; small ecosystem. | MCP servers expose persistent PTY sessions, event subscriptions, reads, waits, and commands to agents. Usually host/tmux/PTY based. | Excellent API-shape reference for `create_session`, `read`, `wait_for`, `send`, and dashboard/event concepts. | Generally terminal/session primitives, not full GitHub issue-to-PR orchestration. | **Adapter reference.** jackin' should expose its own MCP server backed by Capsule rather than reuse a host PTY implementation. |
 | [MCO / Hive lineage](https://github.com/mco-org/mco) | MIT for MCO; MCO notes successor work continues in Hive. | Neutral multi-agent dispatcher for Claude Code, Codex CLI, Gemini CLI, OpenCode, Qwen Code, custom shims, and ACP agents. Runs from shell or MCP server mode. | Strong code-review fan-out: parallel providers, consensus scoring, duplicate finding merge, debate/synthesis, JSON/SARIF/Markdown-PR output, JSONL/live streams, sessions, custom agent registry, ACP transport. | PR-ready Markdown and SARIF output; useful for review comments and code-scanning style artifacts. Not a full branch/run lifecycle owner. | **Optional review adapter.** Best candidate for multi-agent review/fan-out once jackin' has a branch to review. Do not use for mutating implementation sessions because Capsule visibility would be lost. |
 | [Optio](https://optio.host/) | MIT; open-source and self-hosted, but infrastructure-heavy. | Kubernetes-first system with API server, dashboard, workers, repo pods, Postgres, Redis/BullMQ, Helm deployment, pod-per-repo isolation, worktrees per task. | Strong reference for complete ticket-to-merged-PR pipeline, self-healing CI/review loop, realtime dashboard, cost analytics, connections/MCP, and long-running queue semantics. | Explicit intake → queued → provisioning → running → PR opened → CI/review → merged lifecycle across GitHub/GitLab/Linear/Jira/Notion. | **Architecture benchmark, not V1 dependency.** Valuable for daemon/queue/PR-loop design. Too heavy for local CLI-first jackin' V1, and any merge lifecycle would need to be disabled or gated behind explicit operator action. |
+| [Vibe Kanban](https://vibe-kb.com/) | Large open-source user signal; license metadata needs repo audit before dependency discussion. | Local web control plane for many coding agents, one task per git worktree, project defaults, IDE/MCP integration, built-in diff review, alerts, and conversation history. | Strongest product pressure against a bespoke UI: local-first, many supported agents, obvious task board, review/merge workflow, and a simple `npx vibe-kanban` on-ramp. | GitHub-oriented review and merge flow, with PR-like built-in diffs; exact PR automation depth needs hands-on validation. | **Hands-on benchmark, not dependency yet.** If jackin' only wants a board plus worktrees, this may already be enough. It does not replace jackin' role containers, host-mutation rules, or Capsule-visible sessions. |
+| [Sandcastle](https://github.com/mattpocock/sandcastle) | MIT; popular TypeScript library. | Library-first `sandcastle.run()` API for running coding agents in sandbox providers such as Docker, Podman, Vercel, custom providers, or no sandbox, with branch strategies, hooks, logs, and merge-back behavior. | Strongest "do not build a runner" challenge: it is a reusable library rather than a competing app. Hooks, branch strategies, and logging are directly relevant. | Branch and merge-back oriented; not a GitHub issue/PR lifecycle product by itself. | **Potential library/reference, but high-friction fit.** Study before implementing branch/sandbox APIs. Direct adoption would add TypeScript runtime and host/sandbox hook semantics that conflict with jackin' Rust/Capsule ownership unless wrapped very carefully. |
+| [Handler.dev](https://handler.dev/) | MIT-positioned, self-hosted, very young by repository signal. | Docker/Firecracker control plane with a visual canvas, one terminal per sandbox, agent detection, config presets, workspace forking, metrics, and offline local operation. | Strongest Capsule-substrate challenge: it uses a stricter sandbox story than ordinary worktrees and exposes visible terminals/forking. | Human-in-the-loop review and course correction rather than a complete issue-to-PR workflow. | **Isolation benchmark.** If Firecracker-style forkable sandboxes become table stakes, jackin' should consider a selectable sandbox backend rather than forcing all orchestration through container-only Capsule. |
+| [Helmor](https://helmor.ai/) and [Orca](https://www.onorca.dev/docs) | Local-first desktop/workbench projects; Helmor is Apache-2.0 by upstream metadata. | Desktop/workbench surfaces for planning, running, reviewing, testing, merging, and comparing coding-agent work across worktrees and terminals. Orca explicitly centers real git worktrees, agent terminals, browser tabs, diff review, and remote SSH agents. | Strong evidence that the winning UX may be a visual workbench, not a CLI-first runner. They optimize for human review and choosing between parallel attempts. | Review/merge support appears central; full GitHub lifecycle depends on project. | **UX benchmark.** Do not depend on them, but treat their visual comparison/review model as evidence against building only GitHub comments plus CLI status. |
+| [Ruah](https://www.ruah.sh/) and [Bernstein](https://bernstein.run/) | Open-source or open-core positioned; maturity and license details require hands-on audit. | Broad orchestration stacks around task DAGs, worktree isolation, file claims, merge ordering, audit logs, provider breadth, A2A/MCP, and governance. | Strong references for file-claim coordination, tamper-evident audit chains, dependency graphs, and governance. | More task/DAG/audit focused than Capsule-visible terminal focused. | **Research references.** Borrow ideas only after source/license audit; avoid importing broad governance stacks before jackin' has a small proven runner. |
+| [OpenClaw Code Agent](https://github.com/goldmar/openclaw-code-agent) | MIT-signaled but small. | Chat-originated Claude/Codex sessions with plan approval, lifecycle persistence, suspend/resume/fork/interrupt, worktree isolation, merge/PR decisions, explicit goal loops, cost/status reporting, and interactive action buttons. | Strongest reference for operator intervention semantics and goal loops. It proves that "continue existing session" and "ask/merge/open PR/later/discard" actions matter as much as the initial agent launch. | Worktree follow-through can expose Merge/Open PR/View PR/Sync PR decisions from chat. | **Intervention reference.** Too chat/OpenClaw-specific to adopt, but its plan approval and action-token state model should inform jackin' run events. |
 | [Switchboard](https://www.switchboard-oss.net/) | MIT; open-source positioning, maturity needs hands-on validation. | Local/container-oriented scheduled agent workflows with TOML agents and recurring runs. | Strong reference for cron/overnight workflows, multi-agent pipelines, living-docs refresh, and scheduled security audits. | More scheduled automation than issue-to-PR lifecycle. | **Research reference for daemon queue later.** Not needed for the first foreground `roadmap-to-pr` slice. |
 | [GitHub Agentic Workflows](https://github.github.io/gh-aw/introduction/overview/) and [third-party agents on GitHub](https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents) | Open workflow format/tooling around GitHub Actions; execution depends on GitHub-hosted environment and eligible plans for third-party agents. | Markdown workflow compiled into hardened GitHub Actions YAML; agents execute in GitHub Actions with read-only default permissions and safe outputs. | Strong reference for GitHub-visible automation, natural-language workflow files, permission narrowing, and safe write outputs. | GitHub-native issues/PRs/comments and public-preview third-party agent assignment. | **Visibility/security reference, not dependency.** Good for check-run/comment/gate semantics. It is not jackin's local hardware substrate. |
 | [RuFlo / Claude Flow](https://github.com/ruvnet/claude-flow) and OpenFlow-style dashboards | Open-source claims, high visibility, but quality/maturity signals are mixed and require careful hands-on audit. | Claude-centric swarm/MCP ecosystem with many hooks, agents, memory, dashboards, and downstream wrappers. | Useful as a cautionary reference for over-broad "swarm" claims and for UI demand around monitoring many Claude sessions. | Not clearly centered on GitHub issue-to-PR lifecycle. | **Avoid as dependency for now.** Audit only if there is a concrete feature to borrow; prefer smaller, verifiable pieces. |
@@ -87,9 +93,102 @@ The research points to four dependency classes:
 | Class | Projects | Decision |
 |---|---|---|
 | Reusable dependency | None yet. | No project currently fits jackin' well enough to become the runtime dependency. |
-| Optional adapter | MCO/Hive for review fan-out; Conductor for external graph execution once jackin' exposes a stable API; maybe GitHub Agentic Workflows for hosted GitHub automation experiments. | Add adapters only after jackin' has run/session APIs and durable run records. |
-| Research reference | Conductor, Contrabass, agtx, Optio, Switchboard, GitHub Agentic Workflows, terminal MCP projects, worktree managers. | Mine product/API ideas, then implement versions native to jackin' against Capsule. |
+| Optional adapter | MCO/Hive for review fan-out; Conductor for external graph execution once jackin' exposes a stable API; maybe Sandcastle for branch/sandbox mechanics if its host hook model can be wrapped safely; maybe GitHub Agentic Workflows for hosted GitHub automation experiments. | Add adapters only after jackin' has run/session APIs and durable run records. |
+| Research reference | Conductor, Contrabass, agtx, Optio, Vibe Kanban, Sandcastle, Handler.dev, Helmor, Orca, OpenClaw Code Agent, Ruah, Bernstein, Switchboard, GitHub Agentic Workflows, terminal MCP projects, worktree managers. | Mine product/API ideas, then implement versions native to jackin' against Capsule. |
 | Not suitable as dependency now | SaaS-only systems; RuFlo/OpenFlow-style swarm stacks without a narrowly verified feature; tools that require silent host hook/config mutation; tools that assume host tmux/worktrees as the only runtime. | Keep out of the dependency graph. Re-evaluate only with a concrete feature and license/security audit. |
+
+## Adversarial stress test
+
+The recommendation survives the second-pass research, but it should be narrowed: the next implementation should not be a full `roadmap-to-pr` runner. The lowest-regret move is a durable workflow run ledger plus GitHub reporter and manual phase controls. That gives jackin' the evidence model, GitHub visibility, and intervention semantics needed by any future runner, while still allowing a later pivot to Conductor, Sandcastle, Vibe Kanban, Optio, or another project if one becomes the obvious execution engine.
+
+### What would make the recommendation wrong
+
+| Disproving evidence | Decision change |
+|---|---|
+| A local-first orchestrator exposes a stable library/API for externally supplied sandbox/session providers, lets jackin' keep Capsule-owned PTYs, and supports no silent host mutation. | Stop building the runner; build a jackin' provider/adapter for that orchestrator. |
+| A project such as Vibe Kanban, Handler.dev, or Orca becomes the dominant local workbench and can launch jackin' sessions as first-class terminals. | Treat jackin' as the runtime substrate and integrate with that UI instead of building a competing workbench. |
+| Sandcastle or a similar library proves it can own branch/sandbox/run lifecycle cleanly from Rust or a small sidecar without host hooks that violate policy. | Reuse it for sandbox/branch mechanics and keep jackin' focused on Capsule visibility, roles, and policy. |
+| GitHub Agentic Workflows or GitHub third-party agents become open enough to run self-hosted/local agents while preserving visible jackin' sessions. | Move more lifecycle state to GitHub-native workflow files and checks; keep local execution as the agent runner. |
+| Agent Runtime Status Authority cannot reliably classify terminal agents across Codex, Claude, Gemini, OpenCode, and Chinese CLIs. | Do not build unattended orchestration; keep the product as a visible task board plus explicit operator gates. |
+| Capsule cannot provide precise session create/send/read/wait/attach/cancel semantics without brittle terminal scraping. | Reconsider Capsule as the control boundary; either expose a lower-level PTY protocol or use an existing terminal/session server. |
+
+### Competing architecture options
+
+| Option | What it optimizes | Why it might win | Why it is risky for jackin' |
+|---|---|---|---|
+| Build full runner inside jackin' now | Tight integration with roles, Capsule, GitHub, and host policy. | Fastest path to the exact desired `roadmap-to-pr` experience. | Highest lock-in and easiest way to invent a bad workflow model before seeing enough runs. |
+| Build run ledger and GitHub reporter first | Durable state and visibility without committing to execution strategy. | Useful for manual workflows, external adapters, and future native runner. | Does not immediately deliver autonomous implementation; may feel like infrastructure. |
+| Adopt an existing workbench | UI, task board, diff review, and agent support arrive immediately. | Vibe Kanban/Helmor/Orca already prove demand and may iterate faster than jackin'. | Most assume host worktrees, their own terminal model, or their own state store; jackin' loses the product differentiator. |
+| Adopt a library runner | Avoids reimplementing branch/sandbox/hooks/logging. | Sandcastle is the clearest version of this approach. | Adds cross-language/runtime coupling and may import host hook semantics that conflict with jackin' rules. |
+| MCP-first control plane | Lets external orchestrators drive jackin' sessions without jackin' owning workflow semantics. | Good interoperability story and aligns with tool ecosystem direction. | MCP tools are not a durable workflow model; a raw tool surface can become unsafe remote control without policy and run state. |
+| GitHub-native workflow first | Puts state where review already happens. | GitHub checks/comments/issues are durable and familiar. | Hosted GitHub execution cannot replace local jackin' hardware, roles, credentials, or visible terminal hijack. |
+| Optio-style daemon/queue first | Complete issue-to-merged-PR automation and feedback loops. | Best fit for overnight/task-queue ambition. | Too much blast radius before status authority, policy, cost controls, and operator gates exist. |
+
+The best next step is therefore not "build the orchestrator" but "build the smallest state spine that every option needs." That means run records, event types, GitHub reporter, CLI/manual phase controls, and explicit intervention events. Capsule automation can follow after the state spine proves useful during manual runs.
+
+### Are we overestimating Capsule?
+
+Capsule is still the right default substrate, but only if it remains an inspectable terminal and not a fake API. The risk is that the workflow runner starts scraping terminal output and treats screen text as state authority. The correct boundary is: Capsule owns visible sessions and operator hijack; Agent Runtime Status Authority owns semantic state; the workflow runner owns durable run transitions; GitHub owns external visibility.
+
+| Capsule risk | Mitigation |
+|---|---|
+| Terminal screens are lossy and ambiguous. | Require typed session events, explicit markers, verifier commands, or operator confirmation for state transitions. |
+| Hidden background orchestration can undermine the visible-session promise. | Keep every agent session attachable and record when the operator enters or leaves it. |
+| Container-only isolation may be weaker than VM/forkable sandbox competitors. | Keep [selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) compatible with the run model. Do not bake "Docker container" into workflow state. |
+| GitHub visibility can become a noisy comment stream. | Prefer compact phase checks plus sparse summaries; keep detailed logs local unless requested. |
+| The runner can become a second agent that is harder to reason about than the workers. | Keep V1 deterministic and explicit. Do not let an LLM decide phase transitions. |
+
+### Design now vs keep dumb
+
+Some choices are expensive to reverse and should be designed before implementation:
+
+| Design now | Why |
+|---|---|
+| Run/event schema | Every reporter, adapter, retry, audit, and future daemon depends on it. |
+| GitHub object ownership | Deciding issue-first versus draft-PR-first changes user noise, CI behavior, and recovery. |
+| Intervention events | Hijack is a core differentiator, not an edge case. It must be in the model from day one. |
+| Session identity | `implementer`, `reviewer`, `verifier`, and `diagnostic` need stable ids so attach, logs, and GitHub links stay meaningful. |
+| Host-side effect declarations | Workflow steps must inherit the no-silent-host-mutation discipline before role/workspace workflows exist. |
+
+Other pieces should stay intentionally dumb until real runs prove the contract:
+
+| Keep dumb early | Why |
+|---|---|
+| Workflow definition format | Hardcoded phases avoid designing a generic DSL from guesses. |
+| Agent selection | Default Codex implementer plus Claude reviewer is enough for learning; provider matrices can wait. |
+| Review loop count | One bounded review/fix cycle teaches more safely than autonomous loops. |
+| UI | GitHub plus CLI status is enough to validate state semantics before a dashboard. |
+| Background queue | Daemon scheduling should wait for reliable status and cost/resource controls. |
+
+### Cheap experiments before implementation
+
+1. Run the same small roadmap item manually through jackin' Capsule, Vibe Kanban, Contrabass, Sandcastle, and Handler.dev. Score setup time, state fidelity, hijackability, PR quality, review quality, cost visibility, and recovery after failure.
+2. Prototype only the GitHub reporter from a static JSON run-event file. If the output is too noisy or too sparse, fix the event model before touching Capsule.
+3. Prototype `operator_intervention` events by manually appending attach/pause/resume entries and rendering them in GitHub comments. This tests whether hijack can be made legible.
+4. Write a fake `roadmap-to-pr` transcript with explicit state transitions and artifacts. If the transcript cannot explain why each transition is trustworthy, the runner is not ready.
+5. Try Sandcastle as an isolated branch/sandbox experiment outside jackin'. The question is not "does it run an agent?" but "can its abstractions be wrapped without violating host-mutation and visibility rules?"
+
+### Do not build yet
+
+- Do not build an autonomous overnight queue before Agent Runtime Status Authority and durable event storage.
+- Do not build a declarative workflow DSL before hardcoded runs reveal stable step kinds.
+- Do not build a dashboard until GitHub/CLI state semantics are proven.
+- Do not build auto-merge or automatic branch cleanup for workflow runs.
+- Do not add broad MCP tools that can execute arbitrary host shell commands.
+- Do not support many provider-specific review chains before the Codex → Claude path is reliable.
+- Do not treat "agent stopped printing" or "screen looks quiet" as completion.
+
+### Low-regret next PR
+
+The next implementation PR should be "workflow run records and GitHub reporter," not "roadmap-to-pr automation." It should add a small durable `WorkflowRun`/event representation, a CLI command that can create a manual run from a roadmap page or GitHub issue, commands to mark phases manually, and a GitHub reporter that writes compact status to an issue or PR. It should not spawn agents yet. This validates the hardest-to-change state and visibility decisions while keeping execution manual and reversible.
+
+That PR should prove:
+
+1. A run has stable identity, source, branch, workspace, role, phase, sessions, GitHub links, and event history.
+2. A phase transition records actor, reason, evidence, git head, and optional session id.
+3. Operator intervention is a normal event, not an error path.
+4. GitHub output is useful enough to follow a run without reading local logs.
+5. The same state model can represent manual jackin' runs, a future native runner, and an external orchestrator adapter.
 
 ## Design
 
@@ -265,7 +364,7 @@ Both adapter surfaces must preserve the same constraints: visible Capsule sessio
 
 ## Minimal V1
 
-V1 should be intentionally narrow:
+After the low-regret run-record/GitHub-reporter PR proves the state model, the first automated workflow V1 should still be intentionally narrow:
 
 1. Add a foreground `jackin run roadmap <roadmap-page>` command.
 2. Hardcode `roadmap-to-pr`.
@@ -285,7 +384,7 @@ The first version may be foreground-only. Background/overnight dispatch belongs 
 
 ### Phase 0 — Research harness
 
-Run the same real jackin' roadmap task through Contrabass, agtx, Forge MCP, MCO/Hive-style review, GitHub Agentic Workflows, and a manual jackin' Capsule workflow. Record which surfaces are actually useful: status fidelity, hijackability, branch hygiene, PR quality, review quality, cost visibility, and recovery after failure.
+Run the same real jackin' roadmap task through jackin' Capsule, Vibe Kanban, Contrabass, agtx, Sandcastle, Handler.dev, Forge MCP, MCO/Hive-style review, and GitHub Agentic Workflows. Record which surfaces are actually useful: status fidelity, hijackability, branch hygiene, PR quality, review quality, cost visibility, and recovery after failure.
 
 ### Phase 1 — Run record and GitHub reporter
 
