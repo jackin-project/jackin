@@ -1187,7 +1187,7 @@ pub(super) fn handle_editor_modal(
             }
         }
         Modal::AuthForm { .. } => {
-            super::auth::handle_auth_form_key(editor, key, op_available);
+            super::auth::handle_auth_form_key(editor, key, op_available, op_cache);
         }
         Modal::AuthRolePicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
@@ -1213,7 +1213,16 @@ pub(super) fn handle_editor_modal(
             ModalOutcome::Continue => {}
         },
         Modal::OpPicker { state: picker } => {
-            match picker.handle_key(key) {
+            let outcome = picker.handle_key(key);
+            // Token-generate wins over both browse and provide dispatch:
+            // `generating_token_target` is set exactly when the picker was
+            // opened by the auth-form `g`/`G` trigger (Create mode), so the
+            // create variants are reachable only on this path.
+            if let Some(target) = editor.generating_token_target.take() {
+                handle_token_generate_pick(editor, target, outcome);
+                return;
+            }
+            match outcome {
                 // Browse-mode caller: only `Existing` is reachable.
                 ModalOutcome::Commit(
                     crate::console::widgets::op_picker::OpPickerSelection::NewItem { .. }
@@ -1302,6 +1311,81 @@ fn open_secrets_picker_modal(
     editor.modal = Some(Modal::OpPicker {
         state: Box::new(OpPickerState::new_with_cache(op_cache)),
     });
+}
+
+/// Translate a Create-mode `OpPicker` commit into a
+/// [`PendingTokenGenerate`] request that the `run_console` loop drains
+/// to mint the token. `Existing` cannot occur in Create mode; a Cancel
+/// (or stray `Existing`) just closes the chain. On `Continue` the picker
+/// is still drilling, so `target` is re-armed and the modal stays open.
+/// The workspace name comes from `editor.mode` Edit.
+fn handle_token_generate_pick(
+    editor: &mut EditorState<'_>,
+    target: crate::console::manager::state::AuthFormTarget,
+    outcome: ModalOutcome<crate::console::widgets::op_picker::OpPickerSelection>,
+) {
+    use crate::console::widgets::op_picker::OpPickerSelection;
+    use crate::workspace::token_setup::{EditExistingTarget, TokenSetupArgs};
+
+    let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
+        editor.clear_modal_chain();
+        return;
+    };
+    let workspace = name.clone();
+
+    let args = match outcome {
+        ModalOutcome::Commit(OpPickerSelection::NewItem {
+            account,
+            vault,
+            item_name,
+            section,
+            field_label,
+        }) => TokenSetupArgs {
+            vault: Some(vault.id),
+            item_name: Some(item_name),
+            account: account.map(|a| a.id),
+            reuse: None,
+            field_label: Some(field_label),
+            section,
+            edit_existing: None,
+        },
+        ModalOutcome::Commit(OpPickerSelection::EditItemField {
+            account,
+            vault,
+            item,
+            section,
+            field_label,
+        }) => TokenSetupArgs {
+            vault: None,
+            item_name: None,
+            account: account.map(|a| a.id),
+            reuse: None,
+            field_label: None,
+            section: None,
+            edit_existing: Some(EditExistingTarget {
+                vault_id: vault.id,
+                item_id: item.id,
+                field_label,
+                section,
+            }),
+        },
+        // Still drilling — re-arm the marker the caller took and leave
+        // the picker open.
+        ModalOutcome::Continue => {
+            editor.generating_token_target = Some(target);
+            return;
+        }
+        // `Existing` is unreachable in Create mode; a Cancel pops the
+        // chain. Both just close without minting.
+        ModalOutcome::Commit(OpPickerSelection::Existing(_)) | ModalOutcome::Cancel => {
+            editor.clear_modal_chain();
+            return;
+        }
+    };
+
+    editor.pending_token_generate =
+        Some(crate::console::manager::state::PendingTokenGenerate { workspace, args });
+    editor.clear_modal_chain();
 }
 
 const fn scope_label(scope: &SecretsScopeTag) -> &str {

@@ -330,15 +330,17 @@ fn current_mode_and_credential(
 ///
 /// `op_available` gates the 1Password choice rendered inside
 /// `Modal::AuthSourcePicker` — passed through from `EditorState` so
-/// the form doesn't reprobe the `op` binary on every keypress. The
-/// `OpPicker` itself is opened by `open_op_picker_from_auth_source`
-/// after the operator selects 1Password from the source picker; that
-/// helper takes its own `op_cache` so this entry point doesn't have
-/// to.
+/// the form doesn't reprobe the `op` binary on every keypress.
+///
+/// `op_cache` is threaded through (rather than only into
+/// `open_op_picker_from_auth_source`) so the `g`/`G` generate trigger
+/// can mount the Create-mode `OpPicker` from here; the provide-path
+/// `OpPicker` is still opened later by `open_op_picker_from_auth_source`.
 pub(super) fn handle_auth_form_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
     op_available: bool,
+    op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
 ) -> bool {
     if !matches!(editor.modal, Some(Modal::AuthForm { .. })) {
         return false;
@@ -356,6 +358,13 @@ pub(super) fn handle_auth_form_key(
     if key.code == KeyCode::Esc {
         editor.modal = None;
         editor.pending_auth_form_return = None;
+        return true;
+    }
+
+    // `g`/`G` at any focus mints a Claude OAuth token into a new/edited
+    // 1Password location. Gated to the workspace-level Claude oauth_token
+    // slot in Edit mode; a no-op everywhere else.
+    if matches!(key.code, KeyCode::Char('g' | 'G')) && try_start_token_generate(editor, op_cache) {
         return true;
     }
 
@@ -381,6 +390,58 @@ pub(super) fn handle_auth_form_key(
         }
     }
     false
+}
+
+/// Whether the open auth form is eligible for the `g`/`G` generate
+/// trigger: a workspace-level Claude `oauth_token` slot in an existing
+/// (Edit-mode) workspace. Role-level generate is out of scope for now.
+pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
+    if !matches!(
+        editor.mode,
+        crate::console::manager::state::EditorMode::Edit { .. }
+    ) {
+        return false;
+    }
+    let Some(Modal::AuthForm { target, state, .. }) = editor.modal.as_ref() else {
+        return false;
+    };
+    state.kind == AuthKind::Claude
+        && state.mode == Some(AuthMode::OAuthToken)
+        && matches!(
+            target,
+            AuthFormTarget::Workspace {
+                kind: AuthKind::Claude
+            }
+        )
+}
+
+/// Mint-path trigger: when the gate holds, stash the target and mount a
+/// Create-mode `OpPicker` so the operator chooses where the freshly
+/// minted token lands. Returns `false` (a no-op) when the gate fails.
+fn try_start_token_generate(
+    editor: &mut EditorState<'_>,
+    op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
+) -> bool {
+    if !auth_form_can_generate_token(editor) {
+        return false;
+    }
+    let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
+        return false;
+    };
+    let workspace_name = name.clone();
+    let Some(Modal::AuthForm { target, .. }) = editor.modal.as_ref() else {
+        return false;
+    };
+    editor.generating_token_target = Some(target.clone());
+    editor.pending_auth_form_return = None;
+    editor.modal = Some(Modal::OpPicker {
+        state: Box::new(OpPickerState::new_create_with_cache(
+            op_cache,
+            crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE.replace("{ws}", &workspace_name),
+            crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
+        )),
+    });
+    true
 }
 
 /// Keystroke router for the `CredentialSource` row.
@@ -964,7 +1025,7 @@ mod tests {
     /// Test wrapper around `handle_auth_form_key` with
     /// `op_available = true`.
     fn drive_key(editor: &mut EditorState<'_>, k: KeyEvent) -> bool {
-        handle_auth_form_key(editor, k, true)
+        handle_auth_form_key(editor, k, true, fresh_op_cache())
     }
 
     /// Return the flat-row index for `WorkspaceMode { Claude }`.
@@ -1370,6 +1431,66 @@ mod tests {
             editor.pending_auth_form_return.is_some(),
             "auth-form context must be stashed for the picker to return to"
         );
+    }
+
+    /// `g` on the workspace × Claude `oauth_token` form opens the
+    /// `OpPicker` in Create mode and arms `generating_token_target`,
+    /// driving the token-generate (mint) path.
+    #[test]
+    fn auth_form_generate_opens_create_op_picker_and_arms_target() {
+        use crate::console::widgets::op_picker::OpPickerMode;
+
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor, &cfg);
+        // Drive the mode to OAuthToken so the generate gate holds.
+        let Some(Modal::AuthForm { state: form, .. }) = editor.modal.as_mut() else {
+            panic!("auth form must be open")
+        };
+        form.set_mode(AuthMode::OAuthToken);
+        assert!(auth_form_can_generate_token(editor));
+
+        let closed = drive_key(editor, key(KeyCode::Char('g')));
+        assert!(closed, "generate must consume the keystroke");
+        let Some(Modal::OpPicker { state: picker }) = editor.modal.as_ref() else {
+            panic!("generate must open the OpPicker")
+        };
+        assert!(
+            matches!(picker.mode, OpPickerMode::Create { .. }),
+            "generate must open the OpPicker in Create mode"
+        );
+        assert!(
+            matches!(
+                editor.generating_token_target,
+                Some(AuthFormTarget::Workspace {
+                    kind: AuthKind::Claude
+                })
+            ),
+            "generate must arm the workspace × Claude target"
+        );
+    }
+
+    /// `g` is a no-op when the mode is not `oauth_token` (here ApiKey):
+    /// the auth form stays open and no target is armed.
+    #[test]
+    fn auth_form_generate_is_noop_for_non_oauth_token_mode() {
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor, &cfg);
+        let Some(Modal::AuthForm { state: form, .. }) = editor.modal.as_mut() else {
+            panic!("auth form must be open")
+        };
+        form.set_mode(AuthMode::ApiKey);
+        assert!(!auth_form_can_generate_token(editor));
+
+        let closed = drive_key(editor, key(KeyCode::Char('g')));
+        assert!(!closed, "g must be a no-op when not oauth_token");
+        assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
+        assert!(editor.generating_token_target.is_none());
     }
 
     /// Simulating a successful `OpPicker` commit re-mounts the auth

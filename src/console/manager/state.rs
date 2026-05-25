@@ -528,6 +528,18 @@ pub struct WorkspaceSummary {
     pub last_role: Option<String>,
 }
 
+/// A request to mint a Claude OAuth token and write it to the chosen
+/// 1Password location.
+///
+/// Bubbled from the auth-form generate action up to the `run_console`
+/// loop, which owns `paths`, `config`, and the terminal needed to run
+/// `claude setup-token`.
+#[derive(Debug, Clone)]
+pub struct PendingTokenGenerate {
+    pub workspace: String,
+    pub args: crate::workspace::token_setup::TokenSetupArgs,
+}
+
 #[derive(Debug)]
 pub struct EditorState<'a> {
     pub mode: EditorMode,
@@ -616,6 +628,14 @@ pub struct EditorState<'a> {
     /// determine whether the block is actually scrollable.
     pub tab_content_width: usize,
     pub tab_content_height: usize,
+    /// Set when the auth-form "generate token" action launches the
+    /// `op_picker` in Create mode, so the `op_picker` commit knows the
+    /// pick is a token-generate (not a browse/provide pick) and which
+    /// layer it targets. Consumed (taken) by the `op_picker` commit.
+    pub generating_token_target: Option<AuthFormTarget>,
+    /// Set by the `op_picker` commit when `generating_token_target` was
+    /// present; drained by the `run_console` loop to run the mint.
+    pub pending_token_generate: Option<PendingTokenGenerate>,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -2164,6 +2184,8 @@ impl EditorState<'_> {
             tab_content_scroll_focused: false,
             tab_content_width: 0,
             tab_content_height: 0,
+            generating_token_target: None,
+            pending_token_generate: None,
         }
     }
 
@@ -2196,6 +2218,8 @@ impl EditorState<'_> {
             tab_content_scroll_focused: false,
             tab_content_width: 0,
             tab_content_height: 0,
+            generating_token_target: None,
+            pending_token_generate: None,
         }
     }
 

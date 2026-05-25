@@ -393,6 +393,31 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
     out.flush()
 }
 
+/// Hand the real terminal back to a child process: leave raw-mode +
+/// alt-screen and stop debug buffering, mirroring `TerminalGuard::drop`
+/// minus the input drain (the child reads stdin directly). Paired with
+/// [`resume_console_terminal`] around a contained suspend → run → resume.
+fn suspend_console_terminal(stdout: &mut std::io::Stdout) {
+    use crossterm::ExecutableCommand;
+    let _ = disable_console_mouse_capture(stdout);
+    let _ = crossterm::terminal::disable_raw_mode();
+    let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+    let _ = stdout.execute(crossterm::cursor::Show);
+    crate::tui::end_debug_buffering();
+}
+
+/// Re-enter raw-mode + alt-screen after a [`suspend_console_terminal`]
+/// detour, mirroring `run_console`'s initial setup so the TUI resumes
+/// where it left off.
+fn resume_console_terminal(stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
+    use crossterm::ExecutableCommand;
+    crate::tui::begin_debug_buffering();
+    crossterm::terminal::enable_raw_mode()?;
+    stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
+    enable_console_mouse_capture(stdout)?;
+    Ok(())
+}
+
 async fn open_inline_agent_picker(
     state: &mut ConsoleState,
     paths: &JackinPaths,
@@ -657,6 +682,8 @@ pub async fn run_console(
     use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
     use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 
+    use crate::console::manager::state::{ManagerStage, Modal};
+
     // EnableMouseCapture disables native text selection; operators
     // hold Shift (Terminal.app, iTerm2) or Option (iTerm2) to bypass.
     struct TerminalGuard;
@@ -689,6 +716,80 @@ pub async fn run_console(
     let mut last_mouse_event_at: Option<std::time::Instant> = None;
 
     let result = 'main: loop {
+        // Drain a pending token-generate request before render: suspend
+        // the TUI, run the interactive `claude setup-token` mint + the
+        // 1Password write, then resume. Done at the top of the loop (no
+        // live `&mut state.stage` borrow, `config`/`paths`/`terminal` all
+        // in scope) so a request set by the previous iteration's input is
+        // handled before the next frame.
+        let pending = if let ConsoleStage::Manager(ms) = &mut state.stage {
+            if let ManagerStage::Editor(ed) = &mut ms.stage {
+                ed.pending_token_generate.take()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(req) = pending {
+            let mut out = std::io::stdout();
+            suspend_console_terminal(&mut out);
+            println!(
+                "\nGenerating Claude OAuth token for workspace {:?} — complete the browser \
+                 sign-in, then paste the code below.\n",
+                req.workspace
+            );
+            let mint = crate::workspace::token_setup::run_setup(
+                paths,
+                &mut config,
+                &req.workspace,
+                &req.args,
+            );
+            let _ = resume_console_terminal(&mut out);
+            // Force a full redraw next frame so leftover child output is
+            // cleared before the TUI repaints.
+            let _ = terminal.clear();
+            match mint {
+                Ok(report) => {
+                    // Sync the editor's working copy so the Auth tab
+                    // reflects the freshly-wired credential without a
+                    // reopen. `run_setup` already persisted to disk, so
+                    // mirror both pending + original to leave no diff. The
+                    // populated Auth row is the operator's confirmation.
+                    if let ConsoleStage::Manager(ms) = &mut state.stage
+                        && let ManagerStage::Editor(ed) = &mut ms.stage
+                    {
+                        let claude = crate::config::AgentAuthConfig {
+                            auth_forward: crate::config::AuthForwardMode::OAuthToken,
+                        };
+                        ed.pending.claude = Some(claude.clone());
+                        ed.original.claude = Some(claude);
+                        let val = crate::operator_env::EnvValue::OpRef(report.op_ref.clone());
+                        ed.pending.env.insert(
+                            crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string(),
+                            val.clone(),
+                        );
+                        ed.original
+                            .env
+                            .insert(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string(), val);
+                    }
+                }
+                Err(e) => {
+                    if let ConsoleStage::Manager(ms) = &mut state.stage
+                        && let ManagerStage::Editor(ed) = &mut ms.stage
+                    {
+                        ed.modal = Some(Modal::ErrorPopup {
+                            state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                                "Token generation failed",
+                                e.to_string(),
+                            ),
+                        });
+                    }
+                }
+            }
+            continue;
+        }
+
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
