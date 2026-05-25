@@ -3,7 +3,7 @@ title: "Workspace Claude Token Setup"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, in-container OAuth-token onboarding, the shared `op_picker` Create mode, and the plain-prompt `--interactive` storage-location picker are shipped; canonical `oauth_token` auth slot, the console Auth-tab generate-token action, Apple Keychain backend, pre-launch validity probe, and bulk migration remain
+**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, in-container OAuth-token onboarding, the shared `op_picker` Create mode, the plain-prompt `--interactive` storage-location picker, and the console Auth-tab generate-token action are shipped; canonical `oauth_token` auth slot, Apple Keychain backend, pre-launch validity probe, and bulk migration remain
 
 **Parent**: [Reliable Claude Authentication Strategy](/reference/roadmap/claude-auth-strategy/)
 
@@ -25,17 +25,21 @@ Two pieces shipped together, each on the surface where it belongs.
 
 The principle this establishes: a rich ratatui TUI lives only inside `jackin console`; the CLI stays plain CLI. Scripted invocations keep using `--vault` / `--reuse`; `--interactive` is the plain-prompt path for an operator at a shell.
 
+## What Shipped: Console Auth-tab Generate Action
+
+The workspace editor's Auth tab can now mint a Claude token without leaving `jackin console`. On the workspace-level Claude `oauth_token` auth form, `G` opens the shared `op_picker` in Create mode so the operator chooses (or creates, via `+ New item` / `+ New field` / `+ New section`) the 1Password location. On commit, the `run_console` loop suspends the TUI (leaves raw-mode + alt-screen, mirroring the terminal guard), runs `token_setup::run_setup` — the same orchestrator the CLI uses, which drives the interactive `claude setup-token` OAuth capture, writes to 1Password, and wires the workspace config — then resumes the TUI and syncs the editor so the Auth row reflects the wired credential. Errors surface through the standard `ErrorPopup`; success is silent (the populated row is the confirmation).
+
+This is the console counterpart to the CLI `--interactive` storage picker. Role-level generate (the form's per-role override layer) and a plain-text generate target are not yet wired — the action is gated to the workspace-level Claude `oauth_token` slot. The suspend/resume-around-PTY mint is exercised only by live use; it has no headless test.
+
 ## Remaining Work
 
-1. **Console Auth-tab generate-token action.** Add a native multi-step dialog chain launched from the Auth tab in `jackin console` that mints the token via the OAuth flow and writes it through the extended `op_picker`. The full step sequence and component reuse design are documented in [TUI Design Decisions — Wizard-Style Dialog Flows](/reference/tui-design-decisions/#wizard-style-dialog-flows). In summary: scope choice (scope_picker) → optional role picker → source choice (source_picker) → `op_picker` in Create mode (with `+ New item` / `+ New field` / `+ New section` sentinels) or `text_input` for plain text. The remaining large piece is suspend/resume-around-PTY plumbing in the console event loop so the `claude setup-token` OAuth capture can run from inside the console; the drill-down and creation widgets it needs are already shipped.
+1. **Canonical auth slot.** Replace the current two-key implementation (`auth_forward = "oauth_token"` plus managed `CLAUDE_CODE_OAUTH_TOKEN` env) with a dedicated `oauth_token` field on the Claude auth config. The launcher should synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot.
 
-2. **Canonical auth slot.** Replace the current two-key implementation (`auth_forward = "oauth_token"` plus managed `CLAUDE_CODE_OAUTH_TOKEN` env) with a dedicated `oauth_token` field on the Claude auth config. The launcher should synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot.
+2. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session.
 
-3. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session.
+3. **Apple Keychain backend.** Add a local OS-secret-store source after the cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) lands.
 
-4. **Apple Keychain backend.** Add a local OS-secret-store source after the cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) lands.
-
-5. **Bulk migration.** Add a `--all` or equivalent workflow for migrating multiple workspaces to Claude OAuth-token mode.
+4. **Bulk migration.** Add a `--all` or equivalent workflow for migrating multiple workspaces to Claude OAuth-token mode.
 
 ## Design Notes
 
