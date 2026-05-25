@@ -33,6 +33,7 @@ Current shipped pieces in this implementation:
 - macOS Notification Center notifications through the daemon via `jackin daemon notify` and the in-container `jackin-notify` helper. High urgency requests the native `Glass` sound.
 - A container bridge: running roles receive `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` and the host daemon socket bind-mounted at that path when the daemon is available.
 - Desktop-facing read/action methods for `daemon/hello`, saved workspace summaries, running session labels, GitHub PR lists, Ghostty/browser open actions, credential-source presence, and the first attention-route polling contract.
+- PR #317 is the consolidated delivery vehicle for this daemon roadmap item and the [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) roadmap item. It should not split the daemon API and Desktop client across separate implementation PRs.
 
 ## Architecture reset after Capsule
 
@@ -125,10 +126,10 @@ Initial protocol capabilities:
 | `daemon/shutdown` | Stop the daemon cleanly. |
 | `daemon/warm_cache` | Ask the daemon to warm construct, DinD, and cached role images. |
 | `workspace/list` | Return saved workspace summaries for launch-only Desktop surfaces: name, workdir, mount counts, default/last role, default agent, and keep-awake state. |
-| `session/list` | Return running role containers with Docker-label metadata for workspace, role, agent, branch, primary repo, display name, and container status. |
+| `session/list` | Return running role containers with workspace, role, agent, display name, container status, repository owner/name, mounted-repo current branch, and linked PR candidates. Docker labels are an acceptable fallback, but Desktop needs the actual workspace repo branch, not the role-source branch. |
 | `github/my_open_prs` | Return open pull requests authored by the operator, sorted newest first. |
 | `github/project_inbox` | Return the operator's open pull requests filtered by owner and/or repository. |
-| `github/repository_prs` | Return open pull requests for one repository, sorted newest first. |
+| `github/repository_prs` | Return open pull requests for one repository, sorted newest first, including head branch so Desktop can match a running instance to its PR. |
 | `workspace/launch` | Open Ghostty and run `jackin load` against a saved workspace, with optional role and agent override. |
 | `desktop/open` | Open a browser URL through macOS `open`, or open Ghostty and run `jackin hardline` for a running session. |
 | `account/status` | Return cached Claude, Codex, Amp, Kimi, and OpenCode credential-source presence without exposing token values; `refresh` bypasses the daemon cache. |
@@ -154,7 +155,11 @@ Most Desktop-specific methods are deliberately absent until their slices land. T
   one-shot paths only when daemon communication is unavailable or would hurt the
   operator experience. The daemon should expose versioned capabilities for
   workspace/session discovery, GitHub PR lookup, Ghostty/browser open actions,
-  account status, and event subscription as those slices land.
+  account status, and event subscription as those slices land. The immediate
+  Desktop contract must let the app answer: which saved workspaces exist, how
+  many instances are running, which repository branch each instance is changing,
+  which PR is linked to that branch, and how to open that PR in both GitHub and
+  DiffsHub.
 - **Future reactive watchers.** Container exit notifications, sensitive-mount confirmations across sessions, etc. — each adds an adapter under the daemon's plug-in surface, not its own ad-hoc workaround.
 
 ## Why this is one item, not many
@@ -170,7 +175,7 @@ Rough order of operations — not committed; to be confirmed during the design p
 1. **Phase 0 — design.** Complete.
 2. **Phase 1 — daemon base.** Complete: lifecycle, install, singleton, socket protocol, logs, version skew restart.
 3. **Phase 2 — first adapters.** Started: keep-awake reconciliation, cache warmup, and host notification dispatch are daemon-owned.
-4. **Phase 3 — Desktop-ready daemon API.** Started: `daemon/hello` now provides a versioned capability handshake; read-only workspace/session discovery is available through `workspace/list` and `session/list`; initial GitHub PR lookup is available through `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`; Ghostty/browser actions are available through `workspace/launch` and `desktop/open`; Claude/Codex/Amp/Kimi/OpenCode credential-source presence is available through `account/status`; the first `event/subscribe` response publishes the poll and click-routing contract.
+4. **Phase 3 — Desktop-ready daemon API.** Started in PR #317: `daemon/hello` now provides a versioned capability handshake; read-only workspace/session discovery is available through `workspace/list` and `session/list`; initial GitHub PR lookup is available through `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`; Ghostty/browser actions are available through `workspace/launch` and `desktop/open`; Claude/Codex/Amp/Kimi/OpenCode credential-source presence is available through `account/status`; the first `event/subscribe` response publishes the poll and click-routing contract. Before this PR lands, the Desktop-facing session/PR contract should be explicit enough for the app to display running instance counts, per-instance branch/PR mapping, and GitHub plus DiffsHub PR actions.
 5. **Phase 4 — Capsule-backed live index.** Open: replace Docker-label-only session state with a daemon-owned cross-instance cache fed by Capsule snapshots/events, including pane/session IDs, branch/PR context, runtime status, and stale/disconnected diagnostics.
 6. **Phase 5 — real event stream and attention routing.** Open: replace the `event/subscribe` placeholder with streaming daemon events, then connect `blocked`, derived `done`, notification click routes, and Desktop attention surfaces.
 7. **Phase 6 — live auth sync and account telemetry.** Open: add per-axis host watchers/shared-store flocks, then replace credential-source presence with the account quota snapshots and usage endpoints described by Token & Cost Telemetry.

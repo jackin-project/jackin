@@ -25,7 +25,9 @@ prompts when an agent is blocked or finished.
 This roadmap targets the complete Desktop Agent Hub experience: daemon-backed
 state, native macOS status bar, native desktop window, Ghostty workspace
 launch/focus, GitHub PR inbox, account/token status, and notification/attention
-routing. The phased plan below is the review strategy, not a reduced scope.
+routing. The current implementation is intentionally consolidated in
+[PR #317](https://github.com/jackin-project/jackin/pull/317), not split across a
+stack of smaller pull requests.
 
 ## Existing local foundation
 
@@ -209,9 +211,9 @@ The menu bar label should be conservative:
 The main menu should be PR-first, then workspace-aware. The fastest path should be: open the status item, pick the PR, land in GitHub. Workspaces matter because they explain which local jackin' sessions and repositories are currently active, but the operator's day-to-day decision is usually "which pull request do I need to open now?"
 
 1. Header: daemon status, active session count, last refresh time.
-2. My open pull requests: PRs created by the operator, sorted newest first, with direct browser actions.
+2. My open pull requests: PRs created by the operator, sorted newest first, with direct GitHub and DiffsHub actions.
 3. Active projects: repositories recently touched by jackin' work, grouped by owner/org and filterable later in the app window.
-4. Active workspaces: each row shows workspace name, repo/branch, role, agent, container state, last event, and primary action.
+4. Active workspaces: each row shows workspace name, number of running instances, repo/branch, role, agent, container state, linked PR, last event, and primary actions.
 5. Ready for review: PR rows promoted to the top when an agent explicitly reports a PR as ready.
 6. Accounts: cards for the configured built-in jackin' runtimes (Claude, Codex, Amp, Kimi, OpenCode), one or more accounts each.
 7. Recent / saved workspaces: launch shortcuts for jackin' workspaces not currently running.
@@ -239,7 +241,8 @@ jackin'
   Active workspaces
     jackin-project/jackin
       Role: the-architect       Agent: Codex      Branch: docs/desktop-hub
-      Open PR #299
+      Open PR #299 on GitHub
+      Open PR #299 in DiffsHub
       Open repository on GitHub
       Open in Ghostty
       Stop role
@@ -262,7 +265,17 @@ jackin'
     Amp Personal                needs login
 ```
 
-This is closer to a compact operations menu than a dashboard. The default click target for a PR row opens the PR in the browser. Holding Option or opening the submenu can expose secondary actions like copy URL, open checks, copy branch, or reveal the workspace that produced the PR.
+This is closer to a compact operations menu than a dashboard. Every detected PR
+row must expose two first-class links:
+
+- **Open PR on GitHub** — opens the pull request itself.
+- **Open PR in DiffsHub** — opens the same PR through `https://diffshub.com/`
+  by converting `https://github.com/<owner>/<repo>/pull/<number>` to
+  `https://diffshub.com/<owner>/<repo>/pull/<number>`.
+
+Secondary actions like copy URL, open checks, copy branch, or reveal the
+workspace that produced the PR can live behind Option or a submenu, but GitHub
+and DiffsHub review links must not be hidden behind a generic "open" action.
 
 The **My open PRs** section is intentionally inspired by GitHub's authenticated pull-request inbox (`https://github.com/pulls/inbox`): a compact, always-available view of active pull requests. jackin' should not clone GitHub's full UI or attempt to show every GitHub detail. It should take the useful idea — a focused inbox for the work the operator is actively responsible for — and scope it to recently active jackin' projects plus optional org/project filters.
 
@@ -271,14 +284,15 @@ The **My open PRs** section is intentionally inspired by GitHub's authenticated 
 Every workspace row should be a small hierarchy:
 
 1. Workspace row: name, active/running state, number of repositories mounted,
-   number of running roles, and last relevant event.
+   number of running instances, and last relevant event.
 2. Repository rows under that workspace: each Git remote detected from mounted
    repos or worktrees, with branch and dirty/ahead/behind status when cheap.
 3. Repository actions:
    - Open repository on GitHub.
    - Open repository in Finder / editor.
    - Open pull requests page for that repository.
-   - Open current branch PR if one exists.
+   - Open current branch PR on GitHub if one exists.
+   - Open current branch PR in DiffsHub if one exists.
    - Copy remote URL / branch name.
 
 This solves the "I cannot currently see those repositories" pain directly:
@@ -305,8 +319,8 @@ Recommended layout:
 - Sidebar: Pull Requests, Projects, Workspaces, Running Agents, Accounts, Settings.
 - Pull Requests: an inbox-style list of open PRs authored by the operator, newest first, with filters for organization, project/repository, workspace-linked only, draft/open, and ready-for-review.
 - Projects: GitHub repositories jackin' has seen recently through saved workspaces, running sessions, mounted repos, branch activity, or PR tracking. This is not "all GitHub repositories"; it is the operator's current working set.
-- Workspaces: saved jackin' workspaces with a launch button, active/running badge, number of running agents, primary repositories, and last activity. No create/edit form in v1.
-- Running Agents: current role containers grouped by workspace/project, with agent runtime, role, branch, PR, attention state, focused-account quota, workspace spend, and stop/hardline/open actions.
+- Workspaces: saved jackin' workspaces with a launch button, active/running badge, number of running instances, primary repositories, current branches for running instances, linked PRs, and last activity. No create/edit form in v1.
+- Running Agents: current role containers grouped by workspace/project, with agent runtime, role, repository, current branch, linked PR, attention state, focused-account quota, workspace spend, and stop/hardline/open actions. Each linked PR row must provide separate GitHub and DiffsHub buttons.
 - Accounts: Claude/Codex/Amp/Kimi/OpenCode account cards with source, plan/quota, reset time, confidence, last refresh, stale/error state, and repair/login actions.
 - Usage: workspace/session spend view showing tokens and cost by workspace, role, agent, model, and time window.
 
@@ -316,9 +330,11 @@ The first window slice now adds this `NavigationSplitView` shell and wires the
 sidebar destinations to the same daemon-backed menu model. The Pull Requests
 and Projects panes now include first-pass organization, project, and draft/open
 filters over daemon-provided PR state. The Workspaces and Running Agents panes
-now add launch-only Ghostty actions through `workspace/launch` and reconnect
-actions through `desktop/open`. Account cards and attention actions remain in
-focused follow-up PRs.
+must become the operator's live answer to: "Which workspaces exist, how many
+instances are running, which branch is each instance changing, and which pull
+request should I review?" Account cards and attention actions remain in focused
+follow-up work after the consolidated PR establishes that live workspace /
+instance / PR spine.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
@@ -360,8 +376,11 @@ Add request/response shapes:
 
 - `daemon/hello`: protocol version, daemon version, capabilities, socket paths.
 - `workspace/list`: saved workspaces from `AppConfig`.
-- `session/list`: running Capsule-backed instances with labels, workspace, role, agent,
-  branch, PR candidate URLs, state, started time, last activity.
+- `session/list`: running Capsule-backed instances with labels, workspace,
+  role, agent, repository owner/name, mounted-repo current branch, linked PR
+  candidates, state, started time, last activity, and open actions. The branch
+  here is the branch the instance is changing in the mounted workspace repo or
+  isolated worktree, not the role-source branch used to build the role image.
 - `workspace/launch`: launch an existing saved workspace/role/agent through the daemon/app action path.
 - `session/action`: hardline/open-in-ghostty/stop/eject/mute.
 - `event/subscribe`: JSON Lines stream of session, attention, auth, PR, and
@@ -373,7 +392,8 @@ Add request/response shapes:
 - `usage/focused`: active account quota plus session/workspace spend for the currently focused Capsule pane.
 - `github/project_inbox`: open PRs for recently active jackin' projects, with org/project filters.
 - `github/my_open_prs`: open PRs authored by the operator, sorted by created date descending.
-- `github/repository_prs`: PRs for a workspace/repo/branch, cache-first.
+- `github/repository_prs`: PRs for a workspace/repo/branch, cache-first,
+  including the PR head branch so the app can match running instances to PRs.
 - `desktop/open`: daemon-assisted actions for browser open, Ghostty launch/focus, and native notification click handling.
 
 Keep `Notify` as a low-level primitive, but do not make Desktop infer all state
@@ -443,20 +463,43 @@ There are three related but distinct surfaces:
 2. **My open PRs.** Every open PR authored by the operator across repositories
    jackin' knows about, sorted by creation date descending. These appear near the
    top of the status menu so the operator can immediately jump to the newest
-   PR Jack created.
+   PR the agent created.
 3. **Project inbox.** A GitHub pull-request inbox scoped to recently active jackin' projects. This is the main desktop-window view and should support filters by organization, repository/project, workspace-linked status, draft/open status, and eventually "ready for my review" vs "authored by me".
 
 Data sources in order:
 
 1. Agent-reported PR URL through an attention/progress event.
-2. Current branch in the mounted repo/worktree plus GitHub remote:
+2. Current branch in the mounted repo/worktree plus GitHub remote. The daemon
+   should resolve this from the running instance's actual mounted repository,
+   not from the role-source branch label. For worktree and clone isolation this
+   means reading the isolated checkout branch; for shared mounts this means the
+   shared checkout's current branch.
+3. GitHub PR metadata for that repository/branch:
    `gh pr view --json url,state,title,headRefName,baseRefName,isDraft` or a
    daemon GitHub client.
-3. Cache of recently opened PRs for that workspace/branch.
-4. GitHub REST/GraphQL fallback if `gh` is unavailable.
+4. Cache of recently opened PRs for that workspace/branch.
+5. GitHub REST/GraphQL fallback if `gh` is unavailable.
 
 The menu should promote PRs as soon as a PR URL is known. It should not wait for
 full RepoBar-style repository hydration.
+
+Instance-to-PR correlation is a hard requirement for the Desktop Agent Hub. The
+Running Agents and Workspaces views must show, for every running instance when
+known:
+
+- workspace name;
+- instance/container display name;
+- role and agent runtime;
+- repository owner/name;
+- current branch;
+- linked PR number/title/state;
+- **Open PR on GitHub** action;
+- **Open PR in DiffsHub** action.
+
+If no PR is known for the current branch, the row should say "No PR detected"
+and still offer repository-level actions such as "Open pull requests page". It
+should not silently omit the branch or make the operator infer the mapping from
+container names.
 
 For **My open PRs**, the daemon should query cache-first and refresh in the
 background:
@@ -469,9 +512,10 @@ background:
 - Scope: start with repositories present in jackin' saved/running workspaces and repositories with recent jackin'-observed activity. Add an optional "all accessible repositories" mode later only if the current-focus model proves too narrow.
 - Sorting: newest `createdAt` first, oldest at the bottom. Do not sort by
   updated time for the default view because the user's mental model is "what
-  did Jack just create?"
+  did the agent just create?"
 - Row content: repository name, PR number, title, draft/open marker, created
-  relative time, and optional workspace badge if a jackin' workspace matches.
+  relative time, head branch, and optional workspace/instance badge if a
+  jackin' workspace or running instance matches.
 - Empty state: "No open PRs authored by you in jackin' workspaces."
 
 The daemon should expose this as a specific endpoint rather than asking the app
@@ -479,9 +523,13 @@ to run `gh`:
 
 - `github/my_open_prs`: returns authored open PRs sorted newest first.
 - `github/project_inbox`: returns open PRs for recently active jackin' projects with org/project filters.
-- `github/repository_prs`: returns open PRs for a workspace repository.
+- `github/repository_prs`: returns open PRs for a workspace repository,
+  including head branch for instance correlation.
 - `github/open`: opens a repository, repository PR page, or PR URL through the
   host browser action path.
+- `github/diffshub_url`: derived field or helper that converts a GitHub PR URL
+  to the equivalent DiffsHub URL. This can be computed in the app, but the
+  daemon contract should name it so every Desktop surface uses the same rule.
 
 ### Native macOS design
 
@@ -515,61 +563,44 @@ Apple references:
 - WWDC25 "Build a SwiftUI app with the new design":
   https://developer.apple.com/videos/play/wwdc2025/323
 
-## Proposed implementation phasing
+## Current implementation plan
 
-This program should be delivered as a quiet, long-running implementation track,
-not as one large feature branch. The agent running the goal should keep building
-without asking for step-by-step approval, but every externally reviewed unit
-must be a small pull request.
+This program is being delivered through
+[PR #317](https://github.com/jackin-project/jackin/pull/317) on branch
+`jackin/desktop-attention-routing`. The consolidated PR is the review unit for
+the daemon, macOS Desktop shell, menu bar foundation, GitHub PR surfaces,
+account-status foundation, Ghostty/browser actions, notification bridge, and
+attention-route contract.
 
-The phases are delivery slices for review, not optional scope reductions. The
-long-running goal should continue through daemon APIs, menu bar, desktop window,
-notifications, and attention routing unless blocked by a documented design issue
-or repository constraint that must be resolved first.
+The sections below are subsystem checkpoints inside PR #317, not instructions
+to open sequential pull requests. Agents working this goal should update PR
+#317 directly and should not create stacked follow-up branches unless the
+operator explicitly changes the delivery plan.
 
 Delivery rules:
 
-- Create sequential pull requests, not one large PR. Each PR should be
-  reviewable on its own and should leave the repo in a useful state.
-- The implementation track is complete only when all major stages have been
-  delivered as separate reviewable PRs: daemon contract, daemon data endpoints,
-  native status bar, PR/project inbox, account status, Ghostty actions, desktop
-  window, notifications, and attention routing.
-- Implement all PRs without waiting for operator approval, but do not merge any
-  of them. The operator owns merge decisions and will explicitly ask for fixes
-  when a reviewed PR needs changes.
-- Stack PRs in dependency order by branching each next PR from the previous PR
-  branch. PR 2 depends on PR 1, PR 3 depends on PR 2, and so on. This makes the
-  implementation chain visible while still keeping each stage small.
-- Never hijack the middle of the chain. If PR 1 needs fixes after PR 2 or PR 3
-  already exists, fix PR 1 first, then replay/adjust the downstream stacked
-  branches so the chain remains coherent.
-- Every PR body must identify its place in the chain: previous PR, this PR,
-  next PR, base branch, and whether it is blocked on an earlier PR landing. The
-  reviewer should always know which PR to review first and which PR comes next.
-- Keep every PR focused on one stage: daemon contract, session discovery,
-  GitHub PR lookup, menu bar shell, account status cards, workspace launch,
-  desktop window, attention integration, or host-bridge UI. Do not combine
-  unrelated stages just because they are part of the same goal.
-- Follow the repo's existing PR and commit standards for every PR in the chain:
+- Keep all Desktop Agent Hub implementation work on
+  `jackin/desktop-attention-routing` for PR #317.
+- Do not create additional implementation PRs for daemon contract, session
+  discovery, GitHub PR lookup, menu bar shell, account status cards, workspace
+  launch, desktop window, attention integration, or host-bridge UI.
+- Keep the consolidated PR reviewable through focused commits, clear subsystem
+  sections in the PR body, and targeted verification notes.
+- Follow the repo's existing PR and commit standards for PR #317:
   <RepoFile path="AGENTS.md" />, <RepoFile path="PULL_REQUESTS.md" />, and
   <RepoFile path="COMMITS.md" />. This includes the expected PR body shape,
   verification notes, Conventional Commit subjects, DCO signoff, and the
   required agent co-author trailers when agents contribute.
-- Every PR must include focused tests or an explicit reason tests are not
-  meaningful for that slice. UI PRs should include the strongest practical
-  local verification for the current repo shape.
-- Continue silently between PRs: after opening one PR, start the next branch on
-  top of that PR branch unless blocked by CI, merge conflicts, or a design
-  contradiction that cannot be resolved from the roadmap.
-- Treat the daemon branch as editable, not fixed. If a required Desktop
-  contract belongs in the daemon branch, update that branch directly instead of
-  working around a weak daemon API in later Desktop branches.
-- Keep PR descriptions stage-aware: what this PR adds, what it intentionally
-  defers, how to verify it, and which PR should be reviewed next after this one
-  lands.
+- PR #317 must include focused tests or an explicit reason tests are not
+  meaningful for a slice. UI work should include the strongest practical local
+  verification for the current repo shape.
+- Treat the daemon/Desktop/API/docs contract as editable inside PR #317. If a
+  required Desktop contract belongs in the daemon, update the daemon code and
+  docs in the same PR instead of working around a weak API.
+- Keep the PR description current: what #317 adds, what it intentionally
+  defers, how to verify it, and which risks remain.
 
-### Phase 0 — Validate daemon contract before merge
+### Daemon contract before merge
 
 - Keep the current daemon branch as the base, but add explicit capability/version handshake.
 - Add `workspace/list`, `session/list`, `workspace/launch`, `github/my_open_prs`,
@@ -579,44 +610,35 @@ Delivery rules:
 - Add tests around daemon protocol compatibility, session discovery, PR sorting,
   and project filtering.
 
-### Phase 1 — Menu bar MVP
+### Menu bar MVP
 
-- PR 1: Native `Jackin.app` skeleton with menu bar extra and daemon connection
-  health only. Started with the SwiftUI/AppKit package and daemon-health menu.
-- PR 2: Add active workspaces and running-agent counts.
-  Started with daemon-backed saved workspace rows and per-workspace running
-  agent counts in the menu.
-- PR 3: Add My open PRs newest-first and active projects.
-  Started with a daemon-backed My open PRs menu section and direct browser open
-  actions through `desktop/open`; project grouping remains for the next PR
-  slice.
-- PR 4: Add open actions for hardline / Ghostty, repository, and PR.
-- PR 5: Add account cards for the built-in jackin' runtimes using daemon-provided status. Implementations may stage individual providers by adapter maturity, but the Desktop model and daemon API stay shaped for Claude/Codex/Amp/Kimi/OpenCode from the start.
+- Native `Jackin.app` skeleton with menu bar extra and daemon connection health.
+- Active workspaces and running-agent counts from daemon-backed saved workspace
+  rows and session data.
+- My open PRs newest-first and active project grouping, with direct browser open
+  actions through `desktop/open`.
+- Open actions for hardline / Ghostty, repository, and PR.
+- Account cards for the built-in jackin' runtimes using daemon-provided status.
+  Implementations may stage individual providers by adapter maturity, but the
+  Desktop model and daemon API stay shaped for Claude/Codex/Amp/Kimi/OpenCode
+  from the start.
 
-### Phase 2 — Simple desktop window
+### Simple desktop window
 
-- PR 1: Add the simple native window shell with `NavigationSplitView`.
-  Started with a shared-model `WindowGroup`, sidebar destinations, and basic
-  Pull Requests, Projects, Workspaces, Running Agents, Accounts, and Settings
-  panes.
-- PR 2: Add the inbox-style Pull Requests view with organization/project
-  filters.
-  Started with shared filters for organization, project/repository, and
+- Add the simple native window shell with `NavigationSplitView`, shared-model
+  `WindowGroup`, sidebar destinations, and basic Pull Requests, Projects,
+  Workspaces, Running Agents, Accounts, and Settings panes.
+- Add the inbox-style Pull Requests view with organization/project filters and
   draft/open state over the daemon-backed PR list.
-- PR 3: Add the Projects view for recently active jackin' repositories.
-  Started with repository grouping from the daemon-backed PR list and an
-  organization filter.
-- PR 4: Add the Workspaces view for saved workspace visibility and launch-only
-  actions.
-  Started with saved workspace rows, running counts, and Ghostty launch buttons
-  through `workspace/launch`.
-- PR 5: Add the Running Agents view with per-workspace agent counts and Ghostty
-  open/hardline actions.
-  Started with daemon-backed session rows and Ghostty hardline buttons through
-  `desktop/open`.
-- Keep workspace creation/editing in `jackin console` across all Phase 2 PRs.
+- Add the Projects view for recently active jackin' repositories using
+  repository grouping from the daemon-backed PR list and an organization filter.
+- Add the Workspaces view for saved workspace visibility and launch-only
+  actions through `workspace/launch`.
+- Add the Running Agents view with per-workspace agent counts and Ghostty
+  open/hardline actions through `desktop/open`.
+- Keep workspace creation/editing in `jackin console` for this PR.
 
-### Phase 3 — Attention and PR readiness loop
+### Attention and PR readiness loop
 
 - Implement `jackin-attention` MCP server and richer daemon attention events.
 - Promote "waiting" and "ready for review" states in the menu bar.
@@ -629,7 +651,7 @@ Delivery rules:
   `url` through `desktop/open`. Native Notification Center activation still
   needs the later app delegate/event-stream implementation.
 
-### Phase 4 — Live auth sync and host bridge UI
+### Live auth sync and host bridge UI
 
 - Desktop surfaces account sync state and repair actions.
 - Desktop provides the approval UI for host bridge requests using
