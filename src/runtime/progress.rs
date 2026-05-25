@@ -14,7 +14,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::{
-    ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
+    LINK_BLUE, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
 };
 use crate::diagnostics::RunDiagnostics;
 
@@ -156,7 +156,7 @@ pub struct LaunchProgress {
 }
 
 enum Renderer {
-    Rich(RichRenderer),
+    Rich(Box<RichRenderer>),
     Compact {
         interactive: bool,
     },
@@ -171,7 +171,7 @@ impl LaunchProgress {
         no_motion: bool,
     ) -> anyhow::Result<Self> {
         let renderer = if rich_terminal_supported() && !no_tui {
-            Renderer::Rich(RichRenderer::enter(no_motion)?)
+            Renderer::Rich(Box::new(RichRenderer::enter(no_motion)?))
         } else {
             Renderer::Compact {
                 interactive: std::io::stderr().is_terminal(),
@@ -374,6 +374,10 @@ impl Drop for LaunchProgress {
 struct RichRenderer {
     terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     no_motion: bool,
+    /// Shared digital-rain engine (the same one the intro/outro use), ticked
+    /// per frame and painted into the loading box. Sized to the terminal so
+    /// the box shows a window into one continuous rainfall.
+    rain: Option<crate::tui::animation::RainState>,
 }
 
 impl RichRenderer {
@@ -389,13 +393,32 @@ impl RichRenderer {
         Ok(Self {
             terminal,
             no_motion,
+            rain: None,
         })
     }
 
     fn render(&mut self, view: &LaunchView, run_id: &str) -> anyhow::Result<()> {
         let no_motion = self.no_motion;
+        // Keep the rain engine sized to the terminal and advance it once per
+        // render (paused under no-motion). render_rain reads its grid.
+        if let Ok(size) = self.terminal.size() {
+            let (cols, rows) = (size.width as usize, size.height as usize);
+            let stale = self
+                .rain
+                .as_ref()
+                .is_none_or(|rain| rain.cols != cols || rain.rows != rows);
+            if stale && cols > 0 && rows > 0 {
+                self.rain = Some(crate::tui::animation::RainState::new(cols, rows));
+            }
+            if !no_motion
+                && let Some(rain) = &mut self.rain
+            {
+                crate::tui::animation::tick_rain(rain);
+            }
+        }
+        let rain = self.rain.as_ref();
         self.terminal
-            .draw(|frame| render_launch_frame(frame, view, run_id, no_motion))
+            .draw(|frame| render_launch_frame(frame, view, run_id, no_motion, rain))
             .map(|_| ())
             .context("rendering launch progress TUI")
     }
@@ -475,15 +498,14 @@ const BLOCK_GAP: usize = 1;
 /// `DANGER_RED`; the launch screen is the only other site that needs the
 /// colour, so it is duplicated here rather than made public.
 const FAILED_RED: Color = Color::Rgb(255, 94, 122);
-/// Glyphs the in-box digital rain falls through (all single-width so the
-/// columns stay aligned).
-const RAIN_GLYPHS: &[char] = &[
-    '0', '1', '7', '=', '+', '/', '\\', '|', '<', '>', '{', '}', ':', ';', '░', '▒', '╳',
-];
-/// Trail length below each rain head, in rows.
-const RAIN_TRAIL: i64 = 6;
 
-fn render_launch_frame(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, no_motion: bool) {
+fn render_launch_frame(
+    frame: &mut Frame<'_>,
+    view: &LaunchView,
+    run_id: &str,
+    no_motion: bool,
+    rain: Option<&crate::tui::animation::RainState>,
+) {
     let area = frame.area();
     frame.render_widget(Clear, area);
 
@@ -501,7 +523,7 @@ fn render_launch_frame(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, n
     let frozen = no_motion || view.failure.is_some();
 
     render_brand_header(frame, rows[0], "loading");
-    render_body(frame, rows[1], view, frozen);
+    render_body(frame, rows[1], view, frozen, rain);
     render_footer(frame, rows[2], view, run_id);
 
     if let Some(failure) = &view.failure {
@@ -509,103 +531,98 @@ fn render_launch_frame(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, n
     }
 }
 
-fn box_title(view: &LaunchView) -> String {
-    view.identity.as_ref().map_or_else(
-        || "Preparing launch".to_string(),
-        |id| {
-            format!(
-                "Loading {} {} {}",
-                id.role,
-                match id.target_kind {
-                    LaunchTargetKind::Workspace => "into",
-                    LaunchTargetKind::Directory => "in",
-                },
-                id.target_label
-            )
-        },
-    )
-}
-
-fn render_body(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+fn render_body(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &LaunchView,
+    frozen: bool,
+    rain: Option<&crate::tui::animation::RainState>,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            format!(" {} ", box_title(view)),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+        .title(box_title_line(view, frozen));
     let inner = block.inner(area).inner(ratatui::layout::Margin {
         horizontal: 2,
         vertical: 1,
     });
     frame.render_widget(block, area);
 
-    // Digital rain fills the upper space ("entering another universe"); the
-    // block progress + stage words sit just above the status bar. The rain
-    // thins toward the bottom so it never crowds the progress.
+    // Digital rain fills the upper space ("entering the construct"); the
+    // block progress + stage words sit just above the status bar.
     let parts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(2)])
         .split(inner);
-    render_rain(frame, parts[0], view, frozen);
+    render_rain(frame, parts[0], rain);
     render_progress(frame, parts[1], view, frozen);
 }
 
-fn render_rain(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+/// Paint the shared rain engine's grid into `area`. The grid is sized to the
+/// whole terminal, so `area` is a window onto a continuous rainfall; each
+/// cell maps to its glyph and the engine's age-based green fade.
+fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::animation::RainState>) {
+    let Some(rain) = rain else {
+        return;
+    };
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let h = i64::from(area.height);
-    let f = if frozen {
-        0
-    } else {
-        i64::try_from(view.frame).unwrap_or(0)
-    };
-    let lines: Vec<Line<'static>> = (0..h)
+    let lines: Vec<Line<'static>> = (0..area.height)
         .map(|y| {
-            Line::from(
-                (0..i64::from(area.width))
-                    .map(|x| rain_cell(x, y, h, f))
-                    .collect::<Vec<_>>(),
-            )
+            let grid_y = usize::from(area.y + y);
+            let spans: Vec<Span<'static>> = (0..area.width)
+                .map(|x| {
+                    let grid_x = usize::from(area.x + x);
+                    rain.grid
+                        .get(grid_y)
+                        .and_then(|row| row.get(grid_x))
+                        .and_then(|cell| cell.as_ref())
+                        .and_then(|cell| {
+                            crate::tui::animation::age_to_color(cell.age)
+                                .map(|rgb| (cell.ch, rgb))
+                        })
+                        .map_or_else(
+                            || Span::raw(" "),
+                            |(ch, (r, g, b))| {
+                                Span::styled(ch.to_string(), Style::default().fg(Color::Rgb(r, g, b)))
+                            },
+                        )
+                })
+                .collect();
+            Line::from(spans)
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-/// One rain cell at column `x`, row `y` (within a rain area `h` rows tall)
-/// for frame `f`. Stateless: each column's falling head is a pure function
-/// of `f`, so no per-frame rain state has to be stored on the view.
-fn rain_cell(x: i64, y: i64, h: i64, f: i64) -> Span<'static> {
-    let speed = 2 + rain_hash(x).rem_euclid(3); // 2..=4 frames per row
-    let cycle = h + RAIN_TRAIL;
-    let offset = rain_hash(x.wrapping_mul(2_654_435_761)).rem_euclid(cycle);
-    let head = (f / speed + offset).rem_euclid(cycle);
-    let depth = head - y; // 0 = head, increasing up the trail
-    if !(0..=RAIN_TRAIL).contains(&depth) {
-        return Span::raw(" ");
-    }
-    // Lower third keeps heads only, so the rain dissolves before the progress.
-    if y > h * 2 / 3 && depth != 0 {
-        return Span::raw(" ");
-    }
-    let glyph =
-        RAIN_GLYPHS[(x * 7 + y * 13 + f * 3).rem_euclid(RAIN_GLYPHS.len() as i64) as usize];
-    let color = if depth == 0 {
-        WHITE
-    } else if depth <= 2 {
-        PHOSPHOR_GREEN
-    } else if depth <= 4 {
-        PHOSPHOR_DIM
-    } else {
-        PHOSPHOR_DARK
+/// The box title, coloured so the operator reads what is loading at a glance:
+/// the agent role in phosphor green and the target workspace/path in link
+/// blue, both pulsing brighter (to white) as the launch progresses.
+fn box_title_line(view: &LaunchView, frozen: bool) -> Line<'static> {
+    let Some(id) = view.identity.as_ref() else {
+        return Line::from(Span::styled(
+            " Preparing launch ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
     };
-    Span::styled(glyph.to_string(), Style::default().fg(color))
-}
-
-const fn rain_hash(n: i64) -> i64 {
-    let h = n.wrapping_mul(2_246_822_519);
-    (h ^ (h >> 13)).wrapping_abs()
+    let prep = match id.target_kind {
+        LaunchTargetKind::Workspace => "into",
+        LaunchTargetKind::Directory => "in",
+    };
+    let pulse = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
+    let accent = |base: Color| {
+        Style::default()
+            .fg(if pulse { WHITE } else { base })
+            .add_modifier(Modifier::BOLD)
+    };
+    Line::from(vec![
+        Span::styled(" Loading ", Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(id.role.clone(), accent(PHOSPHOR_GREEN)),
+        Span::styled(format!(" {prep} "), Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(id.target_label.clone(), accent(LINK_BLUE)),
+        Span::raw(" "),
+    ])
 }
 
 fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
@@ -756,7 +773,7 @@ fn draw_select(
     picker: &SelectListState,
 ) {
     let area = frame.area();
-    render_launch_frame(frame, view, run_id, true);
+    render_launch_frame(frame, view, run_id, true, None);
     dim_buffer(frame, area);
     select_list::render(frame, picker_rect(area, picker), picker, title);
     render_picker_hints(frame, area);
@@ -886,7 +903,7 @@ mod tests {
             frame: 0,
         };
         terminal
-            .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true))
+            .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true, None))
             .unwrap();
 
         let rendered = format!("{:?}", terminal.backend().buffer());
@@ -902,7 +919,7 @@ mod tests {
             stage: LaunchStage::Network,
         });
         terminal
-            .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true))
+            .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true, None))
             .unwrap();
         let rendered = format!("{:?}", terminal.backend().buffer());
         assert!(rendered.contains("Docker unavailable"));
