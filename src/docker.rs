@@ -177,6 +177,18 @@ impl CommandRunner for ShellRunner {
             );
         } else if opts.capture_stderr || opts.capture_stdout {
             Box::pin(self.run_captured(program, args, cwd, opts)).await?;
+        } else if self.debug || crate::tui::rich_surface_active() {
+            // This arm would otherwise inherit the terminal and stream raw
+            // command output straight to the screen — which floods a rich TUI
+            // and a --debug run. Capture both streams instead so the output
+            // lands in the diagnostics file (under --debug) and never on the
+            // screen.
+            let captured = RunOptions {
+                capture_stdout: true,
+                capture_stderr: true,
+                ..opts.clone()
+            };
+            Box::pin(self.run_captured(program, args, cwd, &captured)).await?;
         } else {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
@@ -509,6 +521,34 @@ mod tests {
             "stderr must not appear in error message: {msg}"
         );
         assert!(msg.contains("sh"), "program name must appear: {msg}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn debug_run_captures_noncapturing_command_into_diagnostics() {
+        // A non-quiet, non-capturing `run` would inherit the terminal and
+        // stream straight to the screen. Under --debug it must capture both
+        // streams and route them to the diagnostics run file instead — never
+        // to the terminal (which would flood a rich TUI).
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(dir.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, true, "test").unwrap();
+        let _active = run.activate();
+        let mut runner = ShellRunner { debug: true };
+        runner
+            .run(
+                "sh",
+                &["-c", "echo hello-from-cmd"],
+                None,
+                &RunOptions::default(),
+            )
+            .await
+            .unwrap();
+        let contents = std::fs::read_to_string(run.path()).unwrap();
+        assert!(
+            contents.contains("hello-from-cmd"),
+            "non-capturing command stdout must be captured into the run file under --debug: {contents}"
+        );
     }
 
     #[cfg(unix)]
