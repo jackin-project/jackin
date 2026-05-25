@@ -1150,7 +1150,9 @@ impl OpWriteRunner for OpCli {
             get_args.push("--account");
             get_args.push(acc);
         }
-        get_args.extend_from_slice(&["item", "get", item_id, "--vault", vault_id, "--format", "json"]);
+        get_args.extend_from_slice(&[
+            "item", "get", item_id, "--vault", vault_id, "--format", "json",
+        ]);
         let raw_bytes = run_op_with_timeout(&self.binary, &get_args, self.timeout)
             .map_err(|e| anyhow::anyhow!("`op item get` failed: {e}"))?;
 
@@ -1164,8 +1166,7 @@ impl OpWriteRunner for OpCli {
             .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
 
         let found = fields.iter_mut().find(|f| {
-            f["label"].as_str() == Some(field_label)
-                || f["id"].as_str() == Some(field_label)
+            f["label"].as_str() == Some(field_label) || f["id"].as_str() == Some(field_label)
         });
 
         if let Some(field) = found {

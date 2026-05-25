@@ -51,13 +51,11 @@ fn picker_area(full: Rect) -> Rect {
 /// be initialised.
 pub fn run(workspace: &str, _account: Option<&str>) -> anyhow::Result<TokenStoreSelection> {
     if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-        anyhow::bail!(
-            "--interactive requires a TTY. Pass --vault <name> for non-interactive use."
-        );
+        anyhow::bail!("--interactive requires a TTY. Pass --vault <name> for non-interactive use.");
     }
 
-    let item_name_default = crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE
-        .replace("{ws}", workspace);
+    let item_name_default =
+        crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE.replace("{ws}", workspace);
 
     enable_raw_mode()?;
     let _guard = TerminalGuard;

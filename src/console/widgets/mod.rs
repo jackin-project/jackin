@@ -43,7 +43,6 @@ pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;
 pub mod op_picker;
-pub mod token_store_picker;
 pub mod panel_rain;
 pub mod role_picker;
 pub mod save_discard;
@@ -52,6 +51,7 @@ pub mod scrollable;
 pub mod source_picker;
 pub mod status_popup;
 pub mod text_input;
+pub mod token_store_picker;
 pub mod workdir_pick;
 
 /// Outcome of a modal's event-handling cycle. Passed back to the

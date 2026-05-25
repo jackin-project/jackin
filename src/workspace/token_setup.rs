@@ -526,10 +526,7 @@ fn create_op_item(
     );
     let tags = [JACKIN_TAG, workspace_tag.as_str()];
 
-    let effective_field_label = args
-        .field_label
-        .as_deref()
-        .unwrap_or(DEFAULT_FIELD_LABEL);
+    let effective_field_label = args.field_label.as_deref().unwrap_or(DEFAULT_FIELD_LABEL);
     let params = OpItemCreateParams {
         vault_id: vault,
         title: &title,
@@ -1018,7 +1015,10 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("--vault"));
         assert!(writer.last_create.borrow().is_none());
-        assert!(!capture_called.get(), "OAuth flow must not start when --vault is missing");
+        assert!(
+            !capture_called.get(),
+            "OAuth flow must not start when --vault is missing"
+        );
     }
 
     /// `op_writer.item_create` returning Err must abort the

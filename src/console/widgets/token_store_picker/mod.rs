@@ -15,9 +15,9 @@ use tui_widget_list::ListState;
 
 use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
-use super::{ModalOutcome, cycle_select};
-use super::text_input::TextInputState;
 pub use super::op_picker::{OpLoadState, OpPickerError, OpPickerFatalState};
+use super::text_input::TextInputState;
+use super::{ModalOutcome, cycle_select};
 
 pub mod render;
 
@@ -210,9 +210,11 @@ impl<'a> TokenStorePickerState<'a> {
         self.rx = Some(rx);
         let runner = self.runner_clone();
         std::thread::spawn(move || {
-            let _ = tx.send(LoadResult::Fields(
-                runner.item_get(&item_id, &vault_id, account_id.as_deref()),
-            ));
+            let _ = tx.send(LoadResult::Fields(runner.item_get(
+                &item_id,
+                &vault_id,
+                account_id.as_deref(),
+            )));
         });
     }
 
@@ -255,8 +257,7 @@ impl<'a> TokenStorePickerState<'a> {
                 | LoadResult::Fields(Err(e)),
             ) => {
                 self.rx = None;
-                self.load_state =
-                    OpLoadState::Error(classify_probe_error(&e));
+                self.load_state = OpLoadState::Error(classify_probe_error(&e));
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {

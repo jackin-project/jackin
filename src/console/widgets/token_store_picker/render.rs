@@ -9,8 +9,8 @@ use ratatui::{
 };
 
 use super::super::scrollable::render_selected_lines_in_area;
-use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use super::super::text_input;
+use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use super::{
     OpLoadState, OpPickerError, OpPickerFatalState, TokenStorePickerState, TokenStoreStage,
 };
@@ -145,12 +145,7 @@ fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
     );
 }
 
-fn render_loading(
-    frame: &mut Frame,
-    area: Rect,
-    state: &TokenStorePickerState,
-    spinner_tick: u8,
-) {
+fn render_loading(frame: &mut Frame, area: Rect, state: &TokenStorePickerState, spinner_tick: u8) {
     let spinner = SPINNER_FRAMES[(spinner_tick as usize) % SPINNER_FRAMES.len()];
     let loading_label = match state.stage {
         TokenStoreStage::Account => "Loading accounts",
@@ -235,7 +230,11 @@ fn render_account_list(frame: &mut Frame, area: Rect, state: &TokenStorePickerSt
         })
         .collect();
     render_selected_lines_in_area(frame, chunks[1], lines, Some(selected));
-    render_hint_footer(frame, chunks[2], "↑↓ navigate  Enter — select  Esc — cancel");
+    render_hint_footer(
+        frame,
+        chunks[2],
+        "↑↓ navigate  Enter — select  Esc — cancel",
+    );
 }
 
 fn render_vault_list(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
@@ -376,4 +375,3 @@ fn render_field_choice(frame: &mut Frame, area: Rect, state: &TokenStorePickerSt
         "↑↓ navigate  Enter — select  Esc — back to item",
     );
 }
-
