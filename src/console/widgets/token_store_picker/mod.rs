@@ -11,12 +11,12 @@
 use std::sync::{Arc, mpsc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui_textarea::{CursorMove, Input, TextArea};
 use tui_widget_list::ListState;
 
 use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
 use super::{ModalOutcome, cycle_select};
+use super::text_input::TextInputState;
 pub use super::op_picker::{OpLoadState, OpPickerError, OpPickerFatalState};
 
 pub mod render;
@@ -85,10 +85,10 @@ pub struct TokenStorePickerState<'a> {
     pub fields: Vec<OpField>,
     pub field_list_state: ListState,
 
-    /// Text area for the new-item name stage.
-    pub new_item_name_area: TextArea<'a>,
-    /// Text area for the field-label stage (new item or new-field-in-existing-item).
-    pub field_label_area: TextArea<'a>,
+    /// Standard text-input dialog for the new-item name stage.
+    pub item_name_input: TextInputState<'a>,
+    /// Standard text-input dialog for the field label (new item or new-field-in-existing-item).
+    pub field_label_input: TextInputState<'a>,
 
     pub load_state: OpLoadState,
 
@@ -118,14 +118,6 @@ impl<'a> TokenStorePickerState<'a> {
         runner: Arc<dyn OpStructRunner + Send + Sync>,
         item_name_default: &str,
     ) -> Self {
-        let mut name_area = TextArea::new(vec![item_name_default.to_string()]);
-        name_area.move_cursor(CursorMove::End);
-
-        let mut field_area = TextArea::new(vec![
-            crate::workspace::token_setup::DEFAULT_FIELD_LABEL.to_string()
-        ]);
-        field_area.move_cursor(CursorMove::End);
-
         let mut s = Self {
             stage: TokenStoreStage::Account,
             filter_buf: String::new(),
@@ -140,8 +132,11 @@ impl<'a> TokenStorePickerState<'a> {
             selected_item: None,
             fields: Vec::new(),
             field_list_state: ListState::default(),
-            new_item_name_area: name_area,
-            field_label_area: field_area,
+            item_name_input: TextInputState::new("Item name", item_name_default),
+            field_label_input: TextInputState::new(
+                "Field label",
+                crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
+            ),
             load_state: OpLoadState::Loading { spinner_tick: 0 },
             runner,
             rx: None,
@@ -351,22 +346,6 @@ impl<'a> TokenStorePickerState<'a> {
         !self.accounts.is_empty()
     }
 
-    fn new_item_name(&self) -> String {
-        self.new_item_name_area
-            .lines()
-            .first()
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn field_label_value(&self) -> String {
-        self.field_label_area
-            .lines()
-            .first()
-            .cloned()
-            .unwrap_or_default()
-    }
-
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<TokenStoreSelection> {
         self.poll_load();
 
@@ -558,24 +537,16 @@ impl<'a> TokenStorePickerState<'a> {
     }
 
     fn handle_new_item_name_key(&mut self, key: KeyEvent) -> ModalOutcome<TokenStoreSelection> {
-        match key.code {
-            KeyCode::Esc => {
+        match self.item_name_input.handle_key(key) {
+            ModalOutcome::Cancel => {
                 self.stage = TokenStoreStage::ItemChoice;
                 ModalOutcome::Continue
             }
-            KeyCode::Enter => {
-                let name = self.new_item_name().trim().to_string();
-                if name.is_empty() {
-                    ModalOutcome::Continue
-                } else {
-                    self.stage = TokenStoreStage::FieldLabel;
-                    ModalOutcome::Continue
-                }
-            }
-            _ => {
-                self.new_item_name_area.input(Input::from(key));
+            ModalOutcome::Commit(_) => {
+                self.stage = TokenStoreStage::FieldLabel;
                 ModalOutcome::Continue
             }
+            ModalOutcome::Continue => ModalOutcome::Continue,
         }
     }
 
@@ -648,8 +619,8 @@ impl<'a> TokenStorePickerState<'a> {
     }
 
     fn handle_field_label_key(&mut self, key: KeyEvent) -> ModalOutcome<TokenStoreSelection> {
-        match key.code {
-            KeyCode::Esc => {
+        match self.field_label_input.handle_key(key) {
+            ModalOutcome::Cancel => {
                 // Go back to where we came from:
                 // - new-item path: selected_item is None → back to NewItemName
                 // - existing-item "new field" path: selected_item is Some → back to ExistingFieldChoice
@@ -660,13 +631,7 @@ impl<'a> TokenStorePickerState<'a> {
                 }
                 ModalOutcome::Continue
             }
-            KeyCode::Enter => {
-                let label = self.field_label_value().trim().to_string();
-                let label = if label.is_empty() {
-                    crate::workspace::token_setup::DEFAULT_FIELD_LABEL.to_string()
-                } else {
-                    label
-                };
+            ModalOutcome::Commit(label) => {
                 let vault = self.selected_vault.clone().expect("vault set");
                 let account = self.selected_account.clone();
                 if let Some(item) = self.selected_item.clone() {
@@ -677,7 +642,7 @@ impl<'a> TokenStorePickerState<'a> {
                         field_label: label,
                     })
                 } else {
-                    let item_name = self.new_item_name().trim().to_string();
+                    let item_name = self.item_name_input.trimmed_value();
                     ModalOutcome::Commit(TokenStoreSelection::NewItem {
                         account,
                         vault,
@@ -686,10 +651,7 @@ impl<'a> TokenStorePickerState<'a> {
                     })
                 }
             }
-            _ => {
-                self.field_label_area.input(Input::from(key));
-                ModalOutcome::Continue
-            }
+            ModalOutcome::Continue => ModalOutcome::Continue,
         }
     }
 }

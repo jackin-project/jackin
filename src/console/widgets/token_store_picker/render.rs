@@ -10,6 +10,7 @@ use ratatui::{
 
 use super::super::scrollable::render_selected_lines_in_area;
 use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::super::text_input;
 use super::{
     OpLoadState, OpPickerError, OpPickerFatalState, TokenStorePickerState, TokenStoreStage,
 };
@@ -179,23 +180,13 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
         TokenStoreStage::Account => render_account_list(frame, inner, state),
         TokenStoreStage::Vault => render_vault_list(frame, inner, state),
         TokenStoreStage::ItemChoice => render_item_choice(frame, inner, state),
-        TokenStoreStage::NewItemName => render_text_input(
-            frame,
-            inner,
-            state,
-            "Item name",
-            &state.new_item_name_area,
-            "Enter — next  Esc — back",
-        ),
+        TokenStoreStage::NewItemName => {
+            text_input::render(frame, inner, &state.item_name_input);
+        }
         TokenStoreStage::ExistingFieldChoice => render_field_choice(frame, inner, state),
-        TokenStoreStage::FieldLabel => render_text_input(
-            frame,
-            inner,
-            state,
-            "Field label",
-            &state.field_label_area,
-            "Enter — confirm  Esc — back",
-        ),
+        TokenStoreStage::FieldLabel => {
+            text_input::render(frame, inner, &state.field_label_input);
+        }
     }
 }
 
@@ -386,36 +377,3 @@ fn render_field_choice(frame: &mut Frame, area: Rect, state: &TokenStorePickerSt
     );
 }
 
-fn render_text_input(
-    frame: &mut Frame,
-    area: Rect,
-    _state: &TokenStorePickerState,
-    label: &str,
-    textarea: &ratatui_textarea::TextArea,
-    hint: &str,
-) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    frame.render_widget(
-        Paragraph::new(label).style(Style::default().fg(PHOSPHOR_DIM)),
-        chunks[0],
-    );
-
-    let mut ta = textarea.clone();
-    ta.set_block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(PHOSPHOR_GREEN)),
-    );
-    ta.set_style(Style::default().fg(Color::White));
-    frame.render_widget(&ta, chunks[1]);
-    render_hint_footer(frame, chunks[3], hint);
-}
