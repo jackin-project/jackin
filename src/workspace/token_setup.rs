@@ -83,6 +83,9 @@ pub struct TokenSetupArgs {
     /// item instead of creating a new one. Mutually exclusive with
     /// `vault`, `item_name`, and `reuse`.
     pub edit_existing: Option<EditExistingTarget>,
+    /// Optional 1Password section label for the field on the new-item
+    /// path. `None` leaves the field unsectioned.
+    pub section: Option<String>,
 }
 
 /// Identifies an existing 1Password item and field to update in-place
@@ -93,6 +96,9 @@ pub struct EditExistingTarget {
     pub item_id: String,
     /// Field label to overwrite, or name of a new field to append.
     pub field_label: String,
+    /// Optional 1Password section label for the field on the
+    /// edit/new-field path. `None` leaves the field unsectioned.
+    pub section: Option<String>,
 }
 
 /// Outcome of one orchestrator run.
@@ -204,6 +210,7 @@ where
                 &target.vault_id,
                 &target.field_label,
                 secret.expose_secret(),
+                target.section.as_deref(),
             )?
         } else {
             create_op_item(op_writer, workspace, args, &secret, &prefix, probe)?
@@ -535,6 +542,7 @@ fn create_op_item(
         value: secret.expose_secret(),
         notes_plain: Some(&notes),
         tags: &tags,
+        section: args.section.as_deref(),
     };
     op_writer.item_create(params)
 }
@@ -813,6 +821,7 @@ mod tests {
             _vault_id: &str,
             field_label: &str,
             value: &str,
+            _section: Option<&str>,
         ) -> anyhow::Result<OpRef> {
             if self.fail_create {
                 anyhow::bail!("simulated item_field_set failure");

@@ -1427,6 +1427,7 @@ fn handle_claude_token(
                     reuse: reuse_ref,
                     field_label: None,
                     edit_existing: None,
+                    section: None,
                 }
             };
 
@@ -1458,6 +1459,7 @@ fn handle_claude_token(
                 reuse: None,
                 field_label: None,
                 edit_existing: None,
+                section: None,
             };
             let report = token_setup::run_setup(paths, config, &workspace, &args)?;
             print_token_setup_report(&report);
@@ -1677,6 +1679,7 @@ fn prompt_interactive_token_store(
             reuse: None,
             field_label: Some(field_label),
             edit_existing: None,
+            section: None,
         });
     }
 
@@ -1693,7 +1696,9 @@ fn prompt_interactive_token_store(
             vault_id: vault.id.clone(),
             item_id: item.id.clone(),
             field_label,
+            section: None,
         }),
+        section: None,
     })
 }
 
@@ -3249,6 +3254,7 @@ mod auth_set_tests {
             _vault_id: &str,
             _field_label: &str,
             _value: &str,
+            _section: Option<&str>,
         ) -> anyhow::Result<crate::operator_env::OpRef> {
             anyhow::bail!("rotate-cleanup tests do not exercise item_field_set")
         }

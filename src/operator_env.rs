@@ -904,6 +904,7 @@ pub trait OpWriteRunner {
         vault_id: &str,
         field_label: &str,
         value: &str,
+        section: Option<&str>,
     ) -> anyhow::Result<OpRef>;
 
     /// Delete an item entirely. Used by
@@ -942,6 +943,9 @@ pub struct OpItemCreateParams<'a> {
     /// `op` item tags applied at create time so list/search filters
     /// can find every jackin-managed item.
     pub tags: &'a [&'a str],
+    /// Optional 1Password section label. When set, the field is placed
+    /// in a section with this label; when `None`, the field is unsectioned.
+    pub section: Option<&'a str>,
 }
 
 /// JSON shape returned by `op item create --format json`. Only the
@@ -969,6 +973,31 @@ struct RawCreatedItemField {
     label: String,
 }
 
+/// Slug a 1Password section label into a deterministic section id:
+/// lowercase, collapse each run of non-alphanumeric characters into a
+/// single `_`, and trim leading/trailing `_`. Empty results fall back
+/// to `"section"` so the id is always a valid non-empty identifier.
+fn op_section_id(label: &str) -> String {
+    let mut id = String::with_capacity(label.len());
+    let mut pending_underscore = false;
+    for ch in label.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_underscore && !id.is_empty() {
+                id.push('_');
+            }
+            pending_underscore = false;
+            id.push(ch.to_ascii_lowercase());
+        } else {
+            pending_underscore = true;
+        }
+    }
+    if id.is_empty() {
+        "section".to_string()
+    } else {
+        id
+    }
+}
+
 impl OpWriteRunner for OpCli {
     #[allow(clippy::too_many_lines)]
     fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef> {
@@ -981,18 +1010,24 @@ impl OpWriteRunner for OpCli {
         // is sensitive but consolidating into one stdin payload
         // keeps the argv invocation deterministic and free of
         // operator-supplied content.
-        let template = serde_json::json!({
+        let mut field = serde_json::json!({
+            "id": params.field_label,
+            "label": params.field_label,
+            "type": "CONCEALED",
+            "value": params.value,
+        });
+        let mut template = serde_json::json!({
             "title": params.title,
             "category": params.category,
             "tags": params.tags,
-            "fields": [{
-                "id": params.field_label,
-                "label": params.field_label,
-                "type": "CONCEALED",
-                "value": params.value,
-            }],
             "notesPlain": params.notes_plain.unwrap_or(""),
         });
+        if let Some(label) = params.section {
+            let section_id = op_section_id(label);
+            template["sections"] = serde_json::json!([{ "id": section_id, "label": label }]);
+            field["section"] = serde_json::json!({ "id": section_id });
+        }
+        template["fields"] = serde_json::json!([field]);
         let body = serde_json::to_vec(&template)
             .map_err(|e| anyhow::anyhow!("failed to encode op item template: {e}"))?;
 
@@ -1137,6 +1172,7 @@ impl OpWriteRunner for OpCli {
         vault_id: &str,
         field_label: &str,
         value: &str,
+        section: Option<&str>,
     ) -> anyhow::Result<OpRef> {
         use std::io::Write;
         use std::process::Stdio;
@@ -1163,6 +1199,8 @@ impl OpWriteRunner for OpCli {
             .as_array_mut()
             .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
 
+        let section_id = section.map(op_section_id);
+
         let found = fields.iter_mut().find(|f| {
             f["label"].as_str() == Some(field_label) || f["id"].as_str() == Some(field_label)
         });
@@ -1170,13 +1208,33 @@ impl OpWriteRunner for OpCli {
         if let Some(field) = found {
             field["value"] = serde_json::Value::String(value.to_string());
             field["type"] = serde_json::Value::String("CONCEALED".to_string());
+            if let Some(id) = section_id.as_deref() {
+                field["section"] = serde_json::json!({ "id": id });
+            }
         } else {
-            fields.push(serde_json::json!({
+            let mut field = serde_json::json!({
                 "id": field_label,
                 "label": field_label,
                 "type": "CONCEALED",
                 "value": value,
-            }));
+            });
+            if let Some(id) = section_id.as_deref() {
+                field["section"] = serde_json::json!({ "id": id });
+            }
+            fields.push(field);
+        }
+
+        if let (Some(id), Some(label)) = (section_id.as_deref(), section) {
+            if !item["sections"].is_array() {
+                item["sections"] = serde_json::Value::Array(Vec::new());
+            }
+            let sections = item["sections"]
+                .as_array_mut()
+                .expect("sections coerced to array above");
+            let exists = sections.iter().any(|s| s["id"].as_str() == Some(id));
+            if !exists {
+                sections.push(serde_json::json!({ "id": id, "label": label }));
+            }
         }
 
         let body = serde_json::to_vec(&item)
@@ -1834,6 +1892,18 @@ fn classify_env_value(value: &EnvValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn op_section_id_slugifies_labels() {
+        assert_eq!(op_section_id("My Creds!"), "my_creds");
+        assert_eq!(op_section_id("Auth"), "auth");
+        assert_eq!(op_section_id("a---b__c"), "a_b_c");
+        assert_eq!(op_section_id("  leading"), "leading");
+        assert_eq!(op_section_id("trailing  "), "trailing");
+        assert_eq!(op_section_id("  "), "section");
+        assert_eq!(op_section_id("!!"), "section");
+        assert_eq!(op_section_id(""), "section");
+    }
 
     #[test]
     fn parse_op_reference_three_segments() {
