@@ -394,17 +394,104 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 **Success feedback** is silent. Navigation back to the workspace list after a successful save is sufficient confirmation. No success toast, no success popup.
 
-## Component Reuse — Strict Rule
+## Component Reuse — Hard Rule
 
-When two TUI surfaces implement the same flow, do not fork modal sizing, rendering, input handling, footer wording, row layout, or picker behavior into a second near-copy. Extract or extend a shared widget, renderer, input helper, or state adapter and have both surfaces call it.
+**Never copy-paste a TUI component. Extend or compose instead.** This is the single most important architectural rule for the jackin' TUI.
 
-Settings screens that intentionally mirror workspace screens must reuse the workspace widgets and flow helpers wherever behavior is the same; keep separate code only for the different persistence target or config scope. Treat visual drift between duplicated TUI components as a bug. If reuse is blocked, call that out in the PR and keep the duplicate small and temporary.
+### Core rules
 
-Every visual pattern that appears in more than one place **must** use one shared implementation — a single widget, render function, or helper. Never create a second near-copy of an existing widget or render function. When the existing implementation cannot serve a new call site without modification, extend it (add parameters, generalize) rather than forking it.
+1. **Every visual pattern that appears in more than one place must use one shared implementation.** A single widget, render function, or helper — not two near-copies. When the existing implementation cannot serve a new call site without modification, extend it (add a parameter, generalize a branch, add an enum variant) rather than forking it.
 
-When a genuinely new component is needed (no existing implementation fits the UX pattern):
-1. The agent proposes the design with a sketch or description.
-2. The operator explicitly approves the design.
-3. Only then may the agent implement it.
+2. **Components live in `src/console/widgets/`.** Before writing any new TUI state machine or renderer, `grep` the directory. If a widget handles the same visual pattern (drill-down picker, text input box, 2-button choice, yes/no confirm, filter list), extend that widget rather than creating a parallel one.
 
-Violations — two functions that render the same kind of content with slightly different styling or behavior — must be fixed before a PR lands by consolidating them into one.
+3. **A genuinely new component is only ever written once.** The first time a new UX pattern appears, it is acceptable to implement it in the most focused way that serves the immediate need. The second time the same pattern is needed somewhere else, the two implementations must be consolidated into one shared widget before the second PR lands — not "as a follow-up."
+
+4. **Copy-paste for convenience is a blocker.** When a PR produces a second near-copy of an existing widget or render function — even 90% similar, even with minor additions — that is a TUI design-decision violation. Reviewers block merge; the fix is consolidation, not a comment.
+
+5. **Refactoring to enable reuse is not optional.** If an existing component does not yet accept a parameter that a new call site needs, add the parameter. If an existing component mixes two responsibilities that need to be separated, separate them. The cost of a targeted refactor is always lower than the cost of maintaining two divergent implementations through every future bug fix and enhancement.
+
+6. **Settings screens mirror workspace screens.** Settings surfaces that intentionally parallel workspace editor screens must reuse the workspace widgets and flow helpers wherever behavior is the same; keep separate code only for the different persistence target or config scope. Visual drift between the two is a bug.
+
+### What to check before writing new code
+
+Before adding any new TUI widget or state type:
+
+1. Run `grep -r 'struct.*State' src/console/widgets/` and `ls src/console/widgets/`. Read the matches. Is there a widget that already owns the pattern?
+2. Run `grep -r 'fn render_' src/console/widgets/` for the render-level equivalent.
+3. If yes — extend the existing widget. Add a mode enum, a new bool flag, or a new variant. Do not create a second module.
+4. If no — propose the design first; get explicit approval; then implement. The first implementation goes into `src/console/widgets/` so the next caller can find it.
+
+### Why this rule exists — canonical counter-example
+
+<RepoFile path="src/console/widgets/token_store_picker/mod.rs" /> is the canonical example of what must never happen. It duplicates the Account → Vault → Item navigation state machine from <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — 1067 lines of closely parallel code, 100+ matched patterns. Every bug fix to `op_picker` navigation, filtering, R-key refresh, or section display must be manually reproduced in `token_store_picker` or the two implementations drift. The correct shape was to extend `op_picker` with a mode parameter that enables the extra steps (`[ + New item ]` sentinel, field-label input, `TokenStoreSelection` commit variants) rather than maintaining a second drill-down widget. Consolidating these is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
+
+---
+
+## Reusable Component Catalog
+
+All shared TUI widgets live in `src/console/widgets/`. Use this table to identify the right component before writing new code.
+
+| Component | Module | What it provides | When to use |
+|---|---|---|---|
+| Op picker (1Password drill-down) | <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit | Any flow that needs to select a 1Password field reference |
+| Role picker | <RepoFile path="src/console/widgets/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
+| Confirm dialog | <RepoFile path="src/console/widgets/confirm.rs" /> | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule) | Any destructive or irreversible action |
+| Save / discard strip | <RepoFile path="src/console/widgets/save_discard.rs" /> | Save / Discard two-button strip, designed for form footers | Bottom of any editable form |
+| Scope picker | <RepoFile path="src/console/widgets/scope_picker.rs" /> | Two-button horizontal strip for binary choices ("All roles" / "Specific role", "Plain text" / "1Password") | Any two-option exclusive-choice prompt |
+| Source picker | <RepoFile path="src/console/widgets/source_picker.rs" /> | Two-button horizontal strip for value-source selection | Choosing between input sources |
+| Mount destination choice | <RepoFile path="src/console/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
+| Panel rain | <RepoFile path="src/console/widgets/panel_rain.rs" /> | Background rain animation for visual ambiance | Background decoration |
+| File browser | <RepoFile path="src/console/widgets/file_browser/mod.rs" /> | Host filesystem navigation | Any flow needing to pick a local file or directory |
+| GitHub picker | <RepoFile path="src/console/widgets/github_picker.rs" /> | GitHub org/repo drill-down | Any flow needing to select a GitHub repository |
+| Error popup | <RepoFile path="src/console/widgets/error_popup.rs" /> | Scrollable red-border error modal (see Error Surface rule) | All error display |
+
+**Render primitives** (in <RepoFile path="src/console/widgets/op_picker/render.rs" /> and <RepoFile path="src/console/manager/render/mod.rs" />): `modal_block`, `breadcrumb_title`, `render_filter_row`, `render_fatal`, `render_scrollable_block` — use these building blocks when composing new modals rather than hand-rolling border + layout from scratch.
+
+**Text input**: `TextInputState` in <RepoFile path="src/console/manager/state.rs" /> (host console) or its equivalent in the capsule dialog layer. Reuse for any single-line text entry box.
+
+**Two-button choice pattern** (`scope_picker.rs`, `source_picker.rs`): when a step in a flow requires the operator to pick one of exactly two options, use or model after this pattern. It produces a consistent visual shape the operator recognises immediately.
+
+---
+
+## Wizard-Style Dialog Flows
+
+When a feature requires the operator to complete several sequential decisions before committing (pick a scope, pick a role, pick a source, select a credential location), implement it as a **wizard flow**: a chain of modals where each step is handled by a reusable component and `Esc` walks back one step.
+
+### Rules
+
+- Each step is one reusable component from the catalog above. Do not design a custom combined-step UI.
+- Modal stack discipline applies (see Sub-dialogs push onto a stack). Each step pushes onto the modal stack; `Esc` pops one step; a terminal commit clears the whole chain.
+- The first step in the chain is opened from whatever UI element the operator interacts with (a button, a hint, an auth-tab action). It does not require a CLI flag.
+- The flow lives in the TUI, not in the CLI. The CLI is for scripted or non-interactive invocations. The TUI is for interactive flows.
+
+### Canonical example — Claude token setup flow
+
+This is the intended shape for interactive Claude token configuration launched from the Auth tab in the jackin' console. It demonstrates how to compose existing components into a multi-step flow with zero new widgets.
+
+**Entry point**: The Auth tab shows `oauth_token` mode with an "Edit auth" action. The operator opens the auth form. If no token is configured yet, the form surfaces a "Set up token" action (replacing the current hint that sends the operator to the CLI).
+
+**Step 1 — scope choice** (`scope_picker.rs`): "All roles" / "Specific role". Reuses the two-button horizontal strip that the "New environment variable" dialog already uses for scope selection. No new component needed.
+
+**Step 2 (conditional) — role picker** (`role_picker.rs`): If the operator chose "Specific role", show the filter-and-select role list. Reuses the same `RolePickerState` the env-var flow uses. If "All roles" was chosen, this step is skipped.
+
+**Step 3 — source choice** (`scope_picker.rs` or `source_picker.rs`): "Plain text" / "1Password". Same two-button pattern. No new component needed.
+
+**Step 4a — plain text input** (`TextInputState`): If the operator chose "Plain text", show a single-line text input box. Reuses the `TextInputState` the credential input flow already uses. The value is written to config on commit.
+
+**Step 4b — 1Password field picker** (extended `op_picker`): If the operator chose "1Password", open the existing `op_picker` Account → Vault → Item → Field drill-down. For this flow, `op_picker` needs two additional sentinel rows in the Item and Field stages:
+- `[ + New item ]` — creates a new 1Password item to receive the token.
+- `[ + New field ]` / `[ + New section ]` — creates a new field inside an existing item.
+
+These sentinels extend `op_picker` via a mode parameter (e.g. `OpPickerMode::TokenStore`). They must **not** be implemented by forking `op_picker` into a second module. The sentinel rows produce a `TokenStoreSelection::NewItem` or `TokenStoreSelection::ReplaceItem` commit variant instead of the normal `op://` reference string.
+
+**What this flow replaces**: The `--interactive` CLI flag added in the `feature/interactive-token-store-picker` PR is a stopgap. The TUI flow above is the correct operator-facing shape. The `token_store_picker` widget and `token_store_dialog.rs` standalone event loop are technical debt created because the TUI flow was not built first — they are candidates for removal once the Auth-tab flow lands. The roadmap item [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) tracks the consolidation.
+
+### Why the flow must start in the TUI, not the CLI
+
+The CLI `--interactive` flag spins up a standalone alt-screen TUI session inside a running terminal, captures the operator's selection, then returns. This approach:
+
+- Cannot compose with the console's existing event loop (it opens a second raw-mode terminal).
+- Loses all the console's context (workspace state, auth tab focus, operator's in-progress edits).
+- Requires the operator to leave the console, run a CLI command, then return — breaking their flow.
+
+The Auth tab is already open when the operator wants to configure a token. The wizard flow opens directly from there, using the console's own modal stack, and the operator never leaves the console. The CLI path (`jackin workspace claude-token setup --vault ... --item-name ...`) remains valid for scripted or automated workflows. It is not the interactive path.
