@@ -1,7 +1,9 @@
 //! TUI picker for selecting where to store a Claude OAuth token in 1Password.
 //!
-//! Drill-down `[Account →] Vault → ItemChoice → [NewItemName → FieldLabel]`
-//! or `[Account →] Vault → ItemChoice → ReplaceItem (existing item selected)`.
+//! Drill-down `[Account →] Vault → ItemChoice`:
+//!   - New item  → `NewItemName → FieldLabel` → commit `NewItem`
+//!   - Existing  → `ExistingFieldChoice` → existing field → commit `EditItemField`
+//!                                        → `[ + New field ]` → `FieldLabel` → commit `EditItemField`
 //!
 //! Called from the standalone token-store dialog when `--interactive` is
 //! passed to `jackin workspace claude-token setup` without `--vault`.
@@ -12,7 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui_textarea::{CursorMove, Input, TextArea};
 use tui_widget_list::ListState;
 
-use crate::operator_env::{OpAccount, OpCli, OpItem, OpStructRunner, OpVault};
+use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
 use super::{ModalOutcome, cycle_select};
 pub use super::op_picker::{OpLoadState, OpPickerError, OpPickerFatalState};
@@ -29,11 +31,12 @@ pub enum TokenStoreSelection {
         item_name: String,
         field_label: String,
     },
-    /// Replace (create new + delete old) an existing 1Password item.
-    ReplaceItem {
+    /// Overwrite (or append) a field in an existing 1Password item.
+    EditItemField {
         account: Option<OpAccount>,
         vault: OpVault,
         item: OpItem,
+        field_label: String,
     },
 }
 
@@ -45,7 +48,9 @@ pub enum TokenStoreStage {
     ItemChoice,
     /// Text input for the new item's title.
     NewItemName,
-    /// Text input for the field label inside the new item.
+    /// List: `[ + New field ]` at index 0, then existing fields in the chosen item.
+    ExistingFieldChoice,
+    /// Text input for the field label (new item path or new-field-in-existing-item path).
     FieldLabel,
 }
 
@@ -53,6 +58,7 @@ enum LoadResult {
     Accounts(anyhow::Result<Vec<OpAccount>>),
     Vaults(anyhow::Result<Vec<OpVault>>),
     Items(anyhow::Result<Vec<OpItem>>),
+    Fields(anyhow::Result<Vec<OpField>>),
 }
 
 pub struct TokenStorePickerState<'a> {
@@ -71,11 +77,17 @@ pub struct TokenStorePickerState<'a> {
     /// "[ + New item ]" placeholder; real items start at row 1.
     pub items: Vec<OpItem>,
     pub item_list_state: ListState,
+    /// Set when user picks an existing item (ExistingFieldChoice path).
     pub selected_item: Option<OpItem>,
+
+    /// Fields in the chosen existing item. Row 0 is always the virtual
+    /// "[ + New field ]" placeholder; real fields start at row 1.
+    pub fields: Vec<OpField>,
+    pub field_list_state: ListState,
 
     /// Text area for the new-item name stage.
     pub new_item_name_area: TextArea<'a>,
-    /// Text area for the field-label stage.
+    /// Text area for the field-label stage (new item or new-field-in-existing-item).
     pub field_label_area: TextArea<'a>,
 
     pub load_state: OpLoadState,
@@ -92,6 +104,7 @@ impl std::fmt::Debug for TokenStorePickerState<'_> {
             .field("selected_account", &self.selected_account)
             .field("selected_vault", &self.selected_vault)
             .field("selected_item", &self.selected_item)
+            .field("fields_count", &self.fields.len())
             .finish_non_exhaustive()
     }
 }
@@ -125,6 +138,8 @@ impl<'a> TokenStorePickerState<'a> {
             items: Vec::new(),
             item_list_state: ListState::default(),
             selected_item: None,
+            fields: Vec::new(),
+            field_list_state: ListState::default(),
             new_item_name_area: name_area,
             field_label_area: field_area,
             load_state: OpLoadState::Loading { spinner_tick: 0 },
@@ -194,6 +209,20 @@ impl<'a> TokenStorePickerState<'a> {
         });
     }
 
+    fn start_field_load(&mut self, item_id: String, vault_id: String, account_id: Option<String>) {
+        self.stage = TokenStoreStage::ExistingFieldChoice;
+        self.filter_buf.clear();
+        self.load_state = OpLoadState::Loading { spinner_tick: 0 };
+        let (tx, rx) = mpsc::channel();
+        self.rx = Some(rx);
+        let runner = self.runner_clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(LoadResult::Fields(
+                runner.item_get(&item_id, &vault_id, account_id.as_deref()),
+            ));
+        });
+    }
+
     pub fn poll_load(&mut self) {
         let Some(rx) = self.rx.as_ref() else { return };
         match rx.try_recv() {
@@ -219,10 +248,18 @@ impl<'a> TokenStorePickerState<'a> {
                 self.item_list_state.select(Some(0));
                 self.load_state = OpLoadState::Ready;
             }
+            Ok(LoadResult::Fields(Ok(fields))) => {
+                self.rx = None;
+                self.fields = fields;
+                // Row 0 is always "[ + New field ]", so start selection there.
+                self.field_list_state.select(Some(0));
+                self.load_state = OpLoadState::Ready;
+            }
             Ok(
                 LoadResult::Accounts(Err(e))
                 | LoadResult::Vaults(Err(e))
-                | LoadResult::Items(Err(e)),
+                | LoadResult::Items(Err(e))
+                | LoadResult::Fields(Err(e)),
             ) => {
                 self.rx = None;
                 self.load_state =
@@ -293,6 +330,21 @@ impl<'a> TokenStorePickerState<'a> {
         out
     }
 
+    /// Fields filtered by the current `filter_buf`. Index 0 is always a
+    /// sentinel `None` (the "[ + New field ]" row); subsequent entries
+    /// are `Some(&OpField)`.
+    pub fn filtered_field_choices(&self) -> Vec<Option<&OpField>> {
+        let needle = self.filter_buf.to_lowercase();
+        let mut out: Vec<Option<&OpField>> = vec![None]; // "[ + New field ]" sentinel
+        out.extend(
+            self.fields
+                .iter()
+                .filter(|f| needle.is_empty() || f.label.to_lowercase().contains(&needle))
+                .map(Some),
+        );
+        out
+    }
+
     pub fn is_multi_account(&self) -> bool {
         // Populated only when there are ≥2 accounts (single-account
         // fast-path leaves `self.accounts` empty).
@@ -339,6 +391,7 @@ impl<'a> TokenStorePickerState<'a> {
             TokenStoreStage::Vault => self.handle_vault_key(key),
             TokenStoreStage::ItemChoice => self.handle_item_choice_key(key),
             TokenStoreStage::NewItemName => self.handle_new_item_name_key(key),
+            TokenStoreStage::ExistingFieldChoice => self.handle_existing_field_choice_key(key),
             TokenStoreStage::FieldLabel => self.handle_field_label_key(key),
         }
     }
@@ -462,14 +515,17 @@ impl<'a> TokenStorePickerState<'a> {
                         match item {
                             None => ModalOutcome::Continue,
                             Some(item) => {
-                                let vault =
-                                    self.selected_vault.clone().expect("vault set before items");
-                                let account = self.selected_account.clone();
-                                ModalOutcome::Commit(TokenStoreSelection::ReplaceItem {
-                                    account,
-                                    vault,
-                                    item,
-                                })
+                                let vault_id = self
+                                    .selected_vault
+                                    .as_ref()
+                                    .expect("vault set before items")
+                                    .id
+                                    .clone();
+                                let account_id = self.selected_account_id();
+                                let item_id_for_load = item.id.clone();
+                                self.selected_item = Some(item);
+                                self.start_field_load(item_id_for_load, vault_id, account_id);
+                                ModalOutcome::Continue
                             }
                         }
                     }
@@ -523,10 +579,85 @@ impl<'a> TokenStorePickerState<'a> {
         }
     }
 
+    fn handle_existing_field_choice_key(
+        &mut self,
+        key: KeyEvent,
+    ) -> ModalOutcome<TokenStoreSelection> {
+        match key.code {
+            KeyCode::Esc => {
+                self.stage = TokenStoreStage::ItemChoice;
+                self.filter_buf.clear();
+                self.selected_item = None;
+                self.fields.clear();
+                ModalOutcome::Continue
+            }
+            KeyCode::Enter => {
+                let cur = self.field_list_state.selected.unwrap_or(0);
+                let choice: Option<Option<String>> = {
+                    let visible = self.filtered_field_choices();
+                    match visible.get(cur) {
+                        Some(None) => Some(None),
+                        Some(Some(field)) => Some(Some(field.label.clone())),
+                        None => None,
+                    }
+                };
+                match choice {
+                    None => ModalOutcome::Continue,
+                    Some(None) => {
+                        // "[ + New field ]" — go to text input
+                        self.stage = TokenStoreStage::FieldLabel;
+                        ModalOutcome::Continue
+                    }
+                    Some(Some(field_label)) => {
+                        let vault = self.selected_vault.clone().expect("vault set");
+                        let account = self.selected_account.clone();
+                        let item = self.selected_item.clone().expect("item set");
+                        ModalOutcome::Commit(TokenStoreSelection::EditItemField {
+                            account,
+                            vault,
+                            item,
+                            field_label,
+                        })
+                    }
+                }
+            }
+            KeyCode::Up => {
+                let n = self.filtered_field_choices().len();
+                cycle_select(&mut self.field_list_state, n, -1);
+                ModalOutcome::Continue
+            }
+            KeyCode::Down => {
+                let n = self.filtered_field_choices().len();
+                cycle_select(&mut self.field_list_state, n, 1);
+                ModalOutcome::Continue
+            }
+            KeyCode::Backspace => {
+                self.filter_buf.pop();
+                let n = self.filtered_field_choices().len();
+                reset_selection(&mut self.field_list_state, n);
+                ModalOutcome::Continue
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.filter_buf.push(c);
+                let n = self.filtered_field_choices().len();
+                reset_selection(&mut self.field_list_state, n);
+                ModalOutcome::Continue
+            }
+            _ => ModalOutcome::Continue,
+        }
+    }
+
     fn handle_field_label_key(&mut self, key: KeyEvent) -> ModalOutcome<TokenStoreSelection> {
         match key.code {
             KeyCode::Esc => {
-                self.stage = TokenStoreStage::NewItemName;
+                // Go back to where we came from:
+                // - new-item path: selected_item is None → back to NewItemName
+                // - existing-item "new field" path: selected_item is Some → back to ExistingFieldChoice
+                if self.selected_item.is_some() {
+                    self.stage = TokenStoreStage::ExistingFieldChoice;
+                } else {
+                    self.stage = TokenStoreStage::NewItemName;
+                }
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
@@ -538,13 +669,22 @@ impl<'a> TokenStorePickerState<'a> {
                 };
                 let vault = self.selected_vault.clone().expect("vault set");
                 let account = self.selected_account.clone();
-                let item_name = self.new_item_name().trim().to_string();
-                ModalOutcome::Commit(TokenStoreSelection::NewItem {
-                    account,
-                    vault,
-                    item_name,
-                    field_label: label,
-                })
+                if let Some(item) = self.selected_item.clone() {
+                    ModalOutcome::Commit(TokenStoreSelection::EditItemField {
+                        account,
+                        vault,
+                        item,
+                        field_label: label,
+                    })
+                } else {
+                    let item_name = self.new_item_name().trim().to_string();
+                    ModalOutcome::Commit(TokenStoreSelection::NewItem {
+                        account,
+                        vault,
+                        item_name,
+                        field_label: label,
+                    })
+                }
             }
             _ => {
                 self.field_label_area.input(Input::from(key));

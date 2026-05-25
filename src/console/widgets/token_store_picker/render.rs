@@ -60,8 +60,30 @@ fn breadcrumb(state: &TokenStorePickerState) -> String {
                 vault.to_string()
             }
         }
-        TokenStoreStage::NewItemName | TokenStoreStage::FieldLabel => {
+        TokenStoreStage::NewItemName => {
             if multi && !acct.is_empty() {
+                format!("{acct} \u{2192} {vault} \u{2192} new item")
+            } else if !vault.is_empty() {
+                format!("{vault} \u{2192} new item")
+            } else {
+                "new item".to_string()
+            }
+        }
+        TokenStoreStage::ExistingFieldChoice | TokenStoreStage::FieldLabel => {
+            let item_name = state
+                .selected_item
+                .as_ref()
+                .map(|i| i.name.as_str())
+                .unwrap_or("");
+            if !item_name.is_empty() {
+                if multi && !acct.is_empty() {
+                    format!("{acct} \u{2192} {vault} \u{2192} {item_name}")
+                } else if !vault.is_empty() {
+                    format!("{vault} \u{2192} {item_name}")
+                } else {
+                    item_name.to_string()
+                }
+            } else if multi && !acct.is_empty() {
                 format!("{acct} \u{2192} {vault} \u{2192} new item")
             } else if !vault.is_empty() {
                 format!("{vault} \u{2192} new item")
@@ -133,6 +155,7 @@ fn render_loading(
         TokenStoreStage::Account => "Loading accounts",
         TokenStoreStage::Vault => "Loading vaults",
         TokenStoreStage::ItemChoice => "Loading items",
+        TokenStoreStage::ExistingFieldChoice => "Loading fields",
         TokenStoreStage::NewItemName | TokenStoreStage::FieldLabel => "Loading",
     };
     let title = breadcrumb(state);
@@ -164,6 +187,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
             &state.new_item_name_area,
             "Enter — next  Esc — back",
         ),
+        TokenStoreStage::ExistingFieldChoice => render_field_choice(frame, inner, state),
         TokenStoreStage::FieldLabel => render_text_input(
             frame,
             inner,
@@ -308,6 +332,57 @@ fn render_item_choice(frame: &mut Frame, area: Rect, state: &TokenStorePickerSta
         frame,
         chunks[2],
         "↑↓ navigate  Enter — select  Esc — back to vault",
+    );
+}
+
+fn render_field_choice(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(area);
+
+    render_filter_row(frame, chunks[0], &state.filter_buf);
+
+    let choices = state.filtered_field_choices();
+    let selected = state.field_list_state.selected.unwrap_or(0);
+    let lines: Vec<Line> = choices
+        .iter()
+        .enumerate()
+        .map(|(i, choice)| {
+            let is_sel = i == selected;
+            match choice {
+                None => {
+                    let style = if is_sel {
+                        Style::default()
+                            .fg(PHOSPHOR_GREEN)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(PHOSPHOR_DIM)
+                    };
+                    Line::from(Span::styled("  [ + New field ]", style))
+                }
+                Some(field) => {
+                    let style = if is_sel {
+                        Style::default()
+                            .fg(PHOSPHOR_GREEN)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    Line::from(Span::styled(format!("  {}", field.label), style))
+                }
+            }
+        })
+        .collect();
+    render_selected_lines_in_area(frame, chunks[1], lines, Some(selected));
+    render_hint_footer(
+        frame,
+        chunks[2],
+        "↑↓ navigate  Enter — select  Esc — back to item",
     );
 }
 

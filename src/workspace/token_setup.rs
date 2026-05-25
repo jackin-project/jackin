@@ -79,6 +79,20 @@ pub struct TokenSetupArgs {
     /// Override the field label inside the created item. Falls back to
     /// [`DEFAULT_FIELD_LABEL`] when `None`.
     pub field_label: Option<String>,
+    /// When set, overwrite (or add) a field in an existing 1Password
+    /// item instead of creating a new one. Mutually exclusive with
+    /// `vault`, `item_name`, and `reuse`.
+    pub edit_existing: Option<EditExistingTarget>,
+}
+
+/// Identifies an existing 1Password item and field to update in-place
+/// during the interactive `--interactive` token-setup path.
+#[derive(Debug, Clone, Default)]
+pub struct EditExistingTarget {
+    pub vault_id: String,
+    pub item_id: String,
+    /// Field label to overwrite, or name of a new field to append.
+    pub field_label: String,
 }
 
 /// Outcome of one orchestrator run.
@@ -168,10 +182,10 @@ where
         let prefix = sha256_prefix(&value);
         (reuse_ref.clone(), prefix, false)
     } else {
-        // Validate --vault before launching the OAuth flow so the operator
-        // is not prompted to complete authentication only to hit a
-        // required-arg error afterward.
-        if args.vault.is_none() && args.reuse.is_none() {
+        // Validate that a destination is specified before launching the
+        // OAuth flow so the operator is not prompted to complete
+        // authentication only to hit a required-arg error afterward.
+        if args.vault.is_none() && args.reuse.is_none() && args.edit_existing.is_none() {
             anyhow::bail!(
                 "no --vault supplied; `jackin workspace claude-token setup` and \
                  `jackin workspace claude-token rotate` need --vault <name-or-uuid> \
@@ -184,7 +198,16 @@ where
         })?;
         let secret = capture()?;
         let prefix = sha256_prefix(secret.expose_secret());
-        let op_ref = create_op_item(op_writer, workspace, args, &secret, &prefix, probe)?;
+        let op_ref = if let Some(target) = args.edit_existing.as_ref() {
+            op_writer.item_field_set(
+                &target.item_id,
+                &target.vault_id,
+                &target.field_label,
+                secret.expose_secret(),
+            )?
+        } else {
+            create_op_item(op_writer, workspace, args, &secret, &prefix, probe)?
+        };
         (op_ref, prefix, true)
     };
 
@@ -786,6 +809,24 @@ mod tests {
                 anyhow::bail!("simulated item_delete failure");
             }
             Ok(())
+        }
+        fn item_field_set(
+            &self,
+            _item_id: &str,
+            _vault_id: &str,
+            field_label: &str,
+            value: &str,
+        ) -> anyhow::Result<OpRef> {
+            if self.fail_create {
+                anyhow::bail!("simulated item_field_set failure");
+            }
+            *self.last_create.borrow_mut() = Some((
+                "existing-vault".to_string(),
+                "existing-item".to_string(),
+                field_label.to_string(),
+            ));
+            *self.recorded_value.borrow_mut() = Some(value.to_string());
+            Ok(self.produced_ref.clone())
         }
     }
 

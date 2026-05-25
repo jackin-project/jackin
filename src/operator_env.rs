@@ -867,17 +867,34 @@ pub trait OpWriteRunner {
     /// stamp `{workspace, host, created, expires, token_sha256_prefix}`).
     fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef>;
 
+    /// Overwrite (or add) a single field in an existing 1Password item.
+    ///
+    /// If a field whose `label` or `id` matches `field_label` already
+    /// exists, its `value` is overwritten and its type is set to
+    /// `CONCEALED`. If no such field exists, a new `CONCEALED` field
+    /// with that label is appended. All other fields and item metadata
+    /// are preserved.
+    ///
+    /// The secret value reaches `op` via stdin (GET → modify in-process
+    /// → EDIT via stdin), following the same never-on-argv contract as
+    /// `item_create`. The implementation issues two `op` invocations:
+    /// 1. `op item get <id> --vault <vault> --format json` — fetch the
+    ///    full item template.
+    /// 2. `op item edit - --vault <vault> --format json` — pipe the
+    ///    modified template back; `op` identifies the item from the
+    ///    `id` field in the template.
+    fn item_field_set(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        field_label: &str,
+        value: &str,
+    ) -> anyhow::Result<OpRef>;
+
     /// Delete an item entirely. Used by
     /// `jackin workspace claude-token revoke --delete-op-item` and
     /// by the rotate flow to remove the prior 1P item once the new
     /// one is wired and validated.
-    ///
-    /// There is intentionally no `item_edit_field` on this trait:
-    /// the upstream `op` CLI has no documented stdin form for
-    /// `op item edit`, and any argv form would violate the
-    /// stdin-only contract this trait declares. Rotation is
-    /// implemented as `item_create` (new item) + `item_delete`
-    /// (old item once the new one is wired and validated).
     fn item_delete(
         &self,
         item_id: &str,
@@ -1108,6 +1125,157 @@ impl OpWriteRunner for OpCli {
         args.extend_from_slice(&["item", "delete", item_id, "--vault", vault_id]);
         let _ = run_op_with_timeout(&self.binary, &args, self.timeout)?;
         Ok(())
+    }
+
+    fn item_field_set(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        field_label: &str,
+        value: &str,
+    ) -> anyhow::Result<OpRef> {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        // Step 1: fetch the full item JSON so we can modify one field
+        // while preserving all other fields and metadata.
+        let mut get_args: Vec<&str> = Vec::new();
+        if let Some(acc) = self.account.as_deref() {
+            get_args.push("--account");
+            get_args.push(acc);
+        }
+        get_args.extend_from_slice(&["item", "get", item_id, "--vault", vault_id, "--format", "json"]);
+        let raw_bytes = run_op_with_timeout(&self.binary, &get_args, self.timeout)
+            .map_err(|e| anyhow::anyhow!("`op item get` failed: {e}"))?;
+
+        // Step 2: parse as a generic JSON value so we can manipulate the
+        // `fields` array without discarding unrecognised properties.
+        let mut item: serde_json::Value = serde_json::from_slice(&raw_bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
+
+        let fields = item["fields"]
+            .as_array_mut()
+            .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
+
+        let found = fields.iter_mut().find(|f| {
+            f["label"].as_str() == Some(field_label)
+                || f["id"].as_str() == Some(field_label)
+        });
+
+        if let Some(field) = found {
+            field["value"] = serde_json::Value::String(value.to_string());
+            field["type"] = serde_json::Value::String("CONCEALED".to_string());
+        } else {
+            fields.push(serde_json::json!({
+                "id": field_label,
+                "label": field_label,
+                "type": "CONCEALED",
+                "value": value,
+            }));
+        }
+
+        let body = serde_json::to_vec(&item)
+            .map_err(|e| anyhow::anyhow!("failed to re-encode item JSON: {e}"))?;
+
+        // Step 3: pipe the modified item JSON to `op item edit -`.
+        // The item is identified by the `id` field inside the JSON;
+        // `-` as the positional arg tells `op` to read the template
+        // from stdin instead of resolving by name.
+        let mut child = spawn_op_with_retry(|| {
+            use std::process::Command;
+            let mut command = Command::new(&self.binary);
+            if let Some(acc) = self.account.as_deref() {
+                command.args(["--account", acc]);
+            }
+            command.args(["item", "edit", "-", "--vault", vault_id, "--format", "json"]);
+            command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            command
+        })
+        .map_err(|e| op_spawn_error(&self.binary, &e))?;
+
+        if let Some(mut stdin) = child.stdin.take()
+            && let Err(e) = stdin.write_all(&body)
+        {
+            drop(stdin);
+            let captured = child.wait_with_output().ok();
+            let stderr_msg = captured
+                .as_ref()
+                .map(|o| String::from_utf8_lossy(&o.stderr).into_owned())
+                .unwrap_or_default();
+            anyhow::bail!(
+                "failed to write op item template to stdin: {e} (op stderr: {})",
+                truncate_stderr(&stderr_msg).trim()
+            );
+        }
+
+        let out = child
+            .wait_with_output()
+            .map_err(|e| anyhow::anyhow!("1Password CLI wait failed: {e}"))?;
+
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            anyhow::bail!(
+                "`op item edit` exited with status {}: {}",
+                format_exit_status(out.status),
+                truncate_stderr(&stderr).trim()
+            );
+        }
+
+        // Step 4: parse the returned item JSON and locate the field
+        // reference by matching label (case-insensitive).
+        let updated: serde_json::Value = serde_json::from_slice(&out.stdout)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item edit` JSON: {e}"))?;
+
+        let updated_fields = updated["fields"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("updated item has no `fields` array"))?;
+
+        let field = updated_fields
+            .iter()
+            .find(|f| {
+                f["label"]
+                    .as_str()
+                    .map(|l| l.eq_ignore_ascii_case(field_label))
+                    .unwrap_or(false)
+                    || f["id"].as_str() == Some(field_label)
+            })
+            .ok_or_else(|| {
+                let labels: Vec<&str> = updated_fields
+                    .iter()
+                    .filter_map(|f| f["label"].as_str())
+                    .collect();
+                anyhow::anyhow!(
+                    "`op item edit` returned no field with label {:?}; \
+                     observed labels: {labels:?}",
+                    field_label
+                )
+            })?;
+
+        let op_uri = field["reference"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                let vault = updated["vault"]["id"].as_str().unwrap_or(vault_id);
+                let iid = updated["id"].as_str().unwrap_or(item_id);
+                let fid = field["id"].as_str().unwrap_or(field_label);
+                format!("op://{vault}/{iid}/{fid}")
+            });
+
+        let vault_name = updated["vault"]["name"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(vault_id);
+        let item_title = updated["title"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(item_id);
+        let path = format!("{vault_name}/{item_title}/{field_label}");
+
+        Ok(OpRef { op: op_uri, path })
     }
 }
 
