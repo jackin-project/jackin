@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cli::daemon::{DaemonCommand, LogsArgs, NotifyArgs};
 use crate::docker::{CommandRunner, RunOptions, ShellRunner};
+use crate::docker_client::BollardDockerClient;
 use crate::paths::JackinPaths;
 
 const PROTOCOL_VERSION: u32 = 2;
@@ -638,8 +639,16 @@ fn workspace_summaries(config: &crate::config::AppConfig) -> Vec<DaemonWorkspace
         .collect()
 }
 
+fn block_on_daemon<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("daemon helper runtime")
+        .block_on(future)
+}
+
 fn session_summaries(runner: &mut impl CommandRunner) -> Result<Vec<DaemonSession>> {
-    let output = runner.capture(
+    let output = block_on_daemon(runner.capture(
         "docker",
         &[
             "ps",
@@ -649,7 +658,7 @@ fn session_summaries(runner: &mut impl CommandRunner) -> Result<Vec<DaemonSessio
             "{{.Names}}\t{{.Status}}\t{{.Label \"jackin.display_name\"}}\t{{.Label \"jackin.workspace\"}}\t{{.Label \"jackin.role_key\"}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.branch\"}}\t{{.Label \"jackin.primary_repo\"}}",
         ],
         None,
-    )?;
+    ))?;
     Ok(parse_session_rows(&output))
 }
 
@@ -752,8 +761,7 @@ fn run_gh_search_prs(
         &limit,
     ];
     args.extend_from_slice(extra_args);
-    let output = runner
-        .capture("gh", &args, None)
+    let output = block_on_daemon(runner.capture("gh", &args, None))
         .context("querying GitHub pull requests with gh")?;
     parse_github_prs(&output)
 }
@@ -979,6 +987,8 @@ fn read_account_status(home: &Path, fetched_at: SystemTime) -> AccountStatusResp
             claude_account_status(home),
             codex_account_status(home),
             amp_account_status(home),
+            kimi_account_status(home),
+            opencode_account_status(home),
         ],
         fetched_at_epoch_seconds: epoch_seconds(fetched_at),
         refresh_after_seconds: ACCOUNT_STATUS_CACHE_SECONDS,
@@ -1020,6 +1030,29 @@ fn amp_account_status(home: &Path) -> AccountProviderStatus {
         return account_available("amp", "file:~/.local/share/amp/secrets.json");
     }
     account_missing("amp", "no Amp env token or host auth file found")
+}
+
+fn kimi_account_status(home: &Path) -> AccountProviderStatus {
+    if env_present("KIMI_API_KEY") {
+        return account_available("kimi", "env:KIMI_API_KEY");
+    }
+    if home.join(".kimi/credentials").is_dir() {
+        return account_available("kimi", "dir:~/.kimi/credentials");
+    }
+    if home.join(".kimi/config.toml").is_file() {
+        return account_available("kimi", "file:~/.kimi/config.toml");
+    }
+    account_missing("kimi", "no Kimi env token or host auth files found")
+}
+
+fn opencode_account_status(home: &Path) -> AccountProviderStatus {
+    if env_present("OPENCODE_API_KEY") {
+        return account_available("opencode", "env:OPENCODE_API_KEY");
+    }
+    if home.join(".local/share/opencode/auth.json").is_file() {
+        return account_available("opencode", "file:~/.local/share/opencode/auth.json");
+    }
+    account_missing("opencode", "no OpenCode env token or host auth file found")
 }
 
 fn account_available(provider: &str, source: &str) -> AccountProviderStatus {
@@ -1282,7 +1315,21 @@ fn spawn_keep_awake_reconciler(state: &Arc<DaemonState>) {
     std::thread::spawn(move || {
         let mut runner = ShellRunner::default();
         while !state.shutdown.load(Ordering::Relaxed) {
-            crate::runtime::reconcile_keep_awake(&state.paths, &mut runner);
+            match BollardDockerClient::connect() {
+                Ok(docker) => {
+                    block_on_daemon(crate::runtime::reconcile_keep_awake(
+                        &state.paths,
+                        &docker,
+                        &mut runner,
+                    ));
+                }
+                Err(err) => {
+                    log_line(
+                        &state.paths,
+                        &format!("keep_awake reconcile skipped: {err:#}"),
+                    );
+                }
+            }
             sleep_or_shutdown(&state.shutdown, Duration::from_secs(5));
         }
     });
@@ -1312,7 +1359,7 @@ fn warm_cache(paths: &JackinPaths) -> Result<String> {
     let mut runner = ShellRunner::default();
     let mut pulled = 0;
     for image in &images {
-        let result = runner.run(
+        let result = block_on_daemon(runner.run(
             "docker",
             &["pull", image],
             None,
@@ -1320,7 +1367,7 @@ fn warm_cache(paths: &JackinPaths) -> Result<String> {
                 quiet: true,
                 ..RunOptions::default()
             },
-        );
+        ));
         if result.is_ok() {
             pulled += 1;
         } else if let Err(err) = result {
@@ -1841,7 +1888,7 @@ published_image = "ghcr.io/example/role:latest"
     #[test]
     fn parse_github_prs_sorts_newest_first() {
         let pulls = parse_github_prs(
-            r##"[
+            r#"[
               {
                 "repository": {"nameWithOwner": "jackin-project/jackin"},
                 "number": 10,
@@ -1864,7 +1911,7 @@ published_image = "ghcr.io/example/role:latest"
                 "state": "open",
                 "isDraft": true
               }
-            ]"##,
+            ]"#,
         )
         .unwrap();
 
@@ -1975,6 +2022,10 @@ published_image = "ghcr.io/example/role:latest"
         std::fs::write(home.join(".codex/auth.json"), "{}").unwrap();
         std::fs::create_dir_all(home.join(".local/share/amp")).unwrap();
         std::fs::write(home.join(".local/share/amp/secrets.json"), "{}").unwrap();
+        std::fs::create_dir_all(home.join(".kimi/credentials")).unwrap();
+        std::fs::write(home.join(".kimi/config.toml"), "[profile]\n").unwrap();
+        std::fs::create_dir_all(home.join(".local/share/opencode")).unwrap();
+        std::fs::write(home.join(".local/share/opencode/auth.json"), "{}").unwrap();
 
         let response = read_account_status(home, UNIX_EPOCH + Duration::from_secs(42));
 
@@ -1990,7 +2041,9 @@ published_image = "ghcr.io/example/role:latest"
             vec![
                 ("claude", "available"),
                 ("codex", "available"),
-                ("amp", "available")
+                ("amp", "available"),
+                ("kimi", "available"),
+                ("opencode", "available"),
             ]
         );
     }

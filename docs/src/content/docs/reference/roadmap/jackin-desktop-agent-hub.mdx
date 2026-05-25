@@ -5,13 +5,13 @@ import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Open — implementation program (daemon, native macOS status bar, desktop app, notifications)
+**Status**: In progress — daemon-backed menu bar foundation landed; live Capsule state, full Desktop window, quota telemetry, and attention routing remain open.
 
 ## Problem
 
 jackin' is already becoming the control plane for isolated developer agents:
 workspaces define project boundaries, roles define runtime shape, and the daemon
-PR introduces the host-side process needed for reactive features. The missing
+branch restores the host-side process needed for reactive features. The missing
 piece is a native macOS operator surface that shows what is running, what needs
 review, and what agent accounts are close to exhaustion without forcing the
 operator to keep every terminal tab in view.
@@ -30,7 +30,8 @@ routing. The phased plan below is the review strategy, not a reduced scope.
 ## Existing local foundation
 
 - The proposal layers on the roadmap items that motivated it: [jackin' daemon](/reference/roadmap/jackin-daemon/), [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/), [Agent attention prompts](/reference/roadmap/agent-attention-prompts/), and [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/). Those documents define the backend responsibilities Desktop should surface rather than reimplement.
-- <RepoFile path="src/daemon.rs" /> implements the first daemon shape: per-user Unix socket, singleton lock, lifecycle commands, launchd / systemd install, keep-awake reconciliation, cache warmup, and macOS notification dispatch. The Desktop-ready protocol work has started with a `daemon/hello` handshake that reports the jackin' version, supported protocol range, and currently available daemon capabilities. Read-only `workspace/list` and `session/list` discovery now expose saved workspace summaries and running role-container labels without requiring the Desktop app to parse jackin' TOML or Docker state directly. GitHub PR lookup starts with `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`, using the operator's `gh` authentication and newest-first open PR results. Ghostty/browser actions start with `workspace/launch` and `desktop/open` so Desktop can launch saved workspaces, reconnect to running sessions, and open PR links without owning terminal or browser command construction. Account cards start with `account/status`, which reports cached Claude, Codex, and Amp credential-source presence without exposing token values.
+- <RepoFile path="src/daemon.rs" /> implements the first daemon shape: per-user Unix socket, singleton lock, lifecycle commands, launchd / systemd install, keep-awake reconciliation, cache warmup, and macOS notification dispatch. The Desktop-ready protocol work has started with a `daemon/hello` handshake that reports the jackin' version, supported protocol range, and currently available daemon capabilities. Read-only `workspace/list` and `session/list` discovery now expose saved workspace summaries and running role-container labels without requiring the Desktop app to parse jackin' TOML files or Docker state directly. GitHub PR lookup starts with `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`, using the operator's `gh` authentication and newest-first open PR results. Ghostty/browser actions start with `workspace/launch` and `desktop/open` so Desktop can launch saved workspaces, reconnect to running sessions, and open PR links without owning terminal or browser command construction. Account cards start with `account/status`, which reports cached Claude, Codex, Amp, Kimi, and OpenCode credential-source presence without exposing token values.
+- The shipped Desktop session list is still label-backed. The next Desktop state layer should come from the daemon's Capsule-backed live index so the app sees panes, runtime status, branch/PR context, stale containers, and attention routes from one source rather than combining Docker labels with local heuristics.
 - `desktop/macos/` contains the first native macOS SwiftUI/AppKit package:
   a `MenuBarExtra` status item, daemon-health view, refresh action, and
   Unix-socket daemon client. The status item now reads `daemon/hello`,
@@ -122,7 +123,8 @@ Implementation details worth borrowing selectively:
 What not to copy:
 
 - CodexBar's provider catalog is intentionally broad. jackin' should not inherit
-  a generic "29 providers" architecture for a three-agent product.
+  a generic "29 providers" architecture for a product scoped to built-in jackin'
+  runtimes.
 - Hidden web scraping and cookie import should be optional diagnostics, not the
   primary path for jackin'-owned account state.
 - Token monitoring should be scoped to accounts jackin' launches, not every
@@ -349,10 +351,10 @@ The Desktop account UI should not try to reconcile conflicting numbers silently.
 4. Optional helpers: small Swift helpers for LocalAuthentication approval and
    login/account diagnostics, invoked by the daemon or app.
 
-### Recommended protocol changes to PR 283
+### Recommended protocol changes to the current daemon branch
 
-PR 283 is a good daemon foundation, but Desktop needs a more intentional API
-before this is merged as "the" daemon contract.
+The current branch is a good daemon foundation, but Desktop still needs a more
+intentional API before this is merged as the long-term daemon contract.
 
 Add request/response shapes:
 
@@ -384,7 +386,7 @@ The daemon should maintain an in-memory state cache and append a small event log
 ```text
 ~/.jackin/run/jackin-daemon.sock
 ~/.jackin/run/jackin-daemon.log
-~/.jackin/events/events.jsonl
+~/.jackin/data/events/events.jsonl
 ~/.jackin/cache/github/
 ~/.jackin/cache/accounts/
 ~/.jackin/cache/usage/
@@ -560,16 +562,16 @@ Delivery rules:
 - Continue silently between PRs: after opening one PR, start the next branch on
   top of that PR branch unless blocked by CI, merge conflicts, or a design
   contradiction that cannot be resolved from the roadmap.
-- Treat the daemon draft PR as editable, not fixed. If a required Desktop
-  contract belongs in PR 283, update that daemon PR directly instead of working
-  around a weak daemon API in later Desktop branches.
+- Treat the daemon branch as editable, not fixed. If a required Desktop
+  contract belongs in the daemon branch, update that branch directly instead of
+  working around a weak daemon API in later Desktop branches.
 - Keep PR descriptions stage-aware: what this PR adds, what it intentionally
   defers, how to verify it, and which PR should be reviewed next after this one
   lands.
 
 ### Phase 0 — Validate daemon contract before merge
 
-- Keep PR 283 as the base, but add explicit capability/version handshake.
+- Keep the current daemon branch as the base, but add explicit capability/version handshake.
 - Add `workspace/list`, `session/list`, `workspace/launch`, `github/my_open_prs`,
   `github/project_inbox`, `github/repository_prs`, and `event/subscribe`.
 - Add labels at container launch for workspace name, agent, branch, and primary
