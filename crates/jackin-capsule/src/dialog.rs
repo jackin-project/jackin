@@ -176,6 +176,17 @@ pub enum Dialog {
         kind: ConfirmKind,
         selected_yes: bool,
     },
+    /// Two-step provider picker shown after agent selection when multiple
+    /// providers (e.g. Anthropic and Z.AI) are available. `providers` is a
+    /// parallel vec of display labels; `env_overrides` carries the matching
+    /// per-provider env injection list (empty for the default provider).
+    ProviderPicker {
+        agent: Option<String>,
+        providers: Vec<String>,
+        env_overrides: Vec<Vec<(String, String)>>,
+        selected: usize,
+        intent: PickerIntent,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -243,6 +254,14 @@ pub enum DialogAction {
     /// daemon whether to spawn it as a tab or as a split pane.
     SpawnAgent {
         agent: Option<String>,
+        intent: PickerIntent,
+    },
+    /// User confirmed a provider in the ProviderPicker — spawn the
+    /// agent with the chosen provider's env overrides and label.
+    SpawnAgentWithProvider {
+        agent: Option<String>,
+        provider_label: String,
+        env_overrides: Vec<(String, String)>,
         intent: PickerIntent,
     },
     /// Operator typed a new tab label and pressed Enter. Empty
@@ -320,6 +339,21 @@ impl Dialog {
             selected: 0,
             filter: String::new(),
             close_label,
+        }
+    }
+
+    pub fn new_provider_picker(
+        agent: Option<String>,
+        providers: Vec<String>,
+        env_overrides: Vec<Vec<(String, String)>>,
+        intent: PickerIntent,
+    ) -> Self {
+        Self::ProviderPicker {
+            agent,
+            providers,
+            env_overrides,
+            selected: 0,
+            intent,
         }
     }
 
@@ -435,6 +469,12 @@ impl Dialog {
                     *selected = step_selectable(&visible, *selected, false);
                     DialogAction::Redraw
                 }
+                Self::ProviderPicker { selected, .. } => {
+                    if *selected > 0 {
+                        *selected -= 1;
+                    }
+                    DialogAction::Redraw
+                }
                 Self::RenameTab { .. }
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
@@ -476,6 +516,12 @@ impl Dialog {
                 } => {
                     let visible = picker_filtered_rows(agents, filter);
                     *selected = step_selectable(&visible, *selected, true);
+                    DialogAction::Redraw
+                }
+                Self::ProviderPicker { selected, providers, .. } => {
+                    if *selected + 1 < providers.len() {
+                        *selected += 1;
+                    }
                     DialogAction::Redraw
                 }
                 Self::RenameTab { .. }
@@ -560,6 +606,24 @@ impl Dialog {
                         Some(PickerRow::Section(_)) | None => DialogAction::Redraw,
                     }
                 }
+                Self::ProviderPicker {
+                    agent,
+                    providers,
+                    env_overrides,
+                    selected,
+                    intent,
+                } => match providers.get(*selected) {
+                    Some(label) => DialogAction::SpawnAgentWithProvider {
+                        agent: agent.clone(),
+                        provider_label: label.clone(),
+                        env_overrides: env_overrides
+                            .get(*selected)
+                            .cloned()
+                            .unwrap_or_default(),
+                        intent: *intent,
+                    },
+                    None => DialogAction::Redraw,
+                },
                 _ => DialogAction::Redraw,
             };
         }
@@ -674,6 +738,32 @@ impl Dialog {
             }
             return DialogAction::Consume;
         }
+        // ProviderPicker: flat list, no filter row. Items start at box_row + 1.
+        if let Self::ProviderPicker {
+            agent,
+            providers,
+            env_overrides,
+            selected,
+            intent,
+        } = self
+        {
+            let first_item_row = box_row + 1;
+            let count = providers.len() as u16;
+            if row < first_item_row || row >= first_item_row + count {
+                return DialogAction::Consume;
+            }
+            let idx = (row - first_item_row) as usize;
+            let Some(label) = providers.get(idx) else {
+                return DialogAction::Consume;
+            };
+            *selected = idx;
+            return DialogAction::SpawnAgentWithProvider {
+                agent: agent.clone(),
+                provider_label: label.clone(),
+                env_overrides: env_overrides.get(idx).cloned().unwrap_or_default(),
+                intent: *intent,
+            };
+        }
         // Row layout inside the box for filterable dialogs:
         //   box_row + 0:  top border (decorative)
         //   box_row + 1:  blank pad row
@@ -705,7 +795,8 @@ impl Dialog {
             Self::RenameTab { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
-            | Self::ConfirmAction { .. } => 0,
+            | Self::ConfirmAction { .. }
+            | Self::ProviderPicker { .. } => 0,
         };
         if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
@@ -768,14 +859,13 @@ impl Dialog {
                     }
                 }
             }
-            // RenameTab and ContainerInfo clicks were already handled
-            // by early returns above. ConfirmAction has no row list —
-            // every inside-box click is dispatched by the early
-            // return below the inside_box check.
+            // RenameTab, ContainerInfo, ConfirmAction, and ProviderPicker
+            // clicks were already handled by early returns above.
             Self::RenameTab { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
-            | Self::ConfirmAction { .. } => DialogAction::Consume,
+            | Self::ConfirmAction { .. }
+            | Self::ProviderPicker { .. } => DialogAction::Consume,
         }
     }
 
@@ -846,6 +936,10 @@ impl Dialog {
                     PickerRow::Agent(_) | PickerRow::Shell
                 )
             }
+            Self::ProviderPicker { providers, .. } => {
+                let first_item_row = box_row + 1;
+                row >= first_item_row && row < first_item_row + providers.len() as u16
+            }
         }
     }
 
@@ -897,6 +991,8 @@ impl Dialog {
             Self::ContainerInfo { .. } => 8,
             Self::GitHubContext { .. } => 9,
             Self::ConfirmAction { .. } => 9,
+            // No filter row: top border + items + bottom border.
+            Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
         };
         let max_height = term_rows
             .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
@@ -1023,6 +1119,13 @@ impl Dialog {
             Self::ConfirmAction { kind, selected_yes } => {
                 render_confirm_action(buf, box_row, box_col, height, width, *kind, *selected_yes);
             }
+            Self::ProviderPicker {
+                providers,
+                selected,
+                ..
+            } => {
+                render_provider_picker(buf, box_row, box_col, height, width, providers, *selected);
+            }
         }
     }
 
@@ -1049,7 +1152,8 @@ impl Dialog {
             Self::CommandPalette { .. } => PALETTE_HINT,
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
-            | Self::CloseTargetPicker { .. } => PICKER_HINT,
+            | Self::CloseTargetPicker { .. }
+            | Self::ProviderPicker { .. } => PICKER_HINT,
             Self::RenameTab { .. } => RENAME_HINT,
             Self::ContainerInfo { .. } => CONTAINER_INFO_HINT,
             Self::GitHubContext { .. } => {
@@ -1756,6 +1860,30 @@ fn render_agent_picker(
                 );
             }
         }
+    }
+}
+
+fn render_provider_picker(
+    buf: &mut Vec<u8>,
+    start_row: u16,
+    start_col: u16,
+    height: u16,
+    width: u16,
+    providers: &[String],
+    selected: usize,
+) {
+    render_box(buf, start_row, start_col, height, width, "Choose provider");
+    let interior_items = height.saturating_sub(2) as usize;
+    let drawn = providers.len().min(interior_items);
+    for (i, label) in providers.iter().enumerate().take(drawn) {
+        render_row(
+            buf,
+            start_row + 1 + i as u16,
+            start_col + 1,
+            width,
+            label,
+            i == selected,
+        );
     }
 }
 

@@ -578,6 +578,7 @@ fn capsule_config(
     selector: &RoleSelector,
     workdir: &str,
     manifest: &crate::manifest::RoleManifest,
+    zai_key: Option<String>,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
@@ -609,6 +610,7 @@ fn capsule_config(
         workdir: workdir.to_string(),
         agents,
         models,
+        zai_key,
     }
 }
 
@@ -1945,7 +1947,13 @@ async fn load_role_with(
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
 
-        let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest);
+        let zai_key = resolved_env
+            .vars
+            .iter()
+            .find(|(k, _)| k == "ZAI_API_KEY")
+            .map(|(_, v)| v.clone())
+            .filter(|v| !v.is_empty());
+        let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest, zai_key);
         let ctx = LaunchContext {
             container_name: &container_name,
             image: &image,
@@ -3562,7 +3570,7 @@ model = "zai/glm"
 
         let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-        let config = capsule_config(&selector, "/workspace", &manifest);
+        let config = capsule_config(&selector, "/workspace", &manifest, None);
 
         assert_eq!(config.role, "chainargos/the-architect");
         assert_eq!(config.workdir, "/workspace");

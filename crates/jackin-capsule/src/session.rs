@@ -46,6 +46,11 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "JACKIN_DEBUG",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
+    // Per-tab provider injection — Z.AI and future Anthropic-compatible backends.
+    // Listed here so env_for_spawn's allowlist accepts them as overrides when the
+    // operator picks an alternative provider in the AgentPicker flow.
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
 ];
 
 /// Per-pane cap on the kitty-keyboard push depth. A buggy or hostile

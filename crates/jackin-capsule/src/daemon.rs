@@ -161,6 +161,9 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
     workdir: PathBuf,
+    /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
+    /// was set at launch time; drives the provider picker for supported agents.
+    zai_key: Option<String>,
     /// Cached at construction; tool availability and `origin/HEAD`
     /// cannot change while the daemon is alive, and re-probing on
     /// the 1Hz state tick would shell out for a stable verdict.
@@ -540,6 +543,7 @@ impl Multiplexer {
             .saturating_sub(STATUS_BAR_ROWS)
             .saturating_sub(BRANCH_CONTEXT_BAR_ROWS);
         let agents = launch_config.supported_agents();
+        let zai_key = launch_config.zai_key.clone();
 
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
@@ -598,6 +602,7 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
+            zai_key,
         }
     }
 
@@ -1311,23 +1316,55 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {agent_slug:?}: {reason}");
                 }
-                self.spawn_session(Some(agent_slug), env_overrides)
+                self.spawn_session(Some(agent_slug), env_overrides, None)
             }
-            SpawnRequest::Shell => self.spawn_session(None, env_overrides),
+            SpawnRequest::Shell => self.spawn_session(None, env_overrides, None),
         }
+    }
+
+    /// Returns the available provider choices for `agent`. Each entry is a
+    /// (display_label, env_overrides) pair. An empty vec means only the
+    /// default provider is available and no picker step is needed.
+    /// A non-empty vec always has 2+ entries — one per available provider.
+    fn providers_for_agent(&self, agent: Option<&str>) -> Vec<(&'static str, Vec<(String, String)>)> {
+        let Some(slug) = agent else { return vec![] };
+        // Z.AI supports Claude Code via the Anthropic-compatible endpoint.
+        // Other agents are deferred until their endpoints are confirmed.
+        if slug == "claude" {
+            if let Some(ref key) = self.zai_key {
+                return vec![
+                    ("Anthropic", vec![]),
+                    ("Z.AI", vec![
+                        ("ANTHROPIC_AUTH_TOKEN".to_string(), key.clone()),
+                        (
+                            "ANTHROPIC_BASE_URL".to_string(),
+                            "https://api.z.ai/api/anthropic".to_string(),
+                        ),
+                    ]),
+                ];
+            }
+        }
+        vec![]
     }
 
     fn session_launch(
         &self,
         agent: Option<&str>,
+        provider_label: Option<&str>,
         env_passthrough: &[(String, String)],
     ) -> SessionLaunch {
         let cwd = self.workdir.as_path();
         match agent {
-            Some(slug) => SessionLaunch {
-                label: capitalize(slug),
-                cmd: build_agent_command(slug, self.model_for_agent(slug), env_passthrough, cwd),
-            },
+            Some(slug) => {
+                let label = match provider_label {
+                    Some(p) => format!("{} ({})", capitalize(slug), p),
+                    None => capitalize(slug),
+                };
+                SessionLaunch {
+                    label,
+                    cmd: build_agent_command(slug, self.model_for_agent(slug), env_passthrough, cwd),
+                }
+            }
             None => SessionLaunch {
                 label: "Shell".to_string(),
                 cmd: build_shell_command(env_passthrough, cwd),
@@ -1372,11 +1409,38 @@ impl Multiplexer {
                 }
             }
             DialogAction::SpawnAgent { agent, intent } => {
-                // Terminal action — agent picked, spawn the session,
-                // close every dialog underneath (Menu / Split picker /
-                // …) so the operator drops straight onto the new pane.
+                let providers = self.providers_for_agent(agent.as_deref());
+                if providers.len() > 1 {
+                    // Multiple providers available — push ProviderPicker
+                    // on top so the operator chooses before spawning.
+                    let labels: Vec<String> =
+                        providers.iter().map(|(l, _)| l.to_string()).collect();
+                    let overrides: Vec<Vec<(String, String)>> =
+                        providers.into_iter().map(|(_, env)| env).collect();
+                    self.dialog_push(Dialog::new_provider_picker(
+                        agent, labels, overrides, intent,
+                    ));
+                } else {
+                    // Zero or one provider — spawn immediately without
+                    // a picker step (operator experience unchanged when
+                    // Z.AI is not configured).
+                    self.dialog_clear();
+                    self.dispatch_spawn_intent(agent, intent);
+                }
+            }
+            DialogAction::SpawnAgentWithProvider {
+                agent,
+                provider_label,
+                env_overrides,
+                intent,
+            } => {
                 self.dialog_clear();
-                self.dispatch_spawn_intent(agent, intent);
+                self.dispatch_spawn_intent_with_provider(
+                    agent,
+                    intent,
+                    &env_overrides,
+                    Some(&provider_label),
+                );
             }
             DialogAction::RenameTab { tab_idx, label } => {
                 self.dialog_clear();
@@ -1450,9 +1514,9 @@ impl Multiplexer {
     /// the operator can retry.
     fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
         let result: anyhow::Result<()> = match intent {
-            PickerIntent::NewTab => self.spawn_session(agent.clone(), &[]).map(|_| ()),
+            PickerIntent::NewTab => self.spawn_session(agent.clone(), &[], None).map(|_| ()),
             PickerIntent::Split(direction) => {
-                self.split_focused_into(direction, agent.clone(), &[])
+                self.split_focused_into(direction, agent.clone(), &[], None)
             }
         };
         if let Err(err) = result {
@@ -1466,10 +1530,34 @@ impl Multiplexer {
         }
     }
 
+    fn dispatch_spawn_intent_with_provider(
+        &mut self,
+        agent: Option<String>,
+        intent: PickerIntent,
+        env_overrides: &[(String, String)],
+        provider_label: Option<&str>,
+    ) {
+        let result: anyhow::Result<()> = match intent {
+            PickerIntent::NewTab => self
+                .spawn_session(agent.clone(), env_overrides, provider_label)
+                .map(|_| ()),
+            PickerIntent::Split(direction) => {
+                self.split_focused_into(direction, agent.clone(), env_overrides, provider_label)
+            }
+        };
+        if let Err(err) = result {
+            let agent_label = agent.as_deref().unwrap_or("shell");
+            crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
+            let banner = spawn_failure_banner(&format!("{agent_label}: {err:#}"));
+            self.send_output(banner);
+        }
+    }
+
     fn spawn_session(
         &mut self,
         agent: Option<String>,
         env_overrides: &[(String, String)],
+        provider_label: Option<&str>,
     ) -> Result<u64> {
         // Bound the per-container surface so a runaway client (or an
         // operator mis-click loop) cannot allocate unbounded PTYs.
@@ -1487,7 +1575,7 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent.as_deref(), &env_passthrough);
+        let launch = self.session_launch(agent.as_deref(), provider_label, &env_passthrough);
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
@@ -1548,6 +1636,7 @@ impl Multiplexer {
         direction: SplitDirection,
         agent_slug: Option<String>,
         env_overrides: &[(String, String)],
+        provider_label: Option<&str>,
     ) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
         // Any selection / drag-resize is anchored to a specific pane
@@ -1576,7 +1665,7 @@ impl Multiplexer {
             ),
         };
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent_slug.as_deref(), &env_passthrough);
+        let launch = self.session_launch(agent_slug.as_deref(), provider_label, &env_passthrough);
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,
@@ -1628,7 +1717,7 @@ impl Multiplexer {
         };
         let from_id = tab.focused_id;
         let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
-        self.split_focused_into(direction, agent_slug, &[])
+        self.split_focused_into(direction, agent_slug, &[], None)
     }
 
     fn close_focused_pane(&mut self) {
@@ -5172,6 +5261,7 @@ mod tests {
                 workdir: "/workspace".to_string(),
                 agents: Vec::new(),
                 models: std::collections::BTreeMap::new(),
+                zai_key: None,
             },
         )
     }
