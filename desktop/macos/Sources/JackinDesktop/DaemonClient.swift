@@ -62,6 +62,13 @@ struct DaemonClient {
         )
     }
 
+    func accountStatus(refresh: Bool = false) async throws -> AccountStatusResponse {
+        try await request(
+            AccountStatusRequest(type: "account/status", protocolVersion: protocolVersion, refresh: refresh),
+            as: AccountStatusResponse.self
+        )
+    }
+
     private func request<Request: Encodable & Sendable, Response: Decodable>(
         _ request: Request,
         as responseType: Response.Type
@@ -123,6 +130,18 @@ private struct WorkspaceLaunchRequest: Encodable, Sendable {
         case protocolVersion = "protocol"
         case workspace
         case role
+    }
+}
+
+private struct AccountStatusRequest: Encodable, Sendable {
+    let type: String
+    let protocolVersion: Int
+    let refresh: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case protocolVersion = "protocol"
+        case refresh
     }
 }
 
@@ -257,6 +276,29 @@ struct GitHubPullRequest: Decodable, Identifiable, Equatable {
 struct DesktopActionResponse: Decodable, Equatable {
     let action: String
     let command: [String]
+}
+
+struct AccountStatusResponse: Decodable, Equatable {
+    let providers: [AccountProviderStatus]
+    let fetchedAtEpochSeconds: UInt64
+    let refreshAfterSeconds: UInt64
+    let cacheHit: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case providers
+        case fetchedAtEpochSeconds = "fetched_at_epoch_seconds"
+        case refreshAfterSeconds = "refresh_after_seconds"
+        case cacheHit = "cache_hit"
+    }
+}
+
+struct AccountProviderStatus: Decodable, Identifiable, Equatable {
+    var id: String { provider }
+
+    let provider: String
+    let state: String
+    let source: String?
+    let detail: String
 }
 
 struct EventSubscriptionResponse: Decodable, Equatable {

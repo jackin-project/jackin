@@ -6,7 +6,11 @@ final class StatusBarModel: ObservableObject {
     @Published private(set) var workspaces: [DesktopWorkspace] = []
     @Published private(set) var sessions: [DesktopSession] = []
     @Published private(set) var pullRequests: [GitHubPullRequest] = []
+    @Published private(set) var accountProviders: [AccountProviderStatus] = []
+    @Published private(set) var accountFetchedAtEpochSeconds: UInt64?
+    @Published private(set) var accountStatusCacheHit = false
     @Published private(set) var pullRequestError: String?
+    @Published private(set) var accountStatusError: String?
     @Published private(set) var openError: String?
     @Published private(set) var eventSubscription: EventSubscriptionResponse?
     @Published private(set) var isRefreshing = false
@@ -37,15 +41,32 @@ final class StatusBarModel: ObservableObject {
             async let workspaceList = client.workspaces()
             async let sessionList = client.sessions()
             async let eventRoutes = client.eventSubscription()
+            async let accountStatus = client.accountStatus()
             workspaces = try await workspaceList.workspaces
             sessions = try await sessionList.sessions
             eventSubscription = try await eventRoutes
+            do {
+                let status = try await accountStatus
+                accountProviders = status.providers
+                accountFetchedAtEpochSeconds = status.fetchedAtEpochSeconds
+                accountStatusCacheHit = status.cacheHit
+                accountStatusError = nil
+            } catch {
+                accountProviders = []
+                accountFetchedAtEpochSeconds = nil
+                accountStatusCacheHit = false
+                accountStatusError = error.localizedDescription
+            }
             daemon = .connected(hello)
         } catch {
             workspaces = []
             sessions = []
             pullRequests = []
+            accountProviders = []
+            accountFetchedAtEpochSeconds = nil
+            accountStatusCacheHit = false
             pullRequestError = nil
+            accountStatusError = nil
             self.eventSubscription = nil
             daemon = .disconnected(error.localizedDescription)
             return
@@ -66,6 +87,21 @@ final class StatusBarModel: ObservableObject {
 
     var readyForReviewPullRequests: [GitHubPullRequest] {
         pullRequests.filter { !$0.isDraft }
+    }
+
+    var projectSummaries: [DesktopProjectSummary] {
+        let repositories = Set(pullRequests.map(\.repository) + sessions.compactMap(\.repository))
+        return repositories.sorted().map { repository in
+            let projectPullRequests = pullRequests.filter { $0.repository == repository }
+            let projectSessions = sessions.filter { $0.repository == repository }
+            let workspaceNames = Set(projectSessions.compactMap(\.workspace)).sorted()
+            return DesktopProjectSummary(
+                repository: repository,
+                pullRequests: projectPullRequests,
+                runningSessions: projectSessions,
+                workspaceNames: workspaceNames
+            )
+        }
     }
 
     func openPullRequest(_ pullRequest: GitHubPullRequest) async {
@@ -110,10 +146,38 @@ final class StatusBarModel: ObservableObject {
             openError = error.localizedDescription
         }
     }
+
+    func refreshAccountStatus() async {
+        do {
+            let status = try await client.accountStatus(refresh: true)
+            accountProviders = status.providers
+            accountFetchedAtEpochSeconds = status.fetchedAtEpochSeconds
+            accountStatusCacheHit = status.cacheHit
+            accountStatusError = nil
+        } catch {
+            accountProviders = []
+            accountFetchedAtEpochSeconds = nil
+            accountStatusCacheHit = false
+            accountStatusError = error.localizedDescription
+        }
+    }
 }
 
 enum DaemonHealth: Equatable {
     case checking
     case connected(DaemonHello)
     case disconnected(String)
+}
+
+struct DesktopProjectSummary: Identifiable, Equatable {
+    var id: String { repository }
+
+    let repository: String
+    let pullRequests: [GitHubPullRequest]
+    let runningSessions: [DesktopSession]
+    let workspaceNames: [String]
+
+    var activePullRequests: [GitHubPullRequest] {
+        pullRequests.filter { !$0.isDraft }
+    }
 }

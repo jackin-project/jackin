@@ -72,17 +72,35 @@ struct DesktopWindowView: View {
     private var projectsView: some View {
         VStack(spacing: 0) {
             projectFilters
-            List(filteredProjectNames, id: \.self) { project in
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(project)
-                            .font(.headline)
-                        Text(projectOrganization(project))
-                            .foregroundStyle(.secondary)
+            List(filteredProjectSummaries) { project in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(project.repository)
+                                .font(.headline)
+                            Text(projectDetailText(project))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            Task {
+                                await model.openRepository(project.repository)
+                            }
+                        } label: {
+                            Label("GitHub", systemImage: "arrow.up.forward.square")
+                        }
+                        Button {
+                            Task {
+                                await model.openRepositoryPullRequests(project.repository)
+                            }
+                        } label: {
+                            Label("Pull Requests", systemImage: "arrow.triangle.pull")
+                        }
                     }
-                    Spacer()
-                    Text("\(pullRequestCount(for: project)) PRs")
-                        .foregroundStyle(.secondary)
+                    ForEach(project.runningSessions) { session in
+                        sessionSummaryRow(session)
+                            .padding(.leading, 12)
+                    }
                 }
             }
         }
@@ -256,8 +274,52 @@ struct DesktopWindowView: View {
     }
 
     private var accountsView: some View {
-        ContentUnavailableView("Account Status Comes Next", systemImage: "person.crop.circle.badge.checkmark")
-            .navigationTitle("Accounts")
+        List {
+            if let accountStatusError = model.accountStatusError {
+                ContentUnavailableView(accountStatusError, systemImage: "exclamationmark.triangle")
+            } else if model.accountProviders.isEmpty {
+                ContentUnavailableView("No Account Status", systemImage: "person.crop.circle.badge.questionmark")
+            } else {
+                Section {
+                    ForEach(model.accountProviders) { provider in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(provider.provider)
+                                    .font(.headline)
+                                Text(provider.detail)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(accountStateColor(provider.state))
+                                        .frame(width: 8, height: 8)
+                                    Text(provider.state)
+                                }
+                                Text(provider.source ?? "No credential source")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text(accountStatusFooter)
+                }
+            }
+        }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    Task {
+                        await model.refreshAccountStatus()
+                    }
+                } label: {
+                    Label("Refresh Accounts", systemImage: "arrow.clockwise")
+                }
+            }
+        }
+        .navigationTitle("Accounts")
     }
 
     private var settingsView: some View {
@@ -287,6 +349,13 @@ struct DesktopWindowView: View {
         projectNamesForCurrentOrganization
     }
 
+    private var filteredProjectSummaries: [DesktopProjectSummary] {
+        model.projectSummaries.filter { project in
+            organizationFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                projectOrganization(project.repository).localizedCaseInsensitiveContains(organizationFilter)
+        }
+    }
+
     private var filteredPullRequests: [GitHubPullRequest] {
         model.pullRequests.filter { pullRequest in
             if !organizationFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -309,6 +378,35 @@ struct DesktopWindowView: View {
 
     private func pullRequestCount(for project: String) -> Int {
         model.pullRequests.filter { $0.repository == project }.count
+    }
+
+    private func projectDetailText(_ project: DesktopProjectSummary) -> String {
+        let prText = project.pullRequests.count == 1 ? "1 PR" : "\(project.pullRequests.count) PRs"
+        let sessionText = project.runningSessions.count == 1 ? "1 running agent" : "\(project.runningSessions.count) running agents"
+        let workspaceText = project.workspaceNames.isEmpty ? "No workspace detected" : project.workspaceNames.joined(separator: ", ")
+        return "\(prText) / \(sessionText) / \(workspaceText)"
+    }
+
+    private var accountStatusFooter: String {
+        var parts: [String] = []
+        if let fetched = model.accountFetchedAtEpochSeconds {
+            parts.append("Fetched \(Date(timeIntervalSince1970: TimeInterval(fetched)).formatted(date: .abbreviated, time: .shortened))")
+        }
+        if model.accountStatusCacheHit {
+            parts.append("cache hit")
+        }
+        return parts.joined(separator: " / ")
+    }
+
+    private func accountStateColor(_ state: String) -> Color {
+        switch state {
+        case "available":
+            .green
+        case "missing":
+            .orange
+        default:
+            .secondary
+        }
     }
 
     private func projectOrganization(_ repository: String) -> String {

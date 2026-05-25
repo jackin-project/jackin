@@ -33,6 +33,15 @@ struct MainMenuView: View {
                 Divider()
             }
 
+            if !model.projectSummaries.isEmpty {
+                Section("Active Projects") {
+                    ForEach(model.projectSummaries.prefix(4)) { project in
+                        projectRow(project)
+                    }
+                }
+                Divider()
+            }
+
             if !model.workspaces.isEmpty {
                 Section("Workspaces") {
                     ForEach(model.workspaces) { workspace in
@@ -49,6 +58,19 @@ struct MainMenuView: View {
                 } else {
                     ForEach(model.pullRequests) { pullRequest in
                         pullRequestRow(pullRequest)
+                    }
+                }
+            }
+
+            Divider()
+
+            Section("Accounts") {
+                if model.accountProviders.isEmpty {
+                    Text(model.accountStatusError ?? "No account status")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.accountProviders) { provider in
+                        accountRow(provider)
                     }
                 }
             }
@@ -83,6 +105,37 @@ struct MainMenuView: View {
             }
         }
         .padding(8)
+    }
+
+    private func projectRow(_ project: DesktopProjectSummary) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(project.repository)
+                        .lineLimit(1)
+                    Text("\(project.runningSessions.count) agents / \(project.pullRequests.count) PRs")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            HStack {
+                Button {
+                    Task {
+                        await model.openRepository(project.repository)
+                    }
+                } label: {
+                    Label("GitHub", systemImage: "arrow.up.forward.square")
+                }
+                Button {
+                    Task {
+                        await model.openRepositoryPullRequests(project.repository)
+                    }
+                } label: {
+                    Label("Pull Requests", systemImage: "arrow.triangle.pull")
+                }
+            }
+        }
     }
 
     private func workspaceRow(_ workspace: DesktopWorkspace) -> some View {
@@ -128,6 +181,21 @@ struct MainMenuView: View {
                     Label("DiffsHub", systemImage: "doc.text.magnifyingglass")
                 }
             }
+        }
+    }
+
+    private func accountRow(_ provider: AccountProviderStatus) -> some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(provider.provider)
+                Text(provider.source ?? provider.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Text(provider.state)
+                .foregroundStyle(provider.state == "available" ? .primary : .secondary)
         }
     }
 }

@@ -5,7 +5,7 @@ import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: In progress — daemon-backed menu bar foundation landed; live Capsule state, full Desktop window, quota telemetry, and attention routing remain open.
+**Status**: In progress — daemon-backed menu bar, first Desktop window, workspace/session/PR spine, and credential-source account cards landed; live Capsule state, quota telemetry, and attention routing remain open.
 
 ## Problem
 
@@ -321,7 +321,7 @@ Recommended layout:
 
 Compact visibility rule: every Desktop view that can start, focus, or stop an agent should show the active account quota beside that agent. The full Accounts and Usage screens are for inspection; the Running Agents, Workspaces, and menu-bar surfaces are for immediate "can I safely keep working?" decisions.
 
-The first window slice now adds this `NavigationSplitView` shell and wires the sidebar destinations to the same daemon-backed menu model. The Pull Requests and Projects panes now include first-pass organization, project, and draft/open filters over daemon-provided PR state. The Workspaces and Running Agents panes now show saved workspace visibility, per-workspace running counts, running instance repository/branch metadata, linked PR details when available, and separate GitHub/DiffsHub review actions. Account cards and attention actions remain in focused follow-up work after the consolidated implementation establishes that live workspace / instance / PR spine.
+The first window slice now adds this `NavigationSplitView` shell and wires the sidebar destinations to the same daemon-backed menu model. The Pull Requests and Projects panes now include first-pass organization, project, and draft/open filters over daemon-provided PR state plus recently active repositories from running sessions. The Workspaces and Running Agents panes now show saved workspace visibility, per-workspace running counts, running instance repository/branch metadata, linked PR details when available, and separate GitHub/DiffsHub review actions. The Accounts pane shows daemon-provided Claude/Codex/Amp/Kimi/OpenCode credential-source presence and cache freshness. Quota cards, repair/login actions, and attention actions remain open because they depend on the later quota telemetry, live auth sync, and event-stream adapters.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
@@ -562,7 +562,7 @@ Delivery rules:
 - Do not create additional implementation PRs for daemon contract, session
   discovery, GitHub PR lookup, menu bar shell, account status cards, workspace
   launch, desktop window, attention integration, or host-bridge UI.
-- Keep the consolidated PR reviewable through focused commits, clear subsystem
+- Keep the consolidated implementation reviewable through focused commits, clear subsystem
   sections in the PR body, and targeted verification notes.
 - Follow the repo's existing pull-request and commit standards:
   <RepoFile path="AGENTS.md" />, <RepoFile path="PULL_REQUESTS.md" />, and
@@ -575,7 +575,7 @@ Delivery rules:
 - Treat the daemon/Desktop/API/docs contract as editable inside the consolidated implementation. If a
   required Desktop contract belongs in the daemon, update the daemon code and
   docs in the same PR instead of working around a weak API.
-- Keep the PR description current: what the consolidated implementation adds, what it intentionally
+- Keep the implementation description current: what the consolidated implementation adds, what it intentionally
   defers, how to verify it, and which risks remain.
 
 ### Daemon contract before merge
@@ -609,21 +609,30 @@ Delivery rules:
 - Add the inbox-style Pull Requests view with organization/project filters and
   draft/open state over the daemon-backed PR list.
 - Add the Projects view for recently active jackin' repositories using
-  repository grouping from the daemon-backed PR list and an organization filter.
+  repository grouping from daemon-backed PRs and running-session repository
+  labels, with an organization filter.
 - Add the Workspaces view for saved workspace visibility and launch-only
   actions through `workspace/launch`.
 - Add the Running Agents view with per-workspace agent counts and Ghostty
   open/hardline actions through `desktop/open`.
+- Add the Accounts view using daemon-provided credential-source presence for
+  Claude, Codex, Amp, Kimi, and OpenCode. Quota telemetry, provider refresh
+  backoff, and repair/login actions stay with the live auth sync and token/cost
+  telemetry roadmap items.
 - Keep workspace creation/editing in `jackin console` for this PR.
 
 ### Attention and PR readiness loop
 
-- Implement `jackin-attention` MCP server and richer daemon attention events.
-- Promote "waiting" and "ready for review" states in the menu bar.
+- Keep the full `jackin-attention` MCP server and richer daemon attention events
+  open for the later attention-routing adapter.
+- Promote "ready for review" states in the menu bar through the current PR
+  polling contract; waiting/blocked attention states stay open until the real
+  event stream lands.
   Started with menu-bar promotion for non-draft operator-authored PRs and a
   daemon `event/subscribe` poll-contract response that names attention and
   ready-for-review click routes.
-- Notification click opens the exact Ghostty session or PR.
+- Notification click opens the exact Ghostty session or PR after native app
+  activation and daemon event streaming land.
   Started with explicit route metadata: attention events target
   `container_name` through `desktop/open`, and ready-for-review PR events target
   `url` through `desktop/open`. Native Notification Center activation still
