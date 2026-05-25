@@ -20,7 +20,7 @@ use super::attach::{
     reconnect_or_create_session_with_focus, start_or_reconnect_capsule_client,
 };
 use super::cleanup::gc_orphaned_resources;
-use super::discovery::{list_running_agent_display_names, list_running_agent_names};
+use super::discovery::list_running_agent_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
 use super::image::build_agent_image;
 use super::naming::{
@@ -1770,11 +1770,11 @@ async fn load_role_with(
                 };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, docker, opts).await;
+                        render_exit(&agent_display_name, paths, docker, opts).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, docker, opts).await;
+                        render_exit(&agent_display_name, paths, docker, opts).await;
                         return Err(error);
                     }
                 }
@@ -1799,11 +1799,11 @@ async fn load_role_with(
                 };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, docker, opts).await;
+                        render_exit(&agent_display_name, paths, docker, opts).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, docker, opts).await;
+                        render_exit(&agent_display_name, paths, docker, opts).await;
                         return Err(error);
                     }
                 }
@@ -2528,7 +2528,7 @@ async fn load_role_with(
 
     match load_result {
         Ok(_) => {
-            render_exit(&agent_display_name, docker, opts).await;
+            render_exit(&agent_display_name, paths, docker, opts).await;
             Ok(())
         }
         Err(error) => {
@@ -2543,7 +2543,7 @@ async fn load_role_with(
                     stage: failed_stage,
                 });
             }
-            render_exit(&agent_display_name, docker, opts).await;
+            render_exit(&agent_display_name, paths, docker, opts).await;
             Err(error)
         }
     }
@@ -2586,30 +2586,35 @@ fn resolve_launch_role_source(
     Ok((source, is_new, false))
 }
 
-async fn render_exit(agent_display_name: &str, docker: &impl DockerApi, opts: &LoadOptions) {
-    if opts.no_rain {
-        return;
-    }
-    let running = match list_running_agent_display_names(docker).await {
+async fn render_exit(
+    agent_display_name: &str,
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    opts: &LoadOptions,
+) {
+    let running = match list_running_agent_names(docker).await {
         Ok(names) => names,
         Err(e) => {
             if let Some(run) = crate::diagnostics::active_run() {
                 run.compact(
-                    "rain_gating",
-                    &format!("skipping outro rain; active-container count failed: {e:#}"),
+                    "exit_summary",
+                    &format!("skipping exit summary; running-container list failed: {e:#}"),
                 );
             }
-            vec![]
+            Vec::new()
         }
     };
     if running.is_empty() {
-        tui::outro_animation(agent_display_name, &running);
-    } else {
-        eprintln!(
-            "Returned from {agent_display_name}; {} jackin' session(s) remain.",
-            running.len()
-        );
+        // No one else is in the construct — the session-boundary rain plays
+        // (unless the operator opted out).
+        if !opts.no_rain {
+            tui::outro_animation(agent_display_name, &[]);
+        }
+        return;
     }
+    // Others remain: show the grouped "still here" summary so the operator
+    // can see who to reconnect to.
+    super::exit_summary::show(paths, &running, agent_display_name, opts).await;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

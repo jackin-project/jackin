@@ -2,6 +2,7 @@ pub(crate) mod attach;
 mod caffeinate;
 mod cleanup;
 mod discovery;
+mod exit_summary;
 mod identity;
 mod image;
 mod launch;

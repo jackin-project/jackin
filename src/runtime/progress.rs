@@ -475,7 +475,7 @@ impl Drop for RichRenderer {
     }
 }
 
-fn rich_terminal_supported() -> bool {
+pub(crate) fn rich_terminal_supported() -> bool {
     if !std::io::stdout().is_terminal() || !std::io::stderr().is_terminal() {
         return false;
     }
