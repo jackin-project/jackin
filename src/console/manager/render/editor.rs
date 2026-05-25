@@ -19,7 +19,8 @@ use super::list::{
     render_mount_header,
 };
 use super::{
-    FooterItem, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header,
+    FooterItem, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_INACTIVE, WHITE, footer_height,
+    render_footer, render_header,
 };
 use crate::config::AppConfig;
 use crate::operator_env::EnvValue;
@@ -427,15 +428,19 @@ pub(in crate::console::manager) fn render_tab_strip(
 
     for &(label, active) in labels {
         let cell_width = label.len() + 2; // " label " padding
+        // Tab chrome mirrors the in-container multiplexer status bar
+        // (jackin-capsule) via the shared jackin-tui palette: inactive cells
+        // sit on a dark-grey background, the active cell lifts to graphite
+        // (never the brand green, so it stays distinct from the ` jackin' `
+        // pill), both with WHITE text. The underline bar below marks tab-bar
+        // keyboard focus.
         let label_style = if active {
-            // Active tab always shows green background — underline bar is the
-            // additional indicator when the tab bar itself has keyboard focus.
             Style::default()
-                .bg(PHOSPHOR_GREEN)
-                .fg(Color::Black)
+                .bg(TAB_BG_ACTIVE)
+                .fg(WHITE)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(PHOSPHOR_DIM)
+            Style::default().bg(TAB_BG_INACTIVE).fg(WHITE)
         };
         label_spans.push(Span::styled(format!(" {label} "), label_style));
         label_spans.push(Span::raw(" "));

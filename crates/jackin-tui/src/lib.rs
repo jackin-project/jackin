@@ -53,6 +53,17 @@ pub const WHITE: Rgb = Rgb::new(255, 255, 255);
 /// "this is where you type" cue.
 pub const INPUT_BG_DIM: Rgb = Rgb::new(20, 24, 22);
 
+/// Tab-cell backgrounds shared by the in-container multiplexer status bar
+/// (`jackin-capsule`) and the host console tab strips (workspace editor,
+/// settings) so the two surfaces render identical tab chrome. Inactive
+/// tabs sit on a subtle dark grey; the active tab lifts to a graphite that
+/// stays distinct from the brand-green pill; hover lifts each one cell
+/// further.
+pub const TAB_BG_INACTIVE: Rgb = Rgb::new(30, 30, 30);
+pub const TAB_BG_INACTIVE_HOVER: Rgb = Rgb::new(48, 48, 48);
+pub const TAB_BG_ACTIVE: Rgb = Rgb::new(42, 42, 42);
+pub const TAB_BG_ACTIVE_HOVER: Rgb = Rgb::new(58, 58, 58);
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.

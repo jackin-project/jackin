@@ -32,7 +32,9 @@ pub(in crate::console::manager) use crate::console::widgets::scrollable::{
 pub(super) use crate::console::widgets::scrollable::{
     line_width, max_line_width, render_scrollable_block,
 };
-pub(super) use crate::console::widgets::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+pub(super) use crate::console::widgets::{
+    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_INACTIVE, WHITE,
+};
 /// Distinct accent for live-state surfaces (instances, sessions).
 /// Cyan contrasts clearly with the phosphor-green config panels.
 pub(super) const CYAN: ratatui::style::Color = ratatui::style::Color::Rgb(0, 180, 180);

@@ -265,11 +265,14 @@ Canonical definitions live in <RepoFile path="src/console/widgets/mod.rs" />. Al
 **W3C ARIA Tabs pattern** (see `AGENTS.md` → TUI navigation conventions for full spec). Summary:
 
 - Tab bar has its own focus area (`tab_bar_focused: bool` in state).
-- **Tab bar focused**: active tab shows `fg(WHITE) + BOLD`; underline bar (`━━━━`) beneath the active tab label.
-- **Content focused** (tab bar not focused): active tab shows `bg(PHOSPHOR_GREEN) + fg(Black) + BOLD`; no underline bar.
+- **Tab chrome is shared with the in-container multiplexer status bar** (`jackin-capsule`): inactive tabs render on a dark-grey background (`TAB_BG_INACTIVE`), the active tab lifts to graphite (`TAB_BG_ACTIVE` — never the brand green, so it stays distinct from the ` jackin' ` pill), both with WHITE text and the active tab bold. These backgrounds live in the shared `jackin-tui` crate (`TAB_BG_*`) and are consumed by both the console tab strips (workspace editor, settings) and the multiplexer, so the two surfaces cannot drift.
+- **Tab bar focused**: the active tab additionally shows a WHITE `━` underline bar beneath its label — the keyboard-focus cue.
+- **Content focused** (tab bar not focused): same graphite active tab, no underline bar.
 - `←`/`→` cycle tabs when tab bar is focused.
 - `Tab`/`↓` moves focus from tab bar into the first content block.
 - `BackTab`/`Esc` returns focus to the tab bar from content.
+
+Hover-lift backgrounds (`TAB_BG_*_HOVER`) exist in the shared palette for the multiplexer's pointer feedback. The host console tab strips do not yet wire hover because the console subscribes only to button/drag/scroll mouse modes (`?1000h`/`?1002h`), not any-event motion (`?1003h`) — enabling motion tracking is a separate decision, deliberately deferred to avoid touchpad-motion flooding.
 
 ---
 

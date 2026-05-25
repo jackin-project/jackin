@@ -44,10 +44,8 @@ const BRAND_BOLD: &str = "\x1b[1m";
 const BRAND_BG_DIM: &str = "\x1b[48;2;0;51;13m";
 const BRAND_FG_DIM: &str = "\x1b[38;2;0;0;0m";
 
-const TAB_BG_INACTIVE: &str = "\x1b[48;2;30;30;30m"; // subtle dark grey
-const TAB_BG_INACTIVE_HOVER: &str = "\x1b[48;2;48;48;48m"; // hover lift for clickable tabs
-const TAB_BG_ACTIVE: &str = "\x1b[48;2;42;42;42m"; // graphite, distinct from brand
-const TAB_BG_ACTIVE_HOVER: &str = "\x1b[48;2;58;58;58m"; // active tab hover lift
+// Tab-cell backgrounds live in `jackin-tui` (TAB_BG_*) so the console tab
+// strips and this status bar can't drift; emitted here via `ansi::bg`.
 const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const TAB_FG_ACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE on graphite
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
@@ -341,20 +339,20 @@ impl StatusBar {
             buf.extend_from_slice(TAB_FG_DIM.as_bytes());
         } else if cell.active {
             let bg = if hovered {
-                TAB_BG_ACTIVE_HOVER
+                jackin_tui::TAB_BG_ACTIVE_HOVER
             } else {
-                TAB_BG_ACTIVE
+                jackin_tui::TAB_BG_ACTIVE
             };
-            buf.extend_from_slice(bg.as_bytes());
+            jackin_tui::ansi::bg(buf, bg);
             buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
             buf.extend_from_slice(BOLD.as_bytes());
         } else {
             let bg = if hovered {
-                TAB_BG_INACTIVE_HOVER
+                jackin_tui::TAB_BG_INACTIVE_HOVER
             } else {
-                TAB_BG_INACTIVE
+                jackin_tui::TAB_BG_INACTIVE
             };
-            buf.extend_from_slice(bg.as_bytes());
+            jackin_tui::ansi::bg(buf, bg);
             buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
         }
         // Cell layout: ` <name> <glyph> `.

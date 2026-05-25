@@ -38,6 +38,20 @@ pub(crate) const WHITE: Color = Color::Rgb(
     tui_palette::WHITE.b,
 );
 
+/// Tab-cell backgrounds, shared with the in-container multiplexer status
+/// bar via `jackin-tui` so the console tab strips (workspace editor,
+/// settings) and the multiplexer render identical tab chrome.
+pub(crate) const TAB_BG_INACTIVE: Color = Color::Rgb(
+    tui_palette::TAB_BG_INACTIVE.r,
+    tui_palette::TAB_BG_INACTIVE.g,
+    tui_palette::TAB_BG_INACTIVE.b,
+);
+pub(crate) const TAB_BG_ACTIVE: Color = Color::Rgb(
+    tui_palette::TAB_BG_ACTIVE.r,
+    tui_palette::TAB_BG_ACTIVE.g,
+    tui_palette::TAB_BG_ACTIVE.b,
+);
+
 /// The ` jackin' ` brand pill followed by ` · <label>`. Shared by every
 /// top-level TUI screen (workspace list, settings, editor, launch
 /// progress) so the logo is byte-identical and never shifts position or
