@@ -252,6 +252,7 @@ pub enum WorkspaceClaudeTokenCommand {
         after_long_help = "\
 Examples:
   jackin workspace claude-token setup my-app --vault Personal
+  jackin workspace claude-token setup my-app --interactive
   jackin workspace claude-token setup my-app --vault Personal --item-name \"jackin · {ws} · claude\"
   jackin workspace claude-token setup my-app --reuse op://Personal/Existing/token
   jackin workspace claude-token setup my-app --vault Work --op-account Work"
@@ -261,8 +262,8 @@ Examples:
         /// be wired
         workspace: String,
         /// 1Password vault name or UUID for the new item. Required
-        /// unless `--reuse` is supplied. Mutually exclusive with
-        /// `--reuse`.
+        /// unless `--reuse` or `--interactive` is supplied. Mutually
+        /// exclusive with `--reuse`.
         #[arg(long, conflicts_with = "reuse")]
         vault: Option<String>,
         /// Override the default item title — `{ws}` substitutes the
@@ -278,6 +279,11 @@ Examples:
         /// vault is implicit in the supplied reference).
         #[arg(long, conflicts_with = "vault")]
         reuse: Option<String>,
+        /// Open an interactive TUI to choose the 1Password vault and
+        /// item instead of specifying them on the command line.
+        /// Mutually exclusive with `--vault` and `--reuse`.
+        #[arg(short = 'i', long, conflicts_with_all = ["vault", "reuse"])]
+        interactive: bool,
     },
     /// Generate a fresh token and overwrite the workspace's existing
     /// canonical slot.

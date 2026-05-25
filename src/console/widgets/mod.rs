@@ -43,6 +43,7 @@ pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;
 pub mod op_picker;
+pub mod token_store_picker;
 pub mod panel_rain;
 pub mod role_picker;
 pub mod save_discard;

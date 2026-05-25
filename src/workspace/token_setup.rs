@@ -76,6 +76,9 @@ pub struct TokenSetupArgs {
     /// `op://...` reference verbatim. Used for setup-from-existing
     /// flows.
     pub reuse: Option<OpRef>,
+    /// Override the field label inside the created item. Falls back to
+    /// [`DEFAULT_FIELD_LABEL`] when `None`.
+    pub field_label: Option<String>,
 }
 
 /// Outcome of one orchestrator run.
@@ -165,6 +168,17 @@ where
         let prefix = sha256_prefix(&value);
         (reuse_ref.clone(), prefix, false)
     } else {
+        // Validate --vault before launching the OAuth flow so the operator
+        // is not prompted to complete authentication only to hit a
+        // required-arg error afterward.
+        if args.vault.is_none() && args.reuse.is_none() {
+            anyhow::bail!(
+                "no --vault supplied; `jackin workspace claude-token setup` and \
+                 `jackin workspace claude-token rotate` need --vault <name-or-uuid> \
+                 so the new item lands somewhere explicit. Pass --reuse if you \
+                 already have an op:// reference to adopt instead."
+            );
+        }
         let probe = probe.ok_or_else(|| {
             anyhow::anyhow!("internal error: claude probe missing on capture path")
         })?;
@@ -489,11 +503,15 @@ fn create_op_item(
     );
     let tags = [JACKIN_TAG, workspace_tag.as_str()];
 
+    let effective_field_label = args
+        .field_label
+        .as_deref()
+        .unwrap_or(DEFAULT_FIELD_LABEL);
     let params = OpItemCreateParams {
         vault_id: vault,
         title: &title,
         category: DEFAULT_ITEM_CATEGORY,
-        field_label: DEFAULT_FIELD_LABEL,
+        field_label: effective_field_label,
         value: secret.expose_secret(),
         notes_plain: Some(&notes),
         tags: &tags,
@@ -942,19 +960,24 @@ mod tests {
         let writer = FakeOpWriter::new(dummy_op_ref());
         let reader = FakeOpReader::ok("ignored");
         let probe = dummy_probe();
+        let capture_called = std::cell::Cell::new(false);
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
             "proj",
             &TokenSetupArgs::default(),
             Some(&probe),
-            || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+            || {
+                capture_called.set(true);
+                Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string()))
+            },
             &reader,
             &writer,
         )
         .unwrap_err();
         assert!(err.to_string().contains("--vault"));
         assert!(writer.last_create.borrow().is_none());
+        assert!(!capture_called.get(), "OAuth flow must not start when --vault is missing");
     }
 
     /// `op_writer.item_create` returning Err must abort the

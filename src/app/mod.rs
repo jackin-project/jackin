@@ -1405,19 +1405,84 @@ fn handle_claude_token(
             item_name,
             op_account,
             reuse,
+            interactive,
         } => {
-            let reuse_ref = reuse
-                .as_deref()
-                .map(|r| parse_reuse(r, op_account.as_deref()))
-                .transpose()?;
-            let args = token_setup::TokenSetupArgs {
-                vault,
-                item_name,
-                account: op_account,
-                reuse: reuse_ref,
+            use crate::console::widgets::token_store_picker::TokenStoreSelection;
+
+            // Interactive mode: launch TUI picker when --interactive is set
+            // and neither --vault nor --reuse was supplied.
+            let (args, prior_to_delete) = if interactive {
+                let selection =
+                    crate::tui::token_store_dialog::run(&workspace, op_account.as_deref())?;
+                match selection {
+                    TokenStoreSelection::NewItem {
+                        account,
+                        vault: sel_vault,
+                        item_name: sel_item_name,
+                        field_label: sel_field_label,
+                    } => {
+                        let args = token_setup::TokenSetupArgs {
+                            vault: Some(sel_vault.id),
+                            item_name: Some(sel_item_name),
+                            account: account.map(|a| a.id).or(op_account),
+                            reuse: None,
+                            field_label: Some(sel_field_label),
+                        };
+                        (args, None)
+                    }
+                    TokenStoreSelection::ReplaceItem {
+                        account,
+                        vault: sel_vault,
+                        item: sel_item,
+                    } => {
+                        // Build the prior op:// reference so we can delete it
+                        // after the new item is created and validated.
+                        let prior_ref = crate::operator_env::OpRef {
+                            op: format!(
+                                "op://{}/{}/{}",
+                                sel_vault.id,
+                                sel_item.id,
+                                token_setup::DEFAULT_FIELD_LABEL
+                            ),
+                            path: format!(
+                                "{}/{}/{}",
+                                sel_vault.name,
+                                sel_item.name,
+                                token_setup::DEFAULT_FIELD_LABEL
+                            ),
+                        };
+                        let args = token_setup::TokenSetupArgs {
+                            vault: Some(sel_vault.id),
+                            item_name: Some(sel_item.name),
+                            account: account.map(|a| a.id).or(op_account),
+                            reuse: None,
+                            field_label: None,
+                        };
+                        (args, Some(crate::operator_env::EnvValue::OpRef(prior_ref)))
+                    }
+                }
+            } else {
+                let reuse_ref = reuse
+                    .as_deref()
+                    .map(|r| parse_reuse(r, op_account.as_deref()))
+                    .transpose()?;
+                let args = token_setup::TokenSetupArgs {
+                    vault,
+                    item_name,
+                    account: op_account,
+                    reuse: reuse_ref,
+                    field_label: None,
+                };
+                (args, None)
             };
+
             let report = token_setup::run_setup(paths, config, &workspace, &args)?;
             print_token_setup_report(&report);
+            // For the replace-existing-item interactive path, delete the prior
+            // item now that the new one is wired and validated.
+            if let Some(prior) = prior_to_delete {
+                delete_prior_op_item(Some(prior), &report.op_ref, report.op_account)?;
+            }
             Ok(())
         }
         cli::WorkspaceClaudeTokenCommand::Rotate {
@@ -1442,6 +1507,7 @@ fn handle_claude_token(
                 item_name,
                 account: op_account,
                 reuse: None,
+                field_label: None,
             };
             let report = token_setup::run_setup(paths, config, &workspace, &args)?;
             print_token_setup_report(&report);
