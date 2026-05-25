@@ -403,6 +403,9 @@ impl RichRenderer {
         stdout.execute(crossterm::cursor::Hide)?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
         let terminal = ratatui::Terminal::new(backend)?;
+        // Ancillary status printers (spinners) go silent while this surface
+        // owns the alternate screen.
+        crate::tui::set_rich_surface_active(true);
         Ok(Self {
             terminal,
             no_motion,
@@ -465,6 +468,7 @@ impl RichRenderer {
 
 impl Drop for RichRenderer {
     fn drop(&mut self) {
+        crate::tui::set_rich_surface_active(false);
         let _ = self.terminal.backend_mut().execute(crossterm::cursor::Show);
         let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
         let _ = std::io::stdout().flush();

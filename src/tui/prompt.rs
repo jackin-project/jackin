@@ -2,7 +2,7 @@ use owo_colors::OwoColorize;
 use std::io::{self, Write};
 use std::sync::atomic::Ordering;
 
-use super::{DEBUG_MODE, PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb};
+use super::{DEBUG_MODE, PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb, rich_surface_active};
 
 // ── Interactive prompt ───────────────────────────────────────────────────
 
@@ -101,34 +101,44 @@ where
     let mut frame_idx: usize = 0;
 
     let debug = DEBUG_MODE.load(Ordering::Relaxed);
+    // A full-screen rich surface (the launch cockpit) owns the terminal —
+    // its own waiting animation conveys progress, so the spinner must stay
+    // silent or it streams over the alternate screen.
+    let suppressed = rich_surface_active();
     for _attempt in 0..max_attempts {
-        if debug {
+        if debug && !suppressed {
             eprint!("\r\x1b[2K");
             let _ = io::stderr().flush();
         }
         match poll().await {
             Ok(()) => {
-                eprint!("\r\x1b[2K");
-                let _ = io::stderr().flush();
+                if !suppressed {
+                    eprint!("\r\x1b[2K");
+                    let _ = io::stderr().flush();
+                }
                 return Ok(());
             }
             Err(e) => last_err = Some(e),
         }
         let spins = interval.as_millis() as u64 / SPIN_MS;
         for _ in 0..spins {
-            let frame = FRAMES[frame_idx % FRAMES.len()];
-            eprint!(
-                "\r   {}   {}",
-                frame.color(mg).bold(),
-                message.color(rgb(PHOSPHOR_DIM)).bold()
-            );
-            let _ = io::stderr().flush();
+            if !suppressed {
+                let frame = FRAMES[frame_idx % FRAMES.len()];
+                eprint!(
+                    "\r   {}   {}",
+                    frame.color(mg).bold(),
+                    message.color(rgb(PHOSPHOR_DIM)).bold()
+                );
+                let _ = io::stderr().flush();
+            }
             tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
             frame_idx += 1;
         }
     }
-    eprint!("\r\x1b[2K");
-    let _ = io::stderr().flush();
+    if !suppressed {
+        eprint!("\r\x1b[2K");
+        let _ = io::stderr().flush();
+    }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
 }
 

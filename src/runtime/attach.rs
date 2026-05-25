@@ -1,5 +1,3 @@
-use std::io::Write as _;
-
 use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
@@ -714,39 +712,23 @@ pub(super) async fn wait_for_dind(
 ) -> anyhow::Result<()> {
     const MAX_ATTEMPTS: u32 = 30;
     const INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
-    const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    const SPIN_MS: u64 = 80;
-    let mut frame_idx: usize = 0;
-    let message = "Waiting for Docker-in-Docker to be ready";
-    let mut last_err = None;
 
-    for _ in 0..MAX_ATTEMPTS {
-        match docker.exec_capture(dind_name, &["docker", "info"]).await {
-            Ok(_) => {
-                eprint!("\r\x1b[2K");
-                let _ = std::io::stderr().flush();
-                last_err = None;
-                break;
-            }
-            Err(e) => last_err = Some(e),
-        }
-        let spins = INTERVAL.as_millis() as u64 / SPIN_MS;
-        for _ in 0..spins {
-            let frame = FRAMES[frame_idx % FRAMES.len()];
-            eprint!("\r   {frame}   {message}");
-            let _ = std::io::stderr().flush();
-            tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
-            frame_idx += 1;
-        }
-    }
-    eprint!("\r\x1b[2K");
-    let _ = std::io::stderr().flush();
-
-    if let Some(e) = last_err {
-        return Err(anyhow::anyhow!(
-            "timed out waiting for Docker-in-Docker sidecar {dind_name}: {e}"
-        ));
-    }
+    // Shared spinner helper: it suppresses its own stderr output while the
+    // rich launch cockpit owns the screen, so the sidecar stage shows only
+    // in the rail rather than streaming "Waiting for ..." over the frame.
+    crate::tui::prompt::spin_wait(
+        "Waiting for Docker-in-Docker to be ready",
+        MAX_ATTEMPTS,
+        INTERVAL,
+        || async {
+            docker
+                .exec_capture(dind_name, &["docker", "info"])
+                .await
+                .map(|_| ())
+        },
+    )
+    .await
+    .with_context(|| format!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))?;
 
     match docker
         .exec_capture(dind_name, &["test", "-f", "/certs/client/ca.pem"])

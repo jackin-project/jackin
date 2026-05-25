@@ -18,6 +18,22 @@ pub fn is_debug_mode() -> bool {
     DEBUG_MODE.load(Ordering::Relaxed)
 }
 
+static RICH_SURFACE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Set while a full-screen rich TUI owns the alternate screen.
+///
+/// Ancillary stderr status output — spinners, "waiting" lines — checks this
+/// and stays silent so it cannot stream over the cockpit. Driven by the
+/// renderer's lifetime, never by callers.
+pub fn set_rich_surface_active(active: bool) {
+    RICH_SURFACE_ACTIVE.store(active, Ordering::Relaxed);
+}
+
+#[must_use]
+pub fn rich_surface_active() -> bool {
+    RICH_SURFACE_ACTIVE.load(Ordering::Relaxed)
+}
+
 /// Format a single debug-log line. Pure (no I/O) so unit tests can
 /// assert on the wire format without touching global state or stderr.
 #[must_use]
