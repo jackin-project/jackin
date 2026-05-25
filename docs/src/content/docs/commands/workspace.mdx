@@ -268,7 +268,7 @@ jackin workspace claude-token setup <WORKSPACE> (--vault <VAULT> | --interactive
 | `--item-name <NAME>`     | Override the auto-generated item title. `{ws}` substitutes the workspace name. Default: `jackin · {ws} · claude-token`. |
 | `--op-account <ACCOUNT>` | Pin every `op` invocation to a specific 1P account. Persists onto the workspace so subsequent `rotate` / `revoke` use the same account. |
 | `--reuse <OP_REF>`       | Skip token generation and adopt the supplied `op://Vault/Item/field` reference verbatim. Use when an item already exists in 1Password. |
-| `--interactive` / `-i`   | Open a TUI drill-down (Account → Vault → Item) to choose where the token lands. Mutually exclusive with `--vault` and `--reuse`. Within the picker, select an existing item to write the token in-place, select `[ + New item ]` to create a fresh 1Password item, or select `[ + New field ]` on an existing item to append a new field. |
+| `--interactive` / `-i`   | Walk plain CLI prompts (account → vault → item → field) to choose where the token lands. Mutually exclusive with `--vault` and `--reuse`. At the item step pick an existing item or `[ + New item ]` to create a fresh 1Password item; at the field step pick an existing field to write the token in-place or `[ + New field ]` to append a new field. |
 
 On success the workspace's Claude auth flips to OAuth-token mode and the new (or reused) `op://` reference is written as the managed `CLAUDE_CODE_OAUTH_TOKEN` env value for that workspace. An "expires in N days" countdown is stamped into the local cache so the launch banner can surface it. On failure no on-disk config is changed and any orphan 1P item is best-effort deleted; if the cleanup itself fails the error message includes the exact `op item delete` command to run by hand.
 
@@ -282,7 +282,7 @@ jackin workspace claude-token setup my-app --vault Work --op-account work@exampl
 # Adopt an existing op:// reference instead of minting a new token
 jackin workspace claude-token setup my-app --reuse "op://Personal/jackin · my-app · claude-token/token"
 
-# TUI picker — choose vault and item interactively
+# Plain CLI prompts — choose vault, item, and field interactively
 jackin workspace claude-token setup my-app --interactive
 ```
 

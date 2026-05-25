@@ -3,7 +3,7 @@ title: "Workspace Claude Token Setup"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, in-container OAuth-token onboarding, and `--interactive` storage-location picker are shipped; canonical `oauth_token` auth slot, TUI generate action, Apple Keychain backend, pre-launch validity probe, bulk migration, and `token_store_picker` → `op_picker` consolidation remain
+**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, in-container OAuth-token onboarding, the shared `op_picker` Create mode, and the plain-prompt `--interactive` storage-location picker are shipped; canonical `oauth_token` auth slot, the console Auth-tab generate-token action, Apple Keychain backend, pre-launch validity probe, and bulk migration remain
 
 **Parent**: [Reliable Claude Authentication Strategy](/reference/roadmap/claude-auth-strategy/)
 
@@ -15,31 +15,31 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 This roadmap item tracks only remaining work. Shipped orchestrator mechanics live in the standard docs above.
 
-## What Shipped: Interactive Storage Picker (`--interactive`)
+## What Shipped: `op_picker` Create Mode + Plain-Prompt `--interactive`
 
-`jackin workspace claude-token setup <ws> --interactive` opens a standalone TUI dialog so the operator can drill through 1Password (Account → Vault → Item → Field) to choose where the token lands. The flag is mutually exclusive with `--vault` and `--reuse`. Within the picker the operator can select an existing item to update the token in-place via `item_field_set`, select `[ + New item ]` to create a fresh 1Password item, or select `[ + New field ]` on an existing item to append a new field.
+Two pieces shipped together, each on the surface where it belongs.
 
-The dialog is driven by <RepoFile path="src/console/widgets/token_store_picker/mod.rs" /> and rendered standalone by <RepoFile path="src/tui/token_store_dialog.rs" />, which initialises raw-mode alt-screen, runs the event loop, and restores the terminal on return. The picker reuses the `op_picker` render primitives (`modal_block`, `breadcrumb_title`, `render_filter_row`, `render_fatal`) for visual consistency.
+**Shared `op_picker` gained an opt-in Create mode.** <RepoFile path="src/console/widgets/op_picker/mod.rs" /> now exposes `OpPickerMode::Create` alongside the default `Browse`. In Create mode the Item stage renders a `+ New item` sentinel and the Field stage renders `+ New field` and `+ New section` sentinels at the bottom of their lists (the standard `+ Add X` creation-sentinel convention), with naming sub-stages that reuse the shared `text_input` box. The picker commits an `OpPickerSelection` enum — `Existing(OpRef)` for an existing field, `NewItem { .. }` for a freshly named item, or `EditItemField { .. }` for a new field/section on an existing item. Browse mode is unchanged, so every existing caller keeps drilling Account → Vault → Item → Field exactly as before. This replaced an earlier separate rich-dialog widget that had duplicated the drill-down state machine; the shared widget is now the single implementation.
 
-**Note: `token_store_picker` and `token_store_dialog.rs` are stopgap implementations.** `token_store_picker` duplicates the Account → Vault → Item navigation state machine from `op_picker` (see Remaining Work item 1 below). `token_store_dialog.rs` spins up a second standalone raw-mode terminal rather than composing with the console's event loop. Both are candidates for removal once the Auth-tab wizard flow in item 2 lands. The `--interactive` CLI flag remains valid for scripted use; the console-native TUI flow is the intended interactive path.
+**The CLI `--interactive` flow uses plain CLI prompts.** `jackin workspace claude-token setup <ws> --interactive` walks the operator through account → vault → item → field using plain dialoguer Select/Input prompts — no rich ratatui TUI. At the item step the operator picks an existing item or `[ + New item ]`; at the field step they pick an existing field (token written in-place via `item_field_set`) or `[ + New field ]`. The flag is mutually exclusive with `--vault` and `--reuse`.
+
+The principle this establishes: a rich ratatui TUI lives only inside `jackin console`; the CLI stays plain CLI. Scripted invocations keep using `--vault` / `--reuse`; `--interactive` is the plain-prompt path for an operator at a shell.
 
 ## Remaining Work
 
-1. **Consolidate `token_store_picker` into `op_picker`.** The `token_store_picker` widget duplicates the Account → Vault → Item navigation state machine that already exists in `op_picker` — 1067 lines of closely parallel code (100+ matched patterns). The right shape is to extend `op_picker` with a mode parameter that enables the extra steps (item-name text input for new items, field-label input, the `[ + New item ]` / `[ + New field ]` sentinels) rather than maintaining a second near-identical drill-down widget. This is load-bearing technical debt: any bug fix or enhancement to navigation, filtering, R-key refresh, or section display currently requires patching both files.
+1. **Console Auth-tab generate-token action.** Add a native multi-step dialog chain launched from the Auth tab in `jackin console` that mints the token via the OAuth flow and writes it through the extended `op_picker`. The full step sequence and component reuse design are documented in [TUI Design Decisions — Wizard-Style Dialog Flows](/reference/tui-design-decisions/#wizard-style-dialog-flows). In summary: scope choice (scope_picker) → optional role picker → source choice (source_picker) → `op_picker` in Create mode (with `+ New item` / `+ New field` / `+ New section` sentinels) or `text_input` for plain text. The remaining large piece is suspend/resume-around-PTY plumbing in the console event loop so the `claude setup-token` OAuth capture can run from inside the console; the drill-down and creation widgets it needs are already shipped.
 
-2. **TUI wizard flow from the Auth tab.** Replace the CLI `--interactive` path with a native multi-step dialog chain launched from the Auth tab in `jackin console`. The full step sequence and component reuse design are documented in [TUI Design Decisions — Wizard-Style Dialog Flows](/reference/tui-design-decisions/#wizard-style-dialog-flows). In summary: scope choice (scope_picker) → optional role picker → source choice (scope_picker) → extended `op_picker` with `[ + New item ]` / `[ + New field ]` sentinels or TextInputState for plain text. **This item depends on item 1 (consolidation):** the Auth-tab flow requires `op_picker` to be extended with `OpPickerMode::TokenStore`; it cannot land while the mode logic lives inside the separate `token_store_picker` widget.
+2. **Canonical auth slot.** Replace the current two-key implementation (`auth_forward = "oauth_token"` plus managed `CLAUDE_CODE_OAUTH_TOKEN` env) with a dedicated `oauth_token` field on the Claude auth config. The launcher should synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot.
 
-3. **Canonical auth slot.** Replace the current two-key implementation (`auth_forward = "oauth_token"` plus managed `CLAUDE_CODE_OAUTH_TOKEN` env) with a dedicated `oauth_token` field on the Claude auth config. The launcher should synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot.
+3. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session.
 
-4. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session.
+4. **Apple Keychain backend.** Add a local OS-secret-store source after the cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) lands.
 
-5. **Apple Keychain backend.** Add a local OS-secret-store source after the cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) lands.
-
-6. **Bulk migration.** Add a `--all` or equivalent workflow for migrating multiple workspaces to Claude OAuth-token mode.
+5. **Bulk migration.** Add a `--all` or equivalent workflow for migrating multiple workspaces to Claude OAuth-token mode.
 
 ## Design Notes
 
 - The upstream `claude setup-token` browser consent remains the token minting step; jackin' owns capture, storage, config wiring, validation, and lifecycle commands.
 - The canonical slot should be the future user-facing shape. The current managed env entry is an implementation bridge, not the target schema.
 - Any future storage backend must preserve the current safety properties: no token in argv, no token in shell history, no config write before storage validation succeeds.
-- The `token_store_picker` → `op_picker` consolidation must preserve the `[ + New item ]` sentinel row, the `NewItemName` and `FieldLabel` text-input stages, and the `TokenStoreSelection::NewItem` / `TokenStoreSelection::ReplaceItem` commit variants. These are the functional additions on top of the plain field-picker.
+- The shared `op_picker` Create mode is the committed shape for in-place creation: the `+ New item` / `+ New field` / `+ New section` sentinels, their `text_input`-backed naming stages, and the `OpPickerSelection` commit enum (`Existing` / `NewItem` / `EditItemField`). The console Auth-tab generate action in Remaining Work item 1 reuses this widget rather than reintroducing a parallel one.

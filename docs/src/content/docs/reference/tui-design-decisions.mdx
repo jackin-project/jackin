@@ -421,9 +421,9 @@ Before adding any new TUI widget or state type:
 3. If yes — extend the existing widget. Add a mode enum, a new bool flag, or a new variant. Do not create a second module.
 4. If no — propose the design first; get explicit approval; then implement. The first implementation goes into `src/console/widgets/` so the next caller can find it.
 
-### Why this rule exists — canonical counter-example
+### Why this rule exists — canonical lesson
 
-<RepoFile path="src/console/widgets/token_store_picker/mod.rs" /> is the canonical example of what must never happen. It duplicates the Account → Vault → Item navigation state machine from <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — 1067 lines of closely parallel code, 100+ matched patterns. Every bug fix to `op_picker` navigation, filtering, R-key refresh, or section display must be manually reproduced in `token_store_picker` or the two implementations drift. The correct shape was to extend `op_picker` with a mode parameter that enables the extra steps (`[ + New item ]` sentinel, field-label input, `TokenStoreSelection` commit variants) rather than maintaining a second drill-down widget. Consolidating these is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
+A `token_store_picker` widget once duplicated the Account → Vault → Item navigation state machine from <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — a 1067-line copy of closely parallel code where every `op_picker` bug fix to navigation, filtering, R-key refresh, or section display had to be manually reproduced or the two implementations drifted. That copy has since been deleted and `op_picker` was extended instead: an opt-in `OpPickerMode::Create` turns on the `+ New item`, `+ New field`, and `+ New section` creation sentinels and the naming sub-stages, and the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`). One widget now serves both the browse and create call sites. This is the positive reference for the rule: when a new call site needs more, **extend the shared widget with a mode**, never fork it into a second drill-down. The remaining Claude-token work is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
 
 ---
 
@@ -433,7 +433,7 @@ All shared TUI widgets live in `src/console/widgets/`. Use this table to identif
 
 | Component | Module | What it provides | When to use |
 |---|---|---|---|
-| Op picker (1Password drill-down) | <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit | Any flow that needs to select a 1Password field reference |
+| Op picker (1Password drill-down) | <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
 | Role picker | <RepoFile path="src/console/widgets/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
 | Text input box | <RepoFile path="src/console/widgets/text_input.rs" /> | Single-line labelled input box (`TextInputState` + `render`) with validation, duplicate detection, forbidden-char rules. This is the **"Credential" dialog** the operator sees when typing any single value. | Any flow needing one line of free text — env value, item name, field label, section name, workspace name |
 | Scope picker | <RepoFile path="src/console/widgets/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
@@ -479,9 +479,9 @@ When a feature requires the operator to complete several sequential decisions be
 
 ### Canonical example — Claude token setup flow
 
-This is **the reference example** for how to design any multi-step TUI flow in jackin'. Every screen reuses a component from the catalog above; the flow adds **zero new widgets** and only **extends** `op_picker`. Read this whenever you design a new flow and ask "which existing component is each of my screens?" before writing any code.
+This is **the reference example** for how to design any multi-step TUI flow in jackin'. Every screen reuses a component from the catalog above; the flow adds **zero new widgets** and only **extends** `op_picker` — and that extension (`OpPickerMode::Create`) is already shipped. Read this whenever you design a new flow and ask "which existing component is each of my screens?" before writing any code.
 
-The flow configures a Claude OAuth token for a workspace, launched entirely from inside `jackin console`. The operator never leaves the console and never runs a CLI command.
+The flow configures a Claude OAuth token for a workspace, launched entirely from inside `jackin console`. The operator never leaves the console and never runs a CLI command. The drill-down and creation widgets are shipped; wiring this flow to the Auth tab — running the OAuth mint from inside the console — is the remaining work, tracked as the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) generate-token action.
 
 **Entry point — the Edit auth dialog.** The Auth tab's "Edit auth" dialog currently shows `Mode: oauth_token`, `CLAUDE_CODE_OAUTH_TOKEN required`, and a hint: *"tip: run jackin workspace claude-token setup &lt;workspace&gt; --vault &lt;vault&gt; from your shell."* That hint is the design defect: it pushes the operator out to the CLI. It must be replaced by an in-dialog action that starts the wizard below. The flow begins from this dialog, not from a CLI flag.
 
@@ -493,7 +493,7 @@ The screens, in order, each mapped to the component it reuses:
 | 2 *(if "Specific role")* | **Role**: filter + role list | Role picker (`role_picker.rs`) | Same `RolePickerState` the env-var flow uses. Skipped entirely for "All roles". |
 | 3 | **Source**: `Plain text` / `1Password` | Source picker (`source_picker.rs`) | Same two-button shape. Titled `Source for CLAUDE_CODE_OAUTH_TOKEN`. |
 | 4a *(if "Plain text")* | **Credential** input box | Text input box (`text_input.rs`) | The reusable input box. **For the Claude token flow the value comes from the Claude OAuth capture, not typed here** — but the box is the canonical reference component for every other flow that needs a typed value. |
-| 4b *(if "1Password")* | **Account → Vault → Item → Field** drill-down | `op_picker` (extended) | The existing `op_picker`, reused verbatim for the four drill-down screens; extended only with the creation sentinels below. |
+| 4b *(if "1Password")* | **Account → Vault → Item → Field** drill-down | `op_picker` (Create mode) | The existing `op_picker`, reused verbatim for the four drill-down screens; its shipped `OpPickerMode::Create` adds the creation sentinels below. |
 
 **Step 4b in detail — extending `op_picker`, not copying it.** The 1Password branch reuses the existing `op_picker` Account, Vault, Item, and Field screens exactly as they render today. The only additions are creation sentinels, each following the `+ Add X` creation-sentinel pattern (a `+ ` row at the bottom of the list):
 
@@ -503,17 +503,16 @@ The screens, in order, each mapped to the component it reuses:
 
 Every "create" affordance in this branch is the same `+ ` sentinel row, and every "name it" prompt is the same text input box. Nothing new is drawn.
 
-**Implementation contract.** These sentinels extend `op_picker` via a mode parameter (e.g. `OpPickerMode::TokenStore`) that turns the creation rows on. They MUST NOT be implemented by forking `op_picker` into a second module. The sentinel selections produce `TokenStoreSelection::NewItem` / `TokenStoreSelection::ReplaceItem` commit variants instead of the plain `op://` reference string. The current <RepoFile path="src/console/widgets/token_store_picker/mod.rs" /> — a 1067-line copy of the `op_picker` state machine — is exactly what this rule forbids and is tracked for removal in [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/).
+**Implementation contract.** These sentinels are shipped in `op_picker` behind the opt-in `OpPickerMode::Create` mode parameter that turns the creation rows on; the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`) instead of only the plain `op://` reference string. This capability now lives in the shared <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — it MUST NOT be reimplemented by forking `op_picker` into a second module.
 
-### Why the flow must start in the TUI, not the CLI
+### Rich TUI lives in the console; the CLI stays plain CLI
 
-The CLI `--interactive` flag spins up a standalone alt-screen TUI session inside a running terminal, captures the operator's selection, then returns. This approach:
+There are two distinct interactive surfaces, and the established principle keeps them apart: a rich ratatui TUI belongs only inside `jackin console`; the CLI never spins one up.
 
-- Cannot compose with the console's existing event loop (it opens a second raw-mode terminal via `token_store_dialog.rs`).
-- Loses all the console's context (workspace state, auth tab focus, operator's in-progress edits).
-- Requires the operator to leave the console, run a CLI command, then return — breaking their flow.
+- **CLI `--interactive`.** `jackin workspace claude-token setup <ws> --interactive` walks account → vault → item → field with **plain CLI prompts** (dialoguer Select/Input), offering `[ + New item ]` and `[ + New field ]` at the relevant steps. It does not open an alt-screen TUI. This keeps the CLI composable with a plain shell, scripts, and pipes, and means an operator at a terminal never has a second raw-mode UI fight their own.
+- **Console wizard flow.** The rich, multi-step wizard above belongs in `jackin console`, opened from the Auth tab — already on screen when the operator wants to configure a token — using the console's own modal stack so the operator never leaves the console and keeps all of its context (workspace state, auth-tab focus, in-progress edits). Every screen reuses a shared component: `scope_picker`, `role_picker`, `source_picker`, `text_input`, and `op_picker` in Create mode.
 
-The Auth tab is already open when the operator wants to configure a token. The wizard flow opens directly from there, using the console's own modal stack, and the operator never leaves the console. The CLI path (`jackin workspace claude-token setup --vault … --item-name …`) remains valid for scripted or automated workflows; it is not the interactive path.
+The shared `op_picker` Create mode and the plain-prompt CLI path are both shipped. The remaining unbuilt piece is the **console-side "generate token" action** — running the `claude setup-token` OAuth mint from inside the console and writing the result through the extended `op_picker`. That needs suspend/resume-around-PTY plumbing in the console event loop so the OAuth capture can run without tearing down the console; it is tracked as the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) generate-token action.
 
 ### Why reusability matters — the design principle behind this flow
 
