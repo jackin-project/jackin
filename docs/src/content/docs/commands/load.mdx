@@ -21,6 +21,10 @@ Load an agent into an isolated `Docker` container directly from the command line
 
 `SELECTOR` chooses the **role** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
 
+Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. Rich terminals show a full-screen launch progress surface with jackin' stages (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`). Non-rich terminals, `--no-tui`, and non-interactive runs use compact deterministic progress lines with the same stage vocabulary.
+
+The full digital rain animation is a boundary marker: it appears when this launch enters jackin' work with no other jackin-managed role containers running, and the outro appears only when the foreground session exits and no role containers remain. Use `--no-rain` to disable that boundary animation without disabling launch progress.
+
 ## Arguments
 
 | Argument | Required | Description |
@@ -36,8 +40,9 @@ Load an agent into an isolated `Docker` container directly from the command line
 | `--rebuild` | Force rebuild the Docker image and refresh agent CLI install layers |
 | `--role-branch <BRANCH>` | Check out a specific branch of the role repository for local testing. See **Testing a role branch** below. |
 | `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
-| `--no-intro` | Skip the animated intro sequence |
-| `--debug` | Print raw container output for troubleshooting |
+| `--no-rain` | Disable the full boundary rain animation. Launch progress still renders normally. |
+| `--no-tui` | Disable the rich launch progress TUI and use compact launch progress output. |
+| `--debug` | Write detailed command, Docker, resolver, auth, and build traces to the run diagnostics artifact. The launch surface stays compact and does not stream raw logs. |
 | `--agent <NAME>` | Override the launch agent (`claude`, `codex`, `amp`, `kimi`, or `opencode`). When omitted, a workspace `default_agent` wins first, a single-agent role uses its only runtime, and a multi-agent role prompts interactively. A non-interactive launch (no TTY) against a multi-agent role with no resolved choice errors out. |
 
 ## Examples
@@ -86,6 +91,8 @@ jackin load the-architect --role-branch feat/my-pr
 11. Launches the agent container with all resolved mounts and environment variables
 12. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)
 13. Starts the selected agent CLI
+
+Failures in the launch surface show a short diagnosis, the failed stage, and the diagnostics run handle. Raw Docker output, build logs, stack traces, and debug traces are written only to diagnostics artifacts under jackin-owned state; they are not rendered in the operator-facing launch progress UI.
 
 <Aside type="note">
 Host-side Docker work follows the operator's selected Docker daemon. If `DOCKER_HOST` is set to a non-empty value, jackin' uses it. Otherwise jackin' follows the active Docker CLI context (honouring a per-shell `DOCKER_CONTEXT` override) for local-socket and plain HTTP/TCP contexts, so the image build, per-agent network, DinD sidecar, and role container are created on the same Docker backend. SSH and TLS Docker contexts currently fail with an explicit error instead of silently dropping connection settings.

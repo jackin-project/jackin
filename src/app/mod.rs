@@ -50,12 +50,15 @@ pub async fn run(cli: Cli) -> Result<()> {
         None => Command::Console(cli.console_args),
     };
 
+    let paths = JackinPaths::detect()?;
+    let command_name = command_name(&command);
+    let diagnostics = crate::diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
+    let _diagnostics_guard = diagnostics.activate();
+    crate::diagnostics::prune_old_runs(&paths);
     let command = match command {
         Command::Role(command) => return crate::role_authoring::run(command),
         command => command,
     };
-
-    let paths = JackinPaths::detect()?;
     let mut config = AppConfig::load_or_init(&paths)?;
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
@@ -66,7 +69,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             target,
             mounts,
             rebuild,
-            no_intro,
+            no_rain,
+            no_tui,
             force,
             agent,
             role_branch,
@@ -114,7 +118,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
+            let mut opts = runtime::LoadOptions::for_load(no_rain, no_tui, debug, rebuild);
             opts.force = force;
             opts.agent = match agent {
                 Some(explicit) => Some(explicit),
@@ -148,7 +152,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
-        Command::Console(ConsoleArgs {}) => {
+        Command::Console(ConsoleArgs { no_rain, no_tui }) => {
             let cwd = std::env::current_dir()?;
             let mut in_place = ConsoleInPlaceHandler {
                 paths: paths.clone(),
@@ -185,7 +189,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let mut opts = runtime::LoadOptions::for_launch(debug);
+            let mut opts = runtime::LoadOptions::for_launch(no_rain, no_tui, debug);
             opts.agent = match selected_agent {
                 Some(agent) => Some(agent),
                 None => prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?,
@@ -1313,6 +1317,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     prune_instances_result,
                     runtime::prune_images(&docker).await.context("prune images"),
                     runtime::prune_roles(&paths).context("prune roles"),
+                    runtime::prune_diagnostics(&paths).context("prune diagnostics"),
                     runtime::prune_cache(&paths).context("prune cache"),
                 ];
                 let errors: Vec<anyhow::Error> =
@@ -1335,6 +1340,23 @@ pub async fn run(cli: Cli) -> Result<()> {
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
         }
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
+    }
+}
+
+const fn command_name(command: &Command) -> &'static str {
+    match command {
+        Command::Load(_) => "load",
+        Command::Hardline(_) => "hardline",
+        Command::Eject(_) => "eject",
+        Command::Exile => "exile",
+        Command::Purge(_) => "purge",
+        Command::Prune(_) => "prune",
+        Command::Console(_) => "console",
+        Command::Role(_) => "role",
+        Command::Workspace(_) => "workspace",
+        Command::Config(_) => "config",
+        Command::Logs(_) => "logs",
+        Command::Help { .. } => "help",
     }
 }
 

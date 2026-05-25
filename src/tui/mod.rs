@@ -57,6 +57,9 @@ pub(crate) fn drain_debug_buffer_for_test() -> Vec<String> {
 
 pub fn emit_debug_line(category: &str, message: &str) {
     let line = format_debug_line(category, message);
+    if crate::diagnostics::active_debug(category, &line) {
+        return;
+    }
     if DEBUG_BUFFER_ACTIVE.load(Ordering::Relaxed) {
         let mut guard = debug_buffer()
             .lock()

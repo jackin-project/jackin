@@ -15,12 +15,14 @@ The expectation is **most people use the TUI, and reach for the CLI only when th
 ## Synopsis
 
 ```bash
-jackin console [--debug]
+jackin console [--debug] [--no-rain] [--no-tui]
 ```
 
 Opens the operator console — an interactive terminal UI for picking a workspace and an agent, managing saved workspaces, editing per-workspace settings, and launching agents into isolated containers.
 
 Running `jackin` with no subcommand opens the same console when stdout is attached to an interactive terminal. On non-interactive shells (piped output, CI, very small terminals) bare `jackin` silently prints top-level help instead. `jackin console` makes the intent explicit and errors out when the terminal cannot host the TUI.
+
+When a console launch leaves the manager, it uses the same launch progress surface as [`jackin load`](/commands/load/). Rich terminals get the full launch cockpit; `--no-tui` uses compact progress lines; `--no-rain` disables only the full boundary rain animation. `--debug` writes detailed evidence to the run diagnostics artifact instead of turning the launch screen into raw logs.
 
 ## What the console gives you
 

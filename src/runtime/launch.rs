@@ -20,7 +20,7 @@ use super::attach::{
     reconnect_or_create_session_with_focus, start_or_reconnect_capsule_client,
 };
 use super::cleanup::gc_orphaned_resources;
-use super::discovery::list_running_agent_display_names;
+use super::discovery::{list_running_agent_display_names, list_running_agent_names};
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
 use super::image::build_agent_image;
 use super::naming::{
@@ -32,12 +32,13 @@ use crate::docker_client::DockerApi;
 
 const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
 
-// Four launch-time toggles (no_intro / debug / rebuild / force) all map
+// Launch-time toggles all map
 // directly to CLI flags; bundling them into nested structs would obscure
 // rather than clarify the call sites.
 #[allow(clippy::struct_excessive_bools)]
 pub struct LoadOptions {
-    pub no_intro: bool,
+    pub no_rain: bool,
+    pub no_tui: bool,
     pub debug: bool,
     pub rebuild: bool,
 
@@ -77,10 +78,12 @@ pub struct LoadOptions {
 }
 
 impl LoadOptions {
-    /// Build options for `jackin load`. Debug mode implies `no_intro`.
-    pub fn for_load(no_intro: bool, debug: bool, rebuild: bool) -> Self {
+    /// Build options for `jackin load`.
+    #[allow(clippy::fn_params_excessive_bools)]
+    pub fn for_load(no_rain: bool, no_tui: bool, debug: bool, rebuild: bool) -> Self {
         Self {
-            no_intro: no_intro || debug,
+            no_rain,
+            no_tui,
             debug,
             rebuild,
             ..Self::default()
@@ -88,10 +91,10 @@ impl LoadOptions {
     }
 
     /// Build options for the operator console (`jackin console`).
-    /// Debug mode implies `no_intro`.
-    pub fn for_launch(debug: bool) -> Self {
+    pub fn for_launch(no_rain: bool, no_tui: bool, debug: bool) -> Self {
         Self {
-            no_intro: debug,
+            no_rain,
+            no_tui,
             debug,
             ..Self::default()
         }
@@ -101,7 +104,8 @@ impl LoadOptions {
 impl Default for LoadOptions {
     fn default() -> Self {
         Self {
-            no_intro: true,
+            no_rain: true,
+            no_tui: true,
             debug: false,
             rebuild: false,
             force: false,
@@ -142,6 +146,8 @@ struct StepCounter {
     current: u32,
     quiet: bool,
     role_name: String,
+    current_stage: Option<super::progress::LaunchStage>,
+    progress: Option<super::progress::LaunchProgress>,
 }
 
 impl StepCounter {
@@ -150,13 +156,26 @@ impl StepCounter {
             current: 0,
             quiet,
             role_name: role_name.to_string(),
+            current_stage: None,
+            progress: None,
         }
     }
 
+    fn start_progress(&mut self, progress: super::progress::LaunchProgress) {
+        self.progress = Some(progress);
+    }
+
     fn next(&mut self, text: &str) {
+        if let (Some(progress), Some(stage)) = (&mut self.progress, self.current_stage) {
+            progress.stage_done(stage, completion_label(stage));
+        }
         self.current += 1;
         tui::set_terminal_title(&format!("{} \u{2014} {text}", self.role_name));
-        if self.quiet {
+        let stage = stage_for_step_text(text);
+        self.current_stage = Some(stage);
+        if let Some(progress) = &mut self.progress {
+            progress.stage_started(stage, text);
+        } else if self.quiet {
             tui::step_quiet(self.current, text);
         } else {
             tui::step_shimmer(self.current, text);
@@ -165,6 +184,37 @@ impl StepCounter {
 
     fn done(&self) {
         tui::set_terminal_title(&self.role_name);
+    }
+
+    const fn progress_mut(&mut self) -> Option<&mut super::progress::LaunchProgress> {
+        self.progress.as_mut()
+    }
+}
+
+fn stage_for_step_text(text: &str) -> super::progress::LaunchStage {
+    match text {
+        "Resolving role identity" => super::progress::LaunchStage::Role,
+        "Building Docker image" => super::progress::LaunchStage::DerivedImage,
+        "Starting Docker-in-Docker" => super::progress::LaunchStage::Sidecar,
+        "Launching role" => super::progress::LaunchStage::Capsule,
+        _ => super::progress::LaunchStage::Identity,
+    }
+}
+
+const fn completion_label(stage: super::progress::LaunchStage) -> &'static str {
+    match stage {
+        super::progress::LaunchStage::Identity | super::progress::LaunchStage::Credentials => {
+            "resolved"
+        }
+        super::progress::LaunchStage::Role => "trusted source",
+        super::progress::LaunchStage::Construct => "online",
+        super::progress::LaunchStage::DerivedImage | super::progress::LaunchStage::Capsule => {
+            "ready"
+        }
+        super::progress::LaunchStage::Workspace => "materialized",
+        super::progress::LaunchStage::Network => "isolated",
+        super::progress::LaunchStage::Sidecar => "awake",
+        super::progress::LaunchStage::Hardline => "open",
     }
 }
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
@@ -647,6 +697,12 @@ async fn launch_role_runtime(
         ..RunOptions::default()
     };
 
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            super::progress::LaunchStage::Network,
+            "wiring private network",
+        );
+    }
     // Create Docker network
     let role_label = format!("jackin.role={container_name}");
     let network_labels = [LABEL_MANAGED, role_label.as_str()]
@@ -657,6 +713,9 @@ async fn launch_role_runtime(
         })
         .collect();
     docker.create_network(network, network_labels).await?;
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(super::progress::LaunchStage::Network, "isolated");
+    }
 
     // Start Docker-in-Docker with TLS.
     //
@@ -705,7 +764,9 @@ async fn launch_role_runtime(
     steps.next("Launching role");
     steps.done();
 
-    tui::print_deploying(agent_display_name);
+    if steps.progress.is_none() {
+        tui::print_deploying(agent_display_name);
+    }
 
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display_name={agent_display_name}");
@@ -1010,6 +1071,10 @@ async fn launch_role_runtime(
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
     // to answer `status`; jackin-capsule detects PID != 1 and then runs in
     // client mode, connecting to that daemon socket inside the container.
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(super::progress::LaunchStage::Capsule, "ready");
+        progress.opening_hardline();
+    }
     let session_result =
         reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
@@ -1040,6 +1105,9 @@ async fn launch_role_runtime(
             return Ok(());
         }
         return Err(err);
+    }
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(super::progress::LaunchStage::Hardline, "open");
     }
 
     Ok(())
@@ -1375,16 +1443,27 @@ async fn load_role_with(
     confirm_trust: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
     confirm_branch: impl FnOnce(&RoleSelector, &crate::config::RoleSource, &str) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    // Pre-launch garbage collection: remove orphaned DinD containers and
-    // networks left behind by hard kills, terminal closures, or startup
-    // failures.  Best-effort — errors are silently ignored.
-    gc_orphaned_resources(docker).await;
+    // Pre-launch garbage collection is independent from host identity probes.
+    let ((), (git, host)) = tokio::join!(gc_orphaned_resources(docker), async {
+        let git = load_git_identity(runner).await;
+        let host = load_host_identity(runner).await;
+        (git, host)
+    });
 
-    let git = load_git_identity(runner).await;
-    let host = load_host_identity(runner).await;
+    let active_before_launch = match list_running_agent_names(docker).await {
+        Ok(names) => Some(names.len()),
+        Err(error) => {
+            if let Some(run) = crate::diagnostics::active_run() {
+                run.compact(
+                    "rain_gating",
+                    &format!("skipping intro rain; active-container count failed: {error:#}"),
+                );
+            }
+            None
+        }
+    };
 
-    // Intro animation
-    if !opts.no_intro {
+    if !opts.no_rain && active_before_launch == Some(0) {
         let intro_name = if git.user_name.is_empty() {
             "operator"
         } else {
@@ -1400,7 +1479,7 @@ async fn load_role_with(
     let (source, is_new, restore_source_override) =
         resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
 
-    let mut steps = StepCounter::new(opts.no_intro, &selector.name);
+    let mut steps = StepCounter::new(opts.no_tui, &selector.name);
 
     // Step 1: Resolve role identity (clone or update repo)
     steps.next("Resolving role identity");
@@ -1579,9 +1658,49 @@ async fn load_role_with(
         runner,
     )
     .await;
-    eprintln!();
-    tui::print_config_table(&config_rows);
-    eprintln!();
+    if let Some(run) = crate::diagnostics::active_run() {
+        let mut progress = super::progress::LaunchProgress::new(
+            run,
+            opts.no_tui,
+            std::env::var_os("JACKIN_NO_MOTION").is_some(),
+        )?;
+        let target_kind = if workspace_name.is_some() {
+            super::progress::LaunchTargetKind::Workspace
+        } else {
+            super::progress::LaunchTargetKind::Directory
+        };
+        let target_label = workspace_name
+            .clone()
+            .unwrap_or_else(|| tui::shorten_home(&workspace.workdir));
+        progress.started(super::progress::LaunchIdentity {
+            role: agent_display_name.clone(),
+            agent: agent.slug().to_string(),
+            target_kind,
+            target_label,
+            workdir: tui::shorten_home(&workspace.workdir),
+            mount_summary: if workspace_name.is_some() {
+                format!("{} configured", workspace.mounts.len())
+            } else {
+                "same path".to_string()
+            },
+            image: Some(image_tag.clone()),
+            container: Some(container_name.clone()),
+        });
+        progress.stage_done(super::progress::LaunchStage::Identity, "resolved operator");
+        progress.stage_done(super::progress::LaunchStage::Role, "trusted source");
+        steps.start_progress(progress);
+    } else {
+        eprintln!();
+        tui::print_config_table(&config_rows);
+        eprintln!();
+    }
+
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            super::progress::LaunchStage::Credentials,
+            "resolving launch credentials",
+        );
+    }
 
     // Resolve env vars (interactive prompts happen here, before build)
     let manifest_resolved = if validated_repo.manifest.env.is_empty() {
@@ -1663,6 +1782,9 @@ async fn load_role_with(
             opts.debug,
         );
     }
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(super::progress::LaunchStage::Credentials, "resolved");
+    }
 
     let load_result: anyhow::Result<String> = async {
         // Step 2: Build Docker image
@@ -1688,6 +1810,13 @@ async fn load_role_with(
             }
             needs_update
         };
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_started(
+                super::progress::LaunchStage::Construct,
+                "verifying construct",
+            );
+            progress.stage_done(super::progress::LaunchStage::Construct, "online");
+        }
         steps.next("Building Docker image");
         let image = build_agent_image(
             paths,
@@ -1928,6 +2057,12 @@ async fn load_role_with(
             "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
             force = opts.force,
         );
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_started(
+                super::progress::LaunchStage::Workspace,
+                "materializing workspace",
+            );
+        }
         let materialized = crate::isolation::materialize::materialize_workspace(
             workspace,
             &container_state,
@@ -1941,6 +2076,9 @@ async fn load_role_with(
             },
             runner,
         ).await?;
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_done(super::progress::LaunchStage::Workspace, "materialized");
+        }
 
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
@@ -2198,10 +2336,39 @@ async fn load_role_with(
             Ok(())
         }
         Err(error) => {
+            let failed_stage = steps
+                .current_stage
+                .unwrap_or(super::progress::LaunchStage::Capsule);
+            if let Some(progress) = steps.progress_mut() {
+                progress.stage_failed(super::progress::LaunchFailure {
+                    title: launch_failure_title(&error),
+                    summary: short_launch_diagnosis(&error),
+                    next_step: None,
+                    stage: failed_stage,
+                });
+            }
             render_exit(&agent_display_name, docker, opts).await;
             Err(error)
         }
     }
+}
+
+fn launch_failure_title(error: &anyhow::Error) -> String {
+    let text = error.to_string().to_ascii_lowercase();
+    if text.contains("docker") {
+        "Docker unavailable".to_string()
+    } else if text.contains("credential") || text.contains("token") || text.contains("auth") {
+        "Credential check failed".to_string()
+    } else {
+        "Launch failed".to_string()
+    }
+}
+
+fn short_launch_diagnosis(error: &anyhow::Error) -> String {
+    error.chain().next().map_or_else(
+        || "launch did not complete".to_string(),
+        ToString::to_string,
+    )
 }
 
 fn resolve_launch_role_source(
@@ -2224,20 +2391,29 @@ fn resolve_launch_role_source(
 }
 
 async fn render_exit(agent_display_name: &str, docker: &impl DockerApi, opts: &LoadOptions) {
-    if opts.no_intro {
+    if opts.no_rain {
         return;
     }
     let running = match list_running_agent_display_names(docker).await {
         Ok(names) => names,
         Err(e) => {
-            eprintln!(
-                "  {} could not list running sessions for outro: {e}",
-                "warning:".yellow().bold()
-            );
+            if let Some(run) = crate::diagnostics::active_run() {
+                run.compact(
+                    "rain_gating",
+                    &format!("skipping outro rain; active-container count failed: {e:#}"),
+                );
+            }
             vec![]
         }
     };
-    tui::outro_animation(agent_display_name, &running);
+    if running.is_empty() {
+        tui::outro_animation(agent_display_name, &running);
+    } else {
+        eprintln!(
+            "Returned from {agent_display_name}; {} jackin' session(s) remain.",
+            running.len()
+        );
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2488,7 +2664,8 @@ fn related_restore_load_options(
     manifest: &InstanceManifest,
 ) -> anyhow::Result<LoadOptions> {
     Ok(LoadOptions {
-        no_intro: current.no_intro,
+        no_rain: current.no_rain,
+        no_tui: current.no_tui,
         debug: current.debug,
         rebuild: current.rebuild,
         force: current.force,
@@ -7246,36 +7423,36 @@ plugins = []
     }
 
     #[tokio::test]
-    async fn load_options_debug_disables_intro_for_load() {
-        let opts = LoadOptions::for_load(false, true, false);
-        assert!(opts.no_intro, "debug mode must disable intro for load");
+    async fn load_options_debug_does_not_disable_rain_for_load() {
+        let opts = LoadOptions::for_load(false, false, true, false);
+        assert!(!opts.no_rain, "debug mode must not disable boundary rain");
         assert!(opts.debug);
     }
 
     #[tokio::test]
-    async fn load_options_no_intro_flag_for_load() {
-        let opts = LoadOptions::for_load(true, false, false);
-        assert!(opts.no_intro, "explicit no_intro must be respected");
+    async fn load_options_no_rain_flag_for_load() {
+        let opts = LoadOptions::for_load(true, false, false, false);
+        assert!(opts.no_rain, "explicit no_rain must be respected");
         assert!(!opts.debug);
     }
 
     #[tokio::test]
     async fn load_options_intro_plays_when_no_flags_for_load() {
-        let opts = LoadOptions::for_load(false, false, false);
-        assert!(!opts.no_intro, "intro should play when no flags set");
+        let opts = LoadOptions::for_load(false, false, false, false);
+        assert!(!opts.no_rain, "intro should play when no flags set");
     }
 
     #[tokio::test]
-    async fn load_options_debug_disables_intro_for_launch() {
-        let opts = LoadOptions::for_launch(true);
-        assert!(opts.no_intro, "debug mode must disable intro for launch");
+    async fn load_options_debug_does_not_disable_rain_for_launch() {
+        let opts = LoadOptions::for_launch(false, false, true);
+        assert!(!opts.no_rain, "debug mode must not disable boundary rain");
         assert!(opts.debug);
     }
 
     #[tokio::test]
     async fn load_options_intro_plays_when_no_debug_for_launch() {
-        let opts = LoadOptions::for_launch(false);
-        assert!(!opts.no_intro, "intro should play when debug is off");
+        let opts = LoadOptions::for_launch(false, false, false);
+        assert!(!opts.no_rain, "intro should play when debug is off");
         assert!(!opts.debug);
     }
 
@@ -8153,11 +8330,12 @@ plugins = []
         );
         manifest.agent_runtime = "codex".to_string();
         manifest.role_source_ref = Some("restore-ref".to_string());
-        let current = LoadOptions::for_load(false, true, false);
+        let current = LoadOptions::for_load(false, true, true, false);
 
         let opts = related_restore_load_options(&current, &manifest).unwrap();
 
-        assert!(opts.no_intro);
+        assert!(!opts.no_rain);
+        assert!(opts.no_tui);
         assert!(opts.debug);
         assert_eq!(opts.agent, Some(crate::agent::Agent::Codex));
         assert_eq!(opts.role_branch.as_deref(), Some("restore-ref"));

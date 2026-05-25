@@ -9,7 +9,7 @@ use super::{BANNER, HELP_STYLES};
 /// destination (~/Projects/my-app:/app), or a saved workspace name.
 /// When omitted, the current directory is used.
 //
-// Five launch-time toggles (rebuild / no_intro / debug / force) plus the
+// Launch-time toggles plus the
 // positional `selector` / `target` / `mounts` map directly to CLI flags;
 // bundling them into nested structs would obscure rather than clarify.
 #[allow(clippy::struct_excessive_bools)]
@@ -42,9 +42,12 @@ pub struct LoadArgs {
     /// Force rebuild the Docker image and refresh agent CLI install layers
     #[arg(long, default_value_t = false)]
     pub rebuild: bool,
-    /// Skip the animated intro sequence
-    #[arg(long, default_value_t = false)]
-    pub no_intro: bool,
+    /// Disable the full boundary rain animation.
+    #[arg(long = "no-rain", alias = "no-intro", default_value_t = false)]
+    pub no_rain: bool,
+    /// Disable the rich launch progress TUI and use compact output.
+    #[arg(long = "no-tui", default_value_t = false)]
+    pub no_tui: bool,
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
@@ -111,7 +114,14 @@ pub struct HardlineArgs {
 /// same console.
 #[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
-pub struct ConsoleArgs {}
+pub struct ConsoleArgs {
+    /// Disable the full boundary rain animation for console-triggered launches.
+    #[arg(long = "no-rain", default_value_t = false)]
+    pub no_rain: bool,
+    /// Disable the rich launch progress TUI for console-triggered launches.
+    #[arg(long = "no-tui", default_value_t = false)]
+    pub no_tui: bool,
+}
 
 /// Validate, migrate, and scaffold role repositories
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -262,7 +272,7 @@ mod tests {
             Some(Command::Load(super::LoadArgs {
                 selector: Some(ref s),
                 target: None,
-                no_intro: false,
+                no_rain: false,
                 ..
             })) if s == "agent-smith"
         ));

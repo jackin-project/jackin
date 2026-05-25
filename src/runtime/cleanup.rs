@@ -346,6 +346,10 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     prune_dir(&paths.cache_dir, "shared cache")
 }
 
+pub fn prune_diagnostics(paths: &JackinPaths) -> anyhow::Result<()> {
+    crate::diagnostics::prune_all_runs(paths)
+}
+
 pub fn prune_jackin_home(paths: &JackinPaths) {
     match std::fs::remove_dir_all(&paths.jackin_home) {
         Ok(()) => println!("Removed jackin home ({}).", paths.jackin_home.display()),
