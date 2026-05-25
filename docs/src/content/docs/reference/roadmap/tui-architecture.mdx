@@ -86,7 +86,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 1. **God-structs that mix four concerns.** `ManagerState` (≈30 fields) holds domain data (`instances`, `workspaces`, `current_dir`), layout geometry (`cached_term_size`, `list_split_pct`, eight separate scroll-offset fields), navigation/focus state (`selected`, `expanded_workspaces`, `list_scroll_focus`, `preview_focused`), and infrastructure (`op_cache`, `instances_last_refresh`) in one struct. Adding one scrollable block touches the state struct, a render signature, the mouse handler, and a focus enum across four files with no single seam to audit.
 
-2. **No `Action`/`Message` type.** Event handling mutates state directly inside the handler. `handle_key` in <RepoFile path="src/console/manager/input/mod.rs" /> is a ~280-line `if`-precedence chain that returns an `InputOutcome` only for routing decisions; all state changes are side effects before the return. Nothing is replayable, loggable, or testable without constructing a full `ManagerState` and driving a real terminal.
+2. **No `Action`/`Message` type.** Event handling mutates state directly inside the handler. `handle_key` in <RepoFile path="src/console/manager/input/mod.rs" /> is a ~240-line `if`-precedence chain that returns an `InputOutcome` only for routing decisions; all state changes are side effects before the return. Nothing is replayable, loggable, or testable without constructing a full `ManagerState` and driving a real terminal.
 
 3. **The view is not pure.** Render functions take `&mut state`. `render_scrollable_block` clamps `scroll_x`/`scroll_y` in place every frame; the editor tab renderers write `tab_content_width`/`tab_content_height` back into `EditorState` so the mouse handler can later read them. "Draw" mutates observable state, which couples render output to input handling and is the root of a class of stale-geometry scroll bugs.
 
@@ -213,7 +213,7 @@ The one open question is the **pane-body** mechanism — the cells that mirror a
 
 ## Target architecture — one owned terminal session
 
-Move terminal/Ratatui-session ownership out of `run_console` and up to the app layer (<RepoFile path="src/app/mod.rs" />). A single owned `Terminal` is created once, lives across the console manager → launch progress renderer → the moment control is handed to the container, and is torn down once at the end:
+Move terminal/Ratatui-session ownership out of `run_console` and up to the app layer (<RepoFile path="src/app/mod.rs" />). A single owned `Terminal` is created once and lives across the console manager → launch progress renderer → handoff — its backend torn down only for the in-container `docker exec` (see below) and fully released at the end:
 
 - The console manager renders into the shared session but no longer owns its lifecycle — no `TerminalGuard` drop mid-flow.
 - The launch progress renderer (owned by [Launch Progress TUI](/reference/roadmap/launch-progress-tui/)) draws into the *same* session, so "operator picked a workspace" → "watching the launch cockpit" is a view swap, not a screen teardown. No stderr fallback, no cooked-mode gap, no clear-screen flash.
@@ -239,8 +239,6 @@ This is a design-system problem, and the web ecosystem has a mature playbook for
 | Component library | the implemented, reusable components | the widget set, consolidated into `jackin-tui` |
 | [Storybook](https://storybook.js.org/) | an interactive explorer that renders each component in isolation with its states ("stories") | the **lookbook** — a docs surface that renders each TUI component and its variants |
 | Living style guide | docs that stay in sync with the real components | lookbook pages generated from real `TestBackend` renders, not hand-drawn |
-
-The canonical *rules* already live in [TUI Design Decisions](/reference/tui-design-decisions/); the design system is the step that turns those rules into a reusable, browsable component set with one implementation each.
 
 ### Catalog — collected evidence
 
@@ -307,7 +305,7 @@ Each component gets one page with a fixed "story" shape so the operator reads th
 3. **Tokens used** — which palette / spacing tokens, linked to the token page.
 4. **States / variants gallery** — focused / unfocused / scrollable-fit / error / default-focus / hover, each rendered.
 5. **Where used** — the screens that compose it, so a change's blast radius is visible.
-6. **Do / Don't** — links to the [TUI Design Decisions](/reference/tui-design-decisions/) rule anchors that apply. The page never restates rule text, so the rules and the lookbook cannot drift.
+6. **Do / Don't** — links to the [TUI Design Decisions](/reference/tui-design-decisions/) rule anchors that apply (never restated inline).
 7. **Live preview** — the actual rendered component (mechanism below).
 
 ### Rendering TUI components in the docs
