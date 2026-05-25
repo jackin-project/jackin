@@ -250,8 +250,23 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<FooterItem> {
             FooterItem::Text("cancel"),
         ],
         Modal::ErrorPopup { .. } => vec![FooterItem::Key("Enter/Esc"), FooterItem::Text("dismiss")],
-        Modal::OpPicker { .. }
-        | Modal::RolePicker { .. }
+        Modal::OpPicker { .. } => vec![
+            FooterItem::Key("\u{2191}\u{2193}"),
+            FooterItem::Text("navigate"),
+            FooterItem::GroupSep,
+            FooterItem::Key("type"),
+            FooterItem::Text("filter"),
+            FooterItem::GroupSep,
+            FooterItem::Key("R"),
+            FooterItem::Text("refresh"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Enter"),
+            FooterItem::Text("select"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            FooterItem::Text("cancel"),
+        ],
+        Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }
         | Modal::AuthRolePicker { .. } => vec![
             FooterItem::Key("\u{2191}\u{2193}"),
