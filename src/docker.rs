@@ -231,7 +231,14 @@ impl ShellRunner {
         let mut child = cmd.spawn()?;
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
-        let stream = opts.stream_captured_output;
+        // Never stream child output to the terminal while a debug run is
+        // capturing (it belongs in the diagnostics file, not the screen) or
+        // while a rich full-screen TUI owns the terminal (it would corrupt
+        // the frame). In both cases the output is captured and, under
+        // --debug, written to the run's JSONL by `log_captured_output`.
+        let stream = opts.stream_captured_output
+            && !self.debug
+            && !crate::tui::rich_surface_active();
         let read_stdout = async move {
             let Some(mut stdout_pipe) = stdout_pipe else {
                 return Ok::<Vec<u8>, std::io::Error>(Vec::new());
