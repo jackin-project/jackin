@@ -1409,6 +1409,8 @@ fn handle_claude_token(
         } => {
             use crate::console::widgets::token_store_picker::TokenStoreSelection;
 
+            config.require_workspace(&workspace)?;
+
             // Interactive mode: launch TUI picker when --interactive is set
             // and neither --vault nor --reuse was supplied.
             let args = if interactive {
