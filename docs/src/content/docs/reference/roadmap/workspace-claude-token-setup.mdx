@@ -1,8 +1,9 @@
 ---
 title: "Workspace Claude Token Setup"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, and in-container OAuth-token onboarding are shipped; canonical `oauth_token` auth slot, TUI generate action, Apple Keychain backend, pre-launch validity probe, and bulk migration remain
+**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, in-container OAuth-token onboarding, and `--interactive` storage-location picker are shipped; canonical `oauth_token` auth slot, TUI generate action, Apple Keychain backend, pre-launch validity probe, bulk migration, and `token_store_picker` → `op_picker` consolidation remain
 
 **Parent**: [Reliable Claude Authentication Strategy](/reference/roadmap/claude-auth-strategy/)
 
@@ -14,16 +15,29 @@ title: "Workspace Claude Token Setup"
 
 This roadmap item tracks only remaining work. Shipped orchestrator mechanics live in the standard docs above.
 
+## What Shipped: Interactive Storage Picker (`--interactive`)
+
+`jackin workspace claude-token setup <ws> --interactive` opens a standalone TUI dialog so the operator can drill through 1Password (Account → Vault → Item → Field) to choose an existing field to adopt or name a new item to create. The flag is mutually exclusive with `--vault` and `--reuse`.
+
+The dialog is driven by <RepoFile path="src/console/widgets/token_store_picker/mod.rs" /> and rendered standalone by <RepoFile path="src/tui/token_store_dialog.rs" />, which initialises raw-mode alt-screen, runs the event loop, and restores the terminal on return. The picker reuses the `op_picker` render primitives (`modal_block`, `breadcrumb_title`, `render_filter_row`, `render_fatal`) for visual consistency.
+
 ## Remaining Work
 
-1. **TUI generate action.** Add a `[G] Generate token` action in the `jackin console` Auth panel so operators can run the same setup flow without leaving the TUI.
-2. **Canonical auth slot.** Replace the current two-key implementation (`auth_forward = "oauth_token"` plus managed `CLAUDE_CODE_OAUTH_TOKEN` env) with a dedicated `oauth_token` field on the Claude auth config. The launcher should synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot.
-3. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session.
-4. **Apple Keychain backend.** Add a local OS-secret-store source after the cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) lands.
-5. **Bulk migration.** Add a `--all` or equivalent workflow for migrating multiple workspaces to Claude OAuth-token mode.
+1. **Consolidate `token_store_picker` into `op_picker`.** The `token_store_picker` widget duplicates the Account → Vault → Item navigation state machine that already exists in `op_picker` — 1067 lines of closely parallel code (100+ matched patterns). The right shape is to extend `op_picker` with a mode parameter that enables the extra steps (item-name text input for new items, field-label input, the `[ + New item ]` / `[ + New field ]` sentinels) rather than maintaining a second near-identical drill-down widget. This is load-bearing technical debt: any bug fix or enhancement to navigation, filtering, R-key refresh, or section display currently requires patching both files.
+
+2. **TUI generate action.** Add a `[G] Generate token` action in the `jackin console` Auth panel so operators can run the same setup flow without leaving the TUI. The standalone `token_store_dialog.rs` event loop provides the raw-mode scaffolding for prototyping, but the production path for this should compose directly with the console's existing event loop rather than spinning up a second terminal.
+
+3. **Canonical auth slot.** Replace the current two-key implementation (`auth_forward = "oauth_token"` plus managed `CLAUDE_CODE_OAUTH_TOKEN` env) with a dedicated `oauth_token` field on the Claude auth config. The launcher should synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot.
+
+4. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session.
+
+5. **Apple Keychain backend.** Add a local OS-secret-store source after the cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) lands.
+
+6. **Bulk migration.** Add a `--all` or equivalent workflow for migrating multiple workspaces to Claude OAuth-token mode.
 
 ## Design Notes
 
 - The upstream `claude setup-token` browser consent remains the token minting step; jackin' owns capture, storage, config wiring, validation, and lifecycle commands.
 - The canonical slot should be the future user-facing shape. The current managed env entry is an implementation bridge, not the target schema.
 - Any future storage backend must preserve the current safety properties: no token in argv, no token in shell history, no config write before storage validation succeeds.
+- The `token_store_picker` → `op_picker` consolidation must preserve the `[ + New item ]` sentinel row, the `NewItemName` and `FieldLabel` text-input stages, and the `TokenStoreSelection::NewItem` / `TokenStoreSelection::ReplaceItem` commit variants. These are the functional additions on top of the plain field-picker.
