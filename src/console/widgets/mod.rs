@@ -54,7 +54,6 @@ pub mod scrollable;
 pub mod source_picker;
 pub mod status_popup;
 pub mod text_input;
-pub mod token_store_picker;
 pub mod workdir_pick;
 
 /// Outcome of a modal's event-handling cycle. Passed back to the

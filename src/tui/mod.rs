@@ -105,7 +105,6 @@ const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
 pub mod animation;
 pub mod output;
 pub mod prompt;
-pub mod token_store_dialog;
 
 pub use animation::{intro_animation, outro_animation, simple_outro};
 pub use output::{

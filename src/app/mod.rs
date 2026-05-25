@@ -1407,45 +1407,14 @@ fn handle_claude_token(
             reuse,
             interactive,
         } => {
-            use crate::console::widgets::token_store_picker::TokenStoreSelection;
-
             config.require_workspace(&workspace)?;
 
-            // Interactive mode: launch TUI picker when --interactive is set
-            // and neither --vault nor --reuse was supplied.
+            // Interactive mode: walk the operator through 1Password with
+            // plain CLI prompts (account → vault → item → field) when
+            // --interactive is set. The rich TUI drill-down lives only in
+            // `jackin console`; the CLI stays CLI.
             let args = if interactive {
-                let selection =
-                    crate::tui::token_store_dialog::run(&workspace, op_account.as_deref())?;
-                match selection {
-                    TokenStoreSelection::NewItem {
-                        vault: sel_vault,
-                        item_name: sel_item_name,
-                        field_label: sel_field_label,
-                    } => token_setup::TokenSetupArgs {
-                        vault: Some(sel_vault.id),
-                        item_name: Some(sel_item_name),
-                        account: op_account,
-                        reuse: None,
-                        field_label: Some(sel_field_label),
-                        edit_existing: None,
-                    },
-                    TokenStoreSelection::EditItemField {
-                        vault: sel_vault,
-                        item: sel_item,
-                        field_label: sel_field_label,
-                    } => token_setup::TokenSetupArgs {
-                        vault: None,
-                        item_name: None,
-                        account: op_account,
-                        reuse: None,
-                        field_label: None,
-                        edit_existing: Some(token_setup::EditExistingTarget {
-                            vault_id: sel_vault.id,
-                            item_id: sel_item.id,
-                            field_label: sel_field_label,
-                        }),
-                    },
-                }
+                prompt_interactive_token_store(&workspace, op_account)?
             } else {
                 let reuse_ref = reuse
                     .as_deref()
@@ -1618,6 +1587,157 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
     } else {
         println!("Existing op:// reference adopted; no new item created.");
     }
+}
+
+/// Plain-CLI interactive selection of where a Claude token should land in
+/// 1Password. Walks account → vault → item → field with `dialoguer`
+/// prompts and returns the [`TokenSetupArgs`] the orchestrator runs. No
+/// rich TUI — the console owns that surface; the CLI stays CLI.
+fn prompt_interactive_token_store(
+    workspace: &str,
+    op_account: Option<String>,
+) -> Result<crate::workspace::token_setup::TokenSetupArgs> {
+    use crate::operator_env::{OpCli, OpStructRunner};
+    use crate::workspace::token_setup;
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "--interactive requires a TTY. Pass --vault <name-or-uuid> for non-interactive use."
+        );
+    }
+
+    let accounts = OpCli::new_interactive()
+        .with_account(op_account.clone())
+        .account_list()?;
+    if accounts.is_empty() {
+        anyhow::bail!("1Password CLI is not signed in. Run `op signin` in your shell, then retry.");
+    }
+
+    // An explicit --op-account wins; otherwise prompt only when ambiguous.
+    let account_id: Option<String> = if op_account.is_some() {
+        op_account
+    } else if accounts.len() == 1 {
+        Some(accounts[0].id.clone())
+    } else {
+        let labels: Vec<String> = accounts
+            .iter()
+            .map(|a| format!("{}  ({})", a.email, a.url))
+            .collect();
+        let idx = dialoguer::Select::new()
+            .with_prompt("1Password account")
+            .items(&labels)
+            .default(0)
+            .interact()?;
+        Some(accounts[idx].id.clone())
+    };
+
+    let op = OpCli::new_interactive().with_account(account_id.clone());
+
+    let vaults = op.vault_list(account_id.as_deref())?;
+    if vaults.is_empty() {
+        anyhow::bail!("No 1Password vaults available for this account.");
+    }
+    let vault_labels: Vec<&str> = vaults.iter().map(|v| v.name.as_str()).collect();
+    let vault = &vaults[dialoguer::Select::new()
+        .with_prompt("Vault")
+        .items(&vault_labels)
+        .default(0)
+        .interact()?];
+
+    let items = op.item_list(&vault.id, account_id.as_deref())?;
+    let mut item_labels: Vec<String> = vec!["[ + New item ]".to_string()];
+    item_labels.extend(items.iter().map(|i| {
+        if i.subtitle.is_empty() {
+            i.name.clone()
+        } else {
+            format!("{} ({})", i.name, i.subtitle)
+        }
+    }));
+    let item_choice = dialoguer::Select::new()
+        .with_prompt("Item")
+        .items(&item_labels)
+        .default(0)
+        .interact()?;
+
+    if item_choice == 0 {
+        let default_name = token_setup::DEFAULT_ITEM_TEMPLATE.replace("{ws}", workspace);
+        let item_name: String = dialoguer::Input::new()
+            .with_prompt("New item name")
+            .default(default_name)
+            .interact_text()?;
+        let field_label: String = dialoguer::Input::new()
+            .with_prompt("Field label")
+            .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
+            .interact_text()?;
+        return Ok(token_setup::TokenSetupArgs {
+            vault: Some(vault.id.clone()),
+            item_name: Some(item_name),
+            account: account_id,
+            reuse: None,
+            field_label: Some(field_label),
+            edit_existing: None,
+        });
+    }
+
+    let item = &items[item_choice - 1];
+    let field_label = prompt_existing_item_field(&op, account_id.as_deref(), &vault.id, &item.id)?;
+
+    Ok(token_setup::TokenSetupArgs {
+        vault: None,
+        item_name: None,
+        account: account_id,
+        reuse: None,
+        field_label: None,
+        edit_existing: Some(token_setup::EditExistingTarget {
+            vault_id: vault.id.clone(),
+            item_id: item.id.clone(),
+            field_label,
+        }),
+    })
+}
+
+/// Prompt for which field of an existing 1Password item the token should
+/// land in: an existing field (overwrite in place) or `[ + New field ]`
+/// (append). Returns the chosen field label.
+fn prompt_existing_item_field(
+    op: &crate::operator_env::OpCli,
+    account_id: Option<&str>,
+    vault_id: &str,
+    item_id: &str,
+) -> Result<String> {
+    use crate::operator_env::OpStructRunner;
+    use crate::workspace::token_setup;
+
+    let fields = op.item_get(item_id, vault_id, account_id)?;
+    let mut field_labels: Vec<String> = vec!["[ + New field ]".to_string()];
+    field_labels.extend(fields.iter().map(|f| {
+        let label = if f.label.is_empty() { &f.id } else { &f.label };
+        let kind = if f.concealed {
+            "concealed".to_string()
+        } else {
+            f.field_type.to_lowercase()
+        };
+        format!("{label}  ({kind})")
+    }));
+    let field_choice = dialoguer::Select::new()
+        .with_prompt("Field")
+        .items(&field_labels)
+        .default(0)
+        .interact()?;
+
+    if field_choice == 0 {
+        return Ok(dialoguer::Input::new()
+            .with_prompt("New field label")
+            .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
+            .interact_text()?);
+    }
+    let f = &fields[field_choice - 1];
+    Ok(if f.label.is_empty() {
+        f.id.clone()
+    } else {
+        f.label.clone()
+    })
 }
 
 #[derive(tabled::Tabled)]

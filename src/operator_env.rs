@@ -291,6 +291,10 @@ impl OpCli {
     /// Long-timeout variant for interactive TUI flows where the operator may
     /// need to complete SSO (Okta, SAML, etc.) in a browser before `op`
     /// returns. Five minutes covers typical SSO redirect + approval round-trips.
+    #[expect(
+        clippy::duration_suboptimal_units,
+        reason = "std has no from_mins; from_secs is the canonical constructor for a 5-minute timeout"
+    )]
     pub fn new_interactive() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_string(),
@@ -963,13 +967,6 @@ struct RawCreatedItemField {
     id: String,
     #[serde(default)]
     label: String,
-    /// 1Password emits `reference` for non-default fields. When present
-    /// jackin prefers it verbatim over a synthesised `op://...` URI
-    /// because `reference` is upstream's canonical form (handles
-    /// sections, slashes, whitespace correctly — same reasoning as
-    /// `OpField::reference`).
-    #[serde(default)]
-    reference: String,
 }
 
 impl OpWriteRunner for OpCli {
@@ -1133,6 +1130,7 @@ impl OpWriteRunner for OpCli {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn item_field_set(
         &self,
         item_id: &str,
@@ -1245,8 +1243,7 @@ impl OpWriteRunner for OpCli {
             .find(|f| {
                 f["label"]
                     .as_str()
-                    .map(|l| l.eq_ignore_ascii_case(field_label))
-                    .unwrap_or(false)
+                    .is_some_and(|l| l.eq_ignore_ascii_case(field_label))
                     || f["id"].as_str() == Some(field_label)
             })
             .ok_or_else(|| {
@@ -1255,9 +1252,8 @@ impl OpWriteRunner for OpCli {
                     .filter_map(|f| f["label"].as_str())
                     .collect();
                 anyhow::anyhow!(
-                    "`op item edit` returned no field with label {:?}; \
-                     observed labels: {labels:?}",
-                    field_label
+                    "`op item edit` returned no field with label {field_label:?}; \
+                     observed labels: {labels:?}"
                 )
             })?;
 

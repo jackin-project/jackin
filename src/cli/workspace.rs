@@ -279,9 +279,10 @@ Examples:
         /// vault is implicit in the supplied reference).
         #[arg(long, conflicts_with = "vault")]
         reuse: Option<String>,
-        /// Open an interactive TUI to choose the 1Password vault and
-        /// item instead of specifying them on the command line.
-        /// Mutually exclusive with `--vault` and `--reuse`.
+        /// Interactively choose the 1Password account, vault, item, and
+        /// field with CLI prompts instead of passing them as flags.
+        /// Offers `[ + New item ]` / `[ + New field ]`. Mutually
+        /// exclusive with `--vault` and `--reuse`.
         #[arg(short = 'i', long, conflicts_with_all = ["vault", "reuse"])]
         interactive: bool,
     },
