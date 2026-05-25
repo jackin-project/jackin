@@ -60,6 +60,14 @@ pub(crate) const LINK_BLUE: Color = Color::Rgb(
     tui_palette::LINK_BLUE.b,
 );
 
+/// Burnt orange marking debug-mode chrome (the run-id chip), shared via
+/// `jackin-tui`.
+pub(crate) const DEBUG_AMBER: Color = Color::Rgb(
+    tui_palette::DEBUG_AMBER.r,
+    tui_palette::DEBUG_AMBER.g,
+    tui_palette::DEBUG_AMBER.b,
+);
+
 /// The ` jackin' ` brand pill followed by ` · <label>`. Shared by every
 /// top-level TUI screen (workspace list, settings, editor, launch
 /// progress) so the logo is byte-identical and never shifts position or

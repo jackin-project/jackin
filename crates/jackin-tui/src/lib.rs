@@ -69,6 +69,11 @@ pub const TAB_BG_ACTIVE_HOVER: Rgb = Rgb::new(58, 58, 58);
 /// host loading screen, so a clickable id reads the same on both surfaces.
 pub const LINK_BLUE: Rgb = Rgb::new(0, 80, 180);
 
+/// Burnt orange marking debug-mode chrome — the run-id chip on the status
+/// bar renders in this so the operator can tell at a glance they are inside
+/// a `--debug` run. Readable on the white status-bar band.
+pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.

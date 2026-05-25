@@ -175,7 +175,10 @@ pub const fn container_arch() -> &'static str {
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let sha_url = format!("{url}.sha256");
-    eprintln!("[jackin] downloading jackin-capsule {version} for linux/{arch}...");
+    crate::debug_log!(
+        "capsule_binary",
+        "downloading jackin-capsule {version} for linux/{arch}"
+    );
     let tmp_archive = dest.with_extension("tar.gz.tmp");
     let tmp = dest.with_extension("tmp");
     let tmp_archive_path_str = tmp_archive.to_str().ok_or_else(|| {
@@ -278,8 +281,9 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     std::fs::rename(&tmp, dest)
         .with_context(|| format!("failed to move jackin-capsule to {}", dest.display()))?;
 
-    eprintln!(
-        "[jackin] jackin-capsule {version} cached at {} (sha256 {})",
+    crate::debug_log!(
+        "capsule_binary",
+        "jackin-capsule {version} cached at {} (sha256 {})",
         dest.display(),
         &actual_sha[..16.min(actual_sha.len())]
     );

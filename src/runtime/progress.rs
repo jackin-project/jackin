@@ -766,23 +766,22 @@ fn fill_target(view: &LaunchView) -> f32 {
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {
-    crate::console::widgets::status_bar::render(
-        frame,
-        area,
-        &view.status,
-        &footer_handle(view, run_id),
-    );
+    let instance = footer_instance(view);
+    // The run id rides the status bar only in --debug, in amber, so the
+    // operator is never unsure whether they are in a debug run; the blue
+    // instance-id chip always shows once the container is named.
+    let debug_chip = crate::tui::is_debug_mode().then_some(run_id);
+    crate::console::widgets::status_bar::render(frame, area, &view.status, &instance, debug_chip);
 }
 
-/// The right-hand status-bar chip: the container's short instance id once the
-/// container name is known, otherwise the diagnostics run handle so the
-/// operator always has a copy-able identifier.
-fn footer_handle(view: &LaunchView, run_id: &str) -> String {
+/// The container's short instance id once the container is named, else empty.
+fn footer_instance(view: &LaunchView) -> String {
     view.identity
         .as_ref()
         .and_then(|identity| identity.container.as_deref())
         .and_then(jackin_protocol::instance_id_from_container_base)
-        .map_or_else(|| run_id.to_string(), str::to_string)
+        .map(str::to_string)
+        .unwrap_or_default()
 }
 
 fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailure, run_id: &str) {
