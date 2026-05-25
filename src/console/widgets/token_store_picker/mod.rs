@@ -111,7 +111,7 @@ impl std::fmt::Debug for TokenStorePickerState<'_> {
 
 impl<'a> TokenStorePickerState<'a> {
     pub fn new(item_name_default: &str) -> Self {
-        Self::new_with_runner(Arc::new(OpCli::new()), item_name_default)
+        Self::new_with_runner(Arc::new(OpCli::new_interactive()), item_name_default)
     }
 
     pub fn new_with_runner(

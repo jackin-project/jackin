@@ -288,6 +288,17 @@ impl OpCli {
         }
     }
 
+    /// Long-timeout variant for interactive TUI flows where the operator may
+    /// need to complete SSO (Okta, SAML, etc.) in a browser before `op`
+    /// returns. Five minutes covers typical SSO redirect + approval round-trips.
+    pub fn new_interactive() -> Self {
+        Self {
+            binary: OP_DEFAULT_BIN.to_string(),
+            timeout: std::time::Duration::from_secs(300),
+            account: None,
+        }
+    }
+
     pub const fn with_binary(binary: String) -> Self {
         Self {
             binary,
