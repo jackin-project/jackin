@@ -1318,6 +1318,14 @@ impl Multiplexer {
                 }
                 self.spawn_session(Some(agent_slug), env_overrides, None)
             }
+            SpawnRequest::AgentWithProvider { slug, provider_label } => {
+                if let Err(reason) =
+                    crate::session::validate_agent_slug(&slug, &self.available_agents)
+                {
+                    anyhow::bail!("rejected agent {slug:?}: {reason}");
+                }
+                self.spawn_session(Some(slug), env_overrides, Some(&provider_label))
+            }
             SpawnRequest::Shell => self.spawn_session(None, env_overrides, None),
         }
     }
@@ -3931,6 +3939,9 @@ fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
 fn spawn_request_label(request: &SpawnRequest) -> String {
     match request {
         SpawnRequest::Agent(agent) => format!("agent {agent:?}"),
+        SpawnRequest::AgentWithProvider { slug, provider_label } => {
+            format!("agent {slug:?} (provider: {provider_label})")
+        }
         SpawnRequest::Shell => "shell".to_string(),
     }
 }

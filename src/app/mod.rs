@@ -178,6 +178,36 @@ pub async fn run(cli: Cli) -> Result<()> {
                     )
                     .await;
                 }
+                console::ConsoleOutcome::NewSessionWithProvider {
+                    container,
+                    agent,
+                    provider_label,
+                    env_overrides,
+                } => {
+                    let manifest =
+                        instance::InstanceManifest::read(&paths.data_dir.join(&container))
+                            .with_context(|| {
+                                format!(
+                                    "cannot start a new agent session in `{container}` because its instance manifest is missing"
+                                )
+                            })?;
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    let result = runtime::spawn_agent_session(
+                        &paths,
+                        &container,
+                        Some(&manifest),
+                        agent,
+                        Some(provider_label.as_str()),
+                        &env_overrides,
+                        config.git.coauthor_trailer,
+                        config.git.dco,
+                        &docker,
+                        &mut runner,
+                    )
+                    .await;
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    return result;
+                }
             };
 
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
@@ -270,6 +300,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                     &container,
                     Some(&manifest),
                     selected_agent,
+                    None,
+                    &[],
                     config.git.coauthor_trailer,
                     config.git.dco,
                     &docker,
@@ -1853,6 +1885,8 @@ async fn handle_console_instance_action(
                 &container,
                 Some(&manifest),
                 selected_agent,
+                None,
+                &[],
                 config.git.coauthor_trailer,
                 config.git.dco,
                 docker,

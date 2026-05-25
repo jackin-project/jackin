@@ -104,7 +104,15 @@ pub(super) fn render_list_body(
         }
     }
 
-    if let Some((container, picker)) = state.inline_new_session_picker.as_ref() {
+    if let Some((container, _agent, providers, selected)) =
+        state.inline_provider_picker.as_ref()
+    {
+        let short_id = crate::instance::naming::instance_id_from_container_base(container)
+            .unwrap_or(container.as_str());
+        render_provider_picker_sidebar(frame, list_area, short_id, providers, *selected);
+    } else if let Some((container, picker, _providers)) =
+        state.inline_new_session_picker.as_ref()
+    {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container.as_str());
         render_agent_picker_sidebar(frame, list_area, short_id, picker);
@@ -310,6 +318,34 @@ fn push_tree_instance_line(
         ])
     };
     lines.push(line);
+}
+
+fn render_provider_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    container_id: &str,
+    providers: &[(String, Vec<(String, String)>)],
+    selected: usize,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            format!(" {container_id} — provider "),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let items: Vec<ListItem> = providers
+        .iter()
+        .map(|(label, _)| ListItem::new(Line::from(label.as_str())))
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN))
+        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
+        .highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(Some(selected));
+    frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn render_role_picker_sidebar(

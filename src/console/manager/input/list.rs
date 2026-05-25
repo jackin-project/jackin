@@ -151,7 +151,37 @@ pub(super) fn handle_list_key(
                         crate::console::widgets::agent_choice::AgentChoiceState::with_choices(
                             crate::agent::Agent::ALL.to_vec(),
                         );
-                    state.inline_new_session_picker = Some((container, picker));
+                    let ws_name = state.workspaces.get(ws_idx).map(|w| w.name.as_str());
+                    let zai_key = ws_name
+                        .and_then(|name| config.workspaces.get(name))
+                        .and_then(|ws| ws.env.get("ZAI_API_KEY"))
+                        .or_else(|| config.env.get("ZAI_API_KEY"))
+                        .and_then(|v| {
+                            if let crate::operator_env::EnvValue::Plain(s) = v {
+                                Some(s.clone())
+                            } else {
+                                None
+                            }
+                        });
+                    let providers: Vec<(String, Vec<(String, String)>)> =
+                        if let Some(key) = zai_key {
+                            vec![
+                                ("Anthropic".to_string(), vec![]),
+                                (
+                                    "Z.AI".to_string(),
+                                    vec![
+                                        ("ANTHROPIC_AUTH_TOKEN".to_string(), key),
+                                        (
+                                            "ANTHROPIC_BASE_URL".to_string(),
+                                            "https://api.z.ai/api/anthropic".to_string(),
+                                        ),
+                                    ],
+                                ),
+                            ]
+                        } else {
+                            vec![]
+                        };
+                    state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
                     state.list_modal = Some(Modal::ErrorPopup {
                         state: crate::console::widgets::error_popup::ErrorPopupState::new(
@@ -643,16 +673,23 @@ pub(super) fn handle_new_session_picker(
     state: &mut ManagerState<'_>,
     key: KeyEvent,
 ) -> InputOutcome {
-    let Some((container, picker)) = state.inline_new_session_picker.as_mut() else {
+    let Some((container, picker, providers)) = state.inline_new_session_picker.as_mut() else {
         return InputOutcome::Continue;
     };
     match picker.handle_key(key) {
         ModalOutcome::Commit(agent) => {
             let container = container.clone();
-            state.inline_new_session_picker = None;
-            InputOutcome::InstanceAction {
-                container,
-                action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+            if providers.is_empty() {
+                state.inline_new_session_picker = None;
+                InputOutcome::InstanceAction {
+                    container,
+                    action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+                }
+            } else {
+                let providers = providers.clone();
+                state.inline_new_session_picker = None;
+                state.inline_provider_picker = Some((container, agent, providers, 0));
+                InputOutcome::Continue
             }
         }
         ModalOutcome::Cancel => {
@@ -660,6 +697,51 @@ pub(super) fn handle_new_session_picker(
             InputOutcome::Continue
         }
         ModalOutcome::Continue => InputOutcome::Continue,
+    }
+}
+
+/// Handle key events while the inline provider picker is open (shown after
+/// agent selection when multiple providers are available). Enter commits;
+/// Esc cancels; Up/Down navigate.
+pub(super) fn handle_inline_provider_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some((container, agent, providers, selected)) =
+        state.inline_provider_picker.as_mut()
+    else {
+        return InputOutcome::Continue;
+    };
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            if *selected > 0 {
+                *selected -= 1;
+            }
+            InputOutcome::Continue
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if *selected + 1 < providers.len() {
+                *selected += 1;
+            }
+            InputOutcome::Continue
+        }
+        KeyCode::Enter => {
+            let (provider_label, env_overrides) = providers[*selected].clone();
+            let container = container.clone();
+            let agent = *agent;
+            state.inline_provider_picker = None;
+            InputOutcome::NewSessionWithProvider {
+                container,
+                agent,
+                provider_label,
+                env_overrides,
+            }
+        }
+        KeyCode::Esc => {
+            state.inline_provider_picker = None;
+            InputOutcome::Continue
+        }
+        _ => InputOutcome::Continue,
     }
 }
 

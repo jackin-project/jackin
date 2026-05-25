@@ -43,18 +43,32 @@ async fn main() -> Result<()> {
                 let supported_agents = config::load_optional()
                     .map(|config| config.supported_agents())
                     .unwrap_or_default();
+                // Parse optional --provider=<label> flag from args[3..].
+                let provider_label: Option<String> = args[3..]
+                    .iter()
+                    .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_string));
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
                     Some(raw) => match validate_agent_slug(raw, &supported_agents) {
-                        Ok(s) => match SpawnRequest::agent(s) {
-                            Ok(req) => Some(req),
-                            Err(reason) => {
-                                eprintln!(
-                                    "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
-                                );
-                                None
-                            }
-                        },
+                        Ok(slug) => {
+                            let req = if let Some(label) = provider_label {
+                                SpawnRequest::AgentWithProvider {
+                                    slug: slug.to_string(),
+                                    provider_label: label,
+                                }
+                            } else {
+                                match SpawnRequest::agent(slug) {
+                                    Ok(req) => req,
+                                    Err(reason) => {
+                                        eprintln!(
+                                            "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
+                                        );
+                                        return client::run_client(None, focus_session).await;
+                                    }
+                                }
+                            };
+                            Some(req)
+                        }
                         Err(reason) => {
                             eprintln!(
                                 "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"

@@ -45,6 +45,14 @@ pub enum InputOutcome {
         container: String,
         action: crate::console::ConsoleInstanceAction,
     },
+    /// Operator selected an agent AND provider in the inline provider picker.
+    /// Bypasses `ConsoleInstanceAction` (which is `Copy` and cannot carry Vec).
+    NewSessionWithProvider {
+        container: String,
+        agent: crate::agent::Agent,
+        provider_label: String,
+        env_overrides: Vec<(String, String)>,
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -66,6 +74,9 @@ pub fn handle_key(
     }
     if state.inline_new_session_picker.is_some() {
         return Ok(list::handle_new_session_picker(state, key));
+    }
+    if state.inline_provider_picker.is_some() {
+        return Ok(list::handle_inline_provider_picker(state, key));
     }
     if state.inline_agent_picker.is_some() {
         return Ok(list::handle_inline_agent_picker(state, key));

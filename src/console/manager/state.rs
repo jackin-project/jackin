@@ -93,10 +93,21 @@ pub struct ManagerState<'a> {
     )>,
     /// Agent picker opened when the operator presses `N` on an instance row
     /// to start a new session in the running container. Carries the target
-    /// `container_base` so the commit can dispatch the right action.
+    /// `container_base`, the agent picker, and the available provider list
+    /// (empty when ZAI_API_KEY is not configured for the workspace).
     pub inline_new_session_picker: Option<(
         String,
         crate::console::widgets::agent_choice::AgentChoiceState,
+        Vec<(String, Vec<(String, String)>)>,
+    )>,
+    /// Provider picker shown after the agent is committed in
+    /// `inline_new_session_picker`, when multiple providers are available.
+    /// Tuple fields: (container, agent, providers, selected_index).
+    pub inline_provider_picker: Option<(
+        String,
+        crate::agent::Agent,
+        Vec<(String, Vec<(String, String)>)>,
+        usize,
     )>,
     pub list_mounts_scroll_x: u16,
     pub list_mounts_scroll_y: u16,
@@ -1517,6 +1528,7 @@ impl ManagerState<'_> {
             inline_role_picker: None,
             inline_agent_picker: None,
             inline_new_session_picker: None,
+            inline_provider_picker: None,
             list_mounts_scroll_x: 0,
             list_mounts_scroll_y: 0,
             list_global_mounts_scroll_x: 0,

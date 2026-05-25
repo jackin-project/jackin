@@ -30,6 +30,16 @@ pub enum ConsoleOutcome {
         container: String,
         action: ConsoleInstanceAction,
     },
+    /// Operator selected an agent AND a provider in the console picker.
+    /// Carries the env overrides needed to redirect the agent to the chosen
+    /// provider (e.g. Z.AI's Anthropic-compatible endpoint) plus the label
+    /// used to suffix the tab name in the multiplexer.
+    NewSessionWithProvider {
+        container: String,
+        agent: crate::agent::Agent,
+        provider_label: String,
+        env_overrides: Vec<(String, String)>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -821,6 +831,19 @@ pub async fn run_console(
                             {
                                 break 'main Ok(Some(outcome));
                             }
+                        }
+                        manager::InputOutcome::NewSessionWithProvider {
+                            container,
+                            agent,
+                            provider_label,
+                            env_overrides,
+                        } => {
+                            break 'main Ok(Some(ConsoleOutcome::NewSessionWithProvider {
+                                container,
+                                agent,
+                                provider_label,
+                                env_overrides,
+                            }));
                         }
                         manager::InputOutcome::InstanceAction { container, action } => {
                             if action.runs_in_place() {
