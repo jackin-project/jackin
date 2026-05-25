@@ -159,8 +159,10 @@ pub struct DaemonSession {
     pub workspace: Option<String>,
     pub role: Option<String>,
     pub agent: Option<String>,
+    pub repository: Option<String>,
     pub branch: Option<String>,
     pub primary_repo: Option<String>,
+    pub linked_pr: Option<GithubPullRequest>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -174,11 +176,14 @@ pub struct GithubPullRequest {
     pub number: u64,
     pub title: String,
     pub url: String,
+    pub diffshub_url: String,
     pub author: String,
     pub created_at: String,
     pub updated_at: String,
     pub state: String,
     pub is_draft: bool,
+    pub head_ref_name: Option<String>,
+    pub base_ref_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -655,11 +660,13 @@ fn session_summaries(runner: &mut impl CommandRunner) -> Result<Vec<DaemonSessio
             "--filter",
             "label=jackin.kind=role",
             "--format",
-            "{{.Names}}\t{{.Status}}\t{{.Label \"jackin.display_name\"}}\t{{.Label \"jackin.workspace\"}}\t{{.Label \"jackin.role_key\"}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.branch\"}}\t{{.Label \"jackin.primary_repo\"}}",
+            "{{.Names}}\t{{.Status}}\t{{.Label \"jackin.display_name\"}}\t{{.Label \"jackin.workspace\"}}\t{{.Label \"jackin.role_key\"}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.repository\"}}\t{{.Label \"jackin.branch\"}}\t{{.Label \"jackin.primary_repo\"}}",
         ],
         None,
     ))?;
-    Ok(parse_session_rows(&output))
+    let mut sessions = parse_session_rows(&output);
+    enrich_sessions_with_pull_requests(runner, &mut sessions);
+    Ok(sessions)
 }
 
 fn parse_session_rows(output: &str) -> Vec<DaemonSession> {
@@ -671,7 +678,7 @@ fn parse_session_rows(output: &str) -> Vec<DaemonSession> {
 }
 
 fn parse_session_row(line: &str) -> Option<DaemonSession> {
-    let mut parts = line.splitn(8, '\t');
+    let mut parts = line.splitn(9, '\t');
     let container_name = parts.next()?.trim();
     if container_name.is_empty() {
         return None;
@@ -689,9 +696,44 @@ fn parse_session_row(line: &str) -> Option<DaemonSession> {
         workspace: non_empty_label(parts.next()),
         role: non_empty_label(parts.next()),
         agent: non_empty_label(parts.next()),
+        repository: non_empty_label(parts.next()),
         branch: non_empty_label(parts.next()),
         primary_repo: non_empty_label(parts.next()),
+        linked_pr: None,
     })
+}
+
+fn enrich_sessions_with_pull_requests(
+    runner: &mut impl CommandRunner,
+    sessions: &mut [DaemonSession],
+) {
+    let repositories = sessions
+        .iter()
+        .filter_map(|session| session.repository.as_deref())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let mut pulls_by_repo = std::collections::BTreeMap::new();
+    for repository in repositories {
+        if let Ok(pulls) = github_repository_prs(runner, repository, Some(100)) {
+            pulls_by_repo.insert(repository.to_string(), pulls);
+        }
+    }
+
+    for session in sessions {
+        let Some(repository) = session.repository.as_deref() else {
+            continue;
+        };
+        let Some(branch) = session.branch.as_deref() else {
+            continue;
+        };
+        let Some(pulls) = pulls_by_repo.get(repository) else {
+            continue;
+        };
+        session.linked_pr = pulls
+            .iter()
+            .find(|pull| pull.head_ref_name.as_deref() == Some(branch))
+            .cloned();
+    }
 }
 
 fn non_empty_label(value: Option<&str>) -> Option<String> {
@@ -701,8 +743,10 @@ fn non_empty_label(value: Option<&str>) -> Option<String> {
         .map(String::from)
 }
 
-const GITHUB_PR_JSON_FIELDS: &str =
+const GITHUB_SEARCH_PR_JSON_FIELDS: &str =
     "number,title,url,author,repository,createdAt,updatedAt,state,isDraft";
+const GITHUB_REPOSITORY_PR_JSON_FIELDS: &str =
+    "number,title,url,author,createdAt,updatedAt,state,isDraft,headRefName,baseRefName";
 
 fn github_response(result: Result<Vec<GithubPullRequest>>) -> Response {
     match result {
@@ -737,7 +781,25 @@ fn github_repository_prs(
     repository: &str,
     limit: Option<usize>,
 ) -> Result<Vec<GithubPullRequest>> {
-    run_gh_search_prs(runner, &["--repo", repository], limit)
+    let limit = github_limit(limit).to_string();
+    let output = block_on_daemon(runner.capture(
+        "gh",
+        &[
+            "pr",
+            "list",
+            "--repo",
+            repository,
+            "--state",
+            "open",
+            "--json",
+            GITHUB_REPOSITORY_PR_JSON_FIELDS,
+            "--limit",
+            &limit,
+        ],
+        None,
+    ))
+    .with_context(|| format!("querying GitHub pull requests for {repository} with gh"))?;
+    parse_github_prs_for_repository(repository, &output)
 }
 
 fn run_gh_search_prs(
@@ -756,7 +818,7 @@ fn run_gh_search_prs(
         "--order",
         "desc",
         "--json",
-        GITHUB_PR_JSON_FIELDS,
+        GITHUB_SEARCH_PR_JSON_FIELDS,
         "--limit",
         &limit,
     ];
@@ -771,11 +833,25 @@ fn github_limit(limit: Option<usize>) -> usize {
 }
 
 fn parse_github_prs(output: &str) -> Result<Vec<GithubPullRequest>> {
-    let raw: Vec<RawGithubPullRequest> =
+    let raw: Vec<RawGithubSearchPullRequest> =
         serde_json::from_str(output).context("decoding gh pull request JSON")?;
     let mut pulls = raw
         .into_iter()
         .map(GithubPullRequest::from)
+        .collect::<Vec<_>>();
+    sort_github_prs_newest_first(&mut pulls);
+    Ok(pulls)
+}
+
+fn parse_github_prs_for_repository(
+    repository: &str,
+    output: &str,
+) -> Result<Vec<GithubPullRequest>> {
+    let raw: Vec<RawGithubRepositoryPullRequest> =
+        serde_json::from_str(output).context("decoding gh repository pull request JSON")?;
+    let mut pulls = raw
+        .into_iter()
+        .map(|pull| GithubPullRequest::from_repository(repository, pull))
         .collect::<Vec<_>>();
     sort_github_prs_newest_first(&mut pulls);
     Ok(pulls)
@@ -809,7 +885,7 @@ fn filter_github_prs(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RawGithubPullRequest {
+struct RawGithubSearchPullRequest {
     repository: RawGithubRepository,
     number: u64,
     title: String,
@@ -823,6 +899,21 @@ struct RawGithubPullRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RawGithubRepositoryPullRequest {
+    number: u64,
+    title: String,
+    url: String,
+    author: RawGithubUser,
+    created_at: String,
+    updated_at: String,
+    state: String,
+    is_draft: bool,
+    head_ref_name: String,
+    base_ref_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RawGithubRepository {
     name_with_owner: String,
 }
@@ -832,20 +923,59 @@ struct RawGithubUser {
     login: String,
 }
 
-impl From<RawGithubPullRequest> for GithubPullRequest {
-    fn from(raw: RawGithubPullRequest) -> Self {
+impl GithubPullRequest {
+    fn from_repository(repository: &str, raw: RawGithubRepositoryPullRequest) -> Self {
+        let diffshub_url = diffshub_url(&raw.url);
         Self {
-            repository: raw.repository.name_with_owner,
+            repository: repository.to_string(),
             number: raw.number,
             title: raw.title,
             url: raw.url,
+            diffshub_url,
             author: raw.author.login,
             created_at: raw.created_at,
             updated_at: raw.updated_at,
             state: raw.state,
             is_draft: raw.is_draft,
+            head_ref_name: non_empty_string(raw.head_ref_name),
+            base_ref_name: non_empty_string(raw.base_ref_name),
         }
     }
+}
+
+impl From<RawGithubSearchPullRequest> for GithubPullRequest {
+    fn from(raw: RawGithubSearchPullRequest) -> Self {
+        let diffshub_url = diffshub_url(&raw.url);
+        Self {
+            repository: raw.repository.name_with_owner,
+            number: raw.number,
+            title: raw.title,
+            url: raw.url,
+            diffshub_url,
+            author: raw.author.login,
+            created_at: raw.created_at,
+            updated_at: raw.updated_at,
+            state: raw.state,
+            is_draft: raw.is_draft,
+            head_ref_name: None,
+            base_ref_name: None,
+        }
+    }
+}
+
+fn non_empty_string(value: String) -> Option<String> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn diffshub_url(github_url: &str) -> String {
+    github_url.strip_prefix("https://github.com/").map_or_else(
+        || github_url.to_string(),
+        |path| format!("https://diffshub.com/{path}"),
+    )
 }
 
 fn launch_workspace_in_ghostty(
@@ -1847,7 +1977,7 @@ published_image = "ghcr.io/example/role:latest"
 
     #[test]
     fn parse_session_rows_uses_launch_labels() {
-        let output = "jackin-agent-smith\tUp 2 minutes\tAgent Smith\tproject\tagent-smith\tclaude\tmain\t/workspace/project\n";
+        let output = "jackin-agent-smith\tUp 2 minutes\tAgent Smith\tproject\tagent-smith\tclaude\tjackin-project/jackin\tmain\t/workspace/project\n";
 
         let sessions = parse_session_rows(output);
 
@@ -1860,8 +1990,10 @@ published_image = "ghcr.io/example/role:latest"
                 workspace: Some("project".to_string()),
                 role: Some("agent-smith".to_string()),
                 agent: Some("claude".to_string()),
+                repository: Some("jackin-project/jackin".to_string()),
                 branch: Some("main".to_string()),
                 primary_repo: Some("/workspace/project".to_string()),
+                linked_pr: None,
             }]
         );
     }
@@ -1879,9 +2011,45 @@ published_image = "ghcr.io/example/role:latest"
                 workspace: None,
                 role: None,
                 agent: None,
+                repository: None,
                 branch: None,
                 primary_repo: None,
+                linked_pr: None,
             }]
+        );
+    }
+
+    #[test]
+    fn session_summaries_links_repository_pull_request_by_branch() {
+        let docker_output = "jackin-agent-smith\tUp 2 minutes\tAgent Smith\tproject\tagent-smith\tclaude\tjackin-project/jackin\tfeature/desktop\t/workspace/project\n";
+        let gh_output = r#"[
+          {
+            "number": 317,
+            "title": "Desktop hub",
+            "url": "https://github.com/jackin-project/jackin/pull/317",
+            "author": {"login": "operator"},
+            "createdAt": "2026-05-03T00:00:00Z",
+            "updatedAt": "2026-05-03T01:00:00Z",
+            "state": "OPEN",
+            "isDraft": false,
+            "headRefName": "feature/desktop",
+            "baseRefName": "main"
+          }
+        ]"#;
+        let mut runner = crate::runtime::FakeRunner {
+            capture_queue: std::collections::VecDeque::from([
+                docker_output.to_string(),
+                gh_output.to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        let sessions = session_summaries(&mut runner).unwrap();
+
+        assert_eq!(sessions[0].linked_pr.as_ref().unwrap().number, 317);
+        assert_eq!(
+            sessions[0].linked_pr.as_ref().unwrap().diffshub_url,
+            "https://diffshub.com/jackin-project/jackin/pull/317"
         );
     }
 
@@ -1920,6 +2088,36 @@ published_image = "ghcr.io/example/role:latest"
             vec![11, 10]
         );
         assert!(pulls[0].is_draft);
+        assert_eq!(
+            pulls[0].diffshub_url,
+            "https://diffshub.com/jackin-project/jackin/pull/11"
+        );
+    }
+
+    #[test]
+    fn parse_repository_prs_keeps_branch_fields() {
+        let pulls = parse_github_prs_for_repository(
+            "jackin-project/jackin",
+            r#"[
+              {
+                "number": 317,
+                "title": "Desktop hub",
+                "url": "https://github.com/jackin-project/jackin/pull/317",
+                "author": {"login": "operator"},
+                "createdAt": "2026-05-03T00:00:00Z",
+                "updatedAt": "2026-05-03T01:00:00Z",
+                "state": "OPEN",
+                "isDraft": false,
+                "headRefName": "feature/desktop",
+                "baseRefName": "main"
+              }
+            ]"#,
+        )
+        .unwrap();
+
+        assert_eq!(pulls[0].repository, "jackin-project/jackin");
+        assert_eq!(pulls[0].head_ref_name.as_deref(), Some("feature/desktop"));
+        assert_eq!(pulls[0].base_ref_name.as_deref(), Some("main"));
     }
 
     #[test]
@@ -2074,11 +2272,14 @@ published_image = "ghcr.io/example/role:latest"
             number,
             title: format!("PR {number}"),
             url: format!("https://github.com/{repository}/pull/{number}"),
+            diffshub_url: format!("https://diffshub.com/{repository}/pull/{number}"),
             author: "operator".to_string(),
             created_at: created_at.to_string(),
             updated_at: created_at.to_string(),
             state: "open".to_string(),
             is_draft: false,
+            head_ref_name: None,
+            base_ref_name: None,
         }
     }
 

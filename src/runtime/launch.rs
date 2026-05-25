@@ -27,7 +27,7 @@ use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
     format_role_display, image_name, image_name_for_branch,
 };
-use super::repo_cache::resolve_agent_repo;
+use super::repo_cache::{git_branch, git_repo_name, is_git_dir, resolve_agent_repo};
 use crate::docker_client::DockerApi;
 
 const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
@@ -565,7 +565,6 @@ struct LaunchContext<'a> {
     /// `GH_ENTERPRISE_TOKEN` are forwarded as-is when set so GHE
     /// targets work end to end.
     github_env: &'a std::collections::BTreeMap<String, String>,
-    role_branch: Option<&'a str>,
     /// Required so `launch_role_runtime` can fire the `keep_awake`
     /// reconciler between `docker run -d` and the foreground `docker
     /// attach`. Without that mid-flight call, caffeinate would never
@@ -614,6 +613,39 @@ fn capsule_config(
     }
 }
 
+#[derive(Debug, Default)]
+struct WorkspaceRepoLabels {
+    repository: Option<String>,
+    branch: Option<String>,
+}
+
+async fn workspace_repo_labels(
+    workspace: &crate::isolation::materialize::MaterializedWorkspace,
+    runner: &mut impl CommandRunner,
+) -> WorkspaceRepoLabels {
+    let Some(mount) = workspace
+        .mounts
+        .iter()
+        .find(|mount| mount.dst == workspace.workdir)
+        .or_else(|| workspace.mounts.first())
+    else {
+        return WorkspaceRepoLabels::default();
+    };
+
+    let bind_src = PathBuf::from(&mount.bind_src);
+    if !bind_src.join(".git").exists() {
+        return WorkspaceRepoLabels::default();
+    }
+    if !is_git_dir(&bind_src, runner).await {
+        return WorkspaceRepoLabels::default();
+    }
+
+    WorkspaceRepoLabels {
+        repository: git_repo_name(&bind_src, runner).await,
+        branch: git_branch(&bind_src, runner).await,
+    }
+}
+
 /// Create the Docker network, start `DinD`, and launch the role container.
 #[allow(clippy::too_many_lines)]
 async fn launch_role_runtime(
@@ -640,7 +672,6 @@ async fn launch_role_runtime(
         capsule_config,
         resolved_env,
         github_env,
-        role_branch,
         paths,
     } = ctx;
 
@@ -656,7 +687,15 @@ async fn launch_role_runtime(
     let workspace_label = format!("jackin.workspace={workspace_label}");
     let role_key_label = format!("jackin.role_key={}", selector.key());
     let agent_label = format!("jackin.agent={}", agent.slug());
-    let branch_label = format!("jackin.branch={}", role_branch.unwrap_or(""));
+    let workspace_repo = workspace_repo_labels(workspace, runner).await;
+    let branch_label = format!(
+        "jackin.branch={}",
+        workspace_repo.branch.as_deref().unwrap_or("")
+    );
+    let repository_label = format!(
+        "jackin.repository={}",
+        workspace_repo.repository.as_deref().unwrap_or("")
+    );
     let primary_repo_label = format!("jackin.primary_repo={}", workspace.workdir);
     let network_labels = [LABEL_MANAGED, role_label.as_str()]
         .iter()
@@ -794,6 +833,8 @@ async fn launch_role_runtime(
         &role_key_label,
         "--label",
         &agent_label,
+        "--label",
+        &repository_label,
         "--label",
         &branch_label,
         "--label",
@@ -1991,7 +2032,6 @@ async fn load_role_with(
             capsule_config: &launch_config,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
-            role_branch: opts.role_branch.as_deref(),
             paths,
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
@@ -6820,7 +6860,40 @@ plugins = []
         );
         assert!(run_cmd.contains("jackin.role_key=agent-smith"));
         assert!(run_cmd.contains("jackin.agent=claude"));
+        assert!(run_cmd.contains("jackin.repository="));
+        assert!(run_cmd.contains("jackin.branch="));
         assert!(run_cmd.contains("jackin.primary_repo=/workspace"));
+    }
+
+    #[tokio::test]
+    async fn workspace_repo_labels_reads_mounted_workdir_git_state() {
+        let temp = tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let workspace = MaterializedWorkspace {
+            workdir: "/workspace".to_string(),
+            mounts: vec![MaterializedMount {
+                bind_src: repo.display().to_string(),
+                dst: "/workspace".to_string(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+                worktree_aux: None,
+            }],
+            keep_awake_enabled: false,
+        };
+        let mut runner = FakeRunner {
+            capture_queue: VecDeque::from([
+                "true".to_string(),
+                "git@github.com:jackin-project/jackin.git".to_string(),
+                "feature/desktop".to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        let labels = workspace_repo_labels(&workspace, &mut runner).await;
+
+        assert_eq!(labels.repository.as_deref(), Some("jackin-project/jackin"));
+        assert_eq!(labels.branch.as_deref(), Some("feature/desktop"));
     }
 
     #[tokio::test]

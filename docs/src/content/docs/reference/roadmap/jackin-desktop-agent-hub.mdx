@@ -22,17 +22,12 @@ control surface around those agents: start workspaces, see active containers,
 jump to pull requests, monitor token/account state, and receive attention
 prompts when an agent is blocked or finished.
 
-This roadmap targets the complete Desktop Agent Hub experience: daemon-backed
-state, native macOS status bar, native desktop window, Ghostty workspace
-launch/focus, GitHub PR inbox, account/token status, and notification/attention
-routing. The current implementation is intentionally consolidated in
-[PR #317](https://github.com/jackin-project/jackin/pull/317), not split across a
-stack of smaller pull requests.
+This roadmap targets the complete Desktop Agent Hub experience: daemon-backed state, native macOS status bar, native desktop window, Ghostty workspace launch/focus, GitHub PR inbox, account/token status, and notification/attention routing. The current implementation is intentionally consolidated, not split across a stack of smaller pull requests.
 
 ## Existing local foundation
 
 - The proposal layers on the roadmap items that motivated it: [jackin' daemon](/reference/roadmap/jackin-daemon/), [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/), [Agent attention prompts](/reference/roadmap/agent-attention-prompts/), and [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/). Those documents define the backend responsibilities Desktop should surface rather than reimplement.
-- <RepoFile path="src/daemon.rs" /> implements the first daemon shape: per-user Unix socket, singleton lock, lifecycle commands, launchd / systemd install, keep-awake reconciliation, cache warmup, and macOS notification dispatch. The Desktop-ready protocol work has started with a `daemon/hello` handshake that reports the jackin' version, supported protocol range, and currently available daemon capabilities. Read-only `workspace/list` and `session/list` discovery now expose saved workspace summaries and running role-container labels without requiring the Desktop app to parse jackin' TOML files or Docker state directly. GitHub PR lookup starts with `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`, using the operator's `gh` authentication and newest-first open PR results. Ghostty/browser actions start with `workspace/launch` and `desktop/open` so Desktop can launch saved workspaces, reconnect to running sessions, and open PR links without owning terminal or browser command construction. Account cards start with `account/status`, which reports cached Claude, Codex, Amp, Kimi, and OpenCode credential-source presence without exposing token values.
+- <RepoFile path="src/daemon.rs" /> implements the first daemon shape: per-user Unix socket, singleton lock, lifecycle commands, launchd / systemd install, keep-awake reconciliation, cache warmup, and macOS notification dispatch. The Desktop-ready protocol work has started with a `daemon/hello` handshake that reports the jackin' version, supported protocol range, and currently available daemon capabilities. Read-only `workspace/list` and `session/list` discovery now expose saved workspace summaries, running role-container labels, repository owner/name, mounted-workspace branch, and matching pull-request metadata without requiring the Desktop app to parse jackin' TOML files or Docker state directly. GitHub PR lookup starts with `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`, using the operator's `gh` authentication and newest-first open PR results. PR responses carry GitHub and DiffsHub URLs so each Desktop surface can offer both review actions. Ghostty/browser actions start with `workspace/launch` and `desktop/open` so Desktop can launch saved workspaces, reconnect to running sessions, and open PR links without owning terminal or browser command construction. Account cards start with `account/status`, which reports cached Claude, Codex, Amp, Kimi, and OpenCode credential-source presence without exposing token values.
 - The shipped Desktop session list is still label-backed. The next Desktop state layer should come from the daemon's Capsule-backed live index so the app sees panes, runtime status, branch/PR context, stale containers, and attention routes from one source rather than combining Docker labels with local heuristics.
 - `desktop/macos/` contains the first native macOS SwiftUI/AppKit package:
   a `MenuBarExtra` status item, daemon-health view, refresh action, and
@@ -241,8 +236,8 @@ jackin'
   Active workspaces
     jackin-project/jackin
       Role: the-architect       Agent: Codex      Branch: docs/desktop-hub
-      Open PR #299 on GitHub
-      Open PR #299 in DiffsHub
+      Open linked PR on GitHub
+      Open linked PR in DiffsHub
       Open repository on GitHub
       Open in Ghostty
       Stop role
@@ -326,15 +321,7 @@ Recommended layout:
 
 Compact visibility rule: every Desktop view that can start, focus, or stop an agent should show the active account quota beside that agent. The full Accounts and Usage screens are for inspection; the Running Agents, Workspaces, and menu-bar surfaces are for immediate "can I safely keep working?" decisions.
 
-The first window slice now adds this `NavigationSplitView` shell and wires the
-sidebar destinations to the same daemon-backed menu model. The Pull Requests
-and Projects panes now include first-pass organization, project, and draft/open
-filters over daemon-provided PR state. The Workspaces and Running Agents panes
-must become the operator's live answer to: "Which workspaces exist, how many
-instances are running, which branch is each instance changing, and which pull
-request should I review?" Account cards and attention actions remain in focused
-follow-up work after the consolidated PR establishes that live workspace /
-instance / PR spine.
+The first window slice now adds this `NavigationSplitView` shell and wires the sidebar destinations to the same daemon-backed menu model. The Pull Requests and Projects panes now include first-pass organization, project, and draft/open filters over daemon-provided PR state. The Workspaces and Running Agents panes now show saved workspace visibility, per-workspace running counts, running instance repository/branch metadata, linked PR details when available, and separate GitHub/DiffsHub review actions. Account cards and attention actions remain in focused follow-up work after the consolidated implementation establishes that live workspace / instance / PR spine.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
@@ -565,39 +552,30 @@ Apple references:
 
 ## Current implementation plan
 
-This program is being delivered through
-[PR #317](https://github.com/jackin-project/jackin/pull/317) on branch
-`jackin/desktop-attention-routing`. The consolidated PR is the review unit for
-the daemon, macOS Desktop shell, menu bar foundation, GitHub PR surfaces,
-account-status foundation, Ghostty/browser actions, notification bridge, and
-attention-route contract.
+This program is being delivered through one consolidated implementation on the active Desktop attention-routing branch. That branch is the review unit for the daemon, macOS Desktop shell, menu bar foundation, GitHub PR surfaces, account-status foundation, Ghostty/browser actions, notification bridge, and attention-route contract.
 
-The sections below are subsystem checkpoints inside PR #317, not instructions
-to open sequential pull requests. Agents working this goal should update PR
-#317 directly and should not create stacked follow-up branches unless the
-operator explicitly changes the delivery plan.
+The sections below are subsystem checkpoints inside the consolidated implementation, not instructions to open sequential pull requests. Agents working this goal should update the active branch directly and should not create stacked follow-up branches unless the operator explicitly changes the delivery plan.
 
 Delivery rules:
 
-- Keep all Desktop Agent Hub implementation work on
-  `jackin/desktop-attention-routing` for PR #317.
+- Keep all Desktop Agent Hub implementation work on the active Desktop attention-routing branch.
 - Do not create additional implementation PRs for daemon contract, session
   discovery, GitHub PR lookup, menu bar shell, account status cards, workspace
   launch, desktop window, attention integration, or host-bridge UI.
 - Keep the consolidated PR reviewable through focused commits, clear subsystem
   sections in the PR body, and targeted verification notes.
-- Follow the repo's existing PR and commit standards for PR #317:
+- Follow the repo's existing pull-request and commit standards:
   <RepoFile path="AGENTS.md" />, <RepoFile path="PULL_REQUESTS.md" />, and
   <RepoFile path="COMMITS.md" />. This includes the expected PR body shape,
   verification notes, Conventional Commit subjects, DCO signoff, and the
   required agent co-author trailers when agents contribute.
-- PR #317 must include focused tests or an explicit reason tests are not
+- The consolidated implementation must include focused tests or an explicit reason tests are not
   meaningful for a slice. UI work should include the strongest practical local
   verification for the current repo shape.
-- Treat the daemon/Desktop/API/docs contract as editable inside PR #317. If a
+- Treat the daemon/Desktop/API/docs contract as editable inside the consolidated implementation. If a
   required Desktop contract belongs in the daemon, update the daemon code and
   docs in the same PR instead of working around a weak API.
-- Keep the PR description current: what #317 adds, what it intentionally
+- Keep the PR description current: what the consolidated implementation adds, what it intentionally
   defers, how to verify it, and which risks remain.
 
 ### Daemon contract before merge

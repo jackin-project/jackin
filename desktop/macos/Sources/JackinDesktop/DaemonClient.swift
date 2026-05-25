@@ -195,6 +195,10 @@ struct DesktopSession: Decodable, Identifiable, Equatable {
     let workspace: String?
     let role: String?
     let agent: String?
+    let repository: String?
+    let branch: String?
+    let primaryRepo: String?
+    let linkedPullRequest: GitHubPullRequest?
 
     enum CodingKeys: String, CodingKey {
         case containerName = "container_name"
@@ -203,6 +207,10 @@ struct DesktopSession: Decodable, Identifiable, Equatable {
         case workspace
         case role
         case agent
+        case repository
+        case branch
+        case primaryRepo = "primary_repo"
+        case linkedPullRequest = "linked_pr"
     }
 }
 
@@ -222,21 +230,27 @@ struct GitHubPullRequest: Decodable, Identifiable, Equatable {
     let number: Int
     let title: String
     let url: String
+    let diffshubUrl: String
     let author: String
     let repository: String
     let createdAt: String
     let updatedAt: String
     let isDraft: Bool
+    let headRefName: String?
+    let baseRefName: String?
 
     enum CodingKeys: String, CodingKey {
         case number
         case title
         case url
+        case diffshubUrl = "diffshub_url"
         case author
         case repository
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case isDraft = "is_draft"
+        case headRefName = "head_ref_name"
+        case baseRefName = "base_ref_name"
     }
 }
 

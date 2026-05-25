@@ -101,11 +101,7 @@ struct MainMenuView: View {
     }
 
     private func pullRequestRow(_ pullRequest: GitHubPullRequest) -> some View {
-        Button {
-            Task {
-                await model.openPullRequest(pullRequest)
-            }
-        } label: {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
                 VStack(alignment: .leading) {
                     Text("#\(pullRequest.number) \(pullRequest.title)")
@@ -115,8 +111,22 @@ struct MainMenuView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Image(systemName: "arrow.up.forward.square")
-                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Button {
+                    Task {
+                        await model.openPullRequest(pullRequest)
+                    }
+                } label: {
+                    Label("GitHub", systemImage: "arrow.up.forward.square")
+                }
+                Button {
+                    Task {
+                        await model.openPullRequestInDiffsHub(pullRequest)
+                    }
+                } label: {
+                    Label("DiffsHub", systemImage: "doc.text.magnifyingglass")
+                }
             }
         }
     }

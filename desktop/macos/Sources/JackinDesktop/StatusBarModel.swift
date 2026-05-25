@@ -69,8 +69,24 @@ final class StatusBarModel: ObservableObject {
     }
 
     func openPullRequest(_ pullRequest: GitHubPullRequest) async {
+        await openURL(pullRequest.url)
+    }
+
+    func openPullRequestInDiffsHub(_ pullRequest: GitHubPullRequest) async {
+        await openURL(pullRequest.diffshubUrl)
+    }
+
+    func openRepository(_ repository: String) async {
+        await openURL("https://github.com/\(repository)")
+    }
+
+    func openRepositoryPullRequests(_ repository: String) async {
+        await openURL("https://github.com/\(repository)/pulls")
+    }
+
+    private func openURL(_ url: String) async {
         do {
-            _ = try await client.openBrowser(pullRequest.url)
+            _ = try await client.openBrowser(url)
             openError = nil
         } catch {
             openError = error.localizedDescription

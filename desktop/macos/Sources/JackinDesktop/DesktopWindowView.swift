@@ -57,14 +57,11 @@ struct DesktopWindowView: View {
                     )
                 } else {
                     ForEach(filteredPullRequests) { pullRequest in
-                        Button {
-                            Task {
-                                await model.openPullRequest(pullRequest)
-                            }
-                        } label: {
+                        HStack {
                             pullRequestRow(pullRequest)
+                            Spacer()
+                            pullRequestActions(pullRequest)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -157,22 +154,28 @@ struct DesktopWindowView: View {
 
     private var workspacesView: some View {
         List(model.workspaces) { workspace in
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(workspace.name)
-                        .font(.headline)
-                    Text(workspaceSubtitle(workspace))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text("\(model.runningCount(for: workspace)) running")
-                    .foregroundStyle(.secondary)
-                Button {
-                    Task {
-                        await model.launchWorkspace(workspace)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(workspace.name)
+                            .font(.headline)
+                        Text(workspaceSubtitle(workspace))
+                            .foregroundStyle(.secondary)
                     }
-                } label: {
-                    Label("Launch", systemImage: "terminal")
+                    Spacer()
+                    Text("\(model.runningCount(for: workspace)) running")
+                        .foregroundStyle(.secondary)
+                    Button {
+                        Task {
+                            await model.launchWorkspace(workspace)
+                        }
+                    } label: {
+                        Label("Launch", systemImage: "terminal")
+                    }
+                }
+                ForEach(model.sessions.filter { $0.workspace == workspace.name }) { session in
+                    sessionSummaryRow(session)
+                        .padding(.leading, 12)
                 }
             }
         }
@@ -181,26 +184,75 @@ struct DesktopWindowView: View {
 
     private var runningAgentsView: some View {
         List(model.sessions) { session in
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(session.displayName)
-                        .font(.headline)
-                    Text(sessionSubtitle(session))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(session.status)
-                    .foregroundStyle(.secondary)
-                Button {
-                    Task {
-                        await model.openSession(session)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(session.displayName)
+                            .font(.headline)
+                        Text(sessionSubtitle(session))
+                            .foregroundStyle(.secondary)
                     }
-                } label: {
-                    Label("Open", systemImage: "terminal")
+                    Spacer()
+                    Text(session.status)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        Task {
+                            await model.openSession(session)
+                        }
+                    } label: {
+                        Label("Open", systemImage: "terminal")
+                    }
                 }
+                sessionSummaryRow(session)
             }
         }
         .navigationTitle("Running Agents")
+    }
+
+    private func sessionSummaryRow(_ session: DesktopSession) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(session.repository ?? "No repository detected")
+                    .font(.subheadline)
+                Text(sessionBranchText(session))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let pullRequest = session.linkedPullRequest {
+                pullRequestActions(pullRequest)
+            } else if let repository = session.repository {
+                Button {
+                    Task {
+                        await model.openRepositoryPullRequests(repository)
+                    }
+                } label: {
+                    Label("Pull Requests", systemImage: "arrow.triangle.pull")
+                }
+            } else {
+                Text("No PR detected")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func pullRequestActions(_ pullRequest: GitHubPullRequest) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                Task {
+                    await model.openPullRequest(pullRequest)
+                }
+            } label: {
+                Label("GitHub", systemImage: "arrow.up.forward.square")
+            }
+            Button {
+                Task {
+                    await model.openPullRequestInDiffsHub(pullRequest)
+                }
+            } label: {
+                Label("DiffsHub", systemImage: "doc.text.magnifyingglass")
+            }
+        }
     }
 
     private var accountsView: some View {
@@ -277,9 +329,19 @@ struct DesktopWindowView: View {
     }
 
     private func sessionSubtitle(_ session: DesktopSession) -> String {
-        [session.workspace, session.role, session.agent]
+        [session.workspace, session.role, session.agent, session.repository]
             .compactMap { $0 }
             .joined(separator: " / ")
+    }
+
+    private func sessionBranchText(_ session: DesktopSession) -> String {
+        if let branch = session.branch, let pullRequest = session.linkedPullRequest {
+            return "\(branch) / PR #\(pullRequest.number) \(pullRequest.title)"
+        }
+        if let branch = session.branch {
+            return "\(branch) / No PR detected"
+        }
+        return "No branch detected"
     }
 }
 
