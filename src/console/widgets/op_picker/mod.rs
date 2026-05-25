@@ -1596,6 +1596,149 @@ mod tests {
         }
     }
 
+    // ── Create-mode tests ─────────────────────────────────────────────
+
+    /// Single-account Create-mode picker forced into a clean Vault-stage
+    /// Ready state, mirroring `picker_ready` but with creation enabled.
+    fn create_ready() -> OpPickerState {
+        let runner = Arc::new(StubRunner {
+            accounts: Mutex::new(vec![account(
+                "acct1",
+                "single@example.com",
+                "single.1password.com",
+            )]),
+            last_vault_list_account: Mutex::new(None),
+        });
+        let mut s = OpPickerState::new_create_with_runner_and_cache(
+            runner,
+            Rc::new(RefCell::new(OpCache::default())),
+            "default-item",
+            "token",
+        );
+        drain_initial_account_load(&mut s);
+        s.rx = None;
+        s.stage = OpPickerStage::Vault;
+        s.load_state = OpLoadState::Ready;
+        s
+    }
+
+    #[test]
+    fn create_mode_item_stage_appends_new_item_sentinel() {
+        let mut s = create_ready();
+        s.items = vec![item("Existing")];
+        let choices = s.filtered_item_choices();
+        assert_eq!(choices.len(), 2, "one item + trailing sentinel");
+        assert!(choices[0].is_some(), "real item first");
+        assert!(
+            choices[1].is_none(),
+            "trailing None is the `+ New item` sentinel"
+        );
+
+        let mut browse = picker_ready();
+        browse.items = vec![item("Existing")];
+        assert!(
+            browse.filtered_item_choices().iter().all(Option::is_some),
+            "browse mode must not append a creation sentinel"
+        );
+    }
+
+    #[test]
+    fn create_mode_new_item_flow_commits_new_item() {
+        let mut s = create_ready();
+        s.selected_vault = Some(vault("Personal"));
+        s.items = vec![item("Existing")];
+        s.stage = OpPickerStage::Item;
+        // choices: [Some(Existing), None]; select the sentinel at index 1.
+        s.item_list_state.select(Some(1));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(s.stage, OpPickerStage::NewItemName);
+        // item_name_input defaults to "default-item"; accept with Enter.
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(s.stage, OpPickerStage::FieldLabel);
+        // field_label_input defaults to "token"; accept with Enter to commit.
+        match s.handle_key(key(KeyCode::Enter)) {
+            ModalOutcome::Commit(OpPickerSelection::NewItem {
+                vault,
+                item_name,
+                section,
+                field_label,
+                ..
+            }) => {
+                assert_eq!(vault.id, "v-Personal");
+                assert_eq!(item_name, "default-item");
+                assert_eq!(field_label, "token");
+                assert_eq!(section, None);
+            }
+            other => panic!("expected Commit(NewItem), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_mode_existing_field_commits_edit_item_field() {
+        let mut s = create_ready();
+        s.selected_vault = Some(vault("Personal"));
+        s.selected_item = Some(item("login"));
+        s.fields = vec![field("token", "CONCEALED", true)];
+        s.stage = OpPickerStage::Field;
+        // Unsectioned field → display rows: [Field{0}, NewFieldSentinel, NewSectionSentinel].
+        s.field_list_state.select(Some(0));
+        match s.handle_key(key(KeyCode::Enter)) {
+            ModalOutcome::Commit(OpPickerSelection::EditItemField {
+                item,
+                field_label,
+                section,
+                ..
+            }) => {
+                assert_eq!(item.id, "i-login");
+                assert_eq!(field_label, "token");
+                assert_eq!(section, None);
+            }
+            other => panic!("expected Commit(EditItemField), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_mode_new_section_flow_threads_section_into_commit() {
+        let mut s = create_ready();
+        s.selected_vault = Some(vault("Personal"));
+        s.selected_item = Some(item("login"));
+        s.fields = vec![];
+        s.stage = OpPickerStage::Field;
+        // Empty field list → display rows: [NewFieldSentinel(0), NewSectionSentinel(1)].
+        s.field_list_state.select(Some(1));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(s.stage, OpPickerStage::NewSectionName);
+        // section_name_input starts empty; type a name (empty won't commit).
+        for c in "creds".chars() {
+            let _ = s.handle_key(key(KeyCode::Char(c)));
+        }
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(s.stage, OpPickerStage::FieldLabel);
+        match s.handle_key(key(KeyCode::Enter)) {
+            ModalOutcome::Commit(OpPickerSelection::EditItemField {
+                section,
+                field_label,
+                ..
+            }) => {
+                assert_eq!(section, Some("creds".to_string()));
+                assert_eq!(field_label, "token");
+            }
+            other => panic!("expected Commit(EditItemField) with section, got {other:?}"),
+        }
+    }
+
     #[test]
     fn stub_runner_constructor_is_not_fatal() {
         let runner = Arc::new(StubRunner {
