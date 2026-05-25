@@ -56,7 +56,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     let _diagnostics_guard = diagnostics.activate();
     crate::diagnostics::prune_old_runs(&paths);
     if debug {
-        announce_debug_run(&diagnostics, &command);
+        announce_debug_run(&diagnostics);
     }
     let command = match command {
         Command::Role(command) => return crate::role_authoring::run(command),
@@ -1363,40 +1363,30 @@ const fn command_name(command: &Command) -> &'static str {
     }
 }
 
-/// In `--debug`, surface the diagnostics run id (and where its file lives)
-/// on the plain CLI before any rich TUI takes the screen, so the operator
-/// can find the run artifact after exit. For TUI-bearing commands on an
-/// interactive terminal, gate entry behind Enter so the id is read before
-/// the screen switches to the alternate buffer. Debug evidence itself never
-/// prints here — it is written only to the run file.
-fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics, command: &Command) {
+/// In `--debug`, surface the diagnostics run id on the plain CLI before
+/// anything else runs — never through a rich TUI. This is identical for
+/// every command (CLI or TUI): print the run id the operator must keep to
+/// retrieve the run's diagnostics file later, then, on an interactive
+/// terminal, gate on Enter so the id is read before the normal flow (rich
+/// or CLI, per terminal capability) takes over. Debug evidence itself is
+/// written only to the run file, never echoed here.
+fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
+    use owo_colors::OwoColorize as _;
     use std::io::{IsTerminal, Write};
     let mut err = std::io::stderr();
     let _ = writeln!(err);
-    let _ = writeln!(err, "[jackin] debug mode — run id: {}", diagnostics.run_id());
     let _ = writeln!(
         err,
-        "[jackin] debug output is written to {} (never to the screen)",
-        diagnostics.path().display()
+        "{} debug mode — save this run id to retrieve the run later:",
+        "[jackin]".bold()
     );
-    if command_enters_tui(command) && std::io::stdin().is_terminal() {
-        let _ = write!(
-            err,
-            "[jackin] copy the run id, then press Enter to continue... "
-        );
+    let _ = writeln!(err, "    {}", diagnostics.run_id());
+    if std::io::stdin().is_terminal() {
+        let _ = write!(err, "[jackin] press Enter to continue... ");
         let _ = err.flush();
         let mut line = String::new();
         let _ = std::io::stdin().read_line(&mut line);
     }
-}
-
-/// Commands that take over the terminal with a rich full-screen TUI, so a
-/// `--debug` run must surface its id and gate on Enter before they start.
-const fn command_enters_tui(command: &Command) -> bool {
-    matches!(
-        command,
-        Command::Console(_) | Command::Load(_) | Command::Hardline(_)
-    )
 }
 
 /// Resolve a CLI-supplied env value string into the appropriate [`EnvValue`]
