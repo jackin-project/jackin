@@ -23,7 +23,7 @@ This item covers **every terminal surface jackin' renders**, unified under Ratat
 3. **Ratatui inside the container.** The `jackin-capsule` multiplexer daemon renders the in-container experience. It moves from hand-rolled ANSI to **rendering through Ratatui** (the attach client stays a thin byte relay — see the capsule target below).
 4. **The capsule, fully Ratatui.** Every capsule surface — pane chrome, status bar, tab strip, dialogs, pickers, confirms — becomes a Ratatui widget, and those widgets are the *same* shared components the host console uses.
 
-The connective tissue across all four is the shared design-component crate (`jackin-tui`): one `ConfirmDialog`, one `FilterList`, one `TabStrip`, one `Panel`, one `HintBar`, reused everywhere rather than reimplemented per surface.
+The connective tissue across all four is the shared design-component crate (`jackin-tui`): one `ConfirmDialog`, one `FilterList`, one `TabStrip`, one `Panel`, one `HintBar`, reused everywhere rather than reimplemented per surface — catalogued and rendered in a browsable **lookbook** (the design-system section below).
 
 ## Design principles
 
@@ -246,6 +246,112 @@ That token layer is the model to follow: one source of truth for the values, a t
 
 The end state: a new screen on either surface is *composed* from `jackin-tui` components rather than hand-built; the confirm dialog an operator sees in `jackin console` and the one inside a Capsule pane are the same widget; and the "Component Reuse — Strict Rule" in [TUI Design Decisions](/reference/tui-design-decisions/) is enforced by crate structure rather than by review vigilance.
 
+## The jackin' TUI design system & lookbook
+
+The patterns above are not a handful of widgets. An audit of the codebase found **~45 distinct repeatable visual patterns**, ~12 of them implemented twice — once in the host console's Ratatui code, once in the capsule's raw ANSI — and at least 6 with measurable visual drift between the two surfaces. That is exactly the problem a **design system** exists to solve, and the web ecosystem has a mature playbook for it. jackin' should adopt the TUI equivalent: a single token set, a single component library, and a browsable **lookbook** that renders every component and its states so the operator can point at one and say "use this."
+
+### The web playbook, mapped to a TUI
+
+| Web concept | What it is | jackin' equivalent |
+|---|---|---|
+| [Design tokens](https://dev.to/psqrrl/managing-design-tokens-using-storybook-5975) | the smallest brand primitives (color, spacing, timing) in a tech-independent source | the `Rgb` palette + spacing/timing constants in <RepoFile path="crates/jackin-tui/src/lib.rs" /> |
+| [Atomic design](https://github.com/danilowoz/react-atomic-design) (Brad Frost) | atoms → molecules → organisms → templates → pages | tokens → primitives → components → chrome → screens |
+| Component library | the implemented, reusable components | the widget set, consolidated into `jackin-tui` |
+| [Storybook](https://storybook.js.org/) | an interactive explorer that renders each component in isolation with its states ("stories") | the **lookbook** — a docs surface that renders each TUI component and its variants |
+| Living style guide | docs that stay in sync with the real components | lookbook pages generated from real `TestBackend` renders, not hand-drawn |
+
+The canonical *rules* already live in [TUI Design Decisions](/reference/tui-design-decisions/); the design system is the step that turns those rules into a reusable, browsable component set with one implementation each.
+
+### Catalog — collected evidence
+
+The audit's patterns, grouped by atomic layer. This is the seed inventory the lookbook pages are built from; each row becomes a component page (page shape below).
+
+**Tokens (atoms)** — defined once in <RepoFile path="crates/jackin-tui/src/lib.rs" />, wrapped per surface:
+
+| Token group | Values | Notes |
+|---|---|---|
+| Core palette | `PHOSPHOR_GREEN` `Rgb(0,255,65)` · `PHOSPHOR_DIM` `Rgb(0,140,30)` · `PHOSPHOR_DARK` `Rgb(0,80,18)` · `WHITE` · `BLACK` · `INPUT_BG_DIM` `Rgb(20,24,22)` | host wraps as `ratatui::Color`; capsule emits SGR |
+| Semantic | danger red `Rgb(255,94,122)` · warning yellow · action-accent · disclosure-accent · cyan (live state) | several are host-only locals today — candidates to promote into the shared token set |
+| Spacing | tab gap `1` · cursor indent `2` · role marker `5` · button gap `4` · text-input band pad `1` | |
+| Glyphs | borders `┌─┐│└┘` · selection `▸ ` · scrollbar thumb `█` / track `·` · filter placeholder `░` · caret `█` | |
+| Motion timing | step shimmer 25 ms · deploy hold 1500 ms · rain age→color ramp | <RepoFile path="src/tui/animation.rs" />, <RepoFile path="src/tui/output.rs" /> |
+
+**Primitives (molecules):**
+
+| Component | Represents | Look & feel | States |
+|---|---|---|---|
+| `Panel` | bordered titled region | `Borders::ALL`; title `" Title "` `WHITE+BOLD`; green border only when focused **and** scrollable | focused-scrollable / focused-fit / unfocused |
+| `ScrollableBlock` | scrollable content + scrollbars | wraps `Panel`; proportional thumbs; clamps offsets each frame | horizontal / vertical overflow |
+| `Scrollbar` | overflow indicator | thumb `█` `PHOSPHOR_DIM`, track `·` `PHOSPHOR_DARK` | vertical / horizontal |
+| `HintBar` | footer key hints | `Key`=`WHITE+BOLD`, `Text`=`GREEN`, `Dyn`=`DIM`, `Sep`=` · ` `DARK` | wraps to width |
+| `TabStrip` | W3C tabs | active focused = `WHITE+BOLD` + `━` underline; content-focused = `GREEN` bg / black fg | tab-bar-focused / content-focused |
+| `TextInput` | single-line entry | band bg `INPUT_BG_DIM`; text `GREEN`; inverse caret; red border on duplicate | normal / invalid |
+| `FilterInput` | type-to-filter row | `"Filter: "` `DIM`; empty = 20×`░`; caret `█` | empty / typing |
+| `ListRow` | selectable item | selected = `▸ ` + `GREEN`; unselected color is a **drift point** (host `WHITE` vs capsule `GREEN`) | selected / idle |
+| `ButtonStrip` | 2–3 buttons | focused = `WHITE` bg / black fg / bold; unfocused = `GREEN+bold`; gap 4 | per-button focus |
+
+**Components (organisms):**
+
+| Component | Represents | Look & feel | Reuse status today |
+|---|---|---|---|
+| `ConfirmDialog` | destructive Yes/No | title `" Confirm "`; question ends `?`; default focus **No** | host <RepoFile path="src/console/widgets/confirm.rs" /> + capsule `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> — two impls, parity by hand |
+| `FilterListPicker` | filter + list pick | filter row 0, spacer, items 2+; box `items + 4` | host <RepoFile path="src/console/widgets/role_picker.rs" /> + capsule palette / agent / split pickers — many impls |
+| `ErrorPopup` | the only error surface | red border + title; scrollable; dismissible | host <RepoFile path="src/console/widgets/error_popup.rs" /> only (capsule has none) |
+| `ConfirmSaveDialog` | diff-preview save | scrollable diff; default focus Save | host only |
+| `SaveDiscardStrip` | 3-button dirty-exit | standard strip; default Cancel | host <RepoFile path="src/console/widgets/save_discard.rs" /> (re-declares palette locally — intra-host drift) |
+| `TextInputDialog` | modal text entry | 60% width clamp `[40,100]`, 5 rows | **already shared** via `render_text_input_dialog` in <RepoFile path="crates/jackin-tui/src/lib.rs" /> |
+| `InfoDialog` | read-only label/value | right-aligned labels; copy-target row emphasized + hover lift; `✓ Copied!` | capsule container-info / github-context in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> |
+
+**Chrome & motion (templates):**
+
+| Component | Represents | Look & feel |
+|---|---|---|
+| `AppLayout` / `TabbedLayout` | screen scaffolds | header / (tab strip) / body / footer constraints |
+| `ConsoleHeader` | top brand bar | `▓▓▓▓ ` green + `jackin'` `WHITE+BOLD` + dim title |
+| `StatusBar` (capsule) | rows 0–1 in container | brand pill `GREEN` bg / black + tab strip + menu button; `━` underline row |
+| `PaneBox` (capsule) | per-PTY frame | active border `GREEN`; inactive gray; `┌─ title ─┐` |
+| `DigitalRain` | boundary ritual | age→color fade; centered reveal banner |
+| `Spinner` / `StepShimmer` | progress | braille spinner; per-char shimmer |
+
+### What each lookbook page contains
+
+Each component gets one page with a fixed "story" shape so the operator reads them all the same way:
+
+1. **Name + one-line purpose** — what it represents and when it appears.
+2. **Anatomy** — a labelled diagram of the rendered component (border, title, content, scrollbar, buttons).
+3. **Tokens used** — which palette / spacing tokens, linked to the token page.
+4. **States / variants gallery** — focused / unfocused / scrollable-fit / error / default-focus / hover, each rendered.
+5. **Where used** — the screens that compose it, so a change's blast radius is visible.
+6. **Do / Don't** — the binding rules from [TUI Design Decisions](/reference/tui-design-decisions/) that apply.
+7. **Live preview** — the actual rendered component (mechanism below).
+
+### Rendering TUI components in the docs
+
+The lookbook is only trustworthy if its previews are the *real* components, not hand-drawn art that drifts. The plan, strongest first:
+
+- **Primary — render the real widget to SVG.** Draw each component (and each state) through `ratatui::backend::TestBackend` into a `Buffer`, then serialize the buffer's cells (char + fg/bg/modifiers) to inline **SVG** (or styled HTML). A small `cargo run --bin tui-lookbook` emits one SVG per component-state from the actual widget code; MDX embeds the generated SVGs; CI regenerates them so they never drift. This reuses the exact `TestBackend` + `insta` infrastructure from [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) — the same render that guards regressions also produces the lookbook art. [`term-transcript`](https://docs.rs/term-transcript) (Rust; renders terminal output to SVG/HTML) is a candidate serializer.
+- **Motion and raw-ANSI surfaces** — for the digital rain, spinners, and (until they move to Ratatui) the capsule's raw-ANSI dialogs, record an asciicast and convert with [`vhs`](https://github.com/charmbracelet/vhs), [`termsvg`](https://github.com/MrMarble/termsvg), [`svg-term`](https://github.com/marionebl/svg-term-cli), or [`termtosvg`](https://nbedos.github.io/termtosvg/) to an animated SVG embeddable in MDX.
+- **Interim bridge** — a small MDX `<TuiPreview>` component that paints hand-authored Unicode mockups using the docs theme's existing `--jk-brand` PHOSPHOR CSS tokens. Fast to write but hand-drawn and drift-prone, so it is a bridge to the generated-SVG approach, not the destination.
+
+### Drift the lookbook would eliminate
+
+Concrete inconsistencies the audit found between host and capsule for the "same" pattern — the evidence that one shared component set is needed:
+
+| Pattern | Host | Capsule |
+|---|---|---|
+| Unselected list-row color | `WHITE` | `PHOSPHOR_GREEN` |
+| Tab strip | two modes (tab-bar / content focus) | one always-on mode |
+| Confirm dialog | dynamic height, structured trust variant | fixed 9 rows, single question + explanation |
+| Inactive tab background | terminal default | explicit `Rgb(30,30,30)` |
+| Agent-choice picker | internal hint row (pre-rule artifact) | hints in footer |
+| `SaveDiscardStrip` palette | re-declares `Color::Rgb(0,255,65)` locally | n/a |
+
+Plus the documented modal-backdrop-dim gap: the rule mandates dimming the whole surface behind a modal; neither implementation fully does today.
+
+### The component selector (end state)
+
+The lookbook is the operator's component catalog. The intended flow: the operator browses it, points at a component — "use `ConfirmDialog` here", "use `FilterList` with section headers", "this should be a `Panel`, not a bare block" — and the agent composes the screen from the shared `jackin-tui` widgets instead of hand-rolling a near-copy. That is the Storybook "pick the component" experience brought to jackin's TUI: a named, visible, reusable vocabulary instead of ~45 patterns reinvented per surface.
+
 ## Constraints and non-goals
 
 - **No behavior change.** Snapshot tests gate every step; the operator must not see a difference. This is a structure refactor, not a redesign — visual/UX changes are out of scope and belong to items like [Launch Progress TUI](/reference/roadmap/launch-progress-tui/).
@@ -287,9 +393,13 @@ Add `MuxMode`; generalize `Action`; split <RepoFile path="crates/jackin-capsule/
 
 Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high-throughput PTY and pick the mechanism. Land the shared confirm / picker / tab-strip / panel / hint-bar widgets so the host console and the capsule render identical components.
 
+### Phase 8 — Design-system lookbook
+
+Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, one MDX page per component following the story shape above, and CI regeneration so previews never drift. Reuses the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) `TestBackend` infrastructure. Reconcile the host/capsule drift table as components consolidate into shared widgets.
+
 ## Documentation impact
 
-When implementation lands, update the contributor-facing internals: [TUI Design Decisions](/reference/tui-design-decisions/) (add the architecture/Model-Update-View section), [Codebase Map](/reference/codebase-map/) (new module shape), and the relevant ADR. No operator- or role-author-facing page changes, because there is no operator-visible behavior change.
+When implementation lands, update the contributor-facing internals: [TUI Design Decisions](/reference/tui-design-decisions/) (add the architecture / Model-Update-View section), [Codebase Map](/reference/codebase-map/) (new module shape), and the relevant ADR. The lookbook adds a new set of Internals pages — one per `jackin-tui` component, with previews generated from real renders. No operator- or role-author-facing page changes, because there is no operator-visible behavior change.
 
 ## Host-side effects
 
@@ -306,4 +416,6 @@ None. This is a pure internal refactor of in-process TUI code. It introduces no 
 - Every rule in [TUI Design Decisions](/reference/tui-design-decisions/) still holds; snapshot tests show no render diff across the refactor.
 - Reusable patterns live in <RepoFile path="crates/jackin-tui/Cargo.toml" /> as single implementations; no visual pattern that appears on both surfaces has two copies. The confirm dialog, picker, tab strip, scrollbar, panel, hint bar, and modal frame each have exactly one implementation both surfaces consume.
 - Token and layout-helper unification lands without a rendering-backend change; full widget sharing follows the capsule's move to a Ratatui frame.
+- Every repeatable visual pattern is a named `jackin-tui` component with a lookbook page rendering its states from the real widget code; no host/capsule drift remains for shared patterns.
+- Lookbook previews are generated from `TestBackend` renders (or recorded SVG for motion) and regenerated in CI, so they cannot drift from the shipped components.
 - No phase introduces an operator-visible behavior change.
