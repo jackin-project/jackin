@@ -19,6 +19,7 @@
 //! (not installed, not signed in, no vaults, generic).
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 
@@ -66,6 +67,19 @@ pub enum OpPickerFatalState {
     GenericFatal { message: String },
 }
 
+/// A single row in the field-picker display list.
+///
+/// Section headers (which toggle collapse/expand on Enter or ←/→) are
+/// interleaved with selectable field rows.  `field_idx` values inside
+/// `Field` rows index into `OpPickerState::filtered_fields()`.
+#[derive(Debug, Clone)]
+pub enum FieldDisplayRow {
+    /// A collapsible section header derived from `OpField::reference`.
+    SectionHeader { name: String, field_count: usize },
+    /// A selectable field row.
+    Field { field_idx: usize },
+}
+
 /// Pane-specific so the `try_recv` drainer can route to the right
 /// `Vec` without a separate "what was loading" tag.
 enum LoadResult {
@@ -93,6 +107,9 @@ pub struct OpPickerState {
 
     pub fields: Vec<OpField>,
     pub field_list_state: ListState,
+    /// Section names currently collapsed in the field picker.
+    /// Absent ⟹ expanded. Cleared whenever a fresh field list loads.
+    pub collapsed_sections: HashSet<String>,
 
     pub load_state: OpLoadState,
 
@@ -119,6 +136,7 @@ impl std::fmt::Debug for OpPickerState {
             .field("items", &self.items)
             .field("selected_item", &self.selected_item)
             .field("fields", &self.fields)
+            .field("collapsed_sections", &self.collapsed_sections)
             .field("load_state", &self.load_state)
             .finish_non_exhaustive()
     }
@@ -167,6 +185,7 @@ impl OpPickerState {
             selected_item: None,
             fields: Vec::new(),
             field_list_state: ListState::default(),
+            collapsed_sections: HashSet::new(),
             load_state: OpLoadState::Loading { spinner_tick: 0 },
             runner,
             rx: None,
@@ -387,11 +406,10 @@ impl OpPickerState {
                     fields.clone(),
                 );
                 self.fields = fields;
-                self.field_list_state.select(if self.fields.is_empty() {
-                    None
-                } else {
-                    Some(0)
-                });
+                self.collapsed_sections.clear();
+                let display_count = self.build_field_display_rows().len();
+                self.field_list_state
+                    .select(if display_count == 0 { None } else { Some(0) });
                 self.load_state = OpLoadState::Ready;
             }
             Err(mpsc::TryRecvError::Empty) => {}
@@ -453,6 +471,55 @@ impl OpPickerState {
                     || f.id.to_lowercase().contains(&needle)
             })
             .collect()
+    }
+
+    /// Build the ordered display rows for the field picker.
+    ///
+    /// Unsectioned fields (no `section` segment in `OpField::reference`)
+    /// are emitted first; each named section follows with a collapsible
+    /// `SectionHeader` row. Sections with zero visible (filtered) fields
+    /// are omitted. The `field_idx` values inside `Field` rows index into
+    /// `self.filtered_fields()`.
+    pub fn build_field_display_rows(&self) -> Vec<FieldDisplayRow> {
+        let visible = self.filtered_fields();
+        let mut unsectioned: Vec<usize> = Vec::new();
+        let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
+
+        for (idx, f) in visible.iter().enumerate() {
+            match crate::operator_env::parse_op_reference(&f.reference)
+                .and_then(|p| p.section)
+            {
+                None => unsectioned.push(idx),
+                Some(name) => {
+                    if let Some(entry) = sections.iter_mut().find(|(n, _)| n == &name) {
+                        entry.1.push(idx);
+                    } else {
+                        sections.push((name, vec![idx]));
+                    }
+                }
+            }
+        }
+
+        let mut rows = Vec::new();
+
+        for idx in unsectioned {
+            rows.push(FieldDisplayRow::Field { field_idx: idx });
+        }
+
+        for (section_name, indices) in sections {
+            let count = indices.len();
+            rows.push(FieldDisplayRow::SectionHeader {
+                name: section_name.clone(),
+                field_count: count,
+            });
+            if !self.collapsed_sections.contains(section_name.as_str()) {
+                for idx in indices {
+                    rows.push(FieldDisplayRow::Field { field_idx: idx });
+                }
+            }
+        }
+
+        rows
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
@@ -683,6 +750,7 @@ impl OpPickerState {
                 );
                 self.fields.clear();
                 self.field_list_state = ListState::default();
+                self.collapsed_sections.clear();
                 self.start_field_load(item_id, vault_id, account_id);
                 ModalOutcome::Continue
             }
@@ -690,17 +758,36 @@ impl OpPickerState {
                 self.stage = OpPickerStage::Item;
                 self.filter_buf.clear();
                 self.fields.clear();
+                self.collapsed_sections.clear();
                 self.selected_item = None;
                 ModalOutcome::Continue
             }
             KeyCode::Up => {
-                let n = self.filtered_fields().len();
+                let n = self.build_field_display_rows().len();
                 cycle_select(&mut self.field_list_state, n, -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down => {
-                let n = self.filtered_fields().len();
+                let n = self.build_field_display_rows().len();
                 cycle_select(&mut self.field_list_state, n, 1);
+                ModalOutcome::Continue
+            }
+            KeyCode::Left => {
+                let cur = self.field_list_state.selected.unwrap_or(0);
+                if let Some(FieldDisplayRow::SectionHeader { name, .. }) =
+                    self.build_field_display_rows().into_iter().nth(cur)
+                {
+                    self.collapsed_sections.insert(name);
+                }
+                ModalOutcome::Continue
+            }
+            KeyCode::Right => {
+                let cur = self.field_list_state.selected.unwrap_or(0);
+                if let Some(FieldDisplayRow::SectionHeader { name, .. }) =
+                    self.build_field_display_rows().into_iter().nth(cur)
+                {
+                    self.collapsed_sections.remove(name.as_str());
+                }
                 ModalOutcome::Continue
             }
             KeyCode::Backspace => {
@@ -711,8 +798,27 @@ impl OpPickerState {
             KeyCode::Enter => {
                 let visible = self.filtered_fields();
                 let cur = self.field_list_state.selected.unwrap_or(0);
-                if let Some(field) = visible.get(cur) {
-                    return ModalOutcome::Commit(build_op_ref_on_commit(self, field));
+                match self.build_field_display_rows().into_iter().nth(cur) {
+                    Some(FieldDisplayRow::SectionHeader { name, .. }) => {
+                        if self.collapsed_sections.contains(name.as_str()) {
+                            self.collapsed_sections.remove(name.as_str());
+                        } else {
+                            self.collapsed_sections.insert(name);
+                        }
+                        // Clamp selection in case the row count shrank.
+                        let new_len = self.build_field_display_rows().len();
+                        if new_len == 0 {
+                            self.field_list_state.select(None);
+                        } else if self.field_list_state.selected.map_or(false, |s| s >= new_len) {
+                            self.field_list_state.select(Some(new_len - 1));
+                        }
+                    }
+                    Some(FieldDisplayRow::Field { field_idx }) => {
+                        if let Some(field) = visible.get(field_idx) {
+                            return ModalOutcome::Commit(build_op_ref_on_commit(self, field));
+                        }
+                    }
+                    None => {}
                 }
                 ModalOutcome::Continue
             }
@@ -743,7 +849,7 @@ impl OpPickerState {
                     .select(if n == 0 { None } else { Some(0) });
             }
             OpPickerStage::Field => {
-                let n = self.filtered_fields().len();
+                let n = self.build_field_display_rows().len();
                 self.field_list_state
                     .select(if n == 0 { None } else { Some(0) });
             }
@@ -1211,7 +1317,10 @@ mod tests {
         });
         s.items = vec![s.selected_item.clone().unwrap()];
         s.fields = vec![field_with_reference("api", "op://Personal/test/auth/api")];
-        s.field_list_state.select(Some(0));
+        // Field is inside section "auth", so display rows are:
+        //   0: SectionHeader "auth"
+        //   1: Field { field_idx: 0 }
+        s.field_list_state.select(Some(1));
         s.stage = OpPickerStage::Field;
 
         let outcome = s.handle_key(key(KeyCode::Enter));

@@ -12,7 +12,9 @@ use crate::operator_env::OpField;
 
 use super::super::scrollable::render_selected_lines_in_area;
 use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
-use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
+use super::{
+    FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState,
+};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -266,34 +268,61 @@ fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
         .max()
         .unwrap_or(0)
         .max(8);
-    visible
+
+    state
+        .build_field_display_rows()
         .into_iter()
         .enumerate()
-        .map(|(i, f)| {
-            let is_selected = Some(i) == selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let label = display_label(f);
-            let pad = label_w.saturating_sub(label.chars().count());
-            let label_style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            let annotation = format!(
-                "({})",
-                if f.concealed {
-                    "concealed".to_string()
-                } else {
-                    f.field_type.to_lowercase()
+        .map(|(row_i, row)| {
+            let is_selected = Some(row_i) == selected;
+            match row {
+                FieldDisplayRow::SectionHeader { name, field_count } => {
+                    let prefix = if is_selected { "\u{25b8}  " } else { "   " };
+                    let arrow =
+                        if state.collapsed_sections.contains(&name) { "\u{25b6}" } else { "\u{25bc}" };
+                    let style = if is_selected {
+                        Style::default()
+                            .fg(PHOSPHOR_GREEN)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(PHOSPHOR_DIM)
+                    };
+                    let count_label = format!(
+                        "({} {})",
+                        field_count,
+                        if field_count == 1 { "field" } else { "fields" }
+                    );
+                    Line::from(vec![
+                        Span::styled(prefix, style),
+                        Span::styled(arrow, style),
+                        Span::styled(format!(" {name}  "), style),
+                        Span::styled(count_label, Style::default().fg(PHOSPHOR_DIM)),
+                    ])
                 }
-            );
-            Line::from(vec![
-                Span::styled(format!("{prefix}{label}"), label_style),
-                Span::raw(format!("{}  ", " ".repeat(pad))),
-                Span::styled(annotation, Style::default().fg(PHOSPHOR_DIM)),
-            ])
+                FieldDisplayRow::Field { field_idx } => {
+                    let f = visible[field_idx];
+                    let prefix = if is_selected { "\u{25b8} " } else { "  " };
+                    let label = display_label(f);
+                    let pad = label_w.saturating_sub(label.chars().count());
+                    let label_style = if is_selected {
+                        Style::default()
+                            .fg(PHOSPHOR_GREEN)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(WHITE)
+                    };
+                    let annotation = if f.concealed {
+                        "(concealed)".to_string()
+                    } else {
+                        format!("({})", f.field_type.to_lowercase())
+                    };
+                    Line::from(vec![
+                        Span::styled(format!("{prefix}{label}"), label_style),
+                        Span::raw(format!("{}  ", " ".repeat(pad))),
+                        Span::styled(annotation, Style::default().fg(PHOSPHOR_DIM)),
+                    ])
+                }
+            }
         })
         .collect()
 }
