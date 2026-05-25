@@ -189,6 +189,14 @@ impl StepCounter {
     const fn progress_mut(&mut self) -> Option<&mut super::progress::LaunchProgress> {
         self.progress.as_mut()
     }
+
+    /// Tear down the rich loading surface (drops the renderer →
+    /// `LeaveAlternateScreen` + clears `rich_surface_active`). Call this
+    /// before handing the terminal to an interactive `docker exec -it`
+    /// session, otherwise the capsule attach can't own the PTY and hangs.
+    fn finish_progress(&mut self) {
+        self.progress = None;
+    }
 }
 
 fn stage_for_step_text(text: &str) -> super::progress::LaunchStage {
@@ -1118,6 +1126,10 @@ async fn launch_role_runtime(
         progress.stage_done(super::progress::LaunchStage::Capsule, "ready");
         progress.opening_hardline();
     }
+    // Tear down the loading cockpit before the interactive attach: the
+    // capsule's `docker exec -it` must own a clean terminal, and leaving the
+    // rich surface active would force-capture its PTY and hang the handoff.
+    steps.finish_progress();
     let session_result =
         reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
@@ -1761,6 +1773,7 @@ async fn load_role_with(
             RestoreResolution::StartFresh => None,
             RestoreResolution::RestoreCurrentRole(container) => Some(container),
             RestoreResolution::RecoverRelatedRole(container) => {
+                steps.finish_progress();
                 let load_result = hardline_agent(paths, &container, docker, runner)
                     .await
                     .map(|()| container);
@@ -1780,6 +1793,7 @@ async fn load_role_with(
                 }
             }
             RestoreResolution::RebuildRelatedRole(manifest) => {
+                steps.finish_progress();
                 let selector = RoleSelector::parse(&manifest.role_key)?;
                 let related_opts = related_restore_load_options(opts, &manifest)?;
                 let load_result = load_role(

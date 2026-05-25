@@ -310,7 +310,11 @@ impl LaunchProgress {
             return future.await;
         }
         tokio::pin!(future);
-        let mut interval = tokio::time::interval(Duration::from_millis(120));
+        // ~20 fps so the digital rain reads as falling, not stuttering. The
+        // draw is interleaved with the awaited future via select, so this
+        // only costs a frame while the future is parked on I/O.
+        let mut interval = tokio::time::interval(Duration::from_millis(50));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
                 result = &mut future => return result,
@@ -491,8 +495,8 @@ pub(crate) fn rich_terminal_supported() -> bool {
     crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
 }
 
-const STAGE_PULSE_PERIOD: usize = 5;
-const BLOCK_WIDTH: usize = 4;
+const STAGE_PULSE_PERIOD: usize = 12;
+const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
 /// Error accent for a failed stage block. Matches `error_popup`'s private
 /// `DANGER_RED`; the launch screen is the only other site that needs the
@@ -639,13 +643,15 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
         if i > 0 {
             spans.push(Span::raw(" ".repeat(BLOCK_GAP)));
         }
+        // Thin horizontal segments (a slim progress bar), not tall full
+        // blocks: heavy `━` for reached/active stages, light `─` for queued.
         let (glyph, color) = match row.status {
-            StageStatus::Done => ('█', PHOSPHOR_GREEN),
-            StageStatus::Running => ('▓', if pulse { WHITE } else { PHOSPHOR_GREEN }),
-            StageStatus::Skipped => ('▒', PHOSPHOR_DIM),
-            StageStatus::Failed => ('█', FAILED_RED),
-            StageStatus::Blocked => ('▓', WHITE),
-            StageStatus::Queued => ('░', PHOSPHOR_DARK),
+            StageStatus::Done => ('━', PHOSPHOR_GREEN),
+            StageStatus::Running => ('━', if pulse { WHITE } else { PHOSPHOR_GREEN }),
+            StageStatus::Skipped => ('━', PHOSPHOR_DIM),
+            StageStatus::Failed => ('━', FAILED_RED),
+            StageStatus::Blocked => ('━', WHITE),
+            StageStatus::Queued => ('─', PHOSPHOR_DARK),
         };
         spans.push(Span::styled(
             glyph.to_string().repeat(BLOCK_WIDTH),
