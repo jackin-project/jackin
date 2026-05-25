@@ -26,14 +26,12 @@ pub mod render;
 pub enum TokenStoreSelection {
     /// Create a brand-new 1Password item in the chosen vault.
     NewItem {
-        account: Option<OpAccount>,
         vault: OpVault,
         item_name: String,
         field_label: String,
     },
     /// Overwrite (or append) a field in an existing 1Password item.
     EditItemField {
-        account: Option<OpAccount>,
         vault: OpVault,
         item: OpItem,
         field_label: String,
@@ -581,10 +579,8 @@ impl<'a> TokenStorePickerState<'a> {
                     }
                     Some(Some(field_label)) => {
                         let vault = self.selected_vault.clone().expect("vault set");
-                        let account = self.selected_account.clone();
                         let item = self.selected_item.clone().expect("item set");
                         ModalOutcome::Commit(TokenStoreSelection::EditItemField {
-                            account,
                             vault,
                             item,
                             field_label,
@@ -633,10 +629,8 @@ impl<'a> TokenStorePickerState<'a> {
             }
             ModalOutcome::Commit(label) => {
                 let vault = self.selected_vault.clone().expect("vault set");
-                let account = self.selected_account.clone();
                 if let Some(item) = self.selected_item.clone() {
                     ModalOutcome::Commit(TokenStoreSelection::EditItemField {
-                        account,
                         vault,
                         item,
                         field_label: label,
@@ -644,7 +638,6 @@ impl<'a> TokenStorePickerState<'a> {
                 } else {
                     let item_name = self.item_name_input.trimmed_value();
                     ModalOutcome::Commit(TokenStoreSelection::NewItem {
-                        account,
                         vault,
                         item_name,
                         field_label: label,

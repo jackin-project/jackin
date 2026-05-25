@@ -1418,27 +1418,25 @@ fn handle_claude_token(
                     crate::tui::token_store_dialog::run(&workspace, op_account.as_deref())?;
                 match selection {
                     TokenStoreSelection::NewItem {
-                        account,
                         vault: sel_vault,
                         item_name: sel_item_name,
                         field_label: sel_field_label,
                     } => token_setup::TokenSetupArgs {
                         vault: Some(sel_vault.id),
                         item_name: Some(sel_item_name),
-                        account: account.map(|a| a.id).or(op_account),
+                        account: op_account,
                         reuse: None,
                         field_label: Some(sel_field_label),
                         edit_existing: None,
                     },
                     TokenStoreSelection::EditItemField {
-                        account,
                         vault: sel_vault,
                         item: sel_item,
                         field_label: sel_field_label,
                     } => token_setup::TokenSetupArgs {
                         vault: None,
                         item_name: None,
-                        account: account.map(|a| a.id).or(op_account),
+                        account: op_account,
                         reuse: None,
                         field_label: None,
                         edit_existing: Some(token_setup::EditExistingTarget {

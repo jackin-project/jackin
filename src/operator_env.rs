@@ -1094,21 +1094,16 @@ impl OpWriteRunner for OpCli {
                 )
             })?;
 
-        // Prefer `field.reference` (1P's canonical emission) when
-        // present; otherwise synthesise the canonical UUID URI.
-        let op_uri = if field.reference.is_empty() {
-            format!("op://{}/{}/{}", raw.vault.id, raw.id, field.id)
-        } else {
-            field.reference.clone()
-        };
+        // Always use UUID-based op:// so the reference is stable even if
+        // the vault, item, or field is renamed. `path` carries the
+        // human-readable names for display only — it must have the same
+        // three-segment structure as the `op` URI.
+        let op_uri = format!("op://{}/{}/{}", raw.vault.id, raw.id, field.id);
 
-        // Snapshot path for editor / display: use the human-visible
-        // names that came back from `op` (vault name, item title,
-        // field label).
         let vault_name = if raw.vault.name.is_empty() {
-            raw.vault.id.clone()
+            raw.vault.id.as_str()
         } else {
-            raw.vault.name
+            raw.vault.name.as_str()
         };
         let path = format!("{}/{}/{}", vault_name, raw.title, params.field_label);
 
@@ -1265,16 +1260,13 @@ impl OpWriteRunner for OpCli {
                 )
             })?;
 
-        let op_uri = field["reference"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| {
-                let vault = updated["vault"]["id"].as_str().unwrap_or(vault_id);
-                let iid = updated["id"].as_str().unwrap_or(item_id);
-                let fid = field["id"].as_str().unwrap_or(field_label);
-                format!("op://{vault}/{iid}/{fid}")
-            });
+        // Always use UUID-based op:// so the reference is stable across
+        // renames. `path` carries human-readable names for display and
+        // must have the same three-segment structure as the `op` URI.
+        let vid = updated["vault"]["id"].as_str().unwrap_or(vault_id);
+        let iid = updated["id"].as_str().unwrap_or(item_id);
+        let fid = field["id"].as_str().unwrap_or(field_label);
+        let op_uri = format!("op://{vid}/{iid}/{fid}");
 
         let vault_name = updated["vault"]["name"]
             .as_str()
@@ -1284,7 +1276,11 @@ impl OpWriteRunner for OpCli {
             .as_str()
             .filter(|s| !s.is_empty())
             .unwrap_or(item_id);
-        let path = format!("{vault_name}/{item_title}/{field_label}");
+        let field_label_display = field["label"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(field_label);
+        let path = format!("{vault_name}/{item_title}/{field_label_display}");
 
         Ok(OpRef { op: op_uri, path })
     }
