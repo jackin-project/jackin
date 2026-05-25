@@ -21,7 +21,7 @@ Load an agent into an isolated `Docker` container directly from the command line
 
 `SELECTOR` chooses the **role** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
 
-Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. Rich terminals show a full-screen launch progress surface with a sliding stage rail for jackin' stages (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`). Non-rich terminals, `--no-tui`, and non-interactive runs use compact deterministic progress lines with the same stage vocabulary.
+Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. Rich terminals show a full-screen launch progress surface with a sliding stage rail for jackin' stages (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`). Workspace repository polling from `git_pull_on_entry` is part of that surface; per-repo pull details go to diagnostics/debug evidence instead of printing over the launch cockpit. Non-rich terminals, `--no-tui`, and non-interactive runs use compact deterministic progress lines with the same stage vocabulary.
 
 The full digital rain animation is a boundary marker: it appears when this launch enters jackin' work with no other jackin-managed role containers running, and the outro appears only when the foreground session exits and no role containers remain. Use `--no-rain` to disable that boundary animation without disabling launch progress.
 

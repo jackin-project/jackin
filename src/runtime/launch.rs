@@ -1323,37 +1323,55 @@ pub async fn inspect_attach_outcome(
 }
 
 enum GitPullResult {
-    Success { stdout: String },
+    Success { src: String, stdout: String },
     Failure { src: String, stderr: String },
     SpawnError { src: String, error: std::io::Error },
     JoinError { src: String },
 }
 
 fn pull_workspace_repos(workspace: &crate::workspace::ResolvedWorkspace, debug: bool) {
-    pull_workspace_repos_with_git(workspace, debug, std::path::Path::new("git"));
+    let results = pull_workspace_repos_with_git(workspace, debug, std::path::Path::new("git"));
+    print_git_pull_results(&results);
 }
 
 fn pull_workspace_repos_with_git(
     workspace: &crate::workspace::ResolvedWorkspace,
     debug: bool,
     git_program: &std::path::Path,
-) {
-    let mut pulls = Vec::new();
-    let mut seen_srcs = std::collections::HashSet::new();
+) -> Vec<GitPullResult> {
+    pull_git_sources_with_git(git_pull_sources(workspace), debug, git_program, true)
+}
 
+fn git_pull_sources(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<String> {
+    let mut sources = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for mount in &workspace.mounts {
-        let src = std::path::Path::new(&mount.src);
-        if !src.join(".git").exists() {
-            continue;
+        if std::path::Path::new(&mount.src).join(".git").exists() && seen.insert(mount.src.clone())
+        {
+            sources.push(mount.src.clone());
         }
-        let src = mount.src.clone();
-        if !seen_srcs.insert(src.clone()) {
-            continue;
-        }
+    }
+    sources
+}
+
+fn pull_git_sources_with_git(
+    sources: Vec<String>,
+    debug: bool,
+    git_program: &std::path::Path,
+    print_starts: bool,
+) -> Vec<GitPullResult> {
+    let mut pulls = Vec::new();
+
+    for src in sources {
         if debug {
-            eprintln!("[jackin debug] git pull in {}", mount.src);
+            crate::diagnostics::active_debug("git_pull", &format!("git pull in {src}"));
+            if crate::diagnostics::active_run().is_none() {
+                eprintln!("[jackin debug] git pull in {src}");
+            }
         }
-        eprintln!("  Pulling {} …", crate::tui::shorten_home(&mount.src));
+        if print_starts {
+            eprintln!("  Pulling {} …", crate::tui::shorten_home(&src));
+        }
         let git_program = git_program.to_path_buf();
         pulls.push((
             src.clone(),
@@ -1363,6 +1381,7 @@ fn pull_workspace_repos_with_git(
                     .output()
                 {
                     Ok(out) if out.status.success() => GitPullResult::Success {
+                        src,
                         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
                     },
                     Ok(out) => GitPullResult::Failure {
@@ -1375,13 +1394,17 @@ fn pull_workspace_repos_with_git(
         ));
     }
 
-    for (src, handle) in pulls {
-        match handle.join().unwrap_or(GitPullResult::JoinError { src }) {
-            GitPullResult::Success { stdout } => {
-                let trimmed = stdout.trim();
-                if !trimmed.is_empty() {
-                    eprintln!("    {trimmed}");
-                }
+    pulls
+        .into_iter()
+        .map(|(src, handle)| handle.join().unwrap_or(GitPullResult::JoinError { src }))
+        .collect()
+}
+
+fn print_git_pull_results(results: &[GitPullResult]) {
+    for result in results {
+        match result {
+            GitPullResult::Success { stdout, .. } => {
+                print_git_pull_stdout(stdout);
             }
             GitPullResult::Failure { src, stderr } => {
                 eprintln!("  Warning: git pull failed in {}: {}", src, stderr.trim());
@@ -1394,6 +1417,55 @@ fn pull_workspace_repos_with_git(
             }
         }
     }
+}
+
+fn print_git_pull_stdout(stdout: &str) {
+    let trimmed = stdout.trim();
+    if !trimmed.is_empty() {
+        eprintln!("    {trimmed}");
+    }
+}
+
+fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usize) {
+    let mut ok = 0;
+    let mut failed = 0;
+    for result in results {
+        match result {
+            GitPullResult::Success { src, stdout } => {
+                ok += 1;
+                crate::diagnostics::active_debug(
+                    "git_pull",
+                    &format!("git pull in {src} succeeded: {}", stdout.trim()),
+                );
+            }
+            GitPullResult::Failure { src, stderr } => {
+                failed += 1;
+                if let Some(run) = crate::diagnostics::active_run() {
+                    run.compact("git_pull", &format!("git pull failed in {src}"));
+                }
+                crate::diagnostics::active_debug(
+                    "git_pull",
+                    &format!("git pull in {src} failed: {}", stderr.trim()),
+                );
+            }
+            GitPullResult::SpawnError { src, error } => {
+                failed += 1;
+                if let Some(run) = crate::diagnostics::active_run() {
+                    run.compact(
+                        "git_pull",
+                        &format!("could not run git pull in {src}: {error}"),
+                    );
+                }
+            }
+            GitPullResult::JoinError { src } => {
+                failed += 1;
+                if let Some(run) = crate::diagnostics::active_run() {
+                    run.compact("git_pull", &format!("git pull thread panicked in {src}"));
+                }
+            }
+        }
+    }
+    (ok, failed)
 }
 
 // Boxed future required: load_role calls itself recursively via
@@ -1510,13 +1582,6 @@ async fn load_role_with(
         tui::intro_animation(intro_name);
     }
 
-    if workspace.git_pull_on_entry {
-        pull_workspace_repos(workspace, opts.debug);
-    }
-
-    let (source, is_new, restore_source_override) =
-        resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
-
     // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
     // not a name. Recover the name by matching workdir, mirroring the
     // identification rule used by `jackin workspace show`.
@@ -1549,6 +1614,46 @@ async fn load_role_with(
         progress.stage_done(super::progress::LaunchStage::Identity, "resolved operator");
         steps.start_progress(progress);
     }
+
+    if workspace.git_pull_on_entry {
+        let sources = git_pull_sources(workspace);
+        if let Some(progress) = steps.progress_mut() {
+            if sources.is_empty() {
+                progress.stage_skipped(
+                    super::progress::LaunchStage::Workspace,
+                    "no mounted git repositories",
+                );
+            } else {
+                progress.stage_started(
+                    super::progress::LaunchStage::Workspace,
+                    format!("polling {} workspace repositories", sources.len()),
+                );
+                let debug = opts.debug;
+                let git_program = std::path::PathBuf::from("git");
+                let pull = tokio::task::spawn_blocking(move || {
+                    pull_git_sources_with_git(sources, debug, &git_program, false)
+                });
+                let results = progress
+                    .while_waiting(async move {
+                        pull.await
+                            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
+                    })
+                    .await?;
+                let (ok, failed) = record_git_pull_results(&results);
+                let detail = if failed == 0 {
+                    format!("{ok} repositories current")
+                } else {
+                    format!("{ok} repositories current; {failed} failed")
+                };
+                progress.stage_done(super::progress::LaunchStage::Workspace, detail);
+            }
+        } else {
+            pull_workspace_repos(workspace, opts.debug);
+        }
+    }
+
+    let (source, is_new, restore_source_override) =
+        resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
 
     // Step 1: Resolve role identity (clone or update repo)
     steps.next("Resolving role identity");
