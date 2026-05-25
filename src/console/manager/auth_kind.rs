@@ -32,6 +32,9 @@ pub enum AuthKind {
     Kimi,
     Opencode,
     Github,
+    /// Z.AI / GLM Coding Plan — env-only kind. No auth_forward config
+    /// block; credential lives purely as `ZAI_API_KEY` in `[env]`.
+    Zai,
 }
 
 impl AuthKind {
@@ -46,6 +49,7 @@ impl AuthKind {
             Self::Kimi => "Kimi",
             Self::Opencode => "OpenCode",
             Self::Github => "GitHub CLI",
+            Self::Zai => "Z.AI",
         }
     }
 
@@ -66,6 +70,7 @@ impl AuthKind {
                 &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
             }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
+            Self::Zai => &[AuthMode::ApiKey, AuthMode::Ignore],
         }
     }
 
@@ -83,6 +88,7 @@ impl AuthKind {
             (Self::Kimi, AuthMode::ApiKey) => Some("KIMI_API_KEY"),
             (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(crate::env_model::GH_TOKEN_ENV_NAME),
+            (Self::Zai, AuthMode::ApiKey) => Some("ZAI_API_KEY"),
             _ => None,
         }
     }
@@ -113,7 +119,7 @@ impl AuthKind {
             Self::Amp => Some(Agent::Amp),
             Self::Kimi => Some(Agent::Kimi),
             Self::Opencode => Some(Agent::Opencode),
-            Self::Github => None,
+            Self::Github | Self::Zai => None,
         }
     }
 
@@ -122,7 +128,7 @@ impl AuthKind {
     /// roles that already have an override) and the render-side row
     /// builder (decide whether to draw a `RoleHeader`).
     #[must_use]
-    pub const fn role_override_present(self, ro: &crate::config::WorkspaceRoleOverride) -> bool {
+    pub fn role_override_present(self, ro: &crate::config::WorkspaceRoleOverride) -> bool {
         match self {
             Self::Claude => ro.claude.is_some(),
             Self::Codex => ro.codex.is_some(),
@@ -130,6 +136,7 @@ impl AuthKind {
             Self::Kimi => ro.kimi.is_some(),
             Self::Opencode => ro.opencode.is_some(),
             Self::Github => ro.github.is_some(),
+            Self::Zai => ro.env.contains_key("ZAI_API_KEY"),
         }
     }
 }

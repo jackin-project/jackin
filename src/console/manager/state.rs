@@ -862,6 +862,11 @@ impl SettingsState<'_> {
                     };
                     editor.set_global_github_auth_forward(mode);
                 }
+                crate::console::manager::auth_kind::AuthKind::Zai => {
+                    // Z.AI auth is env-only; the credential lives in env_vars and
+                    // is written via the env block path above — no auth_forward
+                    // config block to commit here.
+                }
             }
         }
         for key in self.auth.original_github_env.keys() {
@@ -1005,6 +1010,7 @@ impl SettingsAuthState {
             crate::console::manager::auth_kind::AuthKind::Kimi,
             crate::console::manager::auth_kind::AuthKind::Opencode,
             crate::console::manager::auth_kind::AuthKind::Github,
+            crate::console::manager::auth_kind::AuthKind::Zai,
         ]
         .into_iter()
         .map(|kind| SettingsAuthRow {
@@ -1026,6 +1032,13 @@ impl SettingsAuthState {
                     crate::console::manager::auth_kind::AuthMode::from_github(
                         crate::config::resolve_github_mode(config, "", ""),
                     )
+                }
+                crate::console::manager::auth_kind::AuthKind::Zai => {
+                    if config.env.contains_key("ZAI_API_KEY") {
+                        crate::console::manager::auth_kind::AuthMode::ApiKey
+                    } else {
+                        crate::console::manager::auth_kind::AuthMode::Ignore
+                    }
                 }
             },
         })

@@ -849,6 +849,9 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
             AuthRow::AuthKindRow {
                 kind: AuthKind::Github,
             },
+            AuthRow::AuthKindRow {
+                kind: AuthKind::Zai,
+            },
         ];
     };
 
@@ -939,6 +942,26 @@ fn resolve_panel_mode(
         AuthKind::Github => {
             let mode = crate::config::resolve_github_mode(cfg, workspace, role);
             AuthMode::from_github(mode)
+        }
+        AuthKind::Zai => {
+            // Z.AI has no auth_forward block; mode is derived from whether
+            // ZAI_API_KEY is present in the effective env at this layer.
+            let key_present = (!role.is_empty()
+                && cfg
+                    .workspaces
+                    .get(workspace)
+                    .and_then(|ws| ws.roles.get(role))
+                    .is_some_and(|ro| ro.env.contains_key("ZAI_API_KEY")))
+                || cfg
+                    .workspaces
+                    .get(workspace)
+                    .is_some_and(|ws| ws.env.contains_key("ZAI_API_KEY"))
+                || cfg.env.contains_key("ZAI_API_KEY");
+            if key_present {
+                AuthMode::ApiKey
+            } else {
+                AuthMode::Ignore
+            }
         }
     }
 }
@@ -1446,6 +1469,13 @@ fn explicit_workspace_mode(
             .github
             .as_ref()
             .map(|g| AuthMode::from_github(g.auth_forward)),
+        AuthKind::Zai => {
+            if ws.env.contains_key("ZAI_API_KEY") {
+                Some(AuthMode::ApiKey)
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -1466,7 +1496,8 @@ fn auth_source_value<'a>(
         | AuthKind::Codex
         | AuthKind::Amp
         | AuthKind::Kimi
-        | AuthKind::Opencode => agent_env_source_value(synthesized, workspace_name, role, env_name),
+        | AuthKind::Opencode
+        | AuthKind::Zai => agent_env_source_value(synthesized, workspace_name, role, env_name),
     }
 }
 
@@ -3078,6 +3109,9 @@ mod auth_flat_rows_tests {
                 },
                 AuthRow::AuthKindRow {
                     kind: AuthKind::Github,
+                },
+                AuthRow::AuthKindRow {
+                    kind: AuthKind::Zai,
                 },
             ],
             "root view must list Claude / Codex / Amp / Github in this order"

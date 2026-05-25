@@ -164,6 +164,9 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
             AuthKind::Kimi => ro.kimi = None,
             AuthKind::Opencode => ro.opencode = None,
             AuthKind::Github => ro.github = None,
+            AuthKind::Zai => {
+                ro.env.remove("ZAI_API_KEY");
+            }
         }
     }
 }
@@ -176,6 +179,9 @@ fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKi
         AuthKind::Kimi => ws.kimi = None,
         AuthKind::Opencode => ws.opencode = None,
         AuthKind::Github => ws.github = None,
+        AuthKind::Zai => {
+            ws.env.remove("ZAI_API_KEY");
+        }
     }
 }
 
@@ -258,6 +264,11 @@ fn current_mode_and_credential(
                 });
                 (mode, cred)
             }
+            AuthKind::Zai => {
+                let cred = editor.pending.env.get("ZAI_API_KEY").cloned();
+                let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
+                (mode, cred)
+            }
         },
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let override_ref = editor.pending.roles.get(role);
@@ -317,6 +328,12 @@ fn current_mode_and_credential(
                             .and_then(|ro| ro.github.as_ref())
                             .and_then(|g| g.env.get(v).cloned())
                     });
+                    (mode, cred)
+                }
+                AuthKind::Zai => {
+                    let cred = override_ref
+                        .and_then(|ro| ro.env.get("ZAI_API_KEY").cloned());
+                    let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
                     (mode, cred)
                 }
             }
@@ -795,7 +812,8 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
                     | AuthKind::Codex
                     | AuthKind::Amp
                     | AuthKind::Kimi
-                    | AuthKind::Opencode => {
+                    | AuthKind::Opencode
+                    | AuthKind::Zai => {
                         editor.pending.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -814,7 +832,8 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
                     | AuthKind::Codex
                     | AuthKind::Amp
                     | AuthKind::Kimi
-                    | AuthKind::Opencode => {
+                    | AuthKind::Opencode
+                    | AuthKind::Zai => {
                         entry.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -888,6 +907,9 @@ fn set_workspace_mode(
                 GithubAuthConfig { auth_forward, env }
             });
         }
+        AuthKind::Zai => {
+            // No auth_forward block — mode is implicit in ZAI_API_KEY presence in env.
+        }
     }
 }
 
@@ -930,6 +952,9 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
                     .unwrap_or_default();
                 GithubAuthConfig { auth_forward, env }
             });
+        }
+        AuthKind::Zai => {
+            // No auth_forward block — mode is implicit in ZAI_API_KEY presence in env.
         }
     }
 }
