@@ -1,0 +1,205 @@
+---
+title: "Alternative provider support (Z.AI / GLM Coding Plan)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Planned — not yet implemented
+
+## Problem
+
+jackin' forwards agent credentials at the container level: one authentication context per container, shared across every tab running in that container. This works well when an operator uses a single subscription for a given agent, but breaks down when they want to run the same agent binary against two different API backends simultaneously.
+
+The concrete case that motivates this item: Z.AI's GLM Coding Plan provides an Anthropic-API-compatible endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models at substantially lower cost than Anthropic's own billing. Claude Code supports endpoint redirection via two environment variables (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`). An operator who holds both an Anthropic subscription and a Z.AI Coding Plan subscription today cannot run one container tab pointing at Anthropic and another at Z.AI — the container-level credential setup is all-or-nothing.
+
+The same structural gap exists for any API-compatible alternative endpoint (OpenRouter for Claude Code; Azure OpenAI for Codex). Z.AI is the first concrete provider to address here because it is operator-verified and its endpoint protocol is confirmed; the design is intentionally shaped to absorb future providers additively.
+
+## Why it matters
+
+- **Cost flexibility.** GLM Coding Plan (~$18/month quota-based) lets an operator run high-volume exploratory work through Z.AI while keeping Anthropic for tasks that require the canonical model. Without per-tab provider selection, the operator must choose one billing context for the entire session.
+- **Side-by-side comparison.** Running Claude Code against Anthropic and Z.AI in adjacent tabs — same codebase, same prompt — is the fastest way to validate response quality between backends. This requires true process-level isolation per tab, not a container-level toggle.
+- **One key, one place.** The Z.AI API key should be configured exactly once (globally or per workspace) through the existing auth tab UI, using the same 1Password reference and plain-text entry flows already established for Claude, Codex, and GitHub CLI. No separate CLI command, no manual TOML editing.
+
+## Design
+
+### Provider concept
+
+A **provider** is a named API-compatible backend for an agent runtime. Each provider has:
+
+- A **display label** shown in the picker and tab strip (e.g. `Anthropic`, `Z.AI`).
+- A **set of environment overrides** injected into the spawned process at tab-creation time.
+- An **availability condition** — whether the provider can be offered in a given context.
+
+The `Anthropic` provider for Claude Code is always available when Claude credentials exist. `Z.AI` is available only when `ZAI_API_KEY` is present in the resolved operator env. No provider is visible in the picker when only one is available — the picker step is skipped entirely and the single provider is used silently.
+
+### Auth tab: Z.AI row
+
+`ZAI_API_KEY` is configured through the existing **Auth tab** in global settings and per-workspace settings — the same tab that manages Claude Code, Codex, Amp, Kimi, OpenCode, and GitHub CLI authentication.
+
+A new **Z.AI** row appears in the auth tab. It follows the identical pattern established by `AuthKind::Github` — a provider-level kind with no `Agent` runtime peer. The row is driven by a new `AuthKind::Zai` variant with the following properties:
+
+| Property | Value |
+|---|---|
+| Label | `Z.AI` |
+| Supported modes | `API Key`, `Ignore` |
+| Required env var (API Key mode) | `ZAI_API_KEY` |
+| Credential input | `Literal` (plain text) or `OpRef` (1Password reference) |
+
+The `Sync` mode is not offered because there is no host-side Z.AI credential file to synchronise from. The `OAuthToken` mode is not offered because Z.AI does not issue OAuth tokens for its coding plan.
+
+**Mode: API Key.** When the operator selects `API Key` and enters a credential, the form writes `ZAI_API_KEY = <EnvValue>` into the `[env]` map at the chosen layer (global `config.toml` or workspace `workspaces/<name>.toml`). The `EnvValue` is either `EnvValue::Plain(literal_string)` or `EnvValue::OpRef { op: "op://UUID/UUID/UUID", path: "Vault/Item/Field" }` — the same types used everywhere in the operator env system. A bare `op://` string in the TOML is **not** a valid OpRef and is not accepted; the TUI's OpPicker resolves the human-readable path to UUID-form URIs at pick time.
+
+**Mode: Ignore.** No `ZAI_API_KEY` entry is written. Z.AI does not appear as a provider option anywhere.
+
+**Default.** If no Z.AI row has been saved, the effective mode is `Ignore`. Z.AI is absent from all pickers.
+
+The auth form for Z.AI is **identical** in UX to the existing `AuthKind::Github` token entry: mode picker (Space to cycle) → credential block appears when `API Key` is selected → Literal or OpRef toggle (same keybindings as all other auth forms) → Save.
+
+This auth row appears at both the **global settings** level (editing `~/.config/jackin/config.toml`) and the **workspace settings** level (editing the active workspace file). A workspace-level `ZAI_API_KEY` entry overrides the global one, following the standard 4-layer env resolution already in place.
+
+### Provider selection: workspace creation and instance selection
+
+The workspace → role → agent selection flow in the console gains a **provider step** for agents that support multiple providers.
+
+Current flow:
+1. Select workspace
+2. Select role
+3. Select agent
+
+New flow when multiple providers are available for the chosen agent:
+1. Select workspace
+2. Select role
+3. Select agent
+4. **Select provider** (only when 2+ providers are available for that agent)
+
+The provider picker appears as a second `AgentChoiceState`-style modal immediately after agent selection. Its items are the available providers for the chosen agent — for Claude Code today, `Anthropic` and `Z.AI` (when `ZAI_API_KEY` is set). When only one provider is available, step 4 is skipped and no picker is shown. The experience for operators who have not configured Z.AI is unchanged.
+
+### Provider selection: new tab inside the multiplexer
+
+Inside a running container, the operator presses `N` (or the configured keybinding) to open a new tab. The existing `Dialog::AgentPicker` already shows the list of agents available in the current role. After the operator selects an agent, the same provider step applies:
+
+- If only one provider is available → spawn immediately, no second picker.
+- If two or more providers are available → a `Dialog::ProviderPicker` appears listing the available providers for the chosen agent.
+
+The provider picker is a lightweight modal, same visual style as `AgentPicker`, with items like:
+
+```
+▸ Anthropic
+  Z.AI
+```
+
+The operator selects with arrow keys + Enter. Escape cancels back to the agent picker.
+
+### Per-tab provider display in the multiplexer
+
+When multiple providers are configured, the tab label in the status bar's tab strip is extended to show the active provider:
+
+| Configured providers | Tab label |
+|---|---|
+| Anthropic only | `Claude` |
+| Z.AI only | `Claude` |
+| Both | `Claude · Anthropic` or `Claude · Z.AI` |
+
+The suffix `· <Provider>` is appended only when two or more providers are available in the current container. This avoids label noise for operators who use a single subscription. The provider suffix uses the same compact phosphor-green style as other tab annotations.
+
+The pane title box (the `┌─ title ─┐` border drawn around each active pane) follows the same rule: `Claude · Z.AI` when multi-provider, `Claude` when single-provider.
+
+### Process-level environment injection
+
+Z.AI integration uses **process-level environment injection** rather than writing to `~/.claude/settings.json`. This is the load-bearing choice that enables parallel Anthropic and Z.AI tabs in the same container.
+
+**Why not `settings.json`:** `~/.claude/settings.json` is a single file shared by all Claude Code processes in the container. Writing `ANTHROPIC_BASE_URL` there applies it to every tab — no per-tab differentiation is possible.
+
+**The injection mechanism:**
+
+1. At **container launch** (`docker run`), `ZAI_API_KEY` flows into the container as a standard env var via the resolved operator env map — the same path used by every other entry in `[env]`. No special handling.
+
+2. At **daemon startup** (`jackin-capsule` initialising), the daemon reads `std::env::var("ZAI_API_KEY")`. If present and non-empty, Z.AI is registered as an available provider. The resolved key is stored in-process (not logged, not passed to child processes unless the operator explicitly spawns a Z.AI tab).
+
+3. At **tab spawn** (operator selects Z.AI in the provider picker), `env_for_spawn` is called with two additional overrides:
+   - `ANTHROPIC_AUTH_TOKEN` = value of `ZAI_API_KEY`
+   - `ANTHROPIC_BASE_URL` = `https://api.z.ai/api/anthropic` (hardcoded in jackin')
+
+   Both keys are added to `SESSION_ENV_PASSTHROUGH` so `env_for_spawn`'s allowlist accepts them. The spawned Claude Code process inherits these vars and routes all API calls to Z.AI's endpoint.
+
+4. For **Anthropic tabs**, neither `ANTHROPIC_AUTH_TOKEN` nor `ANTHROPIC_BASE_URL` is injected at spawn time. The process uses the container's standard credential path (credential files at `/jackin/claude/` for `Sync`/`OAuthToken` modes, or `ANTHROPIC_API_KEY` for `ApiKey` mode).
+
+**`settings.json` stays clean.** jackin' never writes `ANTHROPIC_BASE_URL` or `ANTHROPIC_AUTH_TOKEN` to `~/.claude/settings.json` inside the container. The file remains unset for these vars so process-level injection is uncontested. If Claude Code's startup code were ever to stomp injected env vars from `settings.json`, the fallback is the HOME-subdirectory isolation approach described in the open questions below.
+
+### Protocol and CapsuleConfig
+
+`CapsuleConfig` (the struct sent from the host CLI to the in-container `jackin-capsule` daemon at launch) gains a new field:
+
+```rust
+pub zai_key: Option<String>,
+```
+
+The host CLI resolves `ZAI_API_KEY` from the operator env at launch time, validates it is non-empty, and passes the resolved value into `CapsuleConfig`. The daemon stores it in-process. The key never appears in `cdebug!` trace output or in the compact `clog!` output.
+
+### No schema version bump
+
+`ZAI_API_KEY` is stored in the existing `[env]` map using the existing `EnvValue` type. No new config struct is introduced. No `CURRENT_CONFIG_VERSION` or `CURRENT_WORKSPACE_VERSION` bump is required for this feature.
+
+## Implementation phases
+
+**Phase 1 — Core injection mechanic**
+
+1. Add `"ANTHROPIC_AUTH_TOKEN"` and `"ANTHROPIC_BASE_URL"` to `SESSION_ENV_PASSTHROUGH` in <RepoFile path="crates/jackin-capsule/src/session.rs" />.
+2. Add `zai_key: Option<String>` to `CapsuleConfig` in <RepoFile path="crates/jackin-protocol/src/lib.rs" />.
+3. In <RepoFile path="src/runtime/launch.rs" />, read `ZAI_API_KEY` from the resolved operator env and pass it into `CapsuleConfig`.
+4. In <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, store `zai_key` at startup; extend `spawn_session` to accept a `provider: AgentProvider` parameter; inject `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` via `env_for_spawn` overrides when provider is `Z.AI`.
+5. Add `AgentProvider` enum (`Anthropic`, `Zai`) and `AgentSpec { agent: Agent, provider: AgentProvider }` to <RepoFile path="src/agent/mod.rs" /> or a new `src/agent/provider.rs`.
+
+**Phase 2 — Provider picker in the multiplexer**
+
+1. Add `Dialog::ProviderPicker` to <RepoFile path="crates/jackin-capsule/src/dialog.rs" />; drive it from the same input handler as `AgentPicker`.
+2. Extend `AgentPicker` dispatch: after agent selection, check `available_providers_for_agent(agent, &self.zai_key)` — if `len() > 1`, push `ProviderPicker` onto the dialog stack; if `len() == 1`, spawn immediately with the single provider.
+3. Extend `Session` in <RepoFile path="crates/jackin-capsule/src/session.rs" /> with `provider: AgentProvider` field.
+4. Extend tab label construction in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (`session_launch` / `tab_label`) to append `· <provider>` suffix when `available_providers_for_agent` returns more than one item.
+
+**Phase 3 — Provider picker in the console (workspace/instance selection)**
+
+1. Extend `AgentChoiceState` in <RepoFile path="src/console/widgets/agent_choice/mod.rs" /> to carry `AgentSpec` (agent + provider) instead of bare `Agent`.
+2. After agent selection in <RepoFile path="src/console/manager/input/list.rs" /> `handle_new_session_picker`, check available providers for the chosen agent and the current workspace's resolved env — if more than one, push a provider sub-picker before dispatching `NewSessionWithAgent`.
+3. Thread the chosen `AgentProvider` through `spawn_agent_session` in <RepoFile path="src/runtime/attach.rs" /> so it reaches the capsule daemon's `spawn_session` call.
+
+**Phase 4 — Auth tab UI (Z.AI row)**
+
+1. Add `AuthKind::Zai` to <RepoFile path="src/console/manager/auth_kind.rs" /> with `supported_modes = [ApiKey, Ignore]` and `required_env_var(ApiKey) = "ZAI_API_KEY"`.
+2. Add `AuthKind::Zai` to the auth row list rendered by `auth_flat_rows` in <RepoFile path="src/console/manager/render/editor.rs" />.
+3. Handle `AuthKind::Zai` in the auth input handler in <RepoFile path="src/console/manager/input/auth.rs" /> — the same `cycle_mode`, `open_auth_form`, and `commit_auth_form` paths used by other kinds apply without modification.
+4. The form's `commit` call writes `ZAI_API_KEY = <EnvValue>` into the `[env]` map at the active layer (global or workspace) via the existing config-write path.
+
+## Open questions
+
+**Process env vs `settings.json` priority.** Phase 1 assumes Claude Code's Anthropic SDK client reads `ANTHROPIC_BASE_URL` from `process.env` at client initialisation time, and that the process env value set at spawn takes precedence over any value Claude Code might inject from `settings.json`. If testing reveals that Claude Code's startup code overwrites the process env from `settings.json`, the fallback is **HOME-subdirectory isolation**:
+
+- At container first-boot, if `ZAI_API_KEY` is set, write `/home/agent/zai/.claude/settings.json` containing the Z.AI env block.
+- Symlink `/home/agent/zai/.ssh → /home/agent/.ssh`, `/home/agent/zai/.gitconfig → /home/agent/.gitconfig`, and other critical dot-dirs so non-Claude tools work correctly.
+- At tab spawn, set `HOME=/home/agent/zai` for Z.AI tabs, `HOME=/home/agent` for Anthropic tabs.
+- `HOME` is added to `SESSION_ENV_PASSTHROUGH`.
+
+This approach is isolated by construction and does not depend on priority assumptions, but requires first-boot setup in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />.
+
+**Future providers.** The `AgentProvider` enum and `available_providers_for_agent` function are designed to be extended additively. A second provider (e.g. OpenRouter for Claude Code) would add a new `AgentProvider::OpenRouter` variant, a new env var (`OPENROUTER_API_KEY`), and a new hardcoded base URL — all in one place. No schema change, no picker restructuring. The URL mapping stays hardcoded in jackin' because each provider's endpoint is fixed; a user-configurable base URL is not exposed.
+
+**Codex Z.AI support.** Z.AI's public documentation covers Claude Code and OpenCode endpoints. Whether Z.AI exposes an OpenAI-compatible endpoint usable by Codex CLI is unconfirmed. If confirmed, a `ZAI_API_KEY` configured in the auth tab would also activate a Z.AI provider option for Codex tabs, injecting `OPENAI_API_KEY` and `OPENAI_BASE_URL` at spawn. This is deferred until the endpoint is verified.
+
+**OpenCode Z.AI support.** Z.AI supports OpenCode natively via `opencode auth login` → provider selection, which writes to `opencode.json` — a config-file injection mechanism different from the env var approach used for Claude Code. OpenCode provider config injection is deferred as a separate design.
+
+## Related files
+
+- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `SESSION_ENV_PASSTHROUGH`, `Session` struct, `env_for_spawn`.
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — `spawn_session`, `AgentPicker` dialog dispatch, tab label construction.
+- <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> — `Dialog` enum, picker dialog variants.
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — container first-boot setup (HOME-subdirectory fallback, if needed).
+- <RepoFile path="crates/jackin-protocol/src/lib.rs" /> — `CapsuleConfig`.
+- <RepoFile path="src/agent/mod.rs" /> — `Agent` enum, `required_env_var`, `supported_modes`.
+- <RepoFile path="src/console/manager/auth_kind.rs" /> — `AuthKind`, `AuthMode`, `required_env_var`.
+- <RepoFile path="src/console/widgets/auth_panel/form.rs" /> — `AuthForm`, `CredentialInput`, `AuthFormOutcome`.
+- <RepoFile path="src/console/manager/render/editor.rs" /> — `render_auth_tab`, `auth_flat_rows`.
+- <RepoFile path="src/console/manager/input/auth.rs" /> — auth tab input handler.
+- <RepoFile path="src/console/widgets/agent_choice/mod.rs" /> — `AgentChoiceState`.
+- <RepoFile path="src/console/manager/input/list.rs" /> — new-session / new-tab dispatch.
+- <RepoFile path="src/runtime/launch.rs" /> — operator env resolution, `CapsuleConfig` construction.
+- <RepoFile path="src/runtime/attach.rs" /> — `spawn_agent_session`.
+- <RepoFile path="src/operator_env.rs" /> — `EnvValue`, `OpRef`.

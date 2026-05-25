@@ -73,6 +73,10 @@ jackin' is a functional proof of concept, not a stable product line. **`Claude C
 
 - **Kubernetes platform support** — run agents on Kubernetes clusters instead of local Docker, enabling team-scale deployments and production debug containers. The vision is to use jackin' as a debug container in production environments — safely exploring issues with AI agent assistance inside a controlled Kubernetes pod.
 
+### Agent runtimes & authentication
+
+- **[Alternative provider support (Z.AI / GLM Coding Plan)](/reference/roadmap/alternative-provider-support/)** — per-tab API backend selection for Claude Code and future agents: configure `ZAI_API_KEY` once in the global or workspace auth tab (same `AuthKind` pattern as GitHub CLI), then choose `Anthropic` or `Z.AI` when spawning any Claude tab in the console or the in-container multiplexer; provider suffix shown in tab strip only when multiple providers are configured; process-level env injection keeps Anthropic and Z.AI tabs isolated in the same container (status: open — design complete, implementation planned)
+
 ### Security improvements
 
 - **[Network egress policy](/reference/roadmap/network-egress-policy/)** — outbound policy per role/workspace, with explicit enforcement-quality reporting across DinD, future microVM backends, SSH remotes, and Kubernetes. Inspired by Docker Sandboxes' host-side proxy model, Hazmat's network tiering, and the upstream `anthropics/claude-code` devcontainer allowlist approach (status: open — design proposal)
