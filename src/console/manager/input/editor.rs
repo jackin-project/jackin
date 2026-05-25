@@ -1383,8 +1383,10 @@ fn handle_token_generate_pick(
         }
     };
 
-    editor.pending_token_generate =
-        Some(crate::console::manager::state::PendingTokenGenerate { workspace, args });
+    editor.pending_token_generate = Some(crate::console::manager::state::PendingTokenGenerate {
+        scope: crate::workspace::token_setup::TokenSetupScope::Workspace(workspace),
+        args,
+    });
     editor.clear_modal_chain();
 }
 

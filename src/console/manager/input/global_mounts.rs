@@ -374,10 +374,26 @@ fn open_settings_auth_form(
     });
 }
 
+/// Whether the open settings Auth modal is eligible for the `g`/`G`
+/// generate trigger: an `AuthForm` showing the global Claude
+/// `oauth_token` slot. Settings generate is always global Claude, so —
+/// unlike the workspace editor — there is no per-target gate.
+pub(in crate::console::manager) fn settings_auth_can_generate_token(
+    auth: &super::super::state::SettingsAuthState,
+) -> bool {
+    matches!(
+        auth.modal.as_ref(),
+        Some(SettingsAuthModal::AuthForm { state, .. })
+            if state.kind == crate::console::manager::auth_kind::AuthKind::Claude
+                && state.mode == Some(crate::console::manager::auth_kind::AuthMode::OAuthToken)
+    )
+}
+
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_settings_auth_modal(
     auth: &mut super::super::state::SettingsAuthState,
     env: &mut super::super::state::SettingsEnvState<'_>,
+    pending_token_generate: &mut Option<super::super::state::PendingTokenGenerate>,
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
@@ -394,6 +410,27 @@ pub(super) fn handle_settings_auth_modal(
         } => {
             if key.code == KeyCode::Esc {
                 auth.pending_auth_form_return = None;
+                return;
+            }
+            // `g`/`G` at any focus mints a global Claude OAuth token into
+            // a new/edited 1Password location. Gated to the global Claude
+            // `oauth_token` slot; a no-op for any other kind/mode.
+            if matches!(key.code, KeyCode::Char('g' | 'G'))
+                && state.kind == crate::console::manager::auth_kind::AuthKind::Claude
+                && state.mode == Some(crate::console::manager::auth_kind::AuthMode::OAuthToken)
+            {
+                auth.generating_token = true;
+                auth.pending_auth_form_return = None;
+                auth.modal = Some(SettingsAuthModal::OpPicker {
+                    state: Box::new(
+                        crate::console::widgets::op_picker::OpPickerState::new_create_with_cache(
+                            op_cache,
+                            crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE
+                                .replace("{ws}", "global"),
+                            crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
+                        ),
+                    ),
+                });
                 return;
             }
             match *focus {
@@ -523,41 +560,123 @@ pub(super) fn handle_settings_auth_modal(
             ModalOutcome::Cancel => restore_settings_auth_form(auth),
             ModalOutcome::Continue => auth.modal = Some(modal),
         },
-        SettingsAuthModal::OpPicker { state } => match state.handle_key(key) {
-            // Browse-mode caller: only `Existing` is reachable.
-            ModalOutcome::Commit(
-                crate::console::widgets::op_picker::OpPickerSelection::NewItem { .. }
-                | crate::console::widgets::op_picker::OpPickerSelection::EditItemField { .. },
-            ) => unreachable!("settings-auth OpPicker runs in Browse mode"),
-            ModalOutcome::Commit(
-                crate::console::widgets::op_picker::OpPickerSelection::Existing(op_ref),
-            ) => {
-                if let Some(AuthFormReturnPath {
-                    target,
-                    mut state,
-                    literal_buffer,
-                    ..
-                }) = auth.pending_auth_form_return.take()
-                {
-                    match state.try_commit_op_ref(&crate::operator_env::OpCli::new(), op_ref) {
-                        Ok(()) => {
-                            auth.modal = Some(SettingsAuthModal::AuthForm {
-                                target,
-                                state,
-                                focus: AuthFormFocus::Save,
-                                literal_buffer,
-                            });
-                        }
-                        Err(err) => {
-                            auth.error = Some(format!("1Password read failed: {err}"));
+        SettingsAuthModal::OpPicker { state } => {
+            let outcome = state.handle_key(key);
+            // Token-generate wins over the browse/provide dispatch:
+            // `generating_token` is set exactly when the picker was opened
+            // by the auth-form `g`/`G` trigger (Create mode), so the create
+            // variants are reachable only on this path.
+            if auth.generating_token {
+                handle_settings_token_generate_pick(auth, pending_token_generate, outcome, modal);
+                return;
+            }
+            match outcome {
+                // Browse-mode caller: only `Existing` is reachable.
+                ModalOutcome::Commit(
+                    crate::console::widgets::op_picker::OpPickerSelection::NewItem { .. }
+                    | crate::console::widgets::op_picker::OpPickerSelection::EditItemField { .. },
+                ) => unreachable!("settings-auth browse OpPicker runs in Browse mode"),
+                ModalOutcome::Commit(
+                    crate::console::widgets::op_picker::OpPickerSelection::Existing(op_ref),
+                ) => {
+                    if let Some(AuthFormReturnPath {
+                        target,
+                        mut state,
+                        literal_buffer,
+                        ..
+                    }) = auth.pending_auth_form_return.take()
+                    {
+                        match state.try_commit_op_ref(&crate::operator_env::OpCli::new(), op_ref) {
+                            Ok(()) => {
+                                auth.modal = Some(SettingsAuthModal::AuthForm {
+                                    target,
+                                    state,
+                                    focus: AuthFormFocus::Save,
+                                    literal_buffer,
+                                });
+                            }
+                            Err(err) => {
+                                auth.error = Some(format!("1Password read failed: {err}"));
+                            }
                         }
                     }
                 }
+                ModalOutcome::Cancel => restore_settings_auth_form(auth),
+                ModalOutcome::Continue => auth.modal = Some(modal),
             }
-            ModalOutcome::Cancel => restore_settings_auth_form(auth),
-            ModalOutcome::Continue => auth.modal = Some(modal),
-        },
+        }
     }
+}
+
+/// Translate a Create-mode `OpPicker` commit into a global
+/// [`PendingTokenGenerate`](super::super::state::PendingTokenGenerate)
+/// request that the `run_console` loop drains to mint the token.
+/// `Existing` cannot occur in Create mode; a Cancel (or stray
+/// `Existing`) just closes the chain. On `Continue` the picker is still
+/// drilling, so the marker stays armed and the modal stays open.
+fn handle_settings_token_generate_pick(
+    auth: &mut super::super::state::SettingsAuthState,
+    pending_token_generate: &mut Option<super::super::state::PendingTokenGenerate>,
+    outcome: ModalOutcome<crate::console::widgets::op_picker::OpPickerSelection>,
+    modal: SettingsAuthModal<'static>,
+) {
+    use crate::console::widgets::op_picker::OpPickerSelection;
+    use crate::workspace::token_setup::{EditExistingTarget, TokenSetupArgs};
+
+    let args = match outcome {
+        ModalOutcome::Commit(OpPickerSelection::NewItem {
+            account,
+            vault,
+            item_name,
+            section,
+            field_label,
+        }) => TokenSetupArgs {
+            vault: Some(vault.id),
+            item_name: Some(item_name),
+            account: account.map(|a| a.id),
+            reuse: None,
+            field_label: Some(field_label),
+            section,
+            edit_existing: None,
+        },
+        ModalOutcome::Commit(OpPickerSelection::EditItemField {
+            account,
+            vault,
+            item,
+            section,
+            field_label,
+        }) => TokenSetupArgs {
+            vault: None,
+            item_name: None,
+            account: account.map(|a| a.id),
+            reuse: None,
+            field_label: None,
+            section: None,
+            edit_existing: Some(EditExistingTarget {
+                vault_id: vault.id,
+                item_id: item.id,
+                field_label,
+                section,
+            }),
+        },
+        // Still drilling — leave the picker open and stay armed.
+        ModalOutcome::Continue => {
+            auth.modal = Some(modal);
+            return;
+        }
+        // `Existing` is unreachable in Create mode; a Cancel pops the
+        // chain. Both close without minting and disarm the marker.
+        ModalOutcome::Commit(OpPickerSelection::Existing(_)) | ModalOutcome::Cancel => {
+            auth.generating_token = false;
+            return;
+        }
+    };
+
+    auth.generating_token = false;
+    *pending_token_generate = Some(super::super::state::PendingTokenGenerate {
+        scope: crate::workspace::token_setup::TokenSetupScope::Global,
+        args,
+    });
 }
 
 fn cycle_auth_form_mode(form: &mut AuthForm) {
@@ -2119,6 +2238,100 @@ mod tests {
             settings.auth.modal,
             Some(SettingsAuthModal::AuthForm { .. })
         ));
+    }
+
+    /// `g` on the global Claude `oauth_token` auth form opens the
+    /// `OpPicker` in Create mode and arms `generating_token`, driving
+    /// the global token-generate (mint) path.
+    #[test]
+    fn settings_auth_generate_opens_create_op_picker_and_arms_flag() {
+        use crate::console::manager::auth_kind::{AuthKind, AuthMode};
+        use crate::console::widgets::op_picker::OpPickerMode;
+
+        let config = AppConfig::default();
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Auth;
+        settings.tab_bar_focused = false;
+        settings.auth.selected_kind = Some(AuthKind::Claude);
+        open_settings_auth_form(&mut settings.auth, &settings.env);
+        // Drive the mode to OAuthToken so the generate gate holds.
+        let Some(SettingsAuthModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut()
+        else {
+            panic!("auth form must be open");
+        };
+        form.set_mode(AuthMode::OAuthToken);
+        assert!(settings_auth_can_generate_token(&settings.auth));
+
+        let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
+            crate::console::op_cache::OpCache::default(),
+        ));
+        let mut pending = None;
+        handle_settings_auth_modal(
+            &mut settings.auth,
+            &mut settings.env,
+            &mut pending,
+            key(KeyCode::Char('g')),
+            true,
+            op_cache,
+        );
+
+        let Some(SettingsAuthModal::OpPicker { state: picker }) = settings.auth.modal.as_ref()
+        else {
+            panic!("generate must open the OpPicker");
+        };
+        assert!(
+            matches!(picker.mode, OpPickerMode::Create { .. }),
+            "generate must open the OpPicker in Create mode"
+        );
+        assert!(
+            settings.auth.generating_token,
+            "generate must arm the global token-generate flag"
+        );
+        assert!(
+            pending.is_none(),
+            "no mint request is built until the picker commits"
+        );
+    }
+
+    /// `g` is a no-op on the global Claude form when the mode is not
+    /// `oauth_token` (here ApiKey): the auth form stays open and the
+    /// generate flag is not armed.
+    #[test]
+    fn settings_auth_generate_is_noop_for_non_oauth_token_mode() {
+        use crate::console::manager::auth_kind::{AuthKind, AuthMode};
+
+        let config = AppConfig::default();
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Auth;
+        settings.tab_bar_focused = false;
+        settings.auth.selected_kind = Some(AuthKind::Claude);
+        open_settings_auth_form(&mut settings.auth, &settings.env);
+        let Some(SettingsAuthModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut()
+        else {
+            panic!("auth form must be open");
+        };
+        form.set_mode(AuthMode::ApiKey);
+        assert!(!settings_auth_can_generate_token(&settings.auth));
+
+        let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
+            crate::console::op_cache::OpCache::default(),
+        ));
+        let mut pending = None;
+        handle_settings_auth_modal(
+            &mut settings.auth,
+            &mut settings.env,
+            &mut pending,
+            key(KeyCode::Char('g')),
+            true,
+            op_cache,
+        );
+
+        assert!(matches!(
+            settings.auth.modal,
+            Some(SettingsAuthModal::AuthForm { .. })
+        ));
+        assert!(!settings.auth.generating_token);
+        assert!(pending.is_none());
     }
 
     #[test]

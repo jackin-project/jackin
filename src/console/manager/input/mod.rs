@@ -180,6 +180,7 @@ pub fn handle_key(
         global_mounts::handle_settings_auth_modal(
             &mut settings.auth,
             &mut settings.env,
+            &mut settings.pending_token_generate,
             key,
             op_available,
             op_cache,

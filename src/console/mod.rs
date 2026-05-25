@@ -723,67 +723,99 @@ pub async fn run_console(
         // in scope) so a request set by the previous iteration's input is
         // handled before the next frame.
         let pending = if let ConsoleStage::Manager(ms) = &mut state.stage {
-            if let ManagerStage::Editor(ed) = &mut ms.stage {
-                ed.pending_token_generate.take()
-            } else {
-                None
+            match &mut ms.stage {
+                ManagerStage::Editor(ed) => ed.pending_token_generate.take(),
+                ManagerStage::Settings(s) => s.pending_token_generate.take(),
+                _ => None,
             }
         } else {
             None
         };
         if let Some(req) = pending {
+            use crate::workspace::token_setup::TokenSetupScope;
             let mut out = std::io::stdout();
             suspend_console_terminal(&mut out);
+            let label = match &req.scope {
+                TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
+                TokenSetupScope::Global => "global config".to_string(),
+            };
             println!(
-                "\nGenerating Claude OAuth token for workspace {:?} — complete the browser \
+                "\nGenerating Claude OAuth token for {label} — complete the browser \
                  sign-in, then paste the code below.\n",
-                req.workspace
             );
-            let mint = crate::workspace::token_setup::run_setup(
-                paths,
-                &mut config,
-                &req.workspace,
-                &req.args,
-            );
+            let mint =
+                crate::workspace::token_setup::run_setup(paths, &mut config, &req.scope, &req.args);
             let _ = resume_console_terminal(&mut out);
             // Force a full redraw next frame so leftover child output is
             // cleared before the TUI repaints.
             let _ = terminal.clear();
             match mint {
                 Ok(report) => {
-                    // Sync the editor's working copy so the Auth tab
-                    // reflects the freshly-wired credential without a
-                    // reopen. `run_setup` already persisted to disk, so
-                    // mirror both pending + original to leave no diff. The
-                    // populated Auth row is the operator's confirmation.
-                    if let ConsoleStage::Manager(ms) = &mut state.stage
-                        && let ManagerStage::Editor(ed) = &mut ms.stage
-                    {
-                        let claude = crate::config::AgentAuthConfig {
-                            auth_forward: crate::config::AuthForwardMode::OAuthToken,
-                        };
-                        ed.pending.claude = Some(claude.clone());
-                        ed.original.claude = Some(claude);
-                        let val = crate::operator_env::EnvValue::OpRef(report.op_ref.clone());
-                        ed.pending.env.insert(
-                            crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string(),
-                            val.clone(),
-                        );
-                        ed.original
-                            .env
-                            .insert(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string(), val);
+                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        match &mut ms.stage {
+                            // Sync the editor's working copy so the Auth tab
+                            // reflects the freshly-wired credential without a
+                            // reopen. `run_setup` already persisted to disk,
+                            // so mirror both pending + original to leave no
+                            // diff. The populated Auth row is the operator's
+                            // confirmation.
+                            ManagerStage::Editor(ed) => {
+                                let claude = crate::config::AgentAuthConfig {
+                                    auth_forward: crate::config::AuthForwardMode::OAuthToken,
+                                };
+                                ed.pending.claude = Some(claude.clone());
+                                ed.original.claude = Some(claude);
+                                let val =
+                                    crate::operator_env::EnvValue::OpRef(report.op_ref.clone());
+                                ed.pending.env.insert(
+                                    crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string(),
+                                    val.clone(),
+                                );
+                                ed.original.env.insert(
+                                    crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string(),
+                                    val,
+                                );
+                            }
+                            // Rebuild the settings Auth view from the now-
+                            // persisted config so the Claude row shows
+                            // oauth_token + the op ref. Only `auth` is
+                            // rebuilt: an in-flight Auth-tab edit would be
+                            // for the same row the operator just minted, and
+                            // other tabs' unsaved drafts are preserved.
+                            ManagerStage::Settings(s) => {
+                                s.auth =
+                                    crate::console::manager::state::SettingsAuthState::from_config(
+                                        &config,
+                                    );
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 Err(e) => {
-                    if let ConsoleStage::Manager(ms) = &mut state.stage
-                        && let ManagerStage::Editor(ed) = &mut ms.stage
-                    {
-                        ed.modal = Some(Modal::ErrorPopup {
-                            state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                                "Token generation failed",
-                                e.to_string(),
-                            ),
-                        });
+                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        match &mut ms.stage {
+                            ManagerStage::Editor(ed) => {
+                                ed.modal = Some(Modal::ErrorPopup {
+                                    state:
+                                        crate::console::widgets::error_popup::ErrorPopupState::new(
+                                            "Token generation failed",
+                                            e.to_string(),
+                                        ),
+                                });
+                            }
+                            // Settings surfaces errors through its top-level
+                            // error popup slot (same widget as the editor).
+                            ManagerStage::Settings(s) => {
+                                s.error_popup = Some(
+                                    crate::console::widgets::error_popup::ErrorPopupState::new(
+                                        "Token generation failed",
+                                        e.to_string(),
+                                    ),
+                                );
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }

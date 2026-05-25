@@ -388,10 +388,27 @@ pub(super) fn settings_env_modal_footer_items(modal: &SettingsEnvModal<'_>) -> V
     }
 }
 
-pub(super) fn settings_auth_modal_footer_items(modal: &SettingsAuthModal<'_>) -> Vec<FooterItem> {
+pub(super) fn settings_auth_modal_footer_items(
+    auth: &crate::console::manager::state::SettingsAuthState,
+) -> Vec<FooterItem> {
+    let Some(modal) = auth.modal.as_ref() else {
+        return Vec::new();
+    };
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
-            auth_form_footer_items(state.as_ref(), *focus)
+            let mut items = auth_form_footer_items(state.as_ref(), *focus);
+            // The auth-form `g`/`G` generate trigger is gated to the
+            // global Claude oauth_token slot; surface the hint only when
+            // that gate holds.
+            if crate::console::manager::input::global_mounts::settings_auth_can_generate_token(auth)
+            {
+                items.extend([
+                    FooterItem::GroupSep,
+                    FooterItem::Key("G"),
+                    FooterItem::Text("generate"),
+                ]);
+            }
+            items
         }
         SettingsAuthModal::TextInput { .. } => vec![
             FooterItem::Key("Enter"),

@@ -38,8 +38,8 @@ pub(super) fn render_settings(
     let area = frame.area();
     // When a modal is open, show its keys in the footer (the "behind" keys are unreachable).
     // Check in priority order: auth modal > env modal > mounts modal > no modal.
-    let footer = if let Some(modal) = &state.auth.modal {
-        settings_auth_modal_footer_items(modal)
+    let footer = if state.auth.modal.is_some() {
+        settings_auth_modal_footer_items(&state.auth)
     } else if let Some(modal) = &state.env.modal {
         settings_env_modal_footer_items(modal)
     } else if let Some(modal) = &state.mounts.modal {

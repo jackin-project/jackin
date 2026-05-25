@@ -88,6 +88,31 @@ pub struct TokenSetupArgs {
     pub section: Option<String>,
 }
 
+/// Where a generated token's config wiring lands.
+#[derive(Debug, Clone)]
+pub enum TokenSetupScope {
+    /// Wire `[workspaces.<name>]` claude auth + the workspace env slot.
+    Workspace(String),
+    /// Wire the global `[claude]` auth + the global env slot.
+    Global,
+}
+
+impl TokenSetupScope {
+    /// Workspace name for the `Workspace` variant, used to stamp the op
+    /// item title, expiry cache, and report line; `None` for `Global`.
+    fn workspace(&self) -> Option<&str> {
+        match self {
+            Self::Workspace(name) => Some(name),
+            Self::Global => None,
+        }
+    }
+
+    /// Item-title / op-tag label: the workspace name, or `"global"`.
+    fn label(&self) -> &str {
+        self.workspace().unwrap_or("global")
+    }
+}
+
 /// Identifies an existing 1Password item and field to update in-place
 /// during the interactive `--interactive` token-setup path.
 #[derive(Debug, Clone, Default)]
@@ -126,10 +151,10 @@ pub struct TokenSetupReport {
 pub fn run_setup(
     paths: &JackinPaths,
     config: &mut AppConfig,
-    workspace: &str,
+    scope: &TokenSetupScope,
     args: &TokenSetupArgs,
 ) -> anyhow::Result<TokenSetupReport> {
-    let op_cli = op_cli_for(config, workspace, args.account.as_deref());
+    let op_cli = op_cli_for_scope(config, scope, args.account.as_deref());
     // Probe `claude` only when we will actually mint a fresh token.
     // `--reuse` adopts an existing `op://` reference and never invokes
     // claude, so requiring it on PATH would block a legitimate flow.
@@ -141,7 +166,7 @@ pub fn run_setup(
     run_setup_with_runner(
         paths,
         config,
-        workspace,
+        scope,
         args,
         probe.as_ref(),
         host_claude::capture_setup_token,
@@ -165,7 +190,7 @@ pub fn run_setup(
 pub fn run_setup_with_runner<F>(
     paths: &JackinPaths,
     config: &mut AppConfig,
-    workspace: &str,
+    scope: &TokenSetupScope,
     args: &TokenSetupArgs,
     probe: Option<&host_claude::ClaudeProbe>,
     capture: F,
@@ -175,7 +200,9 @@ pub fn run_setup_with_runner<F>(
 where
     F: FnOnce() -> anyhow::Result<secrecy::SecretString>,
 {
-    config.require_workspace(workspace)?;
+    if let Some(workspace) = scope.workspace() {
+        config.require_workspace(workspace)?;
+    }
 
     let (op_ref, token_sha256_prefix, created) = if let Some(reuse_ref) = args.reuse.as_ref() {
         let value = op_reader.read(&reuse_ref.op).map_err(|e| {
@@ -213,7 +240,7 @@ where
                 target.section.as_deref(),
             )?
         } else {
-            create_op_item(op_writer, workspace, args, &secret, &prefix, probe)?
+            create_op_item(op_writer, scope, args, &secret, &prefix, probe)?
         };
         (op_ref, prefix, true)
     };
@@ -246,33 +273,51 @@ where
         }
     }
 
-    // Persist the workspace config last: a partial failure earlier
-    // must never leave a wired-but-broken slot.
+    // Persist the config last: a partial failure earlier must never
+    // leave a wired-but-broken slot.
     let mut editor = ConfigEditor::open(paths)?;
-    editor.set_workspace_auth_forward(
-        workspace,
-        crate::agent::Agent::Claude,
-        Some(AuthForwardMode::OAuthToken),
-    );
-    editor.set_env_var(
-        &EnvScope::Workspace(workspace.to_string()),
-        CLAUDE_OAUTH_TOKEN_ENV,
-        EnvValue::OpRef(op_ref.clone()),
-    )?;
-    if let Some(account) = args.account.as_deref()
-        && config
-            .workspaces
-            .get(workspace)
-            .and_then(|ws| ws.op_account.as_deref())
-            != Some(account)
-    {
-        editor.set_workspace_op_account(workspace, Some(account));
+    match scope {
+        TokenSetupScope::Workspace(workspace) => {
+            editor.set_workspace_auth_forward(
+                workspace,
+                crate::agent::Agent::Claude,
+                Some(AuthForwardMode::OAuthToken),
+            );
+            editor.set_env_var(
+                &EnvScope::Workspace(workspace.clone()),
+                CLAUDE_OAUTH_TOKEN_ENV,
+                EnvValue::OpRef(op_ref.clone()),
+            )?;
+            if let Some(account) = args.account.as_deref()
+                && config
+                    .workspaces
+                    .get(workspace)
+                    .and_then(|ws| ws.op_account.as_deref())
+                    != Some(account)
+            {
+                editor.set_workspace_op_account(workspace, Some(account));
+            }
+        }
+        TokenSetupScope::Global => {
+            editor
+                .set_global_auth_forward(crate::agent::Agent::Claude, AuthForwardMode::OAuthToken);
+            editor.set_env_var(
+                &EnvScope::Global,
+                CLAUDE_OAUTH_TOKEN_ENV,
+                EnvValue::OpRef(op_ref.clone()),
+            )?;
+            // No op_account write for global: op_account is a per-workspace field.
+        }
     }
     let saved = editor.save()?;
     *config = saved;
 
-    let op_account =
-        effective_account(config, workspace, args.account.as_deref()).map(str::to_string);
+    let op_account = match scope {
+        TokenSetupScope::Workspace(workspace) => {
+            effective_account(config, workspace, args.account.as_deref()).map(str::to_string)
+        }
+        TokenSetupScope::Global => args.account.clone(),
+    };
 
     // Stamp the expiry estimate into the local cache so the launch
     // diagnostic can render an `expires in N days` banner without
@@ -282,25 +327,30 @@ where
     // the cache write fails (filesystem full / permission), the
     // operator is told and the report's `expiry_estimate` is set to
     // `None` so it matches what the launch banner will see.
-    let expiry_estimate = if created {
-        let expiry = upstream_expiry_stamp();
-        match write_expiry_stamp(paths, workspace, &expiry) {
-            Ok(()) => Some(expiry),
-            Err(e) => {
-                eprintln!(
-                    "[jackin] note: token cached in 1Password, but expiry banner cache \
-                     write failed: {e} — launch banner will not show 'expires in N days' \
-                     for this workspace until the next setup."
-                );
-                None
+    //
+    // The expiry stamp is keyed per workspace; the launch banner that
+    // reads it is per-workspace too, so the `Global` scope has no
+    // banner to feed and skips the stamp entirely.
+    let expiry_estimate = match (created, scope.workspace()) {
+        (true, Some(workspace)) => {
+            let expiry = upstream_expiry_stamp();
+            match write_expiry_stamp(paths, workspace, &expiry) {
+                Ok(()) => Some(expiry),
+                Err(e) => {
+                    eprintln!(
+                        "[jackin] note: token cached in 1Password, but expiry banner cache \
+                         write failed: {e} — launch banner will not show 'expires in N days' \
+                         for this workspace until the next setup."
+                    );
+                    None
+                }
             }
         }
-    } else {
-        None
+        _ => None,
     };
 
     Ok(TokenSetupReport {
-        workspace: workspace.to_string(),
+        workspace: scope.label().to_string(),
         claude_cli_version: probe.map(|p| p.version.clone()),
         op_ref,
         op_account,
@@ -498,7 +548,7 @@ pub struct DoctorReport {
 
 fn create_op_item(
     op_writer: &dyn OpWriteRunner,
-    workspace: &str,
+    scope: &TokenSetupScope,
     args: &TokenSetupArgs,
     secret: &secrecy::SecretString,
     token_sha256_prefix: &str,
@@ -513,14 +563,20 @@ fn create_op_item(
         )
     })?;
 
+    // `{ws}` in the title template substitutes the scope label: the
+    // workspace name, or the literal `global` for the global scope.
+    let label = scope.label();
     let title_template = args.item_name.as_deref().unwrap_or(DEFAULT_ITEM_TEMPLATE);
-    let title = title_template.replace("{ws}", workspace);
+    let title = title_template.replace("{ws}", label);
 
-    let workspace_tag = format!("{WORKSPACE_TAG_PREFIX}{workspace}");
+    // Single deterministic scoping tag: `workspace=<name>` for a
+    // workspace, `workspace=global` for the global scope. Reusing the
+    // existing prefix keeps list/search filters uniform across scopes.
+    let workspace_tag = format!("{WORKSPACE_TAG_PREFIX}{label}");
     let expires = upstream_expiry_stamp();
     let notes = format!(
         "Managed by jackin\n\
-         workspace = {workspace}\n\
+         workspace = {label}\n\
          host_claude = {claude}\n\
          created = {now}\n\
          expires_estimate = {expires}\n\
@@ -569,6 +625,22 @@ fn op_cli_for(
 ) -> crate::operator_env::OpCli {
     let account = effective_account(config, workspace, explicit).map(str::to_string);
     crate::operator_env::OpCli::new().with_account(account)
+}
+
+/// Scope-aware `OpCli` builder for `run_setup`. The `Workspace` variant
+/// folds in the workspace's stored `op_account`; `Global` has no
+/// workspace to read, so it uses only the explicit `--account`.
+fn op_cli_for_scope(
+    config: &AppConfig,
+    scope: &TokenSetupScope,
+    explicit: Option<&str>,
+) -> crate::operator_env::OpCli {
+    match scope {
+        TokenSetupScope::Workspace(workspace) => op_cli_for(config, workspace, explicit),
+        TokenSetupScope::Global => {
+            crate::operator_env::OpCli::new().with_account(explicit.map(str::to_string))
+        }
+    }
 }
 
 /// Outcome of the post-write orphan-cleanup attempt that runs when
@@ -922,7 +994,7 @@ mod tests {
         let report = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 vault: Some("Personal".into()),
                 ..Default::default()
@@ -978,6 +1050,64 @@ mod tests {
         assert_eq!(reader.last_ref.borrow().last().unwrap(), "op://VID/IID/FID");
     }
 
+    /// The `Global` scope wires the global `[claude]` auth + global env
+    /// slot (no workspace require, no `op_account`, no expiry stamp), and
+    /// stamps the op item with the `global` label.
+    #[test]
+    fn run_setup_with_runner_global_scope_wires_global_config() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.config_dir).unwrap();
+        let mut cfg = AppConfig::default();
+        std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
+
+        let writer = FakeOpWriter::new(dummy_op_ref());
+        let token = "sk-ant-oat01-GLOBAL";
+        let reader = FakeOpReader::ok(token);
+        let probe = dummy_probe();
+
+        let report = run_setup_with_runner(
+            &paths,
+            &mut cfg,
+            &TokenSetupScope::Global,
+            &TokenSetupArgs {
+                vault: Some("Personal".into()),
+                ..Default::default()
+            },
+            Some(&probe),
+            || Ok(secrecy::SecretString::from(token.to_string())),
+            &reader,
+            &writer,
+        )
+        .unwrap();
+
+        // Item title used the `global` label, not a workspace name.
+        let last = writer.last_create.borrow().clone().unwrap();
+        assert_eq!(last.1, DEFAULT_ITEM_TEMPLATE.replace("{ws}", "global"));
+
+        // Global [claude] auth_forward set, no workspace touched.
+        let claude = cfg.claude.as_ref().unwrap();
+        assert_eq!(claude.auth_forward, AuthForwardMode::OAuthToken);
+        assert!(
+            cfg.workspaces.is_empty(),
+            "global scope must not add a workspace"
+        );
+        // Token wired into the global env block.
+        assert!(matches!(
+            cfg.env.get("CLAUDE_CODE_OAUTH_TOKEN"),
+            Some(EnvValue::OpRef(_))
+        ));
+
+        // Report uses the `global` label; no expiry stamp keyed by workspace.
+        assert_eq!(report.workspace, "global");
+        assert!(report.created);
+        assert!(
+            report.expiry_estimate.is_none(),
+            "global scope must not stamp a per-workspace expiry"
+        );
+        assert!(!expiry_cache_path(&paths, "global").exists());
+    }
+
     #[test]
     fn run_setup_with_runner_aborts_when_workspace_missing() {
         let temp = tempdir().unwrap();
@@ -989,7 +1119,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "ghost",
+            &TokenSetupScope::Workspace("ghost".into()),
             &TokenSetupArgs::default(),
             Some(&probe),
             || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
@@ -1011,7 +1141,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs::default(),
             Some(&probe),
             || {
@@ -1042,7 +1172,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 vault: Some("Personal".into()),
                 ..Default::default()
@@ -1080,7 +1210,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 vault: Some("Personal".into()),
                 ..Default::default()
@@ -1113,7 +1243,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 vault: Some("Personal".into()),
                 ..Default::default()
@@ -1152,7 +1282,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 vault: Some("Personal".into()),
                 ..Default::default()
@@ -1194,7 +1324,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 reuse: Some(OpRef {
                     op: "op://Other/Item/Field".into(),
@@ -1228,7 +1358,7 @@ mod tests {
         let report = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 reuse: Some(OpRef {
                     op: "op://VID/IID/FID".into(),
@@ -1597,7 +1727,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 vault: Some("Personal".into()),
                 ..Default::default()
@@ -1634,7 +1764,7 @@ mod tests {
         let err = run_setup_with_runner(
             &paths,
             &mut cfg,
-            "proj",
+            &TokenSetupScope::Workspace("proj".into()),
             &TokenSetupArgs {
                 vault: Some("Personal".into()),
                 ..Default::default()

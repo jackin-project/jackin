@@ -1431,7 +1431,12 @@ fn handle_claude_token(
                 }
             };
 
-            let report = token_setup::run_setup(paths, config, &workspace, &args)?;
+            let report = token_setup::run_setup(
+                paths,
+                config,
+                &token_setup::TokenSetupScope::Workspace(workspace),
+                &args,
+            )?;
             print_token_setup_report(&report);
             Ok(())
         }
@@ -1461,7 +1466,12 @@ fn handle_claude_token(
                 edit_existing: None,
                 section: None,
             };
-            let report = token_setup::run_setup(paths, config, &workspace, &args)?;
+            let report = token_setup::run_setup(
+                paths,
+                config,
+                &token_setup::TokenSetupScope::Workspace(workspace),
+                &args,
+            )?;
             print_token_setup_report(&report);
             delete_prior_op_item(prior, &report.op_ref, report.op_account)?;
             Ok(())

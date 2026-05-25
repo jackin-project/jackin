@@ -288,6 +288,9 @@ pub struct SettingsState<'a> {
     /// Error popup shown on top of all settings content. Dismissed with
     /// Enter / O / Esc; clears automatically when opened again.
     pub error_popup: Option<ErrorPopupState>,
+    /// Set by the Auth-tab `g`/`G` generate action; drained by the
+    /// `run_console` loop to run the global Claude OAuth-token mint.
+    pub pending_token_generate: Option<PendingTokenGenerate>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -411,6 +414,10 @@ pub struct SettingsAuthState {
     pub original_github_env: BTreeMap<String, crate::operator_env::EnvValue>,
     pub modal: Option<SettingsAuthModal<'static>>,
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
+    /// Set while the `g`/`G` generate action's Create-mode `OpPicker` is
+    /// open, so its commit knows the pick is a token-generate (always
+    /// global Claude) rather than a browse/provide pick.
+    pub generating_token: bool,
     pub error: Option<String>,
     pub scroll_y: u16,
     pub scroll_focused: bool,
@@ -536,7 +543,7 @@ pub struct WorkspaceSummary {
 /// `claude setup-token`.
 #[derive(Debug, Clone)]
 pub struct PendingTokenGenerate {
-    pub workspace: String,
+    pub scope: crate::workspace::token_setup::TokenSetupScope,
     pub args: crate::workspace::token_setup::TokenSetupArgs,
 }
 
@@ -772,6 +779,7 @@ impl SettingsState<'_> {
             auth: SettingsAuthState::from_config(config),
             trust: SettingsTrustState::from_config(config),
             error_popup: None,
+            pending_token_generate: None,
         }
     }
 
@@ -1056,6 +1064,7 @@ impl SettingsAuthState {
                 .unwrap_or_default(),
             modal: None,
             pending_auth_form_return: None,
+            generating_token: false,
             error: None,
             scroll_y: 0,
             scroll_focused: false,
@@ -1074,6 +1083,7 @@ impl SettingsAuthState {
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.modal = None;
         self.pending_auth_form_return = None;
+        self.generating_token = false;
         self.error = None;
     }
 }
