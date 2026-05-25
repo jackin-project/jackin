@@ -11,10 +11,8 @@ use ratatui::{
 use crate::operator_env::OpField;
 
 use super::super::scrollable::render_selected_lines_in_area;
-use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
-
-const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -245,14 +243,14 @@ fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
             // Subtitle stays dim even on the focused row so the title
             // remains the primary anchor. Empty subtitle → no parens.
             let mut spans = vec![
-                Span::styled(prefix.to_string(), title_style),
+                Span::styled(prefix, title_style),
                 Span::styled(item.name.clone(), title_style),
             ];
             if !item.subtitle.is_empty() {
                 let dim = Style::default().fg(PHOSPHOR_DIM);
-                spans.push(Span::styled(" (".to_string(), dim));
+                spans.push(Span::styled(" (", dim));
                 spans.push(Span::styled(item.subtitle.clone(), dim));
-                spans.push(Span::styled(")".to_string(), dim));
+                spans.push(Span::styled(")", dim));
             }
             Line::from(spans)
         })

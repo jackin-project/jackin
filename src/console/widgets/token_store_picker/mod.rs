@@ -491,8 +491,9 @@ impl<'a> TokenStorePickerState<'a> {
                 let vault_id = self
                     .selected_vault
                     .as_ref()
-                    .map(|v| v.id.clone())
-                    .unwrap_or_default();
+                    .expect("vault must be set when refreshing item list")
+                    .id
+                    .clone();
                 let account_id = self.selected_account_id();
                 self.items.clear();
                 self.item_list_state = ListState::default();
@@ -592,13 +593,15 @@ impl<'a> TokenStorePickerState<'a> {
                 let item_id = self
                     .selected_item
                     .as_ref()
-                    .map(|i| i.id.clone())
-                    .unwrap_or_default();
+                    .expect("item must be set when refreshing field list")
+                    .id
+                    .clone();
                 let vault_id = self
                     .selected_vault
                     .as_ref()
-                    .map(|v| v.id.clone())
-                    .unwrap_or_default();
+                    .expect("vault must be set when refreshing field list")
+                    .id
+                    .clone();
                 let account_id = self.selected_account_id();
                 self.fields.clear();
                 self.field_list_state = ListState::default();

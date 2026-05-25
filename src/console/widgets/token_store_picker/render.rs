@@ -14,10 +14,8 @@ use super::super::op_picker::render::{
 };
 use super::super::scrollable::render_selected_lines_in_area;
 use super::super::text_input;
-use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{OpLoadState, OpPickerError, TokenStorePickerState, TokenStoreStage};
-
-const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub fn render(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -126,7 +124,7 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &TokenStorePickerState, 
         .split(inner);
 
     let body = Line::from(vec![
-        Span::styled(glyph.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(glyph, Style::default().fg(PHOSPHOR_GREEN)),
         Span::raw("  "),
         Span::styled(descriptor, Style::default().fg(PHOSPHOR_DIM)),
     ]);
@@ -268,14 +266,14 @@ fn render_item_choice(frame: &mut Frame, area: Rect, state: &TokenStorePickerSta
                         Style::default().fg(WHITE)
                     };
                     let mut spans = vec![
-                        Span::styled(prefix.to_string(), title_style),
+                        Span::styled(prefix, title_style),
                         Span::styled(item.name.clone(), title_style),
                     ];
                     if !item.subtitle.is_empty() {
                         let dim = Style::default().fg(PHOSPHOR_DIM);
-                        spans.push(Span::styled(" (".to_string(), dim));
+                        spans.push(Span::styled(" (", dim));
                         spans.push(Span::styled(item.subtitle.clone(), dim));
-                        spans.push(Span::styled(")".to_string(), dim));
+                        spans.push(Span::styled(")", dim));
                     }
                     Line::from(spans)
                 }

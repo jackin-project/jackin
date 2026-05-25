@@ -104,12 +104,18 @@ pub fn run(workspace: &str, _account: Option<&str>) -> anyhow::Result<TokenStore
                     MouseEventKind::ScrollDown => KeyCode::Down,
                     _ => continue,
                 };
-                picker.handle_key(KeyEvent {
+                match picker.handle_key(KeyEvent {
                     code,
                     modifiers: KeyModifiers::NONE,
                     kind: KeyEventKind::Press,
                     state: KeyEventState::NONE,
-                });
+                }) {
+                    ModalOutcome::Commit(selection) => return Ok(selection),
+                    ModalOutcome::Cancel => {
+                        anyhow::bail!("token storage selection cancelled");
+                    }
+                    ModalOutcome::Continue => {}
+                }
             }
             _ => {}
         }
