@@ -1,0 +1,77 @@
+---
+title: Z.AI (GLM Coding Plan)
+description: Use Z.AI's Anthropic-compatible endpoint as an alternative provider for Claude Code sessions
+---
+import { Aside } from '@astrojs/starlight/components'
+
+
+[Z.AI's GLM Coding Plan](https://z.ai) provides an Anthropic-compatible API endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models at substantially lower cost than Anthropic's own billing. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
+
+When `ZAI_API_KEY` is configured, opening a new Claude tab presents a two-item provider picker — **Anthropic** or **Z.AI** — immediately after you select the Claude agent. Single-provider operators (no `ZAI_API_KEY`) see no change: the picker is skipped and the session opens directly.
+
+<Aside type="tip">
+Z.AI is configured in the **Auth** tab of `jackin console`, not by hand-editing any config file.
+</Aside>
+
+## Configure your Z.AI API key
+
+1. Open `jackin console`, select your workspace, and switch to the **Auth** tab.
+2. Scroll to the **Z.AI** row and press `Enter` or `Space` to open the auth form.
+3. Set the mode to **API Key** (press `Space` to cycle).
+4. Enter your `ZAI_API_KEY` — either a literal key or a 1Password reference resolved at launch time.
+5. Save the form.
+
+The key is written to the `[env]` map in your config file at the scope you chose (global or per-workspace). A workspace-level key overrides the global one.
+
+To remove Z.AI, open the same row, cycle the mode back to **Ignore**, and save. Ignore is the default when no key is set — Z.AI does not appear in any picker.
+
+## Using the provider picker
+
+With `ZAI_API_KEY` configured:
+
+**In the console** — press `N` on an active container row to open a new session. After you select the Claude agent, a second picker appears:
+
+```
+▸ Anthropic
+  Z.AI
+```
+
+Use arrow keys and `Enter` to pick. `Escape` cancels back to the agent picker.
+
+**In the multiplexer** — press `N` inside a running container (the same `N` key that opens a new agent tab). The same two-step sequence applies: agent picker first, provider picker second if both are available.
+
+## Tab labels
+
+When both Anthropic and Z.AI are configured in the same container, the tab strip labels reflect the active provider:
+
+| Active provider | Tab label |
+|---|---|
+| Anthropic | `Claude (Anthropic)` |
+| Z.AI | `Claude (Z.AI)` |
+
+When only one provider is configured, the bare `Claude` label is used — no suffix added for single-provider containers.
+
+## Scopes
+
+`ZAI_API_KEY` follows the standard 4-layer env resolution — most-specific wins:
+
+**per-(workspace × role) > per-workspace > global > absent**
+
+Set a global key to have Z.AI available in every workspace, or set a per-workspace key to restrict it to specific projects. The Auth tab in `jackin console` manages both scopes through the same Z.AI row.
+
+## How the redirect works
+
+When you select Z.AI in the provider picker, jackin' injects two environment variables into the spawned Claude Code process at launch time — not into any shared config file:
+
+- `ANTHROPIC_AUTH_TOKEN` — set to your `ZAI_API_KEY` value
+- `ANTHROPIC_BASE_URL` — set to `https://api.z.ai/api/anthropic`
+
+Claude Code's API client reads these from its process environment and routes all calls to Z.AI's endpoint. **No other tabs or sessions in the container are affected.** Anthropic tabs continue to use the container's Claude credentials; Z.AI tabs use the injected redirect. Both can run simultaneously in the same container.
+
+The key is never logged in compact output. It does not appear in `cdebug!` trace output.
+
+## See also
+
+- [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin' applies across every auth axis.
+- [Agent Authentication](/guides/authentication/agents/) — agent-level auth forwarding for Claude Code, Codex, Amp, Kimi, and OpenCode.
+- [Environment Variables](/guides/environment-variables/) — how the operator env-vars model supplies credentials at global and per-workspace scope.

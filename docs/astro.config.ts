@@ -88,6 +88,7 @@ export default defineConfig({
                   ],
                 },
                 { label: 'GitHub CLI Authentication', slug: 'guides/authentication/github-cli' },
+                { label: 'Z.AI (GLM Coding Plan)', slug: 'guides/authentication/zai' },
               ],
             },
             { label: 'Running inside tmux', slug: 'guides/tmux' },
@@ -318,7 +319,6 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Multi-runtime support', slug: 'reference/roadmap/multi-runtime-support' },
-                    { label: 'Alternative provider support (Z.AI)', slug: 'reference/roadmap/alternative-provider-support' },
                     { label: 'Native APM role support', slug: 'reference/roadmap/native-apm-role-support' },
                     { label: 'Reliable Claude authentication strategy', slug: 'reference/roadmap/claude-auth-strategy' },
                     { label: 'Workspace Claude token setup', slug: 'reference/roadmap/workspace-claude-token-setup' },
