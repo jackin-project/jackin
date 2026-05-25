@@ -32,7 +32,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
 /// Multi-account titles lead with the chosen account's email so the
 /// operator can see which account they're drilling into; single-
 /// account titles omit it (no ambiguity to resolve).
-fn breadcrumb_title(
+pub fn breadcrumb_title(
     stage: OpPickerStage,
     multi_account: bool,
     account_email: &str,
@@ -65,7 +65,7 @@ fn breadcrumb_title(
     }
 }
 
-fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
+pub fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
     let title_text: String = title.into();
     let title_span = Span::styled(
         format!(" {title_text} "),
@@ -75,6 +75,31 @@ fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(title_span)
+}
+
+/// Renders the standard `Filter: ░░░█` input row.
+///
+/// Uses `░` blocks as a dotted placeholder when empty and a blinking
+/// `█` cursor when the operator has typed something.
+pub fn render_filter_row(frame: &mut Frame, area: Rect, filter_buf: &str) {
+    let line = if filter_buf.is_empty() {
+        Line::from(vec![
+            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled(filter_buf.to_string(), Style::default().fg(WHITE)),
+            Span::styled(
+                "\u{2588}",
+                Style::default()
+                    .fg(WHITE)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
+        ])
+    };
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 #[allow(clippy::too_many_lines)]
@@ -124,26 +149,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         frame.render_widget(Paragraph::new(line), rows[0]);
     }
 
-    // Filter row: `Filter: <buf>█` — placeholder dotted underline when
-    // empty, cursor block at the end when populated.
-    let filter_line = if state.filter_buf.is_empty() {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled(state.filter_buf.clone(), Style::default().fg(WHITE)),
-            Span::styled(
-                "\u{2588}",
-                Style::default()
-                    .fg(WHITE)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ])
-    };
-    frame.render_widget(Paragraph::new(filter_line), rows[1]);
+    render_filter_row(frame, rows[1], &state.filter_buf);
 
     // List rows.
     let list_lines: Vec<Line<'static>> = match state.stage {
@@ -366,7 +372,7 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
     frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
 }
 
-fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
+pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
     let block = modal_block("1Password");
     let inner = block.inner(area);
     frame.render_widget(block, area);

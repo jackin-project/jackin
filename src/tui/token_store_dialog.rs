@@ -6,7 +6,10 @@
 //! the terminal before returning the operator's selection.
 
 use crossterm::ExecutableCommand;
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyEventState, KeyModifiers, MouseEventKind,
+};
 use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -24,6 +27,7 @@ impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let mut stdout = std::io::stdout();
         let _ = crossterm::terminal::disable_raw_mode();
+        let _ = stdout.execute(DisableMouseCapture);
         let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
         let _ = stdout.execute(crossterm::cursor::Show);
     }
@@ -61,6 +65,7 @@ pub fn run(workspace: &str, _account: Option<&str>) -> anyhow::Result<TokenStore
     let _guard = TerminalGuard;
     let mut stdout = std::io::stdout();
     stdout.execute(EnterAlternateScreen)?;
+    stdout.execute(EnableMouseCapture)?;
 
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::new(backend)?;
@@ -80,17 +85,33 @@ pub fn run(workspace: &str, _account: Option<&str>) -> anyhow::Result<TokenStore
         }
         let ev = event::read()?;
 
-        if let Event::Key(key) = ev {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-            match picker.handle_key(key) {
-                ModalOutcome::Commit(selection) => return Ok(selection),
-                ModalOutcome::Cancel => {
-                    anyhow::bail!("token storage selection cancelled");
+        match ev {
+            Event::Key(key) => {
+                if key.kind != KeyEventKind::Press {
+                    continue;
                 }
-                ModalOutcome::Continue => {}
+                match picker.handle_key(key) {
+                    ModalOutcome::Commit(selection) => return Ok(selection),
+                    ModalOutcome::Cancel => {
+                        anyhow::bail!("token storage selection cancelled");
+                    }
+                    ModalOutcome::Continue => {}
+                }
             }
+            Event::Mouse(mouse) => {
+                let code = match mouse.kind {
+                    MouseEventKind::ScrollUp => KeyCode::Up,
+                    MouseEventKind::ScrollDown => KeyCode::Down,
+                    _ => continue,
+                };
+                picker.handle_key(KeyEvent {
+                    code,
+                    modifiers: KeyModifiers::NONE,
+                    kind: KeyEventKind::Press,
+                    state: KeyEventState::NONE,
+                });
+            }
+            _ => {}
         }
     }
 }

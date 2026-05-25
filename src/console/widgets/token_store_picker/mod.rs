@@ -377,6 +377,13 @@ impl<'a> TokenStorePickerState<'a> {
     fn handle_account_key(&mut self, key: KeyEvent) -> ModalOutcome<TokenStoreSelection> {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
+            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.accounts.clear();
+                self.account_list_state = ListState::default();
+                self.selected_account = None;
+                self.start_account_load();
+                ModalOutcome::Continue
+            }
             KeyCode::Enter => {
                 let visible = self.filtered_accounts();
                 let cur = self.account_list_state.selected.unwrap_or(0);
@@ -426,6 +433,14 @@ impl<'a> TokenStorePickerState<'a> {
                     ModalOutcome::Cancel
                 }
             }
+            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let account_id = self.selected_account_id();
+                self.vaults.clear();
+                self.vault_list_state = ListState::default();
+                self.selected_vault = None;
+                self.start_vault_load(account_id);
+                ModalOutcome::Continue
+            }
             KeyCode::Enter => {
                 let visible = self.filtered_vaults();
                 let cur = self.vault_list_state.selected.unwrap_or(0);
@@ -470,6 +485,18 @@ impl<'a> TokenStorePickerState<'a> {
                 self.filter_buf.clear();
                 self.selected_vault = None;
                 self.items.clear();
+                ModalOutcome::Continue
+            }
+            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let vault_id = self
+                    .selected_vault
+                    .as_ref()
+                    .map(|v| v.id.clone())
+                    .unwrap_or_default();
+                let account_id = self.selected_account_id();
+                self.items.clear();
+                self.item_list_state = ListState::default();
+                self.start_item_load(vault_id, account_id);
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
@@ -559,6 +586,23 @@ impl<'a> TokenStorePickerState<'a> {
                 self.filter_buf.clear();
                 self.selected_item = None;
                 self.fields.clear();
+                ModalOutcome::Continue
+            }
+            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let item_id = self
+                    .selected_item
+                    .as_ref()
+                    .map(|i| i.id.clone())
+                    .unwrap_or_default();
+                let vault_id = self
+                    .selected_vault
+                    .as_ref()
+                    .map(|v| v.id.clone())
+                    .unwrap_or_default();
+                let account_id = self.selected_account_id();
+                self.fields.clear();
+                self.field_list_state = ListState::default();
+                self.start_field_load(item_id, vault_id, account_id);
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {

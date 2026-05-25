@@ -2,18 +2,20 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
+use super::super::op_picker::OpPickerStage;
+use super::super::op_picker::render::{
+    breadcrumb_title, modal_block, render_fatal, render_filter_row,
+};
 use super::super::scrollable::render_selected_lines_in_area;
 use super::super::text_input;
-use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-use super::{
-    OpLoadState, OpPickerError, OpPickerFatalState, TokenStorePickerState, TokenStoreStage,
-};
+use super::super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{OpLoadState, OpPickerError, TokenStorePickerState, TokenStoreStage};
 
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -39,135 +41,101 @@ fn breadcrumb(state: &TokenStorePickerState) -> String {
         .as_ref()
         .map(|a| a.email.as_str())
         .unwrap_or("");
-    let vault = state
+    let vault_name = state
         .selected_vault
         .as_ref()
         .map(|v| v.name.as_str())
         .unwrap_or("");
+    let item_name = state
+        .selected_item
+        .as_ref()
+        .map(|i| i.name.as_str())
+        .unwrap_or("");
 
     match state.stage {
-        TokenStoreStage::Account => "1Password · choose account".to_string(),
+        TokenStoreStage::Account => {
+            breadcrumb_title(OpPickerStage::Account, multi, acct, vault_name, item_name)
+        }
         TokenStoreStage::Vault => {
-            if multi && !acct.is_empty() {
-                format!("{acct}")
-            } else {
-                "1Password · choose vault".to_string()
-            }
+            breadcrumb_title(OpPickerStage::Vault, multi, acct, vault_name, item_name)
         }
         TokenStoreStage::ItemChoice => {
-            if multi && !acct.is_empty() {
-                format!("{acct} \u{2192} {vault}")
-            } else {
-                vault.to_string()
-            }
+            breadcrumb_title(OpPickerStage::Item, multi, acct, vault_name, item_name)
         }
         TokenStoreStage::NewItemName => {
-            if multi && !acct.is_empty() {
-                format!("{acct} \u{2192} {vault} \u{2192} new item")
-            } else if !vault.is_empty() {
-                format!("{vault} \u{2192} new item")
-            } else {
-                "new item".to_string()
-            }
+            let base = breadcrumb_title(OpPickerStage::Item, multi, acct, vault_name, item_name);
+            format!("{base} \u{2192} new item")
         }
-        TokenStoreStage::ExistingFieldChoice | TokenStoreStage::FieldLabel => {
-            let item_name = state
-                .selected_item
-                .as_ref()
-                .map(|i| i.name.as_str())
-                .unwrap_or("");
-            if !item_name.is_empty() {
-                if multi && !acct.is_empty() {
-                    format!("{acct} \u{2192} {vault} \u{2192} {item_name}")
-                } else if !vault.is_empty() {
-                    format!("{vault} \u{2192} {item_name}")
-                } else {
-                    item_name.to_string()
-                }
-            } else if multi && !acct.is_empty() {
-                format!("{acct} \u{2192} {vault} \u{2192} new item")
-            } else if !vault.is_empty() {
-                format!("{vault} \u{2192} new item")
+        TokenStoreStage::ExistingFieldChoice => {
+            breadcrumb_title(OpPickerStage::Field, multi, acct, vault_name, item_name)
+        }
+        TokenStoreStage::FieldLabel => {
+            if state.selected_item.is_some() {
+                breadcrumb_title(OpPickerStage::Field, multi, acct, vault_name, item_name)
             } else {
-                "new item".to_string()
+                let base =
+                    breadcrumb_title(OpPickerStage::Item, multi, acct, vault_name, item_name);
+                format!("{base} \u{2192} new item")
             }
         }
     }
 }
 
-fn modal_block(title: impl Into<String>) -> Block<'static> {
-    let title_text: String = title.into();
-    let title_span = Span::styled(
-        format!(" {title_text} "),
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    );
-    Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(title_span)
-}
-
-fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
-    let (heading, body) = match fatal {
-        OpPickerFatalState::NotInstalled => (
-            "1Password CLI not found",
-            "Install `op` and ensure it is on PATH.\nhttps://developer.1password.com/docs/cli/get-started/",
-        ),
-        OpPickerFatalState::NotSignedIn => (
-            "Not signed in to 1Password",
-            "Run `op signin` in your terminal, then retry.",
-        ),
-        OpPickerFatalState::NoVaults => (
-            "No vaults found",
-            "The selected account has no vaults accessible to this session.",
-        ),
-        OpPickerFatalState::GenericFatal { message } => ("1Password error", message.as_str()),
-    };
-
-    let block = modal_block("Token storage — error");
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(0)])
-        .split(inner);
-
-    frame.render_widget(
-        Paragraph::new(heading).style(Style::default().fg(WHITE).add_modifier(Modifier::BOLD)),
-        chunks[0],
-    );
-    frame.render_widget(
-        Paragraph::new(body)
-            .style(Style::default().fg(PHOSPHOR_DIM))
-            .wrap(ratatui::widgets::Wrap { trim: false }),
-        chunks[1],
-    );
-}
-
 fn render_loading(frame: &mut Frame, area: Rect, state: &TokenStorePickerState, spinner_tick: u8) {
-    let spinner = SPINNER_FRAMES[(spinner_tick as usize) % SPINNER_FRAMES.len()];
-    let loading_label = match state.stage {
-        TokenStoreStage::Account => "Loading accounts",
-        TokenStoreStage::Vault => "Loading vaults",
-        TokenStoreStage::ItemChoice => "Loading items",
-        TokenStoreStage::ExistingFieldChoice => "Loading fields",
-        TokenStoreStage::NewItemName | TokenStoreStage::FieldLabel => "Loading",
+    let glyph = SPINNER_FRAMES[(spinner_tick as usize) % SPINNER_FRAMES.len()];
+    let descriptor = match state.stage {
+        TokenStoreStage::Account => "loading accounts\u{2026}".to_string(),
+        TokenStoreStage::Vault => {
+            let acct = state
+                .selected_account
+                .as_ref()
+                .map(|a| a.email.as_str())
+                .unwrap_or("");
+            if state.is_multi_account() && !acct.is_empty() {
+                format!("loading vaults from {acct}\u{2026}")
+            } else {
+                "loading vaults\u{2026}".to_string()
+            }
+        }
+        TokenStoreStage::ItemChoice => {
+            let vault_name = state
+                .selected_vault
+                .as_ref()
+                .map(|v| v.name.as_str())
+                .unwrap_or("");
+            format!("loading items from {vault_name}\u{2026}")
+        }
+        TokenStoreStage::ExistingFieldChoice => {
+            let item_name = state
+                .selected_item
+                .as_ref()
+                .map(|i| i.name.as_str())
+                .unwrap_or("");
+            format!("loading {item_name}\u{2026}")
+        }
+        TokenStoreStage::NewItemName | TokenStoreStage::FieldLabel => "loading\u{2026}".to_string(),
     };
     let title = breadcrumb(state);
-    let block = modal_block(format!("Token storage — {title}"));
+    let block = modal_block(format!("Token storage \u{2014} {title}"));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    frame.render_widget(
-        Paragraph::new(format!("{spinner} {loading_label}…"))
-            .style(Style::default().fg(PHOSPHOR_DIM)),
-        inner,
-    );
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(inner);
+
+    let body = Line::from(vec![
+        Span::styled(glyph.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
+        Span::raw("  "),
+        Span::styled(descriptor, Style::default().fg(PHOSPHOR_DIM)),
+    ]);
+    frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
 }
 
 fn render_pane(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
     let title = breadcrumb(state);
-    let block = modal_block(format!("Token storage — {title}"));
+    let block = modal_block(format!("Token storage \u{2014} {title}"));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -185,193 +153,195 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
     }
 }
 
-fn render_hint_footer(frame: &mut Frame, area: Rect, hint: &str) {
+fn pane_layout(inner: Rect) -> (Rect, Rect, Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // filter row
+            Constraint::Min(0),    // list
+            Constraint::Length(1), // hint footer
+        ])
+        .split(inner);
+    (chunks[0], chunks[1], chunks[2])
+}
+
+fn render_hint(frame: &mut Frame, area: Rect, hint: &str) {
     frame.render_widget(
         Paragraph::new(hint).style(Style::default().fg(PHOSPHOR_DIM)),
         area,
     );
 }
 
-fn render_filter_row(frame: &mut Frame, area: Rect, filter: &str) {
-    let text = if filter.is_empty() {
-        Span::styled("Type to filter…", Style::default().fg(PHOSPHOR_DARK))
-    } else {
-        Span::styled(filter, Style::default().fg(PHOSPHOR_DIM))
-    };
-    frame.render_widget(Paragraph::new(Line::from(text)), area);
-}
-
 fn render_account_list(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    render_filter_row(frame, chunks[0], &state.filter_buf);
+    let (filter_area, list_area, hint_area) = pane_layout(area);
+    render_filter_row(frame, filter_area, &state.filter_buf);
 
     let accounts = state.filtered_accounts();
-    let selected = state.account_list_state.selected.unwrap_or(0);
+    let selected = state.account_list_state.selected;
     let lines: Vec<Line> = accounts
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            let style = if i == selected {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let style = if is_selected {
                 Style::default()
                     .fg(PHOSPHOR_GREEN)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(WHITE)
             };
-            Line::from(Span::styled(format!("  {} ({})", a.email, a.url), style))
+            Line::from(vec![
+                Span::styled(format!("{prefix}{}", a.email), style),
+                Span::raw("  "),
+                Span::styled(format!("({})", a.url), Style::default().fg(PHOSPHOR_DIM)),
+            ])
         })
         .collect();
-    render_selected_lines_in_area(frame, chunks[1], lines, Some(selected));
-    render_hint_footer(
+    render_selected_lines_in_area(frame, list_area, lines, selected);
+    render_hint(
         frame,
-        chunks[2],
-        "↑↓ navigate  Enter — select  Esc — cancel",
+        hint_area,
+        "\u{2191}\u{2193} navigate  Enter \u{2014} select  R \u{2014} refresh  Esc \u{2014} cancel",
     );
 }
 
 fn render_vault_list(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    render_filter_row(frame, chunks[0], &state.filter_buf);
+    let (filter_area, list_area, hint_area) = pane_layout(area);
+    render_filter_row(frame, filter_area, &state.filter_buf);
 
     let vaults = state.filtered_vaults();
-    let selected = state.vault_list_state.selected.unwrap_or(0);
+    let selected = state.vault_list_state.selected;
     let lines: Vec<Line> = vaults
         .iter()
         .enumerate()
         .map(|(i, v)| {
-            let style = if i == selected {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let style = if is_selected {
                 Style::default()
                     .fg(PHOSPHOR_GREEN)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(WHITE)
             };
-            Line::from(Span::styled(format!("  {}", v.name), style))
+            Line::from(Span::styled(format!("{prefix}{}", v.name), style))
         })
         .collect();
-    render_selected_lines_in_area(frame, chunks[1], lines, Some(selected));
-    render_hint_footer(frame, chunks[2], "↑↓ navigate  Enter — select  Esc — back");
+    render_selected_lines_in_area(frame, list_area, lines, selected);
+    render_hint(
+        frame,
+        hint_area,
+        "\u{2191}\u{2193} navigate  Enter \u{2014} select  R \u{2014} refresh  Esc \u{2014} back",
+    );
 }
 
 fn render_item_choice(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    render_filter_row(frame, chunks[0], &state.filter_buf);
+    let (filter_area, list_area, hint_area) = pane_layout(area);
+    render_filter_row(frame, filter_area, &state.filter_buf);
 
     let choices = state.filtered_item_choices();
-    let selected = state.item_list_state.selected.unwrap_or(0);
+    let selected = state.item_list_state.selected;
     let lines: Vec<Line> = choices
         .iter()
         .enumerate()
         .map(|(i, choice)| {
-            let is_sel = i == selected;
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
             match choice {
                 None => {
-                    let style = if is_sel {
+                    let style = if is_selected {
                         Style::default()
                             .fg(PHOSPHOR_GREEN)
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(PHOSPHOR_DIM)
                     };
-                    Line::from(Span::styled("  [ + New item ]", style))
+                    Line::from(Span::styled(format!("{prefix}[ + New item ]"), style))
                 }
                 Some(item) => {
-                    let style = if is_sel {
+                    let title_style = if is_selected {
                         Style::default()
                             .fg(PHOSPHOR_GREEN)
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default().fg(Color::White)
+                        Style::default().fg(WHITE)
                     };
-                    let label = if item.subtitle.is_empty() {
-                        format!("  {}", item.name)
-                    } else {
-                        format!("  {}  ({})", item.name, item.subtitle)
-                    };
-                    Line::from(Span::styled(label, style))
+                    let mut spans = vec![
+                        Span::styled(prefix.to_string(), title_style),
+                        Span::styled(item.name.clone(), title_style),
+                    ];
+                    if !item.subtitle.is_empty() {
+                        let dim = Style::default().fg(PHOSPHOR_DIM);
+                        spans.push(Span::styled(" (".to_string(), dim));
+                        spans.push(Span::styled(item.subtitle.clone(), dim));
+                        spans.push(Span::styled(")".to_string(), dim));
+                    }
+                    Line::from(spans)
                 }
             }
         })
         .collect();
-    render_selected_lines_in_area(frame, chunks[1], lines, Some(selected));
-    render_hint_footer(
+    render_selected_lines_in_area(frame, list_area, lines, selected);
+    render_hint(
         frame,
-        chunks[2],
-        "↑↓ navigate  Enter — select  Esc — back to vault",
+        hint_area,
+        "\u{2191}\u{2193} navigate  Enter \u{2014} select  R \u{2014} refresh  Esc \u{2014} back",
     );
 }
 
 fn render_field_choice(frame: &mut Frame, area: Rect, state: &TokenStorePickerState) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    render_filter_row(frame, chunks[0], &state.filter_buf);
+    let (filter_area, list_area, hint_area) = pane_layout(area);
+    render_filter_row(frame, filter_area, &state.filter_buf);
 
     let choices = state.filtered_field_choices();
-    let selected = state.field_list_state.selected.unwrap_or(0);
+    let selected = state.field_list_state.selected;
     let lines: Vec<Line> = choices
         .iter()
         .enumerate()
         .map(|(i, choice)| {
-            let is_sel = i == selected;
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
             match choice {
                 None => {
-                    let style = if is_sel {
+                    let style = if is_selected {
                         Style::default()
                             .fg(PHOSPHOR_GREEN)
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(PHOSPHOR_DIM)
                     };
-                    Line::from(Span::styled("  [ + New field ]", style))
+                    Line::from(Span::styled(format!("{prefix}[ + New field ]"), style))
                 }
                 Some(field) => {
-                    let style = if is_sel {
+                    let label_style = if is_selected {
                         Style::default()
                             .fg(PHOSPHOR_GREEN)
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default().fg(Color::White)
+                        Style::default().fg(WHITE)
                     };
-                    Line::from(Span::styled(format!("  {}", field.label), style))
+                    let annotation = format!(
+                        "({})",
+                        if field.concealed {
+                            "concealed".to_string()
+                        } else {
+                            field.field_type.to_lowercase()
+                        }
+                    );
+                    Line::from(vec![
+                        Span::styled(format!("{prefix}{}", field.label), label_style),
+                        Span::raw("  "),
+                        Span::styled(annotation, Style::default().fg(PHOSPHOR_DIM)),
+                    ])
                 }
             }
         })
         .collect();
-    render_selected_lines_in_area(frame, chunks[1], lines, Some(selected));
-    render_hint_footer(
+    render_selected_lines_in_area(frame, list_area, lines, selected);
+    render_hint(
         frame,
-        chunks[2],
-        "↑↓ navigate  Enter — select  Esc — back to item",
+        hint_area,
+        "\u{2191}\u{2193} navigate  Enter \u{2014} select  R \u{2014} refresh  Esc \u{2014} back",
     );
 }
