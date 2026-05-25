@@ -251,6 +251,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/codebase-readability' },
+                    { label: 'TUI architecture — Ratatui patterns', slug: 'reference/roadmap/tui-architecture' },
                     {
                       label: 'Phase 1 — Documentation & setup',
                       collapsed: true,

@@ -1,0 +1,309 @@
+---
+title: "TUI architecture — Ratatui application patterns"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+import { Aside } from '@astrojs/starlight/components'
+
+**Status**: Open — design proposal (research captured May 2026, no implementation committed)
+
+## Goal
+
+jackin' renders two terminal UIs, and neither follows the application patterns the Ratatui project documents for immediate-mode TUIs. The host operator console (`jackin console`) uses Ratatui but treats it as a procedural draw-everything-every-frame dump layered over a handful of god-structs. The in-container multiplexer (`jackin-capsule`) uses **no Ratatui at all** — it hand-rolls ANSI escape writes and a hand-rolled row diff that re-implements Ratatui's own `Buffer::diff`.
+
+This item defines the **architectural target** for both surfaces: a clear Model / Update / View separation, an explicit `Action`/`Message` type instead of inline state mutation in event handlers, a pure view layer with no I/O, state decomposed into domain vs. UI vs. ephemeral concerns, `StatefulWidget`-based reusable components, and background I/O that feeds the update loop through a channel rather than blocking the draw. It also commits `jackin-capsule` to **rendering through Ratatui** instead of its current hand-rolled ANSI, so the in-container multiplexer shares the same component library as the host. Throughout, the organizing goal is **reusability**: a single, recognizable component vocabulary that both surfaces share, instead of the parallel copy-paste implementations the codebase accumulates today.
+
+This is a north-star design item, not a big-bang rewrite. The work lands incrementally, one surface and one layer at a time, behind the snapshot-test regression net, with **no operator-visible behavior change** at any step.
+
+## Scope — one continuous Ratatui experience
+
+This item covers **every terminal surface jackin' renders**, unified under Ratatui and one shared component library:
+
+1. **The operator console (`jackin console`)** — the full flow from console start through workspace / role / agent selection. Already Ratatui; this item restructures it (see the host target below).
+2. **The loading flow (console → launch → container).** Today the experience fragments the moment the operator launches: the console tears down its Ratatui surface and the launch phase falls back to plain sequential terminal output before control is handed to the container. The target is **one continuous Ratatui session** spanning console → launch progress → handoff, with no screen flash, no cooked-mode gap, and no stdout/stderr split. The launch-phase *UX* (the cockpit, stage vocabulary, rain lifecycle, failure model) is owned by the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) item — the active work this backbone exists to support. This item owns the *session-ownership* refactor and the *shared components* that make that UX continuous instead of a teardown-and-relaunch.
+3. **Ratatui inside the container.** The `jackin-capsule` multiplexer daemon renders the in-container experience. It moves from hand-rolled ANSI to **rendering through Ratatui** (the attach client stays a thin byte relay — see the capsule target below).
+4. **The capsule, fully Ratatui.** Every capsule surface — pane chrome, status bar, tab strip, dialogs, pickers, confirms — becomes a Ratatui widget, and those widgets are the *same* shared components the host console uses.
+
+The connective tissue across all four is the shared design-component crate (`jackin-tui`): one `ConfirmDialog`, one `FilterList`, one `TabStrip`, one `Panel`, one `HintBar`, reused everywhere rather than reimplemented per surface.
+
+## Design principles
+
+Reusability is the throughline of this item, not a side effect. The single biggest source of TUI entropy today is copy-paste: the same confirm dialog, picker, tab strip, scrollbar, and palette wrapping exist as parallel implementations across the host console and the capsule, kept consistent only by the procedural rules in [TUI Design Decisions](/reference/tui-design-decisions/). The structural fix is to make reuse the path of least resistance — a real design-component crate, not a rulebook.
+
+- **One pattern, one component.** Any visual pattern that appears more than once is a single shared widget with one implementation. This operationalizes the existing "Component Reuse — Strict Rule" in [TUI Design Decisions](/reference/tui-design-decisions/) structurally instead of by review discipline.
+- **One design system, two surfaces.** The host console and the capsule render the same brand language (PHOSPHOR palette, tight chrome, footer-only hints, identical confirm / picker / modal shapes). They must consume the *same* components from the *same* crate, so a confirm dialog is literally the same code on both surfaces — not two copies a rule says must match.
+- **Recognizable, not bespoke.** A contributor (or agent) reading the code should recognize the component vocabulary immediately: `Panel`, `ScrollableBlock`, `ConfirmDialog`, `FilterList`, `TabStrip`, `HintBar`, `Modal`. New screens compose existing components; a genuinely new component is added only when none fits, with operator sign-off per the strict-reuse rule.
+- **Idiomatic Ratatui.** Components are `StatefulWidget` / `WidgetRef` implementations with their own `State`, the shape the Ratatui ecosystem recognizes and the [component template](https://ratatui.rs/templates/component/project-structure/) is built around — so the codebase reads like a Ratatui app, not a one-off renderer.
+- **One source of truth for tokens.** Color values, spacing, tab gap, and hint formatting are defined once and converted per surface (raw-ANSI `Rgb` today, `ratatui::Color` for widgets), never re-declared inline.
+
+## Relationship to existing roadmap work
+
+This item is deliberately scoped to the *architectural pattern*. The neighbouring [Codebase readability program](/reference/roadmap/codebase-readability/) items are scoped to *size and duplication*. They are complementary and must be sequenced together:
+
+| Item | Owns | This item adds |
+|---|---|---|
+| [Codebase readability program](/reference/roadmap/codebase-readability/) | File size, copy-paste duplication, `//!` coverage, mega-functions | The *target shape* the extractions should produce (components, not just smaller files) |
+| [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) | `insta` + `TestBackend` regression net | The safety net every phase below depends on — it must land first |
+| [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) | The launch-flow UX — cockpit, stage vocabulary, rain lifecycle, failure model, `LaunchEvent` renderer abstraction | The session-ownership backbone and shared components that let its rich renderer run continuously with the console instead of after a teardown |
+| [Split `input/editor.rs`](/reference/roadmap/split-input-editor/) · [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) | Mechanical file splits of the largest TUI files | The module boundaries those splits should target (Model/Update/View seams, per-component files) |
+| [Architecture Decision Records](/reference/roadmap/architecture-decision-records/) | ADR-003 "ratatui selection" | The decision record that must be extended to cover the capsule's no-Ratatui status and the adoption decision driven here |
+| [Cargo workspace split](/reference/roadmap/cargo-workspace-split/) | Deferred crate boundaries | This item elevates the existing <RepoFile path="crates/jackin-tui/Cargo.toml" /> crate into the shared design-component crate both surfaces consume (see the design-system section below) |
+
+The key sequencing rule: **the file splits and DRY extractions in the readability program should aim at the target architecture defined here**, so that a 4,000-line input file becomes a set of focused `update`/component modules rather than four smaller files that still mutate a shared god-struct inline.
+
+<Aside type="note">
+Exact line counts drift week to week and are tracked (and re-baked) in the [Codebase readability program](/reference/roadmap/codebase-readability/). This page cites approximate sizes to make the *pattern* legible, not to be the source of truth for LOC.
+</Aside>
+
+## Current state — host operator console
+
+The host console lives under `src/console/` (~28K lines of the production tree) and is built on `ratatui` 0.30 (with the `unstable-widget-ref` feature enabled), `crossterm` 0.29, and `ratatui-textarea` 0.9.
+
+### Module map (the load-bearing files)
+
+| File | Approx. size | Responsibility |
+|---|---|---|
+| <RepoFile path="src/console/mod.rs" /> | ~1,200 | `run_console` entry point, terminal init/teardown, the single event loop |
+| <RepoFile path="src/console/manager/state.rs" /> | ~3,100 | `ManagerState`, `EditorState`, `SettingsState`, all `Modal` enums, instance refresh |
+| <RepoFile path="src/console/manager/render/editor.rs" /> | ~3,300 | Workspace editor render — all five tabs |
+| <RepoFile path="src/console/manager/render/list.rs" /> | ~3,100 | List/details render, the `sidebar_inputs_for_*` split |
+| <RepoFile path="src/console/manager/input/editor.rs" /> | ~4,100 | Editor key dispatch — the largest TUI file |
+| <RepoFile path="src/console/manager/input/mouse.rs" /> | ~2,000 | Mouse handling, seam-drag, scroll-focus |
+| <RepoFile path="src/console/widgets/scrollable.rs" /> | ~800 | `render_scrollable_block`, the one shared scrollable component, and all scroll math |
+
+### Anti-patterns vs. Ratatui best practice
+
+1. **God-structs that mix four concerns.** `ManagerState` (≈30 fields) holds domain data (`instances`, `workspaces`, `current_dir`), layout geometry (`cached_term_size`, `list_split_pct`, eight separate scroll-offset fields), navigation/focus state (`selected`, `expanded_workspaces`, `list_scroll_focus`, `preview_focused`), and infrastructure (`op_cache`, `instances_last_refresh`) in one struct. Adding one scrollable block touches the state struct, a render signature, the mouse handler, and a focus enum across four files with no single seam to audit.
+
+2. **No `Action`/`Message` type.** Event handling mutates state directly inside the handler. `handle_key` in <RepoFile path="src/console/manager/input/mod.rs" /> is a ~280-line `if`-precedence chain that returns an `InputOutcome` only for routing decisions; all state changes are side effects before the return. Nothing is replayable, loggable, or testable without constructing a full `ManagerState` and driving a real terminal.
+
+3. **The view is not pure.** Render functions take `&mut state`. `render_scrollable_block` clamps `scroll_x`/`scroll_y` in place every frame; the editor tab renderers write `tab_content_width`/`tab_content_height` back into `EditorState` so the mouse handler can later read them. "Draw" mutates observable state, which couples render output to input handling and is the root of a class of stale-geometry scroll bugs.
+
+4. **Filesystem I/O inside `terminal.draw`.** `mount_info::inspect` (<RepoFile path="src/console/manager/mount_info.rs" />) stats the disk and reads `.git` pointers for every mount, on every frame, at the 20 Hz tick, uncached — roughly 360 `stat()` calls per second while the operator sits idle. `refresh_instances` does blocking index/manifest reads and a per-container socket fan-out on the event-loop thread (self-throttled to 500 ms, but still blocking the draw when it fires).
+
+5. **Unconditional full-frame redraw.** The loop draws every tick regardless of whether anything changed. No dirty flag, no skipped frames.
+
+6. **No `StatefulWidget`/`WidgetRef`.** Every renderer is a free `fn(frame, area, &mut state)`. The `unstable-widget-ref` feature is enabled in <RepoFile path="Cargo.toml" /> but unused — there are no reusable widget components implementing the Ratatui widget traits.
+
+7. **Three coexisting modal-stack shapes.** A `Vec<Modal>` stack (correct), legacy stash slots (`pending_auth_form_return`, `pending_env_key`, …), and a bare `Option<Modal>` slot the [TUI Design Decisions](/reference/tui-design-decisions/) page already flags as an invalid shape that cannot represent a parent-under-child.
+
+8. **DRY drift from symmetric variants.** `sidebar_inputs_for_workspace` vs. `sidebar_inputs_for_current_dir` in <RepoFile path="src/console/manager/render/list.rs" /> are near-identical bodies; the same workspace-vs-current-dir distinction is repeated in `focused_block_still_scrollable`, `clamp_list_scroll_for_area`, and the mouse `update_scroll_focus` handler — four call sites that must stay in lock-step.
+
+## Current state — `jackin-capsule` multiplexer
+
+The in-container control plane (the [jackin' Capsule](/reference/roadmap/jackin-capsule/) program) is a small tmux-like PTY multiplexer. It uses `crossterm` only for `enable_raw_mode`/`disable_raw_mode` and `terminal::size()` in <RepoFile path="crates/jackin-capsule/src/client.rs" />. **It does not depend on Ratatui.**
+
+### Anti-patterns
+
+1. **All rendering is hand-rolled raw ANSI** into a `Vec<u8>` — direct `write!(buf, "\x1b[{};{}H", …)` cursor moves and inline SGR byte sequences in <RepoFile path="crates/jackin-capsule/src/render.rs" />, <RepoFile path="crates/jackin-capsule/src/dialog.rs" />, and the status bar. There is a hand-rolled SGR serializer and a hand-rolled CSI re-serializer (the latter untested) in <RepoFile path="crates/jackin-capsule/src/session.rs" />.
+
+2. **A hand-rolled row diff re-implements `Buffer::diff`.** `PaneBodyCache` builds a `Vec<RowSnapshot>` from the `vt100::Screen`, compares it cell-by-cell against the cached previous snapshot, and emits only changed rows. This is exactly the job Ratatui's `Buffer` double-buffer does — re-built by hand.
+
+3. **A ~6,900-line god-struct.** `Multiplexer` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> owns rendering, input parsing, network I/O, git/PR context polling, session lifecycle, the dialog stack, and mouse drag/selection in one file and one compilation unit.
+
+4. **No top-level mode state machine.** "Which mode is the multiplexer in?" is answered by combining scattered booleans (`dialog_open()`, `drag.is_some()`, `selection.is_some()`, `input_parser.is_awaiting_prefix()`) at each call site. There is no `MuxMode` enum making invalid combinations unrepresentable — and at least one arm checks `dialog_open()` but not `drag.is_some()`, a latent bug class.
+
+5. **`compose_full_frame` vs. `compose_partial_frame` duplication** — ~160 lines of near-duplicate pane-loop / box-draw / scrollbar code that must be kept symmetric by hand.
+
+6. **No tests** for `handle_input` dispatch, `apply_dialog_action`, the dialog `handle_key`/`handle_click`, the drag/selection state machines, or the compositor. The parser, protocol, and `render_pane` are tested in isolation; the daemon's decision layer is not.
+
+<Aside type="note">
+The capsule already has one piece of the target in place: `Dialog::handle_key`/`handle_click` return a `DialogAction` enum (`Command`, `SpawnAgent`, `RenameTab`, `Dismiss`, …) rather than mutating state directly. That is exactly the `Action` pattern this item generalizes to the whole dispatch layer.
+</Aside>
+
+## Current state — the console → launch → container flow
+
+The three surfaces are not merely built differently — they are three *separate* terminal sessions stitched together, and the seams are visible to the operator. Both `jackin load` and a console-triggered launch call the same `runtime::load_role` (<RepoFile path="src/app/mod.rs" /> at lines ~131 and ~194), but the surrounding terminal lifecycle fragments:
+
+| Segment | Technology | Terminal state | Anchor |
+|---|---|---|---|
+| Console | Ratatui, **stdout** | raw mode, alternate screen | `run_console` in <RepoFile path="src/console/mod.rs" /> |
+| → teardown | — | `TerminalGuard` drop disables raw mode, leaves alt-screen, shows cursor **before `run_console` returns** | <RepoFile path="src/console/mod.rs" /> |
+| Launch progress | plain `eprintln!`, **stderr** | cooked mode, main screen; intro rain, `StepCounter`, config table, `print_deploying` (+1.5 s sleep + clear), spinners | <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/tui/output.rs" />, <RepoFile path="src/tui/animation.rs" /> |
+| → attach | — | `docker exec -it … /jackin/runtime/jackin-capsule` hands the TTY to a child process | <RepoFile path="src/runtime/attach.rs" /> |
+| In-container client | raw byte relay | raw mode + its **own** alternate screen | <RepoFile path="crates/jackin-capsule/src/client.rs" /> |
+| Daemon render | hand-rolled ANSI | — | <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> |
+
+The architectural blocker for continuity: the console **owns and tears down its terminal inside `run_console`** — the `TerminalGuard` drop fires before the function returns, so the launch phase cannot run inside the console's Ratatui surface. The launch phase therefore renders to a *different* stream (stderr), in a *different* mode (cooked), with a *clear-screen flash* between segments. Making the experience continuous requires moving terminal/Ratatui-session ownership **up** to the app layer so a single owned session spans console → launch → handoff.
+
+## Ratatui application patterns (the target)
+
+The Ratatui project documents three application patterns and recommends one for immediate-mode apps:
+
+- **The Elm Architecture (TEA)** — [Model / Update / View](https://ratatui.rs/concepts/application-patterns/the-elm-architecture/). State lives in a Model; events map to a `Message` enum; an `update` function applies a message to the model; a **pure** `view` function renders the model. Ratatui calls TEA "the best architectural approach for immediate-mode rendering."
+- **[Component Architecture](https://ratatui.rs/concepts/application-patterns/component-architecture/)** — components own their local state and event handlers. The [recommended project structure](https://ratatui.rs/templates/component/project-structure/) is `app.rs` · `action.rs` · `event.rs` · `tui.rs` · `components/`, with the guidance that "you shouldn't need to change anything outside the `components` folder."
+- **[Flux](https://ratatui.rs/concepts/application-patterns/flux-architecture/)** — unidirectional data flow; an alternative to TEA for larger apps.
+
+Supporting practices:
+
+- **`StatefulWidget` / `WidgetRef`** separate a widget's drawing logic from a persistent `State` object — the idiomatic way to build reusable, testable components.
+- **Immediate-mode discipline**: the view is a pure function of state, redrawn each frame; mutation and I/O belong in `update`, never in `view`.
+- **I/O off the render/update thread**: long-running work (disk, network, subprocess) runs in background tasks that send `Message`s back to the loop, so the draw never blocks.
+- For PTY rendering specifically, [`tui-term`](https://github.com/a-kenji/tui-term) renders a `vt100::Screen` into a Ratatui `Buffer` (the same approach [used by Turborepo](https://github.com/vercel/turborepo/pull/9123) and [Ratty](https://blog.orhun.dev/introducing-ratty/)) — which means the capsule *could* keep its `vt100` model while letting Ratatui own the buffer diff and the chrome.
+
+<Aside type="caution">
+Dogmatic TEA clones the whole model on every update. jackin's state is large, so a clone-per-keystroke model is impractical. The realistic target is Ratatui's documented **mutable** variant: `fn update(&mut self, msg: Message)` mutating the model in place, paired with a strictly **pure** `fn view(&self, frame)`. The win is the `Message` boundary and the pure view, not literal immutability.
+</Aside>
+
+## Gap analysis
+
+| Ratatui best practice | Host console today | `jackin-capsule` today |
+|---|---|---|
+| `Message`/`Action` enum, central `update` | Absent — inline mutation in handlers | Partial — `DialogAction` exists; dispatch layer still mutates inline |
+| Pure `view` (no `&mut`, no I/O) | Violated — `&mut state`, scroll-clamp + FS reads in draw | Violated — render writes ANSI + diffs in the compose path on the loop |
+| State decomposed (domain / UI / ephemeral) | Violated — god-structs mix all three | Violated — one `Multiplexer` god-struct |
+| Reusable `StatefulWidget` components | Absent — free `fn(frame, &mut state)` | Absent — raw ANSI free functions |
+| I/O off the loop thread | Violated — `mount_info::inspect`, `refresh_instances` block draw | Mostly OK — PTY/git use background tasks; some `std::thread` vs `spawn_blocking` inconsistency |
+| Explicit mode state machine | Partial — focus/modal flags scattered | Violated — no `MuxMode`, scattered booleans |
+| Framework buffer diff | OK — Ratatui owns it | Violated — `PaneBodyCache` re-implements `Buffer::diff` |
+| Render regression tests | Medium-grained `TestBackend`, no snapshots | None for the compositor/dispatch |
+
+## Target architecture — host operator console
+
+Introduce the Model/Update/View seam without changing behavior:
+
+1. **`Message` enum + central `update`.** Define an `enum Message` covering input intents (`MoveSelection`, `OpenModal`, `CommitSave`, `LaunchWorkspace`, …) and background results (`InstancesRefreshed`, `OpItemsLoaded`, `MountInspected`, …). Map `crossterm` events to `Message`s in a thin layer; route every state change through `fn update(&mut self, msg: Message) -> Option<Effect>`. Handlers stop mutating state directly.
+
+2. **Decompose state.** Split the god-structs along the seams that already exist conceptually: a domain `Model` (workspaces, instances, pending config), a `UiState` (selection, focus, scroll offsets, open modal), and ephemeral per-frame scratch. Geometry that the renderer derives (content width/height) becomes computed-and-cached state owned by `update`, not written from inside `view`.
+
+3. **Pure view.** Convert renderers to `fn(frame, area, &Model, &UiState)` with no `&mut` and no I/O. Move scroll clamping into `update` (on resize / scroll messages). Replace per-frame `mount_info::inspect` with a cached `MountFacts` map refreshed by a background `MountInspected` message.
+
+4. **Background I/O → channel.** Move instance refresh, 1Password loads, snapshot fan-out, and mount inspection onto background tasks that send `Message`s. The loop becomes: read event → map to `Message` → `update` → `view`, with the draw never blocking on disk/socket work.
+
+5. **`StatefulWidget` components.** Extract the list, the editor (per tab), settings, and the modal family into components implementing the Ratatui widget traits, each with its own `State`. This is where the [Split `input/editor.rs`](/reference/roadmap/split-input-editor/) and [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) work should land — the splits target component boundaries, not arbitrary smaller files.
+
+6. **Converge the modal stack** onto the single `Vec<Modal>` shape and retire the stash slots and bare `Option<Modal>`, satisfying the existing [TUI Design Decisions](/reference/tui-design-decisions/) sub-dialog-stack rule by construction.
+
+Every existing rule in [TUI Design Decisions](/reference/tui-design-decisions/) (W3C ARIA tabs, the focusability/affordance contract, the shared `render_scrollable_block`, modal backdrop dimming, the PHOSPHOR palette, settings↔editor parity) is preserved — the refactor changes the *structure behind* those rules, never the rules themselves.
+
+## Target architecture — `jackin-capsule`
+
+Two questions are independent and should be decided separately:
+
+**(1) Structural cleanup — clear win, do regardless of rendering backend.**
+
+- Add a `MuxMode` enum (`Normal`, `PrefixAwait`, `Dialog`, `Drag`, `Select`) so invalid combinations are unrepresentable and dispatch reads from one place.
+- Generalize the existing `DialogAction` into a single `Action` type for the whole `handle_input` dispatch, so the daemon's decision layer is testable without a live PTY.
+- Split <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> into modules: event loop, session lifecycle, render/compose, input dispatch, dialog. Merge `compose_full_frame`/`compose_partial_frame` onto a shared pane-composite helper.
+- Add dispatch/dialog/drag tests once the `Action` boundary exists.
+
+**(2) Render through Ratatui — the decided direction.**
+
+The capsule moves to **full Ratatui**: the daemon builds frames in a Ratatui `Buffer` and renders chrome, status bar, tab strip, dialogs, pickers, and confirms as Ratatui widgets — the *same* shared widgets the host console uses (see the shared design system below). The attach client in <RepoFile path="crates/jackin-capsule/src/client.rs" /> stays a thin byte relay; Ratatui renders inside the **daemon** via a custom backend that serializes the `Buffer` diff to the attach socket instead of a real TTY, replacing the hand-rolled `PaneBodyCache` row diff with Ratatui's own `Buffer::diff`.
+
+The one open question is the **pane-body** mechanism — the cells that mirror a child program's `vt100::Screen`, the perf-critical hot path:
+
+| Pane-body option | Shape | Trade-off |
+|---|---|---|
+| `tui-term` | render the `vt100::Screen` into the Ratatui `Buffer` via the pseudo-terminal widget | maximal reuse of Ratatui's buffer/diff; `tui-term` is self-described "work in progress" with a known per-cell allocation cost on high-throughput PTYs |
+| thin custom cell widget | a small `Widget` that blits the `vt100::Screen` into the `Buffer` directly | keeps the proven fast path while still living inside the Ratatui frame; a little custom code, no new dependency risk |
+
+**Resolve the pane-body question with a throughput spike** (a later phase) — both options keep the capsule fully inside a Ratatui frame, so chrome / dialog / picker reuse lands regardless. That benchmark is the only part of the capsule that stays a measurement question; everything else is decided. The shared widgets live in the existing <RepoFile path="crates/jackin-tui/Cargo.toml" /> crate (today Ratatui-free), which grows a Ratatui dependency to host them.
+
+## Target architecture — one owned terminal session
+
+Move terminal/Ratatui-session ownership out of `run_console` and up to the app layer (<RepoFile path="src/app/mod.rs" />). A single owned `Terminal` is created once, lives across the console manager → launch progress renderer → the moment control is handed to the container, and is torn down once at the end:
+
+- The console manager renders into the shared session but no longer owns its lifecycle — no `TerminalGuard` drop mid-flow.
+- The launch progress renderer (owned by [Launch Progress TUI](/reference/roadmap/launch-progress-tui/)) draws into the *same* session, so "operator picked a workspace" → "watching the launch cockpit" is a view swap, not a screen teardown. No stderr fallback, no cooked-mode gap, no clear-screen flash.
+- Launch work emits `Message`s (progress, stage transitions, failures) into the same update loop, so the draw never blocks on Docker/network and the launch view is a pure function of launch state — the same pattern as the console.
+- At the hardline handoff, the owned session is suspended while `docker exec -it` hands the TTY to the capsule; on return it resumes for the outro. The capsule, itself now a Ratatui app, continues the same visual language inside the container.
+
+This is the backbone the Launch Progress TUI's Phase 4 (rich renderer) and Phase 5 (console integration) build on: that item owns *what the launch screens look like*; this item owns *the single session and shared components that make them continuous with the console*.
+
+## Target architecture — shared design system (`jackin-tui`)
+
+A shared crate already exists: <RepoFile path="crates/jackin-tui/Cargo.toml" />. Today it is a **Ratatui-free crate of raw-ANSI primitives and pure helpers** — the PHOSPHOR palette as `Rgb`, an `ansi` module (`fg` / `bg` / `move_to`), `TextField` (a text-input model), `HintSpan` + `hint_row_cols`, `TabCell` + `lay_out_tabs`, `vertical_thumb`, and unicode-width helpers. The capsule consumes it directly; the host console consumes only the **token layer** — <RepoFile path="src/console/widgets/mod.rs" /> wraps `jackin-tui`'s `Rgb` palette values into `ratatui::Color`.
+
+That token layer is the model to follow: one source of truth for the values, a thin per-surface conversion. The gap is that **every component above the token layer is reimplemented per surface** instead of shared the same way:
+
+- the capsule lays out tabs with `lay_out_tabs` while the host has its own tab strip in the render layer;
+- the capsule draws its scrollbar thumb with `vertical_thumb` while the host has its own scrollbar in <RepoFile path="src/console/widgets/scrollable.rs" />;
+- the capsule's text input is `TextField` while the host wraps `ratatui-textarea` in <RepoFile path="src/console/widgets/text_input.rs" />;
+- the capsule's hints are `HintSpan` while the host has its own `FooterItem` model;
+- the confirm dialog is `ConfirmState` in <RepoFile path="src/console/widgets/confirm.rs" /> on the host and `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> in the capsule — two implementations the design rules already *require* to look identical.
+
+**Target: elevate `jackin-tui` into the canonical TUI design-component crate** — the design system both surfaces consume. The crate that already owns the tokens grows to own the components; do not create a new crate.
+
+### Component inventory
+
+| Component | Host console today | Capsule today | Target (shared) |
+|---|---|---|---|
+| Color / style tokens | wraps `jackin-tui` `Rgb` into `ratatui::Color` in <RepoFile path="src/console/widgets/mod.rs" /> | uses `jackin-tui` `Rgb` directly | **Already shared — the model.** Extend with named style tokens (bold-white, dim, danger) |
+| Titled panel | ~27 `Block::default().borders(ALL)` + border-style chains | hand-rolled box borders in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | `Panel` / `titled_block(title, focused)` |
+| Scrollable block + scrollbar | `render_scrollable_block` in <RepoFile path="src/console/widgets/scrollable.rs" /> | `draw_scrollbar` + `vertical_thumb` in <RepoFile path="crates/jackin-capsule/src/render.rs" /> | one `ScrollableBlock` `StatefulWidget` |
+| Confirm dialog | `ConfirmState` in <RepoFile path="src/console/widgets/confirm.rs" /> | `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | one `ConfirmDialog` widget |
+| Filter-list picker | `role_picker` in <RepoFile path="src/console/widgets/role_picker.rs" /> / `op_picker` in <RepoFile path="src/console/widgets/op_picker/render.rs" /> | Menu / SplitDirectionPicker / AgentPicker in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | one `FilterList` / `Picker` widget |
+| Text input | `TextInputState` (wraps `ratatui-textarea`) in <RepoFile path="src/console/widgets/text_input.rs" /> | `TextField` in `jackin-tui` | one text-input widget over one model |
+| Tab strip | own tab bar in the render layer | `lay_out_tabs` + <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> | one W3C-tabs `TabStrip` widget |
+| Hint / footer bar | `FooterItem` + `footer_lines` | `HintSpan` | one `HintBar` widget |
+| Modal frame | `centered_rect_fixed` | `box_rect` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | one `Modal` frame + centering helper |
+| Error popup | `ErrorPopup` in <RepoFile path="src/console/widgets/error_popup.rs" /> | (none yet) | shared `ErrorPopup` widget |
+
+### How deep the sharing goes depends on the capsule's rendering decision
+
+- **Tokens and pure layout math** (palette, `lay_out_tabs`, `vertical_thumb`, text measurement, `box_rect` centering) can be shared **today**, regardless of the capsule's pane-body rendering decision. This is the floor — already partly in place — and unifying the remaining token wrappers and layout helpers is an early, low-risk win that needs no rendering-backend change.
+- **Full `StatefulWidget` components** (`Panel`, `ScrollableBlock`, `ConfirmDialog`, `FilterList`, `TabStrip`, `HintBar`) require the capsule to render through a Ratatui frame (Phase 6). Until that lands, the capsule shares only tokens and layout math and keeps separate render code — the weakest form of reuse, which is why moving the capsule into a Ratatui frame is committed scope here, not an optional follow-up.
+
+The end state: a new screen on either surface is *composed* from `jackin-tui` components rather than hand-built; the confirm dialog an operator sees in `jackin console` and the one inside a Capsule pane are the same widget; and the "Component Reuse — Strict Rule" in [TUI Design Decisions](/reference/tui-design-decisions/) is enforced by crate structure rather than by review vigilance.
+
+## Constraints and non-goals
+
+- **No behavior change.** Snapshot tests gate every step; the operator must not see a difference. This is a structure refactor, not a redesign — visual/UX changes are out of scope and belong to items like [Launch Progress TUI](/reference/roadmap/launch-progress-tui/).
+- **Pre-release freedom.** Internal types may change freely; no migration shims or compatibility layers (these are not versioned schemas).
+- **Incremental only.** No big-bang rewrite. One surface, one layer, behind tests. A half-migrated state (some handlers on `Message`, some not) must compile and pass tests at every commit.
+- **DRY.** Extend the shared scrollable/widget helpers and the `jackin-tui` crate; do not fork parallel implementations.
+
+## Implementation phases
+
+### Phase 0 — Safety net and decision record
+
+Land the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) item (the regression net) and extend [ADR-003 "ratatui selection"](/reference/roadmap/architecture-decision-records/) to record the capsule's current no-Ratatui status and the pane-body rendering decision. This page is the design artifact.
+
+### Phase 1 — Host: `Message` boundary
+
+Introduce the `Message` enum and central `update`; route existing key/mouse handlers through it without moving the renderers. Behavior identical; the win is a testable update layer.
+
+### Phase 2 — Host: pure view
+
+Remove `&mut` and I/O from renderers. Move scroll clamping into `update`. Replace per-frame `mount_info::inspect` with cached facts refreshed by a message.
+
+### Phase 3 — Host: background I/O
+
+Move instance refresh, 1Password loads, snapshot fan-out, and mount inspection onto background tasks that send `Message`s. The draw never blocks.
+
+### Phase 4 — Host: components + modal-stack convergence
+
+Extract `StatefulWidget` components (list, editor-per-tab, settings, modals) into the shared <RepoFile path="crates/jackin-tui/Cargo.toml" /> design crate; land the [Split `input/editor.rs`](/reference/roadmap/split-input-editor/) and [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) work against these seams; converge the modal stack onto `Vec<Modal>`. Token and layout-helper unification (the option-independent floor) can land earlier, in Phase 1.
+
+### Phase 5 — App: one owned terminal session
+
+Lift the `Terminal` out of `run_console` into the app layer (<RepoFile path="src/app/mod.rs" />) so the console manager and the launch progress renderer share one session. Coordinate with [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) Phase 5: the console → launch transition becomes a view swap, not a teardown — no stderr fallback, no clear-screen flash.
+
+### Phase 6 — Capsule: structural cleanup + Ratatui frame
+
+Add `MuxMode`; generalize `Action`; split <RepoFile path="crates/jackin-capsule/src/daemon.rs" />; merge the full/partial compositors; add dispatch/dialog tests. Then move the daemon to render into a Ratatui `Buffer` via a custom attach-socket backend, replacing `PaneBodyCache` with `Buffer::diff`, and render chrome / dialogs / pickers as the shared <RepoFile path="crates/jackin-tui/Cargo.toml" /> widgets.
+
+### Phase 7 — Capsule: pane-body spike + final reuse
+
+Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high-throughput PTY and pick the mechanism. Land the shared confirm / picker / tab-strip / panel / hint-bar widgets so the host console and the capsule render identical components.
+
+## Documentation impact
+
+When implementation lands, update the contributor-facing internals: [TUI Design Decisions](/reference/tui-design-decisions/) (add the architecture/Model-Update-View section), [Codebase Map](/reference/codebase-map/) (new module shape), and the relevant ADR. No operator- or role-author-facing page changes, because there is no operator-visible behavior change.
+
+## Host-side effects
+
+None. This is a pure internal refactor of in-process TUI code. It introduces no new writes to the operator's host machine, no new files, and no new container paths.
+
+## Acceptance criteria
+
+- Host event handling routes through a `Message` enum and a central `update`; no renderer takes `&mut state` or performs disk/socket I/O.
+- Per-frame filesystem inspection is eliminated; mount facts and instance state are refreshed by background tasks that message the loop.
+- Reusable screens are `StatefulWidget` components; the modal stack is a single `Vec<Modal>` shape.
+- The console → launch → container flow is one continuous Ratatui session: no clear-screen flash, no stderr fallback, no cooked-mode gap between picking a workspace and watching the launch; the in-container experience continues the same visual language.
+- The capsule has a `MuxMode` state machine, a generalized `Action` dispatch with tests, and a decomposed `daemon.rs`; the full/partial compositors share one helper.
+- The capsule renders through Ratatui; the pane-body mechanism (`tui-term` vs a custom cell widget) is recorded in an ADR with benchmark evidence.
+- Every rule in [TUI Design Decisions](/reference/tui-design-decisions/) still holds; snapshot tests show no render diff across the refactor.
+- Reusable patterns live in <RepoFile path="crates/jackin-tui/Cargo.toml" /> as single implementations; no visual pattern that appears on both surfaces has two copies. The confirm dialog, picker, tab strip, scrollbar, panel, hint bar, and modal frame each have exactly one implementation both surfaces consume.
+- Token and layout-helper unification lands without a rendering-backend change; full widget sharing follows the capsule's move to a Ratatui frame.
+- No phase introduces an operator-visible behavior change.
