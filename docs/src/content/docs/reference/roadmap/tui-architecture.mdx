@@ -54,6 +54,18 @@ The key sequencing rule: **the file splits and DRY extractions in the readabilit
 Exact line counts drift week to week and are tracked (and re-baked) in the [Codebase readability program](/reference/roadmap/codebase-readability/). This page cites approximate sizes to make the *pattern* legible, not to be the source of truth for LOC.
 </Aside>
 
+## Scope & sequencing
+
+This is a large item — eight phases across two surfaces plus a cross-flow refactor and lookbook tooling. It is scoped as a single roadmap item for now, but if it grows it should graduate to a multi-leaf program like the [Codebase readability program](/reference/roadmap/codebase-readability/), with one leaf per track (host refactor, capsule Ratatui, one-session, design system / lookbook).
+
+Critical-path dependencies:
+
+- **Phase 0 (snapshot tests) blocks every refactor phase** — without the regression net, no behavior-preserving claim is verifiable.
+- The host track (Phases 1–4) and the capsule track (Phases 6–7) are largely independent and can proceed in parallel.
+- The [file-split items](/reference/roadmap/split-input-editor/) land *against* the Phase 1/4 component seams, not before them — splitting first just produces smaller files that still mutate a god-struct.
+- Phase 5 (one owned session) depends on Phase 1 (the `Message` loop) and coordinates with [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) Phase 5.
+- Capsule Ratatui (Phase 6) blocks full widget sharing (Phase 7) and the lookbook's capsule coverage (Phase 8).
+
 ## Current state — host operator console
 
 The host console lives under `src/console/` (~28K lines of the production tree) and is built on `ratatui` 0.30 (with the `unstable-widget-ref` feature enabled), `crossterm` 0.29, and `ratatui-textarea` 0.9.
@@ -161,13 +173,13 @@ Dogmatic TEA clones the whole model on every update. jackin's state is large, so
 
 Introduce the Model/Update/View seam without changing behavior:
 
-1. **`Message` enum + central `update`.** Define an `enum Message` covering input intents (`MoveSelection`, `OpenModal`, `CommitSave`, `LaunchWorkspace`, …) and background results (`InstancesRefreshed`, `OpItemsLoaded`, `MountInspected`, …). Map `crossterm` events to `Message`s in a thin layer; route every state change through `fn update(&mut self, msg: Message) -> Option<Effect>`. Handlers stop mutating state directly.
+1. **`Message` enum + central `update`.** Define an `enum Message` covering input intents (`MoveSelection`, `OpenModal`, `CommitSave`, `LaunchWorkspace`, …) and background results (`InstancesRefreshed`, `OpItemsLoaded`, `MountInspected`, …). Map every `crossterm` event — key, mouse, **paste, focus, and resize** — to `Message`s in a thin layer; route every state change through `fn update(&mut self, msg: Message) -> Option<Effect>`. Handlers stop mutating state directly.
 
 2. **Decompose state.** Split the god-structs along the seams that already exist conceptually: a domain `Model` (workspaces, instances, pending config), a `UiState` (selection, focus, scroll offsets, open modal), and ephemeral per-frame scratch. Geometry that the renderer derives (content width/height) becomes computed-and-cached state owned by `update`, not written from inside `view`.
 
 3. **Pure view.** Convert renderers to `fn(frame, area, &Model, &UiState)` with no `&mut` and no I/O. Move scroll clamping into `update` (on resize / scroll messages). Replace per-frame `mount_info::inspect` with a cached `MountFacts` map refreshed by a background `MountInspected` message.
 
-4. **Background I/O → channel.** Move instance refresh, 1Password loads, snapshot fan-out, and mount inspection onto background tasks that send `Message`s. The loop becomes: read event → map to `Message` → `update` → `view`, with the draw never blocking on disk/socket work.
+4. **Background I/O → channel.** Move instance refresh, 1Password loads, snapshot fan-out, and mount inspection onto background tasks that send `Message`s. `run_console` is already an `async fn`, so the target loop is a `tokio::select!` over a crossterm `EventStream` and the background `Message` channel — replacing today's synchronous `event::poll(50 ms)` — so the draw never blocks on disk/socket work and no longer wakes 20×/s just to spin. (Fallback if `EventStream` proves awkward: a dedicated input thread feeding the same `Message` channel via `std::sync::mpsc`.)
 
 5. **`StatefulWidget` components.** Extract the list, the editor (per tab), settings, and the modal family into components implementing the Ratatui widget traits, each with its own `State`. This is where the [Split `input/editor.rs`](/reference/roadmap/split-input-editor/) and [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) work should land — the splits target component boundaries, not arbitrary smaller files.
 
@@ -206,49 +218,17 @@ Move terminal/Ratatui-session ownership out of `run_console` and up to the app l
 - The console manager renders into the shared session but no longer owns its lifecycle — no `TerminalGuard` drop mid-flow.
 - The launch progress renderer (owned by [Launch Progress TUI](/reference/roadmap/launch-progress-tui/)) draws into the *same* session, so "operator picked a workspace" → "watching the launch cockpit" is a view swap, not a screen teardown. No stderr fallback, no cooked-mode gap, no clear-screen flash.
 - Launch work emits `Message`s (progress, stage transitions, failures) into the same update loop, so the draw never blocks on Docker/network and the launch view is a pure function of launch state — the same pattern as the console.
-- At the hardline handoff, the owned session is suspended while `docker exec -it` hands the TTY to the capsule; on return it resumes for the outro. The capsule, itself now a Ratatui app, continues the same visual language inside the container.
+- At the hardline handoff the host cannot keep an active alt-screen: `docker exec -it` gives the capsule full ownership of the TTY — its own raw mode and alternate screen. So the owned session's **terminal backend is torn down** (leave alt-screen, disable raw mode, flush) before the exec and **re-initialized** on return for the outro. "One owned session" means the app-level `Model` and the shared component set persist across the whole flow — *not* that a single alt-screen literally survives the child. SIGWINCH while the child runs belongs to the child; on resume the host re-enters its alt-screen and forces a full redraw, since its cached `Buffer` is stale. This handoff is the riskiest part of the one-session work and is validated first (see [Open questions & risks](#open-questions--risks)).
 
 This is the backbone the Launch Progress TUI's Phase 4 (rich renderer) and Phase 5 (console integration) build on: that item owns *what the launch screens look like*; this item owns *the single session and shared components that make them continuous with the console*.
 
-## Target architecture — shared design system (`jackin-tui`)
+## Shared design system & lookbook (`jackin-tui`)
 
 A shared crate already exists: <RepoFile path="crates/jackin-tui/Cargo.toml" />. Today it is a **Ratatui-free crate of raw-ANSI primitives and pure helpers** — the PHOSPHOR palette as `Rgb`, an `ansi` module (`fg` / `bg` / `move_to`), `TextField` (a text-input model), `HintSpan` + `hint_row_cols`, `TabCell` + `lay_out_tabs`, `vertical_thumb`, and unicode-width helpers. The capsule consumes it directly; the host console consumes only the **token layer** — <RepoFile path="src/console/widgets/mod.rs" /> wraps `jackin-tui`'s `Rgb` palette values into `ratatui::Color`.
 
-That token layer is the model to follow: one source of truth for the values, a thin per-surface conversion. The gap is that **every component above the token layer is reimplemented per surface** instead of shared the same way:
+That token layer is the model to follow: one source of truth for the values, a thin per-surface conversion. The gap is that **every component above the token layer is reimplemented per surface** — the host has its own tab strip, scrollbar, text input, hint model, and confirm dialog, while the capsule hand-rolls each again in raw ANSI, kept in sync only by the procedural rules in [TUI Design Decisions](/reference/tui-design-decisions/). **Target: elevate `jackin-tui` into the canonical TUI design-component crate** both surfaces consume; the crate that already owns the tokens grows to own the components. Do not create a new crate.
 
-- the capsule lays out tabs with `lay_out_tabs` while the host has its own tab strip in the render layer;
-- the capsule draws its scrollbar thumb with `vertical_thumb` while the host has its own scrollbar in <RepoFile path="src/console/widgets/scrollable.rs" />;
-- the capsule's text input is `TextField` while the host wraps `ratatui-textarea` in <RepoFile path="src/console/widgets/text_input.rs" />;
-- the capsule's hints are `HintSpan` while the host has its own `FooterItem` model;
-- the confirm dialog is `ConfirmState` in <RepoFile path="src/console/widgets/confirm.rs" /> on the host and `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> in the capsule — two implementations the design rules already *require* to look identical.
-
-**Target: elevate `jackin-tui` into the canonical TUI design-component crate** — the design system both surfaces consume. The crate that already owns the tokens grows to own the components; do not create a new crate.
-
-### Component inventory
-
-| Component | Host console today | Capsule today | Target (shared) |
-|---|---|---|---|
-| Color / style tokens | wraps `jackin-tui` `Rgb` into `ratatui::Color` in <RepoFile path="src/console/widgets/mod.rs" /> | uses `jackin-tui` `Rgb` directly | **Already shared — the model.** Extend with named style tokens (bold-white, dim, danger) |
-| Titled panel | ~27 `Block::default().borders(ALL)` + border-style chains | hand-rolled box borders in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | `Panel` / `titled_block(title, focused)` |
-| Scrollable block + scrollbar | `render_scrollable_block` in <RepoFile path="src/console/widgets/scrollable.rs" /> | `draw_scrollbar` + `vertical_thumb` in <RepoFile path="crates/jackin-capsule/src/render.rs" /> | one `ScrollableBlock` `StatefulWidget` |
-| Confirm dialog | `ConfirmState` in <RepoFile path="src/console/widgets/confirm.rs" /> | `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | one `ConfirmDialog` widget |
-| Filter-list picker | `role_picker` in <RepoFile path="src/console/widgets/role_picker.rs" /> / `op_picker` in <RepoFile path="src/console/widgets/op_picker/render.rs" /> | Menu / SplitDirectionPicker / AgentPicker in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | one `FilterList` / `Picker` widget |
-| Text input | `TextInputState` (wraps `ratatui-textarea`) in <RepoFile path="src/console/widgets/text_input.rs" /> | `TextField` in `jackin-tui` | one text-input widget over one model |
-| Tab strip | own tab bar in the render layer | `lay_out_tabs` + <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> | one W3C-tabs `TabStrip` widget |
-| Hint / footer bar | `FooterItem` + `footer_lines` | `HintSpan` | one `HintBar` widget |
-| Modal frame | `centered_rect_fixed` | `box_rect` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | one `Modal` frame + centering helper |
-| Error popup | `ErrorPopup` in <RepoFile path="src/console/widgets/error_popup.rs" /> | (none yet) | shared `ErrorPopup` widget |
-
-### How deep the sharing goes depends on the capsule's rendering decision
-
-- **Tokens and pure layout math** (palette, `lay_out_tabs`, `vertical_thumb`, text measurement, `box_rect` centering) can be shared **today**, regardless of the capsule's pane-body rendering decision. This is the floor — already partly in place — and unifying the remaining token wrappers and layout helpers is an early, low-risk win that needs no rendering-backend change.
-- **Full `StatefulWidget` components** (`Panel`, `ScrollableBlock`, `ConfirmDialog`, `FilterList`, `TabStrip`, `HintBar`) require the capsule to render through a Ratatui frame (Phase 6). Until that lands, the capsule shares only tokens and layout math and keeps separate render code — the weakest form of reuse, which is why moving the capsule into a Ratatui frame is committed scope here, not an optional follow-up.
-
-The end state: a new screen on either surface is *composed* from `jackin-tui` components rather than hand-built; the confirm dialog an operator sees in `jackin console` and the one inside a Capsule pane are the same widget; and the "Component Reuse — Strict Rule" in [TUI Design Decisions](/reference/tui-design-decisions/) is enforced by crate structure rather than by review vigilance.
-
-## The jackin' TUI design system & lookbook
-
-The patterns above are not a handful of widgets. An audit of the codebase found **~45 distinct repeatable visual patterns**, ~12 of them implemented twice — once in the host console's Ratatui code, once in the capsule's raw ANSI — and at least 6 with measurable visual drift between the two surfaces. That is exactly the problem a **design system** exists to solve, and the web ecosystem has a mature playbook for it. jackin' should adopt the TUI equivalent: a single token set, a single component library, and a browsable **lookbook** that renders every component and its states so the operator can point at one and say "use this."
+This is a design-system problem, and the web ecosystem has a mature playbook for it. An audit found **roughly 45 repeatable visual patterns** — an approximate figure; the enumerated drift table below is the verifiable subset — about a dozen implemented twice and several with measurable cross-surface drift. The fix is a single token set, a single component library, and a browsable **lookbook** that renders every component and its states so the operator can point at one and say "use this." The canonical *rules* stay in [TUI Design Decisions](/reference/tui-design-decisions/); the lookbook renders the *components* and never restates a rule — its Do / Don't rows link to the relevant rule anchor. The catalog below, organized by atomic-design layer, is the seed inventory; each row becomes a lookbook page.
 
 ### The web playbook, mapped to a TUI
 
@@ -313,6 +293,11 @@ The audit's patterns, grouped by atomic layer. This is the seed inventory the lo
 | `DigitalRain` | boundary ritual | age→color fade; centered reveal banner |
 | `Spinner` / `StepShimmer` | progress | braille spinner; per-char shimmer |
 
+### How deep the sharing goes depends on the capsule's rendering decision
+
+- **Tokens and pure layout math** (palette, `lay_out_tabs`, `vertical_thumb`, text measurement, `box_rect` centering) can be shared **today**, regardless of the capsule's pane-body rendering decision. This is the floor — already partly in place — and unifying the remaining token wrappers and layout helpers is an early, low-risk win that needs no rendering-backend change.
+- **Full `StatefulWidget` components** (`Panel`, `ScrollableBlock`, `ConfirmDialog`, `FilterList`, `TabStrip`, `HintBar`) require the capsule to render through a Ratatui frame (Phase 6). Until that lands, the capsule shares only tokens and layout math and keeps separate render code — the weakest form of reuse, which is why moving the capsule into a Ratatui frame is committed scope here, not an optional follow-up.
+
 ### What each lookbook page contains
 
 Each component gets one page with a fixed "story" shape so the operator reads them all the same way:
@@ -322,7 +307,7 @@ Each component gets one page with a fixed "story" shape so the operator reads th
 3. **Tokens used** — which palette / spacing tokens, linked to the token page.
 4. **States / variants gallery** — focused / unfocused / scrollable-fit / error / default-focus / hover, each rendered.
 5. **Where used** — the screens that compose it, so a change's blast radius is visible.
-6. **Do / Don't** — the binding rules from [TUI Design Decisions](/reference/tui-design-decisions/) that apply.
+6. **Do / Don't** — links to the [TUI Design Decisions](/reference/tui-design-decisions/) rule anchors that apply. The page never restates rule text, so the rules and the lookbook cannot drift.
 7. **Live preview** — the actual rendered component (mechanism below).
 
 ### Rendering TUI components in the docs
@@ -352,6 +337,17 @@ Plus the documented modal-backdrop-dim gap: the rule mandates dimming the whole 
 
 The lookbook is the operator's component catalog. The intended flow: the operator browses it, points at a component — "use `ConfirmDialog` here", "use `FilterList` with section headers", "this should be a `Panel`, not a bare block" — and the agent composes the screen from the shared `jackin-tui` widgets instead of hand-rolling a near-copy. That is the Storybook "pick the component" experience brought to jackin's TUI: a named, visible, reusable vocabulary instead of ~45 patterns reinvented per surface.
 
+## Terminal capability & degradation
+
+A single token layer makes graceful degradation a property of the tokens, not of every call site:
+
+- **Color depth.** Tokens resolve through Ratatui's color handling for truecolor; on 256- or 16-color terminals the palette maps to the nearest supported color, and `NO_COLOR` / `COLORTERM` are honored so the UI stays legible without a redesign.
+- **Glyph fallback.** The box-drawing, scrollbar, and selection glyphs (`┌─┐│└┘`, `█`, `·`, `▸`, `░`) get an ASCII fallback set for terminals that cannot render them, selected once at startup rather than per call site.
+- **Size.** Components clamp to a minimum usable size and degrade (hide chrome, collapse columns) on narrow terminals instead of panicking or overflowing.
+- **Reduced motion.** Animations (digital rain, spinners, shimmer) honor the reduced-motion handling owned by [Launch Progress TUI](/reference/roadmap/launch-progress-tui/); the design system exposes the same gate so static fallbacks stay consistent.
+
+**Non-goals (this refactor).** Screen-reader / assistive-technology support and alternate themes (light, high-contrast) are out of scope — but the single token set makes both a future *configuration* change rather than a rewrite, which is the point of centralizing them.
+
 ## Constraints and non-goals
 
 - **No behavior change.** Snapshot tests gate every step; the operator must not see a difference. This is a structure refactor, not a redesign — visual/UX changes are out of scope and belong to items like [Launch Progress TUI](/reference/roadmap/launch-progress-tui/).
@@ -371,7 +367,7 @@ Introduce the `Message` enum and central `update`; route existing key/mouse hand
 
 ### Phase 2 — Host: pure view
 
-Remove `&mut` and I/O from renderers. Move scroll clamping into `update`. Replace per-frame `mount_info::inspect` with cached facts refreshed by a message.
+Remove `&mut` and I/O from renderers. Move scroll clamping into `update`. Replace per-frame `mount_info::inspect` with cached facts refreshed by a message. Introduce event-driven (dirty) redraw — draw on a `Message` or an animation tick, not unconditionally every 50 ms — so an idle console does no work.
 
 ### Phase 3 — Host: background I/O
 
@@ -397,6 +393,16 @@ Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high
 
 Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, one MDX page per component following the story shape above, and CI regeneration so previews never drift. Reuses the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) `TestBackend` infrastructure. Reconcile the host/capsule drift table as components consolidate into shared widgets.
 
+## Open questions & risks
+
+- **Handoff feasibility (highest risk).** Tearing down and re-initializing the host terminal backend around `docker exec -it` (alt-screen, raw mode, SIGWINCH, stale `Buffer`) must be proven on a real terminal before Phase 5 commits. If it is not clean, the fallback is the current teardown-and-relaunch with the flash minimized.
+- **Async loop shape.** `EventStream` + `tokio::select!` vs. a dedicated input thread + `std::sync::mpsc`. Decide in Phase 1; the `Message` boundary keeps the rest of the design independent of the choice.
+- **Pane-body rendering cost.** `tui-term`'s per-cell copy on high-throughput PTYs vs. a thin custom cell widget — the Phase 7 benchmark.
+- **`ratatui-textarea` vs. `TextField`.** *Decision:* consolidate the host text input onto the in-house `TextField` (already shared via `jackin-tui`) and drop the third-party, pre-1.0 `ratatui-textarea`, so there is one text-input model. Revisit only if `TextField` lacks needed editing features.
+- **`unstable-widget-ref`.** Enabled but unused today. *Decision:* build components as `StatefulWidget` and drop the unstable feature unless `WidgetRef` proves genuinely necessary, to avoid depending on an unstable API.
+- **Lookbook SVG toolchain.** `term-transcript` vs. a custom `Buffer`→SVG serializer for widgets, and `vhs` / `termsvg` for motion — pick in Phase 8.
+- **Dirty redraw vs. animation.** Event-driven redraw must still drive spinner / rain animation ticks, so the redraw scheduler needs an animation-timer source, not only input `Message`s.
+
 ## Documentation impact
 
 When implementation lands, update the contributor-facing internals: [TUI Design Decisions](/reference/tui-design-decisions/) (add the architecture / Model-Update-View section), [Codebase Map](/reference/codebase-map/) (new module shape), and the relevant ADR. The lookbook adds a new set of Internals pages — one per `jackin-tui` component, with previews generated from real renders. No operator- or role-author-facing page changes, because there is no operator-visible behavior change.
@@ -410,7 +416,7 @@ None. This is a pure internal refactor of in-process TUI code. It introduces no 
 - Host event handling routes through a `Message` enum and a central `update`; no renderer takes `&mut state` or performs disk/socket I/O.
 - Per-frame filesystem inspection is eliminated; mount facts and instance state are refreshed by background tasks that message the loop.
 - Reusable screens are `StatefulWidget` components; the modal stack is a single `Vec<Modal>` shape.
-- The console → launch → container flow is one continuous Ratatui session: no clear-screen flash, no stderr fallback, no cooked-mode gap between picking a workspace and watching the launch; the in-container experience continues the same visual language.
+- The console → launch → handoff is one continuous Ratatui session — shared `Model` and components, no stderr fallback, no cooked-mode gap, no clear-screen flash between picking a workspace and watching the launch; the terminal backend is torn down only for the `docker exec` handoff, and the in-container experience continues the same visual language. *(Manual-smoke criterion — a real-terminal flash is not catchable by `TestBackend` snapshots.)*
 - The capsule has a `MuxMode` state machine, a generalized `Action` dispatch with tests, and a decomposed `daemon.rs`; the full/partial compositors share one helper.
 - The capsule renders through Ratatui; the pane-body mechanism (`tui-term` vs a custom cell widget) is recorded in an ADR with benchmark evidence.
 - Every rule in [TUI Design Decisions](/reference/tui-design-decisions/) still holds; snapshot tests show no render diff across the refactor.
