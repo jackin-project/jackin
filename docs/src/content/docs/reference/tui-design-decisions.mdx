@@ -435,21 +435,34 @@ All shared TUI widgets live in `src/console/widgets/`. Use this table to identif
 |---|---|---|---|
 | Op picker (1Password drill-down) | <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit | Any flow that needs to select a 1Password field reference |
 | Role picker | <RepoFile path="src/console/widgets/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
+| Text input box | <RepoFile path="src/console/widgets/text_input.rs" /> | Single-line labelled input box (`TextInputState` + `render`) with validation, duplicate detection, forbidden-char rules. This is the **"Credential" dialog** the operator sees when typing any single value. | Any flow needing one line of free text — env value, item name, field label, section name, workspace name |
+| Scope picker | <RepoFile path="src/console/widgets/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
+| Source picker | <RepoFile path="src/console/widgets/source_picker.rs" /> | Two-button horizontal strip: `Plain text` / `1Password` | Choosing whether a value is literal or an `op://` reference |
+| Agent choice | <RepoFile path="src/console/widgets/agent_choice/mod.rs" /> | Two-button agent selector used in the Auth-tab `+ Add` flow | Picking one agent from a small fixed set |
+| Mount destination choice | <RepoFile path="src/console/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
 | Confirm dialog | <RepoFile path="src/console/widgets/confirm.rs" /> | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule) | Any destructive or irreversible action |
 | Save / discard strip | <RepoFile path="src/console/widgets/save_discard.rs" /> | Save / Discard two-button strip, designed for form footers | Bottom of any editable form |
-| Scope picker | <RepoFile path="src/console/widgets/scope_picker.rs" /> | Two-button horizontal strip for binary choices ("All roles" / "Specific role", "Plain text" / "1Password") | Any two-option exclusive-choice prompt |
-| Source picker | <RepoFile path="src/console/widgets/source_picker.rs" /> | Two-button horizontal strip for value-source selection | Choosing between input sources |
-| Mount destination choice | <RepoFile path="src/console/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
-| Panel rain | <RepoFile path="src/console/widgets/panel_rain.rs" /> | Background rain animation for visual ambiance | Background decoration |
 | File browser | <RepoFile path="src/console/widgets/file_browser/mod.rs" /> | Host filesystem navigation | Any flow needing to pick a local file or directory |
 | GitHub picker | <RepoFile path="src/console/widgets/github_picker.rs" /> | GitHub org/repo drill-down | Any flow needing to select a GitHub repository |
 | Error popup | <RepoFile path="src/console/widgets/error_popup.rs" /> | Scrollable red-border error modal (see Error Surface rule) | All error display |
+| Panel rain | <RepoFile path="src/console/widgets/panel_rain.rs" /> | Background rain animation | Background decoration |
 
 **Render primitives** (in <RepoFile path="src/console/widgets/op_picker/render.rs" /> and <RepoFile path="src/console/manager/render/mod.rs" />): `modal_block`, `breadcrumb_title`, `render_filter_row`, `render_fatal`, `render_scrollable_block` — use these building blocks when composing new modals rather than hand-rolling border + layout from scratch.
 
-**Text input**: `TextInputState` in <RepoFile path="src/console/manager/state.rs" /> (host console) or its equivalent in the capsule dialog layer. Reuse for any single-line text entry box.
+### Two-button choice pattern
 
-**Two-button choice pattern** (`scope_picker.rs`, `source_picker.rs`): when a step in a flow requires the operator to pick one of exactly two options, use or model after this pattern. It produces a consistent visual shape the operator recognises immediately.
+`scope_picker.rs`, `source_picker.rs`, `agent_choice/`, `mount_dst_choice.rs`, and `confirm.rs` are all the **same visual shape**: a small modal with two side-by-side buttons, `←/→` to move, `Enter` to select, `Esc` to cancel. When a step requires the operator to pick one of exactly two mutually-exclusive options, reuse one of these or model a new one on the identical shape — never invent a third layout. The operator must recognise "this is a two-way choice" instantly from the shape alone.
+
+### Creation-sentinel pattern (`+ Add X` / `+ New X`)
+
+jackin' has **one** convention for "add a new thing to this list": a sentinel row rendered at the bottom of the list with a leading `+ ` and the action label. It is the same across every surface:
+
+- `+ New workspace` — list stage (<RepoFile path="src/console/manager/render/list.rs" />)
+- `+ Add role` — workspace editor Roles tab (<RepoFile path="src/console/manager/render/editor.rs" />)
+- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="src/console/manager/render/global_mounts.rs" />)
+- `+ Override for a role` — Auth tab per-role override
+
+Selecting a creation sentinel opens the next step in the flow — usually the **text input box** to name the new thing, or a two-button choice. Any new "add an item to this list" affordance MUST render as a `+ ` sentinel row in the same position and style, and MUST route its selection through the text input box (for naming) or a picker (for choosing). Do not invent a different add-affordance (no separate "New…" button floating elsewhere, no key-only shortcut without a visible row).
 
 ---
 
@@ -466,32 +479,42 @@ When a feature requires the operator to complete several sequential decisions be
 
 ### Canonical example — Claude token setup flow
 
-This is the intended shape for interactive Claude token configuration launched from the Auth tab in the jackin' console. It demonstrates how to compose existing components into a multi-step flow with zero new widgets.
+This is **the reference example** for how to design any multi-step TUI flow in jackin'. Every screen reuses a component from the catalog above; the flow adds **zero new widgets** and only **extends** `op_picker`. Read this whenever you design a new flow and ask "which existing component is each of my screens?" before writing any code.
 
-**Entry point**: The Auth tab shows `oauth_token` mode with an "Edit auth" action. The operator opens the auth form. If no token is configured yet, the form surfaces a "Set up token" action (replacing the current hint that sends the operator to the CLI).
+The flow configures a Claude OAuth token for a workspace, launched entirely from inside `jackin console`. The operator never leaves the console and never runs a CLI command.
 
-**Step 1 — scope choice** (`scope_picker.rs`): "All roles" / "Specific role". Reuses the two-button horizontal strip that the "New environment variable" dialog already uses for scope selection. No new component needed.
+**Entry point — the Edit auth dialog.** The Auth tab's "Edit auth" dialog currently shows `Mode: oauth_token`, `CLAUDE_CODE_OAUTH_TOKEN required`, and a hint: *"tip: run jackin workspace claude-token setup &lt;workspace&gt; --vault &lt;vault&gt; from your shell."* That hint is the design defect: it pushes the operator out to the CLI. It must be replaced by an in-dialog action that starts the wizard below. The flow begins from this dialog, not from a CLI flag.
 
-**Step 2 (conditional) — role picker** (`role_picker.rs`): If the operator chose "Specific role", show the filter-and-select role list. Reuses the same `RolePickerState` the env-var flow uses. If "All roles" was chosen, this step is skipped.
+The screens, in order, each mapped to the component it reuses:
 
-**Step 3 — source choice** (`scope_picker.rs` or `source_picker.rs`): "Plain text" / "1Password". Same two-button pattern. No new component needed.
+| Step | Screen | Component reused | Notes |
+|---|---|---|---|
+| 1 | **Scope**: `All roles` / `Specific role` | Scope picker (`scope_picker.rs`) | Identical two-button dialog to the "New environment variable" scope step. |
+| 2 *(if "Specific role")* | **Role**: filter + role list | Role picker (`role_picker.rs`) | Same `RolePickerState` the env-var flow uses. Skipped entirely for "All roles". |
+| 3 | **Source**: `Plain text` / `1Password` | Source picker (`source_picker.rs`) | Same two-button shape. Titled `Source for CLAUDE_CODE_OAUTH_TOKEN`. |
+| 4a *(if "Plain text")* | **Credential** input box | Text input box (`text_input.rs`) | The reusable input box. **For the Claude token flow the value comes from the Claude OAuth capture, not typed here** — but the box is the canonical reference component for every other flow that needs a typed value. |
+| 4b *(if "1Password")* | **Account → Vault → Item → Field** drill-down | `op_picker` (extended) | The existing `op_picker`, reused verbatim for the four drill-down screens; extended only with the creation sentinels below. |
 
-**Step 4a — plain text input** (`TextInputState`): If the operator chose "Plain text", show a single-line text input box. Reuses the `TextInputState` the credential input flow already uses. The value is written to config on commit.
+**Step 4b in detail — extending `op_picker`, not copying it.** The 1Password branch reuses the existing `op_picker` Account, Vault, Item, and Field screens exactly as they render today. The only additions are creation sentinels, each following the `+ Add X` creation-sentinel pattern (a `+ ` row at the bottom of the list):
 
-**Step 4b — 1Password field picker** (extended `op_picker`): If the operator chose "1Password", open the existing `op_picker` Account → Vault → Item → Field drill-down. For this flow, `op_picker` needs two additional sentinel rows in the Item and Field stages:
-- `[ + New item ]` — creates a new 1Password item to receive the token.
-- `[ + New field ]` / `[ + New section ]` — creates a new field inside an existing item.
+- **Item stage** — a `+ New item` sentinel below the item list. Selecting it opens the **text input box** to name the new item, then the captured token is written into it.
+- **Field stage** — a `+ New field` sentinel and a `+ New section` sentinel below the field list. Selecting either opens the **text input box** to name the new field or section.
+- Selecting an **existing field** writes the token into that field in-place.
 
-These sentinels extend `op_picker` via a mode parameter (e.g. `OpPickerMode::TokenStore`). They must **not** be implemented by forking `op_picker` into a second module. The sentinel rows produce a `TokenStoreSelection::NewItem` or `TokenStoreSelection::ReplaceItem` commit variant instead of the normal `op://` reference string.
+Every "create" affordance in this branch is the same `+ ` sentinel row, and every "name it" prompt is the same text input box. Nothing new is drawn.
 
-**What this flow replaces**: The `--interactive` CLI flag added in the `feature/interactive-token-store-picker` PR is a stopgap. The TUI flow above is the correct operator-facing shape. The `token_store_picker` widget and `token_store_dialog.rs` standalone event loop are technical debt created because the TUI flow was not built first — they are candidates for removal once the Auth-tab flow lands. The roadmap item [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) tracks the consolidation.
+**Implementation contract.** These sentinels extend `op_picker` via a mode parameter (e.g. `OpPickerMode::TokenStore`) that turns the creation rows on. They MUST NOT be implemented by forking `op_picker` into a second module. The sentinel selections produce `TokenStoreSelection::NewItem` / `TokenStoreSelection::ReplaceItem` commit variants instead of the plain `op://` reference string. The current <RepoFile path="src/console/widgets/token_store_picker/mod.rs" /> — a 1067-line copy of the `op_picker` state machine — is exactly what this rule forbids and is tracked for removal in [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/).
 
 ### Why the flow must start in the TUI, not the CLI
 
 The CLI `--interactive` flag spins up a standalone alt-screen TUI session inside a running terminal, captures the operator's selection, then returns. This approach:
 
-- Cannot compose with the console's existing event loop (it opens a second raw-mode terminal).
+- Cannot compose with the console's existing event loop (it opens a second raw-mode terminal via `token_store_dialog.rs`).
 - Loses all the console's context (workspace state, auth tab focus, operator's in-progress edits).
 - Requires the operator to leave the console, run a CLI command, then return — breaking their flow.
 
-The Auth tab is already open when the operator wants to configure a token. The wizard flow opens directly from there, using the console's own modal stack, and the operator never leaves the console. The CLI path (`jackin workspace claude-token setup --vault ... --item-name ...`) remains valid for scripted or automated workflows. It is not the interactive path.
+The Auth tab is already open when the operator wants to configure a token. The wizard flow opens directly from there, using the console's own modal stack, and the operator never leaves the console. The CLI path (`jackin workspace claude-token setup --vault … --item-name …`) remains valid for scripted or automated workflows; it is not the interactive path.
+
+### Why reusability matters — the design principle behind this flow
+
+The reason every screen above reuses an existing component is not code economy — it is **operator trust**. When the same meaning is always shown with the same shape, the operator learns the UI once and recognises it everywhere: a two-button dialog always means "pick one of two", a `+ ` row always means "add a new one", the bordered filter list always means "drill down", the input box always means "type a value here". A flow assembled from these known shapes is legible on first sight even though the operator has never seen this particular flow before. A flow that invents new shapes for the same meanings forces the operator to re-learn the UI at every screen and erodes that trust. Consistency in design is not polish; it is the contract that lets the operator predict what each screen does. This is why copy-pasting a component with slightly different look-and-feel is a bug, not a shortcut: it breaks the one-meaning-one-shape contract that makes the whole TUI predictable.
