@@ -32,17 +32,18 @@ use crate::paths::JackinPaths;
 use secrecy::ExposeSecret;
 use sha2::Digest;
 
-/// Default `op` item title template — `{ws}` substitutes the
-/// workspace name. Operators can override with
-/// [`TokenSetupArgs::item_name`].
-pub const DEFAULT_ITEM_TEMPLATE: &str = "jackin · {ws} · claude-token";
+/// Default `op` item title. Operators can override with
+/// [`TokenSetupArgs::item_name`]; a custom title may still contain
+/// `{ws}`, which substitutes the scope label (workspace name, or
+/// `global`). The default has no placeholder — it is the literal title.
+pub const DEFAULT_ITEM_TEMPLATE: &str = "Claude";
 
 /// Default `op` item category for OAuth tokens (1Password's API
 /// Credential category renders `token` as a concealed field).
 pub const DEFAULT_ITEM_CATEGORY: &str = "API_CREDENTIAL";
 
 /// Default field label inside the created item.
-pub const DEFAULT_FIELD_LABEL: &str = "token";
+pub const DEFAULT_FIELD_LABEL: &str = "oauth-token";
 
 /// Tags every jackin-managed item is stamped with so list / search
 /// filters can find them later.

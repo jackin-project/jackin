@@ -453,6 +453,10 @@ All shared TUI widgets live in `src/console/widgets/`. Use this table to identif
 
 `scope_picker.rs`, `source_picker.rs`, `agent_choice/`, `mount_dst_choice.rs`, and `confirm.rs` are all the **same visual shape**: a small modal with two side-by-side buttons, `←/→` to move, `Enter` to select, `Esc` to cancel. When a step requires the operator to pick one of exactly two mutually-exclusive options, reuse one of these or model a new one on the identical shape — never invent a third layout. The operator must recognise "this is a two-way choice" instantly from the shape alone.
 
+### Default values are pre-filled in input boxes
+
+**When an input box has a suggested default, that default MUST be pre-filled into the box (cursor at end), not shown as placeholder/ghost text.** The operator either presses `Enter` to accept the pre-filled value or edits it. Never make the operator type a value that the system already knows the default for. This matches the CLI prompt convention (`dialoguer::Input::default(...)`, where `Enter` accepts the suggestion) so the two surfaces behave identically. Construct the input with the default as its initial content — `TextInputState::new(label, default)` already does this (the textarea opens holding `default` with the cursor at the end). Use an empty initial value (`""`) only when there is genuinely no sensible default (e.g. a new section name). Example: the op_picker Create-mode naming stages open with `Claude` (item) and `oauth-token` (field) pre-filled; the operator hits `Enter` to take them or types over them.
+
 ### Creation-sentinel pattern (`+ Add X` / `+ New X`)
 
 jackin' has **one** convention for "add a new thing to this list": a sentinel row rendered at the bottom of the list with a leading `+ ` and the action label. It is the same across every surface:
