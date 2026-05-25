@@ -513,7 +513,7 @@ fn render_launch_frame(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, n
     // live cue keeps moving behind the modal.
     let frozen = no_motion || view.failure.is_some();
 
-    render_brand_header(frame, rows[0], "launch");
+    render_brand_header(frame, rows[0], "loading");
     render_body(frame, rows[1], view, frozen);
     render_footer(frame, rows[2], view, run_id);
 
@@ -766,30 +766,23 @@ fn fill_target(view: &LaunchView) -> f32 {
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {
-    let diagnostics = format!("diagnostics · {run_id}");
-    let diag_w = u16::try_from(diagnostics.chars().count()).unwrap_or(u16::MAX);
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(1),
-            Constraint::Length(diag_w.saturating_add(1)),
-        ])
-        .split(area);
-
-    let status = Line::from(vec![
-        Span::styled("status", Style::default().fg(PHOSPHOR_DIM)),
-        Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
-        Span::styled(view.status.clone(), Style::default().fg(WHITE)),
-    ]);
-    frame.render_widget(Paragraph::new(status), cols[0]);
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            diagnostics,
-            Style::default().fg(PHOSPHOR_DARK),
-        )))
-        .alignment(Alignment::Right),
-        cols[1],
+    crate::console::widgets::status_bar::render(
+        frame,
+        area,
+        &view.status,
+        &footer_handle(view, run_id),
     );
+}
+
+/// The right-hand status-bar chip: the container's short instance id once the
+/// container name is known, otherwise the diagnostics run handle so the
+/// operator always has a copy-able identifier.
+fn footer_handle(view: &LaunchView, run_id: &str) -> String {
+    view.identity
+        .as_ref()
+        .and_then(|identity| identity.container.as_deref())
+        .and_then(jackin_protocol::instance_id_from_container_base)
+        .map_or_else(|| run_id.to_string(), str::to_string)
 }
 
 fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailure, run_id: &str) {
@@ -958,7 +951,8 @@ mod tests {
         let rendered = format!("{:?}", terminal.backend().buffer());
         assert!(rendered.contains("Loading agent-smith into big-monorepo"));
         assert!(rendered.contains("construct"));
-        assert!(rendered.contains("jk-run-42f9aa"));
+        // Footer chip shows the short instance id derived from the container.
+        assert!(rendered.contains("k7p9m2xq"));
 
         view.failure = Some(LaunchFailure {
             title: "Docker unavailable".to_string(),

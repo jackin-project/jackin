@@ -64,6 +64,11 @@ pub const TAB_BG_INACTIVE_HOVER: Rgb = Rgb::new(48, 48, 48);
 pub const TAB_BG_ACTIVE: Rgb = Rgb::new(42, 42, 42);
 pub const TAB_BG_ACTIVE_HOVER: Rgb = Rgb::new(58, 58, 58);
 
+/// Link/clickable foreground used on the white bottom status bar (the
+/// container/instance-id chip) by both the in-container multiplexer and the
+/// host loading screen, so a clickable id reads the same on both surfaces.
+pub const LINK_BLUE: Rgb = Rgb::new(0, 80, 180);
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.

@@ -52,6 +52,14 @@ pub(crate) const TAB_BG_ACTIVE: Color = Color::Rgb(
     tui_palette::TAB_BG_ACTIVE.b,
 );
 
+/// Clickable-id foreground on the white bottom status bar, shared with the
+/// in-container multiplexer via `jackin-tui`.
+pub(crate) const LINK_BLUE: Color = Color::Rgb(
+    tui_palette::LINK_BLUE.r,
+    tui_palette::LINK_BLUE.g,
+    tui_palette::LINK_BLUE.b,
+);
+
 /// The ` jackin' ` brand pill followed by ` · <label>`. Shared by every
 /// top-level TUI screen (workspace list, settings, editor, launch
 /// progress) so the logo is byte-identical and never shifts position or
@@ -96,6 +104,7 @@ pub mod save_discard;
 pub mod scope_picker;
 pub mod scrollable;
 pub mod select_list;
+pub mod status_bar;
 pub mod source_picker;
 pub mod status_popup;
 pub mod text_input;
