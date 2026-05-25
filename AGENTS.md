@@ -302,7 +302,7 @@ This rule applies to inline `//` comments, multi-line `/// `/// `//!` doc commen
 
 When walking the operator through manual validation of a jackin' feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
 
-The `--debug` flag prints every external command the CLI issues (`docker`, `git`, `id`, etc.) along with their captured output, plus the `[jackin debug ...]` instrumentation. This makes the operator's terminal output triage-able by the agent: when something doesn't behave as expected, the operator can paste the full debug log and the agent can localize the issue without guessing.
+The `--debug` flag captures every external command the CLI issues (`docker`, `git`, `id`, etc.) along with their output, plus the `[jackin debug ...]` instrumentation, into the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) — never onto a rich TUI (see the telemetry hard rule above). At the start of a `--debug` run the CLI prints the run id and that file path before any TUI takes the screen. This makes the run triage-able by the agent: when something doesn't behave as expected, the operator shares the run id (or the file) and the agent reads the structured JSONL to localize the issue without guessing. Ask the operator for the run id printed at start, not for a pasted terminal scrollback.
 
 Do not list `git diff --check` as PR verification. It is not a meaningful
 acceptance check for jackin' PRs; prefer targeted commands that exercise the
@@ -326,7 +326,7 @@ cargo run --bin jackin -- load the-architect . --debug
 Do not add `--no-intro` to debug smoke commands. Debug mode already suppresses
 the intro by design, so `--debug --no-intro` is redundant noise.
 
-If the operator reports unexpected behavior from a clean (non-debug) run, the FIRST follow-up should be to ask them to rerun with `--debug` and paste the full output before proposing fixes.
+If the operator reports unexpected behavior from a clean (non-debug) run, the FIRST follow-up should be to ask them to rerun with `--debug` and share the run id printed at start (the agent then reads the run's JSONL file) before proposing fixes.
 
 This does not apply to:
 
