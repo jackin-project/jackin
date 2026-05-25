@@ -74,11 +74,18 @@ The token never crosses `argv`. `OpWriteRunner::item_create` serialises the item
 
 Reasoning: `argv` is visible via `/proc/<pid>/cmdline` to any local unprivileged reader; the `op item create --field value=<token>` form would expose the token for the lifetime of the `op` process. Stdin is not visible the same way.
 
-The trait deliberately omits an `item_edit_field` method:
+### In-place field edit — `item_field_set`
 
-> The upstream `op` CLI has no documented stdin form for `op item edit`, and any argv form would violate the stdin-only contract this trait declares. Rotation is implemented as `item_create` (new item) + `item_delete` (old item once the new one is wired and validated).
->
-> — `OpWriteRunner` doc comment in <RepoFile path="src/operator_env.rs" />
+`OpWriteRunner::item_field_set(item_id, vault_id, field_label, value)` writes a new token value into a specific field of an existing 1Password item without touching any other fields or metadata. It follows the same never-on-argv contract as `item_create` via a two-step GET → stdin-EDIT sequence:
+
+1. **GET** — `op item get <id> --vault <vault> --format json` fetches the full item as a `serde_json::Value`. The raw bytes are decoded as generic JSON (not into a typed struct) so all unrecognised properties are preserved verbatim.
+2. **Modify in-process** — the `fields` array is scanned for a field whose `label` or `id` matches `field_label`. If found, its `value` is replaced and its `type` is set to `CONCEALED`. If not found, a new field object (`{ id, label, type: "CONCEALED", value }`) is appended.
+3. **stdin-EDIT** — the modified JSON is serialised and piped to `op item edit - --vault <vault> --format json`. The `-` positional arg tells `op` to read the full item template from stdin; `op` identifies which item to update from the `id` field inside the JSON body. The token value therefore never appears in `argv` or `/proc/<pid>/cmdline`.
+4. **Reference extraction** — the JSON returned by `op item edit` is scanned for the target field by label (case-insensitive) or id; the resulting `op://` reference is built from UUIDs (vault `id`, item `id`, field `id`) so it stays stable across renames.
+
+This method is used by the `--interactive` setup path when the operator selects an existing 1Password item: the same OAuth token capture flow runs, but instead of creating a fresh item via `item_create`, the captured value is written in-place via `item_field_set`, leaving all other fields and item metadata untouched.
+
+Rotation (the day-to-day `jackin workspace claude-token rotate` path) continues to use `item_create` + `item_delete` — a new item is always created, validated, wired, and only then the prior item is deleted. `item_field_set` is only for the interactive adopt-existing-item case where the operator explicitly chose a specific field to overwrite.
 
 ### Stdout safety on parse
 
