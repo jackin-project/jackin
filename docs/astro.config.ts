@@ -155,6 +155,7 @@ export default defineConfig({
               collapsed: true,
               items: [
                 { label: "jackin' Desktop Agent Hub", slug: 'reference/goals/jackin-desktop-agent-hub' },
+                { label: 'Launch Progress TUI current PR', slug: 'reference/goals/launch-progress-tui-current-pr' },
               ],
             },
             {
