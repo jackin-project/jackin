@@ -139,10 +139,6 @@ struct LaunchView {
     status: String,
     failure: Option<LaunchFailure>,
     frame: usize,
-    /// Eased progress fraction [0,1] driving the rail's green sweep. Lerps
-    /// toward `fill_target` each frame so completed stages flow the fill
-    /// forward smoothly instead of snapping.
-    fill_shown: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -207,7 +203,6 @@ impl LaunchProgress {
                 status: "preparing launch".to_string(),
                 failure: None,
                 frame: 0,
-                fill_shown: 0.0,
             },
         }
     }
@@ -353,23 +348,8 @@ impl LaunchProgress {
     }
 
     fn render(&mut self) {
-        self.advance_fill();
         if let Renderer::Rich(renderer) = &mut self.renderer {
             let _ = renderer.render(&self.view, self.diagnostics.run_id());
-        }
-    }
-
-    fn advance_fill(&mut self) {
-        let target = fill_target(&self.view);
-        if self.no_motion() {
-            self.view.fill_shown = target;
-            return;
-        }
-        let delta = target - self.view.fill_shown;
-        if delta.abs() < 0.005 {
-            self.view.fill_shown = target;
-        } else {
-            self.view.fill_shown += delta * 0.28;
         }
     }
 
@@ -488,13 +468,20 @@ pub(crate) fn rich_terminal_supported() -> bool {
     crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
 }
 
-const RAIL_CONNECTOR_CELLS: usize = 3;
-const RAIL_PULSE_PERIOD: usize = 5;
-const RAIL_ELLIPSIS_PERIOD: usize = 3;
-/// Error accent for a failed stage marker. Matches `error_popup`'s
-/// private `DANGER_RED`; the launch rail is the only other site that
-/// needs the colour, so it is duplicated here rather than made public.
+const STAGE_PULSE_PERIOD: usize = 5;
+const BLOCK_WIDTH: usize = 4;
+const BLOCK_GAP: usize = 1;
+/// Error accent for a failed stage block. Matches `error_popup`'s private
+/// `DANGER_RED`; the launch screen is the only other site that needs the
+/// colour, so it is duplicated here rather than made public.
 const FAILED_RED: Color = Color::Rgb(255, 94, 122);
+/// Glyphs the in-box digital rain falls through (all single-width so the
+/// columns stay aligned).
+const RAIN_GLYPHS: &[char] = &[
+    '0', '1', '7', '=', '+', '/', '\\', '|', '<', '>', '{', '}', ':', ';', '░', '▒', '╳',
+];
+/// Trail length below each rain head, in rows.
+const RAIN_TRAIL: i64 = 6;
 
 fn render_launch_frame(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, no_motion: bool) {
     let area = frame.area();
@@ -553,133 +540,107 @@ fn render_body(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: boo
     });
     frame.render_widget(block, area);
 
+    // Digital rain fills the upper space ("entering another universe"); the
+    // block progress + stage words sit just above the status bar. The rain
+    // thins toward the bottom so it never crowds the progress.
     let parts = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(identity_height(view.identity.as_ref())),
-            Constraint::Min(3),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(2)])
         .split(inner);
-
-    render_identity(frame, parts[0], view.identity.as_ref());
-    render_rail(frame, parts[1], view, frozen);
+    render_rain(frame, parts[0], view, frozen);
+    render_progress(frame, parts[1], view, frozen);
 }
 
-fn identity_height(identity: Option<&LaunchIdentity>) -> u16 {
-    identity.map_or(1, |id| {
-        2 + u16::try_from(id.mounts.len()).unwrap_or(u16::MAX)
-            + u16::from(id.image.is_some())
-            + u16::from(id.container.is_some())
-    })
-}
-
-fn render_identity(frame: &mut Frame<'_>, area: Rect, identity: Option<&LaunchIdentity>) {
-    let Some(id) = identity else {
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "resolving launch identity",
-                Style::default().fg(PHOSPHOR_DIM),
-            ))),
-            area,
-        );
+fn render_rain(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+    if area.width == 0 || area.height == 0 {
         return;
+    }
+    let h = i64::from(area.height);
+    let f = if frozen {
+        0
+    } else {
+        i64::try_from(view.frame).unwrap_or(0)
     };
-    let mut lines = vec![
-        identity_line("agent", &id.agent),
-        identity_line("workdir", &id.workdir),
-    ];
-    for (i, mount) in id.mounts.iter().enumerate() {
-        let label = if i > 0 {
-            "" // continuation rows align under the first mount
-        } else if id.mounts.len() == 1 {
-            "mount"
-        } else {
-            "mounts"
-        };
-        lines.push(identity_line(label, mount));
-    }
-    if let Some(image) = &id.image {
-        lines.push(identity_line("image", image));
-    }
-    if let Some(container) = &id.container {
-        lines.push(identity_line("container", container));
-    }
+    let lines: Vec<Line<'static>> = (0..h)
+        .map(|y| {
+            Line::from(
+                (0..i64::from(area.width))
+                    .map(|x| rain_cell(x, y, h, f))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-fn identity_line(label: &str, value: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(format!("{label:<10}"), Style::default().fg(PHOSPHOR_DIM)),
-        Span::styled(value.to_string(), Style::default().fg(WHITE)),
-    ])
-}
-
-fn render_rail(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
-    let lines = vec![
-        markers_line(view, frozen),
-        Line::raw(""),
-        labels_line(view, frozen),
-        detail_line(view, frozen),
-    ];
-    // Vertically centre the rail within its area so the focal stage sits
-    // in the middle of the box, not pinned to the top.
-    let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
-    let top = area.y + area.height.saturating_sub(height) / 2;
-    let rect = Rect {
-        x: area.x,
-        y: top,
-        width: area.width,
-        height: height.min(area.height),
+/// One rain cell at column `x`, row `y` (within a rain area `h` rows tall)
+/// for frame `f`. Stateless: each column's falling head is a pure function
+/// of `f`, so no per-frame rain state has to be stored on the view.
+fn rain_cell(x: i64, y: i64, h: i64, f: i64) -> Span<'static> {
+    let speed = 2 + rain_hash(x).rem_euclid(3); // 2..=4 frames per row
+    let cycle = h + RAIN_TRAIL;
+    let offset = rain_hash(x.wrapping_mul(2_654_435_761)).rem_euclid(cycle);
+    let head = (f / speed + offset).rem_euclid(cycle);
+    let depth = head - y; // 0 = head, increasing up the trail
+    if !(0..=RAIN_TRAIL).contains(&depth) {
+        return Span::raw(" ");
+    }
+    // Lower third keeps heads only, so the rain dissolves before the progress.
+    if y > h * 2 / 3 && depth != 0 {
+        return Span::raw(" ");
+    }
+    let glyph =
+        RAIN_GLYPHS[(x * 7 + y * 13 + f * 3).rem_euclid(RAIN_GLYPHS.len() as i64) as usize];
+    let color = if depth == 0 {
+        WHITE
+    } else if depth <= 2 {
+        PHOSPHOR_GREEN
+    } else if depth <= 4 {
+        PHOSPHOR_DIM
+    } else {
+        PHOSPHOR_DARK
     };
-    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), rect);
+    Span::styled(glyph.to_string(), Style::default().fg(color))
 }
 
-fn markers_line(view: &LaunchView, frozen: bool) -> Line<'static> {
-    let connector_cells = view.stages.len().saturating_sub(1) * RAIL_CONNECTOR_CELLS;
-    let front = (view.fill_shown * connector_cells as f32).round() as usize;
+const fn rain_hash(n: i64) -> i64 {
+    let h = n.wrapping_mul(2_246_822_519);
+    (h ^ (h >> 13)).wrapping_abs()
+}
+
+fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+    let lines = vec![blocks_line(view, frozen), labels_line(view, frozen)];
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
+}
+
+/// One block per stage, filling gray (queued) -> green (done) so a glance
+/// reads as a percent-complete bar; all green means loaded.
+fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
+    let pulse = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
     let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut cell = 0usize;
     for (i, row) in view.stages.iter().enumerate() {
         if i > 0 {
-            for _ in 0..RAIL_CONNECTOR_CELLS {
-                let color = if cell < front {
-                    PHOSPHOR_GREEN
-                } else {
-                    PHOSPHOR_DARK
-                };
-                spans.push(Span::styled("─", Style::default().fg(color)));
-                cell += 1;
-            }
+            spans.push(Span::raw(" ".repeat(BLOCK_GAP)));
         }
-        spans.push(marker_span(row.status, view.frame, frozen));
+        let (glyph, color) = match row.status {
+            StageStatus::Done => ('█', PHOSPHOR_GREEN),
+            StageStatus::Running => ('▓', if pulse { WHITE } else { PHOSPHOR_GREEN }),
+            StageStatus::Skipped => ('▒', PHOSPHOR_DIM),
+            StageStatus::Failed => ('█', FAILED_RED),
+            StageStatus::Blocked => ('▓', WHITE),
+            StageStatus::Queued => ('░', PHOSPHOR_DARK),
+        };
+        spans.push(Span::styled(
+            glyph.to_string().repeat(BLOCK_WIDTH),
+            Style::default().fg(color),
+        ));
     }
     Line::from(spans)
 }
 
-fn marker_span(status: StageStatus, frame: usize, frozen: bool) -> Span<'static> {
-    let bright = !frozen && (frame / RAIL_PULSE_PERIOD).is_multiple_of(2);
-    match status {
-        StageStatus::Running => Span::styled(
-            "◉",
-            if bright {
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            },
-        ),
-        StageStatus::Done => Span::styled("●", Style::default().fg(PHOSPHOR_GREEN)),
-        StageStatus::Skipped => Span::styled("◌", Style::default().fg(PHOSPHOR_DIM)),
-        StageStatus::Failed => Span::styled("✕", Style::default().fg(FAILED_RED)),
-        StageStatus::Blocked => Span::styled("◈", Style::default().fg(WHITE)),
-        StageStatus::Queued => Span::styled("○", Style::default().fg(PHOSPHOR_DARK)),
-    }
-}
-
 fn labels_line(view: &LaunchView, frozen: bool) -> Line<'static> {
     let active = active_stage_index(view);
-    let bright = !frozen && (view.frame / RAIL_PULSE_PERIOD).is_multiple_of(2);
+    let bright = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
     let active_style = if bright {
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
     } else {
@@ -712,28 +673,21 @@ fn labels_line(view: &LaunchView, frozen: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-fn detail_line(view: &LaunchView, frozen: bool) -> Line<'static> {
-    let row = &view.stages[active_stage_index(view)];
-    let text = if row.status == StageStatus::Running {
-        let base = row
-            .detail
-            .trim_end()
-            .trim_end_matches('…')
-            .trim_end_matches("...")
-            .trim_end();
-        format!("{base}{}", running_ellipsis(view.frame, frozen))
-    } else {
-        row.detail.clone()
+/// The status-bar activity text: the current step with an upper-cased first
+/// word and a trailing ellipsis (`wiring private network` -> `Wiring private
+/// network…`). The live build/step detail lives only here, never inside the
+/// box.
+fn format_activity(status: &str) -> String {
+    let trimmed = status
+        .trim()
+        .trim_end_matches('…')
+        .trim_end_matches("...")
+        .trim_end();
+    let mut chars = trimmed.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
     };
-    Line::from(Span::styled(text, Style::default().fg(PHOSPHOR_DIM)))
-}
-
-const fn running_ellipsis(frame: usize, frozen: bool) -> &'static str {
-    if frozen {
-        return "…";
-    }
-    // Stable 3-cell width so centring does not jitter as the dots cycle.
-    ["   ", ".  ", ".. ", "..."][(frame / RAIL_ELLIPSIS_PERIOD) % 4]
+    format!("{}{}…", first.to_uppercase(), chars.as_str())
 }
 
 fn active_stage_index(view: &LaunchView) -> usize {
@@ -748,30 +702,19 @@ fn active_stage_index(view: &LaunchView) -> usize {
         .unwrap_or(0)
 }
 
-fn fill_target(view: &LaunchView) -> f32 {
-    let total = view.stages.len().max(1) as f32;
-    let done = view
-        .stages
-        .iter()
-        .filter(|row| matches!(row.status, StageStatus::Done | StageStatus::Skipped))
-        .count() as f32;
-    // The running stage pulls the fill halfway into its segment so the
-    // sweep reads as "arriving at" the active marker, not stopped behind it.
-    let active = if view.stages.iter().any(|row| row.status == StageStatus::Running) {
-        0.5
-    } else {
-        0.0
-    };
-    ((done + active) / total).clamp(0.0, 1.0)
-}
-
 fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {
     let instance = footer_instance(view);
     // The run id rides the status bar only in --debug, in amber, so the
     // operator is never unsure whether they are in a debug run; the blue
     // instance-id chip always shows once the container is named.
     let debug_chip = crate::tui::is_debug_mode().then_some(run_id);
-    crate::console::widgets::status_bar::render(frame, area, &view.status, &instance, debug_chip);
+    crate::console::widgets::status_bar::render(
+        frame,
+        area,
+        &format_activity(&view.status),
+        &instance,
+        debug_chip,
+    );
 }
 
 /// The container's short instance id once the container is named, else empty.
@@ -941,7 +884,6 @@ mod tests {
             status: "pulling construct".to_string(),
             failure: None,
             frame: 0,
-            fill_shown: 0.3,
         };
         terminal
             .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true))
