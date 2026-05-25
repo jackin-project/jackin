@@ -99,15 +99,17 @@ pub(super) async fn build_agent_image(
                 None => false,
             };
             if local_is_fresh {
-                eprintln!(
-                    "note: published image {published} is out of date; reusing local workspace image {local_image_name} (role SHA matches)",
+                crate::debug_log!(
+                    "image",
+                    "published image {published} is out of date; reusing local workspace image {local_image_name} (role SHA matches)"
                 );
                 use_prebuilt = false;
                 base_image_override = None;
                 rebuild
             } else {
-                eprintln!(
-                    "note: published image {published} is out of date; rebuilding from workspace Dockerfile",
+                crate::debug_log!(
+                    "image",
+                    "published image {published} is out of date; rebuilding from workspace Dockerfile"
                 );
                 use_prebuilt = false;
                 base_image_override = None;

@@ -233,15 +233,20 @@ fn launch_target_label(
     workspace_name.map_or_else(|| tui::shorten_home(&workspace.workdir), str::to_string)
 }
 
-fn launch_mount_summary(
-    workspace_name: Option<&str>,
-    workspace: &crate::workspace::ResolvedWorkspace,
-) -> String {
-    if workspace_name.is_some() {
-        format!("{} configured", workspace.mounts.len())
-    } else {
-        "same path".to_string()
-    }
+/// Human-readable lines for the mounts whose host source differs from the
+/// container destination. Same-path mounts (the current-directory launch
+/// case) carry no information for the operator and are omitted entirely, so
+/// a directory launch shows no mount line at all.
+fn launch_mount_lines(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<String> {
+    workspace
+        .mounts
+        .iter()
+        .filter(|mount| mount.src.trim_end_matches('/') != mount.dst.trim_end_matches('/'))
+        .map(|mount| {
+            let ro = if mount.readonly { " (ro)" } else { "" };
+            format!("{} → {}{ro}", tui::shorten_home(&mount.src), mount.dst)
+        })
+        .collect()
 }
 
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
@@ -1607,7 +1612,7 @@ async fn load_role_with(
             target_kind: launch_target_kind(workspace_name.as_deref()),
             target_label: launch_target_label(workspace_name.as_deref(), workspace),
             workdir: tui::shorten_home(&workspace.workdir),
-            mount_summary: launch_mount_summary(workspace_name.as_deref(), workspace),
+            mounts: launch_mount_lines(workspace),
             image: None,
             container: None,
         });
@@ -1831,7 +1836,7 @@ async fn load_role_with(
             target_kind: launch_target_kind(workspace_name.as_deref()),
             target_label: launch_target_label(workspace_name.as_deref(), workspace),
             workdir: tui::shorten_home(&workspace.workdir),
-            mount_summary: launch_mount_summary(workspace_name.as_deref(), workspace),
+            mounts: launch_mount_lines(workspace),
             image: Some(image_tag.clone()),
             container: Some(container_name.clone()),
         });

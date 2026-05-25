@@ -102,7 +102,9 @@ pub struct LaunchIdentity {
     pub target_kind: LaunchTargetKind,
     pub target_label: String,
     pub workdir: String,
-    pub mount_summary: String,
+    /// Mounts whose host source differs from the container destination,
+    /// pre-formatted for display. Same-path mounts are omitted upstream.
+    pub mounts: Vec<String>,
     pub image: Option<String>,
     pub container: Option<String>,
 }
@@ -498,7 +500,9 @@ fn render_body(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: boo
 
 fn identity_height(identity: Option<&LaunchIdentity>) -> u16 {
     identity.map_or(1, |id| {
-        3 + u16::from(id.image.is_some()) + u16::from(id.container.is_some())
+        2 + u16::try_from(id.mounts.len()).unwrap_or(u16::MAX)
+            + u16::from(id.image.is_some())
+            + u16::from(id.container.is_some())
     })
 }
 
@@ -516,15 +520,17 @@ fn render_identity(frame: &mut Frame<'_>, area: Rect, identity: Option<&LaunchId
     let mut lines = vec![
         identity_line("agent", &id.agent),
         identity_line("workdir", &id.workdir),
-        identity_line(
-            if id.target_kind == LaunchTargetKind::Workspace {
-                "mounts"
-            } else {
-                "mount"
-            },
-            &id.mount_summary,
-        ),
     ];
+    for (i, mount) in id.mounts.iter().enumerate() {
+        let label = if i > 0 {
+            "" // continuation rows align under the first mount
+        } else if id.mounts.len() == 1 {
+            "mount"
+        } else {
+            "mounts"
+        };
+        lines.push(identity_line(label, mount));
+    }
     if let Some(image) = &id.image {
         lines.push(identity_line("image", image));
     }
@@ -787,7 +793,7 @@ mod tests {
                 target_kind: LaunchTargetKind::Workspace,
                 target_label: "big-monorepo".to_string(),
                 workdir: "~/Projects/app".to_string(),
-                mount_summary: "3 configured".to_string(),
+                mounts: vec!["~/big-monorepo → /workspace".to_string()],
                 image: Some("jk_agent-smith:latest".to_string()),
                 container: Some("jk-k7p9m2xq-bigmonorepo-agentsmith".to_string()),
             }),
