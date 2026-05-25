@@ -8,7 +8,11 @@
 //! the manager (PR 2) and the Secrets tab (PR 3).
 
 use jackin_tui as tui_palette;
-use ratatui::style::Color;
+use ratatui::Frame;
+use ratatui::layout::{Alignment, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 
 /// Canonical phosphor-green palette used across every TUI surface.
 /// Sourced from the shared `jackin-tui` crate so the console TUI and
@@ -33,6 +37,35 @@ pub(crate) const WHITE: Color = Color::Rgb(
     tui_palette::WHITE.g,
     tui_palette::WHITE.b,
 );
+
+/// The ` jackin' ` brand pill followed by ` · <label>`. Shared by every
+/// top-level TUI screen (workspace list, settings, editor, launch
+/// progress) so the logo is byte-identical and never shifts position or
+/// colour as the operator transitions between screens. The pill matches
+/// the in-container multiplexer status-bar brand pill (`statusbar.rs`).
+pub(crate) fn brand_header_line(label: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            " jackin' ",
+            Style::default()
+                .bg(PHOSPHOR_GREEN)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
+        Span::styled(label.to_string(), Style::default().fg(PHOSPHOR_DIM)),
+    ])
+}
+
+/// Render [`brand_header_line`] left-aligned at the top of `area`. `area`
+/// is normally two rows tall (brand row + one spacer) so the body below
+/// sits one clear line under the logo.
+pub(crate) fn render_brand_header(frame: &mut Frame, area: Rect, label: &str) {
+    frame.render_widget(
+        Paragraph::new(brand_header_line(label)).alignment(Alignment::Left),
+        area,
+    );
+}
 
 pub mod agent_choice;
 pub mod auth_panel;

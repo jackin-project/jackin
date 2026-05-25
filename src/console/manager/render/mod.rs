@@ -312,7 +312,7 @@ pub fn render(
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // header
+                Constraint::Length(2), // header (brand pill + 1 spacer row)
                 Constraint::Min(10),   // body
                 Constraint::Length(2), // footer
             ])
@@ -968,16 +968,7 @@ pub(super) fn partition_mounts_by_scope(
 }
 
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
-    let line = Line::from(vec![
-        Span::styled("▓▓▓▓ ", Style::default().fg(PHOSPHOR_GREEN)),
-        Span::styled(
-            "jackin'",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("     · "),
-        Span::styled(title.to_string(), Style::default().fg(PHOSPHOR_DIM)),
-    ]);
-    frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), area);
+    crate::console::widgets::render_brand_header(frame, area, title);
 }
 
 /// Like `centered_rect` but takes a fixed number of rows for the height.

@@ -6,11 +6,15 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use crate::console::widgets::error_popup::{self, ErrorPopupState};
+use crate::console::widgets::{
+    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
+};
 use crate::diagnostics::RunDiagnostics;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -116,13 +120,6 @@ impl LaunchTargetKind {
             Self::Directory => "in directory",
         }
     }
-
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Workspace => "workspace",
-            Self::Directory => "directory",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +136,10 @@ struct LaunchView {
     status: String,
     failure: Option<LaunchFailure>,
     frame: usize,
+    /// Eased progress fraction [0,1] driving the rail's green sweep. Lerps
+    /// toward `fill_target` each frame so completed stages flow the fill
+    /// forward smoothly instead of snapping.
+    fill_shown: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -203,6 +204,7 @@ impl LaunchProgress {
                 status: "preparing launch".to_string(),
                 failure: None,
                 frame: 0,
+                fill_shown: 0.0,
             },
         }
     }
@@ -331,8 +333,23 @@ impl LaunchProgress {
     }
 
     fn render(&mut self) {
+        self.advance_fill();
         if let Renderer::Rich(renderer) = &mut self.renderer {
             let _ = renderer.render(&self.view, self.diagnostics.run_id());
+        }
+    }
+
+    fn advance_fill(&mut self) {
+        let target = fill_target(&self.view);
+        if self.no_motion() {
+            self.view.fill_shown = target;
+            return;
+        }
+        let delta = target - self.view.fill_shown;
+        if delta.abs() < 0.005 {
+            self.view.fill_shown = target;
+        } else {
+            self.view.fill_shown += delta * 0.28;
         }
     }
 
@@ -402,180 +419,248 @@ fn rich_terminal_supported() -> bool {
     crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
 }
 
+const RAIL_CONNECTOR_CELLS: usize = 3;
+const RAIL_PULSE_PERIOD: usize = 5;
+const RAIL_ELLIPSIS_PERIOD: usize = 3;
+/// Error accent for a failed stage marker. Matches `error_popup`'s
+/// private `DANGER_RED`; the launch rail is the only other site that
+/// needs the colour, so it is duplicated here rather than made public.
+const FAILED_RED: Color = Color::Rgb(255, 94, 122);
+
 fn render_launch_frame(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, no_motion: bool) {
     let area = frame.area();
     frame.render_widget(Clear, area);
-    let block = Block::default()
-        .title(" jackin' / launch ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green));
-    frame.render_widget(block, area);
-    let inner = area.inner(ratatui::layout::Margin {
-        horizontal: 2,
-        vertical: 1,
-    });
+
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(8),
-            Constraint::Min(10),
-            Constraint::Length(2),
+            Constraint::Length(2), // brand header (pill + spacer) — shared chrome
+            Constraint::Min(8),    // launch body
+            Constraint::Length(1), // status / diagnostics
+        ])
+        .split(area);
+
+    // Freeze animated accents while a failure popup owns the screen so no
+    // live cue keeps moving behind the modal.
+    let frozen = no_motion || view.failure.is_some();
+
+    render_brand_header(frame, rows[0], "launch");
+    render_body(frame, rows[1], view, frozen);
+    render_footer(frame, rows[2], view, run_id);
+
+    if let Some(failure) = &view.failure {
+        render_failure_popup(frame, area, failure, run_id);
+    }
+}
+
+fn box_title(view: &LaunchView) -> String {
+    view.identity.as_ref().map_or_else(
+        || "Preparing launch".to_string(),
+        |id| {
+            format!(
+                "Loading {} {} {}",
+                id.role,
+                match id.target_kind {
+                    LaunchTargetKind::Workspace => "into",
+                    LaunchTargetKind::Directory => "in",
+                },
+                id.target_label
+            )
+        },
+    )
+}
+
+fn render_body(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            format!(" {} ", box_title(view)),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(area).inner(ratatui::layout::Margin {
+        horizontal: 2,
+        vertical: 1,
+    });
+    frame.render_widget(block, area);
+
+    let parts = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(identity_height(view.identity.as_ref())),
+            Constraint::Min(3),
         ])
         .split(inner);
-    render_identity(frame, rows[0], view.identity.as_ref());
-    render_stages(frame, rows[1], view, no_motion);
-    render_footer(frame, rows[2], view, run_id, no_motion);
-    if let Some(failure) = &view.failure {
-        render_failure(frame, centered_rect(58, 8, area), failure, run_id);
-    }
+
+    render_identity(frame, parts[0], view.identity.as_ref());
+    render_rail(frame, parts[1], view, frozen);
+}
+
+fn identity_height(identity: Option<&LaunchIdentity>) -> u16 {
+    identity.map_or(1, |id| {
+        3 + u16::from(id.image.is_some()) + u16::from(id.container.is_some())
+    })
 }
 
 fn render_identity(frame: &mut Frame<'_>, area: Rect, identity: Option<&LaunchIdentity>) {
-    let Some(identity) = identity else {
-        frame.render_widget(Paragraph::new("resolving launch identity"), area);
+    let Some(id) = identity else {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "resolving launch identity",
+                Style::default().fg(PHOSPHOR_DIM),
+            ))),
+            area,
+        );
         return;
     };
-    let mut lines = vec![Line::from(vec![Span::styled(
-        format!(
-            "jackin' / loading {} {}",
-            identity.role,
-            identity.target_kind.launch_preposition()
+    let mut lines = vec![
+        identity_line("agent", &id.agent),
+        identity_line("workdir", &id.workdir),
+        identity_line(
+            if id.target_kind == LaunchTargetKind::Workspace {
+                "mounts"
+            } else {
+                "mount"
+            },
+            &id.mount_summary,
         ),
-        Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD),
-    )])];
-    lines.push(Line::from(format!(
-        "{:<13} {}",
-        identity.target_kind.label(),
-        identity.target_label
-    )));
-    lines.push(Line::from(format!(
-        "{:<13} {}",
-        "workdir", identity.workdir
-    )));
-    lines.push(Line::from(format!(
-        "{:<13} {}",
-        if identity.target_kind == LaunchTargetKind::Workspace {
-            "mounts"
-        } else {
-            "mount"
-        },
-        identity.mount_summary
-    )));
-    lines.push(Line::from(format!("{:<13} {}", "agent", identity.agent)));
-    if let Some(container) = &identity.container {
-        lines.push(Line::from(format!("{:<13} {container}", "container")));
+    ];
+    if let Some(image) = &id.image {
+        lines.push(identity_line("image", image));
     }
-    if let Some(image) = &identity.image {
-        lines.push(Line::from(format!("{:<13} {image}", "image")));
+    if let Some(container) = &id.container {
+        lines.push(identity_line("container", container));
     }
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-fn render_stages(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, no_motion: bool) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(4), Constraint::Min(1)])
-        .split(area);
-    let rain = if no_motion {
-        "│\n│\n│\n│\n│".to_string()
-    } else {
-        let frames = [
-            "╷\n│\n╵\n│\n╷",
-            "│\n╷\n│\n╵\n│",
-            "╵\n│\n╷\n│\n╵",
-            "│\n╵\n│\n╷\n│",
-        ];
-        frames[view.frame % frames.len()].to_string()
-    };
-    frame.render_widget(
-        Paragraph::new(rain).style(Style::default().fg(Color::DarkGray)),
-        chunks[0],
-    );
-    let stage_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(4), Constraint::Min(1)])
-        .split(chunks[1]);
-    render_stage_slide(frame, stage_area[0], view, no_motion);
-    let lines: Vec<Line<'_>> = view
-        .stages
-        .iter()
-        .map(|row| {
-            let style = match row.status {
-                StageStatus::Queued => Style::default().fg(Color::DarkGray),
-                StageStatus::Running => Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-                StageStatus::Done => Style::default().fg(Color::Green),
-                StageStatus::Skipped => Style::default().fg(Color::Yellow),
-                StageStatus::Failed => Style::default().fg(Color::Red),
-                StageStatus::Blocked => Style::default().fg(Color::Magenta),
-            };
-            Line::from(vec![
-                Span::styled(
-                    format!("{} ", status_marker(row.status, view.frame, no_motion)),
-                    style,
-                ),
-                Span::styled(format!("{:<13} ", row.stage.label()), style),
-                Span::raw(row.detail.clone()),
-            ])
-        })
-        .collect();
-    frame.render_widget(Paragraph::new(lines), stage_area[1]);
+fn identity_line(label: &str, value: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{label:<10}"), Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(value.to_string(), Style::default().fg(WHITE)),
+    ])
 }
 
-fn render_stage_slide(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, no_motion: bool) {
-    let current = active_stage_index(view);
-    let start = current.saturating_sub(2);
-    let end = (start + 5).min(view.stages.len());
-    let mut rail: Vec<Span<'_>> = Vec::new();
-    for (offset, row) in view.stages[start..end].iter().enumerate() {
-        if offset > 0 {
-            rail.push(Span::styled("  ->  ", Style::default().fg(Color::DarkGray)));
-        }
-        let index = start + offset;
-        let style = if index == current {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            match row.status {
-                StageStatus::Done => Style::default().fg(Color::Green),
-                StageStatus::Skipped => Style::default().fg(Color::Yellow),
-                StageStatus::Failed => Style::default().fg(Color::Red),
-                _ => Style::default().fg(Color::DarkGray),
+fn render_rail(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+    let lines = vec![
+        markers_line(view, frozen),
+        Line::raw(""),
+        labels_line(view, frozen),
+        detail_line(view, frozen),
+    ];
+    // Vertically centre the rail within its area so the focal stage sits
+    // in the middle of the box, not pinned to the top.
+    let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+    let top = area.y + area.height.saturating_sub(height) / 2;
+    let rect = Rect {
+        x: area.x,
+        y: top,
+        width: area.width,
+        height: height.min(area.height),
+    };
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), rect);
+}
+
+fn markers_line(view: &LaunchView, frozen: bool) -> Line<'static> {
+    let connector_cells = view.stages.len().saturating_sub(1) * RAIL_CONNECTOR_CELLS;
+    let front = (view.fill_shown * connector_cells as f32).round() as usize;
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut cell = 0usize;
+    for (i, row) in view.stages.iter().enumerate() {
+        if i > 0 {
+            for _ in 0..RAIL_CONNECTOR_CELLS {
+                let color = if cell < front {
+                    PHOSPHOR_GREEN
+                } else {
+                    PHOSPHOR_DARK
+                };
+                spans.push(Span::styled("─", Style::default().fg(color)));
+                cell += 1;
             }
-        };
-        let marker = status_marker(row.status, view.frame + offset, no_motion);
-        rail.push(Span::styled(
-            format!("{marker} {}", row.stage.label()),
-            style,
+        }
+        spans.push(marker_span(row.status, view.frame, frozen));
+    }
+    Line::from(spans)
+}
+
+fn marker_span(status: StageStatus, frame: usize, frozen: bool) -> Span<'static> {
+    let bright = !frozen && (frame / RAIL_PULSE_PERIOD).is_multiple_of(2);
+    match status {
+        StageStatus::Running => Span::styled(
+            "◉",
+            if bright {
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            },
+        ),
+        StageStatus::Done => Span::styled("●", Style::default().fg(PHOSPHOR_GREEN)),
+        StageStatus::Skipped => Span::styled("◌", Style::default().fg(PHOSPHOR_DIM)),
+        StageStatus::Failed => Span::styled("✕", Style::default().fg(FAILED_RED)),
+        StageStatus::Blocked => Span::styled("◈", Style::default().fg(WHITE)),
+        StageStatus::Queued => Span::styled("○", Style::default().fg(PHOSPHOR_DARK)),
+    }
+}
+
+fn labels_line(view: &LaunchView, frozen: bool) -> Line<'static> {
+    let active = active_stage_index(view);
+    let bright = !frozen && (view.frame / RAIL_PULSE_PERIOD).is_multiple_of(2);
+    let active_style = if bright {
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    };
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    // Just-completed stage to the left (dim), focal stage in the middle
+    // (bright), queued stage to the right (dark): the operator reads where
+    // they came from, where they are, and where they are going.
+    if active > 0 {
+        spans.push(Span::styled(
+            view.stages[active - 1].stage.label().to_string(),
+            Style::default().fg(PHOSPHOR_DIM),
+        ));
+        spans.push(Span::raw("    "));
+    }
+    spans.push(Span::styled(
+        view.stages[active].stage.label().to_string(),
+        active_style,
+    ));
+    if active + 1 < view.stages.len() {
+        spans.push(Span::raw("    "));
+        spans.push(Span::styled(
+            view.stages[active + 1].stage.label().to_string(),
+            Style::default().fg(PHOSPHOR_DARK),
         ));
     }
-    let current_row = &view.stages[current];
-    let pulse = if no_motion {
-        "waiting"
+    Line::from(spans)
+}
+
+fn detail_line(view: &LaunchView, frozen: bool) -> Line<'static> {
+    let row = &view.stages[active_stage_index(view)];
+    let text = if row.status == StageStatus::Running {
+        let base = row
+            .detail
+            .trim_end()
+            .trim_end_matches('…')
+            .trim_end_matches("...")
+            .trim_end();
+        format!("{base}{}", running_ellipsis(view.frame, frozen))
     } else {
-        const PULSE: [&str; 4] = ["waiting", "waiting.", "waiting..", "waiting..."];
-        PULSE[view.frame % PULSE.len()]
+        row.detail.clone()
     };
-    let lines = vec![
-        Line::from(rail),
-        Line::from(vec![Span::styled(
-            format!(
-                "{}  {}",
-                current_row.stage.label(),
-                if current_row.status == StageStatus::Running {
-                    pulse
-                } else {
-                    current_row.status.label()
-                }
-            ),
-            Style::default().fg(Color::White),
-        )]),
-    ];
-    frame.render_widget(Paragraph::new(lines), area);
+    Line::from(Span::styled(text, Style::default().fg(PHOSPHOR_DIM)))
+}
+
+const fn running_ellipsis(frame: usize, frozen: bool) -> &'static str {
+    if frozen {
+        return "…";
+    }
+    // Stable 3-cell width so centring does not jitter as the dots cycle.
+    ["   ", ".  ", ".. ", "..."][(frame / RAIL_ELLIPSIS_PERIOD) % 4]
 }
 
 fn active_stage_index(view: &LaunchView) -> usize {
@@ -590,69 +675,69 @@ fn active_stage_index(view: &LaunchView) -> usize {
         .unwrap_or(0)
 }
 
-fn render_footer(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    view: &LaunchView,
-    run_id: &str,
-    no_motion: bool,
-) {
-    let hint = if view.failure.is_some() {
-        "Enter Close"
+fn fill_target(view: &LaunchView) -> f32 {
+    let total = view.stages.len().max(1) as f32;
+    let done = view
+        .stages
+        .iter()
+        .filter(|row| matches!(row.status, StageStatus::Done | StageStatus::Skipped))
+        .count() as f32;
+    // The running stage pulls the fill halfway into its segment so the
+    // sweep reads as "arriving at" the active marker, not stopped behind it.
+    let active = if view.stages.iter().any(|row| row.status == StageStatus::Running) {
+        0.5
     } else {
-        "opening hardline when ready"
+        0.0
     };
-    let line = Line::from(vec![
-        Span::styled(
-            format!(
-                "{} ",
-                status_marker(StageStatus::Running, view.frame, no_motion)
-            ),
-            Style::default().fg(Color::Cyan),
-        ),
-        Span::styled("status: ", Style::default().fg(Color::Green)),
-        Span::raw(&view.status),
-        Span::raw("    "),
-        Span::styled(hint, Style::default().fg(Color::White)),
-        Span::raw("    "),
-        Span::styled(
-            format!("diagnostics: run {run_id}"),
-            Style::default().fg(Color::DarkGray),
-        ),
+    ((done + active) / total).clamp(0.0, 1.0)
+}
+
+fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {
+    let diagnostics = format!("diagnostics · {run_id}");
+    let diag_w = u16::try_from(diagnostics.chars().count()).unwrap_or(u16::MAX);
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(diag_w.saturating_add(1)),
+        ])
+        .split(area);
+
+    let status = Line::from(vec![
+        Span::styled("status", Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
+        Span::styled(view.status.clone(), Style::default().fg(WHITE)),
     ]);
-    frame.render_widget(Paragraph::new(line), area);
+    frame.render_widget(Paragraph::new(status), cols[0]);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            diagnostics,
+            Style::default().fg(PHOSPHOR_DARK),
+        )))
+        .alignment(Alignment::Right),
+        cols[1],
+    );
 }
 
-fn status_marker(status: StageStatus, frame: usize, no_motion: bool) -> &'static str {
-    if status == StageStatus::Running && !no_motion {
-        const FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
-        FRAMES[frame % FRAMES.len()]
-    } else {
-        status.marker()
-    }
-}
+fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailure, run_id: &str) {
+    let next = failure
+        .next_step
+        .as_deref()
+        .map(|next| format!("\n\n{next}"))
+        .unwrap_or_default();
+    let message = format!(
+        "{}\n\nstage · {}{next}\n\ndiagnostics · {run_id}",
+        failure.summary,
+        failure.stage.label(),
+    );
 
-fn render_failure(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailure, run_id: &str) {
-    frame.render_widget(Clear, area);
-    let block = Block::default()
-        .title(format!(" {} ", failure.title))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Red));
-    let inner = area.inner(ratatui::layout::Margin {
-        horizontal: 2,
-        vertical: 1,
-    });
-    frame.render_widget(block, area);
-    let mut lines = vec![
-        Line::from(failure.summary.clone()),
-        Line::from(format!("stage: {}", failure.stage.label())),
-    ];
-    if let Some(next) = &failure.next_step {
-        lines.push(Line::from(next.clone()));
-    }
-    lines.push(Line::from(format!("diagnostics: run {run_id}")));
-    lines.push(Line::from("Enter Close"));
-    frame.render_widget(Paragraph::new(lines), inner);
+    let state = ErrorPopupState::new(failure.title.clone(), message);
+    let popup_w = (area.width.saturating_mul(3) / 5)
+        .clamp(40.min(area.width), area.width.saturating_sub(2).max(1));
+    let inner_w = popup_w.saturating_sub(4).max(1);
+    let height = error_popup::required_height(&state, inner_w, area.height.saturating_sub(2));
+    let rect = centered_rect(popup_w, height, area);
+    error_popup::render(frame, rect, &state);
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
@@ -725,13 +810,14 @@ mod tests {
             status: "pulling construct".to_string(),
             failure: None,
             frame: 0,
+            fill_shown: 0.3,
         };
         terminal
             .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true))
             .unwrap();
 
         let rendered = format!("{:?}", terminal.backend().buffer());
-        assert!(rendered.contains("loading agent-smith into workspace"));
+        assert!(rendered.contains("Loading agent-smith into big-monorepo"));
         assert!(rendered.contains("construct"));
         assert!(rendered.contains("jk-run-42f9aa"));
 
@@ -746,6 +832,8 @@ mod tests {
             .unwrap();
         let rendered = format!("{:?}", terminal.backend().buffer());
         assert!(rendered.contains("Docker unavailable"));
-        assert!(rendered.contains("Enter Close"));
+        assert!(rendered.contains("docker daemon is not responding"));
+        // The reused error_popup carries its own dismiss hint.
+        assert!(rendered.contains("Enter/O"));
     }
 }

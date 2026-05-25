@@ -29,9 +29,10 @@ const MIN_DRAGGABLE_WIDTH: u16 = 40;
 const SEAM_HIT_SLACK: u16 = 1;
 
 /// Height of the header chunk in the list-view chrome. Mirrors
-/// `Constraint::Length(3)` in `render::render`. Used by mouse hit-testing
-/// to convert a terminal row into a list item index.
-const LIST_HEADER_HEIGHT: u16 = 3;
+/// `Constraint::Length(2)` in `render::render` (brand pill row + one
+/// spacer row). Used by mouse hit-testing to convert a terminal row
+/// into a list item index.
+const LIST_HEADER_HEIGHT: u16 = 2;
 /// Height of the footer chunk in the list-view chrome. Mirrors
 /// `Constraint::Length(2)` in `render::render`.
 const LIST_FOOTER_HEIGHT: u16 = 2;
@@ -1390,14 +1391,15 @@ mod mouse_drag_tests {
 
     // ── Click-to-select tests ──────────────────────────────────────
     //
-    // Layout (100x30 terminal, header=3 footer=2 body=25):
-    //   y = 0..=2   → header (chunks[0])
-    //   y = 3       → body top border (list block)
-    //   y = 4       → list item 0 ("Current directory")
-    //   y = 5       → list item 1 (first saved workspace)
+    // Layout (100x30 terminal, header=2 footer=2 body=26):
+    //   y = 0       → header brand pill (chunks[0])
+    //   y = 1       → header spacer row
+    //   y = 2       → body top border (list block)
+    //   y = 3       → list item 0 ("Current directory")
+    //   y = 4       → list item 1 (first saved workspace)
     //   ...
-    //   y = 28      → body bottom border
-    //   y = 29      → footer (chunks[2])
+    //   y = 27      → body bottom border
+    //   y = 28..=29 → footer (chunks[2])
     //
     // Left pane (default split = DEFAULT_SPLIT_PCT%): x = 0..=(seam-1)
     // with x=0 = left border and x=seam-1 inclusive = last interior col.
@@ -1503,33 +1505,33 @@ mod mouse_drag_tests {
 
     #[test]
     fn click_on_first_row_sets_selected_to_zero() {
-        // y=4 = first list item (index 0, "Current directory").
+        // y=3 = first list item (index 0, "Current directory").
         let mut state = list_state_with_saved(3);
         state.selected = 2;
-        handle_mouse(&mut state, mouse_at(10, 4), term(100));
+        handle_mouse(&mut state, mouse_at(10, 3), term(100));
         assert_eq!(state.selected, 0);
     }
 
     #[test]
     fn click_on_fifth_row_sets_selected_to_four() {
-        // y=8 = fifth list row (index 4). Needs enough saved workspaces
+        // y=7 = fifth list row (index 4). Needs enough saved workspaces
         // to make index 4 a valid selection target.
         let mut state = list_state_with_saved(5);
         state.selected = 0;
-        handle_mouse(&mut state, mouse_at(10, 8), term(100));
+        handle_mouse(&mut state, mouse_at(10, 7), term(100));
         assert_eq!(state.selected, 4);
     }
 
     #[test]
     fn click_on_sentinel_row_sets_selected_to_sentinel_idx() {
         // 3 saved workspaces ⇒ rows are:
-        //   y=4  → index 0 ("Current directory")
-        //   y=5,6,7 → indices 1, 2, 3 (saved)
-        //   y=8  → visual spacer
-        //   y=9  → visual index 5 (sentinel "+ New workspace")
+        //   y=3  → index 0 ("Current directory")
+        //   y=4,5,6 → indices 1, 2, 3 (saved)
+        //   y=7  → visual spacer
+        //   y=8  → visual index 5 (sentinel "+ New workspace")
         let mut state = list_state_with_saved(3);
         state.selected = 0;
-        handle_mouse(&mut state, mouse_at(10, 9), term(100));
+        handle_mouse(&mut state, mouse_at(10, 8), term(100));
         assert_eq!(state.selected, 4, "sentinel_idx = saved_count + 1 = 4");
     }
 
@@ -1537,14 +1539,14 @@ mod mouse_drag_tests {
     fn click_on_workspace_list_spacer_does_not_change_selected() {
         let mut state = list_state_with_saved(3);
         state.selected = 2;
-        handle_mouse(&mut state, mouse_at(10, 8), term(100));
+        handle_mouse(&mut state, mouse_at(10, 7), term(100));
         assert_eq!(state.selected, 2);
     }
 
     #[test]
     fn click_outside_list_rows_does_not_change_selected() {
         // Several "outside" positions must all leave selected untouched:
-        //   - Click above the list (y < 4, e.g. in the header)
+        //   - Click above the list (y < 3, e.g. in the header)
         //   - Click on the left border (x=0)
         //   - Click at x >= seam (right pane territory)
         //   - Click below the list content (footer)
@@ -1557,15 +1559,15 @@ mod mouse_drag_tests {
         assert_eq!(state.selected, initial, "click in header must not select");
 
         // On the top border of the list block.
-        handle_mouse(&mut state, mouse_at(10, 3), term(100));
+        handle_mouse(&mut state, mouse_at(10, 2), term(100));
         assert_eq!(state.selected, initial, "click on top border");
 
         // On the left border column.
-        handle_mouse(&mut state, mouse_at(0, 4), term(100));
+        handle_mouse(&mut state, mouse_at(0, 3), term(100));
         assert_eq!(state.selected, initial, "click on left border");
 
-        // Past the sentinel row (y=9+ when we have 3 saved workspaces).
-        handle_mouse(&mut state, mouse_at(10, 10), term(100));
+        // Past the sentinel row (y=8+ when we have 3 saved workspaces).
+        handle_mouse(&mut state, mouse_at(10, 9), term(100));
         assert_eq!(state.selected, initial, "click below sentinel");
 
         // In the right pane (x=60, well clear of the default seam).
@@ -1585,9 +1587,9 @@ mod mouse_drag_tests {
         let mut state = list_state_with_saved(3);
         state.selected = 0;
         // Default split on a 100-col terminal ⇒ seam at column
-        // `DEFAULT_SPLIT_PCT`. y=5 maps to list index 1 in our layout —
+        // `DEFAULT_SPLIT_PCT`. y=4 maps to list index 1 in our layout —
         // if seam didn't win, selection would flip to 1.
-        handle_mouse(&mut state, mouse_at(DEFAULT_SPLIT_PCT, 5), term(100));
+        handle_mouse(&mut state, mouse_at(DEFAULT_SPLIT_PCT, 4), term(100));
         assert!(state.drag_state.is_some(), "click on seam must start drag");
         assert_eq!(
             state.selected, 0,
@@ -1601,8 +1603,8 @@ mod mouse_drag_tests {
         let mut state = selected_demo_state(&config);
 
         // Right pane starts at x=30 for a 100-col terminal. Workspace mounts
-        // block starts at y=6 after General's 3 rows.
-        handle_mouse_with_config(&mut state, mouse_at(31, 7), term(100), Some(&config));
+        // block starts at y=5 after General's 3 rows.
+        handle_mouse_with_config(&mut state, mouse_at(31, 6), term(100), Some(&config));
 
         assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
     }
@@ -1618,12 +1620,12 @@ mod mouse_drag_tests {
         let mut state = current_dir_state_at(&cwd);
         assert!(state.is_current_dir_selected());
 
-        handle_mouse_with_config(&mut state, mouse_at(31, 7), term(100), Some(&config));
+        handle_mouse_with_config(&mut state, mouse_at(31, 6), term(100), Some(&config));
         assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollRight, 31, 7),
+            mouse_kind_at(MouseEventKind::ScrollRight, 31, 6),
             term(100),
             Some(&config),
         );
@@ -1637,9 +1639,9 @@ mod mouse_drag_tests {
         let mut state = selected_demo_state(&config);
         state.list_scroll_focus = Some(MountScrollFocus::Workspace);
 
-        // y=4 is inside the General block, which is not a horizontal-scroll
+        // y=3 is inside the General block, which is not a horizontal-scroll
         // target.
-        handle_mouse_with_config(&mut state, mouse_at(31, 4), term(100), Some(&config));
+        handle_mouse_with_config(&mut state, mouse_at(31, 3), term(100), Some(&config));
 
         assert_eq!(state.list_scroll_focus, None);
     }
@@ -1651,10 +1653,10 @@ mod mouse_drag_tests {
         state.list_scroll_focus = Some(MountScrollFocus::Workspace);
 
         // Global mounts block starts immediately after General (3 rows) and
-        // the one-mount Workspace mounts block (5 rows): y=11.
+        // the one-mount Workspace mounts block (5 rows): y=10.
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollRight, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollRight, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1676,7 +1678,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollDown, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollDown, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1688,7 +1690,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollUp, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollUp, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1704,7 +1706,7 @@ mod mouse_drag_tests {
         for _ in 0..100 {
             handle_mouse_with_config(
                 &mut state,
-                mouse_kind_at(MouseEventKind::ScrollRight, 31, 12),
+                mouse_kind_at(MouseEventKind::ScrollRight, 31, 11),
                 term(100),
                 Some(&config),
             );
@@ -1718,7 +1720,7 @@ mod mouse_drag_tests {
             .collect();
         let global_area = Rect {
             x: 30,
-            y: 11,
+            y: 10,
             width: 70,
             height: 5,
         };
@@ -1730,7 +1732,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1758,7 +1760,7 @@ mod mouse_drag_tests {
         for _ in 0..100 {
             handle_mouse_with_config(
                 &mut state,
-                mouse_kind_at(MouseEventKind::ScrollRight, 31, 7),
+                mouse_kind_at(MouseEventKind::ScrollRight, 31, 6),
                 term(100),
                 Some(&config),
             );
@@ -1767,7 +1769,7 @@ mod mouse_drag_tests {
         let workspace = config.workspaces.get("demo").unwrap();
         let workspace_area = Rect {
             x: 30,
-            y: 6,
+            y: 5,
             width: 70,
             height: 4,
         };
@@ -1796,7 +1798,7 @@ mod mouse_drag_tests {
             .collect();
         let global_area = Rect {
             x: 30,
-            y: 11,
+            y: 10,
             width: 70,
             height: 5,
         };
@@ -1807,7 +1809,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1977,7 +1979,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollUp, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollUp, 31, 11),
             term(100),
             Some(&config),
         );
