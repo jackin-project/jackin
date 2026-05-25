@@ -97,11 +97,11 @@ When multiple providers are configured, the tab label in the status bar's tab st
 |---|---|
 | Anthropic only | `Claude` |
 | Z.AI only | `Claude` |
-| Both | `Claude · Anthropic` or `Claude · Z.AI` |
+| Both | `Claude (Anthropic)` or `Claude (Z.AI)` |
 
-The suffix `· <Provider>` is appended only when two or more providers are available in the current container. This avoids label noise for operators who use a single subscription. The provider suffix uses the same compact phosphor-green style as other tab annotations.
+The `(<Provider>)` suffix is appended only when two or more providers are available in the current container. A single-provider container always shows the bare agent name — no suffix, no noise for operators who use one subscription.
 
-The pane title box (the `┌─ title ─┐` border drawn around each active pane) follows the same rule: `Claude · Z.AI` when multi-provider, `Claude` when single-provider.
+The pane title box (the `┌─ title ─┐` border drawn around each active pane) follows the same rule: `Claude (Z.AI)` when multi-provider, `Claude` when single-provider.
 
 ### Process-level environment injection
 
