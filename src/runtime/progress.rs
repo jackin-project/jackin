@@ -12,8 +12,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::console::widgets::error_popup::{self, ErrorPopupState};
+use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::{
-    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
+    ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
 };
 use crate::diagnostics::RunDiagnostics;
 
@@ -289,6 +290,23 @@ impl LaunchProgress {
         self.stage_started(LaunchStage::Hardline, "opening hardline");
     }
 
+    /// Present a forced-choice picker over `items` and return the chosen
+    /// index. Returns `Ok(None)` when no rich surface is active, so the
+    /// caller can fall back to the plain stdin prompt. The picker cannot
+    /// be cancelled — the operator must commit one of the options.
+    pub fn select_choice(
+        &mut self,
+        title: &str,
+        items: Vec<String>,
+    ) -> anyhow::Result<Option<usize>> {
+        let run_id = self.diagnostics.run_id().to_string();
+        if let Renderer::Rich(renderer) = &mut self.renderer {
+            renderer.select(&self.view, &run_id, title, items).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn while_waiting<T, E, F>(&mut self, future: F) -> Result<T, E>
     where
         F: std::future::Future<Output = Result<T, E>>,
@@ -397,6 +415,51 @@ impl RichRenderer {
             .draw(|frame| render_launch_frame(frame, view, run_id, no_motion))
             .map(|_| ())
             .context("rendering launch progress TUI")
+    }
+
+    /// Run a forced-choice picker over the dimmed launch frame. Enables
+    /// raw mode for the duration so key events arrive un-buffered, and
+    /// restores it on every exit path. `Ctrl-C` aborts the launch.
+    fn select(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        title: &str,
+        items: Vec<String>,
+    ) -> anyhow::Result<usize> {
+        crossterm::terminal::enable_raw_mode().context("entering raw mode for launch picker")?;
+        let outcome = self.select_loop(view, run_id, title, items);
+        let _ = crossterm::terminal::disable_raw_mode();
+        outcome
+    }
+
+    fn select_loop(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        title: &str,
+        items: Vec<String>,
+    ) -> anyhow::Result<usize> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let mut picker = SelectListState::new(items);
+        loop {
+            self.terminal
+                .draw(|frame| draw_select(frame, view, run_id, title, &picker))
+                .context("rendering launch picker")?;
+            if let Event::Key(key) = crossterm::event::read().context("reading launch picker input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                // Esc reports Cancel; ignored here so the choice is forced.
+                if let ModalOutcome::Commit(index) = picker.handle_key(key) {
+                    return Ok(index);
+                }
+            }
+        }
     }
 }
 
@@ -744,6 +807,72 @@ fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailu
     let height = error_popup::required_height(&state, inner_w, area.height.saturating_sub(2));
     let rect = centered_rect(popup_w, height, area);
     error_popup::render(frame, rect, &state);
+}
+
+fn draw_select(
+    frame: &mut Frame<'_>,
+    view: &LaunchView,
+    run_id: &str,
+    title: &str,
+    picker: &SelectListState,
+) {
+    let area = frame.area();
+    render_launch_frame(frame, view, run_id, true);
+    dim_buffer(frame, area);
+    select_list::render(frame, picker_rect(area, picker), picker, title);
+    render_picker_hints(frame, area);
+}
+
+/// Knock every cell behind the dialog back to a dim phosphor so the
+/// modal reads as the foreground surface (matches the console modal-dim
+/// rule). Runs after the frame is drawn and before the picker overlay.
+fn dim_buffer(frame: &mut Frame<'_>, area: Rect) {
+    let dark = Style::reset().fg(PHOSPHOR_DARK);
+    let buf = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            buf[(x, y)].set_style(dark);
+        }
+    }
+}
+
+fn picker_rect(area: Rect, picker: &SelectListState) -> Rect {
+    // Interior: filter row + spacer + one row per item, plus two borders.
+    let rows = u16::try_from(picker.len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(4);
+    let height = rows.clamp(6, area.height.saturating_sub(2).max(6));
+    let min_w = 40.min(area.width);
+    let max_w = (area.width.saturating_mul(4) / 5).max(min_w);
+    let width = picker.max_label_width().saturating_add(6).clamp(min_w, max_w);
+    centered_rect(width, height, area)
+}
+
+fn render_picker_hints(frame: &mut Frame<'_>, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+    let row = Rect {
+        x: area.x,
+        y: area.bottom().saturating_sub(1),
+        width: area.width,
+        height: 1,
+    };
+    let key =
+        |label| Span::styled(label, Style::default().fg(WHITE).add_modifier(Modifier::BOLD));
+    let text = |label| Span::styled(label, Style::default().fg(PHOSPHOR_DIM));
+    let line = Line::from(vec![
+        key("↑/↓"),
+        Span::raw(" "),
+        text("navigate"),
+        Span::raw("    "),
+        text("type to filter"),
+        Span::raw("    "),
+        key("Enter"),
+        Span::raw(" "),
+        text("select"),
+    ]);
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), row);
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {

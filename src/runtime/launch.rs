@@ -1754,6 +1754,7 @@ async fn load_role_with(
             &role_key,
             agent,
             docker,
+            steps.progress_mut(),
         )
         .await?
         {
@@ -2619,7 +2620,7 @@ enum RestoreResolution {
     RebuildRelatedRole(Box<InstanceManifest>),
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -2628,6 +2629,7 @@ async fn resolve_restore_candidate(
     role_key: &str,
     agent: crate::agent::Agent,
     docker: &impl DockerApi,
+    progress: Option<&mut super::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
     let mut candidates = Vec::new();
     for manifest in matching_instance_manifests(
@@ -2672,74 +2674,85 @@ async fn resolve_restore_candidate(
     )
     .await?;
 
-    match candidates.as_slice() {
-        [] if related.is_empty() => Ok(RestoreResolution::StartFresh),
-        [] => prompt_related_restore_candidate(workspace_label, &related),
-        [only] if !std::io::stdin().is_terminal() => anyhow::bail!(
-            "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to inspect it or `jackin load` interactively from the matching workspace to rebuild jackin-managed local state. Run `jackin eject {} --purge` to discard it before starting a fresh load. Anything written only to the deleted container's writable layer is gone and will not be restored, including ad-hoc package installs, global files outside mounted paths, and DinD images.",
-            only.container_base,
-            only.container_base,
-            only.container_base
-        ),
-        [only] => {
-            let mut options = vec![format!("Restore {}", restore_candidate_label(paths, only))];
-            options.extend(related.iter().map(|candidate| {
-                format!(
-                    "Recover other role with hardline {}",
-                    related_restore_candidate_label(paths, candidate)
-                )
-            }));
-            options.push("Start fresh instead".to_string());
-            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-            let choice = tui::prompt_choice(
-                &format!("Unfinished jackin state exists for workspace `{workspace_label}`."),
-                &option_refs,
-            )?;
-            if choice == 0 {
-                Ok(RestoreResolution::RestoreCurrentRole(
-                    only.container_base.clone(),
-                ))
-            } else if let Some(candidate) = related.get(choice.saturating_sub(1)) {
-                recover_related_restore_candidate(candidate)
-            } else {
-                supersede_restore_candidates(paths, candidates)?;
-                Ok(RestoreResolution::StartFresh)
-            }
-        }
-        _ if !std::io::stdin().is_terminal() => anyhow::bail!(
-            "multiple restore candidates exist for role `{role_key}` in workspace `{workspace_label}`; run `jackin hardline <container>` for the instance to recover or purge stale instances before starting a fresh load"
-        ),
-        _ => {
-            let mut options: Vec<String> = candidates
-                .iter()
-                .map(|manifest| format!("Restore {}", restore_candidate_label(paths, manifest)))
-                .collect();
-            options.extend(related.iter().map(|candidate| {
-                format!(
-                    "Recover other role with hardline {}",
-                    related_restore_candidate_label(paths, candidate)
-                )
-            }));
-            options.push("Start fresh instead".to_string());
-            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-            let choice = tui::prompt_choice(
-                &format!(
-                    "Multiple unfinished jackin instances exist for workspace `{workspace_label}`."
-                ),
-                &option_refs,
-            )?;
-            if choice < candidates.len() {
-                Ok(RestoreResolution::RestoreCurrentRole(
-                    candidates[choice].container_base.clone(),
-                ))
-            } else if let Some(candidate) = related.get(choice - candidates.len()) {
-                recover_related_restore_candidate(candidate)
-            } else {
-                supersede_restore_candidates(paths, candidates)?;
-                Ok(RestoreResolution::StartFresh)
-            }
-        }
+    if candidates.is_empty() {
+        return if related.is_empty() {
+            Ok(RestoreResolution::StartFresh)
+        } else {
+            prompt_related_restore_candidate(workspace_label, &related)
+        };
     }
+
+    present_restore_choice(progress, paths, workspace_label, role_key, candidates, &related)
+}
+
+/// Present the stale-instance decision. "Start fresh" is always the
+/// default first option; recoverable instances follow. The rich launch
+/// surface renders it as a forced-choice picker (no cancel); other
+/// surfaces fall back to the stdin prompt. The operator must pick.
+fn present_restore_choice(
+    progress: Option<&mut super::progress::LaunchProgress>,
+    paths: &JackinPaths,
+    workspace_label: &str,
+    role_key: &str,
+    candidates: Vec<InstanceManifest>,
+    related: &[RelatedRestoreCandidate],
+) -> anyhow::Result<RestoreResolution> {
+    let mut labels = vec!["Start fresh instance".to_string()];
+    labels.extend(
+        candidates
+            .iter()
+            .map(|manifest| restore_candidate_label(paths, manifest)),
+    );
+    labels.extend(related.iter().map(|candidate| {
+        format!(
+            "Recover other role with hardline {}",
+            related_restore_candidate_label(paths, candidate)
+        )
+    }));
+
+    let choice = match progress {
+        Some(progress) => match progress.select_choice("Unfinished jackin instances", labels.clone())? {
+            Some(index) => index,
+            None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
+        },
+        None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
+    };
+
+    if choice == 0 {
+        supersede_restore_candidates(paths, candidates)?;
+        Ok(RestoreResolution::StartFresh)
+    } else if choice <= candidates.len() {
+        Ok(RestoreResolution::RestoreCurrentRole(
+            candidates[choice - 1].container_base.clone(),
+        ))
+    } else {
+        recover_related_restore_candidate(&related[choice - 1 - candidates.len()])
+    }
+}
+
+/// Plain stdin fallback for the stale-instance decision when no rich
+/// surface owns the screen. Bails when stdin is not interactive — the
+/// decision cannot be made non-interactively.
+fn stdin_restore_choice(
+    workspace_label: &str,
+    role_key: &str,
+    candidates: &[InstanceManifest],
+    labels: &[String],
+) -> anyhow::Result<usize> {
+    if !std::io::stdin().is_terminal() {
+        let hint = candidates.first().map_or_else(
+            || format!("role `{role_key}`"),
+            |manifest| format!("`jackin hardline {}`", manifest.container_base),
+        );
+        anyhow::bail!(
+            "unfinished jackin instances exist for workspace `{workspace_label}` but stdin is not interactive; run {hint} to inspect or recover, or purge stale instances before a fresh load"
+        );
+    }
+    let option_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+    tui::prompt_choice(
+        &format!("Unfinished jackin instances exist for workspace `{workspace_label}`."),
+        &option_refs,
+    )
 }
 
 #[derive(Debug)]
@@ -3898,6 +3911,7 @@ mod tests {
             role_key,
             crate::agent::Agent::Claude,
             docker,
+            None,
         )
         .await
     }
@@ -8300,7 +8314,7 @@ plugins = []
             .await
             .unwrap_err();
 
-        assert!(error.to_string().contains("restore is available"));
+        assert!(error.to_string().contains("not interactive"));
         assert!(error.to_string().contains(container_name));
     }
 

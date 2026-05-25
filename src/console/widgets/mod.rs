@@ -81,6 +81,7 @@ pub mod role_picker;
 pub mod save_discard;
 pub mod scope_picker;
 pub mod scrollable;
+pub mod select_list;
 pub mod source_picker;
 pub mod status_popup;
 pub mod text_input;
