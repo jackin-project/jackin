@@ -1214,7 +1214,14 @@ pub(super) fn handle_editor_modal(
         },
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {
-                ModalOutcome::Commit(op_ref) => {
+                // Browse-mode caller: only `Existing` is reachable.
+                ModalOutcome::Commit(
+                    crate::console::widgets::op_picker::OpPickerSelection::NewItem { .. }
+                    | crate::console::widgets::op_picker::OpPickerSelection::EditItemField { .. },
+                ) => unreachable!("Secrets-tab OpPicker runs in Browse mode"),
+                ModalOutcome::Commit(
+                    crate::console::widgets::op_picker::OpPickerSelection::Existing(op_ref),
+                ) => {
                     // Auth-form round trip wins over the Secrets-tab
                     // dispatch: the auth form sets
                     // `pending_auth_form_return` exactly when it's the

@@ -524,7 +524,14 @@ pub(super) fn handle_settings_auth_modal(
             ModalOutcome::Continue => auth.modal = Some(modal),
         },
         SettingsAuthModal::OpPicker { state } => match state.handle_key(key) {
-            ModalOutcome::Commit(op_ref) => {
+            // Browse-mode caller: only `Existing` is reachable.
+            ModalOutcome::Commit(
+                crate::console::widgets::op_picker::OpPickerSelection::NewItem { .. }
+                | crate::console::widgets::op_picker::OpPickerSelection::EditItemField { .. },
+            ) => unreachable!("settings-auth OpPicker runs in Browse mode"),
+            ModalOutcome::Commit(
+                crate::console::widgets::op_picker::OpPickerSelection::Existing(op_ref),
+            ) => {
                 if let Some(AuthFormReturnPath {
                     target,
                     mut state,
@@ -945,7 +952,14 @@ pub(super) fn handle_settings_env_modal(
             }
         }
         SettingsEnvModal::OpPicker { state: mut picker } => match picker.handle_key(key) {
-            ModalOutcome::Commit(op_ref) => {
+            // Browse-mode caller: only `Existing` is reachable.
+            ModalOutcome::Commit(
+                crate::console::widgets::op_picker::OpPickerSelection::NewItem { .. }
+                | crate::console::widgets::op_picker::OpPickerSelection::EditItemField { .. },
+            ) => unreachable!("settings-env OpPicker runs in Browse mode"),
+            ModalOutcome::Commit(
+                crate::console::widgets::op_picker::OpPickerSelection::Existing(op_ref),
+            ) => {
                 let target = env.pending_picker_target.take();
                 match target {
                     Some((scope, Some(key))) => {

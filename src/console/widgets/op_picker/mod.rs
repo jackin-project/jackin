@@ -29,9 +29,54 @@ use tui_widget_list::ListState;
 use crate::console::op_cache::OpCache;
 use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
+use super::text_input::TextInputState;
 use super::{ModalOutcome, cycle_select};
 
 pub mod render;
+
+/// Browse-only (existing behaviour) vs. creation-enabled. Creation rows
+/// and the naming sub-stages are gated entirely on `Create`.
+#[derive(Debug, Clone)]
+pub enum OpPickerMode {
+    /// Pick an existing field only. No creation rows. Commit = `Existing(OpRef)`.
+    Browse,
+    /// Enable `+ New item` (Item stage), `+ New field` / `+ New section`
+    /// (Field stage) creation rows and the naming sub-stages.
+    Create {
+        item_name_default: String,
+        field_label_default: String,
+    },
+}
+
+impl OpPickerMode {
+    const fn is_create(&self) -> bool {
+        matches!(self, Self::Create { .. })
+    }
+}
+
+/// What the operator chose when the picker commits.
+#[derive(Debug, Clone)]
+pub enum OpPickerSelection {
+    /// An existing field was chosen — its `op://` reference (Browse behaviour).
+    Existing(crate::operator_env::OpRef),
+    /// `+ New item` flow: create a brand-new item in the vault.
+    NewItem {
+        account: Option<crate::operator_env::OpAccount>,
+        vault: crate::operator_env::OpVault,
+        item_name: String,
+        section: Option<String>,
+        field_label: String,
+    },
+    /// Write/append a field in an existing item (existing-field overwrite,
+    /// `+ New field`, or `+ New section`).
+    EditItemField {
+        account: Option<crate::operator_env::OpAccount>,
+        vault: crate::operator_env::OpVault,
+        item: crate::operator_env::OpItem,
+        section: Option<String>,
+        field_label: String,
+    },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpPickerStage {
@@ -39,6 +84,12 @@ pub enum OpPickerStage {
     Vault,
     Item,
     Field,
+    /// Text input for a brand-new item's title (Create mode).
+    NewItemName,
+    /// Text input for a field label (Create mode).
+    FieldLabel,
+    /// Text input for a new section name (Create mode).
+    NewSectionName,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +129,10 @@ pub enum FieldDisplayRow {
     SectionHeader { name: String, field_count: usize },
     /// A selectable field row.
     Field { field_idx: usize },
+    /// `+ New field` creation row (Create mode only, appended last).
+    NewFieldSentinel,
+    /// `+ New section` creation row (Create mode only, appended last).
+    NewSectionSentinel,
 }
 
 /// Pane-specific so the `try_recv` drainer can route to the right
@@ -113,6 +168,18 @@ pub struct OpPickerState {
 
     pub load_state: OpLoadState,
 
+    /// Browse vs. Create. Browse is the default for all existing callers.
+    pub mode: OpPickerMode,
+    /// New-item title input, driven during the `NewItemName` stage.
+    pub item_name_input: TextInputState<'static>,
+    /// Field-label input, driven during the `FieldLabel` stage.
+    pub field_label_input: TextInputState<'static>,
+    /// New-section name input, driven during the `NewSectionName` stage.
+    pub section_name_input: TextInputState<'static>,
+    /// Captured by the New-section flow, consumed when the final
+    /// `OpPickerSelection` is built at commit.
+    pub pending_section: Option<String>,
+
     /// `Arc` so spawned worker threads share the same trait object
     /// (test injectees included).
     runner: Arc<dyn OpStructRunner + Send + Sync>,
@@ -138,6 +205,8 @@ impl std::fmt::Debug for OpPickerState {
             .field("fields", &self.fields)
             .field("collapsed_sections", &self.collapsed_sections)
             .field("load_state", &self.load_state)
+            .field("mode", &self.mode)
+            .field("pending_section", &self.pending_section)
             .finish_non_exhaustive()
     }
 }
@@ -168,6 +237,51 @@ impl OpPickerState {
         runner: Arc<dyn OpStructRunner + Send + Sync>,
         op_cache: Rc<RefCell<OpCache>>,
     ) -> Self {
+        Self::new_with_mode(runner, op_cache, OpPickerMode::Browse)
+    }
+
+    /// Create-mode picker built against the production `OpCli` runner.
+    pub fn new_create_with_cache(
+        op_cache: Rc<RefCell<OpCache>>,
+        item_name_default: impl Into<String>,
+        field_label_default: impl Into<String>,
+    ) -> Self {
+        Self::new_create_with_runner_and_cache(
+            Arc::new(OpCli::new()),
+            op_cache,
+            item_name_default,
+            field_label_default,
+        )
+    }
+
+    pub fn new_create_with_runner_and_cache(
+        runner: Arc<dyn OpStructRunner + Send + Sync>,
+        op_cache: Rc<RefCell<OpCache>>,
+        item_name_default: impl Into<String>,
+        field_label_default: impl Into<String>,
+    ) -> Self {
+        Self::new_with_mode(
+            runner,
+            op_cache,
+            OpPickerMode::Create {
+                item_name_default: item_name_default.into(),
+                field_label_default: field_label_default.into(),
+            },
+        )
+    }
+
+    fn new_with_mode(
+        runner: Arc<dyn OpStructRunner + Send + Sync>,
+        op_cache: Rc<RefCell<OpCache>>,
+        mode: OpPickerMode,
+    ) -> Self {
+        let (item_default, field_default) = match &mode {
+            OpPickerMode::Browse => (String::new(), String::new()),
+            OpPickerMode::Create {
+                item_name_default,
+                field_label_default,
+            } => (item_name_default.clone(), field_label_default.clone()),
+        };
         let mut s = Self {
             // Start on Account so the loading-panel descriptor says
             // "loading accounts…" until poll_load routes to Vault
@@ -187,6 +301,11 @@ impl OpPickerState {
             field_list_state: ListState::default(),
             collapsed_sections: HashSet::new(),
             load_state: OpLoadState::Loading { spinner_tick: 0 },
+            mode,
+            item_name_input: TextInputState::new("Item name", item_default),
+            field_label_input: TextInputState::new("Field label", field_default),
+            section_name_input: TextInputState::new("Section name", ""),
+            pending_section: None,
             runner,
             rx: None,
             op_cache,
@@ -461,6 +580,16 @@ impl OpPickerState {
             .collect()
     }
 
+    /// Filtered items, followed by a trailing `None` sentinel (the
+    /// `+ New item` row) in Create mode. Browse mode emits no sentinel.
+    pub fn filtered_item_choices(&self) -> Vec<Option<&OpItem>> {
+        let mut out: Vec<Option<&OpItem>> = self.filtered_items().into_iter().map(Some).collect();
+        if self.mode.is_create() {
+            out.push(None);
+        }
+        out
+    }
+
     pub fn filtered_fields(&self) -> Vec<&OpField> {
         let needle = self.filter_buf.to_lowercase();
         self.fields
@@ -486,9 +615,7 @@ impl OpPickerState {
         let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
 
         for (idx, f) in visible.iter().enumerate() {
-            match crate::operator_env::parse_op_reference(&f.reference)
-                .and_then(|p| p.section)
-            {
+            match crate::operator_env::parse_op_reference(&f.reference).and_then(|p| p.section) {
                 None => unsectioned.push(idx),
                 Some(name) => {
                     if let Some(entry) = sections.iter_mut().find(|(n, _)| n == &name) {
@@ -519,13 +646,27 @@ impl OpPickerState {
             }
         }
 
+        if self.mode.is_create() {
+            rows.push(FieldDisplayRow::NewFieldSentinel);
+            rows.push(FieldDisplayRow::NewSectionSentinel);
+        }
+
         rows
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         // Tests bypass render entirely so we drain here too, not just
         // on tick.
         self.poll_load();
+
+        // Naming sub-stages are pure text input (no async load), so the
+        // load-state guards must not swallow their keys.
+        match self.stage {
+            OpPickerStage::NewItemName => return self.handle_new_item_name_key(key),
+            OpPickerStage::FieldLabel => return self.handle_field_label_key(key),
+            OpPickerStage::NewSectionName => return self.handle_new_section_name_key(key),
+            _ => {}
+        }
 
         if matches!(self.load_state, OpLoadState::Error(OpPickerError::Fatal(_))) {
             return if matches!(key.code, KeyCode::Esc) {
@@ -548,10 +689,13 @@ impl OpPickerState {
             OpPickerStage::Vault => self.handle_vault_key(key),
             OpPickerStage::Item => self.handle_item_key(key),
             OpPickerStage::Field => self.handle_field_key(key),
+            OpPickerStage::NewItemName
+            | OpPickerStage::FieldLabel
+            | OpPickerStage::NewSectionName => ModalOutcome::Continue,
         }
     }
 
-    fn handle_account_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
+    fn handle_account_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -599,7 +743,7 @@ impl OpPickerState {
         }
     }
 
-    fn handle_vault_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
+    fn handle_vault_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
@@ -664,7 +808,7 @@ impl OpPickerState {
         }
     }
 
-    fn handle_item_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
+    fn handle_item_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
@@ -689,12 +833,12 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Up => {
-                let n = self.filtered_items().len();
+                let n = self.filtered_item_choices().len();
                 cycle_select(&mut self.item_list_state, n, -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down => {
-                let n = self.filtered_items().len();
+                let n = self.filtered_item_choices().len();
                 cycle_select(&mut self.item_list_state, n, 1);
                 ModalOutcome::Continue
             }
@@ -704,19 +848,28 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                let visible = self.filtered_items();
                 let cur = self.item_list_state.selected.unwrap_or(0);
-                if let Some(item) = visible.get(cur) {
-                    let item = (*item).clone();
-                    let item_id = item.id.clone();
-                    let vault_id = self
-                        .selected_vault
-                        .as_ref()
-                        .map(|v| v.id.clone())
-                        .unwrap_or_default();
-                    let account_id = self.selected_account_id();
-                    self.selected_item = Some(item);
-                    self.start_field_load(item_id, vault_id, account_id);
+                // `None` is the `+ New item` sentinel (Create mode only).
+                let picked: Option<Option<OpItem>> = self
+                    .filtered_item_choices()
+                    .get(cur)
+                    .map(|choice| choice.map(Clone::clone));
+                match picked {
+                    Some(Some(item)) => {
+                        let item_id = item.id.clone();
+                        let vault_id = self
+                            .selected_vault
+                            .as_ref()
+                            .map(|v| v.id.clone())
+                            .unwrap_or_default();
+                        let account_id = self.selected_account_id();
+                        self.selected_item = Some(item);
+                        self.start_field_load(item_id, vault_id, account_id);
+                    }
+                    Some(None) => {
+                        self.stage = OpPickerStage::NewItemName;
+                    }
+                    None => {}
                 }
                 ModalOutcome::Continue
             }
@@ -729,7 +882,7 @@ impl OpPickerState {
         }
     }
 
-    fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
+    fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
@@ -800,23 +953,19 @@ impl OpPickerState {
                 let cur = self.field_list_state.selected.unwrap_or(0);
                 match self.build_field_display_rows().into_iter().nth(cur) {
                     Some(FieldDisplayRow::SectionHeader { name, .. }) => {
-                        if self.collapsed_sections.contains(name.as_str()) {
-                            self.collapsed_sections.remove(name.as_str());
-                        } else {
-                            self.collapsed_sections.insert(name);
-                        }
-                        // Clamp selection in case the row count shrank.
-                        let new_len = self.build_field_display_rows().len();
-                        if new_len == 0 {
-                            self.field_list_state.select(None);
-                        } else if self.field_list_state.selected.map_or(false, |s| s >= new_len) {
-                            self.field_list_state.select(Some(new_len - 1));
-                        }
+                        self.toggle_section_collapse(name);
                     }
                     Some(FieldDisplayRow::Field { field_idx }) => {
                         if let Some(field) = visible.get(field_idx) {
-                            return ModalOutcome::Commit(build_op_ref_on_commit(self, field));
+                            return ModalOutcome::Commit(self.commit_existing_field(field));
                         }
+                    }
+                    Some(FieldDisplayRow::NewFieldSentinel) => {
+                        self.pending_section = None;
+                        self.stage = OpPickerStage::FieldLabel;
+                    }
+                    Some(FieldDisplayRow::NewSectionSentinel) => {
+                        self.stage = OpPickerStage::NewSectionName;
                     }
                     None => {}
                 }
@@ -829,6 +978,109 @@ impl OpPickerState {
             }
             _ => ModalOutcome::Continue,
         }
+    }
+
+    fn handle_new_item_name_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
+        match self.item_name_input.handle_key(key) {
+            ModalOutcome::Cancel => {
+                self.stage = OpPickerStage::Item;
+                ModalOutcome::Continue
+            }
+            // selected_item stays None → FieldLabel commit takes the new-item path.
+            ModalOutcome::Commit(_) => {
+                self.stage = OpPickerStage::FieldLabel;
+                ModalOutcome::Continue
+            }
+            ModalOutcome::Continue => ModalOutcome::Continue,
+        }
+    }
+
+    fn handle_new_section_name_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
+        match self.section_name_input.handle_key(key) {
+            ModalOutcome::Cancel => {
+                self.stage = OpPickerStage::Field;
+                ModalOutcome::Continue
+            }
+            ModalOutcome::Commit(name) => {
+                self.pending_section = Some(name);
+                self.stage = OpPickerStage::FieldLabel;
+                ModalOutcome::Continue
+            }
+            ModalOutcome::Continue => ModalOutcome::Continue,
+        }
+    }
+
+    fn handle_field_label_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
+        match self.field_label_input.handle_key(key) {
+            ModalOutcome::Cancel => {
+                self.stage = if self.selected_item.is_some() {
+                    OpPickerStage::Field
+                } else {
+                    OpPickerStage::NewItemName
+                };
+                ModalOutcome::Continue
+            }
+            ModalOutcome::Commit(label) => {
+                let vault = self
+                    .selected_vault
+                    .clone()
+                    .expect("vault set before field-label commit");
+                if let Some(item) = self.selected_item.clone() {
+                    ModalOutcome::Commit(OpPickerSelection::EditItemField {
+                        account: self.selected_account.clone(),
+                        vault,
+                        item,
+                        section: self.pending_section.take(),
+                        field_label: label,
+                    })
+                } else {
+                    ModalOutcome::Commit(OpPickerSelection::NewItem {
+                        account: self.selected_account.clone(),
+                        vault,
+                        item_name: self.item_name_input.trimmed_value(),
+                        section: self.pending_section.take(),
+                        field_label: label,
+                    })
+                }
+            }
+            ModalOutcome::Continue => ModalOutcome::Continue,
+        }
+    }
+
+    fn toggle_section_collapse(&mut self, name: String) {
+        if self.collapsed_sections.contains(name.as_str()) {
+            self.collapsed_sections.remove(name.as_str());
+        } else {
+            self.collapsed_sections.insert(name);
+        }
+        // Clamp selection in case the row count shrank.
+        let new_len = self.build_field_display_rows().len();
+        if new_len == 0 {
+            self.field_list_state.select(None);
+        } else if self.field_list_state.selected.is_some_and(|s| s >= new_len) {
+            self.field_list_state.select(Some(new_len - 1));
+        }
+    }
+
+    /// Browse: commit the field's `op://` reference. Create: overwrite
+    /// the field in place (section recovered by the commit consumer).
+    fn commit_existing_field(&self, field: &OpField) -> OpPickerSelection {
+        if self.mode.is_create() {
+            return OpPickerSelection::EditItemField {
+                account: self.selected_account.clone(),
+                vault: self
+                    .selected_vault
+                    .clone()
+                    .expect("vault set before field commit"),
+                item: self
+                    .selected_item
+                    .clone()
+                    .expect("item set before field commit"),
+                section: None,
+                field_label: field.label.clone(),
+            };
+        }
+        OpPickerSelection::Existing(build_op_ref_on_commit(self, field))
     }
 
     fn reset_selection_for_filter(&mut self, stage: OpPickerStage) {
@@ -844,7 +1096,7 @@ impl OpPickerState {
                     .select(if n == 0 { None } else { Some(0) });
             }
             OpPickerStage::Item => {
-                let n = self.filtered_items().len();
+                let n = self.filtered_item_choices().len();
                 self.item_list_state
                     .select(if n == 0 { None } else { Some(0) });
             }
@@ -853,6 +1105,10 @@ impl OpPickerState {
                 self.field_list_state
                     .select(if n == 0 { None } else { Some(0) });
             }
+            // Naming sub-stages are text input — no list selection to reset.
+            OpPickerStage::NewItemName
+            | OpPickerStage::FieldLabel
+            | OpPickerStage::NewSectionName => {}
         }
     }
 }
@@ -1292,11 +1548,11 @@ mod tests {
 
         let outcome = s.handle_key(key(KeyCode::Enter));
         match outcome {
-            ModalOutcome::Commit(op_ref) => {
+            ModalOutcome::Commit(OpPickerSelection::Existing(op_ref)) => {
                 assert_eq!(op_ref.op, "op://v-Personal/i-api/password");
                 assert_eq!(op_ref.path, "Personal/API Keys/password");
             }
-            other => panic!("expected Commit, got {other:?}"),
+            other => panic!("expected Commit(Existing), got {other:?}"),
         }
     }
 
@@ -1325,7 +1581,7 @@ mod tests {
 
         let outcome = s.handle_key(key(KeyCode::Enter));
         match outcome {
-            ModalOutcome::Commit(op_ref) => {
+            ModalOutcome::Commit(OpPickerSelection::Existing(op_ref)) => {
                 // Section "auth" must be preserved; vault/item/field use UUIDs.
                 assert_eq!(
                     op_ref.op, "op://v-Personal/i-test/auth/api",
@@ -1336,7 +1592,7 @@ mod tests {
                     "path must use human-readable names and preserve section"
                 );
             }
-            other => panic!("expected Commit, got {other:?}"),
+            other => panic!("expected Commit(Existing), got {other:?}"),
         }
     }
 

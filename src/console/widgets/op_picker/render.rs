@@ -48,7 +48,13 @@ pub fn breadcrumb_title(
                 "1Password".to_string()
             }
         }
-        OpPickerStage::Item => {
+        // Naming sub-stages render their own breadcrumb via
+        // `render_naming_stage`; here they fall back to the Item-level
+        // `[email →] vault` context.
+        OpPickerStage::Item
+        | OpPickerStage::NewItemName
+        | OpPickerStage::FieldLabel
+        | OpPickerStage::NewSectionName => {
             if multi_account {
                 format!("{account_email} \u{2192} {vault_name}")
             } else {
@@ -114,6 +120,25 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         .as_ref()
         .map_or("", |v| v.name.as_str());
     let i_name = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
+
+    // Naming sub-stages render a text-input box inside the breadcrumb
+    // modal rather than a list pane.
+    if matches!(
+        state.stage,
+        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName
+    ) {
+        render_naming_stage(
+            frame,
+            area,
+            state,
+            multi_account,
+            account_email,
+            v_name,
+            i_name,
+        );
+        return;
+    }
+
     let title = breadcrumb_title(state.stage, multi_account, account_email, v_name, i_name);
     let block = modal_block(title);
     let inner = block.inner(area);
@@ -151,12 +176,15 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
 
     render_filter_row(frame, rows[1], &state.filter_buf);
 
-    // List rows.
+    // List rows. Naming sub-stages are handled above and never reach here.
     let list_lines: Vec<Line<'static>> = match state.stage {
         OpPickerStage::Account => render_account_lines(state),
         OpPickerStage::Vault => render_vault_lines(state),
         OpPickerStage::Item => render_item_lines(state),
         OpPickerStage::Field => render_field_lines(state),
+        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName => {
+            Vec::new()
+        }
     };
     if list_lines.is_empty() {
         let para = Paragraph::new(Line::from(Span::styled(
@@ -171,9 +199,62 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
             OpPickerStage::Vault => state.vault_list_state.selected,
             OpPickerStage::Item => state.item_list_state.selected,
             OpPickerStage::Field => state.field_list_state.selected,
+            OpPickerStage::NewItemName
+            | OpPickerStage::FieldLabel
+            | OpPickerStage::NewSectionName => None,
         };
         render_selected_lines_in_area(frame, rows[3], list_lines, selected);
     }
+}
+
+/// Renders a naming sub-stage: the breadcrumb modal with the relevant
+/// `TextInputState` drawn inside, matching the look of the Credential
+/// input box.
+fn render_naming_stage(
+    frame: &mut Frame,
+    area: Rect,
+    state: &OpPickerState,
+    multi_account: bool,
+    account_email: &str,
+    v_name: &str,
+    i_name: &str,
+) {
+    let base = breadcrumb_title(state.stage, multi_account, account_email, v_name, i_name);
+    let (suffix, input) = match state.stage {
+        OpPickerStage::NewItemName => (" \u{2192} New item", &state.item_name_input),
+        OpPickerStage::NewSectionName => (" \u{2192} New section", &state.section_name_input),
+        // FieldLabel reached from both the new-item and existing-item paths.
+        _ => {
+            let crumb = if i_name.is_empty() {
+                base.clone()
+            } else if multi_account {
+                format!("{account_email} \u{2192} {v_name} \u{2192} {i_name}")
+            } else {
+                format!("{v_name} \u{2192} {i_name}")
+            };
+            return render_input_in_block(
+                frame,
+                area,
+                &crumb,
+                " \u{2192} New field",
+                &state.field_label_input,
+            );
+        }
+    };
+    render_input_in_block(frame, area, &base, suffix, input);
+}
+
+fn render_input_in_block(
+    frame: &mut Frame,
+    area: Rect,
+    breadcrumb: &str,
+    suffix: &str,
+    input: &crate::console::widgets::text_input::TextInputState,
+) {
+    let block = modal_block(format!("{breadcrumb}{suffix}"));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    crate::console::widgets::text_input::render(frame, inner, input);
 }
 
 fn render_account_lines(state: &OpPickerState) -> Vec<Line<'static>> {
@@ -227,36 +308,58 @@ fn render_vault_lines(state: &OpPickerState) -> Vec<Line<'static>> {
 }
 
 fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    let visible = state.filtered_items();
     let selected = state.item_list_state.selected;
-    visible
+    // Use the choice list so the trailing `+ New item` sentinel (Create
+    // mode) is rendered and selectable at the same index the handler uses.
+    state
+        .filtered_item_choices()
         .into_iter()
         .enumerate()
-        .map(|(i, item)| {
+        .map(|(i, choice)| {
             let is_selected = Some(i) == selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let title_style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            // Subtitle stays dim even on the focused row so the title
-            // remains the primary anchor. Empty subtitle → no parens.
-            let mut spans = vec![
-                Span::styled(prefix, title_style),
-                Span::styled(item.name.clone(), title_style),
-            ];
-            if !item.subtitle.is_empty() {
-                let dim = Style::default().fg(PHOSPHOR_DIM);
-                spans.push(Span::styled(" (", dim));
-                spans.push(Span::styled(item.subtitle.clone(), dim));
-                spans.push(Span::styled(")", dim));
-            }
-            Line::from(spans)
+            choice.map_or_else(
+                || sentinel_line("+ New item", is_selected),
+                |item| {
+                    let prefix = if is_selected { "\u{25b8} " } else { "  " };
+                    let title_style = if is_selected {
+                        Style::default()
+                            .fg(PHOSPHOR_GREEN)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(WHITE)
+                    };
+                    // Subtitle stays dim even on the focused row so the
+                    // title remains the primary anchor. Empty subtitle →
+                    // no parens.
+                    let mut spans = vec![
+                        Span::styled(prefix, title_style),
+                        Span::styled(item.name.clone(), title_style),
+                    ];
+                    if !item.subtitle.is_empty() {
+                        let dim = Style::default().fg(PHOSPHOR_DIM);
+                        spans.push(Span::styled(" (", dim));
+                        spans.push(Span::styled(item.subtitle.clone(), dim));
+                        spans.push(Span::styled(")", dim));
+                    }
+                    Line::from(spans)
+                },
+            )
         })
         .collect()
+}
+
+/// `+ New X` creation row, styled like the existing list rows
+/// (`PHOSPHOR_GREEN` + BOLD selected, `PHOSPHOR_DIM` otherwise).
+fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
+    let prefix = if is_selected { "\u{25b8} " } else { "  " };
+    let style = if is_selected {
+        Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(PHOSPHOR_DIM)
+    };
+    Line::from(Span::styled(format!("{prefix}{text}"), style))
 }
 
 fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
@@ -278,8 +381,11 @@ fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
             match row {
                 FieldDisplayRow::SectionHeader { name, field_count } => {
                     let prefix = if is_selected { "\u{25b8}  " } else { "   " };
-                    let arrow =
-                        if state.collapsed_sections.contains(&name) { "\u{25b6}" } else { "\u{25bc}" };
+                    let arrow = if state.collapsed_sections.contains(&name) {
+                        "\u{25b6}"
+                    } else {
+                        "\u{25bc}"
+                    };
                     let style = if is_selected {
                         Style::default()
                             .fg(PHOSPHOR_GREEN)
@@ -322,6 +428,8 @@ fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
                         Span::styled(annotation, Style::default().fg(PHOSPHOR_DIM)),
                     ])
                 }
+                FieldDisplayRow::NewFieldSentinel => sentinel_line("+ New field", is_selected),
+                FieldDisplayRow::NewSectionSentinel => sentinel_line("+ New section", is_selected),
             }
         })
         .collect()
@@ -383,6 +491,11 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
             } else {
                 format!("loading {i_name} ({i_subtitle})\u{2026}")
             }
+        }
+        // Naming stages never load; only reachable if a stale Loading
+        // state lingers — fall back to a neutral descriptor.
+        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName => {
+            "loading\u{2026}".to_string()
         }
     };
 
