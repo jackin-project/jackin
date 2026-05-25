@@ -281,6 +281,8 @@ pub(super) async fn build_agent_image(
             None,
             &RunOptions {
                 capture_stderr: true,
+                capture_stdout: true,
+                stream_captured_output: false,
                 extra_env: github_token
                     .as_ref()
                     .map(|_| vec![("DOCKER_BUILDKIT".to_string(), "1".to_string())])

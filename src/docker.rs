@@ -3,12 +3,28 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 /// Options that control how a command is executed.
-#[derive(Clone, Debug, Default)]
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone, Debug)]
 pub struct RunOptions {
     pub capture_stderr: bool,
+    pub capture_stdout: bool,
     pub quiet: bool,
     pub extra_env: Vec<(String, String)>,
     pub null_stdin: bool,
+    pub stream_captured_output: bool,
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self {
+            capture_stderr: false,
+            capture_stdout: false,
+            quiet: false,
+            extra_env: Vec::new(),
+            null_stdin: false,
+            stream_captured_output: true,
+        }
+    }
 }
 
 pub trait CommandRunner {
@@ -57,9 +73,11 @@ impl ShellRunner {
         // or stays the responsibility of an arm-specific branch.
         let RunOptions {
             capture_stderr: _,
+            capture_stdout: _,
             quiet: _,
             extra_env,
             null_stdin,
+            stream_captured_output: _,
         } = opts;
         if *null_stdin {
             cmd.stdin(std::process::Stdio::null());
@@ -103,6 +121,30 @@ pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
     out
 }
 
+async fn read_process_pipe<R, W>(
+    pipe: &mut R,
+    stream: bool,
+    mut output: W,
+) -> std::io::Result<Vec<u8>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: std::io::Write,
+{
+    let mut captured = Vec::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = pipe.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        if stream {
+            output.write_all(&buf[..n])?;
+        }
+        captured.extend_from_slice(&buf[..n]);
+    }
+    Ok(captured)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CaptureMode {
     Normal,
@@ -133,44 +175,8 @@ impl CommandRunner for ShellRunner {
                 program,
                 args.join(" ")
             );
-        } else if opts.capture_stderr {
-            let mut cmd = Self::build_command(program, args, cwd);
-            Self::apply_run_opts(&mut cmd, opts);
-            let mut child = cmd.stderr(std::process::Stdio::piped()).spawn()?;
-            let mut stderr_pipe = child.stderr.take().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "failed to capture stderr for {} {}",
-                    program,
-                    args.join(" ")
-                )
-            })?;
-            let mut stderr_buf = Vec::new();
-            let read_fut = async {
-                let mut buf = [0u8; 8192];
-                loop {
-                    use std::io::Write;
-                    let n = stderr_pipe.read(&mut buf).await?;
-                    if n == 0 {
-                        break;
-                    }
-                    std::io::stderr().write_all(&buf[..n])?;
-                    stderr_buf.extend_from_slice(&buf[..n]);
-                }
-                Ok::<(), std::io::Error>(())
-            };
-            let (status, read_result) = tokio::join!(child.wait(), read_fut);
-            read_result?;
-            let status = status?;
-            if !status.success() {
-                if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
-                    anyhow::bail!("command failed: {} {}", program, args.join(" "));
-                }
-                anyhow::bail!(
-                    "command failed: {} {} (see stderr above)",
-                    program,
-                    args.join(" ")
-                );
-            }
+        } else if opts.capture_stderr || opts.capture_stdout {
+            Box::pin(self.run_captured(program, args, cwd, opts)).await?;
         } else {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
@@ -207,6 +213,92 @@ impl CommandRunner for ShellRunner {
 }
 
 impl ShellRunner {
+    async fn run_captured(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<()> {
+        let mut cmd = Self::build_command(program, args, cwd);
+        Self::apply_run_opts(&mut cmd, opts);
+        if opts.capture_stdout {
+            cmd.stdout(std::process::Stdio::piped());
+        }
+        if opts.capture_stderr {
+            cmd.stderr(std::process::Stdio::piped());
+        }
+        let mut child = cmd.spawn()?;
+        let stdout_pipe = child.stdout.take();
+        let stderr_pipe = child.stderr.take();
+        let stream = opts.stream_captured_output;
+        let read_stdout = async move {
+            let Some(mut stdout_pipe) = stdout_pipe else {
+                return Ok::<Vec<u8>, std::io::Error>(Vec::new());
+            };
+            read_process_pipe(&mut stdout_pipe, stream, std::io::stdout()).await
+        };
+        let read_stderr = async move {
+            let Some(mut stderr_pipe) = stderr_pipe else {
+                return Ok::<Vec<u8>, std::io::Error>(Vec::new());
+            };
+            read_process_pipe(&mut stderr_pipe, stream, std::io::stderr()).await
+        };
+        let (status, stdout_result, stderr_result) =
+            tokio::join!(child.wait(), read_stdout, read_stderr);
+        let stdout_buf = stdout_result?;
+        let stderr_buf = stderr_result?;
+        let status = status?;
+        self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
+        if !status.success() {
+            if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
+                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+            }
+            if !opts.stream_captured_output {
+                if let Some(run) = crate::diagnostics::active_run().filter(|_| self.debug) {
+                    anyhow::bail!(
+                        "command failed: {} {} (captured output in diagnostics run {})",
+                        program,
+                        args.join(" "),
+                        run.run_id()
+                    );
+                }
+                if let Some(run) = crate::diagnostics::active_run() {
+                    anyhow::bail!(
+                        "command failed: {} {} (output suppressed; rerun with --debug to capture it in diagnostics run {})",
+                        program,
+                        args.join(" "),
+                        run.run_id()
+                    );
+                }
+                anyhow::bail!(
+                    "command failed: {} {} (captured output suppressed)",
+                    program,
+                    args.join(" ")
+                );
+            }
+            anyhow::bail!(
+                "command failed: {} {} (see stderr above)",
+                program,
+                args.join(" ")
+            );
+        }
+        Ok(())
+    }
+
+    fn log_captured_output(&self, program: &str, args: &[&str], stdout: &[u8], stderr: &[u8]) {
+        if !self.debug {
+            return;
+        }
+        let command = format!("{} {}", program, redact_env_args(args).join(" "));
+        for line in String::from_utf8_lossy(stdout).lines() {
+            crate::diagnostics::active_debug("cmd.stdout", &format!("{command}: {line}"));
+        }
+        for line in String::from_utf8_lossy(stderr).lines() {
+            crate::diagnostics::active_debug("cmd.stderr", &format!("{command}: {line}"));
+        }
+    }
+
     async fn do_capture(
         &self,
         program: &str,

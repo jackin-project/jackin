@@ -217,6 +217,33 @@ const fn completion_label(stage: super::progress::LaunchStage) -> &'static str {
         super::progress::LaunchStage::Hardline => "open",
     }
 }
+
+const fn launch_target_kind(workspace_name: Option<&str>) -> super::progress::LaunchTargetKind {
+    if workspace_name.is_some() {
+        super::progress::LaunchTargetKind::Workspace
+    } else {
+        super::progress::LaunchTargetKind::Directory
+    }
+}
+
+fn launch_target_label(
+    workspace_name: Option<&str>,
+    workspace: &crate::workspace::ResolvedWorkspace,
+) -> String {
+    workspace_name.map_or_else(|| tui::shorten_home(&workspace.workdir), str::to_string)
+}
+
+fn launch_mount_summary(
+    workspace_name: Option<&str>,
+    workspace: &crate::workspace::ResolvedWorkspace,
+) -> String {
+    if workspace_name.is_some() {
+        format!("{} configured", workspace.mounts.len())
+    } else {
+        "same path".to_string()
+    }
+}
+
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
 /// idiom for `docker run -v`.
 ///
@@ -754,11 +781,19 @@ async fn launch_role_runtime(
         &certs_dind_mount,
         "docker:dind",
     ];
-    runner
-        .run("docker", &dind_args, None, &docker_run_opts)
-        .await?;
+    let run_dind = runner.run("docker", &dind_args, None, &docker_run_opts);
+    if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(run_dind).await?;
+    } else {
+        run_dind.await?;
+    }
 
-    wait_for_dind(dind, &certs_volume, docker).await?;
+    let dind_ready = wait_for_dind(dind, &certs_volume, docker);
+    if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(dind_ready).await?;
+    } else {
+        dind_ready.await?;
+    }
 
     // Step 4: Mount volumes and launch
     steps.next("Launching role");
@@ -1049,9 +1084,12 @@ async fn launch_role_runtime(
     // daemon uses it only to choose the first tab; per-session
     // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
     run_args.push(agent.slug());
-    runner
-        .run("docker", &run_args, None, &docker_run_opts)
-        .await?;
+    let run_role = runner.run("docker", &run_args, None, &docker_run_opts);
+    if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(run_role).await?;
+    } else {
+        run_role.await?;
+    }
 
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
@@ -1479,7 +1517,38 @@ async fn load_role_with(
     let (source, is_new, restore_source_override) =
         resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
 
+    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
+    // not a name. Recover the name by matching workdir, mirroring the
+    // identification rule used by `jackin workspace show`.
+    let workspace_name = config
+        .workspaces
+        .iter()
+        .find(|(_, w)| w.workdir == workspace.workdir)
+        .map(|(name, _)| name.clone());
+
     let mut steps = StepCounter::new(opts.no_tui, &selector.name);
+    if let Some(run) = crate::diagnostics::active_run() {
+        let mut progress = super::progress::LaunchProgress::new(
+            run,
+            opts.no_tui,
+            std::env::var_os("JACKIN_NO_MOTION").is_some(),
+        )?;
+        progress.started(super::progress::LaunchIdentity {
+            role: selector.name.clone(),
+            agent: opts
+                .agent
+                .or(workspace.default_agent)
+                .map_or_else(|| "resolving".to_string(), |agent| agent.slug().to_string()),
+            target_kind: launch_target_kind(workspace_name.as_deref()),
+            target_label: launch_target_label(workspace_name.as_deref(), workspace),
+            workdir: tui::shorten_home(&workspace.workdir),
+            mount_summary: launch_mount_summary(workspace_name.as_deref(), workspace),
+            image: None,
+            container: None,
+        });
+        progress.stage_done(super::progress::LaunchStage::Identity, "resolved operator");
+        steps.start_progress(progress);
+    }
 
     // Step 1: Resolve role identity (clone or update repo)
     steps.next("Resolving role identity");
@@ -1559,17 +1628,9 @@ async fn load_role_with(
         confirm_branch(selector, &source, branch)?;
     }
 
-    // Logo (if present in role repo)
-    tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
-
-    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
-    // not a name. Recover the name by matching workdir, mirroring the
-    // identification rule used by `jackin workspace show`.
-    let workspace_name = config
-        .workspaces
-        .iter()
-        .find(|(_, w)| w.workdir == workspace.workdir)
-        .map(|(name, _)| name.clone());
+    if steps.progress.is_none() {
+        tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
+    }
 
     let role_key = selector.key();
     let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
@@ -1658,37 +1719,18 @@ async fn load_role_with(
         runner,
     )
     .await;
-    if let Some(run) = crate::diagnostics::active_run() {
-        let mut progress = super::progress::LaunchProgress::new(
-            run,
-            opts.no_tui,
-            std::env::var_os("JACKIN_NO_MOTION").is_some(),
-        )?;
-        let target_kind = if workspace_name.is_some() {
-            super::progress::LaunchTargetKind::Workspace
-        } else {
-            super::progress::LaunchTargetKind::Directory
-        };
-        let target_label = workspace_name
-            .clone()
-            .unwrap_or_else(|| tui::shorten_home(&workspace.workdir));
-        progress.started(super::progress::LaunchIdentity {
+    if let Some(progress) = steps.progress_mut() {
+        progress.update_identity(super::progress::LaunchIdentity {
             role: agent_display_name.clone(),
             agent: agent.slug().to_string(),
-            target_kind,
-            target_label,
+            target_kind: launch_target_kind(workspace_name.as_deref()),
+            target_label: launch_target_label(workspace_name.as_deref(), workspace),
             workdir: tui::shorten_home(&workspace.workdir),
-            mount_summary: if workspace_name.is_some() {
-                format!("{} configured", workspace.mounts.len())
-            } else {
-                "same path".to_string()
-            },
+            mount_summary: launch_mount_summary(workspace_name.as_deref(), workspace),
             image: Some(image_tag.clone()),
             container: Some(container_name.clone()),
         });
-        progress.stage_done(super::progress::LaunchStage::Identity, "resolved operator");
         progress.stage_done(super::progress::LaunchStage::Role, "trusted source");
-        steps.start_progress(progress);
     } else {
         eprintln!();
         tui::print_config_table(&config_rows);
@@ -1806,7 +1848,14 @@ async fn load_role_with(
                     crate::agent::Agent::Opencode => "OpenCode",
                     _ => unreachable!(),
                 };
-                eprintln!("        {name} update available — refreshing agent layer");
+                if let Some(progress) = steps.progress_mut() {
+                    progress.stage_progress(
+                        super::progress::LaunchStage::DerivedImage,
+                        format!("{name} update available; refreshing agent layer"),
+                    );
+                } else {
+                    eprintln!("        {name} update available — refreshing agent layer");
+                }
             }
             needs_update
         };
@@ -1818,7 +1867,7 @@ async fn load_role_with(
             progress.stage_done(super::progress::LaunchStage::Construct, "online");
         }
         steps.next("Building Docker image");
-        let image = build_agent_image(
+        let image_build = build_agent_image(
             paths,
             selector,
             &cached_repo,
@@ -1832,7 +1881,12 @@ async fn load_role_with(
             docker,
             runner,
             repo_lock,
-        ).await?;
+        );
+        let image = if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(image_build).await?
+        } else {
+            image_build.await?
+        };
 
         let container_state = paths.data_dir.join(&container_name);
         let network = format!("{container_name}-net");
@@ -1999,7 +2053,14 @@ async fn load_role_with(
             });
 
         if agent == crate::agent::Agent::Codex {
-            tui::codex_auth_notice(resolved_source.as_deref(), (auth_mode, auth_outcome).into());
+            if steps.progress.is_none() {
+                tui::codex_auth_notice(
+                    resolved_source.as_deref(),
+                    (auth_mode, auth_outcome).into(),
+                );
+            } else if let Some(run) = crate::diagnostics::active_run() {
+                run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
+            }
         } else {
             let expiry_days = workspace_name
                 .as_deref()
@@ -2008,25 +2069,31 @@ async fn load_role_with(
                     match crate::workspace::token_setup::expiry_days_for_launch(paths, ws) {
                         Ok(days) => days,
                         Err(e) => {
-                            // Malformed cache stamp: warn so the operator sees
-                            // it once on the next launch instead of having the
-                            // banner silently degrade to "no expiry known".
-                            eprintln!(
+                            let message = format!(
                                 "[jackin] note: token expiry cache for workspace {ws:?} \
                                  is unreadable ({e}); re-run \
                                  `jackin workspace claude-token setup {ws}` to refresh."
                             );
+                            if let Some(run) = crate::diagnostics::active_run() {
+                                run.compact("auth", &message);
+                            } else {
+                                eprintln!("{message}");
+                            }
                             None
                         }
                     }
                 });
-            tui::auth_mode_notice(
-                agent,
-                &auth_mode.to_string(),
-                resolved_source.as_deref(),
-                expiry_days,
-            );
-            tui::agent_outcome_notice(agent, auth_mode, auth_outcome);
+            if steps.progress.is_none() {
+                tui::auth_mode_notice(
+                    agent,
+                    &auth_mode.to_string(),
+                    resolved_source.as_deref(),
+                    expiry_days,
+                );
+                tui::agent_outcome_notice(agent, auth_mode, auth_outcome);
+            } else if let Some(run) = crate::diagnostics::active_run() {
+                run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
+            }
         }
 
         // GitHub auth summary line — agent-neutral. The breadcrumb walks
@@ -2041,7 +2108,14 @@ async fn load_role_with(
                 || gh_token_key.to_string(),
                 |value| auth_token_source_reference(gh_token_key, Some(value.as_display_str())),
             );
-            tui::github_auth_notice(&state.gh_provision_outcome, Some(&token_breadcrumb));
+            if steps.progress.is_none() {
+                tui::github_auth_notice(&state.gh_provision_outcome, Some(&token_breadcrumb));
+            } else if let Some(run) = crate::diagnostics::active_run() {
+                run.compact(
+                    "github_auth",
+                    &format!("resolved GitHub auth from {token_breadcrumb}"),
+                );
+            }
         }
 
         // Materialize workspace mounts: shared mounts pass through;
@@ -2063,19 +2137,25 @@ async fn load_role_with(
                 "materializing workspace",
             );
         }
-        let materialized = crate::isolation::materialize::materialize_workspace(
+        let materialize_preflight = crate::isolation::materialize::PreflightContext {
+            workspace_name: workspace_label.to_string(),
+            force: opts.force,
+            interactive,
+        };
+        let materialize = crate::isolation::materialize::materialize_workspace(
             workspace,
             &container_state,
-            &selector.key(),
+            &role_key,
             &container_name,
             workspace_label,
-            &crate::isolation::materialize::PreflightContext {
-                workspace_name: workspace_label.to_string(),
-                force: opts.force,
-                interactive,
-            },
+            &materialize_preflight,
             runner,
-        ).await?;
+        );
+        let materialized = if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(materialize).await?
+        } else {
+            materialize.await?
+        };
         if let Some(progress) = steps.progress_mut() {
             progress.stage_done(super::progress::LaunchStage::Workspace, "materialized");
         }
@@ -2122,10 +2202,15 @@ async fn load_role_with(
                 &mut instance_manifest,
                 InstanceStatus::FailedSetup,
             ) {
-                eprintln!(
+                let message = format!(
                     "jackin: warning: failed to mark FailedSetup for {container_name} \
-                     after launch error: {status_err:#}; on-disk status may be stale",
+                     after launch error: {status_err:#}; on-disk status may be stale"
                 );
+                if let Some(run) = crate::diagnostics::active_run() {
+                    run.compact("status", &message);
+                } else {
+                    eprintln!("{message}");
+                }
             }
             cleanup.run(docker).await;
         }

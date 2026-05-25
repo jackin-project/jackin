@@ -1,5 +1,6 @@
 use std::io::{IsTerminal, Write};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use crossterm::ExecutableCommand;
@@ -137,6 +138,7 @@ struct LaunchView {
     stages: Vec<StageView>,
     status: String,
     failure: Option<LaunchFailure>,
+    frame: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +202,7 @@ impl LaunchProgress {
                 stages,
                 status: "preparing launch".to_string(),
                 failure: None,
+                frame: 0,
             },
         }
     }
@@ -219,6 +222,11 @@ impl LaunchProgress {
             "launch_started",
             &format!("diagnostics: run {}", self.run_id()),
         );
+        self.render();
+    }
+
+    pub fn update_identity(&mut self, identity: LaunchIdentity) {
+        self.view.identity = Some(identity);
         self.render();
     }
 
@@ -277,6 +285,23 @@ impl LaunchProgress {
         self.stage_started(LaunchStage::Hardline, "opening hardline");
     }
 
+    pub async fn while_waiting<T, E, F>(&mut self, future: F) -> Result<T, E>
+    where
+        F: std::future::Future<Output = Result<T, E>>,
+    {
+        if !matches!(self.renderer, Renderer::Rich(_)) || self.no_motion() {
+            return future.await;
+        }
+        tokio::pin!(future);
+        let mut interval = tokio::time::interval(Duration::from_millis(120));
+        loop {
+            tokio::select! {
+                result = &mut future => return result,
+                _ = interval.tick() => self.tick(),
+            }
+        }
+    }
+
     fn update_stage(&mut self, stage: LaunchStage, status: StageStatus, detail: &str) {
         if let Some(row) = self.view.stages.iter_mut().find(|row| row.stage == stage) {
             row.status = status;
@@ -309,6 +334,15 @@ impl LaunchProgress {
         if let Renderer::Rich(renderer) = &mut self.renderer {
             let _ = renderer.render(&self.view, self.diagnostics.run_id());
         }
+    }
+
+    fn tick(&mut self) {
+        self.view.frame = self.view.frame.wrapping_add(1);
+        self.render();
+    }
+
+    const fn no_motion(&self) -> bool {
+        matches!(&self.renderer, Renderer::Rich(renderer) if renderer.no_motion)
     }
 }
 
@@ -390,7 +424,7 @@ fn render_launch_frame(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, n
         .split(inner);
     render_identity(frame, rows[0], view.identity.as_ref());
     render_stages(frame, rows[1], view, no_motion);
-    render_footer(frame, rows[2], view, run_id);
+    render_footer(frame, rows[2], view, run_id, no_motion);
     if let Some(failure) = &view.failure {
         render_failure(frame, centered_rect(58, 8, area), failure, run_id);
     }
@@ -445,14 +479,25 @@ fn render_stages(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, no_motion
         .constraints([Constraint::Length(4), Constraint::Min(1)])
         .split(area);
     let rain = if no_motion {
-        "│\n│\n│\n│\n│"
+        "│\n│\n│\n│\n│".to_string()
     } else {
-        "╷\n│\n╵\n│\n╷"
+        let frames = [
+            "╷\n│\n╵\n│\n╷",
+            "│\n╷\n│\n╵\n│",
+            "╵\n│\n╷\n│\n╵",
+            "│\n╵\n│\n╷\n│",
+        ];
+        frames[view.frame % frames.len()].to_string()
     };
     frame.render_widget(
         Paragraph::new(rain).style(Style::default().fg(Color::DarkGray)),
         chunks[0],
     );
+    let stage_area = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(4), Constraint::Min(1)])
+        .split(chunks[1]);
+    render_stage_slide(frame, stage_area[0], view, no_motion);
     let lines: Vec<Line<'_>> = view
         .stages
         .iter()
@@ -468,22 +513,103 @@ fn render_stages(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, no_motion
                 StageStatus::Blocked => Style::default().fg(Color::Magenta),
             };
             Line::from(vec![
-                Span::styled(format!("{} ", row.status.marker()), style),
+                Span::styled(
+                    format!("{} ", status_marker(row.status, view.frame, no_motion)),
+                    style,
+                ),
                 Span::styled(format!("{:<13} ", row.stage.label()), style),
                 Span::raw(row.detail.clone()),
             ])
         })
         .collect();
-    frame.render_widget(Paragraph::new(lines), chunks[1]);
+    frame.render_widget(Paragraph::new(lines), stage_area[1]);
 }
 
-fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {
+fn render_stage_slide(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, no_motion: bool) {
+    let current = active_stage_index(view);
+    let start = current.saturating_sub(2);
+    let end = (start + 5).min(view.stages.len());
+    let mut rail: Vec<Span<'_>> = Vec::new();
+    for (offset, row) in view.stages[start..end].iter().enumerate() {
+        if offset > 0 {
+            rail.push(Span::styled("  ->  ", Style::default().fg(Color::DarkGray)));
+        }
+        let index = start + offset;
+        let style = if index == current {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            match row.status {
+                StageStatus::Done => Style::default().fg(Color::Green),
+                StageStatus::Skipped => Style::default().fg(Color::Yellow),
+                StageStatus::Failed => Style::default().fg(Color::Red),
+                _ => Style::default().fg(Color::DarkGray),
+            }
+        };
+        let marker = status_marker(row.status, view.frame + offset, no_motion);
+        rail.push(Span::styled(
+            format!("{marker} {}", row.stage.label()),
+            style,
+        ));
+    }
+    let current_row = &view.stages[current];
+    let pulse = if no_motion {
+        "waiting"
+    } else {
+        const PULSE: [&str; 4] = ["waiting", "waiting.", "waiting..", "waiting..."];
+        PULSE[view.frame % PULSE.len()]
+    };
+    let lines = vec![
+        Line::from(rail),
+        Line::from(vec![Span::styled(
+            format!(
+                "{}  {}",
+                current_row.stage.label(),
+                if current_row.status == StageStatus::Running {
+                    pulse
+                } else {
+                    current_row.status.label()
+                }
+            ),
+            Style::default().fg(Color::White),
+        )]),
+    ];
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn active_stage_index(view: &LaunchView) -> usize {
+    view.stages
+        .iter()
+        .position(|row| row.status == StageStatus::Running)
+        .or_else(|| {
+            view.stages
+                .iter()
+                .rposition(|row| matches!(row.status, StageStatus::Done | StageStatus::Skipped))
+        })
+        .unwrap_or(0)
+}
+
+fn render_footer(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &LaunchView,
+    run_id: &str,
+    no_motion: bool,
+) {
     let hint = if view.failure.is_some() {
         "Enter Close"
     } else {
         "opening hardline when ready"
     };
     let line = Line::from(vec![
+        Span::styled(
+            format!(
+                "{} ",
+                status_marker(StageStatus::Running, view.frame, no_motion)
+            ),
+            Style::default().fg(Color::Cyan),
+        ),
         Span::styled("status: ", Style::default().fg(Color::Green)),
         Span::raw(&view.status),
         Span::raw("    "),
@@ -495,6 +621,15 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &
         ),
     ]);
     frame.render_widget(Paragraph::new(line), area);
+}
+
+fn status_marker(status: StageStatus, frame: usize, no_motion: bool) -> &'static str {
+    if status == StageStatus::Running && !no_motion {
+        const FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
+        FRAMES[frame % FRAMES.len()]
+    } else {
+        status.marker()
+    }
 }
 
 fn render_failure(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailure, run_id: &str) {
@@ -589,6 +724,7 @@ mod tests {
                 .collect(),
             status: "pulling construct".to_string(),
             failure: None,
+            frame: 0,
         };
         terminal
             .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true))
