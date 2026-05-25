@@ -173,7 +173,7 @@ Dogmatic TEA clones the whole model on every update. jackin's state is large, so
 
 Introduce the Model/Update/View seam without changing behavior:
 
-1. **`Message` enum + central `update`.** Define an `enum Message` covering input intents (`MoveSelection`, `OpenModal`, `CommitSave`, `LaunchWorkspace`, …) and background results (`InstancesRefreshed`, `OpItemsLoaded`, `MountInspected`, …). Map every `crossterm` event — key, mouse, **paste, focus, and resize** — to `Message`s in a thin layer; route every state change through `fn update(&mut self, msg: Message) -> Option<Effect>`. Handlers stop mutating state directly.
+1. **One dispatch type + central `update`.** Define the dispatch `enum` — `Message` on the host, the generalized `Action` on the capsule, **converged on a single name** so the shared vocabulary stays recognizable — covering input intents (`MoveSelection`, `OpenModal`, `CommitSave`, `LaunchWorkspace`, …), background results, and their failures (`InstancesRefreshed`, `MountInspected`, `OpLoadFailed(e)`, …) so errors flow as messages routed to the `ErrorPopup`, never as `unwrap`/panic. Map every `crossterm` event — key, mouse, **paste, focus, and resize** — to messages in a thin layer; route every state change through `fn update(&mut self, msg: Message) -> Vec<Effect>` — one update may emit several effects (redraw, spawn a task, quit), so it returns a list, not a single `Option`. Handlers stop mutating state directly.
 
 2. **Decompose state.** Split the god-structs along the seams that already exist conceptually: a domain `Model` (workspaces, instances, pending config), a `UiState` (selection, focus, scroll offsets, open modal), and ephemeral per-frame scratch. Geometry that the renderer derives (content width/height) becomes computed-and-cached state owned by `update`, not written from inside `view`.
 
@@ -194,7 +194,7 @@ Two questions are independent and should be decided separately:
 **(1) Structural cleanup — clear win, do regardless of rendering backend.**
 
 - Add a `MuxMode` enum (`Normal`, `PrefixAwait`, `Dialog`, `Drag`, `Select`) so invalid combinations are unrepresentable and dispatch reads from one place.
-- Generalize the existing `DialogAction` into a single `Action` type for the whole `handle_input` dispatch, so the daemon's decision layer is testable without a live PTY.
+- Generalize the existing `DialogAction` into a single `Action` type for the whole `handle_input` dispatch — the *same dispatch type the host converges on* (see the host target) — so the daemon's decision layer is testable without a live PTY.
 - Split <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> into modules: event loop, session lifecycle, render/compose, input dispatch, dialog. Merge `compose_full_frame`/`compose_partial_frame` onto a shared pane-composite helper.
 - Add dispatch/dialog/drag tests once the `Action` boundary exists.
 
@@ -219,6 +219,8 @@ Move terminal/Ratatui-session ownership out of `run_console` and up to the app l
 - The launch progress renderer (owned by [Launch Progress TUI](/reference/roadmap/launch-progress-tui/)) draws into the *same* session, so "operator picked a workspace" → "watching the launch cockpit" is a view swap, not a screen teardown. No stderr fallback, no cooked-mode gap, no clear-screen flash.
 - Launch work emits `Message`s (progress, stage transitions, failures) into the same update loop, so the draw never blocks on Docker/network and the launch view is a pure function of launch state — the same pattern as the console.
 - At the hardline handoff the host cannot keep an active alt-screen: `docker exec -it` gives the capsule full ownership of the TTY — its own raw mode and alternate screen. So the owned session's **terminal backend is torn down** (leave alt-screen, disable raw mode, flush) before the exec and **re-initialized** on return for the outro. "One owned session" means the app-level `Model` and the shared component set persist across the whole flow — *not* that a single alt-screen literally survives the child. SIGWINCH while the child runs belongs to the child; on resume the host re-enters its alt-screen and forces a full redraw, since its cached `Buffer` is stale. This handoff is the riskiest part of the one-session work and is validated first (see [Open questions & risks](#open-questions--risks)).
+
+- Terminal restore stays **panic-safe**: the RAII `Drop` guard that today lives in `run_console` (`TerminalGuard`) moves up with the session, so a panic anywhere in the console → launch flow still leaves the alternate screen and disables raw mode. Moving ownership up must not regress that guarantee.
 
 This is the backbone the Launch Progress TUI's Phase 4 (rich renderer) and Phase 5 (console integration) build on: that item owns *what the launch screens look like*; this item owns *the single session and shared components that make them continuous with the console*.
 
