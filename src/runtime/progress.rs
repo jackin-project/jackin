@@ -9,7 +9,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Clear, Paragraph};
 
 use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
@@ -147,6 +147,9 @@ struct LaunchView {
     /// Lines scrolled up from the tail of the build log (0 = follow the
     /// newest output).
     build_log_scroll: usize,
+    /// Pointer is hovering the clickable footer activity (which opens the
+    /// build-log overlay). Lifts the activity to the link colour.
+    build_log_hover: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -250,6 +253,7 @@ fn initial_view() -> LaunchView {
         frame: 0,
         build_log_open: false,
         build_log_scroll: 0,
+        build_log_hover: false,
     }
 }
 
@@ -480,6 +484,23 @@ fn hit_activity(view: &LaunchView, col: u16, row: u16) -> bool {
 /// Called only while the render task owns the renderer (no forced-choice picker
 /// is reading events), so this poll cannot steal a picker's keystrokes. Polling
 /// with a zero timeout keeps the 33 ms render cadence intact.
+/// Switch the terminal pointer to the hand/`pointer` shape over a clickable
+/// element, or back to `default`, via OSC 22 — the same mechanism the
+/// in-container multiplexer uses. Terminals without OSC 22 support ignore the
+/// sequence harmlessly. Emitted between ratatui frames from the render task, so
+/// it never interleaves with a frame write.
+fn set_cockpit_pointer(pointer: bool) {
+    use std::io::Write as _;
+    let seq: &[u8] = if pointer {
+        b"\x1b]22;pointer\x1b\\"
+    } else {
+        b"\x1b]22;default\x1b\\"
+    };
+    let mut out = std::io::stdout();
+    let _ = out.write_all(seq);
+    let _ = out.flush();
+}
+
 fn handle_cockpit_input(view: &SharedView) {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
     while event::poll(Duration::ZERO).unwrap_or(false) {
@@ -501,6 +522,23 @@ fn handle_cockpit_input(view: &SharedView) {
                     {
                         v.build_log_open = true;
                         v.build_log_scroll = 0;
+                        // Overlay now covers the activity; clear its hover lift
+                        // and drop the hand pointer.
+                        v.build_log_hover = false;
+                        set_cockpit_pointer(false);
+                    }
+                }
+                MouseEventKind::Moved => {
+                    // Hover the activity only while it is actually clickable
+                    // (overlay closed and there is a build log to show). Lift
+                    // its colour and switch to the hand pointer on enter; revert
+                    // on leave — the same affordance the tabs use.
+                    let hovering = !v.build_log_open
+                        && crate::runtime::build_log::len() > 0
+                        && hit_activity(&v, m.column, m.row);
+                    if hovering != v.build_log_hover {
+                        v.build_log_hover = hovering;
+                        set_cockpit_pointer(hovering);
                     }
                 }
                 MouseEventKind::ScrollUp if v.build_log_open => {
@@ -1005,6 +1043,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &
         &instance,
         debug_chip,
         alpha,
+        view.build_log_hover,
     );
 }
 
@@ -1083,10 +1122,13 @@ const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
 /// full output is in the diagnostics run file under `--debug`). The key hint
 /// renders in the bottom footer row, never inside the box (TUI design rule).
 fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
-    // Opaque black backdrop fully hides the cockpit behind the overlay.
+    use crate::console::widgets::scrollable::{render_scrollable_block, viewport_height};
+
+    // Opaque black backdrop fully hides the cockpit behind the overlay (same
+    // solid look as the capsule modals).
     frame.render_widget(Block::default().style(Style::default().bg(Color::Black)), area);
 
-    // Bottom row is the footer hint; the box takes the rest.
+    // Bottom row is the footer hint; the bordered box takes the rest.
     let box_area = Rect {
         height: area.height.saturating_sub(1),
         ..area
@@ -1102,30 +1144,36 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     } else {
         " Docker build "
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(Span::styled(
-            title,
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(box_area);
-    frame.render_widget(block, box_area);
-    if inner.width != 0 && inner.height != 0 {
-        // Clone only the visible rows (tail-following, scroll-adjusted), not the
-        // whole ring buffer, since this runs every render frame.
-        let window =
-            crate::runtime::build_log::window_from_bottom(view.build_log_scroll, inner.height as usize);
-        let text = if window.is_empty() {
-            "(waiting for docker build output…)".to_string()
-        } else {
-            window.join("\n")
-        };
-        frame.render_widget(
-            Paragraph::new(text).style(Style::default().fg(WHITE).bg(Color::Black)),
-            inner,
-        );
-    }
+    // The full output drives the shared scrollable block so its proportional
+    // scrollbar is correct. Cloning the (capped) buffer is acceptable here: the
+    // overlay is a transient, operator-opened modal, not the steady cockpit.
+    let raw = crate::runtime::build_log::snapshot();
+    let lines: Vec<Line<'_>> = if raw.is_empty() {
+        vec![Line::from(Span::styled(
+            "(waiting for docker build output…)",
+            Style::default().fg(PHOSPHOR_DIM),
+        ))]
+    } else {
+        raw.into_iter().map(Line::from).collect()
+    };
+
+    // `build_log_scroll` counts lines up from the tail (0 = follow newest).
+    // Convert to the shared block's top-offset; render_scrollable_block clamps
+    // and paints the green scrollbar only when the content overflows.
+    let viewport_h = viewport_height(box_area);
+    let max_top = lines.len().saturating_sub(viewport_h);
+    let mut scroll_y =
+        u16::try_from(max_top.saturating_sub(view.build_log_scroll)).unwrap_or(u16::MAX);
+    let mut scroll_x = 0u16;
+    render_scrollable_block(
+        frame,
+        box_area,
+        lines,
+        &mut scroll_x,
+        &mut scroll_y,
+        true,
+        Some(title),
+    );
 
     crate::console::widgets::hints::render(frame, hint_area, BUILD_LOG_HINT);
 }
@@ -1254,6 +1302,7 @@ mod tests {
             frame: 0,
             build_log_open: false,
             build_log_scroll: 0,
+            build_log_hover: false,
         };
         terminal
             .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true, None))

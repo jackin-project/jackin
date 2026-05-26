@@ -37,6 +37,7 @@ fn faded(color: Color, alpha: f32) -> Color {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render(
     frame: &mut Frame,
     area: Rect,
@@ -44,6 +45,7 @@ pub(crate) fn render(
     right: &str,
     right_debug: Option<&str>,
     alpha: f32,
+    left_hover: bool,
 ) {
     // White band across the whole row first, so the inter-chunk gap is also
     // white rather than the terminal default. `alpha` fades the band up from
@@ -85,13 +87,21 @@ pub(crate) fn render(
         .constraints([Constraint::Min(1), Constraint::Length(right_w)])
         .split(area);
 
+    // Hover lifts the activity text to the clickable link colour (it opens the
+    // build-log overlay) — the same "this is interactive" cue the link chip
+    // uses, on the same white band.
+    let activity_fg = if left_hover {
+        faded(LINK_BLUE, alpha)
+    } else {
+        Color::Black
+    };
     let activity = Line::from(vec![
         Span::raw(" "),
         Span::styled(
             left.to_string(),
             Style::default()
                 .bg(faded(WHITE, alpha))
-                .fg(Color::Black)
+                .fg(activity_fg)
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
@@ -113,7 +123,7 @@ mod tests {
     fn dump(left: &str, right: &str, w: u16) -> String {
         let backend = TestBackend::new(w, 1);
         let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| render(f, Rect::new(0, 0, w, 1), left, right, None, 1.0))
+        term.draw(|f| render(f, Rect::new(0, 0, w, 1), left, right, None, 1.0, false))
             .unwrap();
         let buf = term.backend().buffer();
         (0..w).map(|x| buf[(x, 0)].symbol().to_string()).collect()
@@ -140,7 +150,7 @@ mod tests {
     fn bar_fills_white_background_across_the_row() {
         let backend = TestBackend::new(30, 1);
         let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| render(f, Rect::new(0, 0, 30, 1), "x", "y", None, 1.0))
+        term.draw(|f| render(f, Rect::new(0, 0, 30, 1), "x", "y", None, 1.0, false))
             .unwrap();
         let buf = term.backend().buffer();
         // Every cell carries the white background, including the gap.
@@ -161,6 +171,7 @@ mod tests {
                 "s9994y2n",
                 Some("jk-run-3d7e23"),
                 1.0,
+                false,
             );
         })
         .unwrap();
