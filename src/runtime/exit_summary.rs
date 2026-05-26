@@ -23,12 +23,11 @@ fn summary(running_bases: &[String], index: &InstanceIndex) -> (String, Vec<Stri
     let running: HashSet<&str> = running_bases.iter().map(String::as_str).collect();
     let mut saved: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
     let mut folders: HashSet<String> = HashSet::new();
-    let mut total = 0usize;
+    let total = running_bases.len();
     for entry in &index.instances {
         if !running.contains(entry.container_base.as_str()) {
             continue;
         }
-        total += 1;
         if entry.workspace_name.is_some() && !entry.workspace_label.trim().is_empty() {
             *saved
                 .entry(entry.workspace_label.clone())
@@ -38,11 +37,6 @@ fn summary(running_bases: &[String], index: &InstanceIndex) -> (String, Vec<Stri
         } else {
             folders.insert(entry.workdir.clone());
         }
-    }
-    // If the index is missing entries, fall back to the raw running count so
-    // the headline is never an undercount.
-    if total == 0 {
-        total = running_bases.len();
     }
 
     let mut rows = Vec::new();
@@ -185,5 +179,25 @@ mod tests {
         let running = vec!["jk-aaa".to_string()];
         let (headline, _) = summary(&running, &idx);
         assert!(headline.contains("1 agent "), "singular: {headline}");
+    }
+
+    #[test]
+    fn headline_counts_running_bases_when_index_is_partial() {
+        let idx = index(vec![entry(
+            "aaa",
+            "jk-aaa",
+            Some("app"),
+            "app",
+            "/app",
+            "the-architect",
+        )]);
+        let running = vec!["jk-aaa".to_string(), "jk-missing".to_string()];
+        let (headline, rows) = summary(&running, &idx);
+        assert!(headline.contains("2 agents"), "headline: {headline}");
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("app") && r.contains("the-architect")),
+            "known indexed rows should still be shown: {rows:?}"
+        );
     }
 }

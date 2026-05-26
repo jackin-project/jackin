@@ -178,6 +178,26 @@ where
     Ok(captured)
 }
 
+fn summarize_stderr(stderr: &[u8]) -> Option<String> {
+    const MAX_CHARS: usize = 500;
+    let stderr = String::from_utf8_lossy(stderr);
+    let mut summary = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("; ");
+    if summary.is_empty() {
+        return None;
+    }
+    if summary.chars().count() > MAX_CHARS {
+        summary = summary.chars().take(MAX_CHARS).collect();
+        summary.push_str("...");
+    }
+    Some(summary)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CaptureMode {
     Normal,
@@ -329,7 +349,7 @@ impl ShellRunner {
             if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
                 anyhow::bail!("command failed: {} {}", program, args.join(" "));
             }
-            if !opts.stream_captured_output {
+            if !stream {
                 if let Some(run) = crate::diagnostics::active_run().filter(|_| self.debug) {
                     anyhow::bail!(
                         "command failed: {} {} (captured output in diagnostics run {})",
@@ -344,6 +364,13 @@ impl ShellRunner {
                         program,
                         args.join(" "),
                         run.run_id()
+                    );
+                }
+                if let Some(stderr) = summarize_stderr(&stderr_buf) {
+                    anyhow::bail!(
+                        "command failed: {} {} (stderr: {stderr}; captured output suppressed)",
+                        program,
+                        args.join(" ")
                     );
                 }
                 anyhow::bail!(
@@ -439,6 +466,37 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("see stderr above"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_capture_reports_stderr_when_streaming_is_suppressed() {
+        let mut runner = ShellRunner::default();
+        let opts = RunOptions {
+            capture_stderr: true,
+            stream_captured_output: false,
+            ..RunOptions::default()
+        };
+
+        let error = runner
+            .run(
+                "sh",
+                &["-c", "printf 'region blocked\\n' >&2; exit 2"],
+                None,
+                &opts,
+            )
+            .await
+            .unwrap_err();
+        let message = error.to_string();
+
+        assert!(
+            message.contains("region blocked"),
+            "suppressed stderr should be summarized: {message}"
+        );
+        assert!(
+            !message.contains("see stderr above"),
+            "must not point at terminal output that was not streamed: {message}"
+        );
     }
 
     #[cfg(unix)]

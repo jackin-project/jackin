@@ -106,10 +106,12 @@ impl RunDiagnostics {
         self.write(kind, message, Some(stage), detail, None);
     }
 
-    pub fn debug(&self, category: &str, line: &str) {
-        if self.debug {
-            self.write("debug", line, None, Some(category), None);
+    pub fn debug(&self, category: &str, line: &str) -> bool {
+        if !self.debug {
+            return false;
         }
+        self.write("debug", line, None, Some(category), None);
+        true
     }
 
     fn write(
@@ -143,10 +145,7 @@ impl RunDiagnostics {
 }
 
 pub fn active_debug(category: &str, line: &str) -> bool {
-    active_run().is_some_and(|run| {
-        run.debug(category, line);
-        true
-    })
+    active_run().is_some_and(|run| run.debug(category, line))
 }
 
 pub fn active_run() -> Option<Arc<RunDiagnostics>> {
@@ -157,11 +156,19 @@ pub fn active_run() -> Option<Arc<RunDiagnostics>> {
 }
 
 pub fn prune_old_runs(paths: &JackinPaths) {
-    prune_old_runs_in_dir(&run_dir(paths), None);
+    let active_run_id = active_run().map(|run| run.run_id().to_string());
+    prune_old_runs_in_dir(&run_dir(paths), active_run_id.as_deref());
 }
 
 pub fn prune_all_runs(paths: &JackinPaths) -> anyhow::Result<()> {
     let dir = run_dir(paths);
+    let active_path = active_run().map(|run| run.path().to_path_buf());
+    if let Some(active_path) = active_path
+        .as_deref()
+        .filter(|path| path.parent() == Some(dir.as_path()))
+    {
+        return prune_all_runs_except(&dir, active_path);
+    }
     match fs::remove_dir_all(&dir) {
         Ok(()) => println!("Removed diagnostics runs ({}).", dir.display()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -175,6 +182,47 @@ pub fn prune_all_runs(paths: &JackinPaths) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn prune_all_runs_except(dir: &Path, preserved_path: &Path) -> anyhow::Result<()> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            println!("diagnostics runs already empty.");
+            return Ok(());
+        }
+        Err(error) => {
+            return Err(anyhow::Error::from(error).context(format!(
+                "failed to read diagnostics runs at {}",
+                dir.display()
+            )));
+        }
+    };
+
+    for entry in entries {
+        let entry =
+            entry.with_context(|| format!("reading diagnostics run in {}", dir.display()))?;
+        let path = entry.path();
+        if path == preserved_path {
+            continue;
+        }
+        remove_run_entry(&path)
+            .with_context(|| format!("removing diagnostics run {}", path.display()))?;
+    }
+    println!(
+        "Removed diagnostics runs except active run ({}).",
+        dir.display()
+    );
+    Ok(())
+}
+
+fn remove_run_entry(path: &Path) -> std::io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    }
 }
 
 fn run_dir(paths: &JackinPaths) -> PathBuf {
@@ -248,11 +296,42 @@ mod tests {
         let paths = JackinPaths::for_tests(tmp.path());
         let run = RunDiagnostics::start(&paths, true, "load").unwrap();
         run.compact("breadcrumb", "hello");
-        run.debug("cmd", "docker ps");
+        assert!(run.debug("cmd", "docker ps"));
 
         let contents = fs::read_to_string(run.path()).unwrap();
         assert!(contents.contains("\"run_id\""));
         assert!(contents.contains("\"hello\""));
         assert!(contents.contains("\"debug\""));
+    }
+
+    #[test]
+    fn debug_is_not_consumed_when_capture_is_disabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+        assert!(!run.debug("cmd", "docker ps"));
+
+        let contents = fs::read_to_string(run.path()).unwrap();
+        assert!(
+            !contents.contains("docker ps"),
+            "debug line must not be written when debug capture is disabled: {contents}"
+        );
+    }
+
+    #[test]
+    fn prune_all_runs_except_preserves_active_run_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let dir = run_dir(&paths);
+        fs::create_dir_all(&dir).unwrap();
+        let active = dir.join("jk-run-active.jsonl");
+        let stale = dir.join("jk-run-stale.jsonl");
+        fs::write(&active, "active").unwrap();
+        fs::write(&stale, "stale").unwrap();
+
+        prune_all_runs_except(&dir, &active).unwrap();
+
+        assert!(active.exists(), "active run must remain retrievable");
+        assert!(!stale.exists(), "stale run should be pruned");
     }
 }

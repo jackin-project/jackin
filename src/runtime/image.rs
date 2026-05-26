@@ -249,21 +249,17 @@ pub(super) async fn build_agent_image(
             .as_ref()
             .and_then(|token| match tempfile::NamedTempFile::new() {
                 Err(e) => {
-                    crate::tui::emit_debug_line(
-                        "image",
-                        &format!(
-                            "warning: failed to create tempfile for GitHub token: {e}; build will use unauthenticated GitHub API"
-                        ),
+                    emit_compact_image_warning(&format!(
+                        "failed to create tempfile for GitHub token: {e}; build will use unauthenticated GitHub API"
+                    ),
                     );
                     None
                 }
                 Ok(mut f) => match std::io::Write::write_all(&mut f, token.as_bytes()) {
                     Err(e) => {
-                        crate::tui::emit_debug_line(
-                            "image",
-                            &format!(
-                                "warning: failed to write GitHub token to tempfile: {e}; build will use unauthenticated GitHub API"
-                            ),
+                        emit_compact_image_warning(&format!(
+                            "failed to write GitHub token to tempfile: {e}; build will use unauthenticated GitHub API"
+                        ),
                         );
                         None
                     }
@@ -289,7 +285,7 @@ pub(super) async fn build_agent_image(
             &RunOptions {
                 capture_stderr: true,
                 capture_stdout: true,
-                stream_captured_output: false,
+                stream_captured_output: should_stream_build_output(debug),
                 tee_to_build_log: true,
                 extra_env: github_token
                     .as_ref()
@@ -319,6 +315,23 @@ async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) ->
         .filter(|s| !s.is_empty())
 }
 
+fn should_stream_build_output(debug: bool) -> bool {
+    !debug && !crate::tui::rich_surface_active()
+}
+
+fn emit_compact_image_warning(message: &str) {
+    if let Some(run) = crate::diagnostics::active_run() {
+        run.compact("warning", message);
+    }
+    if !crate::tui::rich_surface_active() {
+        eprintln!("{}", compact_image_warning_line(message));
+    }
+}
+
+fn compact_image_warning_line(message: &str) -> String {
+    format!("jackin: warning: {message}")
+}
+
 /// Returns `true` when the published image is out of date relative to the
 /// current role repo state.
 ///
@@ -342,23 +355,17 @@ async fn published_image_is_stale(
     docker: &impl DockerApi,
 ) -> bool {
     if let Err(e) = docker.pull_image(published).await {
-        crate::tui::emit_debug_line(
-            "image",
-            &format!(
-                "warning: docker pull {published} failed ({e}); treating published image as stale and rebuilding from workspace Dockerfile"
-            ),
-        );
+        emit_compact_image_warning(&format!(
+            "docker pull {published} failed ({e}); treating published image as stale and rebuilding from workspace Dockerfile"
+        ));
         return true;
     }
 
     let labels = match docker.inspect_image_labels(published).await {
         Err(e) => {
-            crate::tui::emit_debug_line(
-                "image",
-                &format!(
-                    "warning: could not read labels from {published} ({e}); treating published image as stale"
-                ),
-            );
+            emit_compact_image_warning(&format!(
+                "could not read labels from {published} ({e}); treating published image as stale"
+            ));
             return true;
         }
         Ok(map) => map,
@@ -417,12 +424,12 @@ async fn extract_agent_version(
         )
         .await
     else {
-        crate::tui::emit_debug_line(
-            "image",
-            &format!(
-                "warning: could not probe {display} version from {image}; version check skipped"
-            ),
-        );
+        if debug {
+            crate::tui::emit_debug_line(
+                "image",
+                &format!("could not probe {display} version from {image}; version check skipped"),
+            );
+        }
         return;
     };
     let version = raw.trim();
@@ -472,6 +479,27 @@ mod tests {
     use super::*;
     use crate::docker_client::FakeDockerClient;
     use std::collections::HashMap;
+    use std::sync::{Mutex, MutexGuard};
+
+    static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct RichSurfaceTestGuard {
+        _guard: MutexGuard<'static, ()>,
+    }
+
+    impl Drop for RichSurfaceTestGuard {
+        fn drop(&mut self) {
+            crate::tui::set_rich_surface_active(false);
+        }
+    }
+
+    fn rich_surface_test_guard() -> RichSurfaceTestGuard {
+        let guard = RICH_SURFACE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::tui::set_rich_surface_active(false);
+        RichSurfaceTestGuard { _guard: guard }
+    }
 
     fn make_docker(labels: HashMap<String, String>) -> FakeDockerClient {
         let docker = FakeDockerClient::default();
@@ -480,6 +508,28 @@ mod tests {
             .borrow_mut()
             .push_back(labels);
         docker
+    }
+
+    #[test]
+    fn build_output_streams_for_compact_non_debug_runs() {
+        let _guard = rich_surface_test_guard();
+        assert!(should_stream_build_output(false));
+    }
+
+    #[test]
+    fn build_output_is_suppressed_for_debug_or_rich_surface() {
+        let _guard = rich_surface_test_guard();
+        assert!(!should_stream_build_output(true));
+
+        crate::tui::set_rich_surface_active(true);
+        assert!(!should_stream_build_output(false));
+    }
+
+    #[test]
+    fn compact_image_warning_line_is_not_debug_prefixed() {
+        let line = compact_image_warning_line("docker pull image failed");
+        assert_eq!(line, "jackin: warning: docker pull image failed");
+        assert!(!line.contains("[jackin debug"));
     }
 
     #[tokio::test]

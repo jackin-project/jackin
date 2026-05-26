@@ -414,10 +414,11 @@ impl HostScreen {
         let mut stdout = std::io::stdout();
         crossterm::terminal::enable_raw_mode()?;
         crate::tui::begin_debug_buffering();
+        let screen = Self { _private: () };
         stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
         enable_console_mouse_capture(&mut stdout)?;
         crate::tui::set_host_screen_owned(true);
-        Ok(Self { _private: () })
+        Ok(screen)
     }
 
     /// Drop to the cooked primary screen for the duration of `f`, then restore
