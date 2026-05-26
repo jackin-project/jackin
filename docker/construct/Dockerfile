@@ -1,4 +1,4 @@
-FROM rust:1.95.0-trixie@sha256:0861191076afc8e2dfcf0bec6ad6c2dec8494b3a1e9249729e1989690afed5ec AS security-tools
+FROM rust:1.95.0-trixie@sha256:f49565f188ee00bc2a18dd418183f2c5f23ef7d6e691890517ed341a598f67c3 AS security-tools
 
 ARG SHELLFIRM_VERSION
 
