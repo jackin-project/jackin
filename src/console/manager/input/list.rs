@@ -163,24 +163,22 @@ pub(super) fn handle_list_key(
                                 None
                             }
                         });
-                    let providers: Vec<(String, Vec<(String, String)>)> = if let Some(key) = zai_key
-                    {
-                        vec![
-                            ("Anthropic".to_string(), vec![]),
-                            (
-                                "Z.AI".to_string(),
-                                vec![
-                                    ("ANTHROPIC_AUTH_TOKEN".to_string(), key),
-                                    (
-                                        "ANTHROPIC_BASE_URL".to_string(),
-                                        "https://api.z.ai/api/anthropic".to_string(),
-                                    ),
-                                ],
-                            ),
-                        ]
-                    } else {
-                        vec![]
-                    };
+                    let providers: Vec<(String, Vec<(String, String)>)> =
+                        zai_key.map_or_else(Vec::new, |key| {
+                            vec![
+                                ("Anthropic".to_string(), vec![]),
+                                (
+                                    "Z.AI".to_string(),
+                                    vec![
+                                        ("ANTHROPIC_AUTH_TOKEN".to_string(), key),
+                                        (
+                                            "ANTHROPIC_BASE_URL".to_string(),
+                                            "https://api.z.ai/api/anthropic".to_string(),
+                                        ),
+                                    ],
+                                ),
+                            ]
+                        });
                     state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
                     state.list_modal = Some(Modal::ErrorPopup {
@@ -738,6 +736,45 @@ pub(super) fn handle_inline_provider_picker(
         }
         KeyCode::Esc => {
             state.inline_provider_picker = None;
+            InputOutcome::Continue
+        }
+        _ => InputOutcome::Continue,
+    }
+}
+
+pub(super) fn handle_launch_provider_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some((_role, _agent, providers, selected)) = state.launch_provider_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            if *selected > 0 {
+                *selected -= 1;
+            }
+            InputOutcome::Continue
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if *selected + 1 < providers.len() {
+                *selected += 1;
+            }
+            InputOutcome::Continue
+        }
+        KeyCode::Enter => {
+            let (role, agent, providers, selected) =
+                state.launch_provider_picker.take().expect("checked above");
+            let (provider_label, env_overrides) = providers[selected].clone();
+            InputOutcome::LaunchWithProvider {
+                selector: role,
+                agent,
+                provider_label,
+                env_overrides,
+            }
+        }
+        KeyCode::Esc => {
+            state.launch_provider_picker = None;
             InputOutcome::Continue
         }
         _ => InputOutcome::Continue,

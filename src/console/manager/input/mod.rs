@@ -60,6 +60,13 @@ pub enum InputOutcome {
         provider_label: String,
         env_overrides: Vec<(String, String)>,
     },
+    /// Operator selected a provider for the initial workspace launch.
+    LaunchWithProvider {
+        selector: crate::selector::RoleSelector,
+        agent: crate::agent::Agent,
+        provider_label: String,
+        env_overrides: Vec<(String, String)>,
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -84,6 +91,9 @@ pub fn handle_key(
     }
     if state.inline_provider_picker.is_some() {
         return Ok(list::handle_inline_provider_picker(state, key));
+    }
+    if state.launch_provider_picker.is_some() {
+        return Ok(list::handle_launch_provider_picker(state, key));
     }
     if state.inline_agent_picker.is_some() {
         return Ok(list::handle_inline_agent_picker(state, key));

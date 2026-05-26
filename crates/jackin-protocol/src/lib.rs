@@ -33,6 +33,19 @@ pub struct CapsuleConfig {
     /// a provider option in the agent picker for supported agents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zai_key: Option<String>,
+    /// When the operator picked a specific provider in the console's
+    /// launch flow (before the container existed), this field tells the
+    /// capsule's initial spawn to use that provider and env overrides
+    /// instead of defaulting to Anthropic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_provider: Option<InitialProvider>,
+}
+
+/// Provider selection for the capsule's initial session spawn.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InitialProvider {
+    pub label: String,
+    pub env_overrides: Vec<(String, String)>,
 }
 
 impl CapsuleConfig {

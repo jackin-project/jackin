@@ -94,7 +94,8 @@ pub struct ManagerState<'a> {
     /// Agent picker opened when the operator presses `N` on an instance row
     /// to start a new session in the running container. Carries the target
     /// `container_base`, the agent picker, and the available provider list
-    /// (empty when ZAI_API_KEY is not configured for the workspace).
+    /// (empty when `ZAI_API_KEY` is not configured for the workspace).
+    #[allow(clippy::type_complexity)]
     pub inline_new_session_picker: Option<(
         String,
         crate::console::widgets::agent_choice::AgentChoiceState,
@@ -102,9 +103,21 @@ pub struct ManagerState<'a> {
     )>,
     /// Provider picker shown after the agent is committed in
     /// `inline_new_session_picker`, when multiple providers are available.
-    /// Tuple fields: (container, agent, providers, selected_index).
+    /// Tuple fields: (`container`, `agent`, `providers`, `selected_index`).
+    #[allow(clippy::type_complexity)]
     pub inline_provider_picker: Option<(
         String,
+        crate::agent::Agent,
+        Vec<(String, Vec<(String, String)>)>,
+        usize,
+    )>,
+    /// Provider picker for the initial workspace launch (before the container
+    /// exists). Shown after the operator commits an agent choice and
+    /// `ZAI_API_KEY` is configured. Tuple: (`role_selector`, `agent`,
+    /// `providers`, `selected_index`).
+    #[allow(clippy::type_complexity)]
+    pub launch_provider_picker: Option<(
+        crate::selector::RoleSelector,
         crate::agent::Agent,
         Vec<(String, Vec<(String, String)>)>,
         usize,
@@ -1577,6 +1590,7 @@ impl ManagerState<'_> {
             inline_agent_picker: None,
             inline_new_session_picker: None,
             inline_provider_picker: None,
+            launch_provider_picker: None,
             list_mounts_scroll_x: 0,
             list_mounts_scroll_y: 0,
             list_global_mounts_scroll_x: 0,

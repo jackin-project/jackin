@@ -40,6 +40,16 @@ pub enum ConsoleOutcome {
         provider_label: String,
         env_overrides: Vec<(String, String)>,
     },
+    /// Initial launch with a provider selected in the console before the
+    /// container is created. The provider env overrides flow into the
+    /// capsule's initial attach so the first session uses the chosen provider.
+    LaunchWithProvider {
+        selector: RoleSelector,
+        workspace: ResolvedWorkspace,
+        agent: crate::agent::Agent,
+        provider_label: String,
+        env_overrides: Vec<(String, String)>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -676,6 +686,42 @@ where
     }
 }
 
+fn providers_for_launch(
+    config: &AppConfig,
+    workspace_name: &str,
+    agent: crate::agent::Agent,
+) -> Vec<(String, Vec<(String, String)>)> {
+    if agent != crate::agent::Agent::Claude {
+        return vec![];
+    }
+    let zai_key = config
+        .workspaces
+        .get(workspace_name)
+        .and_then(|ws| ws.env.get("ZAI_API_KEY"))
+        .or_else(|| config.env.get("ZAI_API_KEY"))
+        .and_then(|v| {
+            if let crate::operator_env::EnvValue::Plain(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
+    let Some(key) = zai_key else { return vec![] };
+    vec![
+        ("Anthropic".to_string(), vec![]),
+        (
+            "Z.AI".to_string(),
+            vec![
+                ("ANTHROPIC_AUTH_TOKEN".to_string(), key),
+                (
+                    "ANTHROPIC_BASE_URL".to_string(),
+                    "https://api.z.ai/api/anthropic".to_string(),
+                ),
+            ],
+        ),
+    ]
+}
+
 fn launch_with_committed_agent(
     state: &mut ConsoleState,
     config: &AppConfig,
@@ -692,7 +738,18 @@ fn launch_with_committed_agent(
         return Ok(None);
     };
     let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
-    Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent))))
+
+    let providers = providers_for_launch(config, &choice.name, agent);
+    if providers.is_empty() {
+        return Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent))));
+    }
+
+    if let ConsoleStage::Manager(ms) = &mut state.stage {
+        ms.launch_provider_picker = Some((role.clone(), agent, providers, 0));
+    }
+    state.pending_launch = Some(input);
+    state.pending_launch_role = Some(role);
+    Ok(None)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1006,6 +1063,31 @@ pub async fn run_console(
                         } => {
                             break 'main Ok(Some(ConsoleOutcome::NewSessionWithProvider {
                                 container,
+                                agent,
+                                provider_label,
+                                env_overrides,
+                            }));
+                        }
+                        manager::InputOutcome::LaunchWithProvider {
+                            selector,
+                            agent,
+                            provider_label,
+                            env_overrides,
+                        } => {
+                            let input = state.pending_launch.take();
+                            let ws = input.and_then(|inp| {
+                                let choice = build_workspace_choice(&config, cwd, &inp).ok()??;
+                                preview::resolve_selected_workspace(
+                                    &config, cwd, &choice, &selector,
+                                )
+                                .ok()
+                            });
+                            let Some(workspace) = ws else {
+                                break 'main Ok(None);
+                            };
+                            break 'main Ok(Some(ConsoleOutcome::LaunchWithProvider {
+                                selector,
+                                workspace,
                                 agent,
                                 provider_label,
                                 env_overrides,

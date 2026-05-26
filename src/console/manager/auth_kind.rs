@@ -32,7 +32,7 @@ pub enum AuthKind {
     Kimi,
     Opencode,
     Github,
-    /// Z.AI / GLM Coding Plan — env-only kind. No auth_forward config
+    /// Z.AI / GLM Coding Plan — env-only kind. No `auth_forward` config
     /// block; credential lives purely as `ZAI_API_KEY` in `[env]`.
     Zai,
 }

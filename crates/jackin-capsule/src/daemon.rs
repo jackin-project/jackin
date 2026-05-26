@@ -3285,7 +3285,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // real outer-terminal dimensions. Later panes already spawn after
     // attach-time resize; routing the first pane through the same
     // path removes first-tab-only scrollback/chrome differences.
-    let mut pending_initial_spawn = Some(initial_spawn_request(&initial_agent));
+    let initial_provider_env = launch_config
+        .initial_provider
+        .as_ref()
+        .map(|p| p.env_overrides.clone())
+        .unwrap_or_default();
+    let mut pending_initial_spawn = Some(initial_spawn_request(
+        &initial_agent,
+        launch_config.initial_provider.as_ref(),
+    ));
 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
@@ -3398,7 +3406,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.pointer_shape = PointerShape::Default;
                 if mux.sessions.is_empty()
                     && let Some(request) = pending_initial_spawn.take()
-                    && let Err(err) = mux.spawn_request(request.clone(), &[])
+                    && let Err(err) = mux.spawn_request(request.clone(), &initial_provider_env)
                 {
                     crate::clog!(
                         "initial spawn failed (request={}): {err:#}",
@@ -3942,9 +3950,17 @@ async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
     }
 }
 
-fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
+fn initial_spawn_request(
+    initial_agent: &str,
+    initial_provider: Option<&jackin_protocol::InitialProvider>,
+) -> SpawnRequest {
     if initial_agent.is_empty() {
         SpawnRequest::Shell
+    } else if let Some(provider) = initial_provider {
+        SpawnRequest::AgentWithProvider {
+            slug: initial_agent.to_string(),
+            provider_label: provider.label.clone(),
+        }
     } else {
         SpawnRequest::Agent(initial_agent.to_string())
     }

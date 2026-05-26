@@ -208,6 +208,44 @@ pub async fn run(cli: Cli) -> Result<()> {
                     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
                     return result;
                 }
+                console::ConsoleOutcome::LaunchWithProvider {
+                    selector,
+                    workspace,
+                    agent,
+                    provider_label,
+                    env_overrides,
+                } => {
+                    let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
+                    if !sensitive.is_empty()
+                        && !crate::workspace::confirm_sensitive_mounts(&sensitive)?
+                    {
+                        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+                    }
+                    let mut opts = runtime::LoadOptions::for_launch(debug);
+                    opts.agent = Some(agent);
+                    opts.provider_label = Some(provider_label);
+                    opts.provider_env_overrides = env_overrides;
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    let result = runtime::load_role(
+                        &paths,
+                        &mut config,
+                        &selector,
+                        &workspace,
+                        &docker,
+                        &mut runner,
+                        &opts,
+                    )
+                    .await;
+                    remember_last_agent(
+                        &paths,
+                        &mut config,
+                        Some(&workspace.label),
+                        &selector,
+                        &result,
+                    );
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    return result;
+                }
             };
 
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);

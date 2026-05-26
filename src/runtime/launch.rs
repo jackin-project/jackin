@@ -74,9 +74,23 @@ pub struct LoadOptions {
 
     /// Role source URL captured in the instance manifest for restore paths.
     pub restore_role_source_git: Option<String>,
+    /// Provider overrides for the initial session (e.g. Z.AI Anthropic
+    /// redirect). When set, the first attach carries these env overrides
+    /// and provider label into the capsule's initial spawn.
+    pub provider_label: Option<String>,
+    pub provider_env_overrides: Vec<(String, String)>,
 }
 
 impl LoadOptions {
+    pub fn initial_provider(&self) -> Option<jackin_protocol::InitialProvider> {
+        self.provider_label
+            .as_ref()
+            .map(|label| jackin_protocol::InitialProvider {
+                label: label.clone(),
+                env_overrides: self.provider_env_overrides.clone(),
+            })
+    }
+
     /// Build options for `jackin load`. Debug mode implies `no_intro`.
     pub fn for_load(no_intro: bool, debug: bool, rebuild: bool) -> Self {
         Self {
@@ -111,6 +125,8 @@ impl Default for LoadOptions {
             role_branch: None,
             restore_container_base: None,
             restore_role_source_git: None,
+            provider_label: None,
+            provider_env_overrides: vec![],
         }
     }
 }
@@ -579,6 +595,7 @@ fn capsule_config(
     workdir: &str,
     manifest: &crate::manifest::RoleManifest,
     zai_key: Option<String>,
+    initial_provider: Option<jackin_protocol::InitialProvider>,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
@@ -611,6 +628,7 @@ fn capsule_config(
         agents,
         models,
         zai_key,
+        initial_provider,
     }
 }
 
@@ -1953,7 +1971,13 @@ async fn load_role_with(
             .find(|(k, _)| k == "ZAI_API_KEY")
             .map(|(_, v)| v.clone())
             .filter(|v| !v.is_empty());
-        let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest, zai_key);
+        let launch_config = capsule_config(
+            selector,
+            &workspace.workdir,
+            &validated_repo.manifest,
+            zai_key,
+            opts.initial_provider(),
+        );
         let ctx = LaunchContext {
             container_name: &container_name,
             image: &image,
@@ -3570,7 +3594,7 @@ model = "zai/glm"
 
         let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-        let config = capsule_config(&selector, "/workspace", &manifest, None);
+        let config = capsule_config(&selector, "/workspace", &manifest, None, None);
 
         assert_eq!(config.role, "chainargos/the-architect");
         assert_eq!(config.workdir, "/workspace");
