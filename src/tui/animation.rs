@@ -298,8 +298,8 @@ fn glitch_centered(text: &str, color: (u8, u8, u8), hold_ms: u64) -> bool {
     skippable_sleep(std::time::Duration::from_millis(hold_ms))
 }
 
-/// The opening Matrix-style call — each phrase shown on its own, centered, in
-/// white, before the warp. Each lands, holds, then gives way to the next.
+/// The opening cyberpunk-style call — each phrase shown on its own, centered,
+/// in white, before the warp. Each lands, holds, then gives way to the next.
 /// Skippable with Enter/Esc.
 fn intro_phrases() {
     if type_centered("Stand up, operator...", WHITE, 60, 950) {
