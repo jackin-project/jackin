@@ -95,6 +95,11 @@ Enforcement:
 - `render_editor` checks `state.modal` first; if a modal is open it calls `modal_footer_items(modal)` and skips the normal contextual items.
 - `render_settings` checks the three settings modal chains (`auth.modal`, `env.modal`, `mounts.modal`) in priority order; if any is `Some`, calls the corresponding `*_modal_footer_items` function.
 - No `Constraint::Length` row for a hint line may remain inside any widget layout.
+- A full-screen overlay that hides the footer (e.g. the build-log viewer) still renders its hint as the bottom row of the screen, outside its box — not as an internal line of the box.
+
+### Hints use one shared span vocabulary and one renderer per surface
+
+Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in `jackin-tui` (`Key`, `Text`, `Sep`, `GroupSep`), and the styling rule is identical everywhere: `Key` is white + bold, `Text` is phosphor green (rendered with a leading space), `Sep` is a gray `" · "`, `GroupSep` is three spaces, and the row is centered. Because the host (ratatui) and the in-container multiplexer (raw ANSI) draw to different backends, there are exactly two renderers over the *same* spans — the host renderer in <RepoFile path="src/console/widgets/hints.rs" /> and the capsule renderer `render_hint_row` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> — and no third. Define a screen's hint as a `&[HintSpan]` constant and pass it to the renderer; do not assemble styled `Span`s, raw separator strings, or per-surface colour choices inline. A new hand-rolled hint row (its own `Span::styled` key/label pairs, its own `" · "` literal, or its own dim/green choice) is a design-decision violation: route it through the shared span list + renderer instead. This is what lets the cockpit picker, the build-log overlay, and every capsule dialog footer read identically.
 
 ### Brand chrome is shared across every top-level screen
 

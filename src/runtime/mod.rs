@@ -1,4 +1,5 @@
 pub(crate) mod attach;
+pub mod build_log;
 mod caffeinate;
 mod cleanup;
 mod discovery;

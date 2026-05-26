@@ -18,6 +18,10 @@ pub struct RunOptions {
     /// long-lived session, even under `--debug` or while a rich surface was
     /// active.
     pub interactive: bool,
+    /// Tee captured output, line by line as it arrives, into the global
+    /// [`crate::runtime::build_log`] sink so the loading cockpit can show a
+    /// live view. Only the derived-image `docker build` sets this.
+    pub tee_to_build_log: bool,
 }
 
 impl Default for RunOptions {
@@ -30,6 +34,7 @@ impl Default for RunOptions {
             null_stdin: false,
             stream_captured_output: true,
             interactive: false,
+            tee_to_build_log: false,
         }
     }
 }
@@ -86,6 +91,7 @@ impl ShellRunner {
             null_stdin,
             stream_captured_output: _,
             interactive: _,
+            tee_to_build_log: _,
         } = opts;
         if *null_stdin {
             cmd.stdin(std::process::Stdio::null());
@@ -132,6 +138,7 @@ pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
 async fn read_process_pipe<R, W>(
     pipe: &mut R,
     stream: bool,
+    tee_build_log: bool,
     mut output: W,
 ) -> std::io::Result<Vec<u8>>
 where
@@ -140,6 +147,9 @@ where
 {
     let mut captured = Vec::new();
     let mut buf = [0u8; 8192];
+    // Partial line carried across reads so the build-log tee only ever pushes
+    // complete lines (BuildKit emits CRLF; the trailing `\r` is trimmed).
+    let mut line_remainder: Vec<u8> = Vec::new();
     loop {
         let n = pipe.read(&mut buf).await?;
         if n == 0 {
@@ -148,7 +158,22 @@ where
         if stream {
             output.write_all(&buf[..n])?;
         }
+        if tee_build_log {
+            for &byte in &buf[..n] {
+                if byte == b'\n' {
+                    let line = String::from_utf8_lossy(&line_remainder);
+                    crate::runtime::build_log::push_line(line.trim_end_matches('\r'));
+                    line_remainder.clear();
+                } else {
+                    line_remainder.push(byte);
+                }
+            }
+        }
         captured.extend_from_slice(&buf[..n]);
+    }
+    if tee_build_log && !line_remainder.is_empty() {
+        let line = String::from_utf8_lossy(&line_remainder);
+        crate::runtime::build_log::push_line(line.trim_end_matches('\r'));
     }
     Ok(captured)
 }
@@ -274,17 +299,18 @@ impl ShellRunner {
         let stream = opts.stream_captured_output
             && !self.debug
             && !crate::tui::rich_surface_active();
+        let tee = opts.tee_to_build_log;
         let read_stdout = async move {
             let Some(mut stdout_pipe) = stdout_pipe else {
                 return Ok::<Vec<u8>, std::io::Error>(Vec::new());
             };
-            read_process_pipe(&mut stdout_pipe, stream, std::io::stdout()).await
+            read_process_pipe(&mut stdout_pipe, stream, tee, std::io::stdout()).await
         };
         let read_stderr = async move {
             let Some(mut stderr_pipe) = stderr_pipe else {
                 return Ok::<Vec<u8>, std::io::Error>(Vec::new());
             };
-            read_process_pipe(&mut stderr_pipe, stream, std::io::stderr()).await
+            read_process_pipe(&mut stderr_pipe, stream, tee, std::io::stderr()).await
         };
         let (status, stdout_result, stderr_result) =
             tokio::join!(child.wait(), read_stdout, read_stderr);

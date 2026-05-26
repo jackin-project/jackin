@@ -9,7 +9,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
@@ -17,6 +17,7 @@ use crate::console::widgets::{
     ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
 };
 use crate::diagnostics::RunDiagnostics;
+use jackin_tui::HintSpan;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum LaunchStage {
@@ -139,6 +140,13 @@ struct LaunchView {
     status: String,
     failure: Option<LaunchFailure>,
     frame: usize,
+    /// Operator opened the live docker-build log overlay (by clicking the
+    /// footer activity). While open it hides the cockpit behind an opaque
+    /// scrollable view of [`crate::runtime::build_log`].
+    build_log_open: bool,
+    /// Lines scrolled up from the tail of the build log (0 = follow the
+    /// newest output).
+    build_log_scroll: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -201,6 +209,10 @@ impl RichDriver {
                     let Ok(mut rr) = renderer.try_lock() else {
                         continue;
                     };
+                    // Drain input only while this task owns the renderer — when
+                    // a forced-choice picker holds it, the picker reads events
+                    // itself and this poll would steal its keystrokes.
+                    handle_cockpit_input(&view);
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             if !rr.no_motion {
@@ -236,6 +248,8 @@ fn initial_view() -> LaunchView {
         status: "preparing launch".to_string(),
         failure: None,
         frame: 0,
+        build_log_open: false,
+        build_log_scroll: 0,
     }
 }
 
@@ -443,6 +457,77 @@ fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, 
     }
 }
 
+const BUILD_LOG_SCROLL_STEP: usize = 3;
+const BUILD_LOG_PAGE_STEP: usize = 10;
+
+/// Whether `(col, row)` falls on the footer activity text ("Building Docker
+/// image…"). The footer is the last terminal row; the activity is left-aligned
+/// and the right-side chips never overlap it, so a left-edge span is enough.
+fn hit_activity(view: &LaunchView, col: u16, row: u16) -> bool {
+    let Ok((_, rows)) = crossterm::terminal::size() else {
+        return false;
+    };
+    if rows == 0 || row != rows - 1 {
+        return false;
+    }
+    let width = u16::try_from(format_activity(&view.status).chars().count()).unwrap_or(u16::MAX);
+    // One column of slack for the band's left padding.
+    col <= width
+}
+
+/// Drain queued terminal input and fold it into the build-log overlay state.
+///
+/// Called only while the render task owns the renderer (no forced-choice picker
+/// is reading events), so this poll cannot steal a picker's keystrokes. Polling
+/// with a zero timeout keeps the 33 ms render cadence intact.
+fn handle_cockpit_input(view: &SharedView) {
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+    while event::poll(Duration::ZERO).unwrap_or(false) {
+        let Ok(ev) = event::read() else {
+            return;
+        };
+        let Ok(mut v) = view.lock() else {
+            return;
+        };
+        match ev {
+            Event::Mouse(m) => match m.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if v.build_log_open {
+                        // The overlay covers the whole screen, so any click
+                        // dismisses it back to the cockpit.
+                        v.build_log_open = false;
+                    } else if crate::runtime::build_log::len() > 0
+                        && hit_activity(&v, m.column, m.row)
+                    {
+                        v.build_log_open = true;
+                        v.build_log_scroll = 0;
+                    }
+                }
+                MouseEventKind::ScrollUp if v.build_log_open => {
+                    v.build_log_scroll = v.build_log_scroll.saturating_add(BUILD_LOG_SCROLL_STEP);
+                }
+                MouseEventKind::ScrollDown if v.build_log_open => {
+                    v.build_log_scroll = v.build_log_scroll.saturating_sub(BUILD_LOG_SCROLL_STEP);
+                }
+                _ => {}
+            },
+            Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
+                KeyCode::Esc | KeyCode::Char('q') => v.build_log_open = false,
+                KeyCode::Up => v.build_log_scroll = v.build_log_scroll.saturating_add(1),
+                KeyCode::Down => v.build_log_scroll = v.build_log_scroll.saturating_sub(1),
+                KeyCode::PageUp => {
+                    v.build_log_scroll = v.build_log_scroll.saturating_add(BUILD_LOG_PAGE_STEP);
+                }
+                KeyCode::PageDown => {
+                    v.build_log_scroll = v.build_log_scroll.saturating_sub(BUILD_LOG_PAGE_STEP);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+}
+
 impl Drop for LaunchProgress {
     fn drop(&mut self) {
         use std::sync::atomic::Ordering;
@@ -618,6 +703,13 @@ fn render_launch_frame(
 ) {
     let area = frame.area();
     frame.render_widget(Clear, area);
+
+    // The build-log overlay owns the whole screen behind an opaque backdrop,
+    // matching the capsule modal convention (hide everything, don't dim).
+    if view.build_log_open {
+        render_build_log_dialog(frame, area, view);
+        return;
+    }
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -947,6 +1039,87 @@ fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailu
     error_popup::render(frame, rect, &state);
 }
 
+/// Footer-hint keys for the forced-choice launch picker.
+const PICKER_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑/↓"),
+    HintSpan::Text("navigate"),
+    HintSpan::GroupSep,
+    HintSpan::Text("type to filter"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Enter"),
+    HintSpan::Text("select"),
+];
+
+/// Footer-hint keys for the build-log overlay. Shared `HintSpan` vocabulary,
+/// rendered by the shared host hint renderer so it matches every other footer.
+const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("scroll"),
+    HintSpan::GroupSep,
+    HintSpan::Key("PgUp/PgDn"),
+    HintSpan::Text("page"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("close"),
+];
+
+/// Full-screen opaque overlay over the live docker-build output, scrollable.
+/// Opened by clicking the footer activity; dismissed by `Esc`/`q` or a click.
+/// Lines are not wrapped so one log line maps to one row — that keeps the
+/// tail-follow and scroll offset exact; long lines clip at the right edge (the
+/// full output is in the diagnostics run file under `--debug`). The key hint
+/// renders in the bottom footer row, never inside the box (TUI design rule).
+fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
+    // Opaque black backdrop fully hides the cockpit behind the overlay.
+    frame.render_widget(Block::default().style(Style::default().bg(Color::Black)), area);
+
+    // Bottom row is the footer hint; the box takes the rest.
+    let box_area = Rect {
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let hint_area = Rect {
+        y: area.y + area.height.saturating_sub(1),
+        height: 1,
+        ..area
+    };
+
+    let title = if crate::runtime::build_log::is_active() {
+        " Docker build · building… "
+    } else {
+        " Docker build "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
+        .title(Span::styled(
+            title,
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(box_area);
+    frame.render_widget(block, box_area);
+    if inner.width != 0 && inner.height != 0 {
+        let lines = crate::runtime::build_log::snapshot();
+        let text = if lines.is_empty() {
+            "(waiting for docker build output…)".to_string()
+        } else {
+            lines.join("\n")
+        };
+        // Follow the tail unless the operator scrolled up. `build_log_scroll`
+        // counts lines from the bottom; clamp so it never passes the top.
+        let max_top = lines.len().saturating_sub(inner.height as usize);
+        let top = max_top.saturating_sub(view.build_log_scroll);
+        frame.render_widget(
+            Paragraph::new(text)
+                .style(Style::default().fg(WHITE).bg(Color::Black))
+                .scroll((u16::try_from(top).unwrap_or(u16::MAX), 0)),
+            inner,
+        );
+    }
+
+    crate::console::widgets::hints::render(frame, hint_area, BUILD_LOG_HINT);
+}
+
 fn draw_select(
     frame: &mut Frame<'_>,
     view: &LaunchView,
@@ -996,21 +1169,7 @@ fn render_picker_hints(frame: &mut Frame<'_>, area: Rect) {
         width: area.width,
         height: 1,
     };
-    let key =
-        |label| Span::styled(label, Style::default().fg(WHITE).add_modifier(Modifier::BOLD));
-    let text = |label| Span::styled(label, Style::default().fg(PHOSPHOR_DIM));
-    let line = Line::from(vec![
-        key("↑/↓"),
-        Span::raw(" "),
-        text("navigate"),
-        Span::raw("    "),
-        text("type to filter"),
-        Span::raw("    "),
-        key("Enter"),
-        Span::raw(" "),
-        text("select"),
-    ]);
-    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), row);
+    crate::console::widgets::hints::render(frame, row, PICKER_HINT);
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
@@ -1083,6 +1242,8 @@ mod tests {
             status: "pulling construct".to_string(),
             failure: None,
             frame: 0,
+            build_log_open: false,
+            build_log_scroll: 0,
         };
         terminal
             .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true, None))

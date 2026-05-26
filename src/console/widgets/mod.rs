@@ -114,6 +114,7 @@ pub mod confirm_save;
 pub mod error_popup;
 pub mod file_browser;
 pub mod github_picker;
+pub mod hints;
 pub mod mount_dst_choice;
 pub mod op_picker;
 pub mod panel_rain;

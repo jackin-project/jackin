@@ -277,7 +277,11 @@ pub(super) async fn build_agent_image(
         build_args.extend(["--secret", s.as_str()]);
     }
 
-    runner
+    // Tee the build's captured output into the live build-log sink so the
+    // loading cockpit can show it on demand (the build is the slowest step).
+    // `end` stops teeing but keeps the captured lines for the dialog.
+    crate::runtime::build_log::begin();
+    let build_result = runner
         .run(
             "docker",
             &build_args,
@@ -286,6 +290,7 @@ pub(super) async fn build_agent_image(
                 capture_stderr: true,
                 capture_stdout: true,
                 stream_captured_output: false,
+                tee_to_build_log: true,
                 extra_env: github_token
                     .as_ref()
                     .map(|_| vec![("DOCKER_BUILDKIT".to_string(), "1".to_string())])
@@ -293,7 +298,9 @@ pub(super) async fn build_agent_image(
                 ..RunOptions::default()
             },
         )
-        .await?;
+        .await;
+    crate::runtime::build_log::end();
+    build_result?;
 
     extract_agent_version(paths, &image, agent, debug, runner).await;
 

@@ -1,0 +1,84 @@
+//! Live docker-build output sink.
+//!
+//! The derived-image `docker build` is the slowest launch step. The command
+//! runner tees its captured output here line-by-line so the loading cockpit
+//! can show a live, scrollable view on demand. Keeping it in a process-global
+//! buffer decouples the generic command runner (which knows nothing about the
+//! cockpit) from the cockpit's view state (which knows nothing about docker).
+
+use std::collections::VecDeque;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Cap on retained lines. A long `BuildKit` run is bounded so the buffer
+/// cannot grow without limit; the oldest lines drop first.
+const MAX_LINES: usize = 5000;
+
+static ACTIVE: AtomicBool = AtomicBool::new(false);
+static LINES: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
+
+/// Start a fresh capture: drop any prior lines and mark the sink active so the
+/// command runner tees build output here.
+pub fn begin() {
+    if let Ok(mut lines) = LINES.lock() {
+        lines.clear();
+    }
+    ACTIVE.store(true, Ordering::Relaxed);
+}
+
+/// Stop teeing. The captured lines are retained so the dialog can still show
+/// the finished log after the build completes.
+pub fn end() {
+    ACTIVE.store(false, Ordering::Relaxed);
+}
+
+#[must_use]
+pub fn is_active() -> bool {
+    ACTIVE.load(Ordering::Relaxed)
+}
+
+/// Append one output line, dropping the oldest when the cap is reached.
+pub fn push_line(line: &str) {
+    if let Ok(mut lines) = LINES.lock() {
+        if lines.len() >= MAX_LINES {
+            lines.pop_front();
+        }
+        lines.push_back(line.to_string());
+    }
+}
+
+/// Number of retained lines, for scroll math without cloning the buffer.
+#[must_use]
+pub fn len() -> usize {
+    LINES.lock().map_or(0, |lines| lines.len())
+}
+
+/// Snapshot the retained lines for rendering.
+#[must_use]
+pub fn snapshot() -> Vec<String> {
+    LINES
+        .lock()
+        .map_or_else(|_| Vec::new(), |lines| lines.iter().cloned().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn caps_at_max_lines_dropping_oldest() {
+        begin();
+        for i in 0..(MAX_LINES + 10) {
+            push_line(&format!("line {i}"));
+        }
+        assert_eq!(len(), MAX_LINES);
+        let snap = snapshot();
+        assert_eq!(snap.first().map(String::as_str), Some("line 10"));
+        assert_eq!(
+            snap.last().map(String::as_str),
+            Some(&*format!("line {}", MAX_LINES + 9))
+        );
+        end();
+        assert!(!is_active());
+    }
+}
