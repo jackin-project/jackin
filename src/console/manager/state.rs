@@ -111,6 +111,9 @@ pub struct ManagerState<'a> {
     pub list_names_focused: bool,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
+    /// Logical list row the pointer is hovering (lifts its background like a
+    /// hovered tab). Transient; set on mouse motion, cleared off the list.
+    pub hovered_list_row: Option<ManagerListRow>,
     /// Process-lifetime cache of `op` structural metadata, threaded
     /// into the picker on open. Carries no credentials — see
     /// `op_cache.rs`.
@@ -1572,6 +1575,7 @@ impl ManagerState<'_> {
             list_names_focused: false,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
+            hovered_list_row: None,
             op_cache,
             op_available,
             cached_term_size: Rect {

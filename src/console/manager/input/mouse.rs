@@ -72,9 +72,11 @@ pub fn handle_mouse_with_config(
         return;
     }
 
-    // Pointer motion only repaints the hovered tab; it never selects or drags.
+    // Pointer motion only repaints the hovered tab / list row; it never selects
+    // or drags.
     if matches!(mouse.kind, MouseEventKind::Moved) {
         update_tab_hover(state, mouse);
+        update_list_row_hover(state, mouse, term_size);
         return;
     }
 
@@ -279,6 +281,24 @@ fn file_browser_url_row_at(
     };
     let modal_area = super::super::render::modal_outer_rect(modal, term_size);
     fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
+}
+
+/// Track the list row under the pointer so the renderer can lift its
+/// background, mirroring the tab-hover cue. Cleared when off the list pane,
+/// over the seam, or when a list modal is open.
+fn update_list_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
+    state.hovered_list_row =
+        if matches!(state.stage, ManagerStage::List) && state.list_modal.is_none() {
+            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            if near_seam(mouse.column, seam_x) {
+                None
+            } else {
+                list_content_row_index(state, mouse, term_size, seam_x)
+                    .filter(|row| state.index_of_row(*row).is_some())
+            }
+        } else {
+            None
+        };
 }
 
 fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
