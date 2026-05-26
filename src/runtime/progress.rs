@@ -664,7 +664,7 @@ fn render_body(
         .constraints([Constraint::Min(0), Constraint::Length(2)])
         .split(inner);
     render_rain(frame, parts[0], rain);
-    render_logo_and_standup(frame, parts[0], view, frozen);
+    render_standup(frame, parts[0], view, frozen);
     render_progress(frame, parts[1], view, frozen);
 }
 
@@ -681,39 +681,13 @@ const STANDUP_LINES: &[&str] = &[
 /// Frames per standup line (~2s at the 50ms render tick).
 const STANDUP_PERIOD: usize = 40;
 
-/// Overlay the persistent jackin' logo (centered, never moving) and a rotating
-/// standup line over the rain. The logo sits on a cleared patch so the rain
-/// does not bleed through its gaps; the rain still falls around it.
-fn render_logo_and_standup(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
-    let logo = crate::tui::animation::REVEAL_BANNER;
-    let logo_w = u16::try_from(logo.iter().map(|l| l.chars().count()).max().unwrap_or(0))
-        .unwrap_or(0);
-    let logo_h = u16::try_from(logo.len()).unwrap_or(0);
-    // Need room for the logo plus a blank row and the standup line beneath it.
-    if area.width < logo_w || area.height < logo_h + 2 {
+/// Overlay a rotating standup line centered over the rain. No logo on the
+/// cockpit — the jackin' logo belongs to the intro/outro only; here the line
+/// gives the wait a pulse without competing with the stage bar.
+fn render_standup(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+    if area.width == 0 || area.height == 0 {
         return;
     }
-    let top = area.y + area.height.saturating_sub(logo_h + 2) / 2;
-    let left = area.x + area.width.saturating_sub(logo_w) / 2;
-    let logo_rect = Rect {
-        x: left,
-        y: top,
-        width: logo_w,
-        height: logo_h,
-    };
-    frame.render_widget(Clear, logo_rect);
-    let logo_lines: Vec<Line<'static>> = logo
-        .iter()
-        .map(|l| {
-            Line::from(Span::styled(
-                (*l).to_string(),
-                Style::default().fg(PHOSPHOR_GREEN),
-            ))
-        })
-        .collect();
-    frame.render_widget(Paragraph::new(logo_lines), logo_rect);
-
-    // Rotating standup line, centered two rows below the logo.
     let idx = if frozen {
         0
     } else {
@@ -721,37 +695,38 @@ fn render_logo_and_standup(frame: &mut Frame<'_>, area: Rect, view: &LaunchView,
     };
     let msg = STANDUP_LINES[idx];
     let msg_w = u16::try_from(msg.chars().count()).unwrap_or(0);
-    let msg_row = top + logo_h + 1;
-    if msg_w <= area.width && msg_row < area.y + area.height {
-        let msg_rect = Rect {
-            x: area.x + area.width.saturating_sub(msg_w) / 2,
-            y: msg_row,
-            width: msg_w,
-            height: 1,
-        };
-        frame.render_widget(Clear, msg_rect);
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                msg.to_string(),
-                Style::default().fg(PHOSPHOR_DIM),
-            ))),
-            msg_rect,
-        );
+    if msg_w == 0 || msg_w > area.width {
+        return;
     }
+    let rect = Rect {
+        x: area.x + area.width.saturating_sub(msg_w) / 2,
+        y: area.y + area.height / 2,
+        width: msg_w,
+        height: 1,
+    };
+    frame.render_widget(Clear, rect);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            msg.to_string(),
+            Style::default().fg(PHOSPHOR_DIM),
+        ))),
+        rect,
+    );
 }
 
-/// Dim, non-green rain palette for the loading cockpit: a recessive steel-blue
-/// ramp so the rain reads as ambient texture and the eye stays on the green
-/// stage bar. Age ranges mirror the engine's own fade so cell lifetimes match;
-/// the bright Matrix-green is reserved for the boundary intro/outro rain.
+/// Non-green rain palette for the loading cockpit: a bright, juicy sky-blue
+/// head fading down a vivid blue trail — distinct from the green stage bar but
+/// nice to look at, not a murky gray. Age ranges mirror the engine's own fade
+/// so cell lifetimes match; the Matrix-green is reserved for the boundary
+/// intro/outro rain.
 const fn cockpit_rain_color(age: u16) -> Option<(u8, u8, u8)> {
     match age {
-        0 => Some((96, 124, 168)),
-        1..=2 => Some((72, 96, 136)),
-        3..=5 => Some((54, 74, 108)),
-        6..=10 => Some((40, 56, 84)),
-        11..=16 => Some((30, 42, 64)),
-        17..=24 => Some((22, 30, 46)),
+        0 => Some((140, 215, 255)),
+        1..=2 => Some((96, 180, 245)),
+        3..=5 => Some((64, 145, 225)),
+        6..=10 => Some((48, 115, 195)),
+        11..=16 => Some((40, 90, 160)),
+        17..=24 => Some((32, 68, 120)),
         _ => None,
     }
 }
