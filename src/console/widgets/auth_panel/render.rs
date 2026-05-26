@@ -16,9 +16,6 @@ use crate::console::manager::auth_kind::AuthMode;
 use crate::console::manager::render::editor::push_op_breadcrumb_spans;
 use crate::console::manager::state::AuthFormFocus;
 
-const OAUTH_TOKEN_TIP: &str =
-    "tip: run jackin workspace claude-token setup <workspace> --vault <vault> from your shell";
-
 use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 pub(crate) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 // Width chosen so the longest credential env-var name
@@ -59,7 +56,7 @@ pub fn render_form(frame: &mut Frame, area: Rect, form: &AuthForm, focus: AuthFo
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    for (idx, row) in build_form_lines(form, focus, inner.width)
+    for (idx, row) in build_form_lines(form, focus)
         .into_iter()
         .enumerate()
     {
@@ -107,41 +104,15 @@ impl FormLine {
 ///
 /// Inner content + 2 borders. Used by `render::modal` to size the
 /// modal so its vertical layout hugs the content rather than leaving
-/// dead space below the hint line.
+/// dead space below the buttons.
 #[must_use]
-pub fn required_height(form: &AuthForm, outer_modal_width: u16) -> u16 {
-    // Layout (without tip):
+pub const fn required_height(form: &AuthForm) -> u16 {
     //   blank, Mode, [cred,] blank, buttons, blank = 5 or 6 inner rows
-    // With the OAuth-token setup tip, the tip moves above the buttons:
-    //   blank, Mode, [cred,] blank, TIP…, blank, buttons, blank
-    // Each wrapped tip line is +1 row; the extra blank after the tip is +1.
-    let mut inner: u16 = if form.shows_credential_block() { 6 } else { 5 };
-    if shows_oauth_token_setup_tip(form) {
-        let inner_w = outer_modal_width.saturating_sub(2).max(1);
-        let wrapped_lines = (OAUTH_TOKEN_TIP.len() as u16).div_ceil(inner_w);
-        inner += wrapped_lines + 1; // wrapped tip lines + blank after tip
-    }
+    let inner: u16 = if form.shows_credential_block() { 6 } else { 5 };
     inner + 2
 }
 
-/// Whether the OAuth-token setup tip line is rendered for this
-/// form. Visible only when the operator has picked
-/// `oauth_token` mode but has not yet supplied a credential — that's
-/// the moment a pointer at `jackin workspace claude-token setup` is
-/// most actionable. Once a credential is set, the tip would be
-/// noise.
-const fn shows_oauth_token_setup_tip(form: &AuthForm) -> bool {
-    matches!(
-        (form.kind, form.mode, &form.credential),
-        (
-            crate::console::manager::auth_kind::AuthKind::Claude,
-            Some(crate::console::manager::auth_kind::AuthMode::OAuthToken),
-            crate::console::widgets::auth_panel::form::CredentialInput::None
-        )
-    )
-}
-
-fn build_form_lines(form: &AuthForm, focus: AuthFormFocus, inner_width: u16) -> Vec<FormLine> {
+fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
     let mut lines: Vec<FormLine> = Vec::new();
 
     lines.push(FormLine::left(Line::from("")));
@@ -170,45 +141,12 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus, inner_width: u16) -> 
 
     lines.push(FormLine::left(Line::from("")));
 
-    // Tip renders above the buttons when present, wrapping to fit inner_width.
-    if shows_oauth_token_setup_tip(form) {
-        for tip_line in wrap_tip_lines(inner_width) {
-            lines.push(FormLine::centered(tip_line));
-        }
-        lines.push(FormLine::left(Line::from("")));
-    }
-
     lines.push(FormLine::centered(action_buttons_line(
         form.can_save(),
         focus,
     )));
     lines.push(FormLine::left(Line::from("")));
     lines
-}
-
-/// Break the OAuth-token setup tip into word-wrapped lines that each fit
-/// within `inner_width` columns. Falls back to one long line when width=0.
-fn wrap_tip_lines(inner_width: u16) -> Vec<Line<'static>> {
-    let dim = Style::default().fg(PHOSPHOR_DIM);
-    let full = OAUTH_TOKEN_TIP;
-    let w = inner_width.max(20) as usize;
-    let mut result = Vec::new();
-    let mut current = String::new();
-    for word in full.split_whitespace() {
-        if current.is_empty() {
-            current = word.to_string();
-        } else if current.len() + 1 + word.len() <= w {
-            current.push(' ');
-            current.push_str(word);
-        } else {
-            result.push(Line::from(Span::styled(current, dim)));
-            current = word.to_string();
-        }
-    }
-    if !current.is_empty() {
-        result.push(Line::from(Span::styled(current, dim)));
-    }
-    result
 }
 
 fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) -> Line<'static> {
@@ -439,69 +377,4 @@ mod form_render_tests {
         );
     }
 
-    /// The OAuth-token setup tip line is the operator's "what do I
-    /// type next?" hint when they pick `oauth_token` mode but have
-    /// no credential set yet. It is Claude-only — Codex has no
-    /// `oauth_token` mode at the deserializer (parse-rejected) and
-    /// the TUI does not offer it for Codex either; the predicate
-    /// matrix below pins those invariants.
-    #[test]
-    fn oauth_token_setup_tip_shows_for_claude_no_credential_only() {
-        let mut form = AuthForm::new(AuthKind::Claude);
-        form.set_mode(AuthMode::OAuthToken);
-        assert!(
-            shows_oauth_token_setup_tip(&form),
-            "Claude + OAuthToken + no credential ⇒ show tip"
-        );
-        let s = dump_form(&form);
-        assert!(
-            s.contains("jackin workspace claude-token setup"),
-            "tip with the canonical CLI command must render; dump:\n{s}"
-        );
-    }
-
-    #[test]
-    fn oauth_token_setup_tip_does_not_show_for_codex() {
-        // Codex's `AuthForm::set_mode(OAuthToken)` panics by design
-        // (the form refuses unsupported kind/mode combinations).
-        // The Claude-specific tip must therefore stay hidden across
-        // every Codex-supported mode — pin every supported variant
-        // here so a future tip-predicate refactor can't accidentally
-        // light up for Codex.
-        let mut form = AuthForm::new(AuthKind::Codex);
-        for mode in AuthKind::Codex.supported_modes() {
-            form.set_mode(*mode);
-            assert!(
-                !shows_oauth_token_setup_tip(&form),
-                "Codex must never surface the Claude tip (mode {mode:?})"
-            );
-            let s = dump_form(&form);
-            assert!(
-                !s.contains("jackin workspace claude-token setup"),
-                "Codex modal must not render the Claude tip; mode {mode:?}; dump:\n{s}"
-            );
-        }
-    }
-
-    #[test]
-    fn oauth_token_setup_tip_does_not_show_when_credential_set() {
-        let mut form = AuthForm::new(AuthKind::Claude);
-        form.set_mode(AuthMode::OAuthToken);
-        form.set_literal("sk-ant-oat01-already-set".into());
-        assert!(
-            !shows_oauth_token_setup_tip(&form),
-            "tip must hide once a credential is supplied"
-        );
-    }
-
-    #[test]
-    fn oauth_token_setup_tip_does_not_show_for_other_modes() {
-        let mut form = AuthForm::new(AuthKind::Claude);
-        form.set_mode(AuthMode::ApiKey);
-        assert!(!shows_oauth_token_setup_tip(&form));
-        form.set_mode(AuthMode::Sync);
-        assert!(!shows_oauth_token_setup_tip(&form));
-        form.set_mode(AuthMode::Ignore);
-        assert!(!shows_oauth_token_setup_tip(&form));
-    }
 }

@@ -64,11 +64,7 @@ pub(in crate::console::manager) fn auth_form_rect(
     outer: Rect,
     state: &auth_panel::AuthForm,
 ) -> Rect {
-    centered_rect_fixed(
-        outer,
-        80,
-        auth_panel::required_height(state, outer.width * 80 / 100),
-    )
+    centered_rect_fixed(outer, 80, auth_panel::required_height(state))
 }
 
 /// Single source of truth for modal size + placement;
