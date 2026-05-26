@@ -7,9 +7,9 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/console/widgets/op_picker/mod.rs" /> is now **2331L** total (was ~1712L at original analysis — +36% growth). It has a `//!` doc but no INV-format invariant contract. The 4-level drill-down state machine has subtle invariants around the `op://` reference format and the absence of secret values in the picker path.
+<RepoFile path="src/console/widgets/op_picker/mod.rs" /> is now **2440L** total (was ~1712L at original analysis — +43% growth). It has a `//!` doc but no INV-format invariant contract. The 4-level drill-down state machine has subtle invariants around the `op://` reference format, the absence of secret values in the picker path, and the collapsible-section navigation layer added to the field stage.
 
-The render counterpart <RepoFile path="src/console/widgets/op_picker/render.rs" /> is **865L** (separate file).
+The render counterpart <RepoFile path="src/console/widgets/op_picker/render.rs" /> is **758L** (separate file).
 
 ## Key invariants
 
@@ -18,20 +18,23 @@ The render counterpart <RepoFile path="src/console/widgets/op_picker/render.rs" 
 | INV-1 | Field selection commits `OpField::reference` verbatim when present; only fixtures missing `reference` use the synthesized `op://<vault>/<item>/<label>` fallback | selection path returns `field.reference.clone()` first, then falls back to `format!("op://{}/{}/{}"...)` |
 | INV-2 | No secret values in picker path — `RawOpField` struct has no `value` field; serde drops it silently | grep `value` in op_picker/mod.rs; exhaustive destructure test at `operator_env.rs:~2055` |
 | INV-3 | Loading is async (background worker + channel); key handlers stay synchronous and only advance UI state / `poll_load()` | background loaders use `std::thread::spawn`; key handlers do not call the CLI directly |
+| INV-4 | `field_list_state.selected` indexes the *display* row list (returned by `build_field_display_rows()`), not `filtered_fields()` directly. Section-header rows are navigable and selectable; Enter on a header toggles its `collapsed_sections` membership rather than committing a field | display rows built from `FieldDisplayRow` enum; collapse/expand via `collapsed_sections: HashSet<String>`; `reset_selection_for_filter` and Up/Down both use `build_field_display_rows().len()` |
 
 ## State machine
 
 4 stages: `Accounts` → `Vaults` → `Items` → `Fields`. Each stage has a background loader and a key handler. Loaders post results via channel; `poll_load()` drains them before each render.
 
+The field stage has an extra navigation layer: fields belonging to named 1Password sections (detected from `OpField::reference` using `parse_op_reference`) are grouped under collapsible `SectionHeader` rows. Unsectioned fields render first. Navigation (Up/Down), collapse (Left), and expand (Right/Enter-on-header) all operate on the full display-row list, not the underlying field slice.
+
 ## Steps
 
 1. Create `docs/src/content/docs/internal/specs/op-picker.mdx` (once Developer Reference setup exists).
-2. Use INV-N template for the three invariants above.
+2. Use INV-N template for the invariants above.
 3. Add sidebar entry under Developer Reference → Specs.
 4. Link from the `op_picker/mod.rs` `//!` doc to the spec URL once the internal docs section exists.
 
 ## Related files
 
-- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — 2331L total (state machine + loader + key handler)
-- <RepoFile path="src/console/widgets/op_picker/render.rs" /> — 865L (render logic)
-- <RepoFile path="src/operator_env.rs" /> — uses `RawOpField`; exhaustive destructure test
+- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — 2440L total (state machine + loader + key handler + `build_field_display_rows`)
+- <RepoFile path="src/console/widgets/op_picker/render.rs" /> — 758L (render logic including collapsible section headers)
+- <RepoFile path="src/operator_env.rs" /> — uses `RawOpField`; exhaustive destructure test; `parse_op_reference` used by `build_field_display_rows`

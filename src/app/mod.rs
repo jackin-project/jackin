@@ -728,7 +728,6 @@ pub async fn run(cli: Cli) -> Result<()> {
                     keep_awake: crate::workspace::KeepAwakeConfig {
                         enabled: keep_awake,
                     },
-                    op_account: None,
                     claude: None,
                     codex: None,
                     amp: None,
@@ -1401,36 +1400,98 @@ fn handle_claude_token(
     match action {
         cli::WorkspaceClaudeTokenCommand::Setup {
             workspace,
+            role,
             vault,
             item_name,
             op_account,
             reuse,
+            plain,
+            interactive,
         } => {
-            let reuse_ref = reuse
-                .as_deref()
-                .map(|r| parse_reuse(r, op_account.as_deref()))
-                .transpose()?;
-            let args = token_setup::TokenSetupArgs {
-                vault,
-                item_name,
-                account: op_account,
-                reuse: reuse_ref,
+            config.require_workspace(&workspace)?;
+
+            // Interactive mode: walk the operator through 1Password with
+            // plain CLI prompts (account → vault → item → field) when
+            // --interactive is set. The rich TUI drill-down lives only in
+            // `jackin console`; the CLI stays CLI.
+            let (args, role) = if interactive {
+                // --role flag wins; otherwise prompt for the scope so the
+                // interactive path selects everything.
+                let role = match role {
+                    Some(r) => Some(r),
+                    None => prompt_interactive_role(config, &workspace)?,
+                };
+                let args = match prompt_interactive_token_source()? {
+                    InteractiveTokenSource::Plain => token_setup::TokenSetupArgs {
+                        account: op_account,
+                        plain_text: true,
+                        ..Default::default()
+                    },
+                    InteractiveTokenSource::Op => {
+                        prompt_interactive_token_store(&workspace, op_account)?
+                    }
+                };
+                (args, role)
+            } else if plain {
+                let args = token_setup::TokenSetupArgs {
+                    account: op_account,
+                    plain_text: true,
+                    ..Default::default()
+                };
+                (args, role)
+            } else {
+                let reuse_ref = reuse
+                    .as_deref()
+                    .map(|r| parse_reuse(r, op_account.as_deref()))
+                    .transpose()?;
+                let args = token_setup::TokenSetupArgs {
+                    vault,
+                    item_name,
+                    account: op_account,
+                    reuse: reuse_ref,
+                    field_label: None,
+                    edit_existing: None,
+                    section: None,
+                    plain_text: false,
+                };
+                (args, role)
             };
-            let report = token_setup::run_setup(paths, config, &workspace, &args)?;
+
+            // A flag-supplied role is taken verbatim, so reject one the
+            // workspace doesn't allow before minting — otherwise the OAuth
+            // round-trip runs and wires a token to a dead role scope. The
+            // interactive prompt already only offers allowed roles.
+            if let Some(role) = role.as_deref() {
+                validate_setup_role_allowed(config, &workspace, role)?;
+            }
+            let scope = match role {
+                Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
+                None => token_setup::TokenSetupScope::Workspace(workspace),
+            };
+            let report = token_setup::run_setup(paths, config, &scope, &args)?;
             print_token_setup_report(&report);
             Ok(())
         }
         cli::WorkspaceClaudeTokenCommand::Rotate {
             workspace,
+            role,
             vault,
             item_name,
             op_account,
         } => {
-            let prior = config
-                .workspaces
-                .get(&workspace)
-                .and_then(|w| w.env.get(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV))
-                .cloned();
+            // Reject a disallowed flag-supplied role before minting, same
+            // as setup — otherwise rotate wires a token to a dead scope.
+            if let Some(role) = role.as_deref() {
+                validate_setup_role_allowed(config, &workspace, role)?;
+            }
+            let scope = match role {
+                Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
+                None => token_setup::TokenSetupScope::Workspace(workspace),
+            };
+            // Read the prior token from the SAME scope being rotated so a
+            // role-scoped token (wired by `setup --role`) is found and its
+            // vault/op-item are reused, not the workspace-level slot.
+            let prior = token_setup::prior_token_slot(config, &scope);
             // Default rotate to the prior item's vault when
             // `--vault` is not supplied. Without this, the
             // documented `rotate my-app` form errors inside
@@ -1442,10 +1503,20 @@ fn handle_claude_token(
                 item_name,
                 account: op_account,
                 reuse: None,
+                field_label: None,
+                edit_existing: None,
+                section: None,
+                plain_text: false,
             };
-            let report = token_setup::run_setup(paths, config, &workspace, &args)?;
+            let report = token_setup::run_setup(paths, config, &scope, &args)?;
             print_token_setup_report(&report);
-            delete_prior_op_item(prior, &report.op_ref, report.op_account)?;
+            // Rotate is an op-only flow (it always mints into a new 1P
+            // item), so the report always carries an op ref here.
+            let new_ref = report
+                .op_ref
+                .as_ref()
+                .expect("rotate always wires an op reference");
+            delete_prior_op_item(prior, new_ref, report.op_account)?;
             Ok(())
         }
         cli::WorkspaceClaudeTokenCommand::Revoke {
@@ -1474,7 +1545,7 @@ fn handle_claude_token(
             println!("workspace        {}", report.workspace);
             println!("auth_forward     {}", report.mode);
             println!(
-                "op_account       {}",
+                "op account       {}",
                 report.op_account.as_deref().unwrap_or("(default)")
             );
             if let Some(r) = &report.op_ref {
@@ -1532,8 +1603,40 @@ fn delete_prior_op_item_with_runner(
         );
         return Ok(());
     };
+    // Only delete an item jackin created. An item the operator adopted via
+    // `--reuse` or interactive edit-in-place carries no jackin tag and may
+    // hold the operator's other fields, so deleting the whole item would be
+    // data loss — leave it. Fail safe on a read error: don't delete what we
+    // can't verify.
+    match op_writer.item_tags(&parts.item, &parts.vault, prior_ref.account.as_deref()) {
+        Ok(tags) if crate::workspace::token_setup::tags_indicate_jackin_owned(&tags) => {}
+        Ok(_) => {
+            eprintln!(
+                "[jackin] rotate: prior item ({path}) is not jackin-managed (no `{tag}` tag) — \
+                 leaving it untouched so none of your other fields are deleted. The new token is \
+                 wired and live; remove the old field by hand if you want: `{hint}`",
+                path = prior_ref.path,
+                tag = crate::workspace::token_setup::JACKIN_TAG,
+                hint = parts.manual_delete_hint(),
+            );
+            return Ok(());
+        }
+        Err(e) => {
+            eprintln!(
+                "[jackin] rotate: could not verify whether prior item ({path}) is jackin-managed: \
+                 {e} — leaving it untouched to avoid deleting an adopted item. Delete by hand if \
+                 needed: `{hint}`",
+                path = prior_ref.path,
+                hint = parts.manual_delete_hint(),
+            );
+            return Ok(());
+        }
+    }
     op_writer
-        .item_delete(&parts.item, &parts.vault, None)
+        // The prior item lives in the account that minted it, which can
+        // differ from the new ref's account on a cross-account rotate.
+        // Pinning the delete to the new account would orphan it.
+        .item_delete(&parts.item, &parts.vault, prior_ref.account.as_deref())
         .map_err(|e| {
             anyhow::anyhow!(
                 "rotate: prior item ({path}) was NOT deleted: {e} \
@@ -1552,11 +1655,15 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
     if let Some(version) = report.claude_cli_version.as_deref() {
         println!("Claude CLI       {version}");
     }
-    println!("op:// reference  {}", report.op_ref.path);
-    println!(
-        "op_account       {}",
-        report.op_account.as_deref().unwrap_or("(default)")
-    );
+    if let Some(op_ref) = report.op_ref.as_ref() {
+        println!("op:// reference  {}", op_ref.path);
+        println!(
+            "op account       {}",
+            report.op_account.as_deref().unwrap_or("(default)")
+        );
+    } else {
+        println!("stored           plain text in workspace/role config");
+    }
     println!(
         "token sha256     {}… (12 hex prefix; matches stored value)",
         report.token_sha256_prefix
@@ -1566,11 +1673,311 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
     }
     println!("auth_forward     oauth_token (synthesised CLAUDE_CODE_OAUTH_TOKEN)");
     println!();
-    if report.created {
+    if report.op_ref.is_none() {
+        println!("New token captured and stored as a literal in config.");
+    } else if report.created {
         println!("New token captured and stored in 1Password.");
     } else {
         println!("Existing op:// reference adopted; no new item created.");
     }
+}
+
+/// Reject a flag-supplied `--role` the workspace does not allow, before
+/// any token mint runs. Empty `allowed_roles` is the "any role" shorthand
+/// (see [`crate::console::manager::agent_allow`]).
+fn validate_setup_role_allowed(config: &AppConfig, workspace: &str, role: &str) -> Result<()> {
+    use crate::console::manager::agent_allow::agent_is_effectively_allowed;
+    let ws = config.require_workspace(workspace)?;
+    if !agent_is_effectively_allowed(ws, role) {
+        anyhow::bail!(
+            "role {role:?} is not allowed in workspace {workspace:?}; allowed roles: {}",
+            ws.allowed_roles.join(", ")
+        );
+    }
+    Ok(())
+}
+
+/// Prompt for the token scope: all roles in the workspace, or a specific
+/// role override. Returns `None` for the workspace level (all roles) and
+/// `Some(role)` for a per-role override. Falls back to `None` when stdin
+/// is not a TTY or the workspace has no allowed roles to scope to.
+fn prompt_interactive_role(config: &AppConfig, workspace: &str) -> Result<Option<String>> {
+    use std::io::IsTerminal;
+
+    let roles: Vec<String> = config
+        .workspaces
+        .get(workspace)
+        .map(|w| w.allowed_roles.clone())
+        .unwrap_or_default();
+    if roles.is_empty() || !std::io::stdin().is_terminal() {
+        return Ok(None);
+    }
+
+    let mut labels: Vec<String> = vec!["All roles (workspace level)".to_string()];
+    labels.extend(roles.iter().cloned());
+    let idx = dialoguer::Select::new()
+        .with_prompt("Scope")
+        .items(&labels)
+        .default(0)
+        .interact()?;
+    Ok(if idx == 0 {
+        None
+    } else {
+        Some(roles[idx - 1].clone())
+    })
+}
+
+/// Storage target chosen at the top of the `--interactive` flow.
+enum InteractiveTokenSource {
+    /// Store the minted token as a literal in config.
+    Plain,
+    /// Walk the 1Password account → vault → item → field drill-down.
+    Op,
+}
+
+/// First `--interactive` step: pick where the minted token is stored.
+/// Plain-text skips the 1Password account/vault/item/field prompts
+/// entirely.
+fn prompt_interactive_token_source() -> Result<InteractiveTokenSource> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "--interactive requires a TTY. Pass --vault <name-or-uuid> or --plain for \
+             non-interactive use."
+        );
+    }
+    let idx = dialoguer::Select::new()
+        .with_prompt("Store token in")
+        .items(["Plain text", "1Password"])
+        .default(0)
+        .interact()?;
+    Ok(if idx == 0 {
+        InteractiveTokenSource::Plain
+    } else {
+        InteractiveTokenSource::Op
+    })
+}
+
+/// Plain-CLI interactive selection of where a Claude token should land in
+/// 1Password. Walks account → vault → item → field with `dialoguer`
+/// prompts and returns the [`TokenSetupArgs`] the orchestrator runs. No
+/// rich TUI — the console owns that surface; the CLI stays CLI.
+fn prompt_interactive_token_store(
+    workspace: &str,
+    op_account: Option<String>,
+) -> Result<crate::workspace::token_setup::TokenSetupArgs> {
+    use crate::operator_env::{OpCli, OpStructRunner};
+    use crate::workspace::token_setup;
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "--interactive requires a TTY. Pass --vault <name-or-uuid> for non-interactive use."
+        );
+    }
+
+    let accounts = OpCli::new_interactive()
+        .with_account(op_account.clone())
+        .account_list()?;
+    if accounts.is_empty() {
+        anyhow::bail!("1Password CLI is not signed in. Run `op signin` in your shell, then retry.");
+    }
+
+    // An explicit --op-account wins; otherwise prompt only when ambiguous.
+    let account_id: Option<String> = if op_account.is_some() {
+        op_account
+    } else if accounts.len() == 1 {
+        Some(accounts[0].id.clone())
+    } else {
+        let labels: Vec<String> = accounts
+            .iter()
+            .map(|a| format!("{}  ({})", a.email, a.url))
+            .collect();
+        let idx = dialoguer::Select::new()
+            .with_prompt("1Password account")
+            .items(&labels)
+            .default(0)
+            .interact()?;
+        Some(accounts[idx].id.clone())
+    };
+
+    let op = OpCli::new_interactive().with_account(account_id.clone());
+
+    let vaults = op.vault_list(account_id.as_deref())?;
+    if vaults.is_empty() {
+        anyhow::bail!("No 1Password vaults available for this account.");
+    }
+    let vault_labels: Vec<&str> = vaults.iter().map(|v| v.name.as_str()).collect();
+    let vault = &vaults[dialoguer::Select::new()
+        .with_prompt("Vault")
+        .items(&vault_labels)
+        .default(0)
+        .interact()?];
+
+    let items = op.item_list(&vault.id, account_id.as_deref())?;
+    let mut item_labels: Vec<String> = vec!["[ + New item ]".to_string()];
+    item_labels.extend(items.iter().map(|i| {
+        if i.subtitle.is_empty() {
+            i.name.clone()
+        } else {
+            format!("{} ({})", i.name, i.subtitle)
+        }
+    }));
+    let item_choice = dialoguer::Select::new()
+        .with_prompt("Item")
+        .items(&item_labels)
+        .default(0)
+        .interact()?;
+
+    if item_choice == 0 {
+        let default_name = token_setup::DEFAULT_ITEM_TEMPLATE.replace("{ws}", workspace);
+        let item_name: String = dialoguer::Input::new()
+            .with_prompt("New item name")
+            .default(default_name)
+            .interact_text()?;
+        let field_label: String = dialoguer::Input::new()
+            .with_prompt("Field label")
+            .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
+            .interact_text()?;
+        // Trim so padding can't reach the op item title / field id+label,
+        // matching the TUI picker's commit trimming.
+        return Ok(token_setup::TokenSetupArgs {
+            vault: Some(vault.id.clone()),
+            item_name: Some(item_name.trim().to_string()),
+            account: account_id,
+            reuse: None,
+            field_label: Some(field_label.trim().to_string()),
+            edit_existing: None,
+            section: None,
+            plain_text: false,
+        });
+    }
+
+    let item = &items[item_choice - 1];
+    let (section, field) =
+        prompt_existing_item_section_and_field(&op, account_id.as_deref(), &vault.id, &item.id)?;
+
+    Ok(token_setup::TokenSetupArgs {
+        vault: None,
+        item_name: None,
+        account: account_id,
+        reuse: None,
+        field_label: None,
+        edit_existing: Some(token_setup::EditExistingTarget {
+            vault_id: vault.id.clone(),
+            item_id: item.id.clone(),
+            field,
+            section,
+        }),
+        section: None,
+        plain_text: false,
+    })
+}
+
+/// Prompt for which section and field of an existing 1Password item the
+/// token should land in. Mirrors the TUI Create-mode drill: first pick a
+/// section (`(root)`, an existing named section, or `[ + New section ]`),
+/// then pick a field scoped to that section (an existing field to
+/// overwrite, or `[ + New field ]` to append). Returns the chosen section
+/// (`None` for `(root)`) and a [`FieldTarget`] — `Existing` when an
+/// existing field was picked (so the write targets that exact field and
+/// preserves its placement), `New` for an appended field.
+fn prompt_existing_item_section_and_field(
+    op: &crate::operator_env::OpCli,
+    account_id: Option<&str>,
+    vault_id: &str,
+    item_id: &str,
+) -> Result<(Option<String>, crate::operator_env::FieldTarget)> {
+    use crate::operator_env::{FieldTarget, OpStructRunner, parse_op_reference};
+    use crate::workspace::token_setup;
+
+    let fields = op.item_get(item_id, vault_id, account_id)?;
+
+    // Distinct sections in first-appearance order; `None` is `(root)`.
+    let mut sections: Vec<Option<String>> = vec![None];
+    for f in &fields {
+        if let Some(name) = parse_op_reference(&f.reference).and_then(|p| p.section)
+            && !sections.iter().any(|s| s.as_deref() == Some(name.as_str()))
+        {
+            sections.push(Some(name));
+        }
+    }
+
+    let mut section_labels: Vec<String> = sections
+        .iter()
+        .map(|s| s.clone().unwrap_or_else(|| "(root)".to_string()))
+        .collect();
+    section_labels.push("[ + New section ]".to_string());
+
+    let section_choice = dialoguer::Select::new()
+        .with_prompt("Section")
+        .items(&section_labels)
+        .default(0)
+        .interact()?;
+
+    let section: Option<String> = if section_choice == sections.len() {
+        let name: String = dialoguer::Input::new()
+            .with_prompt("New section name")
+            .interact_text()?;
+        // Trim to match the TUI picker so padding can't reach the section label.
+        Some(name.trim().to_string())
+    } else {
+        sections[section_choice].clone()
+    };
+
+    // Fields scoped to the chosen section.
+    let scoped: Vec<&crate::operator_env::OpField> = fields
+        .iter()
+        .filter(|f| {
+            parse_op_reference(&f.reference)
+                .and_then(|p| p.section)
+                .as_deref()
+                == section.as_deref()
+        })
+        .collect();
+
+    let mut field_labels: Vec<String> = vec!["[ + New field ]".to_string()];
+    field_labels.extend(scoped.iter().map(|f| {
+        let label = if f.label.is_empty() { &f.id } else { &f.label };
+        let kind = if f.concealed {
+            "concealed".to_string()
+        } else {
+            f.field_type.to_lowercase()
+        };
+        format!("{label}  ({kind})")
+    }));
+    let field_choice = dialoguer::Select::new()
+        .with_prompt("Field")
+        .items(&field_labels)
+        .default(0)
+        .interact()?;
+
+    if field_choice == 0 {
+        let field_label: String = dialoguer::Input::new()
+            .with_prompt("New field label")
+            .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
+            .interact_text()?;
+        return Ok((
+            section,
+            FieldTarget::New {
+                label: field_label.trim().to_string(),
+            },
+        ));
+    }
+    let f = scoped[field_choice - 1];
+    let label = if f.label.is_empty() {
+        f.id.clone()
+    } else {
+        f.label.clone()
+    };
+    Ok((
+        section,
+        FieldTarget::Existing {
+            id: f.id.clone(),
+            label,
+        },
+    ))
 }
 
 #[derive(tabled::Tabled)]
@@ -2901,7 +3308,6 @@ mod auth_set_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,
@@ -2959,6 +3365,38 @@ mod auth_set_tests {
         assert!(!out.contains("Global mounts (agent-smith):"), "{out}");
         assert!(out.contains("gradle-cache"), "{out}");
         assert!(!out.contains("│ Scope"), "{out}");
+    }
+
+    #[test]
+    fn validate_setup_role_rejects_disallowed_and_accepts_allowed() {
+        let mut config = AppConfig::default();
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            allowed_roles: vec!["alpha".into(), "beta".into()],
+            ..Default::default()
+        };
+        config.workspaces.insert("proj".into(), ws);
+
+        validate_setup_role_allowed(&config, "proj", "alpha").expect("allowed role passes");
+        let err = validate_setup_role_allowed(&config, "proj", "typo").unwrap_err();
+        assert!(
+            err.to_string().contains("not allowed"),
+            "disallowed role must bail: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_setup_role_allows_any_when_allowed_roles_empty() {
+        let mut config = AppConfig::default();
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            allowed_roles: vec![],
+            ..Default::default()
+        };
+        config.workspaces.insert("proj".into(), ws);
+        validate_setup_role_allowed(&config, "proj", "anything").expect("empty list = any role");
     }
 
     #[test]
@@ -3038,20 +3476,50 @@ mod auth_set_tests {
     /// Test fake for [`crate::operator_env::OpWriteRunner`] used by
     /// the rotate-cleanup tests below.
     struct FakeOpWriter {
-        deletes: std::cell::RefCell<Vec<(String, String)>>,
+        /// Records every `item_delete` call as `(vault, item, account)`
+        /// so the rotate-cleanup tests can assert the per-call account
+        /// override (the account the prior item lives in).
+        deletes: std::cell::RefCell<Vec<(String, String, Option<String>)>>,
         fail_delete: bool,
+        /// Tags returned by `item_tags`. Defaults to jackin-owned so the
+        /// rotate-cleanup tests exercise the delete; set empty to model an
+        /// operator-adopted item the delete guard must spare.
+        tags: Vec<String>,
+        /// When `true`, `item_tags` returns `Err` to exercise the rotate
+        /// guard's fail-safe (skip delete) path.
+        fail_tags: bool,
     }
     impl FakeOpWriter {
         fn new() -> Self {
             Self {
                 deletes: std::cell::RefCell::new(Vec::new()),
                 fail_delete: false,
+                tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_string()],
+                fail_tags: false,
             }
         }
         fn failing() -> Self {
             Self {
                 deletes: std::cell::RefCell::new(Vec::new()),
                 fail_delete: true,
+                tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_string()],
+                fail_tags: false,
+            }
+        }
+        fn adopted() -> Self {
+            Self {
+                deletes: std::cell::RefCell::new(Vec::new()),
+                fail_delete: false,
+                tags: Vec::new(),
+                fail_tags: false,
+            }
+        }
+        fn tag_read_fails() -> Self {
+            Self {
+                deletes: std::cell::RefCell::new(Vec::new()),
+                fail_delete: false,
+                tags: Vec::new(),
+                fail_tags: true,
             }
         }
     }
@@ -3066,15 +3534,38 @@ mod auth_set_tests {
             &self,
             item_id: &str,
             vault_id: &str,
-            _account: Option<&str>,
+            account: Option<&str>,
         ) -> anyhow::Result<()> {
-            self.deletes
-                .borrow_mut()
-                .push((vault_id.to_string(), item_id.to_string()));
+            self.deletes.borrow_mut().push((
+                vault_id.to_string(),
+                item_id.to_string(),
+                account.map(str::to_string),
+            ));
             if self.fail_delete {
                 anyhow::bail!("simulated item_delete failure");
             }
             Ok(())
+        }
+        fn item_field_set(
+            &self,
+            _item_id: &str,
+            _vault_id: &str,
+            _target: &crate::operator_env::FieldTarget,
+            _value: &str,
+            _section: Option<&str>,
+        ) -> anyhow::Result<crate::operator_env::OpRef> {
+            anyhow::bail!("rotate-cleanup tests do not exercise item_field_set")
+        }
+        fn item_tags(
+            &self,
+            _item_id: &str,
+            _vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<String>> {
+            if self.fail_tags {
+                anyhow::bail!("simulated item_tags read failure");
+            }
+            Ok(self.tags.clone())
         }
     }
 
@@ -3086,17 +3577,102 @@ mod auth_set_tests {
             crate::operator_env::OpRef {
                 op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
                 path: "Personal/Prior/token".into(),
+                account: None,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
             path: "Personal/New/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
         assert_eq!(
             *writer.deletes.borrow(),
-            vec![("VAULT_UUID".to_string(), "OLD_ITEM".to_string())],
+            vec![("VAULT_UUID".to_string(), "OLD_ITEM".to_string(), None)],
+        );
+    }
+
+    /// The prior item the operator adopted (no jackin tag) must NOT be
+    /// deleted on rotate — it may hold the operator's other fields.
+    #[test]
+    fn delete_prior_op_item_spares_operator_adopted_item() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://VAULT_UUID/SHARED_ITEM/token".into(),
+                path: "Personal/My Vault Item/token".into(),
+                account: None,
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
+            path: "Personal/New/token".into(),
+            account: None,
+        };
+        let writer = FakeOpWriter::adopted();
+        delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
+        assert!(
+            writer.deletes.borrow().is_empty(),
+            "an adopted (non-jackin-tagged) prior item must never be deleted"
+        );
+    }
+
+    /// If the ownership tag-read fails (auth/network), rotate must fail safe:
+    /// skip the delete (don't risk destroying an item we can't verify) and
+    /// still return Ok so the freshly-wired token stands.
+    #[test]
+    fn delete_prior_op_item_skips_delete_on_tag_read_error() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://VAULT_UUID/OLD_ITEM/token".into(),
+                path: "Personal/Prior/token".into(),
+                account: None,
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
+            path: "Personal/New/token".into(),
+            account: None,
+        };
+        let writer = FakeOpWriter::tag_read_fails();
+        delete_prior_op_item_with_runner(prior, &new_ref, &writer)
+            .expect("tag-read failure must not fail the rotate");
+        assert!(
+            writer.deletes.borrow().is_empty(),
+            "an unverifiable prior item must never be deleted"
+        );
+    }
+
+    /// Cross-account rotate: the prior item lives in account A, the new
+    /// item in account B. The delete must target account A (the prior
+    /// ref's own account) via the per-call override, NOT the new ref's
+    /// account — otherwise the prior item is orphaned.
+    #[test]
+    fn delete_prior_op_item_targets_prior_refs_account() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
+                path: "Personal/Prior/token".into(),
+                account: Some("account-A".into()),
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
+            path: "Personal/New/token".into(),
+            account: Some("account-B".into()),
+        };
+        // The OpCli is pinned to the NEW account; the per-call override
+        // (the prior ref's account) must still win.
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
+        assert_eq!(
+            *writer.deletes.borrow(),
+            vec![(
+                "VAULT_UUID".to_string(),
+                "OLD_ITEM".to_string(),
+                Some("account-A".to_string()),
+            )],
+            "delete must target the account the prior item actually lives in"
         );
     }
 
@@ -3108,6 +3684,7 @@ mod auth_set_tests {
         let new_ref = crate::operator_env::OpRef {
             op: "op://V/I/F".into(),
             path: "Personal/New/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(None, &new_ref, &writer).unwrap();
@@ -3132,6 +3709,7 @@ mod auth_set_tests {
         let same = crate::operator_env::OpRef {
             op: "op://V/I/F".into(),
             path: "Personal/Item/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(
@@ -3152,11 +3730,13 @@ mod auth_set_tests {
             crate::operator_env::OpRef {
                 op: "op://V_UUID/I_UUID/F".into(),
                 path: "Personal/Prior/token".into(),
+                account: None,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://V_UUID/I_NEW/F".into(),
             path: "Personal/New/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::failing();
         let err = delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap_err();

@@ -64,11 +64,7 @@ pub(in crate::console::manager) fn auth_form_rect(
     outer: Rect,
     state: &auth_panel::AuthForm,
 ) -> Rect {
-    centered_rect_fixed(
-        outer,
-        80,
-        auth_panel::required_height(state, outer.width * 80 / 100),
-    )
+    centered_rect_fixed(outer, 80, auth_panel::required_height(state))
 }
 
 /// Single source of truth for modal size + placement;
@@ -104,6 +100,12 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
                 60,
                 error_popup::required_height(state, inner_width, max_rows),
             )
+        }
+        // A naming sub-stage is a plain labelled input box, sized like
+        // every other text-input modal; the drill-down stages use the
+        // larger picker rect.
+        Modal::OpPicker { state } if state.naming_stage_input().is_some() => {
+            return text_input_rect(outer);
         }
         Modal::OpPicker { .. } => return op_picker_rect(outer),
         Modal::RolePicker { state }
@@ -250,6 +252,30 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<FooterItem> {
             FooterItem::Text("cancel"),
         ],
         Modal::ErrorPopup { .. } => vec![FooterItem::Key("Enter/Esc"), FooterItem::Text("dismiss")],
+        // A naming sub-stage is a plain input box: confirm / cancel only.
+        Modal::OpPicker { state } if state.naming_stage_input().is_some() => vec![
+            FooterItem::Key("Enter"),
+            FooterItem::Text("confirm"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            FooterItem::Text("cancel"),
+        ],
+        // The Section stage is a short list with no filter — drop the
+        // `type filter` hint that the other picker list stages carry.
+        Modal::OpPicker { state }
+            if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
+        {
+            vec![
+                FooterItem::Key("\u{2191}\u{2193}"),
+                FooterItem::Text("navigate"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Enter"),
+                FooterItem::Text("select"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Esc"),
+                FooterItem::Text("cancel"),
+            ]
+        }
         Modal::OpPicker { .. }
         | Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }
@@ -388,10 +414,27 @@ pub(super) fn settings_env_modal_footer_items(modal: &SettingsEnvModal<'_>) -> V
     }
 }
 
-pub(super) fn settings_auth_modal_footer_items(modal: &SettingsAuthModal<'_>) -> Vec<FooterItem> {
+pub(super) fn settings_auth_modal_footer_items(
+    auth: &crate::console::manager::state::SettingsAuthState,
+) -> Vec<FooterItem> {
+    let Some(modal) = auth.modal.as_ref() else {
+        return Vec::new();
+    };
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
-            auth_form_footer_items(state.as_ref(), *focus)
+            let mut items = auth_form_footer_items(state.as_ref(), *focus);
+            // The auth-form `g`/`G` generate trigger is gated to the
+            // global Claude oauth_token slot; surface the hint only when
+            // that gate holds.
+            if crate::console::manager::input::global_mounts::settings_auth_can_generate_token(auth)
+            {
+                items.extend([
+                    FooterItem::GroupSep,
+                    FooterItem::Key("G"),
+                    FooterItem::Text("generate"),
+                ]);
+            }
+            items
         }
         SettingsAuthModal::TextInput { .. } => vec![
             FooterItem::Key("Enter"),
@@ -410,6 +453,28 @@ pub(super) fn settings_auth_modal_footer_items(modal: &SettingsAuthModal<'_>) ->
             FooterItem::Key("Esc"),
             FooterItem::Text("cancel"),
         ],
+        // A naming sub-stage is a plain input box: confirm / cancel only.
+        SettingsAuthModal::OpPicker { state } if state.naming_stage_input().is_some() => vec![
+            FooterItem::Key("Enter"),
+            FooterItem::Text("confirm"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            FooterItem::Text("cancel"),
+        ],
+        SettingsAuthModal::OpPicker { state }
+            if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
+        {
+            vec![
+                FooterItem::Key("\u{2191}\u{2193}"),
+                FooterItem::Text("navigate"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Enter"),
+                FooterItem::Text("select"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Esc"),
+                FooterItem::Text("cancel"),
+            ]
+        }
         SettingsAuthModal::OpPicker { .. } => vec![
             FooterItem::Key("\u{2191}\u{2193}"),
             FooterItem::Text("navigate"),
