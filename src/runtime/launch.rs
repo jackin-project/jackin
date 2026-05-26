@@ -2617,18 +2617,23 @@ async fn render_exit(
             Vec::new()
         }
     };
+    // The decel warp plays on every exit, so leaving the foreground always
+    // feels like dropping out of hyperspace.
+    if !opts.no_rain {
+        tui::warp_out();
+    }
     if running.is_empty() {
-        // Last container left the construct. Clear the session marker and, when
-        // rain is enabled, play the hyperspace warp-out with a wind-down quote
-        // and how long the operator was in the construct.
+        // Last container left the construct: clear the session marker and show
+        // the closing caption (brand pill, wind-down quote, time in the
+        // Construct).
         let elapsed = super::universe::take_elapsed(paths);
         if !opts.no_rain {
-            tui::warp_outro(elapsed);
+            tui::warp_end_caption(elapsed);
         }
         return;
     }
-    // Others remain: show the grouped "still here" summary so the operator
-    // can see who to reconnect to.
+    // Others remain: show the grouped "still here" summary after the warp so
+    // the operator can see who to reconnect to.
     super::exit_summary::show(paths, &running, agent_display_name, opts).await;
 }
 

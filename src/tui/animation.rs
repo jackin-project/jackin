@@ -304,11 +304,19 @@ pub fn warp_intro() {
     warp_caption(super::quotes::pick(super::quotes::START_QUOTES), None);
 }
 
-/// Exit ritual — dropping *out* of hyperspace: the starfield decelerates from
-/// lightspeed to a drift, then a caption with how long the operator was in the
-/// Construct.
-pub fn warp_outro(elapsed: Option<std::time::Duration>) {
+/// Exit ritual — dropping *out* of hyperspace.
+///
+/// The starfield decelerates from lightspeed to a drift. Played whenever the
+/// operator leaves the foreground session, so leaving always feels like slowing
+/// down out of the universe.
+pub fn warp_out() {
     warp(false);
+}
+
+/// The closing caption shown only when the *last* container left (the universe
+/// is empty): the brand pill, a wind-down quote, and how long the operator was
+/// in the Construct.
+pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
     let footer = elapsed.map(|d| format!("in the Construct for {}", format_universe_duration(d)));
     warp_caption(super::quotes::pick(super::quotes::END_QUOTES), footer.as_deref());
 }

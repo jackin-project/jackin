@@ -161,7 +161,7 @@ pub mod output;
 pub mod prompt;
 pub mod quotes;
 
-pub use animation::{warp_intro, warp_outro};
+pub use animation::{warp_end_caption, warp_intro, warp_out};
 pub use output::{
     CodexSyncState, agent_outcome_notice, auth_mode_notice, clear_screen, codex_auth_notice, fatal,
     github_auth_notice, hint, print_config_table, print_deploying, print_logo, set_terminal_title,
