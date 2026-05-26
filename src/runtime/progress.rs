@@ -509,7 +509,7 @@ impl RichRenderer {
                 self.rain = Some(crate::tui::animation::RainState::new(cols, rows));
             }
             if !no_motion
-                && view.frame.is_multiple_of(2)
+                && !view.frame.is_multiple_of(3)
                 && let Some(rain) = &mut self.rain
             {
                 crate::tui::animation::tick_rain(rain);
