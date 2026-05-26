@@ -47,6 +47,8 @@ pub(super) fn render_settings(
         footer_items(state, op_available)
     };
     let footer_h = footer_height(&footer, area.width).max(1);
+    // Cache for mouse hit-testing so it subtracts the same dynamic footer.
+    state.cached_footer_h = footer_h;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

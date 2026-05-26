@@ -297,6 +297,10 @@ pub struct SettingsState<'a> {
     /// Set by the Auth-tab `g`/`G` generate action; drained by the
     /// `run_console` loop to run the global Claude OAuth-token mint.
     pub pending_token_generate: Option<PendingTokenGenerate>,
+    /// Footer height (rows) the renderer last laid out, cached so mouse
+    /// hit-testing subtracts the same dynamic footer the frame drew rather than
+    /// a stale constant — otherwise clicks near the bottom mis-map.
+    pub cached_footer_h: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -657,6 +661,10 @@ pub struct EditorState<'a> {
     /// Set by the `op_picker` commit when `generating_token_target` was
     /// present; drained by the `run_console` loop to run the mint.
     pub pending_token_generate: Option<PendingTokenGenerate>,
+    /// Footer height (rows) the renderer last laid out, cached so mouse
+    /// hit-testing subtracts the same dynamic footer the frame drew rather than
+    /// a stale constant — otherwise clicks near the bottom mis-map.
+    pub cached_footer_h: u16,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -795,6 +803,7 @@ impl SettingsState<'_> {
             trust: SettingsTrustState::from_config(config),
             error_popup: None,
             pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 
@@ -2220,6 +2229,7 @@ impl EditorState<'_> {
             tab_content_height: 0,
             generating_token_target: None,
             pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 
@@ -2256,6 +2266,7 @@ impl EditorState<'_> {
             tab_content_height: 0,
             generating_token_target: None,
             pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 

@@ -258,7 +258,7 @@ fn settings_trust_clickable(
 ) -> bool {
     settings.active_tab == SettingsTab::Trust
         && settings.mounts.modal.is_none()
-        && point_in(mouse, settings_content_area(term_size))
+        && point_in(mouse, settings_content_area(settings, term_size))
 }
 
 /// Resolve the active file-browser modal and its state from whichever stage
@@ -332,7 +332,7 @@ fn settings_trust_row_at(
     if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
         return None;
     }
-    let area = settings_content_area(term_size);
+    let area = settings_content_area(settings, term_size);
     if !point_in(mouse, area) {
         return None;
     }
@@ -452,7 +452,7 @@ fn try_select_settings_trust_row(
     if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
         return false;
     }
-    let area = settings_content_area(term_size);
+    let area = settings_content_area(settings, term_size);
     if !point_in(mouse, area) {
         return false;
     }
@@ -598,10 +598,11 @@ fn try_drag_horizontal_scrollbar(
                     workspace.content_width,
                 )
             } else {
+                let content_area = editor_content_area(editor, term_size);
                 drag_scrollbar(
                     &mut editor.tab_scroll_x,
                     mouse,
-                    editor_content_area(term_size),
+                    content_area,
                     editor.tab_content_width,
                 )
             };
@@ -695,7 +696,7 @@ fn update_scroll_focus(
                 if editor.modal.is_some() {
                     editor.tab_content_scroll_focused = false;
                 } else {
-                    let content_area = editor_content_area(term_size);
+                    let content_area = editor_content_area(editor, term_size);
                     let in_content = point_in(mouse, content_area);
                     let viewport_h = scroll_viewport_height(content_area);
                     let viewport_w = scroll_viewport_width(content_area);
@@ -706,7 +707,7 @@ fn update_scroll_focus(
             }
         }
         ManagerStage::Settings(settings) => {
-            let content_area = settings_content_area(term_size);
+            let content_area = settings_content_area(settings, term_size);
             let in_content = point_in(mouse, content_area);
             settings.mounts.scroll_focused =
                 settings.active_tab == SettingsTab::Mounts && in_content;
@@ -722,14 +723,17 @@ fn update_scroll_focus(
 }
 
 /// The content area below the header + tab strip in Settings/Editor stages.
-const fn settings_content_area(term_size: Rect) -> Rect {
+const fn settings_content_area(
+    settings: &super::super::state::SettingsState<'_>,
+    term_size: Rect,
+) -> Rect {
     Rect {
         x: 0,
         y: EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT,
         width: term_size.width,
-        height: term_size
-            .height
-            .saturating_sub(EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT),
+        height: term_size.height.saturating_sub(
+            EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + settings.cached_footer_h,
+        ),
     }
 }
 
@@ -804,7 +808,7 @@ fn scroll_active_panel(
         ManagerStage::Editor(editor) => {
             if editor.active_tab != EditorTab::Mounts {
                 editor.workspace_mounts_scroll_focused = false;
-                let area = editor_content_area(term_size);
+                let area = editor_content_area(editor, term_size);
                 if point_in(mouse, area)
                     && is_scrollable(editor.tab_content_width, scroll_viewport_width(area))
                 {
@@ -837,7 +841,7 @@ fn scroll_active_panel(
         }
         ManagerStage::Settings(settings) => {
             // Hover-scroll: fire on whichever block the cursor is over.
-            let content_area = settings_content_area(term_size);
+            let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
                 return;
             }
@@ -875,7 +879,7 @@ fn scroll_active_panel_vertical(
 ) {
     match &mut state.stage {
         ManagerStage::Settings(settings) => {
-            let content_area = settings_content_area(term_size);
+            let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
                 return;
             }
@@ -1022,14 +1026,17 @@ fn global_mounts_content_width_from_rows(rows: &[&crate::config::GlobalMountRow]
     global_mounts_content_width(&mounts)
 }
 
-const fn editor_content_area(term_size: Rect) -> Rect {
+const fn editor_content_area(
+    editor: &super::super::state::EditorState<'_>,
+    term_size: Rect,
+) -> Rect {
     Rect {
         x: 0,
         y: EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT,
         width: term_size.width,
-        height: term_size
-            .height
-            .saturating_sub(EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + LIST_FOOTER_HEIGHT),
+        height: term_size.height.saturating_sub(
+            EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + editor.cached_footer_h,
+        ),
     }
 }
 
@@ -1038,7 +1045,7 @@ fn editor_scroll_area(
     term_size: Rect,
 ) -> ScrollArea {
     ScrollArea {
-        area: editor_content_area(term_size),
+        area: editor_content_area(editor, term_size),
         content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
     }
 }
@@ -1194,6 +1201,38 @@ mod mouse_drag_tests {
         let config = crate::config::AppConfig::default();
         let tmp = tempfile::tempdir().unwrap();
         ManagerState::from_config(&config, tmp.path())
+    }
+
+    /// The mouse content-area helpers must subtract the renderer's cached
+    /// dynamic footer height, so a click in the footer never maps to content
+    /// (a footer-height of 2 was hard-coded while the renderer went dynamic).
+    #[test]
+    fn content_areas_exclude_the_cached_footer() {
+        use super::{
+            EDITOR_HEADER_HEIGHT, EDITOR_TAB_STRIP_HEIGHT, editor_content_area,
+            settings_content_area,
+        };
+        use crate::console::manager::state::SettingsState;
+        let term = Rect::new(0, 0, 80, 24);
+
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings.cached_footer_h = 3;
+        let s = settings_content_area(&settings, term);
+        assert_eq!(s.y, EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT);
+        assert_eq!(
+            s.y + s.height,
+            term.height - 3,
+            "settings content must stop where the footer begins"
+        );
+
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.cached_footer_h = 4;
+        let e = editor_content_area(&editor, term);
+        assert_eq!(
+            e.y + e.height,
+            term.height - 4,
+            "editor content must stop where the footer begins"
+        );
     }
 
     /// Build a `MouseEvent` at column `col`, row 0.

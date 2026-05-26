@@ -133,6 +133,8 @@ pub fn render_editor(
     let area = frame.area();
     let items = editor_footer_items(state, config, op_available);
     let footer_h = footer_height(&items, area.width).max(1);
+    // Cache for mouse hit-testing so it subtracts the same dynamic footer.
+    state.cached_footer_h = footer_h;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
