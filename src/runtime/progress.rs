@@ -1099,20 +1099,17 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     let inner = block.inner(box_area);
     frame.render_widget(block, box_area);
     if inner.width != 0 && inner.height != 0 {
-        let lines = crate::runtime::build_log::snapshot();
-        let text = if lines.is_empty() {
+        // Clone only the visible rows (tail-following, scroll-adjusted), not the
+        // whole ring buffer, since this runs every render frame.
+        let window =
+            crate::runtime::build_log::window_from_bottom(view.build_log_scroll, inner.height as usize);
+        let text = if window.is_empty() {
             "(waiting for docker build output…)".to_string()
         } else {
-            lines.join("\n")
+            window.join("\n")
         };
-        // Follow the tail unless the operator scrolled up. `build_log_scroll`
-        // counts lines from the bottom; clamp so it never passes the top.
-        let max_top = lines.len().saturating_sub(inner.height as usize);
-        let top = max_top.saturating_sub(view.build_log_scroll);
         frame.render_widget(
-            Paragraph::new(text)
-                .style(Style::default().fg(WHITE).bg(Color::Black))
-                .scroll((u16::try_from(top).unwrap_or(u16::MAX), 0)),
+            Paragraph::new(text).style(Style::default().fg(WHITE).bg(Color::Black)),
             inner,
         );
     }

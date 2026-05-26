@@ -61,12 +61,31 @@ pub fn snapshot() -> Vec<String> {
         .map_or_else(|_| Vec::new(), |lines| lines.iter().cloned().collect())
 }
 
+/// The visible window of lines for a viewport `height` rows tall.
+///
+/// `scroll` counts lines up from the tail (`0` follows the newest output).
+/// Clones only the visible lines, not the whole buffer — the cockpit calls
+/// this every render frame while the overlay is open.
+#[must_use]
+pub fn window_from_bottom(scroll: usize, height: usize) -> Vec<String> {
+    let Ok(lines) = LINES.lock() else {
+        return Vec::new();
+    };
+    let top = lines
+        .len()
+        .saturating_sub(height)
+        .saturating_sub(scroll);
+    lines.iter().skip(top).take(height).cloned().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // One test only: the buffer is a process-global static, so splitting these
+    // assertions into parallel tests would race on the shared state.
     #[test]
-    fn caps_at_max_lines_dropping_oldest() {
+    fn buffer_caps_windows_and_clears() {
         begin();
         for i in 0..(MAX_LINES + 10) {
             push_line(&format!("line {i}"));
@@ -78,6 +97,25 @@ mod tests {
             snap.last().map(String::as_str),
             Some(&*format!("line {}", MAX_LINES + 9))
         );
+
+        // window_from_bottom on a known buffer: tail-follow, scroll, and a
+        // buffer smaller than the viewport.
+        begin();
+        for i in 0..100 {
+            push_line(&format!("line {i}"));
+        }
+        assert_eq!(
+            window_from_bottom(0, 5),
+            vec!["line 95", "line 96", "line 97", "line 98", "line 99"]
+        );
+        assert_eq!(
+            window_from_bottom(10, 5),
+            vec!["line 85", "line 86", "line 87", "line 88", "line 89"]
+        );
+        begin();
+        push_line("only");
+        assert_eq!(window_from_bottom(0, 5), vec!["only"]);
+
         end();
         assert!(!is_active());
     }
