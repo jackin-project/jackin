@@ -430,18 +430,23 @@ fn rain_logo_with(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
     // Brief, brisk rainfall that reveals the logo (the reveal + hold happen
     // inside digital_rain when a banner is supplied).
     digital_rain(900, Some(REVEAL_BANNER));
-    print_corner(quote, footer);
+    print_logo_caption(quote, footer);
     // Linger so the quote is readable, then wipe so the next surface — the
     // console manager on entry, or the shell on exit — starts clean.
     let _ = skippable_sleep(std::time::Duration::from_millis(1900));
     clear_screen();
 }
 
-/// Render the quote (bottom-right) and an optional footer line (bottom-left)
-/// over the revealed logo, using absolute cursor moves like `digital_rain`.
-fn print_corner(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
+/// Render the quote centered just below the revealed logo (where the operator
+/// is already looking), bright/white so it reads, with the author and any
+/// footer line dimmer beneath it. Uses absolute cursor moves like `digital_rain`.
+fn print_logo_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
     let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let cols = term_cols as usize;
+    // The logo is vertically centered (see `banner_grid`); start the caption one
+    // blank row beneath it.
+    let logo_top = (term_rows as usize).saturating_sub(REVEAL_BANNER.len()) / 2;
+    let mut row = u16::try_from(logo_top + REVEAL_BANNER.len() + 1).unwrap_or(term_rows);
     let truncate = |s: &str| -> String {
         let max = cols.saturating_sub(4).max(8);
         if s.chars().count() > max {
@@ -452,29 +457,21 @@ fn print_corner(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
             s.to_string()
         }
     };
-    let right = |row: u16, text: &str, color: (u8, u8, u8)| {
+    let center = |row: u16, text: &str, color: (u8, u8, u8)| {
+        if row == 0 || row > term_rows {
+            return;
+        }
         let t = truncate(text);
-        let col = cols.saturating_sub(t.chars().count() + 2).max(1);
+        let col = (cols.saturating_sub(t.chars().count()) / 2).max(1);
         eprint!("\x1b[{row};{col}H{}", t.color(rgb(color)));
     };
     if let Some(q) = quote {
-        right(
-            term_rows.saturating_sub(3),
-            &format!("\u{201C}{}\u{201D}", q.text),
-            PHOSPHOR_DIM,
-        );
-        right(
-            term_rows.saturating_sub(2),
-            &format!("\u{2014} {}", q.author),
-            PHOSPHOR_DARK,
-        );
+        center(row, &format!("\u{201C}{}\u{201D}", q.text), WHITE);
+        center(row.saturating_add(1), &format!("\u{2014} {}", q.author), PHOSPHOR_DIM);
+        row = row.saturating_add(3);
     }
     if let Some(f) = footer {
-        eprint!(
-            "\x1b[{};3H{}",
-            term_rows.saturating_sub(2),
-            truncate(f).color(rgb(PHOSPHOR_DIM))
-        );
+        center(row, f, PHOSPHOR_DIM);
     }
     let _ = io::stderr().flush();
 }
