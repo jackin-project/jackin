@@ -63,11 +63,17 @@ Rules:
 - `Tab switch tab`, `S save`, and `Esc back/discard` are always shown in the global footer.
 - Keep each hint concise: one symbol or key name, one word label. Use `·` separators between hints.
 
-### Clickable targets must look clickable
+### Clickable targets must look clickable (hover + hand pointer — non-negotiable)
 
-Any jackin' TUI element that performs an action on click must expose three matching cues: a distinct resting style, a hover style change, and pointer-shape feedback where the terminal supports it. The hover change must be visible but modest — a lifted background, brighter foreground, or equivalent cue that matches the website's "this is interactive" clarity without overpowering the surrounding chrome. The visual target must be the exact value or control that will act. For copy dialogs, only the value copied by `Enter` is rendered as the emphasized clickable value; informational rows stay in the normal value color.
+This mirrors the web/W3C convention: on a website you know something is clickable because (1) the cursor turns into a hand pointer over it, and (2) it changes appearance on hover. Every jackin' TUI element that performs an action on click **must** expose both, plus a distinct resting style:
 
-When a footer says `Enter copy <value>`, clicking that same emphasized value must perform the same copy action and show visible feedback. Do not make a whole dialog row look actionable if only one value is copied, and do not add click handlers without a visible hover/resting affordance.
+1. **Hand pointer on hover.** When the pointer is over a clickable element, the terminal cursor must switch to the hand/pointer shape via OSC 22 (`\x1b]22;pointer\x1b\\`); it returns to the default shape (`\x1b]22;default`) when the pointer leaves. This is the single most important "you can click this" signal. Both surfaces already own the mechanism — the in-container multiplexer's `PointerShape`/`osc22_pointer_shape` + `update_pointer_shape_for_mouse` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, and the console's pointer handling — so a new clickable wires into the existing hover→pointer-shape resolution rather than inventing its own.
+2. **Hover style change.** The element must visibly change while hovered — a lifted background, brighter foreground, or equivalent — modest but unmistakable, matching the website's "this is interactive" clarity without overpowering the surrounding chrome. The **gold-standard exemplar is the tab strip**: hovering a tab lifts its background (`TAB_BG_INACTIVE_HOVER` / `TAB_BG_ACTIVE_HOVER`) and the console + multiplexer share the same hit-test (`jackin_tui::lay_out_tabs` + `tab_at_column`) so hover and click stay in lock-step. Model new clickables on it.
+3. **Distinct resting style.** The element looks different from inert text even when not hovered (e.g. the blue instance-id link chip, the emphasized copy value).
+
+The visual target must be the exact value or control that will act. For copy dialogs, only the value copied by `Enter` is rendered as the emphasized clickable value; informational rows stay in the normal value color. When a footer says `Enter copy <value>`, clicking that same emphasized value must perform the same copy action and show visible feedback. Do not make a whole dialog row look actionable if only one value is copied.
+
+**A click handler without both a hover style change and an OSC 22 hand-pointer is a design-decision violation.** This applies to every surface that handles mouse input — the workspace manager, the launch cockpit (the build-log button on the loading screen is a clickable and must hover + show the hand pointer), and every in-container multiplexer dialog. Reviewers reject a new clickable that lacks either cue.
 
 This rule applies to every TUI surface: list view, workspace editor (all tabs), settings (all tabs), all modals and overlays.
 
