@@ -118,9 +118,9 @@ The mechanism is a single host-side guard, `HostScreen` (<RepoFile path="src/con
 
 The in-container capsule client (<RepoFile path="crates/jackin-capsule/src/client.rs" />) would otherwise toggle its **own** alternate screen (`?1049h`/`?1049l`) over the `docker exec` channel, so detaching it would pop the operator back to the cooked terminal even though the host still holds a screen. The launch flow passes `JACKIN_HOST_ALT_SCREEN=1` on the capsule `docker exec` (the `host_alt_screen_exec_flag` helper in <RepoFile path="src/runtime/attach.rs" />) whenever it owns the screen; the client then skips its `?1049h` enter (keeping the `clear + home` so it draws fresh over the loading frame) and drops the `?1049l` from its detach reset, leaving the host guard to leave the screen once at the very end. Standalone capsule invocations (`jackin hardline`) do not set the env, so the client manages its own screen exactly as before.
 
-### Modals dim the full surface behind them
+### Modals hide the full surface behind them
 
-Every modal or dialog is global to the TUI surface, not scoped to one pane, tab, list row, or content block. Opening a modal must redraw the whole background in backdrop colors before painting the modal: top chrome, bottom chrome, pane/list/card borders, focused-state accents, scrollbars, and content all dim together. Do not leave active green borders, selected scrollbars, or bright clickable chrome visible behind a modal. Those focus cues belong to the surface behind the dialog and return only after the modal closes.
+Every modal or dialog is global to the TUI surface, not scoped to one pane, tab, list row, or content block. Opening a modal must paint an opaque backdrop over the whole terminal before drawing the modal, so the surface behind it is fully hidden rather than dimmed: top chrome, bottom chrome, pane/list/card borders, focused-state accents, scrollbars, and content all disappear behind the fill. Do not leave active green borders, selected scrollbars, bright clickable chrome, or dimmed-but-readable content visible behind a modal. (An earlier dimmed-backdrop treatment read as unstable; an opaque fill is cleaner and unambiguous.) The hidden chrome reappears only after the modal closes. The in-container multiplexer fills with solid black (`render::fill_screen`); other rich surfaces use their own background colour.
 
 ---
 

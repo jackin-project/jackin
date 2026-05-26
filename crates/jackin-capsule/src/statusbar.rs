@@ -41,8 +41,6 @@ const JACKIN_INSTANCE_ID_ENV: &str = "JACKIN_INSTANCE_ID";
 const BRAND_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
 const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
 const BRAND_BOLD: &str = "\x1b[1m";
-const BRAND_BG_DIM: &str = "\x1b[48;2;0;51;13m";
-const BRAND_FG_DIM: &str = "\x1b[38;2;0;0;0m";
 
 // Tab-cell backgrounds live in `jackin-tui` (TAB_BG_*) so the console tab
 // strips and this status bar can't drift; emitted here via `ansi::bg`.
@@ -50,10 +48,6 @@ const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const TAB_FG_ACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE on graphite
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waiting for operator"
-const TAB_BG_DIM: &str = "\x1b[48;2;8;8;8m";
-const TAB_FG_DIM: &str = "\x1b[38;2;51;51;51m";
-const TAB_UNDERLINE_FG_DIM: &str = "\x1b[38;2;51;51;51m";
-const GLYPH_BLOCKED_FG_DIM: &str = "\x1b[38;2;51;12;12m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
 const BUTTON_BG_IDLE: &str = "\x1b[48;2;18;70;130m"; // restrained blue
@@ -62,9 +56,6 @@ const BUTTON_FG_IDLE: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const BUTTON_BG_AWAITING: &str = "\x1b[48;2;96;180;255m"; // active blue
 const BUTTON_BG_AWAITING_HOVER: &str = "\x1b[48;2;132;202;255m"; // active hover lift
 const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
-const HINT_FG_DIM: &str = "\x1b[38;2;0;28;6m";
-const BUTTON_BG_DIM: &str = "\x1b[48;2;4;14;26m";
-const BUTTON_FG_DIM: &str = "\x1b[38;2;51;51;51m";
 use jackin_tui::ansi::{BOLD, RESET};
 
 const BRAND_TEXT: &str = " jackin' ";
@@ -174,6 +165,7 @@ impl StatusBar {
     }
 
     /// Render the status bar at rows 0–1 of the host terminal.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         buf: &mut Vec<u8>,
@@ -183,7 +175,6 @@ impl StatusBar {
         sessions_state: &[(u64, AgentState)],
         hovered_tab: Option<usize>,
         menu_hovered: bool,
-        dim: bool,
     ) {
         self.tab_regions.clear();
         self.hint_region = None;
@@ -192,11 +183,9 @@ impl StatusBar {
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
 
         // Brand pill.
-        buf.extend_from_slice(if dim { BRAND_BG_DIM } else { BRAND_BG }.as_bytes());
-        buf.extend_from_slice(if dim { BRAND_FG_DIM } else { BRAND_FG }.as_bytes());
-        if !dim {
-            buf.extend_from_slice(BRAND_BOLD.as_bytes());
-        }
+        buf.extend_from_slice(BRAND_BG.as_bytes());
+        buf.extend_from_slice(BRAND_FG.as_bytes());
+        buf.extend_from_slice(BRAND_BOLD.as_bytes());
         buf.extend_from_slice(BRAND_TEXT.as_bytes());
         buf.extend_from_slice(RESET.as_bytes());
         for _ in 0..BRAND_PAD_COLS {
@@ -240,7 +229,7 @@ impl StatusBar {
                 clipped_at = Some(cell.start_col);
                 break;
             }
-            self.emit_tab_row0(buf, cell, *glyph, hovered_tab == Some(idx), dim);
+            self.emit_tab_row0(buf, cell, *glyph, hovered_tab == Some(idx));
             let region_start = cell.start_col + 1;
             let region_end = region_start + cell.cell_cols;
             self.tab_regions.push((region_start, region_end));
@@ -253,20 +242,15 @@ impl StatusBar {
         let hint_start = cols.saturating_sub(hint_cols);
         if hint_start > brand_end_1based {
             move_to(buf, 1, hint_start);
-            let (bg, fg) = match (dim, self.prefix_mode, menu_hovered) {
-                (true, _, _) => (BUTTON_BG_DIM, BUTTON_FG_DIM),
-                (false, PrefixMode::Idle, false) => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
-                (false, PrefixMode::Idle, true) => (BUTTON_BG_IDLE_HOVER, BUTTON_FG_IDLE),
-                (false, PrefixMode::Awaiting, false) => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
-                (false, PrefixMode::Awaiting, true) => {
-                    (BUTTON_BG_AWAITING_HOVER, BUTTON_FG_AWAITING)
-                }
+            let (bg, fg) = match (self.prefix_mode, menu_hovered) {
+                (PrefixMode::Idle, false) => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
+                (PrefixMode::Idle, true) => (BUTTON_BG_IDLE_HOVER, BUTTON_FG_IDLE),
+                (PrefixMode::Awaiting, false) => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
+                (PrefixMode::Awaiting, true) => (BUTTON_BG_AWAITING_HOVER, BUTTON_FG_AWAITING),
             };
             buf.extend_from_slice(bg.as_bytes());
             buf.extend_from_slice(fg.as_bytes());
-            if !dim {
-                buf.extend_from_slice(BOLD.as_bytes());
-            }
+            buf.extend_from_slice(BOLD.as_bytes());
             buf.extend_from_slice(hint.as_bytes());
             buf.extend_from_slice(RESET.as_bytes());
             self.hint_region = Some((hint_start, hint_start + hint_cols));
@@ -280,7 +264,7 @@ impl StatusBar {
             let pos = cols.saturating_sub(reserve_right);
             if pos > brand_end_1based {
                 move_to(buf, 1, pos);
-                buf.extend_from_slice(if dim { HINT_FG_DIM } else { HINT_FG }.as_bytes());
+                buf.extend_from_slice(HINT_FG.as_bytes());
                 buf.extend_from_slice("›".as_bytes());
                 buf.extend_from_slice(RESET.as_bytes());
             }
@@ -295,17 +279,8 @@ impl StatusBar {
             }
             if cell.active {
                 move_to(buf, 2, cell.start_col + 1);
-                buf.extend_from_slice(
-                    if dim {
-                        TAB_UNDERLINE_FG_DIM
-                    } else {
-                        TAB_UNDERLINE_FG
-                    }
-                    .as_bytes(),
-                );
-                if !dim {
-                    buf.extend_from_slice(BOLD.as_bytes());
-                }
+                buf.extend_from_slice(TAB_UNDERLINE_FG.as_bytes());
+                buf.extend_from_slice(BOLD.as_bytes());
                 for _ in 0..cell.cell_cols {
                     buf.extend_from_slice("━".as_bytes());
                 }
@@ -328,16 +303,12 @@ impl StatusBar {
         cell: &TabCell<'_>,
         glyph: TabGlyph,
         hovered: bool,
-        dim: bool,
     ) {
         // Position cursor at the cell's first column (1-based).
         move_to(buf, 1, cell.start_col + 1);
         // Apply tab bg + fg first; the Blocked glyph overrides fg
         // locally and restores it before the trailing pad.
-        if dim {
-            buf.extend_from_slice(TAB_BG_DIM.as_bytes());
-            buf.extend_from_slice(TAB_FG_DIM.as_bytes());
-        } else if cell.active {
+        if cell.active {
             let bg = if hovered {
                 jackin_tui::TAB_BG_ACTIVE_HOVER
             } else {
@@ -378,23 +349,12 @@ impl StatusBar {
             TabGlyph::None => buf.push(b' '),
             TabGlyph::Done => buf.extend_from_slice("○".as_bytes()),
             TabGlyph::Blocked => {
-                buf.extend_from_slice(
-                    if dim {
-                        GLYPH_BLOCKED_FG_DIM
-                    } else {
-                        GLYPH_BLOCKED_FG
-                    }
-                    .as_bytes(),
-                );
-                if !dim {
-                    buf.extend_from_slice(BOLD.as_bytes());
-                }
+                buf.extend_from_slice(GLYPH_BLOCKED_FG.as_bytes());
+                buf.extend_from_slice(BOLD.as_bytes());
                 buf.extend_from_slice("●".as_bytes());
                 // Restore tab fg so any trailing padding inside the
                 // cell stays the right colour.
-                if dim {
-                    buf.extend_from_slice(TAB_FG_DIM.as_bytes());
-                } else if cell.active {
+                if cell.active {
                     buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
                 } else {
                     buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
@@ -477,8 +437,6 @@ const BORDER_ACTIVE: &str = "\x1b[38;2;0;255;65m"; // jackin_tui::PHOSPHOR_GREEN
 const BORDER_INACTIVE: &str = "\x1b[38;2;80;80;80m"; // jackin_tui::BORDER_GRAY (80,80,80)
 const TITLE_ACTIVE: &str = "\x1b[1;38;2;255;255;255m"; // bright white, bold
 const TITLE_INACTIVE: &str = "\x1b[38;2;160;160;160m"; // mid gray
-const BORDER_DIM: &str = "\x1b[38;2;48;48;48m";
-const TITLE_DIM: &str = "\x1b[38;2;58;58;58m";
 
 /// Draw a full bordered box around a pane: `┌─ title ─┐` top, `│` sides,
 /// `└──┘` bottom. The pane's PTY content renders into the box
@@ -495,21 +453,16 @@ pub fn draw_pane_box(
     cols: u16,
     title: &str,
     active: bool,
-    dim: bool,
 ) {
     if rows < 2 || cols < 2 {
         return;
     }
-    let border = if dim {
-        BORDER_DIM
-    } else if active {
+    let border = if active {
         BORDER_ACTIVE
     } else {
         BORDER_INACTIVE
     };
-    let title_color = if dim {
-        TITLE_DIM
-    } else if active {
+    let title_color = if active {
         TITLE_ACTIVE
     } else {
         TITLE_INACTIVE
@@ -635,12 +588,12 @@ mod tests {
         let tabs = vec![tab];
         let states = vec![(1u64, AgentState::Blocked)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &states, None, false, false);
+        bar.render(&mut buf, 80, &tabs, 0, &states, None, false);
         let (start, end) = bar.tab_regions[0];
         assert_eq!(end - start, 10);
         // Re-rendering with no state must keep the same width.
         let mut buf2 = Vec::new();
-        bar.render(&mut buf2, 80, &tabs, 0, &[], None, false, false);
+        bar.render(&mut buf2, 80, &tabs, 0, &[], None, false);
         let (s2, e2) = bar.tab_regions[0];
         assert_eq!(e2 - s2, 10);
         assert_eq!((s2, e2), (start, end));
@@ -675,7 +628,6 @@ mod tests {
             16,
             "Shell title that is too long",
             false,
-            false,
         );
         let out = String::from_utf8_lossy(&buf);
 
@@ -693,7 +645,7 @@ mod tests {
     fn idle_hint_is_rendered() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, false, false);
+        bar.render(&mut buf, 80, &[], 0, &[], None, false);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("☰Menu"), "menu hint missing: {s:?}");
         assert!(
@@ -715,7 +667,7 @@ mod tests {
     fn idle_hint_hover_uses_lifted_button_chrome() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, true, false);
+        bar.render(&mut buf, 80, &[], 0, &[], None, true);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains(" ☰Menu "), "menu hint should be padded: {s:?}");
         assert!(
@@ -729,7 +681,7 @@ mod tests {
         let mut bar = StatusBar::new();
         bar.set_prefix_mode(PrefixMode::Awaiting);
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &[], 0, &[], None, false, false);
+        bar.render(&mut buf, 80, &[], 0, &[], None, false);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("prefix…"), "prefix hint missing: {s:?}");
         assert!(
@@ -743,7 +695,7 @@ mod tests {
         let mut bar = StatusBar::new();
         let tabs = vec![Tab::new_single("Claude", 1)];
         let mut buf = Vec::new();
-        bar.render(&mut buf, 80, &tabs, 0, &[], None, false, false);
+        bar.render(&mut buf, 80, &tabs, 0, &[], None, false);
         let s = String::from_utf8_lossy(&buf);
         // Row 1 = ANSI row 2 (1-based). Underline uses `━`.
         assert!(s.contains("\x1b[2;"), "row 2 cursor move missing: {s:?}");

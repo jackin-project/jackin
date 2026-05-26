@@ -12,7 +12,7 @@ fn render(
     states: &[(u64, AgentState)],
 ) -> String {
     let mut buf = Vec::new();
-    bar.render(&mut buf, cols, tabs, active, states, None, false, false);
+    bar.render(&mut buf, cols, tabs, active, states, None, false);
     String::from_utf8_lossy(&buf).to_string()
 }
 
@@ -32,7 +32,6 @@ fn render_with_hover(
         active,
         states,
         hovered_tab,
-        false,
         false,
     );
     String::from_utf8_lossy(&buf).to_string()

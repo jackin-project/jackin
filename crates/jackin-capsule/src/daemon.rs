@@ -42,7 +42,7 @@ use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server, read_client_frame,
 };
 use crate::protocol::control::{AgentState, SessionInfo};
-use crate::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, draw_scrollbar};
+use crate::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, draw_scrollbar, fill_screen};
 use crate::session::{
     PullRequestChecks, PullRequestInfo, PullRequestLookupOutcome, SESSION_ENV_PASSTHROUGH, Session,
     SessionEvent, build_agent_command, build_shell_command,
@@ -1865,7 +1865,6 @@ impl Multiplexer {
     fn visible_panes(&self) -> Vec<VisiblePane> {
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
-        let dialog_open = self.dialog_open();
         if let Some(zoom_id) = self.active_zoomed_id() {
             let outer = content_rect;
             return vec![VisiblePane {
@@ -1873,11 +1872,7 @@ impl Multiplexer {
                 outer,
                 inner: outer.shrink(1),
                 focused: Some(zoom_id) == focused_id,
-                body_dim: if dialog_open {
-                    PaneBodyDim::Backdrop
-                } else {
-                    PaneBodyDim::Normal
-                },
+                body_dim: PaneBodyDim::Normal,
             }];
         }
         let Some(tab) = self.tabs.get(self.active_tab) else {
@@ -1894,9 +1889,7 @@ impl Multiplexer {
                     outer,
                     inner: outer.shrink(1),
                     focused,
-                    body_dim: if dialog_open {
-                        PaneBodyDim::Backdrop
-                    } else if multi_pane && !focused {
+                    body_dim: if multi_pane && !focused {
                         PaneBodyDim::Inactive
                     } else {
                         PaneBodyDim::Normal
@@ -2718,7 +2711,33 @@ impl Multiplexer {
         let mut buf = Vec::with_capacity(65536);
         self.append_outer_terminal_title(&mut buf);
         buf.extend_from_slice(b"\x1b[?25l");
-        let dialog_dim = self.dialog_open();
+
+        // A modal dialog takes over the whole screen: paint an opaque
+        // black backdrop so the panes and chrome behind it are fully
+        // hidden (not dimmed), then draw the dialog on top. The cursor
+        // stays hidden from the `?25l` above (append_cursor_state
+        // no-ops while a dialog is open).
+        if self.dialog_open() {
+            fill_screen(&mut buf, self.term_rows, self.term_cols, (0, 0, 0));
+            if let Some(dialog) = self.dialog_top() {
+                let github = self.github_context_view();
+                dialog.render_with_hover(
+                    &mut buf,
+                    self.term_rows,
+                    self.term_cols,
+                    self.hover_target == Some(HoverTarget::DialogCopyTarget),
+                    Some(&github),
+                );
+                dialog.render_footer_hint(&mut buf, self.term_rows, self.term_cols, Some(&github));
+            }
+            crate::cdebug!(
+                "render: kind=dialog reason={} bytes={} duration_us={}",
+                reason.as_str(),
+                buf.len(),
+                started.elapsed().as_micros()
+            );
+            return buf;
+        }
 
         // Tab labels track the pane makeup. Done here (not on every
         // spawn / split / remove) so the rule lives in one place.
@@ -2733,7 +2752,6 @@ impl Multiplexer {
             &states,
             hovered_tab(self.hover_target),
             hovered_menu(self.hover_target),
-            dialog_dim,
         );
 
         let focused_id = self.active_focused_id();
@@ -2789,8 +2807,7 @@ impl Multiplexer {
                     pane.outer.rows,
                     pane.outer.cols,
                     &title,
-                    pane.focused && highlight_focus && !dialog_dim,
-                    dialog_dim,
+                    pane.focused && highlight_focus,
                 );
                 draw_scrollbar(
                     &mut buf,
@@ -2800,7 +2817,7 @@ impl Multiplexer {
                     pane.outer.cols,
                     scrollbar.offset,
                     scrollbar.filled,
-                    pane.focused && highlight_focus && !dialog_dim,
+                    pane.focused && highlight_focus,
                 );
             }
         }
@@ -2827,20 +2844,7 @@ impl Multiplexer {
             pull_request_loading,
             self.status_bar.instance_id_label(),
             self.hover_target,
-            dialog_dim,
         );
-
-        if let Some(dialog) = self.dialog_top() {
-            let github = self.github_context_view();
-            dialog.render_with_hover(
-                &mut buf,
-                self.term_rows,
-                self.term_cols,
-                self.hover_target == Some(HoverTarget::DialogCopyTarget),
-                Some(&github),
-            );
-            dialog.render_footer_hint(&mut buf, self.term_rows, self.term_cols, Some(&github));
-        }
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
 
@@ -2859,8 +2863,8 @@ impl Multiplexer {
 
     fn compose_dialog_overlay_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
         // Dialog overlays always go through the full compositor so the
-        // background dim cue, status chrome, branch bar, and bottom
-        // footer hint stay consistent for every dialog type.
+        // opaque backdrop + footer hint stay consistent for every
+        // dialog type.
         self.compose_full_frame(reason)
     }
 
@@ -2880,7 +2884,6 @@ impl Multiplexer {
             &states,
             hovered_tab(self.hover_target),
             hovered_menu(self.hover_target),
-            self.dialog_open(),
         );
         render_branch_context_bar(
             &mut buf,
@@ -2891,7 +2894,6 @@ impl Multiplexer {
             self.pull_request_context_loading(),
             self.status_bar.instance_id_label(),
             self.hover_target,
-            self.dialog_open(),
         );
         buf.extend_from_slice(b"\x1b8");
         buf
@@ -2987,7 +2989,6 @@ impl Multiplexer {
                     pane.outer.cols,
                     &title,
                     pane.focused && highlight_focus,
-                    false,
                 );
                 draw_scrollbar(
                     &mut buf,
@@ -4079,11 +4080,9 @@ const BRANCH_CONTEXT_BAR_FG: &str = "\x1b[38;2;0;0;0m";
 const BRANCH_CONTEXT_BAR_LINK_FG: &str = "\x1b[38;2;0;80;180m";
 const BRANCH_CONTEXT_BAR_HOVER_FG: &str = "\x1b[38;2;0;55;140m";
 const BRANCH_CONTEXT_BAR_BOLD: &str = "\x1b[1m";
-const BRANCH_CONTEXT_BAR_BG_DIM: &str = "\x1b[48;2;51;51;51m";
-const BRANCH_CONTEXT_BAR_FG_DIM: &str = "\x1b[38;2;0;28;6m";
-const BRANCH_CONTEXT_BAR_LINK_FG_DIM: &str = "\x1b[38;2;0;16;36m";
 use jackin_tui::ansi::RESET;
 
+#[allow(clippy::too_many_arguments)]
 fn render_branch_context_bar(
     buf: &mut Vec<u8>,
     term_rows: u16,
@@ -4093,7 +4092,6 @@ fn render_branch_context_bar(
     pull_request_loading: bool,
     container_name: &str,
     hover_target: Option<HoverTarget>,
-    dim: bool,
 ) {
     let Some(layout) = branch_context_bar_layout(
         term_rows,
@@ -4108,18 +4106,8 @@ fn render_branch_context_bar(
 
     let bar_row = term_rows.saturating_sub(1);
     jackin_tui::ansi::move_to(buf, bar_row, 0);
-    let bar_bg = if dim {
-        BRANCH_CONTEXT_BAR_BG_DIM
-    } else {
-        BRANCH_CONTEXT_BAR_BG
-    };
-    let bar_fg = if dim {
-        BRANCH_CONTEXT_BAR_FG_DIM
-    } else {
-        BRANCH_CONTEXT_BAR_FG
-    };
-    buf.extend_from_slice(bar_bg.as_bytes());
-    buf.extend_from_slice(bar_fg.as_bytes());
+    buf.extend_from_slice(BRANCH_CONTEXT_BAR_BG.as_bytes());
+    buf.extend_from_slice(BRANCH_CONTEXT_BAR_FG.as_bytes());
     for _ in 0..term_cols {
         buf.push(b' ');
     }
@@ -4130,8 +4118,7 @@ fn render_branch_context_bar(
         0,
         &layout.left,
         ChunkStyle::left(),
-        !dim && hover_target == Some(HoverTarget::BranchContext),
-        dim,
+        hover_target == Some(HoverTarget::BranchContext),
     );
     if let Some(region) = layout.container_region {
         paint_branch_bar_chunk(
@@ -4140,22 +4127,19 @@ fn render_branch_context_bar(
             region.start.saturating_sub(1),
             &layout.container,
             ChunkStyle::container(),
-            !dim && hover_target == Some(HoverTarget::Container),
-            dim,
+            hover_target == Some(HoverTarget::Container),
         );
     }
     buf.extend_from_slice(RESET.as_bytes());
 }
 
 /// Per-chunk colour selection rule for `render_branch_context_bar`.
-/// The left chunk always emits bold unless dimmed; the container
-/// chunk emits bold only on hover and uses the "link" foreground
-/// instead of the plain foreground.
+/// The left chunk always emits bold; the container chunk emits bold
+/// only on hover and uses the "link" foreground instead of the plain
+/// foreground.
 struct ChunkStyle {
-    /// Idle foreground (`!dim && !hovered`).
+    /// Idle foreground (`!hovered`).
     idle_fg: &'static str,
-    /// Foreground when dimmed; both chunks share their idle dim shape.
-    dim_fg: &'static str,
     /// Emit bold even when not hovered.
     always_bold: bool,
 }
@@ -4164,14 +4148,12 @@ impl ChunkStyle {
     const fn left() -> Self {
         Self {
             idle_fg: BRANCH_CONTEXT_BAR_FG,
-            dim_fg: BRANCH_CONTEXT_BAR_FG_DIM,
             always_bold: true,
         }
     }
     const fn container() -> Self {
         Self {
             idle_fg: BRANCH_CONTEXT_BAR_LINK_FG,
-            dim_fg: BRANCH_CONTEXT_BAR_LINK_FG_DIM,
             always_bold: false,
         }
     }
@@ -4184,26 +4166,21 @@ fn paint_branch_bar_chunk(
     label: &str,
     style: ChunkStyle,
     hovered: bool,
-    dim: bool,
 ) {
     jackin_tui::ansi::move_to(buf, bar_row, start_col);
-    let bg = if dim {
-        BRANCH_CONTEXT_BAR_BG_DIM
-    } else if hovered {
+    let bg = if hovered {
         BRANCH_CONTEXT_BAR_HOVER_BG
     } else {
         BRANCH_CONTEXT_BAR_BG
     };
-    let fg = if dim {
-        style.dim_fg
-    } else if hovered {
+    let fg = if hovered {
         BRANCH_CONTEXT_BAR_HOVER_FG
     } else {
         style.idle_fg
     };
     buf.extend_from_slice(bg.as_bytes());
     buf.extend_from_slice(fg.as_bytes());
-    if !dim && (style.always_bold || hovered) {
+    if style.always_bold || hovered {
         buf.extend_from_slice(BRANCH_CONTEXT_BAR_BOLD.as_bytes());
     }
     buf.extend_from_slice(label.as_bytes());
@@ -4313,6 +4290,7 @@ const fn hovered_menu(target: Option<HoverTarget>) -> bool {
     matches!(target, Some(HoverTarget::Menu))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn branch_context_bar_hit(
     row: u16,
     col: u16,
@@ -5450,7 +5428,7 @@ mod tests {
     }
 
     #[test]
-    fn dialog_backdrop_dims_full_multiplexer_chrome() {
+    fn dialog_opaque_backdrop_hides_multiplexer_chrome() {
         fn mux_with_two_sessions() -> Multiplexer {
             let mut mux = split_tab_mux();
             let (session_one, _) = test_session(24, 80);
@@ -5460,42 +5438,42 @@ mod tests {
             mux
         }
 
-        fn assert_backdrop_dimmed(mut mux: Multiplexer, context: &str) {
+        fn assert_backdrop_opaque(mut mux: Multiplexer, context: &str) {
             let frame =
                 String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::DialogChange))
                     .to_string();
 
             assert!(
-                frame.contains("\x1b[48;2;0;51;13m"),
-                "{context} should dim the top status brand: {frame:?}"
+                frame.contains("\x1b[0;48;2;0;0;0m"),
+                "{context} should paint an opaque black backdrop: {frame:?}"
             );
             assert!(
-                frame.contains("\x1b[48;2;51;51;51m"),
-                "{context} should dim the bottom context bar: {frame:?}"
+                !frame.contains("jackin'"),
+                "{context} should hide the top status brand pill behind the dialog: {frame:?}"
             );
             assert!(
-                frame.contains("\x1b[38;2;48;48;48m┌"),
-                "{context} should dim pane borders behind the dialog: {frame:?}"
+                !frame.contains("\x1b[38;2;80;80;80m┌"),
+                "{context} should hide inactive pane borders behind the dialog: {frame:?}"
             );
             assert!(
                 !frame.contains("\x1b[38;2;0;255;65m┌"),
-                "{context} should not leave the active pane border green behind the dialog: {frame:?}"
+                "{context} should hide the active pane border behind the dialog: {frame:?}"
             );
         }
 
         let mut menu_mux = mux_with_two_sessions();
         menu_mux.open_command_palette();
-        assert_backdrop_dimmed(menu_mux, "menu dialog");
+        assert_backdrop_opaque(menu_mux, "menu dialog");
 
         let mut container_mux = mux_with_two_sessions();
         container_mux.open_container_info_dialog();
-        assert_backdrop_dimmed(container_mux, "container info dialog");
+        assert_backdrop_opaque(container_mux, "container info dialog");
 
         let mut github_mux = mux_with_two_sessions();
         github_mux.pull_request_context_branch = Some("feat/capsule-pr-context-bar".to_string());
         github_mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
         github_mux.open_github_context_dialog();
-        assert_backdrop_dimmed(github_mux, "GitHub context dialog");
+        assert_backdrop_opaque(github_mux, "GitHub context dialog");
     }
 
     #[test]
@@ -5539,7 +5517,6 @@ mod tests {
             false,
             "jk-test-container",
             None,
-            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
 
@@ -5565,7 +5542,6 @@ mod tests {
             false,
             "jk-test-container",
             None,
-            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
 
@@ -5586,7 +5562,6 @@ mod tests {
             true,
             "jk-test-container",
             None,
-            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
 
@@ -5613,7 +5588,6 @@ mod tests {
             false,
             "jk-test-container-with-extra-long-suffix",
             None,
-            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
         assert!(rendered.contains("PR #999"));
@@ -5720,7 +5694,6 @@ mod tests {
             false,
             "jk-test-container",
             Some(HoverTarget::BranchContext),
-            false,
         );
         let context_rendered = String::from_utf8_lossy(&context_buf);
         assert!(context_rendered.contains(BRANCH_CONTEXT_BAR_HOVER_BG));
@@ -5736,7 +5709,6 @@ mod tests {
             false,
             "jk-test-container",
             Some(HoverTarget::Container),
-            false,
         );
         let container_rendered = String::from_utf8_lossy(&container_buf);
         assert!(container_rendered.contains(BRANCH_CONTEXT_BAR_HOVER_BG));
@@ -5759,7 +5731,6 @@ mod tests {
             false,
             "jk-test-container",
             None,
-            false,
         );
         let rendered = String::from_utf8_lossy(&buf);
         assert!(rendered.contains("jk-test-container"));
