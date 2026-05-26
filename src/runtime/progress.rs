@@ -14,7 +14,8 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::{
-    LINK_BLUE, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
+    BORDER_GRAY, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+    render_brand_header,
 };
 use crate::diagnostics::RunDiagnostics;
 
@@ -564,7 +565,7 @@ fn render_body(
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(BORDER_GRAY))
         .title(box_title_line(view, frozen));
     let inner = block.inner(area).inner(ratatui::layout::Margin {
         horizontal: 2,

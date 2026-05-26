@@ -21,7 +21,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::console::widgets::{
-    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
+    BORDER_GRAY, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
 };
 use crate::instance::InstanceIndex;
 use crate::paths::JackinPaths;
@@ -103,7 +103,7 @@ fn render(frame: &mut Frame<'_>, area: Rect, exited: &str, groups: &[ExitGroup])
     let total = total_instances(groups);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(BORDER_GRAY))
         .title(Span::styled(
             format!(" Exiled {exited} · {total} still in the construct "),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

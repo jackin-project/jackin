@@ -473,8 +473,8 @@ fn tab_display_label(name: &str) -> String {
 /// not compete with the focused pane. Title text in the top border
 /// stays bright white when the pane is focused so the operator can
 /// locate the keystroke target at a glance.
-const BORDER_ACTIVE: &str = "\x1b[38;2;0;255;65m"; // PHOSPHOR_GREEN
-const BORDER_INACTIVE: &str = "\x1b[38;2;80;80;80m"; // dim gray
+const BORDER_ACTIVE: &str = "\x1b[38;2;0;255;65m"; // jackin_tui::PHOSPHOR_GREEN
+const BORDER_INACTIVE: &str = "\x1b[38;2;80;80;80m"; // jackin_tui::BORDER_GRAY (80,80,80)
 const TITLE_ACTIVE: &str = "\x1b[1;38;2;255;255;255m"; // bright white, bold
 const TITLE_INACTIVE: &str = "\x1b[38;2;160;160;160m"; // mid gray
 const BORDER_DIM: &str = "\x1b[38;2;48;48;48m";

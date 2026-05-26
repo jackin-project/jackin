@@ -74,6 +74,12 @@ pub const LINK_BLUE: Rgb = Rgb::new(0, 80, 180);
 /// a `--debug` run. Readable on the white status-bar band.
 pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
 
+/// Neutral gray for unfocused chrome borders — the in-container multiplexer's
+/// inactive pane border and the host's full-screen non-interactive frames
+/// (the launch cockpit box, the exit summary box) so chrome reads identically
+/// across surfaces and stays out of the way of focused, brand-green content.
+pub const BORDER_GRAY: Rgb = Rgb::new(80, 80, 80);
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.
