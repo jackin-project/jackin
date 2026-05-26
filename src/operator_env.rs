@@ -1240,17 +1240,21 @@ impl OpWriteRunner for OpCli {
         let body = serde_json::to_vec(&item)
             .map_err(|e| anyhow::anyhow!("failed to re-encode item JSON: {e}"))?;
 
-        // Step 3: pipe the modified item JSON to `op item edit -`.
-        // The item is identified by the `id` field inside the JSON;
-        // `-` as the positional arg tells `op` to read the template
-        // from stdin instead of resolving by name.
+        // Step 3: pipe the modified item JSON to `op item edit <id>`.
+        // `op item edit` takes the item as a positional and reads a JSON
+        // template from stdin (the documented `cat updated.json | op item
+        // edit <id>` form), so the secret value rides in stdin, never on
+        // argv. The item id must be the positional — `-` would be parsed
+        // as the item name, not a stdin sentinel (that is the create-only
+        // convention). `--template` is mutually exclusive with piped
+        // input, so it is intentionally not passed.
         let mut child = spawn_op_with_retry(|| {
             use std::process::Command;
             let mut command = Command::new(&self.binary);
             if let Some(acc) = self.account.as_deref() {
                 command.args(["--account", acc]);
             }
-            command.args(["item", "edit", "-", "--vault", vault_id, "--format", "json"]);
+            command.args(["item", "edit", item_id, "--vault", vault_id, "--format", "json"]);
             command
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
