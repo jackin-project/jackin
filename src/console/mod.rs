@@ -737,6 +737,9 @@ pub async fn run_console(
             suspend_console_terminal(&mut out);
             let label = match &req.scope {
                 TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
+                TokenSetupScope::WorkspaceRole { workspace, role } => {
+                    format!("workspace {workspace:?} role {role:?}")
+                }
                 TokenSetupScope::Global => "global config".to_string(),
             };
             println!(
@@ -763,18 +766,26 @@ pub async fn run_console(
                                 let claude = crate::config::AgentAuthConfig {
                                     auth_forward: crate::config::AuthForwardMode::OAuthToken,
                                 };
-                                ed.pending.claude = Some(claude.clone());
-                                ed.original.claude = Some(claude);
+                                let key = crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string();
                                 let val =
                                     crate::operator_env::EnvValue::OpRef(report.op_ref.clone());
-                                ed.pending.env.insert(
-                                    crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string(),
-                                    val.clone(),
-                                );
-                                ed.original.env.insert(
-                                    crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string(),
-                                    val,
-                                );
+                                if let crate::workspace::token_setup::TokenSetupScope::WorkspaceRole {
+                                    role,
+                                    ..
+                                } = &req.scope
+                                {
+                                    let p = ed.pending.roles.entry(role.clone()).or_default();
+                                    p.claude = Some(claude.clone());
+                                    p.env.insert(key.clone(), val.clone());
+                                    let o = ed.original.roles.entry(role.clone()).or_default();
+                                    o.claude = Some(claude);
+                                    o.env.insert(key, val);
+                                } else {
+                                    ed.pending.claude = Some(claude.clone());
+                                    ed.original.claude = Some(claude);
+                                    ed.pending.env.insert(key.clone(), val.clone());
+                                    ed.original.env.insert(key, val);
+                                }
                             }
                             // Rebuild the settings Auth view from the now-
                             // persisted config so the Claude row shows

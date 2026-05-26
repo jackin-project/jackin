@@ -393,8 +393,10 @@ pub(super) fn handle_auth_form_key(
 }
 
 /// Whether the open auth form is eligible for the `g`/`G` generate
-/// trigger: a workspace-level Claude `oauth_token` slot in an existing
-/// (Edit-mode) workspace. Role-level generate is out of scope for now.
+/// trigger: a Claude `oauth_token` slot in an existing (Edit-mode)
+/// workspace, at either the workspace layer or a per-role override. The
+/// scope is taken from the form's target — the operator picks the role
+/// by opening that role's auth form, so generate needs no role step.
 pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
     if !matches!(
         editor.mode,
@@ -411,6 +413,9 @@ pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
             target,
             AuthFormTarget::Workspace {
                 kind: AuthKind::Claude
+            } | AuthFormTarget::WorkspaceRole {
+                kind: AuthKind::Claude,
+                ..
             }
         )
 }

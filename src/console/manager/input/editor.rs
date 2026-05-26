@@ -1332,6 +1332,14 @@ fn handle_token_generate_pick(
         return;
     };
     let workspace = name.clone();
+    // Scope follows the auth-form target: a per-role override generates
+    // for that role, the workspace form for all roles.
+    let role = match &target {
+        crate::console::manager::state::AuthFormTarget::WorkspaceRole { role, .. } => {
+            Some(role.clone())
+        }
+        crate::console::manager::state::AuthFormTarget::Workspace { .. } => None,
+    };
 
     let args = match outcome {
         ModalOutcome::Commit(OpPickerSelection::NewItem {
@@ -1383,10 +1391,14 @@ fn handle_token_generate_pick(
         }
     };
 
-    editor.pending_token_generate = Some(crate::console::manager::state::PendingTokenGenerate {
-        scope: crate::workspace::token_setup::TokenSetupScope::Workspace(workspace),
-        args,
-    });
+    let scope = match role {
+        Some(role) => {
+            crate::workspace::token_setup::TokenSetupScope::WorkspaceRole { workspace, role }
+        }
+        None => crate::workspace::token_setup::TokenSetupScope::Workspace(workspace),
+    };
+    editor.pending_token_generate =
+        Some(crate::console::manager::state::PendingTokenGenerate { scope, args });
     editor.clear_modal_chain();
 }
 

@@ -56,10 +56,7 @@ pub fn render_form(frame: &mut Frame, area: Rect, form: &AuthForm, focus: AuthFo
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    for (idx, row) in build_form_lines(form, focus)
-        .into_iter()
-        .enumerate()
-    {
+    for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {
         let y = inner.y.saturating_add(idx as u16);
         if y >= inner.y.saturating_add(inner.height) {
             break;
@@ -376,5 +373,4 @@ mod form_render_tests {
             "env var and breadcrumb should have a visible gap; dump:\n{s}"
         );
     }
-
 }

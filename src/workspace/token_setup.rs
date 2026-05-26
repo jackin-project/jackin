@@ -95,16 +95,23 @@ pub struct TokenSetupArgs {
 pub enum TokenSetupScope {
     /// Wire `[workspaces.<name>]` claude auth + the workspace env slot.
     Workspace(String),
+    /// Wire `[workspaces.<name>.roles.<role>]` claude auth + that role's
+    /// env slot — a per-role override inside the workspace.
+    WorkspaceRole { workspace: String, role: String },
     /// Wire the global `[claude]` auth + the global env slot.
     Global,
 }
 
 impl TokenSetupScope {
-    /// Workspace name for the `Workspace` variant, used to stamp the op
-    /// item title, expiry cache, and report line; `None` for `Global`.
+    /// Workspace name for the workspace-scoped variants, used to stamp
+    /// the op item title, expiry cache, op account, and report line;
+    /// `None` for `Global`.
     fn workspace(&self) -> Option<&str> {
         match self {
-            Self::Workspace(name) => Some(name),
+            Self::Workspace(name)
+            | Self::WorkspaceRole {
+                workspace: name, ..
+            } => Some(name),
             Self::Global => None,
         }
     }
@@ -300,6 +307,33 @@ where
                 editor.set_workspace_op_account(workspace, Some(account));
             }
         }
+        TokenSetupScope::WorkspaceRole { workspace, role } => {
+            editor.set_workspace_role_auth_forward(
+                workspace,
+                role,
+                crate::agent::Agent::Claude,
+                Some(AuthForwardMode::OAuthToken),
+            );
+            editor.set_env_var(
+                &EnvScope::WorkspaceRole {
+                    workspace: workspace.clone(),
+                    role: role.clone(),
+                },
+                CLAUDE_OAUTH_TOKEN_ENV,
+                EnvValue::OpRef(op_ref.clone()),
+            )?;
+            // op_account is a workspace-level field — write it there, same
+            // as the plain workspace scope.
+            if let Some(account) = args.account.as_deref()
+                && config
+                    .workspaces
+                    .get(workspace)
+                    .and_then(|ws| ws.op_account.as_deref())
+                    != Some(account)
+            {
+                editor.set_workspace_op_account(workspace, Some(account));
+            }
+        }
         TokenSetupScope::Global => {
             editor
                 .set_global_auth_forward(crate::agent::Agent::Claude, AuthForwardMode::OAuthToken);
@@ -315,7 +349,8 @@ where
     *config = saved;
 
     let op_account = match scope {
-        TokenSetupScope::Workspace(workspace) => {
+        TokenSetupScope::Workspace(workspace)
+        | TokenSetupScope::WorkspaceRole { workspace, .. } => {
             effective_account(config, workspace, args.account.as_deref()).map(str::to_string)
         }
         TokenSetupScope::Global => args.account.clone(),
@@ -638,7 +673,10 @@ fn op_cli_for_scope(
     explicit: Option<&str>,
 ) -> crate::operator_env::OpCli {
     match scope {
-        TokenSetupScope::Workspace(workspace) => op_cli_for(config, workspace, explicit),
+        TokenSetupScope::Workspace(workspace)
+        | TokenSetupScope::WorkspaceRole { workspace, .. } => {
+            op_cli_for(config, workspace, explicit)
+        }
         TokenSetupScope::Global => {
             crate::operator_env::OpCli::new().with_account(explicit.map(str::to_string))
         }

@@ -1254,7 +1254,9 @@ impl OpWriteRunner for OpCli {
             if let Some(acc) = self.account.as_deref() {
                 command.args(["--account", acc]);
             }
-            command.args(["item", "edit", item_id, "--vault", vault_id, "--format", "json"]);
+            command.args([
+                "item", "edit", item_id, "--vault", vault_id, "--format", "json",
+            ]);
             command
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
