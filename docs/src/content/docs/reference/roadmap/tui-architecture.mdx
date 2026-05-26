@@ -34,6 +34,7 @@ Reusability is the throughline of this item, not a side effect. The single bigge
 - **Recognizable, not bespoke.** A contributor (or agent) reading the code should recognize the component vocabulary immediately: `Panel`, `ScrollableBlock`, `ConfirmDialog`, `FilterList`, `TabStrip`, `HintBar`, `Modal`. New screens compose existing components; a genuinely new component is added only when none fits, with operator sign-off per the strict-reuse rule.
 - **Idiomatic Ratatui.** Components are `StatefulWidget` / `WidgetRef` implementations with their own `State`, the shape the Ratatui ecosystem recognizes and the [component template](https://ratatui.rs/templates/component/project-structure/) is built around — so the codebase reads like a Ratatui app, not a one-off renderer.
 - **One source of truth for tokens.** Color values, spacing, tab gap, and hint formatting are defined once and converted per surface (raw-ANSI `Rgb` today, `ratatui::Color` for widgets), never re-declared inline.
+- **Async-first rendering — never block the loop.** Every animated or progress-bearing surface keeps drawing on its own cadence *while work is in flight*. Rendering and long-running work (Docker calls, image pulls, network waits, git, daemon round-trips, disk inspection) run on independent async tasks: an interval-/`Message`-driven loop repaints shared state, and the work mutates that state from a `tokio::select!` arm, a `tokio::spawn`d task, or `spawn_blocking` — never inline with the draw. A surface that only repaints *between* sequential blocking steps freezes the instant a step is slow: the digital rain stalls, the active-stage pulse stops, the spinner hangs, and the operator cannot tell whether jackin' is working or wedged. Steady motion regardless of how long the underlying step takes is what makes the TUI feel native, snappy, and alive — and that "snappy and alive" feel is an explicit operator goal for this item, not a nice-to-have side effect. The acceptance test for any new long-running step on an animated surface: *does the animation keep moving smoothly while the step runs?* If it stutters, the step is on the render loop and must move off it. The concrete sites to migrate are enumerated in the [blocking-work inventory](#blocking-work-inventory--async-migration-targets) below.
 
 ## Relationship to existing roadmap work
 
@@ -169,6 +170,36 @@ Dogmatic TEA clones the whole model on every update. jackin's state is large, so
 | Framework buffer diff | OK — Ratatui owns it | Violated — `PaneBodyCache` re-implements `Buffer::diff` |
 | Render regression tests | Medium-grained `TestBackend`, no snapshots | None for the compositor/dispatch |
 
+## Blocking-work inventory — async migration targets
+
+The async-first principle becomes actionable as a concrete list. Every site below either blocks the render/update loop today or sleeps synchronously on a render-adjacent path; the migration target for each is the same — move it off the loop so the draw keeps ticking. Phases 2, 3, and 5 are where these land.
+
+**Host console — work on the event-loop thread:**
+
+| Site | What blocks | Target |
+|---|---|---|
+| `mount_info::inspect` (<RepoFile path="src/console/manager/mount_info.rs" />) | per-frame `stat()` + `.git` reads for every mount, at 20 Hz, uncached | cached `MountFacts`, refreshed by a background `MountInspected` message |
+| `refresh_instances` (<RepoFile path="src/console/manager/state.rs" />) | blocking index/manifest reads + per-container socket fan-out (self-throttled to 500 ms, still blocks the draw when it fires) | background task → `InstancesRefreshed` message |
+| 1Password loads / snapshot fan-out | synchronous `OpRunner` + socket calls invoked from input handlers | background task → result message |
+| `event::poll(50 ms)` loop | wakes 20×/s even when idle; full-frame redraw every tick | `tokio::select!` over an `EventStream` + the `Message` channel; dirty/animation-tick redraw |
+
+**Launch flow — the cockpit render cadence:**
+
+The launch cockpit already has the right primitive: the `while_waiting` helper in the launch progress renderer (owned by the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) item) runs a `tokio::select!` that ticks the rain/render on a 50 ms `interval` (`MissedTickBehavior::Skip`) while awaiting a step's future. The "stuck" feeling comes from launch work that is **not** routed through it — a step awaited directly, or synchronous work between steps, renders only at step boundaries and freezes the rain. Target: every long step in <RepoFile path="src/runtime/launch.rs" /> runs inside `while_waiting` (or an equivalent interval-driven wrapper), and synchronous shell-outs move to captured/async calls so nothing on the launch path blocks the tick.
+
+**Synchronous `std::thread::sleep` on render-adjacent paths** — each should become `tokio::time::sleep`, an interval tick, or move off the render task:
+
+| Site | Sleep | Note |
+|---|---|---|
+| <RepoFile path="src/tui/output.rs" /> | 25 ms shimmer · 1500 ms deploy hold | animation/pacing on the launch path — drive from an interval, not a blocking sleep |
+| <RepoFile path="src/runtime/snapshot.rs" /> | 20 ms · 10 ms | retry pacing |
+| <RepoFile path="src/runtime/logs.rs" /> | 250 ms | poll pacing |
+| <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | 2 ms ×2 | worker poll pacing |
+
+**Capsule:** PTY and git/PR context already run on background tasks; the gap is the `std::thread` vs. `spawn_blocking` inconsistency the gap-analysis table notes, plus the compose path running on the loop. The Ratatui-frame move (Phase 6) puts the buffer diff on the framework and the compose work behind the same `Action`/update boundary.
+
+Line references and timings drift — re-grep (`rg 'thread::sleep' src/`, `rg 'while_waiting' src/`) before acting on any row.
+
 ## Target architecture — host operator console
 
 Introduce the Model/Update/View seam without changing behavior:
@@ -218,7 +249,7 @@ Move terminal/Ratatui-session ownership out of `run_console` and up to the app l
 - The console manager renders into the shared session but no longer owns its lifecycle — no `TerminalGuard` drop mid-flow.
 - The launch progress renderer (owned by [Launch Progress TUI](/reference/roadmap/launch-progress-tui/)) draws into the *same* session, so "operator picked a workspace" → "watching the launch cockpit" is a view swap, not a screen teardown. No stderr fallback, no cooked-mode gap, no clear-screen flash.
 - Launch work emits `Message`s (progress, stage transitions, failures) into the same update loop, so the draw never blocks on Docker/network and the launch view is a pure function of launch state — the same pattern as the console.
-- At the hardline handoff the host cannot keep an active alt-screen: `docker exec -it` gives the capsule full ownership of the TTY — its own raw mode and alternate screen. So the owned session's **terminal backend is torn down** (leave alt-screen, disable raw mode, flush) before the exec and **re-initialized** on return for the outro. "One owned session" means the app-level `Model` and the shared component set persist across the whole flow — *not* that a single alt-screen literally survives the child. SIGWINCH while the child runs belongs to the child; on resume the host re-enters its alt-screen and forces a full redraw, since its cached `Buffer` is stale. This handoff is the riskiest part of the one-session work and is validated first (see [Open questions & risks](#open-questions--risks)).
+- At the hardline handoff `docker exec -it` hands the TTY to the in-container capsule client. The [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) work established that a **single host alternate screen can survive the handoff** rather than being torn down: the host keeps its alt-screen + raw mode across the exec and passes an env flag (`JACKIN_HOST_ALT_SCREEN`) that makes the in-container client skip its *own* alt-screen toggle — clear-and-home on attach instead of entering a nested `?1049h` buffer, and dropping the `?1049l` from its detach reset — so detaching the capsule does not pop the operator back to the cooked terminal. The host guard leaves the screen exactly once, at the very end (after the outro). "One owned session" therefore means both the app-level `Model` / shared component set **and** a single literal alt-screen persist across the whole flow. The rare interim cooked prompts (sensitive-mount confirm, agent choice) drop to the cooked screen for just that prompt via a `suspend` scope and restore the session after. SIGWINCH while the child runs belongs to the child; on resume the host forces a full redraw since its cached `Buffer` is stale. The earlier-assumed fallback — tear the host backend down before the exec and re-initialize on return, accepting one flash — stays available if a terminal mishandles the shared screen. This handoff is validated on real terminals first (see [Open questions & risks](#open-questions--risks)).
 
 - Terminal restore stays **panic-safe**: the RAII `Drop` guard that today lives in `run_console` (`TerminalGuard`) moves up with the session, so a panic anywhere in the console → launch flow still leaves the alternate screen and disables raw mode. Moving ownership up must not regress that guarantee.
 
@@ -395,7 +426,7 @@ Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` co
 
 ## Open questions & risks
 
-- **Handoff feasibility (highest risk).** Tearing down and re-initializing the host terminal backend around `docker exec -it` (alt-screen, raw mode, SIGWINCH, stale `Buffer`) must be proven on a real terminal before Phase 5 commits. If it is not clean, the fallback is the current teardown-and-relaunch with the flash minimized.
+- **Handoff feasibility.** The single-host-alt-screen approach (the host keeps its alt-screen across `docker exec -it`; the capsule client skips its own `?1049` toggle via `JACKIN_HOST_ALT_SCREEN`) is implemented by the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) work and must be confirmed across real terminals — alt-screen survival, raw mode, SIGWINCH, and the stale `Buffer` full-redraw on resume. If a terminal mishandles the shared screen, the fallback is to tear the host backend down before the exec and re-initialize on return, with the flash minimized.
 - **Async loop shape.** `EventStream` + `tokio::select!` vs. a dedicated input thread + `std::sync::mpsc`. Decide in Phase 1; the `Message` boundary keeps the rest of the design independent of the choice.
 - **Pane-body rendering cost.** `tui-term`'s per-cell copy on high-throughput PTYs vs. a thin custom cell widget — the Phase 7 benchmark.
 - **`ratatui-textarea` vs. `TextField`.** *Decision:* consolidate the host text input onto the in-house `TextField` (already shared via `jackin-tui`) and drop the third-party, pre-1.0 `ratatui-textarea`, so there is one text-input model. Revisit only if `TextField` lacks needed editing features.
@@ -416,7 +447,7 @@ None. This is a pure internal refactor of in-process TUI code. It introduces no 
 - Host event handling routes through a `Message` enum and a central `update`; no renderer takes `&mut state` or performs disk/socket I/O.
 - Per-frame filesystem inspection is eliminated; mount facts and instance state are refreshed by background tasks that message the loop.
 - Reusable screens are `StatefulWidget` components; the modal stack is a single `Vec<Modal>` shape.
-- The console → launch → handoff is one continuous Ratatui session — shared `Model` and components, no stderr fallback, no cooked-mode gap, no clear-screen flash between picking a workspace and watching the launch; the terminal backend is torn down only for the `docker exec` handoff, and the in-container experience continues the same visual language. *(Manual-smoke criterion — a real-terminal flash is not catchable by `TestBackend` snapshots.)*
+- The console → launch → handoff is one continuous Ratatui session — shared `Model` and components, no stderr fallback, no cooked-mode gap, and no clear-screen flash anywhere in the flow, including across the `docker exec` capsule handoff (the host keeps a single alt-screen and the capsule suppresses its own via `JACKIN_HOST_ALT_SCREEN`); the in-container experience continues the same visual language. *(Manual-smoke criterion — a real-terminal flash is not catchable by `TestBackend` snapshots.)*
 - The capsule has a `MuxMode` state machine, a generalized `Action` dispatch with tests, and a decomposed `daemon.rs`; the full/partial compositors share one helper.
 - The capsule renders through Ratatui; the pane-body mechanism (`tui-term` vs a custom cell widget) is recorded in an ADR with benchmark evidence.
 - Every rule in [TUI Design Decisions](/reference/tui-design-decisions/) still holds; snapshot tests show no render diff across the refactor.
