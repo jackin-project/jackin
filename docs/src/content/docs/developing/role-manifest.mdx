@@ -177,7 +177,7 @@ The `[kimi]` table is required when `"kimi"` appears in `agents`.
 |---|---|---|
 | `model` | No | Optional Kimi model passed to `kimi --model` at launch |
 
-Kimi authenticates via host `~/.kimi` state in `sync` mode. jackin forwards `~/.kimi/config.toml`, files under `~/.kimi/credentials/`, and `~/.kimi/device_id` into the container before Kimi starts. `api_key` mode uses `KIMI_API_KEY`; `oauth_token` is not supported.
+Kimi authenticates via host `~/.kimi-code` state in `sync` mode. jackin forwards `~/.kimi-code/config.toml`, files under `~/.kimi-code/credentials/`, and `~/.kimi-code/device_id` into the container before Kimi starts. `api_key` mode uses `KIMI_API_KEY`; `oauth_token` is not supported.
 
 ```toml title="jackin.role.toml"
 version = "v1alpha4"

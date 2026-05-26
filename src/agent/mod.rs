@@ -103,7 +103,7 @@ ARG JACKIN_CACHE_BUST=0
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
     export PATH=\"${HOME}/.local/bin:${PATH}\" && \\
-    curl -fsSL https://code.kimi.com/install.sh | bash && \\
+    curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash && \\
     kimi --version
 ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 ";
@@ -263,7 +263,7 @@ mod tests {
         let block = Agent::Kimi.install_block();
         assert!(block.starts_with("USER agent\n"));
         assert!(block.contains("export PATH=\"${HOME}/.local/bin:${PATH}\""));
-        assert!(block.contains("curl -fsSL https://code.kimi.com/install.sh | bash"));
+        assert!(block.contains("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"));
         assert!(block.contains("kimi --version"));
         assert!(block.contains("ENV PATH=\"/home/agent/.local/bin:${PATH}\""));
     }

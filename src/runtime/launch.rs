@@ -243,13 +243,13 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
 
     if let Some(kimi) = &state.auth.kimi {
         mounts.push(format!(
-            "{}:/home/agent/.kimi",
-            state.root.join("home/.kimi").display()
+            "{}:/home/agent/.kimi-code",
+            state.root.join("home/.kimi-code").display()
         ));
         if kimi.forward_auth {
             mounts.push(format!(
-                "{}:/jackin/kimi",
-                state.root.join("kimi").display()
+                "{}:/jackin/kimi-code",
+                state.root.join("kimi-code").display()
             ));
         }
     }

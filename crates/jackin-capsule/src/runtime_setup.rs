@@ -242,18 +242,18 @@ fn setup_amp() -> Result<()> {
 }
 
 fn setup_kimi() -> Result<()> {
-    seed_home_dir("/jackin/default-home/.kimi", "/home/agent/.kimi")?;
-    let kimi_src = Path::new("/jackin/kimi");
+    seed_home_dir("/jackin/default-home/.kimi-code", "/home/agent/.kimi-code")?;
+    let kimi_src = Path::new("/jackin/kimi-code");
     if kimi_src.is_dir() && dir_nonempty(kimi_src)? {
-        eprintln!("[entrypoint] kimi: copying provisioned credentials into ~/.kimi/");
+        eprintln!("[entrypoint] kimi: copying provisioned credentials into ~/.kimi-code/");
         copy_dir_contents(
             kimi_src,
-            Path::new("/home/agent/.kimi"),
+            Path::new("/home/agent/.kimi-code"),
             CopyMode::Overwrite,
         )?;
     } else if kimi_src.is_dir() {
         eprintln!(
-            "[entrypoint] kimi: sync mode active but host ~/.kimi was absent at provision time - Kimi will start without forwarded auth"
+            "[entrypoint] kimi: sync mode active but host ~/.kimi-code was absent at provision time - Kimi will start without forwarded auth"
         );
     } else if nonempty_env("KIMI_API_KEY").is_some() {
         eprintln!("[entrypoint] kimi: KIMI_API_KEY present in env; agent will use api-key auth");

@@ -291,7 +291,7 @@ pub fn agent_outcome_notice(
             if matches!(auth_mode, M::Sync) {
                 let host_file = match agent {
                     A::Claude => "credentials",
-                    A::Kimi => "~/.kimi/ directory",
+                    A::Kimi => "~/.kimi-code/ directory",
                     A::Codex => "auth.json",
                     A::Amp => "secrets.json",
                     A::Opencode => "config.json",

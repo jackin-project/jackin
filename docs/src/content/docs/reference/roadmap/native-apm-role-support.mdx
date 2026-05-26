@@ -17,7 +17,7 @@ APM should become Jackin's dependency and agent-context packaging layer. Jackin 
 The current Jackin implementation already overlaps with APM in several places:
 
 - `jackin.role.toml` has `[claude] plugins = [...]` and `[[claude.marketplaces]]`, which Jackin converts into `claude plugin marketplace add` and `claude plugin install` Dockerfile layers.
-- The derived image snapshots `/home/agent/.claude`, `/home/agent/.codex`, `/home/agent/.local/share/amp`, `/home/agent/.kimi`, and `/home/agent/.local/share/opencode` into `/jackin/default-home` so image-baked runtime context survives first launch.
+- The derived image snapshots `/home/agent/.claude`, `/home/agent/.codex`, `/home/agent/.local/share/amp`, `/home/agent/.kimi-code`, and `/home/agent/.local/share/opencode` into `/jackin/default-home` so image-baked runtime context survives first launch.
 - Runtime startup seeds those defaults into durable per-instance homes, then overlays auth handoff files.
 - Separate roadmap work such as workspace skill mounts and Jackin-managed skill bundles duplicates parts of APM's skills/package/distribution model.
 
