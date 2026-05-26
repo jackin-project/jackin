@@ -42,6 +42,16 @@ pub struct LoadOptions {
     pub debug: bool,
     pub rebuild: bool,
 
+    /// Force the full-screen intro rain even when role containers are already
+    /// running (the default only plays it on the first container). Set by
+    /// `jackin console --intro`; overrides `no_rain` for the intro ritual.
+    pub force_intro: bool,
+
+    /// Force the full-screen outro rain on exit even when other role
+    /// containers remain (the default plays it only when none remain). Set by
+    /// `jackin console --outro`; overrides `no_rain` for the outro ritual.
+    pub force_outro: bool,
+
     /// Bypass interactive preflight gates (e.g. dirty host repo).
     /// Wired through to `PreflightContext.force` during workspace
     /// materialization.
@@ -108,6 +118,8 @@ impl Default for LoadOptions {
             no_tui: true,
             debug: false,
             rebuild: false,
+            force_intro: false,
+            force_outro: false,
             force: false,
             op_runner: None,
             host_env: None,
@@ -1590,7 +1602,7 @@ async fn load_role_with(
         }
     };
 
-    if !opts.no_rain && active_before_launch == Some(0) {
+    if should_play_intro_rain(opts, active_before_launch) {
         let intro_name = if git.user_name.is_empty() {
             "operator"
         } else {
@@ -2600,6 +2612,14 @@ fn resolve_launch_role_source(
     Ok((source, is_new, false))
 }
 
+/// Whether the full-screen intro rain should play: forced by `--intro`, or the
+/// default first-container ritual (`--no-rain` off and no role containers were
+/// running before this launch). A failed pre-launch count (`None`) suppresses
+/// the default ritual but `--intro` still forces it.
+fn should_play_intro_rain(opts: &LoadOptions, active_before_launch: Option<usize>) -> bool {
+    opts.force_intro || (!opts.no_rain && active_before_launch == Some(0))
+}
+
 async fn render_exit(
     agent_display_name: &str,
     paths: &JackinPaths,
@@ -2620,10 +2640,19 @@ async fn render_exit(
     };
     if running.is_empty() {
         // No one else is in the construct — the session-boundary rain plays
-        // (unless the operator opted out).
-        if !opts.no_rain {
+        // unless the operator opted out, or always when forced with `--outro`.
+        if opts.force_outro || !opts.no_rain {
             tui::outro_animation(agent_display_name, &[]);
         }
+        return;
+    }
+    if opts.force_outro {
+        // `--outro` forces the rain even though others remain; the animation
+        // lists who is still running, so it doubles as the "still here" view.
+        let remaining = super::discovery::list_running_agent_display_names(docker)
+            .await
+            .unwrap_or_default();
+        tui::outro_animation(agent_display_name, &remaining);
         return;
     }
     // Others remain: show the grouped "still here" summary so the operator
@@ -7682,6 +7711,35 @@ plugins = []
         let opts = LoadOptions::for_launch(false, false, false);
         assert!(!opts.no_rain, "intro should play when debug is off");
         assert!(!opts.debug);
+    }
+
+    #[test]
+    fn intro_rain_default_only_on_first_container() {
+        let opts = LoadOptions::for_launch(false, false, false);
+        assert!(should_play_intro_rain(&opts, Some(0)), "first container");
+        assert!(
+            !should_play_intro_rain(&opts, Some(1)),
+            "others already running"
+        );
+        assert!(
+            !should_play_intro_rain(&opts, None),
+            "count failure suppresses the default ritual"
+        );
+    }
+
+    #[test]
+    fn force_intro_overrides_no_rain_and_running_count() {
+        let mut opts = LoadOptions::for_launch(true, false, false);
+        opts.force_intro = true;
+        assert!(should_play_intro_rain(&opts, Some(3)), "forced with others up");
+        assert!(should_play_intro_rain(&opts, None), "forced despite count failure");
+    }
+
+    #[test]
+    fn no_rain_suppresses_default_intro() {
+        let opts = LoadOptions::for_launch(true, false, false);
+        assert!(!opts.force_intro);
+        assert!(!should_play_intro_rain(&opts, Some(0)), "--no-rain off");
     }
 
     #[tokio::test]

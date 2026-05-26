@@ -155,7 +155,12 @@ pub async fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
-        Command::Console(ConsoleArgs { no_rain, no_tui }) => {
+        Command::Console(ConsoleArgs {
+            no_rain,
+            no_tui,
+            intro,
+            outro,
+        }) => {
             let cwd = std::env::current_dir()?;
             let mut in_place = ConsoleInPlaceHandler {
                 paths: paths.clone(),
@@ -220,6 +225,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             };
 
             let mut opts = runtime::LoadOptions::for_launch(no_rain, no_tui, debug);
+            opts.force_intro = intro;
+            opts.force_outro = outro;
             opts.agent = agent;
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(

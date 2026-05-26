@@ -114,6 +114,8 @@ pub struct HardlineArgs {
 /// same console.
 #[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
+// These are independent CLI toggles; bool flags are the natural shape.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ConsoleArgs {
     /// Disable the full boundary rain animation for console-triggered launches.
     #[arg(long = "no-rain", default_value_t = false)]
@@ -121,6 +123,14 @@ pub struct ConsoleArgs {
     /// Disable the rich launch progress TUI for console-triggered launches.
     #[arg(long = "no-tui", default_value_t = false)]
     pub no_tui: bool,
+    /// Force the full-screen intro rain even when role containers are already
+    /// running (normally it plays only for the first container).
+    #[arg(long = "intro", default_value_t = false)]
+    pub intro: bool,
+    /// Force the full-screen outro rain on exit even when other role
+    /// containers remain (normally it plays only when none remain).
+    #[arg(long = "outro", default_value_t = false)]
+    pub outro: bool,
 }
 
 /// Validate, migrate, and scaffold role repositories
@@ -380,6 +390,23 @@ mod tests {
         ));
         // --debug is global on Cli, not on ConsoleArgs.
         assert!(cli.debug);
+    }
+
+    #[test]
+    fn parses_console_intro_outro_flags() {
+        let cli = Cli::try_parse_from(["jackin", "console", "--intro", "--outro"]).unwrap();
+        let Some(Command::Console(args)) = cli.command else {
+            panic!("expected console command");
+        };
+        assert!(args.intro);
+        assert!(args.outro);
+
+        let default = Cli::try_parse_from(["jackin", "console"]).unwrap();
+        let Some(Command::Console(args)) = default.command else {
+            panic!("expected console command");
+        };
+        assert!(!args.intro, "intro defaults off");
+        assert!(!args.outro, "outro defaults off");
     }
 
     #[test]
