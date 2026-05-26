@@ -110,7 +110,7 @@ pub(super) fn render_list_body(
         render_provider_picker_sidebar(frame, list_area, short_id, providers, *selected);
     } else if let Some((_role, _agent, providers, selected)) = state.launch_provider_picker.as_ref()
     {
-        render_provider_picker_sidebar(frame, list_area, "launch", providers, *selected);
+        render_provider_picker_sidebar(frame, list_area, "provider", providers, *selected);
     } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container.as_str());
