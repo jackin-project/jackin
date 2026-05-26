@@ -168,11 +168,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             // enter/leave; the guard tears the terminal down once, on drop.
             let screen = console::HostScreen::enter()?;
 
-            // Entering the construct: a fast rain + logo (with a "start your
+            // Entering the construct: a hyperspace warp (with a "start your
             // day" quote) plays once at the very start of the console session.
             // Subsequent launches within the session do not replay it — the
             // operator is already inside.
-            crate::tui::rain_logo_intro();
+            crate::tui::warp_intro();
 
             let Some(outcome) =
                 console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?

@@ -129,34 +129,6 @@ pub(crate) fn random_char(seed: &mut u64) -> char {
     RAIN_CHARS[(xorshift(seed) as usize) % RAIN_CHARS.len()] as char
 }
 
-const REVEAL_BANNER: &[&str] = &[
-    "\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2577}  \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502}",
-    "\u{2502} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2575} \u{2577} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2502}\u{2575}\u{2502}",
-    "\u{2575}  \u{2575} \u{2575} \u{2575}  \u{2502}  \u{2575} \u{2575} \u{2575} \u{2575} \u{2575}",
-    "           \u{2575}",
-    "      j a c k i n",
-    "   operator terminal",
-];
-
-fn banner_grid(banner: &[&str], cols: usize, rows: usize) -> Vec<Vec<Option<char>>> {
-    let banner_height = banner.len();
-    let banner_width = banner.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-    let offset_row = (rows.saturating_sub(banner_height)) / 2;
-    let offset_col = (cols.saturating_sub(banner_width)) / 2;
-
-    let mut grid = vec![vec![None; cols]; rows];
-    for (i, line) in banner.iter().enumerate() {
-        for (j, ch) in line.chars().enumerate() {
-            let r = offset_row + i;
-            let c = offset_col + j;
-            if r < rows && c < cols {
-                grid[r][c] = Some(ch);
-            }
-        }
-    }
-    grid
-}
-
 /// Advance the rain state by one tick: age existing cells and move column
 /// heads forward. This is the simulation step; call `render_rain_frame`
 /// afterward to draw the result.
@@ -245,216 +217,165 @@ pub(crate) fn render_rain_frame(state: &RainState, area: (u16, u16, u16, u16)) {
     let _ = io::stderr().flush();
 }
 
-#[allow(clippy::too_many_lines)]
-pub(crate) fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
-    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    let cols = term_cols as usize;
-    // Reserve last row to avoid scroll when writing to it
-    let rows = (term_rows as usize).saturating_sub(1).max(1);
-    let frame_ms = 35;
-    let total_frames = duration_ms / frame_ms;
+// ── Session warp (hyperspace intro / outro) ───────────────────────────────
 
-    let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
-
-    let columns: Vec<RainColumn> = (0..cols)
-        .map(|_| {
-            let s = xorshift(&mut seed);
-            let s2 = xorshift(&mut seed);
-            RainColumn {
-                head: -((s % (rows as u64 + 6)) as i32),
-                speed: 1 + (s % 4) as u32,
-                fade: 1 + (s2 % 3) as u16,
-                active: !s.is_multiple_of(3),
-                cooldown: 0,
-            }
-        })
-        .collect();
-
-    let grid: Vec<Vec<Option<RainCell>>> = (0..rows)
-        .map(|_| (0..cols).map(|_| None).collect())
-        .collect();
-
-    let mut state = RainState {
-        grid,
-        columns,
-        cols,
-        rows,
-        seed,
-        frame: 0,
-    };
-
-    eprint!("\x1b[?25l"); // hide cursor
-
-    // ── Phase 1: Pure rain ──────────────────────────────────────────────
-    let mut skipped = false;
-    for _ in 0..total_frames {
-        if skipped {
-            break;
-        }
-        tick_rain(&mut state);
-        render_rain_frame(&state, (0, 0, cols as u16, rows as u16));
-        skipped = skippable_sleep(std::time::Duration::from_millis(frame_ms));
-    }
-
-    // Sync seed back for reveal phase (seed was updated inside state)
-    // ── Phase 2 & 3: Reveal + Hold (only if reveal banner provided) ─────
-    if let Some(banner) = reveal {
-        let target = banner_grid(banner, cols, rows);
-
-        // Assign a random flip frame to each banner cell within the reveal window
-        let reveal_frames = 1000 / frame_ms;
-        let mut flip_at: Vec<Vec<u64>> =
-            (0..rows).map(|_| (0..cols).map(|_| 0).collect()).collect();
-        let mut locked: Vec<Vec<bool>> = vec![vec![false; cols]; rows];
-
-        for (r, row) in target.iter().enumerate() {
-            for (c, cell) in row.iter().enumerate() {
-                if cell.is_some() {
-                    flip_at[r][c] = xorshift(&mut state.seed) % reveal_frames;
-                }
-            }
-        }
-
-        // Stop spawning new heads — deactivate all columns permanently
-        for column in &mut state.columns {
-            column.active = false;
-            column.cooldown = u32::MAX;
-        }
-
-        // Reveal phase animation
-        for frame in 0..reveal_frames {
-            if skipped {
-                break;
-            }
-            // Age existing non-locked cells
-            for (r, row) in state.grid.iter_mut().enumerate() {
-                for (c, cell) in row.iter_mut().enumerate() {
-                    if locked[r][c] {
-                        continue;
-                    }
-                    if let Some(rc) = cell {
-                        rc.age += 3;
-                        if age_to_color(rc.age).is_none() {
-                            *cell = None;
-                        } else if should_mutate(rc.age, &mut state.seed) {
-                            rc.ch = random_char(&mut state.seed);
-                        }
-                    }
-                }
-            }
-
-            // Lock banner cells that have reached their flip frame
-            for (r, row) in target.iter().enumerate() {
-                for (c, target_ch) in row.iter().enumerate() {
-                    if let Some(ch) = target_ch
-                        && !locked[r][c]
-                        && frame >= flip_at[r][c]
-                    {
-                        locked[r][c] = true;
-                        if *ch == ' ' {
-                            state.grid[r][c] = None;
-                        } else {
-                            state.grid[r][c] = Some(RainCell {
-                                ch: *ch,
-                                age: 0,
-                                fade: 1,
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Render
-            for (r, row) in state.grid.iter().enumerate() {
-                eprint!("\x1b[{};1H", r + 1);
-                for (c, cell) in row.iter().enumerate() {
-                    if locked[r][c] {
-                        if let Some(rc) = cell {
-                            eprint!("{}", rc.ch.color(rgb(PHOSPHOR_GREEN)));
-                        } else {
-                            eprint!(" ");
-                        }
-                    } else {
-                        match cell {
-                            None => eprint!(" "),
-                            Some(rc) => {
-                                let (cr, cg, cb) = age_to_color(rc.age).unwrap_or(PHOSPHOR_DARK);
-                                eprint!("{}", rc.ch.color(owo_colors::Rgb(cr, cg, cb)));
-                            }
-                        }
-                    }
-                }
-            }
-
-            let _ = io::stderr().flush();
-            skipped = skippable_sleep(std::time::Duration::from_millis(frame_ms));
-        }
-
-        // Hold the revealed logo briefly
-        if !skipped {
-            let _ = skippable_sleep(std::time::Duration::from_millis(1500));
-        }
-    }
-
-    // Clear rain area
-    for r in 0..rows {
-        eprint!("\x1b[{};1H\x1b[2K", r + 1);
-    }
-    eprint!("\x1b[H");
-    eprint!("\x1b[?25h"); // show cursor
-    let _ = io::stderr().flush();
+struct WarpStar {
+    angle: f32,
+    radius: f32,
+    speed: f32,
 }
 
-
-// ── Session rain + logo ──────────────────────────────────────────────────
-
-/// Entry ritual: fast rain resolving into the logo, tagged "entering the
-/// Construct", with a "start your day" phrase at the bottom. Played once when
-/// the console opens.
-pub fn rain_logo_intro() {
-    rain_logo_with(
+/// Entry ritual — a hyperspace jump *into* the Construct: a starfield that
+/// streaks outward from the center and accelerates to lightspeed, then a calm
+/// caption with the phrase of the day.
+pub fn warp_intro() {
+    warp(true);
+    warp_caption(
         "entering the Construct",
         super::quotes::pick(super::quotes::START_QUOTES),
         None,
     );
 }
 
-/// Exit ritual: fast rain resolving into the logo, played when the last
-/// container leaves.
-///
-/// Tagged "leaving the Construct", with a "wind down" phrase and — when known —
-/// how long the operator was in the Construct.
-pub fn rain_logo_outro(elapsed: Option<std::time::Duration>) {
+/// Exit ritual — dropping *out* of hyperspace: the starfield decelerates from
+/// lightspeed to a drift, then a caption with how long the operator was in the
+/// Construct.
+pub fn warp_outro(elapsed: Option<std::time::Duration>) {
+    warp(false);
     let footer = elapsed.map(|d| format!("in the Construct for {}", format_universe_duration(d)));
-    rain_logo_with(
+    warp_caption(
         "leaving the Construct",
         super::quotes::pick(super::quotes::END_QUOTES),
         footer.as_deref(),
     );
 }
 
-/// Fast digital rain that resolves into the jackin' logo, then holds.
-///
-/// While holding it shows a tagline beneath the logo, the phrase of the day at
-/// the bottom, and an optional footer line, then clears. No prose body — just
-/// rain, logo, and captions.
-fn rain_logo_with(tagline: &str, quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
-    clear_screen();
-    // Brief, brisk rainfall that reveals the logo (the reveal + hold happen
-    // inside digital_rain when a banner is supplied).
-    digital_rain(900, Some(REVEAL_BANNER));
-    print_logo_caption(tagline, quote, footer);
-    // Linger so the quote is readable, then wipe so the next surface — the
-    // console manager on entry, or the shell on exit — starts clean.
-    let _ = skippable_sleep(std::time::Duration::from_millis(1900));
-    clear_screen();
+fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
+    let t = t.clamp(0.0, 1.0);
+    (f32::from(b) - f32::from(a)).mul_add(t, f32::from(a)).round() as u8
 }
 
-/// Render the "phrase of the day" anchored to the bottom of the logo screen,
-/// centered and bright/white so it reads, with the author and any footer line
-/// (e.g. time in the construct) dimmer beneath it. Uses absolute cursor moves
-/// like `digital_rain`. The logo stays centered; this fills the lower margin.
-fn print_logo_caption(tagline: &str, quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
+/// Hyperspace starfield. `accelerating` ramps the warp speed up (entering the
+/// universe at increasing velocity); otherwise it ramps back down (dropping to
+/// sublight on the way out). Stars stream radially from the center; their
+/// trails lengthen and brighten toward white with speed for the lightspeed
+/// "wow". Renders raw ANSI like the rest of this module.
+#[allow(
+    clippy::too_many_lines,
+    clippy::suboptimal_flops,
+    clippy::type_complexity
+)]
+fn warp(accelerating: bool) {
+    use std::f32::consts::PI;
+    use std::fmt::Write as _;
+
+    clear_screen();
+    eprint!("\x1b[?25l"); // hide cursor
+    let _ = io::stderr().flush();
+
+    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let cols = term_cols as usize;
+    let rows = (term_rows as usize).saturating_sub(1).max(1);
+    let cx = cols as f32 / 2.0;
+    let cy = rows as f32 / 2.0;
+    // Terminal cells are about twice as tall as wide, so the horizontal
+    // projection is stretched ×2 below; size the field to the half-width.
+    let max_r = (cx / 2.0).hypot(cy).max(1.0);
+
+    let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut stars: Vec<WarpStar> = (0..(cols * rows / 5).clamp(60, 1500))
+        .map(|_| WarpStar {
+            angle: (xorshift(&mut seed) % 36000) as f32 / 36000.0 * 2.0 * PI,
+            radius: (xorshift(&mut seed) % 1000) as f32 / 1000.0 * max_r,
+            speed: 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0,
+        })
+        .collect();
+
+    let frame_ms = 28;
+    let frames: usize = 56;
+    for f in 0..frames {
+        let t = f as f32 / frames as f32;
+        // Ease the warp factor: accelerate in (slow → blast), decelerate out.
+        let warp = if accelerating {
+            0.2 + t * t * 5.0
+        } else {
+            0.2 + (1.0 - t).powi(2) * 5.0
+        };
+
+        let mut grid: Vec<Vec<Option<(char, (u8, u8, u8))>>> = vec![vec![None; cols]; rows];
+        for star in &mut stars {
+            let prev = star.radius;
+            star.radius += star.speed * warp;
+            if star.radius >= max_r {
+                star.angle = (xorshift(&mut seed) % 36000) as f32 / 36000.0 * 2.0 * PI;
+                star.radius = (xorshift(&mut seed) % 60) as f32 / 100.0;
+                star.speed = 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0;
+                continue;
+            }
+            let (dx, dy) = (star.angle.cos() * 2.0, star.angle.sin());
+            let steps = (1.0 + warp * 1.4) as usize;
+            for s in 0..=steps {
+                let rr = prev + (star.radius - prev) * (s as f32 / steps as f32);
+                let x = (cx + dx * rr).round();
+                let y = (cy + dy * rr).round();
+                if x < 0.0 || y < 0.0 {
+                    continue;
+                }
+                let (xu, yu) = (x as usize, y as usize);
+                if xu >= cols || yu >= rows {
+                    continue;
+                }
+                let frac = (rr / max_r).clamp(0.0, 1.0);
+                let glyph = if frac > 0.66 {
+                    if warp > 2.5 { '─' } else { '*' }
+                } else if frac > 0.33 {
+                    '+'
+                } else {
+                    '·'
+                };
+                // Blue core deepening to bright white streaks toward the edge
+                // at speed.
+                let bright = (frac * 0.7 + warp / 5.2 * 0.3).clamp(0.0, 1.0);
+                let color = (
+                    lerp_channel(60, 235, bright),
+                    lerp_channel(150, 245, bright),
+                    255,
+                );
+                grid[yu][xu] = Some((glyph, color));
+            }
+        }
+
+        let mut out = String::with_capacity(cols * rows + rows * 8);
+        for (r, row) in grid.iter().enumerate() {
+            let _ = write!(out, "\x1b[{};1H", r + 1);
+            for cell in row {
+                match cell {
+                    None => out.push(' '),
+                    Some((ch, (cr, cg, cb))) => {
+                        let _ = write!(out, "{}", ch.color(owo_colors::Rgb(*cr, *cg, *cb)));
+                    }
+                }
+            }
+        }
+        eprint!("{out}");
+        let _ = io::stderr().flush();
+        if skippable_sleep(std::time::Duration::from_millis(frame_ms)) {
+            break;
+        }
+    }
+
+    for r in 0..rows {
+        eprint!("\x1b[{};1H\x1b[2K", r + 1);
+    }
+    eprint!("\x1b[H\x1b[?25h"); // home + show cursor
+    let _ = io::stderr().flush();
+}
+
+/// Centered caption shown after the warp settles: the tagline (bright green)
+/// with the phrase of the day and an optional footer line beneath it. Brief,
+/// then clears.
+fn warp_caption(tagline: &str, quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
+    clear_screen();
     let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let cols = term_cols as usize;
     let truncate = |s: &str| -> String {
@@ -475,29 +396,26 @@ fn print_logo_caption(tagline: &str, quote: Option<&super::quotes::Quote>, foote
         let col = (cols.saturating_sub(t.chars().count()) / 2).max(1);
         eprint!("\x1b[{row};{col}H{}", t.color(rgb(color)));
     };
-    // Tagline ("entering / leaving the Construct") one blank row below the
-    // vertically-centered logo (see `banner_grid`).
-    if !tagline.is_empty() {
-        let logo_top = (term_rows as usize).saturating_sub(REVEAL_BANNER.len()) / 2;
-        let row = u16::try_from(logo_top + REVEAL_BANNER.len() + 1).unwrap_or(term_rows);
-        center(row, tagline, PHOSPHOR_GREEN);
-    }
-    // Anchor to the bottom: the footer (if any) on the lowest line, the author
-    // above it, the quote above that — leaving the very last row as margin.
-    let mut row = term_rows.saturating_sub(1);
-    if let Some(f) = footer {
-        center(row, f, PHOSPHOR_DIM);
-        row = row.saturating_sub(1);
-    }
+    let mid = term_rows / 2;
+    center(mid.saturating_sub(1), tagline, PHOSPHOR_GREEN);
     if let Some(q) = quote {
-        center(row, &format!("\u{2014} {}", q.author), PHOSPHOR_DIM);
         center(
-            row.saturating_sub(1),
+            mid.saturating_add(1),
             &format!("\u{201C}{}\u{201D}", q.text),
             WHITE,
         );
+        center(
+            mid.saturating_add(2),
+            &format!("\u{2014} {}", q.author),
+            PHOSPHOR_DIM,
+        );
+    }
+    if let Some(f) = footer {
+        center(mid.saturating_add(4), f, PHOSPHOR_DIM);
     }
     let _ = io::stderr().flush();
+    let _ = skippable_sleep(std::time::Duration::from_millis(1700));
+    clear_screen();
 }
 
 /// Format a session duration compactly: `2h 14m`, `7m 30s`, or `45s`.

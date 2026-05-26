@@ -2619,11 +2619,11 @@ async fn render_exit(
     };
     if running.is_empty() {
         // Last container left the construct. Clear the session marker and, when
-        // rain is enabled, play the fast rain + logo with a wind-down quote and
-        // how long the operator was in the construct.
+        // rain is enabled, play the hyperspace warp-out with a wind-down quote
+        // and how long the operator was in the construct.
         let elapsed = super::universe::take_elapsed(paths);
         if !opts.no_rain {
-            tui::rain_logo_outro(elapsed);
+            tui::warp_outro(elapsed);
         }
         return;
     }
