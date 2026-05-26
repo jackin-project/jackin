@@ -225,94 +225,74 @@ struct WarpStar {
     speed: f32,
 }
 
-/// Type `text` one character at a time. Returns `true` if the operator skipped
-/// it with Enter/Esc.
-fn type_text(text: &str, color: (u8, u8, u8), char_ms: u64) -> bool {
-    eprint!("  ");
+/// Column where a centered line of `width` chars starts (1-based).
+fn center_col(cols: u16, width: usize) -> u16 {
+    u16::try_from((cols as usize).saturating_sub(width) / 2)
+        .unwrap_or(0)
+        .max(1)
+}
+
+/// Type `text` centered on screen one character at a time, then hold. Returns
+/// `true` if the operator skipped with Enter/Esc.
+fn type_centered(text: &str, color: (u8, u8, u8), char_ms: u64, hold_ms: u64) -> bool {
+    clear_screen();
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
+    eprint!("\x1b[{row};{col}H");
     for ch in text.chars() {
         eprint!("{}", ch.color(rgb(color)));
         let _ = io::stderr().flush();
         if skippable_sleep(std::time::Duration::from_millis(char_ms)) {
-            eprintln!();
             return true;
         }
     }
-    eprintln!();
-    false
+    skippable_sleep(std::time::Duration::from_millis(hold_ms))
 }
 
-/// Briefly scramble `text` with random glyphs before resolving it — a glitch
-/// reveal. Returns `true` if skipped.
-fn glitch_text(text: &str, color: (u8, u8, u8)) -> bool {
+/// Glitch-reveal `text` centered on screen (random glyphs settling into the
+/// words), then hold. Returns `true` if skipped.
+fn glitch_centered(text: &str, color: (u8, u8, u8), hold_ms: u64) -> bool {
+    clear_screen();
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let chars: Vec<char> = text.chars().collect();
+    let (row, col) = (rows / 2, center_col(cols, chars.len()));
     let mut seed: u64 = 0xCAFE_BABE_1337;
-    for _ in 0..4 {
-        eprint!("\r  ");
+    for _ in 0..5 {
+        eprint!("\x1b[{row};{col}H");
         for &ch in &chars {
             let s = xorshift(&mut seed);
-            let display = if s.is_multiple_of(4) {
+            let display = if s.is_multiple_of(3) {
                 random_char(&mut seed)
             } else {
                 ch
             };
-            let (r, g, b) = if s.is_multiple_of(3) { PHOSPHOR_GREEN } else { color };
-            eprint!("{}", display.color(owo_colors::Rgb(r, g, b)));
+            eprint!("{}", display.color(rgb(color)));
         }
         let _ = io::stderr().flush();
-        if skippable_sleep(std::time::Duration::from_millis(80)) {
-            eprint!("\r  ");
-            eprintln!("{}", text.color(rgb(color)));
-            return true;
+        if skippable_sleep(std::time::Duration::from_millis(70)) {
+            break;
         }
     }
-    eprint!("\r  ");
-    eprintln!("{}", text.color(rgb(color)));
-    false
+    eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
+    let _ = io::stderr().flush();
+    skippable_sleep(std::time::Duration::from_millis(hold_ms))
 }
 
-/// The opening Matrix-style call — a few typed phrases that land before the
-/// warp, setting the "you're being pulled into another world" tone. Skippable
-/// with Enter/Esc.
+/// The opening Matrix-style call — each phrase shown on its own, centered, in
+/// white, before the warp. Each lands, holds, then gives way to the next.
+/// Skippable with Enter/Esc.
 fn intro_phrases() {
+    if type_centered("Stand up, operator\u{2026}", WHITE, 60, 950) {
+        return;
+    }
+    if type_centered("They're already inside\u{2026}", WHITE, 55, 950) {
+        return;
+    }
+    if type_centered("Follow the green.", WHITE, 50, 850) {
+        return;
+    }
+    let _ = glitch_centered("Knock, knock, operator.", WHITE, 850);
     clear_screen();
-    if skippable_sleep(std::time::Duration::from_millis(300)) {
-        return;
-    }
-    eprintln!();
-    if type_text("Stand up, operator...", PHOSPHOR_GREEN, 65) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(800)) {
-        clear_screen();
-        return;
-    }
-    eprintln!();
-    if type_text("They're already inside...", PHOSPHOR_GREEN, 55) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(600)) {
-        clear_screen();
-        return;
-    }
-    eprintln!();
-    if type_text("Follow the green.", PHOSPHOR_GREEN, 50) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(400)) {
-        clear_screen();
-        return;
-    }
-    eprintln!();
-    glitch_text("Knock, knock, operator.", PHOSPHOR_GREEN);
-    if skippable_sleep(std::time::Duration::from_millis(600)) {
-        clear_screen();
-        return;
-    }
-    clear_screen();
-    let _ = skippable_sleep(std::time::Duration::from_millis(200));
 }
 
 /// Entry ritual — the opening phrases, then a hyperspace jump *into* the
@@ -387,8 +367,8 @@ fn warp(accelerating: bool) {
         })
         .collect();
 
-    let frame_ms = 28;
-    let frames: usize = 56;
+    let frame_ms = 30;
+    let frames: usize = 104;
     for f in 0..frames {
         let t = f as f32 / frames as f32;
         // Ease the warp factor: accelerate in (slow → blast), decelerate out.
@@ -535,7 +515,7 @@ fn warp_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
         center(row, f, PHOSPHOR_DIM);
     }
     let _ = io::stderr().flush();
-    let _ = skippable_sleep(std::time::Duration::from_millis(1700));
+    let _ = skippable_sleep(std::time::Duration::from_millis(2600));
     clear_screen();
 }
 
