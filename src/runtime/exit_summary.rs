@@ -1,208 +1,84 @@
-//! Exit "still here" summary.
+//! Exit "still running" summary.
 //!
-//! When an operator exits a foreground session and other jackin' agents
-//! are still running, this shows a brief rich screen listing who remains —
-//! grouped project (workspace / folder) → role → instance ids, with duplicate
-//! ids collapsed — so the operator sees which roles are working on which
-//! projects and their ids, not the underlying agent runtime. It uses the
-//! shared brand chrome and dwells for a couple of seconds so the
-//! operator can register "those agents are still in the construct, I can
-//! reconnect", then returns to the shell. Non-rich terminals (and
-//! `--no-rain`) fall back to a single plain line.
+//! When the operator leaves the foreground session and other jackin' instances
+//! are still running, this shows a brief centered white block — styled like the
+//! intro phrase screens, with the brand pill at the bottom. It lists which
+//! saved workspaces still have running instances (workspace · role ×count) and
+//! a generic count of ad-hoc folders (their paths are never shown). Non-rich
+//! terminals fall back to a plain line.
 
-use std::time::Duration;
+use std::collections::{BTreeMap, HashSet};
 
-use crossterm::ExecutableCommand as _;
-use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-
-use crate::console::widgets::{
-    BORDER_GRAY, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_brand_header,
-};
 use crate::instance::InstanceIndex;
 use crate::paths::JackinPaths;
 use crate::runtime::LoadOptions;
 
-/// How long the summary stays on screen before returning to the shell.
-const DWELL: Duration = Duration::from_millis(2600);
-const ROLE_COL: usize = 16;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExitRole {
-    pub role: String,
-    pub ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExitGroup {
-    pub workspace: String,
-    pub roles: Vec<ExitRole>,
-}
-
-/// Group the still-running instances by project (workspace / folder), then by
-/// role, collapsing duplicate instance ids. Only entries whose container is in
-/// `running_bases` are included. Ordering is stable (workspace then role
-/// sorted) so the screen does not jitter between runs. The agent runtime is
-/// deliberately not surfaced — the operator wants to see which roles run where,
-/// not whether each is Claude or another runtime.
-#[must_use]
-pub fn group_running(running_bases: &[String], index: &InstanceIndex) -> Vec<ExitGroup> {
-    use std::collections::{BTreeMap, HashSet};
+/// Build the headline + rows from the still-running instances.
+///
+/// Saved workspaces (named) contribute one row per role: `workspace · role
+/// ×count`. Ad-hoc directories (no saved workspace) collapse to a single
+/// generic `N folders` row — their paths are never surfaced. The headline
+/// counts all still-running instances ("agents" = instances).
+fn summary(running_bases: &[String], index: &InstanceIndex) -> (String, Vec<String>) {
     let running: HashSet<&str> = running_bases.iter().map(String::as_str).collect();
-    let mut by_ws: BTreeMap<String, BTreeMap<String, Vec<String>>> = BTreeMap::new();
+    let mut saved: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+    let mut folders: HashSet<String> = HashSet::new();
+    let mut total = 0usize;
     for entry in &index.instances {
         if !running.contains(entry.container_base.as_str()) {
             continue;
         }
-        let workspace = if entry.workspace_label.trim().is_empty() {
-            crate::tui::shorten_home(&entry.workdir)
+        total += 1;
+        if entry.workspace_name.is_some() && !entry.workspace_label.trim().is_empty() {
+            *saved
+                .entry(entry.workspace_label.clone())
+                .or_default()
+                .entry(entry.role_key.clone())
+                .or_default() += 1;
         } else {
-            entry.workspace_label.clone()
-        };
-        let ids = by_ws
-            .entry(workspace)
-            .or_default()
-            .entry(entry.role_key.clone())
-            .or_default();
-        if !ids.contains(&entry.instance_id) {
-            ids.push(entry.instance_id.clone());
+            folders.insert(entry.workdir.clone());
         }
     }
-    by_ws
-        .into_iter()
-        .map(|(workspace, roles)| ExitGroup {
-            workspace,
-            roles: roles
-                .into_iter()
-                .map(|(role, ids)| ExitRole { role, ids })
-                .collect(),
-        })
-        .collect()
-}
+    // If the index is missing entries, fall back to the raw running count so
+    // the headline is never an undercount.
+    if total == 0 {
+        total = running_bases.len();
+    }
 
-fn total_instances(groups: &[ExitGroup]) -> usize {
-    groups
-        .iter()
-        .flat_map(|group| group.roles.iter())
-        .map(|role| role.ids.len())
-        .sum()
-}
-
-fn render(frame: &mut Frame<'_>, area: Rect, exited: &str, groups: &[ExitGroup]) {
-    frame.render_widget(Clear, area);
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(3)])
-        .split(area);
-    render_brand_header(frame, rows[0], "exile");
-
-    let total = total_instances(groups);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(BORDER_GRAY))
-        .title(Span::styled(
-            format!(" Exiled {exited} · {total} still in the construct "),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(rows[1]).inner(ratatui::layout::Margin {
-        horizontal: 2,
-        vertical: 1,
-    });
-    frame.render_widget(block, rows[1]);
-
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    for (i, group) in groups.iter().enumerate() {
-        if i > 0 {
-            lines.push(Line::raw(""));
-        }
-        lines.push(Line::from(Span::styled(
-            group.workspace.clone(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        )));
-        for role in &group.roles {
-            let mut spans = vec![Span::styled(
-                format!("  {:<ROLE_COL$}", role.role),
-                Style::default().fg(PHOSPHOR_DIM),
-            )];
-            for (j, id) in role.ids.iter().enumerate() {
-                if j > 0 {
-                    spans.push(Span::raw("  "));
-                }
-                spans.push(Span::styled(id.clone(), Style::default().fg(PHOSPHOR_GREEN)));
-            }
-            lines.push(Line::from(spans));
+    let mut rows = Vec::new();
+    for (workspace, roles) in &saved {
+        for (role, count) in roles {
+            rows.push(format!("{workspace}  \u{00b7}  {role} \u{00d7}{count}"));
         }
     }
-    frame.render_widget(Paragraph::new(lines), inner);
+    if !folders.is_empty() {
+        let n = folders.len();
+        rows.push(format!("{n} folder{}", if n == 1 { "" } else { "s" }));
+    }
+    let headline = format!(
+        "{total} agent{} still in the Construct",
+        if total == 1 { "" } else { "s" }
+    );
+    (headline, rows)
 }
 
-/// Show the rich exit summary, dwell briefly, then return. Falls back to a
-/// single plain line on non-rich terminals, when nothing is grouped, or
-/// when `--no-rain` opts out of exit rituals.
-pub async fn show(paths: &JackinPaths, running_bases: &[String], exited: &str, opts: &LoadOptions) {
+/// Show the exit summary: a centered white block with the brand pill on a rich
+/// terminal, or a plain line otherwise.
+pub fn show(paths: &JackinPaths, running_bases: &[String], opts: &LoadOptions) {
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap_or(InstanceIndex {
         version: 0,
         instances: Vec::new(),
     });
-    let groups = group_running(running_bases, &index);
-    let total = if groups.is_empty() {
-        running_bases.len()
-    } else {
-        total_instances(&groups)
-    };
+    let (headline, rows) = summary(running_bases, &index);
 
-    let rich = !opts.no_rain
-        && !opts.no_tui
-        && !groups.is_empty()
-        && super::progress::rich_terminal_supported();
-    if !rich {
-        eprintln!("Exiled {exited}; {total} jackin' session(s) still running.");
+    if opts.no_rain || opts.no_tui || !super::progress::rich_terminal_supported() {
+        eprintln!("{headline}");
+        for row in &rows {
+            eprintln!("  {row}");
+        }
         return;
     }
-
-    if let Err(error) = show_rich(exited, &groups).await {
-        if let Some(run) = crate::diagnostics::active_run() {
-            run.compact("exit_summary", &format!("rich exit summary failed: {error:#}"));
-        }
-        eprintln!("Exiled {exited}; {total} jackin' session(s) still running.");
-    }
-}
-
-async fn show_rich(exited: &str, groups: &[ExitGroup]) -> anyhow::Result<()> {
-    let owns_screen = !crate::tui::host_screen_owned();
-    let mut stdout = std::io::stdout();
-    if owns_screen {
-        stdout.execute(EnterAlternateScreen)?;
-    }
-    stdout.execute(crossterm::cursor::Hide)?;
-    crate::tui::set_rich_surface_active(true);
-    let backend = ratatui::backend::CrosstermBackend::new(stdout);
-    let mut terminal = ratatui::Terminal::new(backend)?;
-    // Under the host guard we skipped EnterAlternateScreen, so the capsule's
-    // last frame is still on the inherited screen; clear it and force a full
-    // redraw before drawing the summary.
-    terminal.clear()?;
-    // Consume the CompletedFrame immediately (map to ()) so it does not hold
-    // a borrow of `terminal` across the teardown below.
-    let drawn: anyhow::Result<()> = terminal
-        .draw(|frame| render(frame, frame.area(), exited, groups))
-        .map(|_| ())
-        .map_err(anyhow::Error::from);
-    if drawn.is_ok() {
-        tokio::time::sleep(DWELL).await;
-    }
-    crate::tui::set_rich_surface_active(false);
-    let backend = terminal.backend_mut();
-    let _ = backend.execute(crossterm::cursor::Show);
-    if owns_screen {
-        let _ = backend.execute(LeaveAlternateScreen);
-    }
-    let _ = std::io::Write::flush(&mut std::io::stdout());
-    drawn
+    crate::tui::outro_summary(&headline, &rows);
 }
 
 #[cfg(test)]
@@ -210,22 +86,23 @@ mod tests {
     use super::*;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
 
+    #[allow(clippy::ref_option)]
     fn entry(
         id: &str,
         base: &str,
-        ws: &str,
+        workspace_name: Option<&str>,
+        workspace_label: &str,
         workdir: &str,
         role: &str,
-        agent: &str,
     ) -> InstanceIndexEntry {
         InstanceIndexEntry {
             instance_id: id.to_string(),
             container_base: base.to_string(),
-            workspace_name: Some(ws.to_string()),
-            workspace_label: ws.to_string(),
+            workspace_name: workspace_name.map(str::to_string),
+            workspace_label: workspace_label.to_string(),
             workdir: workdir.to_string(),
             role_key: role.to_string(),
-            agent_runtime: agent.to_string(),
+            agent_runtime: "claude".to_string(),
             status: InstanceStatus::Running,
             updated_at: "2026-05-25T00:00:00Z".to_string(),
         }
@@ -239,80 +116,42 @@ mod tests {
     }
 
     #[test]
-    fn groups_by_workspace_then_role() {
+    fn saved_workspaces_listed_by_role_with_counts() {
         let idx = index(vec![
-            entry("aaa", "jk-aaa-app-arch", "app", "/app", "the-architect", "claude"),
-            entry("bbb", "jk-bbb-app-smith", "app", "/app", "agent-smith", "codex"),
-            entry(
-                "ccc",
-                "jk-ccc-other-arch",
-                "other",
-                "/other",
-                "the-architect",
-                "amp",
-            ),
+            entry("aaa", "jk-aaa", Some("app"), "app", "/app", "the-architect"),
+            entry("bbb", "jk-bbb", Some("app"), "app", "/app", "the-architect"),
+            entry("ccc", "jk-ccc", Some("app"), "app", "/app", "agent-smith"),
         ]);
-        let running = vec![
-            "jk-aaa-app-arch".to_string(),
-            "jk-bbb-app-smith".to_string(),
-            "jk-ccc-other-arch".to_string(),
-        ];
-        let groups = group_running(&running, &idx);
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].workspace, "app");
-        assert_eq!(groups[0].roles.len(), 2, "two distinct roles in one project");
-        assert_eq!(groups[1].workspace, "other");
-        assert_eq!(total_instances(&groups), 3);
+        let running = vec!["jk-aaa".to_string(), "jk-bbb".to_string(), "jk-ccc".to_string()];
+        let (headline, rows) = summary(&running, &idx);
+        assert!(headline.contains("3 agents"), "headline: {headline}");
+        assert!(rows.iter().any(|r| r.contains("app") && r.contains("the-architect") && r.contains("\u{00d7}2")));
+        assert!(rows.iter().any(|r| r.contains("agent-smith") && r.contains("\u{00d7}1")));
     }
 
     #[test]
-    fn collapses_duplicate_ids_for_one_role() {
-        // Same role, two runtimes — grouped by role, so they merge into one row
-        // and the runtime is never surfaced.
+    fn private_folders_collapse_to_a_count() {
         let idx = index(vec![
-            entry("aaa", "jk-aaa-app-arch", "app", "/app", "the-architect", "claude"),
-            entry("ddd", "jk-ddd-app-arch", "app", "/app", "the-architect", "codex"),
+            entry("aaa", "jk-aaa", None, "", "/home/me/proj-a", "the-architect"),
+            entry("bbb", "jk-bbb", None, "", "/home/me/proj-b", "the-architect"),
+            entry("ccc", "jk-ccc", Some("app"), "app", "/app", "the-architect"),
         ]);
-        let running = vec!["jk-aaa-app-arch".to_string(), "jk-ddd-app-arch".to_string()];
-        let groups = group_running(&running, &idx);
-        assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].roles.len(), 1, "one role row");
-        assert_eq!(groups[0].roles[0].role, "the-architect");
-        assert_eq!(groups[0].roles[0].ids, vec!["aaa", "ddd"]);
+        let running = vec!["jk-aaa".to_string(), "jk-bbb".to_string(), "jk-ccc".to_string()];
+        let (headline, rows) = summary(&running, &idx);
+        assert!(headline.contains("3 agents"));
+        // Two distinct private folders, no paths shown.
+        assert!(rows.iter().any(|r| r == "2 folders"), "rows: {rows:?}");
+        assert!(!rows.iter().any(|r| r.contains("proj-a")), "paths must not leak");
     }
 
     #[test]
     fn excludes_instances_not_in_the_running_set() {
         let idx = index(vec![
-            entry("aaa", "jk-aaa-app-arch", "app", "/app", "the-architect", "claude"),
-            entry("zzz", "jk-zzz-app-arch", "app", "/app", "the-architect", "codex"),
+            entry("aaa", "jk-aaa", Some("app"), "app", "/app", "the-architect"),
+            entry("zzz", "jk-zzz", Some("app"), "app", "/app", "the-architect"),
         ]);
-        let running = vec!["jk-aaa-app-arch".to_string()];
-        let groups = group_running(&running, &idx);
-        assert_eq!(total_instances(&groups), 1);
-        assert_eq!(groups[0].roles[0].role, "the-architect");
-    }
-
-    #[test]
-    fn renders_groups_into_the_frame() {
-        use ratatui::{Terminal, backend::TestBackend};
-        let groups = vec![ExitGroup {
-            workspace: "big-monorepo".to_string(),
-            roles: vec![ExitRole {
-                role: "the-architect".to_string(),
-                ids: vec!["k7p9m2xq".to_string(), "a1b2c3d4".to_string()],
-            }],
-        }];
-        let backend = TestBackend::new(80, 16);
-        let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| render(f, f.area(), "the-architect", &groups))
-            .unwrap();
-        let buf = term.backend().buffer();
-        let dump: String = format!("{buf:?}");
-        assert!(dump.contains("Exiled the-architect"), "title missing");
-        assert!(dump.contains("big-monorepo"), "workspace missing");
-        assert!(dump.contains("the-architect"), "role missing");
-        assert!(dump.contains("k7p9m2xq"), "id missing");
-        assert!(dump.contains("a1b2c3d4"), "second id missing");
+        let running = vec!["jk-aaa".to_string()];
+        let (headline, _) = summary(&running, &idx);
+        assert!(headline.contains("1 agent "), "singular: {headline}");
     }
 }

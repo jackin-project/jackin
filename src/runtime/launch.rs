@@ -2595,7 +2595,9 @@ fn resolve_launch_role_source(
 }
 
 async fn render_exit(
-    agent_display_name: &str,
+    // The exit summary no longer names the exiting agent (it lists who remains),
+    // but callers still thread it for the diagnostics/outro paths.
+    _agent_display_name: &str,
     paths: &JackinPaths,
     docker: &impl DockerApi,
     opts: &LoadOptions,
@@ -2634,7 +2636,7 @@ async fn render_exit(
     }
     // Others remain: show the grouped "still here" summary after the warp so
     // the operator can see who to reconnect to.
-    super::exit_summary::show(paths, &running, agent_display_name, opts).await;
+    super::exit_summary::show(paths, &running, opts);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

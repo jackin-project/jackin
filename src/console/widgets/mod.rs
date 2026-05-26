@@ -78,12 +78,6 @@ pub(crate) const DEBUG_AMBER: Color = Color::Rgb(
     tui_palette::DEBUG_AMBER.b,
 );
 
-pub(crate) const BORDER_GRAY: Color = Color::Rgb(
-    tui_palette::BORDER_GRAY.r,
-    tui_palette::BORDER_GRAY.g,
-    tui_palette::BORDER_GRAY.b,
-);
-
 /// The ` jackin' ` brand pill followed by ` · <label>`. Shared by every
 /// top-level TUI screen (workspace list, settings, editor, launch
 /// progress) so the logo is byte-identical and never shifts position or
