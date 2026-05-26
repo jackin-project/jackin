@@ -321,9 +321,9 @@ fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
     }
 }
 
-/// Trust-tab row index under the pointer, or `None`. Matches the click
-/// handler's geometry (raw row offset inside the content area; no scroll
-/// adjustment, same as `try_select_settings_trust_row`).
+/// Trust-tab pending-entry index under the pointer, or `None`. Matches the
+/// click handler's geometry: skip the column header (content line 0) and add
+/// the rendered vertical scroll, same as `try_select_settings_trust_row`.
 fn settings_trust_row_at(
     settings: &super::super::state::SettingsState<'_>,
     mouse: MouseEvent,
@@ -336,11 +336,12 @@ fn settings_trust_row_at(
     if !point_in(mouse, area) {
         return None;
     }
-    // Add the rendered vertical scroll: the Trust list is drawn through
-    // `render_scrollable_block` scrolled by `trust.scroll_y`, so the visible row
-    // under the pointer maps to a row that many entries further down the list.
-    let row =
+    // Content line 0 is the column header; pending entries start at line 1.
+    // Add the rendered `trust.scroll_y` so a scrolled list maps to the right
+    // entry (render_scrollable_block draws header + entries scrolled together).
+    let line =
         usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(settings.trust.scroll_y);
+    let row = line.checked_sub(1)?;
     (row < settings.trust.pending.len()).then_some(row)
 }
 
@@ -455,12 +456,15 @@ fn try_select_settings_trust_row(
     if !point_in(mouse, area) {
         return false;
     }
-    // Account for the rendered vertical scroll (same `trust.scroll_y` the
-    // scrollable block was drawn with) so clicks land on the visible entry.
-    let clicked_row =
+    // Content line 0 is the column header; pending entries start at line 1.
+    // Add the rendered `trust.scroll_y` (same offset the scrollable block was
+    // drawn with) so clicks land on the entry actually under the pointer.
+    let line =
         usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(settings.trust.scroll_y);
-    if clicked_row < settings.trust.pending.len() {
-        settings.trust.selected = clicked_row;
+    if let Some(row) = line.checked_sub(1)
+        && row < settings.trust.pending.len()
+    {
+        settings.trust.selected = row;
     }
     settings.trust.scroll_focused = true;
     true
