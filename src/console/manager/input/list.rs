@@ -163,24 +163,24 @@ pub(super) fn handle_list_key(
                                 None
                             }
                         });
-                    let providers: Vec<(String, Vec<(String, String)>)> =
-                        if let Some(key) = zai_key {
-                            vec![
-                                ("Anthropic".to_string(), vec![]),
-                                (
-                                    "Z.AI".to_string(),
-                                    vec![
-                                        ("ANTHROPIC_AUTH_TOKEN".to_string(), key),
-                                        (
-                                            "ANTHROPIC_BASE_URL".to_string(),
-                                            "https://api.z.ai/api/anthropic".to_string(),
-                                        ),
-                                    ],
-                                ),
-                            ]
-                        } else {
-                            vec![]
-                        };
+                    let providers: Vec<(String, Vec<(String, String)>)> = if let Some(key) = zai_key
+                    {
+                        vec![
+                            ("Anthropic".to_string(), vec![]),
+                            (
+                                "Z.AI".to_string(),
+                                vec![
+                                    ("ANTHROPIC_AUTH_TOKEN".to_string(), key),
+                                    (
+                                        "ANTHROPIC_BASE_URL".to_string(),
+                                        "https://api.z.ai/api/anthropic".to_string(),
+                                    ),
+                                ],
+                            ),
+                        ]
+                    } else {
+                        vec![]
+                    };
                     state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
                     state.list_modal = Some(Modal::ErrorPopup {
@@ -707,8 +707,7 @@ pub(super) fn handle_inline_provider_picker(
     state: &mut ManagerState<'_>,
     key: KeyEvent,
 ) -> InputOutcome {
-    let Some((container, agent, providers, selected)) =
-        state.inline_provider_picker.as_mut()
+    let Some((container, agent, providers, selected)) = state.inline_provider_picker.as_mut()
     else {
         return InputOutcome::Continue;
     };

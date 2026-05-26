@@ -1318,7 +1318,10 @@ impl Multiplexer {
                 }
                 self.spawn_session(Some(agent_slug), env_overrides, None)
             }
-            SpawnRequest::AgentWithProvider { slug, provider_label } => {
+            SpawnRequest::AgentWithProvider {
+                slug,
+                provider_label,
+            } => {
                 if let Err(reason) =
                     crate::session::validate_agent_slug(&slug, &self.available_agents)
                 {
@@ -1334,7 +1337,10 @@ impl Multiplexer {
     /// (display_label, env_overrides) pair. An empty vec means only the
     /// default provider is available and no picker step is needed.
     /// A non-empty vec always has 2+ entries — one per available provider.
-    fn providers_for_agent(&self, agent: Option<&str>) -> Vec<(&'static str, Vec<(String, String)>)> {
+    fn providers_for_agent(
+        &self,
+        agent: Option<&str>,
+    ) -> Vec<(&'static str, Vec<(String, String)>)> {
         let Some(slug) = agent else { return vec![] };
         // Z.AI supports Claude Code via the Anthropic-compatible endpoint.
         // Other agents are deferred until their endpoints are confirmed.
@@ -1342,13 +1348,16 @@ impl Multiplexer {
             if let Some(ref key) = self.zai_key {
                 return vec![
                     ("Anthropic", vec![]),
-                    ("Z.AI", vec![
-                        ("ANTHROPIC_AUTH_TOKEN".to_string(), key.clone()),
-                        (
-                            "ANTHROPIC_BASE_URL".to_string(),
-                            "https://api.z.ai/api/anthropic".to_string(),
-                        ),
-                    ]),
+                    (
+                        "Z.AI",
+                        vec![
+                            ("ANTHROPIC_AUTH_TOKEN".to_string(), key.clone()),
+                            (
+                                "ANTHROPIC_BASE_URL".to_string(),
+                                "https://api.z.ai/api/anthropic".to_string(),
+                            ),
+                        ],
+                    ),
                 ];
             }
         }
@@ -1370,7 +1379,12 @@ impl Multiplexer {
                 };
                 SessionLaunch {
                     label,
-                    cmd: build_agent_command(slug, self.model_for_agent(slug), env_passthrough, cwd),
+                    cmd: build_agent_command(
+                        slug,
+                        self.model_for_agent(slug),
+                        env_passthrough,
+                        cwd,
+                    ),
                 }
             }
             None => SessionLaunch {
@@ -3939,7 +3953,10 @@ fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
 fn spawn_request_label(request: &SpawnRequest) -> String {
     match request {
         SpawnRequest::Agent(agent) => format!("agent {agent:?}"),
-        SpawnRequest::AgentWithProvider { slug, provider_label } => {
+        SpawnRequest::AgentWithProvider {
+            slug,
+            provider_label,
+        } => {
             format!("agent {slug:?} (provider: {provider_label})")
         }
         SpawnRequest::Shell => "shell".to_string(),

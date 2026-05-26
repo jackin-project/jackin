@@ -366,13 +366,7 @@ pub async fn spawn_agent_session(
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
 
-    let mut exec_args = vec![
-        "exec",
-        "--workdir",
-        workdir,
-        "-it",
-        container_name,
-    ];
+    let mut exec_args = vec!["exec", "--workdir", workdir, "-it", container_name];
     let coauthor_env_flag;
     let dco_env_flag;
     if let Some(ref env) = coauthor_env {

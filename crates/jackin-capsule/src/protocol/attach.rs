@@ -68,7 +68,10 @@ pub enum SpawnRequest {
     /// Agent spawn where the provider was already selected by the console
     /// before `docker exec`-ing. The daemon uses `provider_label` directly
     /// as the tab suffix instead of showing the in-mux ProviderPicker dialog.
-    AgentWithProvider { slug: String, provider_label: String },
+    AgentWithProvider {
+        slug: String,
+        provider_label: String,
+    },
 }
 
 impl SpawnRequest {
@@ -231,9 +234,10 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
                     None => (0, b"", b""),
                     Some(SpawnRequest::Shell) => (1, b"", b""),
                     Some(SpawnRequest::Agent(agent)) => (2, agent.as_bytes(), b""),
-                    Some(SpawnRequest::AgentWithProvider { slug, provider_label }) => {
-                        (3, slug.as_bytes(), provider_label.as_bytes())
-                    }
+                    Some(SpawnRequest::AgentWithProvider {
+                        slug,
+                        provider_label,
+                    }) => (3, slug.as_bytes(), provider_label.as_bytes()),
                 };
             if env.len() > MAX_HELLO_ENV {
                 bail!(
@@ -461,7 +465,9 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                     }
                     let pl_len = cursor.read_u16("provider label length")? as usize;
                     if pl_len > MAX_HELLO_PROVIDER_LABEL {
-                        bail!("hello provider label length {pl_len} exceeds cap {MAX_HELLO_PROVIDER_LABEL}");
+                        bail!(
+                            "hello provider label length {pl_len} exceeds cap {MAX_HELLO_PROVIDER_LABEL}"
+                        );
                     }
                     let provider_label = cursor.read_string(pl_len, "provider label")?;
                     if provider_label.is_empty() {

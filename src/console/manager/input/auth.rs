@@ -331,8 +331,7 @@ fn current_mode_and_credential(
                     (mode, cred)
                 }
                 AuthKind::Zai => {
-                    let cred = override_ref
-                        .and_then(|ro| ro.env.get("ZAI_API_KEY").cloned());
+                    let cred = override_ref.and_then(|ro| ro.env.get("ZAI_API_KEY").cloned());
                     let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
                     (mode, cred)
                 }

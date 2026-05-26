@@ -104,15 +104,11 @@ pub(super) fn render_list_body(
         }
     }
 
-    if let Some((container, _agent, providers, selected)) =
-        state.inline_provider_picker.as_ref()
-    {
+    if let Some((container, _agent, providers, selected)) = state.inline_provider_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container.as_str());
         render_provider_picker_sidebar(frame, list_area, short_id, providers, *selected);
-    } else if let Some((container, picker, _providers)) =
-        state.inline_new_session_picker.as_ref()
-    {
+    } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container.as_str());
         render_agent_picker_sidebar(frame, list_area, short_id, picker);

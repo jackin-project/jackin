@@ -518,7 +518,11 @@ impl Dialog {
                     *selected = step_selectable(&visible, *selected, true);
                     DialogAction::Redraw
                 }
-                Self::ProviderPicker { selected, providers, .. } => {
+                Self::ProviderPicker {
+                    selected,
+                    providers,
+                    ..
+                } => {
                     if *selected + 1 < providers.len() {
                         *selected += 1;
                     }
@@ -616,10 +620,7 @@ impl Dialog {
                     Some(label) => DialogAction::SpawnAgentWithProvider {
                         agent: agent.clone(),
                         provider_label: label.clone(),
-                        env_overrides: env_overrides
-                            .get(*selected)
-                            .cloned()
-                            .unwrap_or_default(),
+                        env_overrides: env_overrides.get(*selected).cloned().unwrap_or_default(),
                         intent: *intent,
                     },
                     None => DialogAction::Redraw,
