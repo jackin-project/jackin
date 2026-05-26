@@ -2,8 +2,10 @@
 //!
 //! When an operator exits a foreground session and other jackin' agents
 //! are still running, this shows a brief rich screen listing who remains —
-//! grouped workspace → agent → instance ids, with duplicate ids collapsed —
-//! using the shared brand chrome. It dwells for a couple of seconds so the
+//! grouped project (workspace / folder) → role → instance ids, with duplicate
+//! ids collapsed — so the operator sees which roles are working on which
+//! projects and their ids, not the underlying agent runtime. It uses the
+//! shared brand chrome and dwells for a couple of seconds so the
 //! operator can register "those agents are still in the construct, I can
 //! reconnect", then returns to the shell. Non-rich terminals (and
 //! `--no-rain`) fall back to a single plain line.
@@ -27,24 +29,26 @@ use crate::runtime::LoadOptions;
 
 /// How long the summary stays on screen before returning to the shell.
 const DWELL: Duration = Duration::from_millis(2600);
-const AGENT_COL: usize = 12;
+const ROLE_COL: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExitAgent {
-    pub agent: String,
+pub struct ExitRole {
+    pub role: String,
     pub ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExitGroup {
     pub workspace: String,
-    pub agents: Vec<ExitAgent>,
+    pub roles: Vec<ExitRole>,
 }
 
-/// Group the still-running instances by workspace, then by agent, collapsing
-/// duplicate instance ids. Only entries whose container is in
-/// `running_bases` are included. Ordering is stable (workspace then agent
-/// sorted) so the screen does not jitter between runs.
+/// Group the still-running instances by project (workspace / folder), then by
+/// role, collapsing duplicate instance ids. Only entries whose container is in
+/// `running_bases` are included. Ordering is stable (workspace then role
+/// sorted) so the screen does not jitter between runs. The agent runtime is
+/// deliberately not surfaced — the operator wants to see which roles run where,
+/// not whether each is Claude or another runtime.
 #[must_use]
 pub fn group_running(running_bases: &[String], index: &InstanceIndex) -> Vec<ExitGroup> {
     use std::collections::{BTreeMap, HashSet};
@@ -62,7 +66,7 @@ pub fn group_running(running_bases: &[String], index: &InstanceIndex) -> Vec<Exi
         let ids = by_ws
             .entry(workspace)
             .or_default()
-            .entry(entry.agent_runtime.clone())
+            .entry(entry.role_key.clone())
             .or_default();
         if !ids.contains(&entry.instance_id) {
             ids.push(entry.instance_id.clone());
@@ -70,11 +74,11 @@ pub fn group_running(running_bases: &[String], index: &InstanceIndex) -> Vec<Exi
     }
     by_ws
         .into_iter()
-        .map(|(workspace, agents)| ExitGroup {
+        .map(|(workspace, roles)| ExitGroup {
             workspace,
-            agents: agents
+            roles: roles
                 .into_iter()
-                .map(|(agent, ids)| ExitAgent { agent, ids })
+                .map(|(role, ids)| ExitRole { role, ids })
                 .collect(),
         })
         .collect()
@@ -83,8 +87,8 @@ pub fn group_running(running_bases: &[String], index: &InstanceIndex) -> Vec<Exi
 fn total_instances(groups: &[ExitGroup]) -> usize {
     groups
         .iter()
-        .flat_map(|group| group.agents.iter())
-        .map(|agent| agent.ids.len())
+        .flat_map(|group| group.roles.iter())
+        .map(|role| role.ids.len())
         .sum()
 }
 
@@ -119,12 +123,12 @@ fn render(frame: &mut Frame<'_>, area: Rect, exited: &str, groups: &[ExitGroup])
             group.workspace.clone(),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         )));
-        for agent in &group.agents {
+        for role in &group.roles {
             let mut spans = vec![Span::styled(
-                format!("  {:<AGENT_COL$}", agent.agent),
+                format!("  {:<ROLE_COL$}", role.role),
                 Style::default().fg(PHOSPHOR_DIM),
             )];
-            for (j, id) in agent.ids.iter().enumerate() {
+            for (j, id) in role.ids.iter().enumerate() {
                 if j > 0 {
                     spans.push(Span::raw("  "));
                 }
@@ -206,14 +210,21 @@ mod tests {
     use super::*;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
 
-    fn entry(id: &str, base: &str, ws: &str, workdir: &str, agent: &str) -> InstanceIndexEntry {
+    fn entry(
+        id: &str,
+        base: &str,
+        ws: &str,
+        workdir: &str,
+        role: &str,
+        agent: &str,
+    ) -> InstanceIndexEntry {
         InstanceIndexEntry {
             instance_id: id.to_string(),
             container_base: base.to_string(),
             workspace_name: Some(ws.to_string()),
             workspace_label: ws.to_string(),
             workdir: workdir.to_string(),
-            role_key: "the-architect".to_string(),
+            role_key: role.to_string(),
             agent_runtime: agent.to_string(),
             status: InstanceStatus::Running,
             updated_at: "2026-05-25T00:00:00Z".to_string(),
@@ -228,49 +239,58 @@ mod tests {
     }
 
     #[test]
-    fn groups_by_workspace_then_agent() {
+    fn groups_by_workspace_then_role() {
         let idx = index(vec![
-            entry("aaa", "jk-aaa-app-arch", "app", "/app", "claude"),
-            entry("bbb", "jk-bbb-app-arch", "app", "/app", "codex"),
-            entry("ccc", "jk-ccc-other-arch", "other", "/other", "amp"),
+            entry("aaa", "jk-aaa-app-arch", "app", "/app", "the-architect", "claude"),
+            entry("bbb", "jk-bbb-app-smith", "app", "/app", "agent-smith", "codex"),
+            entry(
+                "ccc",
+                "jk-ccc-other-arch",
+                "other",
+                "/other",
+                "the-architect",
+                "amp",
+            ),
         ]);
         let running = vec![
             "jk-aaa-app-arch".to_string(),
-            "jk-bbb-app-arch".to_string(),
+            "jk-bbb-app-smith".to_string(),
             "jk-ccc-other-arch".to_string(),
         ];
         let groups = group_running(&running, &idx);
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].workspace, "app");
-        assert_eq!(groups[0].agents.len(), 2);
+        assert_eq!(groups[0].roles.len(), 2, "two distinct roles in one project");
         assert_eq!(groups[1].workspace, "other");
         assert_eq!(total_instances(&groups), 3);
     }
 
     #[test]
-    fn collapses_duplicate_ids_for_one_agent() {
+    fn collapses_duplicate_ids_for_one_role() {
+        // Same role, two runtimes — grouped by role, so they merge into one row
+        // and the runtime is never surfaced.
         let idx = index(vec![
-            entry("aaa", "jk-aaa-app-arch", "app", "/app", "claude"),
-            entry("ddd", "jk-ddd-app-arch", "app", "/app", "claude"),
+            entry("aaa", "jk-aaa-app-arch", "app", "/app", "the-architect", "claude"),
+            entry("ddd", "jk-ddd-app-arch", "app", "/app", "the-architect", "codex"),
         ]);
         let running = vec!["jk-aaa-app-arch".to_string(), "jk-ddd-app-arch".to_string()];
         let groups = group_running(&running, &idx);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].agents.len(), 1, "one agent row");
-        assert_eq!(groups[0].agents[0].agent, "claude");
-        assert_eq!(groups[0].agents[0].ids, vec!["aaa", "ddd"]);
+        assert_eq!(groups[0].roles.len(), 1, "one role row");
+        assert_eq!(groups[0].roles[0].role, "the-architect");
+        assert_eq!(groups[0].roles[0].ids, vec!["aaa", "ddd"]);
     }
 
     #[test]
     fn excludes_instances_not_in_the_running_set() {
         let idx = index(vec![
-            entry("aaa", "jk-aaa-app-arch", "app", "/app", "claude"),
-            entry("zzz", "jk-zzz-app-arch", "app", "/app", "codex"),
+            entry("aaa", "jk-aaa-app-arch", "app", "/app", "the-architect", "claude"),
+            entry("zzz", "jk-zzz-app-arch", "app", "/app", "the-architect", "codex"),
         ]);
         let running = vec!["jk-aaa-app-arch".to_string()];
         let groups = group_running(&running, &idx);
         assert_eq!(total_instances(&groups), 1);
-        assert_eq!(groups[0].agents[0].agent, "claude");
+        assert_eq!(groups[0].roles[0].role, "the-architect");
     }
 
     #[test]
@@ -278,8 +298,8 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend};
         let groups = vec![ExitGroup {
             workspace: "big-monorepo".to_string(),
-            agents: vec![ExitAgent {
-                agent: "claude".to_string(),
+            roles: vec![ExitRole {
+                role: "the-architect".to_string(),
                 ids: vec!["k7p9m2xq".to_string(), "a1b2c3d4".to_string()],
             }],
         }];
@@ -291,7 +311,7 @@ mod tests {
         let dump: String = format!("{buf:?}");
         assert!(dump.contains("Exiled the-architect"), "title missing");
         assert!(dump.contains("big-monorepo"), "workspace missing");
-        assert!(dump.contains("claude"), "agent missing");
+        assert!(dump.contains("the-architect"), "role missing");
         assert!(dump.contains("k7p9m2xq"), "id missing");
         assert!(dump.contains("a1b2c3d4"), "second id missing");
     }
