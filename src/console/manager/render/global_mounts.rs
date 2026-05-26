@@ -835,7 +835,13 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &mut Settings
             crate::console::widgets::text_input::render(frame, area, state);
         }
         SettingsAuthModal::OpPicker { state } => {
-            let area = super::modal::op_picker_rect(frame.area());
+            // A naming sub-stage is a plain input box, sized like every
+            // other text-input modal; drill-down stages use the picker rect.
+            let area = if state.naming_stage_input().is_some() {
+                super::modal::text_input_rect(frame.area())
+            } else {
+                super::modal::op_picker_rect(frame.area())
+            };
             crate::console::widgets::op_picker::render::render(frame, area, state);
         }
     }

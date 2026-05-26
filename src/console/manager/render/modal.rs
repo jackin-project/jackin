@@ -105,6 +105,12 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
                 error_popup::required_height(state, inner_width, max_rows),
             )
         }
+        // A naming sub-stage is a plain labelled input box, sized like
+        // every other text-input modal; the drill-down stages use the
+        // larger picker rect.
+        Modal::OpPicker { state } if state.naming_stage_input().is_some() => {
+            return text_input_rect(outer);
+        }
         Modal::OpPicker { .. } => return op_picker_rect(outer),
         Modal::RolePicker { state }
         | Modal::RoleOverridePicker { state }
@@ -250,6 +256,14 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<FooterItem> {
             FooterItem::Text("cancel"),
         ],
         Modal::ErrorPopup { .. } => vec![FooterItem::Key("Enter/Esc"), FooterItem::Text("dismiss")],
+        // A naming sub-stage is a plain input box: confirm / cancel only.
+        Modal::OpPicker { state } if state.naming_stage_input().is_some() => vec![
+            FooterItem::Key("Enter"),
+            FooterItem::Text("confirm"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            FooterItem::Text("cancel"),
+        ],
         Modal::OpPicker { .. }
         | Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }
@@ -423,6 +437,14 @@ pub(super) fn settings_auth_modal_footer_items(
             FooterItem::GroupSep,
             FooterItem::Key("Enter"),
             FooterItem::Text("select"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            FooterItem::Text("cancel"),
+        ],
+        // A naming sub-stage is a plain input box: confirm / cancel only.
+        SettingsAuthModal::OpPicker { state } if state.naming_stage_input().is_some() => vec![
+            FooterItem::Key("Enter"),
+            FooterItem::Text("confirm"),
             FooterItem::GroupSep,
             FooterItem::Key("Esc"),
             FooterItem::Text("cancel"),

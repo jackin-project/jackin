@@ -48,9 +48,9 @@ pub fn breadcrumb_title(
                 "1Password".to_string()
             }
         }
-        // Naming sub-stages render their own breadcrumb via
-        // `render_naming_stage`; here they fall back to the Item-level
-        // `[email →] vault` context.
+        // Naming sub-stages render as a plain labelled input box (no
+        // breadcrumb); this arm exists only for match exhaustiveness and
+        // is reached for the Item list pane.
         OpPickerStage::Item
         | OpPickerStage::NewItemName
         | OpPickerStage::FieldLabel
@@ -121,21 +121,10 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         .map_or("", |v| v.name.as_str());
     let i_name = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
 
-    // Naming sub-stages render a text-input box inside the breadcrumb
-    // modal rather than a list pane.
-    if matches!(
-        state.stage,
-        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName
-    ) {
-        render_naming_stage(
-            frame,
-            area,
-            state,
-            multi_account,
-            account_email,
-            v_name,
-            i_name,
-        );
+    // Naming sub-stages are a plain labelled input box — the same shared
+    // dialog every "type one value" prompt uses. No breadcrumb frame.
+    if let Some(input) = state.naming_stage_input() {
+        crate::console::widgets::text_input::render(frame, area, input);
         return;
     }
 
@@ -205,56 +194,6 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         };
         render_selected_lines_in_area(frame, rows[3], list_lines, selected);
     }
-}
-
-/// Renders a naming sub-stage: the breadcrumb modal with the relevant
-/// `TextInputState` drawn inside, matching the look of the Credential
-/// input box.
-fn render_naming_stage(
-    frame: &mut Frame,
-    area: Rect,
-    state: &OpPickerState,
-    multi_account: bool,
-    account_email: &str,
-    v_name: &str,
-    i_name: &str,
-) {
-    let base = breadcrumb_title(state.stage, multi_account, account_email, v_name, i_name);
-    let (suffix, input) = match state.stage {
-        OpPickerStage::NewItemName => (" \u{2192} New item", &state.item_name_input),
-        OpPickerStage::NewSectionName => (" \u{2192} New section", &state.section_name_input),
-        // FieldLabel reached from both the new-item and existing-item paths.
-        _ => {
-            let crumb = if i_name.is_empty() {
-                base.clone()
-            } else if multi_account {
-                format!("{account_email} \u{2192} {v_name} \u{2192} {i_name}")
-            } else {
-                format!("{v_name} \u{2192} {i_name}")
-            };
-            return render_input_in_block(
-                frame,
-                area,
-                &crumb,
-                " \u{2192} New field",
-                &state.field_label_input,
-            );
-        }
-    };
-    render_input_in_block(frame, area, &base, suffix, input);
-}
-
-fn render_input_in_block(
-    frame: &mut Frame,
-    area: Rect,
-    breadcrumb: &str,
-    suffix: &str,
-    input: &crate::console::widgets::text_input::TextInputState,
-) {
-    let block = modal_block(format!("{breadcrumb}{suffix}"));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    crate::console::widgets::text_input::render(frame, inner, input);
 }
 
 fn render_account_lines(state: &OpPickerState) -> Vec<Line<'static>> {

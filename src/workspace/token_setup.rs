@@ -32,10 +32,11 @@ use crate::paths::JackinPaths;
 use secrecy::ExposeSecret;
 use sha2::Digest;
 
-/// Default `op` item title. Operators can override with
-/// [`TokenSetupArgs::item_name`]; a custom title may still contain
-/// `{ws}`, which substitutes the scope label (workspace name, or
-/// `global`). The default has no placeholder — it is the literal title.
+/// Default `op` item title (the literal `Claude`).
+///
+/// Operators can override with [`TokenSetupArgs::item_name`]; a custom
+/// title may still contain `{ws}`, which substitutes the scope label
+/// (workspace name, or `global`). The default has no placeholder.
 pub const DEFAULT_ITEM_TEMPLATE: &str = "Claude";
 
 /// Default `op` item category for OAuth tokens (1Password's API

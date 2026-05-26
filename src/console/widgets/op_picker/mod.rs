@@ -654,6 +654,22 @@ impl OpPickerState {
         rows
     }
 
+    /// The input box for the current naming sub-stage, or `None` when the
+    /// picker is in a list stage. Single source for the stage → input
+    /// mapping shared by the renderer, the modal sizing, and the footer
+    /// so a naming stage renders as the standard labelled input dialog.
+    pub const fn naming_stage_input(&self) -> Option<&super::text_input::TextInputState<'static>> {
+        match self.stage {
+            OpPickerStage::NewItemName => Some(&self.item_name_input),
+            OpPickerStage::FieldLabel => Some(&self.field_label_input),
+            OpPickerStage::NewSectionName => Some(&self.section_name_input),
+            OpPickerStage::Account
+            | OpPickerStage::Vault
+            | OpPickerStage::Item
+            | OpPickerStage::Field => None,
+        }
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         // Tests bypass render entirely so we drain here too, not just
         // on tick.
