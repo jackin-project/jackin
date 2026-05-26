@@ -101,7 +101,9 @@ impl RunDiagnostics {
     }
 
     pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
-        self.write(kind, message, Some(stage), detail, Some(stage));
+        // `span_id` is left unset: the `stage` field already identifies the
+        // span, so repeating it as the span id is pure duplication.
+        self.write(kind, message, Some(stage), detail, None);
     }
 
     pub fn debug(&self, category: &str, line: &str) {

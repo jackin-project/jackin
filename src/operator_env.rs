@@ -273,6 +273,11 @@ impl OpReferenceParts {
 #[must_use]
 pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     let path = value.strip_prefix("op://")?;
+    // An op:// reference can carry a `?attribute=…` / `?ssh-format=…` query
+    // suffix (emitted by `resolve_op_uri_to_ref`). It tunes retrieval, not the
+    // vault/item/section/field structure, so strip it before splitting —
+    // otherwise it leaks into the parsed `field`.
+    let path = path.split('?').next().unwrap_or(path);
     let parts: Vec<&str> = path.split('/').collect();
     match parts.as_slice() {
         [vault, item, field] => Some(OpReferenceParts {
@@ -2286,6 +2291,19 @@ mod tests {
         assert_eq!(parts.item, "Item");
         assert_eq!(parts.section, Some("Auth".to_string()));
         assert_eq!(parts.field, "password");
+    }
+
+    #[test]
+    fn parse_op_reference_strips_query_suffix() {
+        // `resolve_op_uri_to_ref` can append a `?attribute=…` / `?ssh-format=…`
+        // suffix to the final segment; it must not leak into the parsed field.
+        let parts = parse_op_reference("op://Vault/Item/token?attribute=otp").unwrap();
+        assert_eq!(parts.field, "token");
+        assert_eq!(parts.section, None);
+
+        let parts = parse_op_reference("op://Vault/Item/Auth/key?ssh-format=openssh").unwrap();
+        assert_eq!(parts.section, Some("Auth".to_string()));
+        assert_eq!(parts.field, "key");
     }
 
     #[test]
