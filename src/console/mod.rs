@@ -378,11 +378,12 @@ fn flush_terminal_input_queue() {
 fn flush_terminal_input_queue() {}
 
 fn enable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    // Crossterm's EnableMouseCapture includes ?1003h "any-event"
-    // tracking. That reports plain pointer motion and can flood the pty
-    // under touchpad inertia. Jackin needs press/release, drag, scroll,
-    // and SGR coordinates, so enable only those modes.
-    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1015h\x1b[?1006h")?;
+    // ?1000h press/release, ?1002h drag, ?1003h any-event motion (drives tab
+    // hover, matching the in-container multiplexer), ?1015h+?1006h SGR
+    // coordinates. ?1003h motion floods only matter across a pty under inertia;
+    // host events are local and the manager batches renders at 20Hz, so the
+    // cost is paid once per coalesced frame.
+    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1015h\x1b[?1006h")?;
     out.flush()
 }
 

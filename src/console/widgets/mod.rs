@@ -51,6 +51,16 @@ pub(crate) const TAB_BG_ACTIVE: Color = Color::Rgb(
     tui_palette::TAB_BG_ACTIVE.g,
     tui_palette::TAB_BG_ACTIVE.b,
 );
+pub(crate) const TAB_BG_INACTIVE_HOVER: Color = Color::Rgb(
+    tui_palette::TAB_BG_INACTIVE_HOVER.r,
+    tui_palette::TAB_BG_INACTIVE_HOVER.g,
+    tui_palette::TAB_BG_INACTIVE_HOVER.b,
+);
+pub(crate) const TAB_BG_ACTIVE_HOVER: Color = Color::Rgb(
+    tui_palette::TAB_BG_ACTIVE_HOVER.r,
+    tui_palette::TAB_BG_ACTIVE_HOVER.g,
+    tui_palette::TAB_BG_ACTIVE_HOVER.b,
+);
 
 /// Clickable-id foreground on the white bottom status bar, shared with the
 /// in-container multiplexer via `jackin-tui`.

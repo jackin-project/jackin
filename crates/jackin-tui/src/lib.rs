@@ -242,6 +242,18 @@ pub fn lay_out_tabs<'a>(labels: &[(&'a str, bool)], start_col: u16) -> Vec<TabCe
     out
 }
 
+/// Index of the tab cell whose column range contains `col`, if any. Shared
+/// by every tab strip (console editor/settings, in-container status bar) so
+/// click and hover hit-testing resolve the same tab as `lay_out_tabs`
+/// painted — no surface re-derives the column maths. `col` and the cells'
+/// `start_col` are in the same 0-based column space.
+#[must_use]
+pub fn tab_at_column(cells: &[TabCell<'_>], col: u16) -> Option<usize> {
+    cells
+        .iter()
+        .position(|cell| col >= cell.start_col && col < cell.start_col.saturating_add(cell.cell_cols))
+}
+
 /// Cross-surface single-line text-input model. Holds the buffer,
 /// cursor position (in bytes), an optional max length, and an
 /// optional forbidden set used for duplicate detection. Pure data +

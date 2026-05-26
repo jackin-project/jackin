@@ -272,7 +272,7 @@ Canonical definitions live in <RepoFile path="src/console/widgets/mod.rs" />. Al
 - `Tab`/`↓` moves focus from tab bar into the first content block.
 - `BackTab`/`Esc` returns focus to the tab bar from content.
 
-Hover-lift backgrounds (`TAB_BG_*_HOVER`) exist in the shared palette for the multiplexer's pointer feedback. The host console tab strips do not yet wire hover because the console subscribes only to button/drag/scroll mouse modes (`?1000h`/`?1002h`), not any-event motion (`?1003h`) — enabling motion tracking is a separate decision, deliberately deferred to avoid touchpad-motion flooding.
+- **Tab hover lifts the cell under the pointer** (`TAB_BG_INACTIVE_HOVER` / `TAB_BG_ACTIVE_HOVER` in the shared palette), matching the in-container multiplexer's pointer feedback. The console enables any-event motion tracking (`?1003h` alongside `?1000h`/`?1002h`/`?1015h`/`?1006h`) so a `MouseEventKind::Moved` event repaints the hovered tab; moving off the strip clears it. The motion-flood concern that deferred this earlier is moot host-side — events are local (no pty) and the manager coalesces renders at 20Hz, so a stream of motion events costs one repaint per frame. The hit-test that maps a column to a tab index is the shared `jackin_tui::lay_out_tabs` + `jackin_tui::tab_at_column`, the same geometry the multiplexer uses, so click-selection and hover stay in lock-step with the rendered cells.
 
 ---
 

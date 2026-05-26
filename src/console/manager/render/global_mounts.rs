@@ -62,7 +62,13 @@ pub(super) fn render_settings(
         .iter()
         .map(|tab| (tab.label(), *tab == state.active_tab))
         .collect::<Vec<_>>();
-    super::editor::render_tab_strip(frame, chunks[1], &labels, state.tab_bar_focused);
+    super::editor::render_tab_strip(
+        frame,
+        chunks[1],
+        &labels,
+        state.tab_bar_focused,
+        state.hovered_tab,
+    );
 
     match state.active_tab {
         SettingsTab::General => render_general_tab(frame, state, chunks[2]),

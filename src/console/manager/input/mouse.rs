@@ -72,6 +72,12 @@ pub fn handle_mouse_with_config(
         return;
     }
 
+    // Pointer motion only repaints the hovered tab; it never selects or drags.
+    if matches!(mouse.kind, MouseEventKind::Moved) {
+        update_tab_hover(state, mouse);
+        return;
+    }
+
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && try_select_editor_tab(state, mouse)
     {
@@ -221,21 +227,51 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
 }
 
 fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
+    let labels: Vec<&str> = super::super::render::editor::EDITOR_TAB_LABELS
+        .iter()
+        .map(|(_, label)| *label)
+        .collect();
+    let idx = tab_cell_at(mouse, &labels)?;
+    super::super::render::editor::EDITOR_TAB_LABELS
+        .get(idx)
+        .map(|(tab, _)| *tab)
+}
+
+/// Index of the tab cell under `mouse`, or `None` when the pointer is outside
+/// the strip rows. Geometry comes from the shared `jackin_tui::lay_out_tabs`
+/// (` label ` cell, one-column gap, from col 0) so the host console's hit-test
+/// and the in-container multiplexer's stay in lock-step.
+fn tab_cell_at(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
     if mouse.row < EDITOR_HEADER_HEIGHT
         || mouse.row >= EDITOR_HEADER_HEIGHT.saturating_add(EDITOR_TAB_STRIP_HEIGHT)
     {
         return None;
     }
+    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
+    let laid = jackin_tui::lay_out_tabs(&cells, 0);
+    jackin_tui::tab_at_column(&laid, mouse.column)
+}
 
-    let mut x = 0u16;
-    for &(tab, label) in super::super::render::editor::EDITOR_TAB_LABELS {
-        let width = label.len() as u16 + 2;
-        if mouse.column >= x && mouse.column < x.saturating_add(width) {
-            return Some(tab);
+/// Repaint the hovered tab index on mouse motion so the strip lifts under the
+/// pointer like the in-container multiplexer tabs. A motion off the strip
+/// clears the highlight (`tab_cell_at` returns `None`).
+fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
+    match &mut state.stage {
+        ManagerStage::Editor(editor) if editor.modal.is_none() => {
+            let labels: Vec<&str> = super::super::render::editor::EDITOR_TAB_LABELS
+                .iter()
+                .map(|(_, label)| *label)
+                .collect();
+            editor.hovered_tab = tab_cell_at(mouse, &labels);
         }
-        x = x.saturating_add(width + 1);
+        ManagerStage::Settings(settings)
+            if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
+        {
+            let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
+            settings.hovered_tab = tab_cell_at(mouse, &labels);
+        }
+        _ => {}
     }
-    None
 }
 
 fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
@@ -254,20 +290,9 @@ fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> b
 }
 
 fn settings_tab_at(mouse: MouseEvent) -> Option<SettingsTab> {
-    if mouse.row < EDITOR_HEADER_HEIGHT
-        || mouse.row >= EDITOR_HEADER_HEIGHT.saturating_add(EDITOR_TAB_STRIP_HEIGHT)
-    {
-        return None;
-    }
-    let mut x = 0u16;
-    for tab in SettingsTab::ALL {
-        let width = tab.label().len() as u16 + 2;
-        if mouse.column >= x && mouse.column < x.saturating_add(width) {
-            return Some(tab);
-        }
-        x = x.saturating_add(width + 1);
-    }
-    None
+    let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
+    let idx = tab_cell_at(mouse, &labels)?;
+    SettingsTab::ALL.get(idx).copied()
 }
 
 /// Click inside the Trust block selects the row and activates the block for scrolling.
@@ -1275,6 +1300,41 @@ mod mouse_drag_tests {
             editor.active_field,
             crate::console::manager::state::FieldFocus::Row(0)
         ));
+    }
+
+    #[test]
+    fn mouse_motion_sets_and_clears_editor_tab_hover() {
+        let mut state = list_state();
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
+
+        // Motion inside " Roles " (cols 19..26 on the strip row) highlights the
+        // third cell without changing the active tab.
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Moved, 22, 3),
+            term(100),
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.hovered_tab, Some(2));
+        assert_eq!(editor.active_tab, EditorTab::General);
+
+        // Motion off the strip (header row) clears the highlight.
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Moved, 22, 0),
+            term(100),
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.hovered_tab, None);
     }
 
     #[test]

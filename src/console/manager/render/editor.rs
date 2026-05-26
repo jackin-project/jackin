@@ -19,8 +19,8 @@ use super::list::{
     render_mount_header,
 };
 use super::{
-    FooterItem, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_INACTIVE, WHITE, footer_height,
-    render_footer, render_header,
+    FooterItem, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE,
+    TAB_BG_INACTIVE_HOVER, WHITE, footer_height, render_footer, render_header,
 };
 use crate::config::AppConfig;
 use crate::operator_env::EnvValue;
@@ -140,7 +140,13 @@ pub fn render_editor(
         EditorMode::Create => "create workspace".to_string(),
     };
     render_header(frame, chunks[0], &title);
-    render_editor_tab_strip(frame, chunks[1], state.active_tab, state.tab_bar_focused);
+    render_editor_tab_strip(
+        frame,
+        chunks[1],
+        state.active_tab,
+        state.tab_bar_focused,
+        state.hovered_tab,
+    );
 
     match state.active_tab {
         EditorTab::General => render_general_tab(frame, chunks[2], state),
@@ -407,12 +413,13 @@ fn render_editor_tab_strip(
     area: Rect,
     active: EditorTab,
     tab_bar_focused: bool,
+    hovered: Option<usize>,
 ) {
     let labels: Vec<(&str, bool)> = EDITOR_TAB_LABELS
         .iter()
         .map(|(tab, label)| (*label, *tab == active))
         .collect();
-    render_tab_strip(frame, area, &labels, tab_bar_focused);
+    render_tab_strip(frame, area, &labels, tab_bar_focused, hovered);
 }
 
 pub(in crate::console::manager) fn render_tab_strip(
@@ -420,27 +427,31 @@ pub(in crate::console::manager) fn render_tab_strip(
     area: Rect,
     labels: &[(&str, bool)],
     tab_bar_focused: bool,
+    hovered: Option<usize>,
 ) {
     let mut label_spans: Vec<Span> = Vec::new();
     // Row 1: underline bar shown only when the tab bar has keyboard focus
     // so the operator can see which area is active.
     let mut bar_spans: Vec<Span> = Vec::new();
 
-    for &(label, active) in labels {
+    for (i, &(label, active)) in labels.iter().enumerate() {
         let cell_width = label.len() + 2; // " label " padding
         // Tab chrome mirrors the in-container multiplexer status bar
         // (jackin-capsule) via the shared jackin-tui palette: inactive cells
-        // sit on a dark-grey background, the active cell lifts to graphite
-        // (never the brand green, so it stays distinct from the ` jackin' `
-        // pill), both with WHITE text. The underline bar below marks tab-bar
-        // keyboard focus.
+        // sit on dark grey, the active cell lifts to graphite (never the
+        // brand green, so it stays distinct from the ` jackin' ` pill), and
+        // the cell under the pointer lifts one step further (the shared
+        // TAB_BG_*_HOVER). Both surfaces react to hover identically.
+        let bg = match (active, hovered == Some(i)) {
+            (true, true) => TAB_BG_ACTIVE_HOVER,
+            (true, false) => TAB_BG_ACTIVE,
+            (false, true) => TAB_BG_INACTIVE_HOVER,
+            (false, false) => TAB_BG_INACTIVE,
+        };
         let label_style = if active {
-            Style::default()
-                .bg(TAB_BG_ACTIVE)
-                .fg(WHITE)
-                .add_modifier(Modifier::BOLD)
+            Style::default().bg(bg).fg(WHITE).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().bg(TAB_BG_INACTIVE).fg(WHITE)
+            Style::default().bg(bg).fg(WHITE)
         };
         label_spans.push(Span::styled(format!(" {label} "), label_style));
         label_spans.push(Span::raw(" "));

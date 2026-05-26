@@ -280,6 +280,9 @@ pub struct SettingsState<'a> {
     /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
     /// Tab/↓ enters content); when false, focus is in the tab panel.
     pub tab_bar_focused: bool,
+    /// Index of the tab cell under the pointer, repainted on mouse motion so
+    /// the strip reacts to hover like the in-container multiplexer tabs.
+    pub hovered_tab: Option<usize>,
     pub general: SettingsGeneralState,
     pub mounts: GlobalMountsState<'a>,
     pub env: SettingsEnvState<'a>,
@@ -535,6 +538,9 @@ pub struct EditorState<'a> {
     /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
     /// Tab/↓ enters content); when false, focus is in the tab panel.
     pub tab_bar_focused: bool,
+    /// Index of the tab cell under the pointer, repainted on mouse motion so
+    /// the strip reacts to hover like the in-container multiplexer tabs.
+    pub hovered_tab: Option<usize>,
     pub active_field: FieldFocus,
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
@@ -746,6 +752,7 @@ impl SettingsState<'_> {
         Self {
             active_tab: SettingsTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             general: SettingsGeneralState::from_config(config),
             mounts: GlobalMountsState::from_config(config),
             env: SettingsEnvState::from_config(config),
@@ -2141,6 +2148,7 @@ impl EditorState<'_> {
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             active_field: FieldFocus::Row(0),
             original: ws.clone(),
             pending: ws,
@@ -2173,6 +2181,7 @@ impl EditorState<'_> {
             mode: EditorMode::Create,
             active_tab: EditorTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             active_field: FieldFocus::Row(0),
             original: empty.clone(),
             pending: empty,
