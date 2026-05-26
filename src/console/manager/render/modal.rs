@@ -9,8 +9,8 @@ use super::super::super::widgets::{
     op_picker, role_picker, save_discard, scope_picker, source_picker, text_input, workdir_pick,
 };
 use super::super::state::{GlobalMountModal, Modal, SettingsAuthModal, SettingsEnvModal};
-use super::FooterItem;
 use super::centered_rect_fixed;
+use jackin_tui::HintSpan;
 
 // ── Modal dispatcher ────────────────────────────────────────────────
 
@@ -162,183 +162,183 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
 // ── Modal footer-item dispatch ──────────────────────────────────────────────
 //
 // When a modal is open the main footer must show the modal's keys, not the
-// "behind" content keys. These functions return `Vec<FooterItem>` for each
+// "behind" content keys. These functions return `Vec<HintSpan<'static>>` for each
 // modal variant. Callers (render_editor, render_settings) check whether a
 // modal is open and delegate here before building contextual footer items.
 
 /// Footer items for an editor-stage `Modal`. Returns the keys valid while
 /// that modal has focus.
 #[allow(clippy::too_many_lines)]
-pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<FooterItem> {
+pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
     match modal {
         Modal::AuthForm { state, focus, .. } => auth_form_footer_items(state.as_ref(), *focus),
         Modal::TextInput { .. } => vec![
-            FooterItem::Key("Enter"),
-            FooterItem::Text("confirm"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("Enter"),
+            HintSpan::Text("confirm"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         Modal::FileBrowser { .. } => vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("open"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("open"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         Modal::MountDstChoice { .. }
         | Modal::SourcePicker { .. }
         | Modal::AuthSourcePicker { .. }
         | Modal::ScopePicker { .. } => vec![
-            FooterItem::Key("\u{2190}/\u{2192}"),
-            FooterItem::Text("move"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("move"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         Modal::WorkdirPick { .. } => vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         Modal::GithubPicker { .. } => vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("confirm"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("confirm"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         Modal::ConfirmSave { state } => {
             let mut items = vec![
-                FooterItem::Key("S"),
-                FooterItem::Text("save"),
-                FooterItem::GroupSep,
-                FooterItem::Key("C/Esc"),
-                FooterItem::Text("cancel"),
+                HintSpan::Key("S"),
+                HintSpan::Text("save"),
+                HintSpan::GroupSep,
+                HintSpan::Key("C/Esc"),
+                HintSpan::Text("cancel"),
             ];
             if !state.lines.is_empty() {
                 items.extend([
-                    FooterItem::GroupSep,
-                    FooterItem::Key("\u{2191}\u{2193}"),
-                    FooterItem::Text("scroll"),
+                    HintSpan::GroupSep,
+                    HintSpan::Key("\u{2191}\u{2193}"),
+                    HintSpan::Text("scroll"),
                 ]);
             }
             items
         }
         Modal::SaveDiscardCancel { .. } => vec![
-            FooterItem::Key("S"),
-            FooterItem::Text("save"),
-            FooterItem::GroupSep,
-            FooterItem::Key("D"),
-            FooterItem::Text("discard"),
-            FooterItem::GroupSep,
-            FooterItem::Key("C/Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("S"),
+            HintSpan::Text("save"),
+            HintSpan::GroupSep,
+            HintSpan::Key("D"),
+            HintSpan::Text("discard"),
+            HintSpan::GroupSep,
+            HintSpan::Key("C/Esc"),
+            HintSpan::Text("cancel"),
         ],
-        Modal::ErrorPopup { .. } => vec![FooterItem::Key("Enter/Esc"), FooterItem::Text("dismiss")],
+        Modal::ErrorPopup { .. } => vec![HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")],
         Modal::OpPicker { .. }
         | Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }
         | Modal::AuthRolePicker { .. } => vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("type"),
-            FooterItem::Text("filter"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("type"),
+            HintSpan::Text("filter"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         Modal::Confirm { .. } => vec![
-            FooterItem::Key("Y"),
-            FooterItem::Text("yes"),
-            FooterItem::GroupSep,
-            FooterItem::Key("N/Esc"),
-            FooterItem::Text("no"),
+            HintSpan::Key("Y"),
+            HintSpan::Text("yes"),
+            HintSpan::GroupSep,
+            HintSpan::Key("N/Esc"),
+            HintSpan::Text("no"),
         ],
     }
 }
 
 /// Footer items for the three settings modal chains.
-pub(super) fn settings_mounts_modal_footer_items(modal: &GlobalMountModal<'_>) -> Vec<FooterItem> {
+pub(super) fn settings_mounts_modal_footer_items(modal: &GlobalMountModal<'_>) -> Vec<HintSpan<'static>> {
     match modal {
         GlobalMountModal::Text { .. } => vec![
-            FooterItem::Key("Enter"),
-            FooterItem::Text("confirm"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("Enter"),
+            HintSpan::Text("confirm"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         GlobalMountModal::FileBrowser { .. } => vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("open"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("open"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         GlobalMountModal::MountDstChoice { .. } | GlobalMountModal::ScopePicker { .. } => vec![
-            FooterItem::Key("\u{2190}/\u{2192}"),
-            FooterItem::Text("move"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("move"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         GlobalMountModal::RolePicker { .. } => vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("type"),
-            FooterItem::Text("filter"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("type"),
+            HintSpan::Text("filter"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         GlobalMountModal::Confirm { .. } => vec![
-            FooterItem::Key("Y"),
-            FooterItem::Text("yes"),
-            FooterItem::GroupSep,
-            FooterItem::Key("N/Esc"),
-            FooterItem::Text("no"),
+            HintSpan::Key("Y"),
+            HintSpan::Text("yes"),
+            HintSpan::GroupSep,
+            HintSpan::Key("N/Esc"),
+            HintSpan::Text("no"),
         ],
         GlobalMountModal::PreviewSave { state } => {
             let mut items = vec![
-                FooterItem::Key("S"),
-                FooterItem::Text("save"),
-                FooterItem::GroupSep,
-                FooterItem::Key("C/Esc"),
-                FooterItem::Text("cancel"),
+                HintSpan::Key("S"),
+                HintSpan::Text("save"),
+                HintSpan::GroupSep,
+                HintSpan::Key("C/Esc"),
+                HintSpan::Text("cancel"),
             ];
             if !state.lines.is_empty() {
                 items.extend([
-                    FooterItem::GroupSep,
-                    FooterItem::Key("\u{2191}\u{2193}"),
-                    FooterItem::Text("scroll"),
+                    HintSpan::GroupSep,
+                    HintSpan::Key("\u{2191}\u{2193}"),
+                    HintSpan::Text("scroll"),
                 ]);
             }
             items
@@ -346,134 +346,134 @@ pub(super) fn settings_mounts_modal_footer_items(modal: &GlobalMountModal<'_>) -
     }
 }
 
-pub(super) fn settings_env_modal_footer_items(modal: &SettingsEnvModal<'_>) -> Vec<FooterItem> {
+pub(super) fn settings_env_modal_footer_items(modal: &SettingsEnvModal<'_>) -> Vec<HintSpan<'static>> {
     match modal {
         SettingsEnvModal::Text { .. } => vec![
-            FooterItem::Key("Enter"),
-            FooterItem::Text("confirm"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("Enter"),
+            HintSpan::Text("confirm"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         SettingsEnvModal::SourcePicker { .. } | SettingsEnvModal::ScopePicker { .. } => vec![
-            FooterItem::Key("\u{2190}/\u{2192}"),
-            FooterItem::Text("move"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("move"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         SettingsEnvModal::OpPicker { .. } | SettingsEnvModal::RolePicker { .. } => vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("type"),
-            FooterItem::Text("filter"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("type"),
+            HintSpan::Text("filter"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         SettingsEnvModal::Confirm { .. } => vec![
-            FooterItem::Key("Y"),
-            FooterItem::Text("yes"),
-            FooterItem::GroupSep,
-            FooterItem::Key("N/Esc"),
-            FooterItem::Text("no"),
+            HintSpan::Key("Y"),
+            HintSpan::Text("yes"),
+            HintSpan::GroupSep,
+            HintSpan::Key("N/Esc"),
+            HintSpan::Text("no"),
         ],
     }
 }
 
-pub(super) fn settings_auth_modal_footer_items(modal: &SettingsAuthModal<'_>) -> Vec<FooterItem> {
+pub(super) fn settings_auth_modal_footer_items(modal: &SettingsAuthModal<'_>) -> Vec<HintSpan<'static>> {
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
             auth_form_footer_items(state.as_ref(), *focus)
         }
         SettingsAuthModal::TextInput { .. } => vec![
-            FooterItem::Key("Enter"),
-            FooterItem::Text("confirm"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("Enter"),
+            HintSpan::Text("confirm"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         SettingsAuthModal::SourcePicker { .. } => vec![
-            FooterItem::Key("\u{2190}/\u{2192}"),
-            FooterItem::Text("move"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("move"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
         SettingsAuthModal::OpPicker { .. } => vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("type"),
-            FooterItem::Text("filter"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("type"),
+            HintSpan::Text("filter"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
         ],
     }
 }
 
-/// Convert the auth form hint logic into `Vec<FooterItem>` for the main footer.
+/// Convert the auth form hint logic into `Vec<HintSpan<'static>>` for the main footer.
 fn auth_form_footer_items(
     form: &crate::console::widgets::auth_panel::form::AuthForm,
     focus: crate::console::manager::state::AuthFormFocus,
-) -> Vec<FooterItem> {
+) -> Vec<HintSpan<'static>> {
     use crate::console::manager::state::AuthFormFocus;
-    let mut items: Vec<FooterItem> = match focus {
+    let mut items: Vec<HintSpan<'static>> = match focus {
         AuthFormFocus::Mode => {
-            let mut v = vec![FooterItem::Key("Space"), FooterItem::Text("cycle")];
+            let mut v = vec![HintSpan::Key("Space"), HintSpan::Text("cycle")];
             if form.shows_credential_block() {
                 v.extend([
-                    FooterItem::Sep,
-                    FooterItem::Key("\u{2193}"),
-                    FooterItem::Text("navigate"),
+                    HintSpan::Sep,
+                    HintSpan::Key("\u{2193}"),
+                    HintSpan::Text("navigate"),
                 ]);
             }
             v.extend([
-                FooterItem::GroupSep,
-                FooterItem::Key("Tab"),
-                FooterItem::Text("button row"),
+                HintSpan::GroupSep,
+                HintSpan::Key("Tab"),
+                HintSpan::Text("button row"),
             ]);
             v
         }
         AuthFormFocus::CredentialSource => vec![
-            FooterItem::Key("Enter"),
-            FooterItem::Text("set"),
-            FooterItem::Sep,
-            FooterItem::Key("\u{2191}"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Tab"),
-            FooterItem::Text("button row"),
+            HintSpan::Key("Enter"),
+            HintSpan::Text("set"),
+            HintSpan::Sep,
+            HintSpan::Key("\u{2191}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Tab"),
+            HintSpan::Text("button row"),
         ],
         AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
-            FooterItem::Key("\u{2190}/\u{2192}"),
-            FooterItem::Text("move"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Tab"),
-            FooterItem::Text("fields"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("select"),
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("move"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Tab"),
+            HintSpan::Text("fields"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
         ],
     };
     items.extend([
-        FooterItem::GroupSep,
-        FooterItem::Key("Esc"),
-        FooterItem::Text("cancel"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text("cancel"),
     ]);
     items
 }

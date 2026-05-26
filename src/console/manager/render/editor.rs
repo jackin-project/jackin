@@ -19,9 +19,10 @@ use super::list::{
     render_mount_header,
 };
 use super::{
-    FooterItem, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE,
+    PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE,
     TAB_BG_INACTIVE_HOVER, WHITE, footer_height, render_footer, render_header,
 };
+use jackin_tui::HintSpan;
 use crate::config::AppConfig;
 use crate::operator_env::EnvValue;
 
@@ -49,68 +50,68 @@ fn editor_footer_items(
     state: &EditorState<'_>,
     config: &AppConfig,
     op_available: bool,
-) -> Vec<FooterItem> {
+) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
         return super::modal::modal_footer_items(modal);
     }
     if state.tab_bar_focused {
         let mut items = vec![
-            FooterItem::Key("\u{2190}\u{2192}"),
-            FooterItem::Text("switch tab"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Tab/\u{2193}"),
-            FooterItem::Text("enter content"),
-            FooterItem::GroupSep,
-            FooterItem::Key("S"),
-            FooterItem::Text("save workspace"),
+            HintSpan::Key("\u{2190}\u{2192}"),
+            HintSpan::Text("switch tab"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Tab/\u{2193}"),
+            HintSpan::Text("enter content"),
+            HintSpan::GroupSep,
+            HintSpan::Key("S"),
+            HintSpan::Text("save workspace"),
         ];
         if state.is_dirty() {
-            items.push(FooterItem::Dyn(format!(
+            items.push(HintSpan::Dyn(format!(
                 "({} changes)",
                 state.change_count()
             )));
         }
         items.extend([
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
             if state.is_dirty() {
-                FooterItem::Text("discard")
+                HintSpan::Text("discard")
             } else {
-                FooterItem::Text("back")
+                HintSpan::Text("back")
             },
         ]);
         return items;
     }
-    let mut items: Vec<FooterItem> = vec![
-        FooterItem::Key("\u{2191}\u{2193}"),
-        FooterItem::Text("navigate"),
+    let mut items: Vec<HintSpan<'static>> = vec![
+        HintSpan::Key("\u{2191}\u{2193}"),
+        HintSpan::Text("navigate"),
     ];
     let row_items = contextual_row_items(state, config, op_available);
     if !row_items.is_empty() {
-        items.push(FooterItem::GroupSep);
+        items.push(HintSpan::GroupSep);
         items.extend(row_items);
     }
     items.extend([
-        FooterItem::GroupSep,
-        FooterItem::Key("BackTab"),
-        FooterItem::Text("tab bar"),
-        FooterItem::GroupSep,
-        FooterItem::Key("S"),
-        FooterItem::Text("save workspace"),
+        HintSpan::GroupSep,
+        HintSpan::Key("BackTab"),
+        HintSpan::Text("tab bar"),
+        HintSpan::GroupSep,
+        HintSpan::Key("S"),
+        HintSpan::Text("save workspace"),
     ]);
     if state.is_dirty() {
-        items.push(FooterItem::Dyn(format!(
+        items.push(HintSpan::Dyn(format!(
             "({} changes)",
             state.change_count()
         )));
     }
     items.extend([
-        FooterItem::GroupSep,
-        FooterItem::Key("Esc"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
         if state.is_dirty() {
-            FooterItem::Text("discard")
+            HintSpan::Text("discard")
         } else {
-            FooterItem::Text("back")
+            HintSpan::Text("back")
         },
     ]);
     items
@@ -185,7 +186,7 @@ fn contextual_row_items(
     state: &EditorState<'_>,
     config: &AppConfig,
     op_available: bool,
-) -> Vec<FooterItem> {
+) -> Vec<HintSpan<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
@@ -194,15 +195,15 @@ fn contextual_row_items(
             //   row 2 = Keep awake  (toggle — Space flips on/off)
             //   row 3 = Git pull    (toggle — Space flips on/off)
             match cursor {
-                0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
+                0 => vec![HintSpan::Key("Enter"), HintSpan::Text("rename")],
                 // WorkdirPick requires at least one mount to choose from;
                 // suppress the hint when there are none so the key isn't
                 // advertised as available when Enter would be a no-op.
                 1 if !state.pending.mounts.is_empty() => vec![
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("pick working directory"),
+                    HintSpan::Key("Enter"),
+                    HintSpan::Text("pick working directory"),
                 ],
-                2 | 3 => vec![FooterItem::Key("Space"), FooterItem::Text("toggle")],
+                2 | 3 => vec![HintSpan::Key("Space"), HintSpan::Text("toggle")],
                 _ => Vec::new(),
             }
         }
@@ -211,11 +212,11 @@ fn contextual_row_items(
             match cursor.cmp(&mount_count) {
                 Ordering::Less => {
                     let mut items = vec![
-                        FooterItem::Key("D"),
-                        FooterItem::Text("remove"),
-                        FooterItem::Sep,
-                        FooterItem::Key("A"),
-                        FooterItem::Text("add"),
+                        HintSpan::Key("D"),
+                        HintSpan::Text("remove"),
+                        HintSpan::Sep,
+                        HintSpan::Key("A"),
+                        HintSpan::Text("add"),
                     ];
                     if let Some(m) = state.pending.mounts.get(cursor)
                         && matches!(
@@ -226,39 +227,39 @@ fn contextual_row_items(
                             }
                         )
                     {
-                        items.push(FooterItem::Sep);
-                        items.push(FooterItem::Key("O"));
-                        items.push(FooterItem::Text("open in GitHub"));
+                        items.push(HintSpan::Sep);
+                        items.push(HintSpan::Key("O"));
+                        items.push(HintSpan::Text("open in GitHub"));
                     }
-                    items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("R"));
-                    items.push(FooterItem::Text("toggle ro/rw"));
-                    items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("I"));
-                    items.push(FooterItem::Text("cycle isolation"));
-                    items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("H/L"));
-                    items.push(FooterItem::Text("scroll"));
+                    items.push(HintSpan::Sep);
+                    items.push(HintSpan::Key("R"));
+                    items.push(HintSpan::Text("toggle ro/rw"));
+                    items.push(HintSpan::Sep);
+                    items.push(HintSpan::Key("I"));
+                    items.push(HintSpan::Text("cycle isolation"));
+                    items.push(HintSpan::Sep);
+                    items.push(HintSpan::Key("H/L"));
+                    items.push(HintSpan::Text("scroll"));
                     items
                 }
-                Ordering::Equal => vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")],
+                Ordering::Equal => vec![HintSpan::Key("Enter/A"), HintSpan::Text("add")],
                 Ordering::Greater => Vec::new(),
             }
         }
         EditorTab::Roles => {
             if cursor < config.roles.len() {
                 vec![
-                    FooterItem::Key("Space"),
-                    FooterItem::Text("allow/disallow"),
-                    FooterItem::Sep,
-                    FooterItem::Key("*"),
-                    FooterItem::Text("set/unset default"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add role"),
+                    HintSpan::Key("Space"),
+                    HintSpan::Text("allow/disallow"),
+                    HintSpan::Sep,
+                    HintSpan::Key("*"),
+                    HintSpan::Text("set/unset default"),
+                    HintSpan::Sep,
+                    HintSpan::Key("A"),
+                    HintSpan::Text("add role"),
                 ]
             } else {
-                vec![FooterItem::Key("Enter/A"), FooterItem::Text("add role")]
+                vec![HintSpan::Key("Enter/A"), HintSpan::Text("add role")]
             }
         }
         EditorTab::Secrets => {
@@ -288,64 +289,64 @@ fn contextual_row_items(
                 {
                     let mut items = if op_available {
                         vec![
-                            FooterItem::Key("Enter"),
-                            FooterItem::Sep,
-                            FooterItem::Key("P"),
-                            FooterItem::Text("re-pick from 1Password"),
-                            FooterItem::Sep,
+                            HintSpan::Key("Enter"),
+                            HintSpan::Sep,
+                            HintSpan::Key("P"),
+                            HintSpan::Text("re-pick from 1Password"),
+                            HintSpan::Sep,
                         ]
                     } else {
                         Vec::new()
                     };
                     items.extend([
-                        FooterItem::Key("D"),
-                        FooterItem::Text("delete"),
-                        FooterItem::Sep,
-                        FooterItem::Key("A"),
-                        FooterItem::Text("add"),
+                        HintSpan::Key("D"),
+                        HintSpan::Text("delete"),
+                        HintSpan::Sep,
+                        HintSpan::Key("A"),
+                        HintSpan::Text("add"),
                     ]);
                     items
                 }
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. }) => {
                     let mut items = vec![
-                        FooterItem::Key("Enter"),
-                        FooterItem::Text("edit"),
-                        FooterItem::Sep,
-                        FooterItem::Key("D"),
-                        FooterItem::Text("delete"),
-                        FooterItem::Sep,
-                        FooterItem::Key("A"),
-                        FooterItem::Text("add"),
-                        FooterItem::Sep,
-                        FooterItem::Key("M"),
-                        FooterItem::Text("mask/unmask"),
+                        HintSpan::Key("Enter"),
+                        HintSpan::Text("edit"),
+                        HintSpan::Sep,
+                        HintSpan::Key("D"),
+                        HintSpan::Text("delete"),
+                        HintSpan::Sep,
+                        HintSpan::Key("A"),
+                        HintSpan::Text("add"),
+                        HintSpan::Sep,
+                        HintSpan::Key("M"),
+                        HintSpan::Text("mask/unmask"),
                     ];
                     if op_available {
                         items.extend([
-                            FooterItem::Sep,
-                            FooterItem::Key("P"),
-                            FooterItem::Text("1Password"),
+                            HintSpan::Sep,
+                            HintSpan::Key("P"),
+                            HintSpan::Text("1Password"),
                         ]);
                     }
                     items
                 }
                 Some(SecretsRow::RoleHeader { .. }) => vec![
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("expand"),
-                    FooterItem::Sep,
-                    FooterItem::Key("←/→"),
-                    FooterItem::Text("collapse/expand"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add"),
+                    HintSpan::Key("Enter"),
+                    HintSpan::Text("expand"),
+                    HintSpan::Sep,
+                    HintSpan::Key("←/→"),
+                    HintSpan::Text("collapse/expand"),
+                    HintSpan::Sep,
+                    HintSpan::Key("A"),
+                    HintSpan::Text("add"),
                 ],
                 Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::RoleAddSentinel(_)) => {
-                    let mut items = vec![FooterItem::Key("Enter"), FooterItem::Text("add")];
+                    let mut items = vec![HintSpan::Key("Enter"), HintSpan::Text("add")];
                     if op_available {
                         items.extend([
-                            FooterItem::Sep,
-                            FooterItem::Key("P"),
-                            FooterItem::Text("1Password"),
+                            HintSpan::Sep,
+                            HintSpan::Key("P"),
+                            HintSpan::Text("1Password"),
                         ]);
                     }
                     items
@@ -360,26 +361,26 @@ fn contextual_row_items(
             let flat = auth_flat_rows(state, config);
             match flat.get(cursor) {
                 Some(AuthRow::AuthKindRow { .. }) => {
-                    vec![FooterItem::Key("Enter"), FooterItem::Text("manage auth")]
+                    vec![HintSpan::Key("Enter"), HintSpan::Text("manage auth")]
                 }
                 Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
-                    vec![FooterItem::Key("Enter"), FooterItem::Text("edit mode")]
+                    vec![HintSpan::Key("Enter"), HintSpan::Text("edit mode")]
                 }
                 Some(AuthRow::RoleHeader { .. }) => vec![
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("expand"),
-                    FooterItem::Sep,
-                    FooterItem::Key("←/→"),
-                    FooterItem::Text("collapse/expand"),
-                    FooterItem::Sep,
-                    FooterItem::Key("D"),
-                    FooterItem::Text("reset"),
+                    HintSpan::Key("Enter"),
+                    HintSpan::Text("expand"),
+                    HintSpan::Sep,
+                    HintSpan::Key("←/→"),
+                    HintSpan::Text("collapse/expand"),
+                    HintSpan::Sep,
+                    HintSpan::Key("D"),
+                    HintSpan::Text("reset"),
                 ],
                 Some(AuthRow::AddSentinel { .. }) => {
-                    vec![FooterItem::Key("Enter/A"), FooterItem::Text("add override")]
+                    vec![HintSpan::Key("Enter/A"), HintSpan::Text("add override")]
                 }
                 Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
-                    vec![FooterItem::Key("Enter"), FooterItem::Text("edit source")]
+                    vec![HintSpan::Key("Enter"), HintSpan::Text("edit source")]
                 }
                 Some(AuthRow::Spacer) | None => Vec::new(),
             }
@@ -1651,18 +1652,18 @@ pub(in crate::console::manager) fn resolve_auth_row_target(
 mod contextual_row_items_tests {
     //! Row-specific footer-hint composition for the editor tabs.
 
-    use super::super::FooterItem;
     use super::contextual_row_items;
+    use jackin_tui::HintSpan;
     use crate::config::{AppConfig, RoleSource};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
 
-    /// Collect every `FooterItem::Text` label from a hint list.
-    fn text_labels(items: &[FooterItem]) -> Vec<&str> {
+    /// Collect every `HintSpan::Text` label from a hint list.
+    fn text_labels<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
         items
             .iter()
             .filter_map(|it| {
-                if let FooterItem::Text(t) = it {
+                if let HintSpan::Text(t) = it {
                     Some(*t)
                 } else {
                     None
@@ -1671,12 +1672,12 @@ mod contextual_row_items_tests {
             .collect()
     }
 
-    /// Collect every `FooterItem::Key` glyph from a hint list.
-    fn key_glyphs(items: &[FooterItem]) -> Vec<&str> {
+    /// Collect every `HintSpan::Key` glyph from a hint list.
+    fn key_glyphs<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
         items
             .iter()
             .filter_map(|it| {
-                if let FooterItem::Key(k) = it {
+                if let HintSpan::Key(k) = it {
                     Some(*k)
                 } else {
                     None
@@ -1830,9 +1831,9 @@ mod contextual_row_items_tests {
     /// Scan a footer-hint list and assert every single-character `Key`
     /// alphabetic glyph is uppercase. Multi-character glyphs (Enter, Tab,
     /// Esc, arrows, etc.) and non-alpha keys (`*`) pass through.
-    fn assert_hint_hotkeys_uppercase(hint: &[FooterItem], context: &str) {
+    fn assert_hint_hotkeys_uppercase(hint: &[HintSpan<'_>], context: &str) {
         for item in hint {
-            if let FooterItem::Key(k) = item {
+            if let HintSpan::Key(k) = item {
                 let chars: Vec<char> = k.chars().collect();
                 if chars.len() == 1 {
                     let c = chars[0];

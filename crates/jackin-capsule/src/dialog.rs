@@ -2192,6 +2192,13 @@ fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpa
                 buf.extend_from_slice(t.as_bytes());
                 buf.extend_from_slice(RESET.as_bytes());
             }
+            HintSpan::Dyn(t) => {
+                buf.extend_from_slice(BG_DARK.as_bytes());
+                buf.extend_from_slice(FG_DIM.as_bytes());
+                buf.push(b' ');
+                buf.extend_from_slice(t.as_bytes());
+                buf.extend_from_slice(RESET.as_bytes());
+            }
             HintSpan::Sep => {
                 buf.extend_from_slice(BG_DARK.as_bytes());
                 buf.extend_from_slice(FG_BORDER.as_bytes());
@@ -2207,7 +2214,6 @@ fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpa
     buf.extend_from_slice(FG_BORDER.as_bytes());
     buf.extend_from_slice("  ".as_bytes());
     buf.extend_from_slice(RESET.as_bytes());
-    let _ = FG_DIM; // reserved for future Dyn spans (e.g., "N items selected")
 }
 
 fn render_blank_row(buf: &mut Vec<u8>, row: u16, term_cols: u16) {

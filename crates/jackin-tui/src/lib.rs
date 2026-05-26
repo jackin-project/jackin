@@ -97,14 +97,24 @@ pub struct TabCell<'a> {
 /// jackin-capsule both follow this spacing.
 pub const TAB_GAP: u16 = 1;
 
-/// One footer-hint span. Each consumer renders the same hint list
-/// in its own format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One footer-hint span — the single hint vocabulary shared by every TUI
+/// surface (host cockpit, workspace manager, in-container multiplexer). Each
+/// backend has its own renderer over these spans, but the vocabulary and
+/// styling rule are one: `Key` white + bold, `Text`/`Dyn` phosphor green /
+/// dim, `Sep` a gray dot, `GroupSep` a wide gap.
+///
+/// Not `Copy`: `Dyn` owns a runtime `String` (e.g. "3 items selected"), which
+/// `Key`/`Text` static spans cannot express. Static hint lists stay `const`
+/// (`&[HintSpan]` of borrowed variants); only runtime-built lists allocate.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HintSpan<'a> {
     /// Hotkey glyph(s) — white + bold in rendered output.
     Key(&'a str),
     /// Action label following a key — phosphor green in rendered output.
     Text(&'a str),
+    /// Runtime action label whose text is only known at render time —
+    /// rendered dim to set it apart from the static `Text` labels.
+    Dyn(String),
     /// Single dot separator (`" · "`) between two related items in
     /// the same group.
     Sep,
@@ -114,13 +124,14 @@ pub enum HintSpan<'a> {
 
 impl HintSpan<'_> {
     /// Display-column width contribution of a single span. Mirrors
-    /// the rendering rule that `Text` spans render with a leading
+    /// the rendering rule that `Text` / `Dyn` spans render with a leading
     /// space and `Sep`/`GroupSep` each occupy three columns.
     #[must_use]
     pub fn display_cols(&self) -> usize {
         match self {
             Self::Key(k) => k.chars().count(),
             Self::Text(t) => 1 + t.chars().count(),
+            Self::Dyn(t) => 1 + t.chars().count(),
             Self::Sep | Self::GroupSep => 3,
         }
     }
