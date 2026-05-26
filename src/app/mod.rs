@@ -1534,7 +1534,7 @@ fn handle_claude_token(
             println!("workspace        {}", report.workspace);
             println!("auth_forward     {}", report.mode);
             println!(
-                "op_account       {}",
+                "op account       {}",
                 report.op_account.as_deref().unwrap_or("(default)")
             );
             if let Some(r) = &report.op_ref {
@@ -1615,7 +1615,7 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
     if let Some(op_ref) = report.op_ref.as_ref() {
         println!("op:// reference  {}", op_ref.path);
         println!(
-            "op_account       {}",
+            "op account       {}",
             report.op_account.as_deref().unwrap_or("(default)")
         );
     } else {
