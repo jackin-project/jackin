@@ -1586,7 +1586,12 @@ async fn load_role_with(
         .await
         .map(|names| names.len())
         .ok();
-    super::universe::mark_start(paths, active_before_launch == Some(0));
+    let start_kind = if active_before_launch == Some(0) {
+        super::universe::StartKind::FreshConstruct
+    } else {
+        super::universe::StartKind::ResumeExisting
+    };
+    super::universe::mark_start(paths, start_kind);
 
     // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
     // not a name. Recover the name by matching workdir, mirroring the

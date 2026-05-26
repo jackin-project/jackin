@@ -1322,6 +1322,37 @@ mod tests {
     }
 
     #[test]
+    fn select_choice_returns_none_on_non_rich_renderer() {
+        // No picker without a rich surface; the caller falls back to the plain
+        // stdin prompt, so this must be Ok(None) — not Err, not a default index.
+        let mut progress = LaunchProgress::for_test(test_diagnostics());
+        let choice = progress
+            .select_choice("pick", vec!["a".into(), "b".into()])
+            .unwrap();
+        assert!(choice.is_none());
+    }
+
+    #[test]
+    fn update_stage_sets_one_rows_status_and_detail() {
+        let mut view = initial_view();
+        update_stage(&mut view, LaunchStage::Network, StageStatus::Done, "up");
+        let net = view
+            .stages
+            .iter()
+            .find(|r| r.stage == LaunchStage::Network)
+            .unwrap();
+        assert_eq!(net.status, StageStatus::Done);
+        assert_eq!(net.detail, "up");
+        // A different stage is left untouched.
+        let cap = view
+            .stages
+            .iter()
+            .find(|r| r.stage == LaunchStage::Capsule)
+            .unwrap();
+        assert_ne!(cap.status, StageStatus::Done);
+    }
+
+    #[test]
     fn stage_labels_are_stable() {
         let labels: Vec<&str> = LaunchStage::ALL.iter().map(|stage| stage.label()).collect();
         assert_eq!(

@@ -19,13 +19,22 @@ fn now_millis() -> u128 {
         .map_or(0, |d| d.as_millis())
 }
 
-/// Record the construct's start instant. `fresh` is true when no containers
-/// were running before this launch (the operator is entering an empty
-/// construct), in which case the marker is (re)written to now; otherwise it is
-/// only written if absent, so an ongoing session keeps its original start.
-pub fn mark_start(paths: &JackinPaths, fresh: bool) {
+/// Whether a launch enters an empty construct or joins one already running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartKind {
+    /// No containers were running before this launch — (re)write the marker so
+    /// the span starts now.
+    FreshConstruct,
+    /// A session is already ongoing — keep its original start instant.
+    ResumeExisting,
+}
+
+/// Record the construct's start instant. A `FreshConstruct` launch (re)writes
+/// the marker to now; a `ResumeExisting` launch only writes it if absent, so an
+/// ongoing session keeps its original start.
+pub fn mark_start(paths: &JackinPaths, kind: StartKind) {
     let file = marker_path(paths);
-    if !fresh && file.exists() {
+    if kind == StartKind::ResumeExisting && file.exists() {
         return;
     }
     let _ = std::fs::write(&file, now_millis().to_string());
@@ -56,7 +65,7 @@ mod tests {
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
 
-        mark_start(&paths, true);
+        mark_start(&paths, StartKind::FreshConstruct);
         assert!(marker_path(&paths).exists(), "marker written");
 
         let elapsed = take_elapsed(&paths).expect("elapsed available");
@@ -75,7 +84,7 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
 
         std::fs::write(marker_path(&paths), "1000").unwrap();
-        mark_start(&paths, false); // not fresh — must not overwrite
+        mark_start(&paths, StartKind::ResumeExisting); // must not overwrite
         let kept = std::fs::read_to_string(marker_path(&paths)).unwrap();
         assert_eq!(kept, "1000", "ongoing session keeps its original start");
     }
