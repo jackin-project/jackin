@@ -131,21 +131,29 @@ impl FileBrowserState {
     /// the parallel rationale). A `true` return doesn't dismiss the
     /// prompt, matching the keyboard keypath.
     pub fn maybe_open_url_on_click(&self, modal_area: Rect, column: u16, row: u16) -> bool {
-        if self.pending_git_prompt.is_none() {
+        if !self.url_row_hit(modal_area, column, row) {
             return false;
         }
-        let Some(url) = self.pending_git_url.as_deref() else {
+        if let Some(url) = self.pending_git_url.as_deref() {
+            let _ = open::that_detached(url);
+        }
+        true
+    }
+
+    /// Side-effect-free hit-test: whether `(column, row)` lands on the
+    /// git-prompt's clickable URL row (prompt active and a URL resolved).
+    /// Separated from [`Self::maybe_open_url_on_click`] so the hover
+    /// hand-pointer cue can test the same geometry without opening the URL.
+    #[must_use]
+    pub fn url_row_hit(&self, modal_area: Rect, column: u16, row: u16) -> bool {
+        if self.pending_git_prompt.is_none() || self.pending_git_url.is_none() {
             return false;
-        };
+        }
         let has_rejection = self.rejected_reason.is_some();
         let Some(url_rect) = git_prompt_url_row_rect(modal_area, has_rejection) else {
             return false;
         };
-        if column < url_rect.x || column >= url_rect.x + url_rect.width || row != url_rect.y {
-            return false;
-        }
-        let _ = open::that_detached(url);
-        true
+        column >= url_rect.x && column < url_rect.x + url_rect.width && row == url_rect.y
     }
 }
 

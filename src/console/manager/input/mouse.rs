@@ -217,12 +217,20 @@ pub fn clickable_at(
     if term_size.width < MIN_DRAGGABLE_WIDTH {
         return false;
     }
+    // The git-prompt URL row is clickable whenever a file-browser modal with a
+    // resolved URL is open, regardless of stage.
+    if file_browser_url_row_at(state, mouse, term_size) {
+        return true;
+    }
     match &state.stage {
-        ManagerStage::Editor(editor) if editor.modal.is_none() => editor_tab_at(mouse).is_some(),
+        ManagerStage::Editor(editor) if editor.modal.is_none() => {
+            editor_tab_at(mouse).is_some()
+                || editor_mount_index_at(editor, mouse, term_size).is_some()
+        }
         ManagerStage::Settings(settings)
             if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
         {
-            settings_tab_at(mouse).is_some()
+            settings_tab_at(mouse).is_some() || settings_trust_clickable(settings, mouse, term_size)
         }
         ManagerStage::List if state.list_modal.is_none() => {
             let seam_x = seam_column(state.list_split_pct, term_size.width);
@@ -235,6 +243,42 @@ pub fn clickable_at(
         }
         _ => false,
     }
+}
+
+/// Whether the pointer is inside the Settings → Trust content area (a click
+/// there selects a row / activates scroll). Shared by the click handler and the
+/// hover cue.
+fn settings_trust_clickable(
+    settings: &super::super::state::SettingsState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    settings.active_tab == SettingsTab::Trust
+        && settings.mounts.modal.is_none()
+        && point_in(mouse, settings_content_area(term_size))
+}
+
+/// Whether the pointer is over a file-browser git-prompt URL row (side-effect
+/// free; does not open the URL). Mirrors `try_open_file_browser_git_url`'s
+/// modal resolution.
+fn file_browser_url_row_at(
+    state: &ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    let (modal, fb_state): (&Modal<'_>, &FileBrowserState) = match &state.stage {
+        ManagerStage::Editor(editor) => match editor.modal.as_ref() {
+            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
+            _ => return false,
+        },
+        ManagerStage::CreatePrelude(prelude) => match prelude.modal.as_ref() {
+            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
+            _ => return false,
+        },
+        _ => return false,
+    };
+    let modal_area = super::super::render::modal_outer_rect(modal, term_size);
+    fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
 }
 
 fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
@@ -357,6 +401,29 @@ fn try_select_settings_trust_row(
     true
 }
 
+/// Mount-row index the pointer is over on the editor Mounts tab, or `None`.
+/// Pure geometry shared by the click handler and the hover hand-pointer cue so
+/// they can't drift.
+fn editor_mount_index_at(
+    editor: &super::super::state::EditorState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> Option<usize> {
+    if editor.active_tab != EditorTab::Mounts || editor.modal.is_some() {
+        return None;
+    }
+    let area = editor_scroll_area(editor, term_size).area;
+    if mouse.column <= area.x
+        || mouse.column >= area.x.saturating_add(area.width).saturating_sub(1)
+        || mouse.row <= area.y
+        || mouse.row >= area.y.saturating_add(area.height).saturating_sub(1)
+    {
+        return None;
+    }
+    let row = usize::from(mouse.row.saturating_sub(area.y + 1));
+    editor_mount_index_at_visual_row(editor, row)
+}
+
 fn try_select_editor_mount_row(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -365,27 +432,13 @@ fn try_select_editor_mount_row(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return false;
     };
-    if editor.active_tab != EditorTab::Mounts || editor.modal.is_some() {
-        return false;
-    }
-
-    let area_info = editor_scroll_area(editor, term_size);
-    let area = area_info.area;
-    if mouse.column <= area.x
-        || mouse.column >= area.x.saturating_add(area.width).saturating_sub(1)
-        || mouse.row <= area.y
-        || mouse.row >= area.y.saturating_add(area.height).saturating_sub(1)
-    {
-        return false;
-    }
-
-    let row = usize::from(mouse.row.saturating_sub(area.y + 1));
-    let Some(index) = editor_mount_index_at_visual_row(editor, row) else {
+    let Some(index) = editor_mount_index_at(editor, mouse, term_size) else {
         return false;
     };
+    let area = editor_scroll_area(editor, term_size);
     editor.active_field = FieldFocus::Row(index);
     editor.workspace_mounts_scroll_focused =
-        is_scrollable(area_info.content_width, scroll_viewport_width(area));
+        is_scrollable(area.content_width, scroll_viewport_width(area.area));
     true
 }
 
