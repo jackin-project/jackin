@@ -1445,7 +1445,7 @@ fn render_auth_source_line(
         _ => {
             spans.push(Span::styled(
                 format!("unset  ({env_name} for {})", mode_str(mode)),
-                Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+                Style::default().fg(crate::console::widgets::DANGER_RED),
             ));
         }
     }

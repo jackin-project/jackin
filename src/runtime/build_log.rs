@@ -22,19 +22,21 @@ static LINES: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 pub fn begin() {
     if let Ok(mut lines) = LINES.lock() {
         lines.clear();
+        // Flip the gate while holding the lock so a teeing writer never observes
+        // the cleared-but-still-inactive window between reset and activation.
+        ACTIVE.store(true, Ordering::Release);
     }
-    ACTIVE.store(true, Ordering::Relaxed);
 }
 
 /// Stop teeing. The captured lines are retained so the dialog can still show
 /// the finished log after the build completes.
 pub fn end() {
-    ACTIVE.store(false, Ordering::Relaxed);
+    ACTIVE.store(false, Ordering::Release);
 }
 
 #[must_use]
 pub fn is_active() -> bool {
-    ACTIVE.load(Ordering::Relaxed)
+    ACTIVE.load(Ordering::Acquire)
 }
 
 /// Append one output line, dropping the oldest when the cap is reached.

@@ -130,7 +130,7 @@ fn render_mounts_tab(
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
     super::render_scrollable_block(
@@ -150,7 +150,7 @@ fn render_env_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatu
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
     let mut no_scroll_x = 0u16;
@@ -172,7 +172,7 @@ fn render_auth_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratat
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
     let mut no_scroll_x = 0u16;
@@ -193,7 +193,7 @@ fn render_trust_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: rata
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
     super::render_scrollable_block(
@@ -698,7 +698,7 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
             _ => {
                 spans.push(Span::styled(
                     format!("unset  ({env_name} for {})", mode_str(row.mode)),
-                    Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+                    Style::default().fg(crate::console::widgets::DANGER_RED),
                 ));
             }
         }

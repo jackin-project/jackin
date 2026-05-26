@@ -268,23 +268,33 @@ pub(crate) fn tick_rain(state: &mut RainState) {
 /// (area-bounded). Does not clear the background — callers that need
 /// a clear should emit it before calling this.
 pub(crate) fn render_rain_frame(state: &RainState, area: (u16, u16, u16, u16)) {
+    use std::fmt::Write as _;
     let (col_start, row_start, width, height) = area;
 
+    // Build the whole frame into one buffer and emit a single write, rather than
+    // one syscall per cell (width × height per frame on the hot animation path).
+    let mut out = String::with_capacity(width as usize * height as usize + height as usize * 8);
     for r in 0..height as usize {
-        eprint!("\x1b[{};{}H", row_start as usize + r + 1, col_start + 1);
+        let _ = write!(
+            out,
+            "\x1b[{};{}H",
+            row_start as usize + r + 1,
+            col_start + 1
+        );
         for c in 0..width as usize {
             match state.grid.get(r).and_then(|row| row.get(c)) {
-                None | Some(None) => eprint!(" "),
+                None | Some(None) => out.push(' '),
                 Some(Some(cell)) => match age_to_color(cell.age) {
-                    None => eprint!(" "),
+                    None => out.push(' '),
                     Some((red, g, b)) => {
-                        eprint!("{}", cell.ch.color(owo_colors::Rgb(red, g, b)));
+                        let _ = write!(out, "{}", cell.ch.color(owo_colors::Rgb(red, g, b)));
                     }
                 },
             }
         }
     }
 
+    eprint!("{out}");
     let _ = io::stderr().flush();
 }
 
@@ -322,6 +332,16 @@ fn draw_brand_pill_bottom() {
     );
 }
 
+/// Draw `text` centered on screen with the brand pill below it. This is the
+/// held frame shared by the intro phrase animations; it re-reads the live size
+/// so callers can re-draw it on every resize.
+fn draw_centered_phrase(text: &str, color: (u8, u8, u8)) {
+    draw_brand_pill_bottom();
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
+    eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
+}
+
 /// Type `text` centered on screen one character at a time, then hold. Returns
 /// `true` if the operator skipped with Enter/Esc.
 fn type_centered(text: &str, color: (u8, u8, u8), char_ms: u64, hold_ms: u64) -> bool {
@@ -339,10 +359,7 @@ fn type_centered(text: &str, color: (u8, u8, u8), char_ms: u64, hold_ms: u64) ->
     }
     // Hold, re-centering the full phrase + pill on every resize.
     hold_resizable(std::time::Duration::from_millis(hold_ms), || {
-        draw_brand_pill_bottom();
-        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-        let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
-        eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
+        draw_centered_phrase(text, color);
     })
 }
 
@@ -375,10 +392,7 @@ fn glitch_centered(text: &str, color: (u8, u8, u8), hold_ms: u64) -> bool {
     let _ = io::stderr().flush();
     // Hold, re-centering the settled text + pill on every resize.
     hold_resizable(std::time::Duration::from_millis(hold_ms), || {
-        draw_brand_pill_bottom();
-        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-        let (row, col) = (rows / 2, center_col(cols, chars.len()));
-        eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
+        draw_centered_phrase(text, color);
     })
 }
 
@@ -481,12 +495,11 @@ pub fn outro_summary(headline: &str, rows: &[String]) {
                 return;
             }
             let col = center_col(cols, text.chars().count());
-            let styled = if bold {
-                text.bold().color(rgb(WHITE)).to_string()
+            if bold {
+                eprint!("\x1b[{row};{col}H{}", text.bold().color(rgb(WHITE)));
             } else {
-                text.color(rgb(WHITE)).to_string()
-            };
-            eprint!("\x1b[{row};{col}H{styled}");
+                eprint!("\x1b[{row};{col}H{}", text.color(rgb(WHITE)));
+            }
         };
         // Center the block (headline + blank + rows) vertically, leaving room
         // above the bottom pill.
@@ -557,15 +570,24 @@ fn warp(accelerating: bool) {
     let frame_ms = 30;
     let frames: usize = 104;
     let mut last_size = (cols0, rows0);
+    // Reused across frames; only re-allocated on a terminal resize, otherwise
+    // cleared in place so the 104-frame render loop allocates nothing per frame.
+    let mut grid: Vec<Vec<Option<(char, (u8, u8, u8))>>> = vec![vec![None; cols0]; rows0];
+    let mut out = String::with_capacity(cols0 * rows0 + rows0 * 8);
     for f in 0..frames {
         // Re-read the terminal each frame so a resize mid-warp adapts; clear
         // once on a size change so shrunk-away cells don't linger.
         let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
         let cols = term_cols as usize;
         let rows = (term_rows as usize).max(1);
-        if (cols, rows) != last_size {
+        if (cols, rows) == last_size {
+            for row in &mut grid {
+                row.fill(None);
+            }
+        } else {
             clear_screen();
             last_size = (cols, rows);
+            grid = vec![vec![None; cols]; rows];
         }
         let cx = cols as f32 / 2.0;
         let cy = rows as f32 / 2.0;
@@ -584,7 +606,6 @@ fn warp(accelerating: bool) {
         // fades in instead of popping on at full brightness.
         let entry_fade = (f as f32 / 8.0).min(1.0);
 
-        let mut grid: Vec<Vec<Option<(char, (u8, u8, u8))>>> = vec![vec![None; cols]; rows];
         for star in &mut stars {
             let prev = star.radius;
             star.radius += star.speed * warp;
@@ -600,7 +621,7 @@ fn warp(accelerating: bool) {
                 star.speed = 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0;
                 continue;
             }
-            let steps = (1.0 + warp * 1.4) as usize;
+            let steps = ((1.0 + warp * 1.4) as usize).max(1);
             for s in 0..=steps {
                 let rr = prev + (star.radius - prev) * (s as f32 / steps as f32);
                 let x = (cx + dx * rr).round();
@@ -633,7 +654,7 @@ fn warp(accelerating: bool) {
             }
         }
 
-        let mut out = String::with_capacity(cols * rows + rows * 8);
+        out.clear();
         for (r, row) in grid.iter().enumerate() {
             let _ = write!(out, "\x1b[{};1H", r + 1);
             for cell in row {

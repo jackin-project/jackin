@@ -80,6 +80,12 @@ pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
 /// across surfaces and stays out of the way of focused, brand-green content.
 pub const BORDER_GRAY: Rgb = Rgb::new(80, 80, 80);
 
+/// Error/danger accent — failed launch stages, error-popup borders, invalid
+/// input fields, and danger labels. Shared across every TUI surface so the
+/// "something went wrong" colour never drifts between the console widgets and
+/// the launch cockpit.
+pub const DANGER_RED: Rgb = Rgb::new(255, 94, 122);
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.

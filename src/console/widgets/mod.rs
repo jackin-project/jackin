@@ -78,6 +78,14 @@ pub(crate) const DEBUG_AMBER: Color = Color::Rgb(
     tui_palette::DEBUG_AMBER.b,
 );
 
+/// Error/danger accent (failed stages, error-popup borders, invalid input),
+/// shared via `jackin-tui`.
+pub(crate) const DANGER_RED: Color = Color::Rgb(
+    tui_palette::DANGER_RED.r,
+    tui_palette::DANGER_RED.g,
+    tui_palette::DANGER_RED.b,
+);
+
 /// The ` jackin' ` brand pill followed by ` · <label>`. Shared by every
 /// top-level TUI screen (workspace list, settings, editor, launch
 /// progress) so the logo is byte-identical and never shifts position or

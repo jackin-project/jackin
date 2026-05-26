@@ -13,7 +13,9 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 
 use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
-use crate::console::widgets::{ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::console::widgets::{
+    DANGER_RED, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+};
 use crate::diagnostics::RunDiagnostics;
 use jackin_tui::HintSpan;
 
@@ -137,6 +139,11 @@ struct LaunchView {
     stages: Vec<StageView>,
     status: String,
     failure: Option<LaunchFailure>,
+    /// Operator dismissed the failure popup (Enter/Esc). The render task owns
+    /// input, so it sets this flag; [`LaunchProgress::stage_failed`] awaits it
+    /// rather than reading stdin itself (which would freeze the single-threaded
+    /// executor and never let the render task draw the popup).
+    failure_ack: bool,
     frame: usize,
     /// Operator opened the live docker-build log overlay (by clicking the
     /// footer activity). While open it hides the cockpit behind an opaque
@@ -248,6 +255,7 @@ fn initial_view() -> LaunchView {
             .collect(),
         status: "preparing launch".to_string(),
         failure: None,
+        failure_ack: false,
         frame: 0,
         build_log_open: false,
         build_log_scroll: 0,
@@ -355,13 +363,14 @@ impl LaunchProgress {
         self.compact_line(stage, StageStatus::Skipped, &reason);
     }
 
-    pub fn stage_failed(&mut self, failure: LaunchFailure) {
+    pub async fn stage_failed(&mut self, failure: LaunchFailure) {
         let stage = failure.stage;
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
         self.with_view(|v| {
             update_stage(v, stage, StageStatus::Failed, &summary);
             v.status.clone_from(&summary);
+            v.failure_ack = false;
             v.failure = Some(failure);
         });
         self.diagnostics.stage(
@@ -370,11 +379,19 @@ impl LaunchProgress {
             &summary,
             next_step.as_deref(),
         );
-        // The render task draws the failure popup; wait for the operator to
-        // acknowledge it on a rich terminal.
-        if matches!(self.renderer, Renderer::Rich(_)) && std::io::stdin().is_terminal() {
-            let mut line = String::new();
-            let _ = std::io::stdin().read_line(&mut line);
+        // On a rich surface the render task draws the failure popup and owns the
+        // terminal's input; poll for the operator's Enter/Esc dismiss. Yielding
+        // with an async sleep (rather than a blocking stdin read) is essential on
+        // the single-threaded runtime — a blocking read would never let the
+        // render task run, so the popup would neither draw nor receive the key.
+        if matches!(self.renderer, Renderer::Rich(_)) {
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let acked = self.view.lock().map_or(true, |v| v.failure_ack);
+                if acked {
+                    break;
+                }
+            }
         }
     }
 
@@ -407,13 +424,11 @@ impl LaunchProgress {
             let label = stage.label();
             if *interactive {
                 eprintln!("  {marker} {label:<13} {detail}");
-            } else {
+            } else if detail.is_empty() {
                 eprintln!("{label}: {}", status.label());
-                if !detail.is_empty() {
-                    eprintln!("status: {detail}");
-                }
+            } else {
+                eprintln!("{label}: {} \u{2014} {detail}", status.label());
             }
-            eprintln!("diagnostics: run {}", self.run_id());
         }
     }
 
@@ -551,6 +566,15 @@ fn handle_cockpit_input(view: &SharedView) {
                 }
                 _ => {}
             },
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && v.failure.is_some()
+                    && matches!(k.code, KeyCode::Enter | KeyCode::Esc) =>
+            {
+                // Failure popup is modal over the cockpit; Enter/Esc acknowledges
+                // it so the awaiting `stage_failed` returns.
+                v.failure_ack = true;
+            }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
                 KeyCode::Esc | KeyCode::Char('q') => v.build_log_open = false,
                 KeyCode::Up => v.build_log_scroll = v.build_log_scroll.saturating_add(1),
@@ -731,10 +755,6 @@ pub(crate) fn rich_terminal_supported() -> bool {
 const STAGE_PULSE_PERIOD: usize = 12;
 const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
-/// Error accent for a failed stage block. Matches `error_popup`'s private
-/// `DANGER_RED`; the launch screen is the only other site that needs the
-/// colour, so it is duplicated here rather than made public.
-const FAILED_RED: Color = Color::Rgb(255, 94, 122);
 
 fn render_launch_frame(
     frame: &mut Frame<'_>,
@@ -958,7 +978,7 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
             StageStatus::Done => ('━', PHOSPHOR_GREEN),
             StageStatus::Running => ('━', if pulse { WHITE } else { PHOSPHOR_GREEN }),
             StageStatus::Skipped => ('━', PHOSPHOR_DIM),
-            StageStatus::Failed => ('━', FAILED_RED),
+            StageStatus::Failed => ('━', DANGER_RED),
             StageStatus::Blocked => ('━', WHITE),
             StageStatus::Queued => ('─', PHOSPHOR_DARK),
         };
@@ -1312,6 +1332,7 @@ mod tests {
                 .collect(),
             status: "pulling construct".to_string(),
             failure: None,
+            failure_ack: false,
             frame: 0,
             build_log_open: false,
             build_log_scroll: 0,

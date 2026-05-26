@@ -538,16 +538,11 @@ fn confirm_branch_trust(
         );
     }
 
-    eprintln!();
-    eprintln!(
-        "{}",
-        "!! Unreviewed branch — verify before proceeding !!"
-            .red()
-            .bold()
+    print_trust_banner(
+        "!! Unreviewed branch — verify before proceeding !!",
+        selector,
+        source,
     );
-    eprintln!();
-    eprintln!("  role:   {}", selector.to_string().bold());
-    eprintln!("  source: {}", source.git.yellow());
     eprintln!("  branch: {}", branch.yellow().bold());
     eprintln!();
     eprintln!(
@@ -564,20 +559,34 @@ fn confirm_branch_trust(
     );
     eprintln!();
 
-    let confirmed = dialoguer::Confirm::new()
-        .with_prompt(format!(
-            "Have you reviewed branch \"{branch}\" and verified it is safe to build?"
-        ))
-        .default(false)
-        .interact()?;
-
-    if !confirmed {
-        anyhow::bail!(
+    confirm_trust_or_bail(
+        &format!("Have you reviewed branch \"{branch}\" and verified it is safe to build?"),
+        &format!(
             "branch \"{branch}\" not confirmed — aborting.\n\
              Review the Dockerfile and scripts on that branch before loading it."
-        );
-    }
+        ),
+    )
+}
 
+/// Shared red headline + role/source identity for the two trust prompts. Each
+/// caller prints its own explanation body and confirmation prompt after this.
+fn print_trust_banner(heading: &str, selector: &RoleSelector, source: &crate::config::RoleSource) {
+    eprintln!();
+    eprintln!("{}", heading.red().bold());
+    eprintln!();
+    eprintln!("  role:   {}", selector.to_string().bold());
+    eprintln!("  source: {}", source.git.yellow());
+}
+
+/// Final yes/no trust gate. Defaults to "no"; declining aborts with `abort`.
+fn confirm_trust_or_bail(prompt: &str, abort: &str) -> anyhow::Result<()> {
+    let confirmed = dialoguer::Confirm::new()
+        .with_prompt(prompt)
+        .default(false)
+        .interact()?;
+    if !confirmed {
+        anyhow::bail!("{abort}");
+    }
     Ok(())
 }
 
@@ -593,11 +602,7 @@ fn confirm_agent_trust(
         );
     }
 
-    eprintln!();
-    eprintln!("{}", "!! Untrusted role source !!".red().bold());
-    eprintln!();
-    eprintln!("  role:  {}", selector.to_string().bold());
-    eprintln!("  source: {}", source.git.yellow());
+    print_trust_banner("!! Untrusted role source !!", selector, source);
     eprintln!();
     eprintln!(
         "  {}",
@@ -622,19 +627,13 @@ fn confirm_agent_trust(
     eprintln!("  {}", "Review the repository before trusting it.".dimmed());
     eprintln!();
 
-    let confirmed = dialoguer::Confirm::new()
-        .with_prompt("Do you trust this role source and want to proceed?")
-        .default(false)
-        .interact()?;
-
-    if !confirmed {
-        anyhow::bail!(
+    confirm_trust_or_bail(
+        "Do you trust this role source and want to proceed?",
+        &format!(
             "role source \"{selector}\" not trusted — aborting.\n\
              To trust it later, run `jackin config trust grant {selector}` or try loading again."
-        );
-    }
-
-    Ok(())
+        ),
+    )
 }
 
 struct LaunchContext<'a> {
@@ -1351,11 +1350,7 @@ enum GitPullResult {
     JoinError { src: String },
 }
 
-fn pull_workspace_repos(workspace: &crate::workspace::ResolvedWorkspace, debug: bool) {
-    let results = pull_workspace_repos_with_git(workspace, debug, std::path::Path::new("git"));
-    print_git_pull_results(&results);
-}
-
+#[cfg(test)]
 fn pull_workspace_repos_with_git(
     workspace: &crate::workspace::ResolvedWorkspace,
     debug: bool,
@@ -1658,8 +1653,17 @@ async fn load_role_with(
                 };
                 progress.stage_done(super::progress::LaunchStage::Workspace, detail);
             }
-        } else {
-            pull_workspace_repos(workspace, opts.debug);
+        } else if !sources.is_empty() {
+            // Run the blocking git pulls on a blocking-pool thread so the
+            // single-threaded executor is never parked on the join.
+            let debug = opts.debug;
+            let git_program = std::path::PathBuf::from("git");
+            let results = tokio::task::spawn_blocking(move || {
+                pull_git_sources_with_git(sources, debug, &git_program, true)
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
+            print_git_pull_results(&results);
         }
     }
 
@@ -2544,12 +2548,14 @@ async fn load_role_with(
                 .current_stage
                 .unwrap_or(super::progress::LaunchStage::Capsule);
             if let Some(progress) = steps.progress_mut() {
-                progress.stage_failed(super::progress::LaunchFailure {
-                    title: launch_failure_title(&error),
-                    summary: short_launch_diagnosis(&error),
-                    next_step: None,
-                    stage: failed_stage,
-                });
+                progress
+                    .stage_failed(super::progress::LaunchFailure {
+                        title: launch_failure_title(&error),
+                        summary: short_launch_diagnosis(&error),
+                        next_step: None,
+                        stage: failed_stage,
+                    })
+                    .await;
             }
             render_exit(&agent_display_name, paths, docker, opts).await;
             Err(error)
