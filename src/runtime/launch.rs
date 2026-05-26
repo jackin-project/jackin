@@ -2708,7 +2708,14 @@ async fn resolve_restore_candidate(
     // One dialog for every stale-state decision — same-role candidates and
     // related-role candidates alike — so the operator always sees the rich
     // forced-choice picker inside the TUI, never a divergent stdin prompt.
-    present_restore_choice(progress, paths, workspace_label, role_key, candidates, &related)
+    present_restore_choice(
+        progress,
+        paths,
+        workspace_label,
+        role_key,
+        candidates,
+        &related,
+    )
 }
 
 /// Present the stale-instance decision. "Start fresh" is always the
@@ -2737,10 +2744,12 @@ fn present_restore_choice(
     }));
 
     let choice = match progress {
-        Some(progress) => match progress.select_choice("Unfinished jackin instances", labels.clone())? {
-            Some(index) => index,
-            None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
-        },
+        Some(progress) => {
+            match progress.select_choice("Unfinished jackin instances", labels.clone())? {
+                Some(index) => index,
+                None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
+            }
+        }
         None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
     };
 

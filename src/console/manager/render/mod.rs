@@ -59,7 +59,6 @@ pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[HintSpan<'_>
     crate::console::widgets::hints::render_wrapped(frame, area, items);
 }
 
-
 /// Adjust stored `scroll_y` so the cursor row stays inside the viewport.
 /// Returns the effective (clamped, cursor-following) `scroll_y` to use for rendering.
 pub(super) fn follow_cursor_y(
@@ -775,7 +774,6 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
         height: h,
     }
 }
-
 
 #[cfg(test)]
 mod header_branding_tests {

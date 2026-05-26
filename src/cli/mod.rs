@@ -16,8 +16,13 @@ pub(super) const HELP_STYLES: Styles = Styles::styled()
 // The canonical jackin' logo — the ` jackin' ` brand pill (black bold on
 // phosphor-green), identical to the host and capsule status bars. Used as the
 // help banner so every surface shows the one logo.
-pub(super) const BANNER: &str =
-    concat!("\n  ", "\x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m", " jackin' ", "\x1b[0m", "\n");
+pub(super) const BANNER: &str = concat!(
+    "\n  ",
+    "\x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m",
+    " jackin' ",
+    "\x1b[0m",
+    "\n"
+);
 
 pub mod cleanup;
 pub mod config;

@@ -6,10 +6,7 @@ use ratatui::{
 };
 use std::collections::BTreeMap;
 
-use super::{
-    PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header,
-};
-use jackin_tui::HintSpan;
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header};
 use crate::console::manager::auth_kind::AuthKind;
 use crate::console::manager::render::list::{
     MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
@@ -19,6 +16,7 @@ use crate::console::manager::state::{
     SettingsTab,
 };
 use crate::operator_env::EnvValue;
+use jackin_tui::HintSpan;
 
 pub(in crate::console::manager) fn global_mounts_content_width(
     rows: &[crate::config::GlobalMountRow],
@@ -230,10 +228,7 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
             HintSpan::Text("save settings"),
         ]);
         if state.is_dirty() {
-            items.push(HintSpan::Dyn(format!(
-                "({} changes)",
-                state.change_count()
-            )));
+            items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
         }
         items.extend([
             HintSpan::GroupSep,
@@ -263,10 +258,7 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
     ]);
     items.extend([HintSpan::Key("S"), HintSpan::Text("save settings")]);
     if state.is_dirty() {
-        items.push(HintSpan::Dyn(format!(
-            "({} changes)",
-            state.change_count()
-        )));
+        items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
     }
     items.extend([
         HintSpan::GroupSep,

@@ -296,9 +296,8 @@ impl ShellRunner {
         // while a rich full-screen TUI owns the terminal (it would corrupt
         // the frame). In both cases the output is captured and, under
         // --debug, written to the run's JSONL by `log_captured_output`.
-        let stream = opts.stream_captured_output
-            && !self.debug
-            && !crate::tui::rich_surface_active();
+        let stream =
+            opts.stream_captured_output && !self.debug && !crate::tui::rich_surface_active();
         let tee = opts.tee_to_build_log;
         let read_stdout = async move {
             let Some(mut stdout_pipe) = stdout_pipe else {

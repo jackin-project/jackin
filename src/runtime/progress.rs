@@ -13,9 +13,7 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 
 use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
-use crate::console::widgets::{
-    ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
-};
+use crate::console::widgets::{ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::diagnostics::RunDiagnostics;
 use jackin_tui::HintSpan;
 
@@ -366,8 +364,12 @@ impl LaunchProgress {
             v.status.clone_from(&summary);
             v.failure = Some(failure);
         });
-        self.diagnostics
-            .stage("stage_failed", stage.label(), &summary, next_step.as_deref());
+        self.diagnostics.stage(
+            "stage_failed",
+            stage.label(),
+            &summary,
+            next_step.as_deref(),
+        );
         // The render task draws the failure popup; wait for the operator to
         // acknowledge it on a rich terminal.
         if matches!(self.renderer, Renderer::Rich(_)) && std::io::stdin().is_terminal() {
@@ -659,7 +661,8 @@ impl RichRenderer {
         // toggle it when this renderer is running standalone.
         let owns_raw = !crate::tui::host_screen_owned();
         if owns_raw {
-            crossterm::terminal::enable_raw_mode().context("entering raw mode for launch picker")?;
+            crossterm::terminal::enable_raw_mode()
+                .context("entering raw mode for launch picker")?;
         }
         let outcome = self.select_loop(view, run_id, title, items);
         if owns_raw {
@@ -681,7 +684,8 @@ impl RichRenderer {
             self.terminal
                 .draw(|frame| draw_select(frame, view, run_id, title, &picker))
                 .context("rendering launch picker")?;
-            if let Event::Key(key) = crossterm::event::read().context("reading launch picker input")?
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch picker input")?
             {
                 if key.kind != KeyEventKind::Press {
                     continue;
@@ -915,7 +919,11 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
             };
             let color = if kind == 0 {
                 // "Loading" / "in": green, dim → bright on the ripple.
-                Color::Rgb(lerp(0, 120, bright), lerp(140, 255, bright), lerp(30, 120, bright))
+                Color::Rgb(
+                    lerp(0, 120, bright),
+                    lerp(140, 255, bright),
+                    lerp(30, 120, bright),
+                )
             } else {
                 // Role + path: white, brightening dim-white → full white.
                 let v = lerp(170, 255, bright);
@@ -1088,8 +1096,7 @@ fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailu
 }
 
 /// Footer-hint keys for the launch failure popup (dismiss only).
-const FAILURE_HINT: &[HintSpan<'static>] =
-    &[HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")];
+const FAILURE_HINT: &[HintSpan<'static>] = &[HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")];
 
 /// Footer-hint keys for the forced-choice launch picker.
 const PICKER_HINT: &[HintSpan<'static>] = &[
@@ -1126,7 +1133,10 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
 
     // Opaque black backdrop fully hides the cockpit behind the overlay (same
     // solid look as the capsule modals).
-    frame.render_widget(Block::default().style(Style::default().bg(Color::Black)), area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(Color::Black)),
+        area,
+    );
 
     // Bottom row is the footer hint; the bordered box takes the rest.
     let box_area = Rect {
@@ -1213,7 +1223,10 @@ fn picker_rect(area: Rect, picker: &SelectListState) -> Rect {
     let height = rows.clamp(6, area.height.saturating_sub(2).max(6));
     let min_w = 40.min(area.width);
     let max_w = (area.width.saturating_mul(4) / 5).max(min_w);
-    let width = picker.max_label_width().saturating_add(6).clamp(min_w, max_w);
+    let width = picker
+        .max_label_width()
+        .saturating_add(6)
+        .clamp(min_w, max_w);
     centered_rect(width, height, area)
 }
 

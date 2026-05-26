@@ -509,7 +509,9 @@ pub fn outro_summary(headline: &str, rows: &[String]) {
 
 fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
     let t = t.clamp(0.0, 1.0);
-    (f32::from(b) - f32::from(a)).mul_add(t, f32::from(a)).round() as u8
+    (f32::from(b) - f32::from(a))
+        .mul_add(t, f32::from(a))
+        .round() as u8
 }
 
 /// Hyperspace starfield. `accelerating` ramps the warp speed up (entering the

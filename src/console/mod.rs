@@ -1103,7 +1103,8 @@ pub async fn run_console(
                         // Switch the terminal pointer to the hand shape over any
                         // clickable element (and back off it), per the clickable
                         // affordance rule — only when the state changes.
-                        let hand = manager::input::clickable_at(ms, mouse, term_size, Some(&config));
+                        let hand =
+                            manager::input::clickable_at(ms, mouse, term_size, Some(&config));
                         if hand != pointer_is_hand {
                             pointer_is_hand = hand;
                             let seq = if hand {

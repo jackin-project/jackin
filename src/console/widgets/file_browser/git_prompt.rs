@@ -211,7 +211,11 @@ pub(super) fn git_prompt_hint(has_url: bool) -> Line<'static> {
     if has_url {
         spans.extend([HintSpan::Sep, HintSpan::Key("O"), HintSpan::Text("open")]);
     }
-    spans.extend([HintSpan::Sep, HintSpan::Key("C/Esc"), HintSpan::Text("cancel")]);
+    spans.extend([
+        HintSpan::Sep,
+        HintSpan::Key("C/Esc"),
+        HintSpan::Text("cancel"),
+    ]);
     crate::console::widgets::hints::line(&spans)
 }
 

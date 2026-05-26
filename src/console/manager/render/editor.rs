@@ -22,9 +22,9 @@ use super::{
     PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE,
     TAB_BG_INACTIVE_HOVER, WHITE, footer_height, render_footer, render_header,
 };
-use jackin_tui::HintSpan;
 use crate::config::AppConfig;
 use crate::operator_env::EnvValue;
+use jackin_tui::HintSpan;
 
 // ── Editor stage ────────────────────────────────────────────────────
 
@@ -79,10 +79,7 @@ fn editor_footer_items(
             HintSpan::Text("save workspace"),
         ];
         if state.is_dirty() {
-            items.push(HintSpan::Dyn(format!(
-                "({} changes)",
-                state.change_count()
-            )));
+            items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
         }
         items.extend([
             HintSpan::GroupSep,
@@ -113,10 +110,7 @@ fn editor_footer_items(
         HintSpan::Text("save workspace"),
     ]);
     if state.is_dirty() {
-        items.push(HintSpan::Dyn(format!(
-            "({} changes)",
-            state.change_count()
-        )));
+        items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
     }
     items.extend([
         HintSpan::GroupSep,
@@ -463,7 +457,10 @@ pub(in crate::console::manager) fn render_tab_strip(
             (false, false) => TAB_BG_INACTIVE,
         };
         let label_style = if active {
-            Style::default().bg(bg).fg(WHITE).add_modifier(Modifier::BOLD)
+            Style::default()
+                .bg(bg)
+                .fg(WHITE)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().bg(bg).fg(WHITE)
         };
@@ -605,7 +602,13 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>)
         // row, matching the tab/list hover cue. Applied to every span (and the
         // column gaps) so the row's background is contiguous.
         let hovered = !selected && state.hovered_mount_row == Some(i);
-        let hb = |s: Style| if hovered { s.bg(TAB_BG_INACTIVE_HOVER) } else { s };
+        let hb = |s: Style| {
+            if hovered {
+                s.bg(TAB_BG_INACTIVE_HOVER)
+            } else {
+                s
+            }
+        };
         let prefix = if selected { "▸ " } else { "  " };
         let base_style = if selected {
             Style::default()
@@ -1671,10 +1674,10 @@ mod contextual_row_items_tests {
     //! Row-specific footer-hint composition for the editor tabs.
 
     use super::contextual_row_items;
-    use jackin_tui::HintSpan;
     use crate::config::{AppConfig, RoleSource};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
+    use jackin_tui::HintSpan;
 
     /// Collect every `HintSpan::Text` label from a hint list.
     fn text_labels<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {

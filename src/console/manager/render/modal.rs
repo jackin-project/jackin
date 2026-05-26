@@ -303,7 +303,9 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
 }
 
 /// Footer items for the three settings modal chains.
-pub(super) fn settings_mounts_modal_footer_items(modal: &GlobalMountModal<'_>) -> Vec<HintSpan<'static>> {
+pub(super) fn settings_mounts_modal_footer_items(
+    modal: &GlobalMountModal<'_>,
+) -> Vec<HintSpan<'static>> {
     match modal {
         GlobalMountModal::Text { .. } => vec![
             HintSpan::Key("Enter"),
@@ -372,7 +374,9 @@ pub(super) fn settings_mounts_modal_footer_items(modal: &GlobalMountModal<'_>) -
     }
 }
 
-pub(super) fn settings_env_modal_footer_items(modal: &SettingsEnvModal<'_>) -> Vec<HintSpan<'static>> {
+pub(super) fn settings_env_modal_footer_items(
+    modal: &SettingsEnvModal<'_>,
+) -> Vec<HintSpan<'static>> {
     match modal {
         SettingsEnvModal::Text { .. } => vec![
             HintSpan::Key("Enter"),

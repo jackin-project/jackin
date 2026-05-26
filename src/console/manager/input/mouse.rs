@@ -264,11 +264,7 @@ fn settings_trust_clickable(
 /// Whether the pointer is over a file-browser git-prompt URL row (side-effect
 /// free; does not open the URL). Mirrors `try_open_file_browser_git_url`'s
 /// modal resolution.
-fn file_browser_url_row_at(
-    state: &ManagerState<'_>,
-    mouse: MouseEvent,
-    term_size: Rect,
-) -> bool {
+fn file_browser_url_row_at(state: &ManagerState<'_>, mouse: MouseEvent, term_size: Rect) -> bool {
     let (modal, fb_state): (&Modal<'_>, &FileBrowserState) = match &state.stage {
         ManagerStage::Editor(editor) => match editor.modal.as_ref() {
             Some(m @ Modal::FileBrowser { state, .. }) => (m, state),

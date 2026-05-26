@@ -24,7 +24,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, spans: &[HintSpan<'_>]) {
     if area.height == 0 {
         return;
     }
-    frame.render_widget(Paragraph::new(line(spans)).alignment(Alignment::Center), area);
+    frame.render_widget(
+        Paragraph::new(line(spans)).alignment(Alignment::Center),
+        area,
+    );
 }
 
 /// Build the styled hint line from shared spans. Pure so it can be unit-tested
@@ -177,8 +180,18 @@ mod tests {
         // Key keeps its glyphs verbatim; Text gets a leading space.
         let joined: String = rendered.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(joined, "Esc close   ↑↓ scroll");
-        assert!(rendered.spans[0].style.add_modifier.contains(Modifier::BOLD));
-        assert!(!rendered.spans[1].style.add_modifier.contains(Modifier::BOLD));
+        assert!(
+            rendered.spans[0]
+                .style
+                .add_modifier
+                .contains(Modifier::BOLD)
+        );
+        assert!(
+            !rendered.spans[1]
+                .style
+                .add_modifier
+                .contains(Modifier::BOLD)
+        );
     }
 
     #[test]

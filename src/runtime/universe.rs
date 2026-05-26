@@ -41,7 +41,9 @@ pub fn take_elapsed(paths: &JackinPaths) -> Option<Duration> {
     let _ = std::fs::remove_file(&file);
     let started: u128 = content.trim().parse().ok()?;
     let elapsed_ms = now_millis().checked_sub(started)?;
-    Some(Duration::from_millis(u64::try_from(elapsed_ms).unwrap_or(u64::MAX)))
+    Some(Duration::from_millis(
+        u64::try_from(elapsed_ms).unwrap_or(u64::MAX),
+    ))
 }
 
 #[cfg(test)]
@@ -58,7 +60,10 @@ mod tests {
         assert!(marker_path(&paths).exists(), "marker written");
 
         let elapsed = take_elapsed(&paths).expect("elapsed available");
-        assert!(elapsed < Duration::from_secs(5), "just-started span is small");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "just-started span is small"
+        );
         assert!(!marker_path(&paths).exists(), "marker cleared after take");
         assert!(take_elapsed(&paths).is_none(), "second take is empty");
     }

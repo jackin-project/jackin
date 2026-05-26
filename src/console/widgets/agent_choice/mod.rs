@@ -4,8 +4,8 @@
 
 use crate::agent::Agent;
 use crate::console::widgets::ModalOutcome;
-use jackin_tui::HintSpan;
 use crossterm::event::{KeyCode, KeyEvent};
+use jackin_tui::HintSpan;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};

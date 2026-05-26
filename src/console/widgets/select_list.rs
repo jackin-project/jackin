@@ -161,7 +161,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SelectListState, title: &st
             Span::styled(state.filter.clone(), Style::default().fg(WHITE)),
             Span::styled(
                 "\u{2588}",
-                Style::default().fg(WHITE).add_modifier(Modifier::SLOW_BLINK),
+                Style::default()
+                    .fg(WHITE)
+                    .add_modifier(Modifier::SLOW_BLINK),
             ),
         ])
     };
@@ -181,7 +183,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SelectListState, title: &st
             } else {
                 Style::default().fg(WHITE)
             };
-            Line::from(vec![Span::styled(format!("{prefix}{}", state.items[item]), style)])
+            Line::from(vec![Span::styled(
+                format!("{prefix}{}", state.items[item]),
+                style,
+            )])
         })
         .collect();
     render_selected_lines_in_area(frame, rows[2], lines, state.list_state.selected);
@@ -267,7 +272,10 @@ mod tests {
     #[test]
     fn esc_reports_cancel_for_callers_that_allow_it() {
         let mut s = sample();
-        assert!(matches!(s.handle_key(key(KeyCode::Esc)), ModalOutcome::Cancel));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Esc)),
+            ModalOutcome::Cancel
+        ));
     }
 
     #[test]
@@ -298,10 +306,22 @@ mod tests {
     #[test]
     fn renders_title_filter_row_and_cursor() {
         let frame = dump(&sample(), 60, 12);
-        assert!(frame.contains("Unfinished instances"), "title missing:\n{frame}");
+        assert!(
+            frame.contains("Unfinished instances"),
+            "title missing:\n{frame}"
+        );
         assert!(frame.contains("Filter:"), "filter row missing:\n{frame}");
-        assert!(frame.contains('\u{2591}'), "placeholder dots missing:\n{frame}");
-        assert!(frame.contains('\u{25b8}'), "cursor marker missing:\n{frame}");
-        assert!(frame.contains("Start fresh"), "first item missing:\n{frame}");
+        assert!(
+            frame.contains('\u{2591}'),
+            "placeholder dots missing:\n{frame}"
+        );
+        assert!(
+            frame.contains('\u{25b8}'),
+            "cursor marker missing:\n{frame}"
+        );
+        assert!(
+            frame.contains("Start fresh"),
+            "first item missing:\n{frame}"
+        );
     }
 }

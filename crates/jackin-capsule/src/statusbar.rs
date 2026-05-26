@@ -297,13 +297,7 @@ impl StatusBar {
         }
     }
 
-    fn emit_tab_row0(
-        &self,
-        buf: &mut Vec<u8>,
-        cell: &TabCell<'_>,
-        glyph: TabGlyph,
-        hovered: bool,
-    ) {
+    fn emit_tab_row0(&self, buf: &mut Vec<u8>, cell: &TabCell<'_>, glyph: TabGlyph, hovered: bool) {
         // Position cursor at the cell's first column (1-based).
         move_to(buf, 1, cell.start_col + 1);
         // Apply tab bg + fg first; the Blocked glyph overrides fg
@@ -462,11 +456,7 @@ pub fn draw_pane_box(
     } else {
         BORDER_INACTIVE
     };
-    let title_color = if active {
-        TITLE_ACTIVE
-    } else {
-        TITLE_INACTIVE
-    };
+    let title_color = if active { TITLE_ACTIVE } else { TITLE_INACTIVE };
     let interior_cols = cols.saturating_sub(2);
     let max_title_cols = interior_cols.saturating_sub(4);
     let display_title = take_display_cols(title, max_title_cols);
@@ -620,15 +610,7 @@ mod tests {
     #[test]
     fn pane_box_truncates_long_titles_instead_of_omitting_them() {
         let mut buf = Vec::new();
-        draw_pane_box(
-            &mut buf,
-            0,
-            0,
-            4,
-            16,
-            "Shell title that is too long",
-            false,
-        );
+        draw_pane_box(&mut buf, 0, 0, 4, 16, "Shell title that is too long", false);
         let out = String::from_utf8_lossy(&buf);
 
         assert!(

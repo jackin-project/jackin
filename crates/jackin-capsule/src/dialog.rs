@@ -2219,7 +2219,6 @@ fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpa
     buf.extend_from_slice(RESET.as_bytes());
 }
 
-
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
     buf.extend_from_slice(b"\x1b[");
     write_dec(buf, row + 1);

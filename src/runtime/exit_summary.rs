@@ -122,26 +122,58 @@ mod tests {
             entry("bbb", "jk-bbb", Some("app"), "app", "/app", "the-architect"),
             entry("ccc", "jk-ccc", Some("app"), "app", "/app", "agent-smith"),
         ]);
-        let running = vec!["jk-aaa".to_string(), "jk-bbb".to_string(), "jk-ccc".to_string()];
+        let running = vec![
+            "jk-aaa".to_string(),
+            "jk-bbb".to_string(),
+            "jk-ccc".to_string(),
+        ];
         let (headline, rows) = summary(&running, &idx);
         assert!(headline.contains("3 agents"), "headline: {headline}");
-        assert!(rows.iter().any(|r| r.contains("app") && r.contains("the-architect") && r.contains("\u{00d7}2")));
-        assert!(rows.iter().any(|r| r.contains("agent-smith") && r.contains("\u{00d7}1")));
+        assert!(
+            rows.iter().any(|r| r.contains("app")
+                && r.contains("the-architect")
+                && r.contains("\u{00d7}2"))
+        );
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("agent-smith") && r.contains("\u{00d7}1"))
+        );
     }
 
     #[test]
     fn private_folders_collapse_to_a_count() {
         let idx = index(vec![
-            entry("aaa", "jk-aaa", None, "", "/home/me/proj-a", "the-architect"),
-            entry("bbb", "jk-bbb", None, "", "/home/me/proj-b", "the-architect"),
+            entry(
+                "aaa",
+                "jk-aaa",
+                None,
+                "",
+                "/home/me/proj-a",
+                "the-architect",
+            ),
+            entry(
+                "bbb",
+                "jk-bbb",
+                None,
+                "",
+                "/home/me/proj-b",
+                "the-architect",
+            ),
             entry("ccc", "jk-ccc", Some("app"), "app", "/app", "the-architect"),
         ]);
-        let running = vec!["jk-aaa".to_string(), "jk-bbb".to_string(), "jk-ccc".to_string()];
+        let running = vec![
+            "jk-aaa".to_string(),
+            "jk-bbb".to_string(),
+            "jk-ccc".to_string(),
+        ];
         let (headline, rows) = summary(&running, &idx);
         assert!(headline.contains("3 agents"));
         // Two distinct private folders, no paths shown.
         assert!(rows.iter().any(|r| r == "2 folders"), "rows: {rows:?}");
-        assert!(!rows.iter().any(|r| r.contains("proj-a")), "paths must not leak");
+        assert!(
+            !rows.iter().any(|r| r.contains("proj-a")),
+            "paths must not leak"
+        );
     }
 
     #[test]

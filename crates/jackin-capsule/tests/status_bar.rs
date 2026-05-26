@@ -25,15 +25,7 @@ fn render_with_hover(
     hovered_tab: Option<usize>,
 ) -> String {
     let mut buf = Vec::new();
-    bar.render(
-        &mut buf,
-        cols,
-        tabs,
-        active,
-        states,
-        hovered_tab,
-        false,
-    );
+    bar.render(&mut buf, cols, tabs, active, states, hovered_tab, false);
     String::from_utf8_lossy(&buf).to_string()
 }
 

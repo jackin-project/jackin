@@ -266,9 +266,9 @@ pub fn lay_out_tabs<'a>(labels: &[(&'a str, bool)], start_col: u16) -> Vec<TabCe
 /// `start_col` are in the same 0-based column space.
 #[must_use]
 pub fn tab_at_column(cells: &[TabCell<'_>], col: u16) -> Option<usize> {
-    cells
-        .iter()
-        .position(|cell| col >= cell.start_col && col < cell.start_col.saturating_add(cell.cell_cols))
+    cells.iter().position(|cell| {
+        col >= cell.start_col && col < cell.start_col.saturating_add(cell.cell_cols)
+    })
 }
 
 /// Cross-surface single-line text-input model. Holds the buffer,

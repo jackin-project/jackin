@@ -419,7 +419,9 @@ async fn extract_agent_version(
     else {
         crate::tui::emit_debug_line(
             "image",
-            &format!("warning: could not probe {display} version from {image}; version check skipped"),
+            &format!(
+                "warning: could not probe {display} version from {image}; version check skipped"
+            ),
         );
         return;
     };

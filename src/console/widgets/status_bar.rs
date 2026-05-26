@@ -132,12 +132,18 @@ mod tests {
     #[test]
     fn renders_activity_on_the_left_and_chip_on_the_right() {
         let row = dump("Building Docker image", "k7p9m2xq", 60);
-        assert!(row.contains("Building Docker image"), "activity missing: {row:?}");
+        assert!(
+            row.contains("Building Docker image"),
+            "activity missing: {row:?}"
+        );
         assert!(row.contains("k7p9m2xq"), "chip missing: {row:?}");
         // The activity sits left of the chip.
         let activity_at = row.find("Building").unwrap();
         let chip_at = row.find("k7p9m2xq").unwrap();
-        assert!(activity_at < chip_at, "activity must be left of the chip: {row:?}");
+        assert!(
+            activity_at < chip_at,
+            "activity must be left of the chip: {row:?}"
+        );
     }
 
     #[test]
@@ -178,7 +184,10 @@ mod tests {
         let buf = term.backend().buffer();
         let row: String = (0..60).map(|x| buf[(x, 0)].symbol().to_string()).collect();
         assert!(row.contains("s9994y2n"), "instance chip missing: {row:?}");
-        assert!(row.contains("jk-run-3d7e23"), "debug run-id chip missing: {row:?}");
+        assert!(
+            row.contains("jk-run-3d7e23"),
+            "debug run-id chip missing: {row:?}"
+        );
         // The run id sits to the right of the instance id.
         assert!(
             row.find("s9994y2n").unwrap() < row.find("jk-run-3d7e23").unwrap(),
