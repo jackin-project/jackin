@@ -679,6 +679,9 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
     if area.width == 0 || area.height == 0 {
         return;
     }
+    // Fade the whole field up from black over the first ~30 ticks so the rain
+    // eases in smoothly instead of popping on at full brightness.
+    let fade_in = (rain.frame as f32 / 30.0).min(1.0);
     // Fade the rain to black over the bottom rows so it dissolves into a gap
     // above the progress bar instead of colliding with it: the bottommost row
     // is fully extinguished and brightness ramps back to full a few rows up.
@@ -692,7 +695,7 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
             } else {
                 f32::from(rows_from_bottom) / f32::from(fade_rows)
             };
-            let dim = |c: u8| (f32::from(c) * fade) as u8;
+            let dim = |c: u8| (f32::from(c) * fade * fade_in) as u8;
             let spans: Vec<Span<'static>> = (0..area.width)
                 .map(|x| {
                     let grid_x = usize::from(area.x + x);
