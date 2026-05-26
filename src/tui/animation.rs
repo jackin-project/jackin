@@ -527,14 +527,17 @@ fn warp(accelerating: bool) {
     use std::fmt::Write as _;
 
     clear_screen();
-    eprint!("\x1b[?25l"); // hide cursor
+    // Hide the cursor and turn off autowrap (DECAWM) for the duration: the warp
+    // fills every cell including the bottom-right one, which would scroll the
+    // terminal with autowrap on. Off, the field can use the full height.
+    eprint!("\x1b[?25l\x1b[?7l");
     let _ = io::stderr().flush();
 
     // Initial size only seeds the star field; the loop re-reads the live size
     // every frame so the warp tracks terminal resizes.
     let (cols0, rows0) = {
         let (c, r) = crossterm::terminal::size().unwrap_or((80, 24));
-        (c as usize, (r as usize).saturating_sub(1).max(1))
+        (c as usize, (r as usize).max(1))
     };
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut stars: Vec<WarpStar> = (0..(cols0 * rows0 / 4).clamp(80, 2400))
@@ -557,7 +560,7 @@ fn warp(accelerating: bool) {
         // once on a size change so shrunk-away cells don't linger.
         let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
         let cols = term_cols as usize;
-        let rows = (term_rows as usize).saturating_sub(1).max(1);
+        let rows = (term_rows as usize).max(1);
         if (cols, rows) != last_size {
             clear_screen();
             last_size = (cols, rows);
@@ -648,7 +651,7 @@ fn warp(accelerating: bool) {
     }
 
     clear_screen();
-    eprint!("\x1b[H\x1b[?25h"); // home + show cursor
+    eprint!("\x1b[H\x1b[?25h\x1b[?7h"); // home + show cursor + restore autowrap
     let _ = io::stderr().flush();
 }
 
