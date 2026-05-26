@@ -52,6 +52,23 @@ pub fn host_screen_owned() -> bool {
     HOST_SCREEN_OWNED.load(Ordering::Relaxed)
 }
 
+/// Re-enter the host alternate screen after an interactive child returns.
+///
+/// A baked capsule still drops `?1049l` on detach and returns the terminal to
+/// the primary screen; re-asserting the moment the `docker exec` returns means
+/// the post-attach work (outcome inspection, the exit summary) renders on the
+/// alternate screen instead of flashing the operator's shell. No-op unless a
+/// host guard owns the screen.
+pub fn reassert_alt_screen() {
+    use crossterm::ExecutableCommand as _;
+    if !host_screen_owned() {
+        return;
+    }
+    let mut out = std::io::stdout();
+    let _ = out.execute(crossterm::terminal::EnterAlternateScreen);
+    let _ = out.execute(crossterm::cursor::Hide);
+}
+
 /// Format a single debug-log line. Pure (no I/O) so unit tests can
 /// assert on the wire format without touching global state or stderr.
 #[must_use]

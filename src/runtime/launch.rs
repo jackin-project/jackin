@@ -2597,19 +2597,11 @@ async fn render_exit(
     docker: &impl DockerApi,
     opts: &LoadOptions,
 ) {
-    // The capsule attach may have returned us to the primary screen — an older
-    // in-container capsule still toggles its own alternate screen and drops
-    // `?1049l` on detach regardless of `JACKIN_HOST_ALT_SCREEN`. Re-assert the
-    // host alternate screen so the outro / exit summary render there and are
-    // discarded cleanly on teardown, never dumped into the operator's
-    // scrollback. (When the capsule already kept the screen, this is a no-op
-    // beyond a redundant clear the surfaces redraw over.)
-    if crate::tui::host_screen_owned() {
-        use crossterm::ExecutableCommand as _;
-        let mut stdout = std::io::stdout();
-        let _ = stdout.execute(crossterm::terminal::EnterAlternateScreen);
-        let _ = stdout.execute(crossterm::cursor::Hide);
-    }
+    // Defensive: the attach paths already re-assert the alt screen the moment
+    // the capsule exec returns, so the post-attach work never flashes the
+    // shell. Re-assert once more here in case render_exit is reached by a path
+    // that did not go through the attach.
+    crate::tui::reassert_alt_screen();
     let running = match list_running_agent_names(docker).await {
         Ok(names) => names,
         Err(e) => {
