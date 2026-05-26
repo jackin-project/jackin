@@ -65,9 +65,12 @@ pub fn render_wrapped(frame: &mut Frame<'_>, area: Rect, spans: &[HintSpan<'_>])
 }
 
 /// Rows the wrapped footer needs to show every span within `width` columns.
+///
+/// Clamped to a sane maximum: a footer is at most a few rows, so an adversarial
+/// span set must not return a height that blows up the layout splitter.
 #[must_use]
 pub fn wrapped_height(spans: &[HintSpan<'_>], width: u16) -> u16 {
-    u16::try_from(wrapped_lines(spans, width).len().max(1)).unwrap_or(u16::MAX)
+    u16::try_from(wrapped_lines(spans, width).len().clamp(1, 64)).unwrap_or(64)
 }
 
 /// Greedy line-packer shared by the wrapped footer renderer. A chunk is one

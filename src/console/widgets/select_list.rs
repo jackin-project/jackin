@@ -120,11 +120,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 
 use super::scrollable::render_selected_lines_in_area;
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 /// Render the picker into `area` with `title` in the top border. Hint
 /// text is the caller's responsibility (it belongs in the screen footer,
@@ -150,24 +150,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SelectListState, title: &st
         ])
         .split(inner);
 
-    let filter_line = if state.filter.is_empty() {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled(state.filter.clone(), Style::default().fg(WHITE)),
-            Span::styled(
-                "\u{2588}",
-                Style::default()
-                    .fg(WHITE)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ])
-    };
-    frame.render_widget(Paragraph::new(filter_line), rows[0]);
+    super::render_filter_row(frame, rows[0], &state.filter);
 
     let lines: Vec<Line> = state
         .filtered

@@ -17,13 +17,9 @@ use super::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 fn render_constraints(has_rejection: bool) -> Vec<ratatui::layout::Constraint> {
     use ratatui::layout::Constraint;
     if has_rejection {
-        vec![
-            Constraint::Length(1),
-            Constraint::Min(3),
-            Constraint::Length(1),
-        ]
+        vec![Constraint::Length(1), Constraint::Min(3)]
     } else {
-        vec![Constraint::Min(3), Constraint::Length(1)]
+        vec![Constraint::Min(3)]
     }
 }
 
@@ -49,7 +45,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 
     frame.render_widget(ratatui::widgets::Clear, area);
 
-    // Layout: [optional rejection banner][listing][nav hint].
+    // Layout: [optional rejection banner][listing]. Hints render in the
+    // screen footer (see `FileBrowserState::footer_items`), not inside the box.
     let rejection = state.rejected_reason.as_ref();
     let constraints = render_constraints(rejection.is_some());
     let chunks = Layout::default()
@@ -70,7 +67,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
     });
 
     render_listing(frame, chunks[listing_idx], state);
-    render_footer_legend(frame, chunks[chunks.len() - 1], state);
 
     // Git-repo prompt overlay — centred inside the listing area so the
     // listing stays visible as context behind the modal.
@@ -135,39 +131,6 @@ fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
-}
-
-/// Render the bottom footer legend. Swaps the usual nav+`s` legend for a
-/// prompt-focused legend when the git-repo confirm overlay is active.
-fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
-    use jackin_tui::HintSpan;
-    let spans = if state.pending_git_prompt.is_some() {
-        vec![
-            HintSpan::Key("Enter"),
-            HintSpan::Text("confirm"),
-            HintSpan::Sep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ]
-    } else {
-        vec![
-            HintSpan::Key("\u{2191}\u{2193}"),
-            HintSpan::Text("navigate"),
-            HintSpan::Sep,
-            HintSpan::Key("Enter"),
-            HintSpan::Text("open"),
-            HintSpan::Sep,
-            HintSpan::Key("H/\u{2190}"),
-            HintSpan::Text("up"),
-            HintSpan::GroupSep,
-            HintSpan::Key("S"),
-            HintSpan::Text("select"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("up/cancel"),
-        ]
-    };
-    crate::console::widgets::hints::render(frame, area, &spans);
 }
 
 #[cfg(test)]

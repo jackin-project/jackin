@@ -115,6 +115,31 @@ pub(crate) fn render_brand_header(frame: &mut Frame, area: Rect, label: &str) {
     );
 }
 
+/// The canonical `Filter: ░░░█` input row drawn directly under a list modal's
+/// top border: dotted `░` placeholders when empty, the typed text plus a
+/// blinking `█` cursor otherwise. Shared by every filterable list modal (the
+/// op-picker drill-down, the generic `select_list`) so the row is identical.
+pub(crate) fn render_filter_row(frame: &mut Frame, area: Rect, filter: &str) {
+    let line = if filter.is_empty() {
+        Line::from(vec![
+            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled(filter.to_string(), Style::default().fg(WHITE)),
+            Span::styled(
+                "\u{2588}",
+                Style::default()
+                    .fg(WHITE)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
+        ])
+    };
+    frame.render_widget(Paragraph::new(line), area);
+}
+
 /// Braille spinner animation shared across all modal loading panels.
 pub(crate) const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -321,6 +346,15 @@ mod consistency_tests {
         (buf, area)
     }
 
+    fn render_op_picker() -> (Buffer, Rect) {
+        use super::op_picker::OpPickerState;
+        use super::op_picker::render::render;
+        let area = Rect::new(0, 0, 70, 20);
+        let state = OpPickerState::new();
+        let buf = draw(area.width, area.height, |f| render(f, area, &state));
+        (buf, area)
+    }
+
     fn render_role_picker() -> (Buffer, Rect) {
         use super::role_picker::{RolePickerState, render};
         use crate::selector::RoleSelector;
@@ -362,6 +396,7 @@ mod consistency_tests {
             ("SaveDiscardCancel", render_save_discard()),
             ("Confirm", render_confirm()),
             ("MountDstChoice", render_mount_dst()),
+            ("OpPicker", render_op_picker()),
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),
@@ -388,6 +423,7 @@ mod consistency_tests {
             ("SaveDiscardCancel", render_save_discard()),
             ("Confirm", render_confirm()),
             ("MountDstChoice", render_mount_dst()),
+            ("OpPicker", render_op_picker()),
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),

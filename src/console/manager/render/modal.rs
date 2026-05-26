@@ -51,7 +51,7 @@ pub(in crate::console::manager) fn confirm_rect(
 
 pub(in crate::console::manager) fn mount_choice_rect(outer: Rect) -> Rect {
     let w = outer.width.min(80);
-    let h = 8.min(outer.height);
+    let h = 6.min(outer.height);
     Rect {
         x: outer.x + outer.width.saturating_sub(w) / 2,
         y: outer.y + outer.height.saturating_sub(h) / 2,
@@ -181,29 +181,35 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Key("Esc"),
             HintSpan::Text("cancel"),
         ],
-        Modal::FileBrowser { .. } => vec![
-            HintSpan::Key("\u{2191}\u{2193}"),
-            HintSpan::Text("navigate"),
+        Modal::FileBrowser { state, .. } => state.footer_items(),
+        Modal::MountDstChoice { .. } => vec![
+            HintSpan::Key("M"),
+            HintSpan::Text("mount"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
-            HintSpan::Text("open"),
+            HintSpan::Key("E"),
+            HintSpan::Text("edit"),
             HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ],
-        Modal::MountDstChoice { .. }
-        | Modal::SourcePicker { .. }
-        | Modal::AuthSourcePicker { .. }
-        | Modal::ScopePicker { .. } => vec![
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
             HintSpan::Key("Enter"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
+            HintSpan::Key("C/Esc"),
             HintSpan::Text("cancel"),
         ],
+        Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } | Modal::ScopePicker { .. } => {
+            vec![
+                HintSpan::Key("\u{2190}/\u{2192}"),
+                HintSpan::Text("move"),
+                HintSpan::GroupSep,
+                HintSpan::Key("Enter"),
+                HintSpan::Text("select"),
+                HintSpan::GroupSep,
+                HintSpan::Key("Esc"),
+                HintSpan::Text("cancel"),
+            ]
+        }
         Modal::WorkdirPick { .. } => vec![
             HintSpan::Key("\u{2191}\u{2193}"),
             HintSpan::Text("navigate"),
@@ -314,17 +320,24 @@ pub(super) fn settings_mounts_modal_footer_items(
             HintSpan::Key("Esc"),
             HintSpan::Text("cancel"),
         ],
-        GlobalMountModal::FileBrowser { .. } => vec![
-            HintSpan::Key("\u{2191}\u{2193}"),
-            HintSpan::Text("navigate"),
+        GlobalMountModal::FileBrowser { state } => state.footer_items(),
+        GlobalMountModal::MountDstChoice { .. } => vec![
+            HintSpan::Key("M"),
+            HintSpan::Text("mount"),
+            HintSpan::GroupSep,
+            HintSpan::Key("E"),
+            HintSpan::Text("edit"),
+            HintSpan::GroupSep,
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("move"),
             HintSpan::GroupSep,
             HintSpan::Key("Enter"),
-            HintSpan::Text("open"),
+            HintSpan::Text("select"),
             HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
+            HintSpan::Key("C/Esc"),
             HintSpan::Text("cancel"),
         ],
-        GlobalMountModal::MountDstChoice { .. } | GlobalMountModal::ScopePicker { .. } => vec![
+        GlobalMountModal::ScopePicker { .. } => vec![
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,

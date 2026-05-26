@@ -14,8 +14,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::ModalOutcome;
-use jackin_tui::HintSpan;
+use super::{ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 /// Outcome of the mount-destination modal.
 ///
@@ -86,24 +85,18 @@ impl MountDstChoiceState {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
-    let phosphor = Color::Rgb(0, 255, 65);
-    let phosphor_dim = Color::Rgb(0, 140, 30);
-    let phosphor_dark = Color::Rgb(0, 80, 18);
-    let white = Color::Rgb(255, 255, 255);
-
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(phosphor_dark))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             " Mount destination ",
-            Style::default().fg(white).add_modifier(Modifier::BOLD),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Layout mirrors the git-repo prompt:
-    // question | path | blank | buttons | blank | hint
+    // question | path | blank | buttons. Hints live in the screen footer.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -111,15 +104,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
             Constraint::Length(1), // src path
             Constraint::Length(1), // spacer
             Constraint::Length(1), // buttons
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // hint
         ])
         .split(inner);
 
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            Style::default().fg(white).add_modifier(Modifier::BOLD),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
         chunks[0],
@@ -131,7 +122,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
         Paragraph::new(Span::styled(
             shortened,
             Style::default()
-                .fg(phosphor_dim)
+                .fg(PHOSPHOR_DIM)
                 .add_modifier(Modifier::ITALIC),
         ))
         .alignment(Alignment::Center),
@@ -141,10 +132,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     // Buttons — focused choice highlights on white; unfocused stays
     // flush with the modal background so only the focused choice pops.
     let focused_style = Style::default()
-        .bg(white)
+        .bg(WHITE)
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default().fg(phosphor).add_modifier(Modifier::BOLD);
+    let unfocused_style = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
 
     let ok_style = if state.focus == MountDstFocus::SamePath {
         focused_style
@@ -172,22 +165,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(
         Paragraph::new(button_line).alignment(Alignment::Center),
         chunks[3],
-    );
-
-    // Footer hint via the shared renderer (one styling source for every footer).
-    crate::console::widgets::hints::render(
-        frame,
-        chunks[5],
-        &[
-            HintSpan::Key("M"),
-            HintSpan::Text("mount"),
-            HintSpan::Sep,
-            HintSpan::Key("E"),
-            HintSpan::Text("edit"),
-            HintSpan::Sep,
-            HintSpan::Key("C/Esc"),
-            HintSpan::Text("cancel"),
-        ],
     );
 }
 
