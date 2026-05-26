@@ -150,19 +150,94 @@ pub struct LaunchFailure {
     pub stage: LaunchStage,
 }
 
+type SharedView = Arc<std::sync::Mutex<LaunchView>>;
+
 pub struct LaunchProgress {
     diagnostics: Arc<RunDiagnostics>,
     renderer: Renderer,
-    view: LaunchView,
+    view: SharedView,
 }
 
 enum Renderer {
-    Rich(Box<RichRenderer>),
+    Rich(RichDriver),
     Compact {
         interactive: bool,
     },
+    /// Rich surface torn down at the handoff; inert (no draws, no diagnostics
+    /// trailer) so the interactive capsule attach owns the terminal alone.
+    Done,
     #[cfg(test)]
     Test,
+}
+
+/// Owns the background render task that ticks the cockpit independently of the
+/// launch work, so the rain and animation never freeze while a launch step is
+/// blocked on I/O. The task shares the renderer behind a `try_lock` (so the
+/// reclaiming picker is never blocked) and a stop flag.
+struct RichDriver {
+    renderer: Arc<std::sync::Mutex<RichRenderer>>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl RichDriver {
+    fn spawn(renderer: RichRenderer, view: SharedView, run_id: String) -> Self {
+        use std::sync::atomic::Ordering;
+        let renderer = Arc::new(std::sync::Mutex::new(renderer));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handle = {
+            let renderer = renderer.clone();
+            let stop = stop.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_millis(33));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    interval.tick().await;
+                    if stop.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    // Try-lock so a picker reclaiming the renderer is never
+                    // blocked; snapshot the view (advancing the animation frame)
+                    // without holding the view lock across the draw.
+                    let Ok(mut rr) = renderer.try_lock() else {
+                        continue;
+                    };
+                    let snapshot = match view.lock() {
+                        Ok(mut v) => {
+                            if !rr.no_motion {
+                                v.frame = v.frame.wrapping_add(1);
+                            }
+                            v.clone()
+                        }
+                        Err(_) => continue,
+                    };
+                    let _ = rr.render(&snapshot, &run_id);
+                }
+            })
+        };
+        Self {
+            renderer,
+            stop,
+            handle: Some(handle),
+        }
+    }
+}
+
+fn initial_view() -> LaunchView {
+    LaunchView {
+        identity: None,
+        stages: LaunchStage::ALL
+            .into_iter()
+            .map(|stage| StageView {
+                stage,
+                status: StageStatus::Queued,
+                detail: "queued".to_string(),
+            })
+            .collect(),
+        status: "preparing launch".to_string(),
+        failure: None,
+        frame: 0,
+    }
 }
 
 impl LaunchProgress {
@@ -171,40 +246,32 @@ impl LaunchProgress {
         no_tui: bool,
         no_motion: bool,
     ) -> anyhow::Result<Self> {
+        let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
         let renderer = if rich_terminal_supported() && !no_tui {
-            Renderer::Rich(Box::new(RichRenderer::enter(no_motion)?))
+            let rich = RichRenderer::enter(no_motion)?;
+            Renderer::Rich(RichDriver::spawn(
+                rich,
+                view.clone(),
+                diagnostics.run_id().to_string(),
+            ))
         } else {
             Renderer::Compact {
                 interactive: std::io::stderr().is_terminal(),
             }
         };
-        Ok(Self::with_renderer(diagnostics, renderer))
+        Ok(Self {
+            diagnostics,
+            renderer,
+            view,
+        })
     }
 
     #[cfg(test)]
     pub fn for_test(diagnostics: Arc<RunDiagnostics>) -> Self {
-        Self::with_renderer(diagnostics, Renderer::Test)
-    }
-
-    fn with_renderer(diagnostics: Arc<RunDiagnostics>, renderer: Renderer) -> Self {
-        let stages = LaunchStage::ALL
-            .into_iter()
-            .map(|stage| StageView {
-                stage,
-                status: StageStatus::Queued,
-                detail: "queued".to_string(),
-            })
-            .collect();
         Self {
             diagnostics,
-            renderer,
-            view: LaunchView {
-                identity: None,
-                stages,
-                status: "preparing launch".to_string(),
-                failure: None,
-                frame: 0,
-            },
+            renderer: Renderer::Test,
+            view: Arc::new(std::sync::Mutex::new(initial_view())),
         }
     }
 
@@ -212,70 +279,80 @@ impl LaunchProgress {
         self.diagnostics.run_id()
     }
 
+    /// Mutate the shared view; the background render task redraws it on its next
+    /// tick (≤33ms), so callers never block on drawing.
+    fn with_view(&self, f: impl FnOnce(&mut LaunchView)) {
+        if let Ok(mut view) = self.view.lock() {
+            f(&mut view);
+        }
+    }
+
     pub fn started(&mut self, identity: LaunchIdentity) {
-        self.view.status = format!(
-            "loading {} {}",
-            identity.role,
-            identity.target_kind.launch_preposition()
-        );
-        self.view.identity = Some(identity);
+        let preposition = identity.target_kind.launch_preposition();
+        self.with_view(|v| {
+            v.status = format!("loading {} {preposition}", identity.role);
+            v.identity = Some(identity);
+        });
         self.diagnostics.compact(
             "launch_started",
             &format!("diagnostics: run {}", self.run_id()),
         );
-        self.render();
     }
 
     pub fn update_identity(&mut self, identity: LaunchIdentity) {
-        self.view.identity = Some(identity);
-        self.render();
+        self.with_view(|v| v.identity = Some(identity));
     }
 
     pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
         let detail = detail.into();
-        self.update_stage(stage, StageStatus::Running, &detail);
-        self.view.status.clone_from(&detail);
+        self.with_view(|v| {
+            update_stage(v, stage, StageStatus::Running, &detail);
+            v.status.clone_from(&detail);
+        });
         self.diagnostics
             .stage("stage_started", stage.label(), &detail, None);
-        self.render_or_line(stage, StageStatus::Running, &detail);
+        self.compact_line(stage, StageStatus::Running, &detail);
     }
 
     pub fn stage_progress(&mut self, stage: LaunchStage, detail: impl Into<String>) {
         let detail = detail.into();
-        self.update_stage(stage, StageStatus::Running, &detail);
-        self.view.status.clone_from(&detail);
+        self.with_view(|v| {
+            update_stage(v, stage, StageStatus::Running, &detail);
+            v.status.clone_from(&detail);
+        });
         self.diagnostics
             .stage("stage_progress", stage.label(), &detail, None);
-        self.render();
     }
 
     pub fn stage_done(&mut self, stage: LaunchStage, detail: impl Into<String>) {
         let detail = detail.into();
-        self.update_stage(stage, StageStatus::Done, &detail);
+        self.with_view(|v| update_stage(v, stage, StageStatus::Done, &detail));
         self.diagnostics
             .stage("stage_done", stage.label(), &detail, None);
-        self.render_or_line(stage, StageStatus::Done, &detail);
+        self.compact_line(stage, StageStatus::Done, &detail);
     }
 
     pub fn stage_skipped(&mut self, stage: LaunchStage, reason: impl Into<String>) {
         let reason = reason.into();
-        self.update_stage(stage, StageStatus::Skipped, &reason);
+        self.with_view(|v| update_stage(v, stage, StageStatus::Skipped, &reason));
         self.diagnostics
             .stage("stage_skipped", stage.label(), &reason, None);
-        self.render_or_line(stage, StageStatus::Skipped, &reason);
+        self.compact_line(stage, StageStatus::Skipped, &reason);
     }
 
     pub fn stage_failed(&mut self, failure: LaunchFailure) {
-        self.update_stage(failure.stage, StageStatus::Failed, &failure.summary);
-        self.view.status.clone_from(&failure.summary);
-        self.diagnostics.stage(
-            "stage_failed",
-            failure.stage.label(),
-            &failure.summary,
-            failure.next_step.as_deref(),
-        );
-        self.view.failure = Some(failure);
-        self.render();
+        let stage = failure.stage;
+        let summary = failure.summary.clone();
+        let next_step = failure.next_step.clone();
+        self.with_view(|v| {
+            update_stage(v, stage, StageStatus::Failed, &summary);
+            v.status.clone_from(&summary);
+            v.failure = Some(failure);
+        });
+        self.diagnostics
+            .stage("stage_failed", stage.label(), &summary, next_step.as_deref());
+        // The render task draws the failure popup; wait for the operator to
+        // acknowledge it on a rich terminal.
         if matches!(self.renderer, Renderer::Rich(_)) && std::io::stdin().is_terminal() {
             let mut line = String::new();
             let _ = std::io::stdin().read_line(&mut line);
@@ -284,6 +361,41 @@ impl LaunchProgress {
 
     pub fn opening_hardline(&mut self) {
         self.stage_started(LaunchStage::Hardline, "opening hardline");
+    }
+
+    /// Stop the render task and release the rich surface before the interactive
+    /// handoff, so the capsule attach owns the terminal alone. Idempotent;
+    /// no-op for the compact and test renderers.
+    pub fn finish(&mut self) {
+        use std::sync::atomic::Ordering;
+        if let Renderer::Rich(driver) = &mut self.renderer {
+            // Signal the task to stop drawing; it exits on its next tick and
+            // drops its renderer (any stray final frame is wiped by the
+            // capsule's clear-on-attach). Detach the handle — we do not block.
+            driver.stop.store(true, Ordering::Relaxed);
+            let _ = driver.handle.take();
+            // The interactive attach must inherit the terminal, not be
+            // captured, so clear the rich-surface flag now regardless of when
+            // the task's renderer finally drops.
+            crate::tui::set_rich_surface_active(false);
+            self.renderer = Renderer::Done;
+        }
+    }
+
+    fn compact_line(&self, stage: LaunchStage, status: StageStatus, detail: &str) {
+        if let Renderer::Compact { interactive } = &self.renderer {
+            let marker = status.marker();
+            let label = stage.label();
+            if *interactive {
+                eprintln!("  {marker} {label:<13} {detail}");
+            } else {
+                eprintln!("{label}: {}", status.label());
+                if !detail.is_empty() {
+                    eprintln!("status: {detail}");
+                }
+            }
+            eprintln!("diagnostics: run {}", self.run_id());
+        }
     }
 
     /// Present a forced-choice picker over `items` and return the chosen
@@ -296,80 +408,52 @@ impl LaunchProgress {
         items: Vec<String>,
     ) -> anyhow::Result<Option<usize>> {
         let run_id = self.diagnostics.run_id().to_string();
-        if let Renderer::Rich(renderer) = &mut self.renderer {
-            renderer.select(&self.view, &run_id, title, items).map(Some)
+        if let Renderer::Rich(driver) = &mut self.renderer {
+            // Reclaim the renderer from the render task for the modal picker.
+            // The task try-locks, so it simply skips frames while we hold it.
+            let mut renderer = driver
+                .renderer
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+            let view = self
+                .view
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
+                .clone();
+            renderer.select(&view, &run_id, title, items).map(Some)
         } else {
             Ok(None)
         }
     }
 
-    pub async fn while_waiting<T, E, F>(&mut self, future: F) -> Result<T, E>
+    #[allow(clippy::unused_self)]
+    pub async fn while_waiting<T, E, F>(&self, future: F) -> Result<T, E>
     where
         F: std::future::Future<Output = Result<T, E>>,
     {
-        if !matches!(self.renderer, Renderer::Rich(_)) || self.no_motion() {
-            return future.await;
-        }
-        tokio::pin!(future);
-        // ~20 fps so the digital rain reads as falling, not stuttering. The
-        // draw is interleaved with the awaited future via select, so this
-        // only costs a frame while the future is parked on I/O.
-        let mut interval = tokio::time::interval(Duration::from_millis(50));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            tokio::select! {
-                result = &mut future => return result,
-                _ = interval.tick() => self.tick(),
-            }
-        }
+        // The background render task ticks the cockpit independently, so the
+        // awaited work no longer needs to interleave a draw — just await it.
+        future.await
     }
+}
 
-    fn update_stage(&mut self, stage: LaunchStage, status: StageStatus, detail: &str) {
-        if let Some(row) = self.view.stages.iter_mut().find(|row| row.stage == stage) {
-            row.status = status;
-            row.detail = detail.to_string();
-        }
-    }
-
-    fn render_or_line(&mut self, stage: LaunchStage, status: StageStatus, detail: &str) {
-        match &mut self.renderer {
-            Renderer::Compact { interactive } => {
-                let marker = status.marker();
-                let label = stage.label();
-                if *interactive {
-                    eprintln!("  {marker} {label:<13} {detail}");
-                } else {
-                    eprintln!("{label}: {}", status.label());
-                    if !detail.is_empty() {
-                        eprintln!("status: {detail}");
-                    }
-                }
-                eprintln!("diagnostics: run {}", self.run_id());
-            }
-            Renderer::Rich(_) => self.render(),
-            #[cfg(test)]
-            Renderer::Test => self.render(),
-        }
-    }
-
-    fn render(&mut self) {
-        if let Renderer::Rich(renderer) = &mut self.renderer {
-            let _ = renderer.render(&self.view, self.diagnostics.run_id());
-        }
-    }
-
-    fn tick(&mut self) {
-        self.view.frame = self.view.frame.wrapping_add(1);
-        self.render();
-    }
-
-    const fn no_motion(&self) -> bool {
-        matches!(&self.renderer, Renderer::Rich(renderer) if renderer.no_motion)
+fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, detail: &str) {
+    if let Some(row) = view.stages.iter_mut().find(|row| row.stage == stage) {
+        row.status = status;
+        row.detail = detail.to_string();
     }
 }
 
 impl Drop for LaunchProgress {
     fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        // Dropped without an explicit finish (e.g. an error path): stop the
+        // render task. Its renderer drops when the task exits, restoring the
+        // terminal — the host-screen guard is the ultimate safety net.
+        if let Renderer::Rich(driver) = &self.renderer {
+            driver.stop.store(true, Ordering::Relaxed);
+        }
+        // Non-rich launches print the run-id trailer on completion.
         if matches!(self.renderer, Renderer::Compact { .. }) {
             eprintln!("diagnostics: run {}", self.run_id());
         }

@@ -192,11 +192,14 @@ impl StepCounter {
         self.progress.as_mut()
     }
 
-    /// Tear down the rich loading surface (drops the renderer →
-    /// `LeaveAlternateScreen` + clears `rich_surface_active`). Call this
-    /// before handing the terminal to an interactive `docker exec -it`
-    /// session, otherwise the capsule attach can't own the PTY and hangs.
+    /// Stop the rich loading surface's render task and clear
+    /// `rich_surface_active`. Call this before handing the terminal to an
+    /// interactive `docker exec -it` session, otherwise the capsule attach
+    /// can't own the PTY and hangs.
     fn finish_progress(&mut self) {
+        if let Some(progress) = self.progress.as_mut() {
+            progress.finish();
+        }
         self.progress = None;
     }
 }
