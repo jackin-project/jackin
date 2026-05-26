@@ -394,7 +394,12 @@ impl RichRenderer {
         }
         stdout.execute(crossterm::cursor::Hide)?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
-        let terminal = ratatui::Terminal::new(backend)?;
+        let mut terminal = ratatui::Terminal::new(backend)?;
+        // Wipe whatever the previous surface left on the screen and force a full
+        // first redraw. Under the host guard we skipped EnterAlternateScreen
+        // (which would have cleared), so the console's last frame is still on
+        // the inherited screen — clear it or the cockpit renders over it.
+        terminal.clear().context("clearing launch screen")?;
         // Ancillary status printers (spinners) go silent while this surface
         // owns the alternate screen.
         crate::tui::set_rich_surface_active(true);

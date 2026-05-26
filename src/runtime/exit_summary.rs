@@ -178,6 +178,10 @@ async fn show_rich(exited: &str, groups: &[ExitGroup]) -> anyhow::Result<()> {
     crate::tui::set_rich_surface_active(true);
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
+    // Under the host guard we skipped EnterAlternateScreen, so the capsule's
+    // last frame is still on the inherited screen; clear it and force a full
+    // redraw before drawing the summary.
+    terminal.clear()?;
     // Consume the CompletedFrame immediately (map to ()) so it does not hold
     // a borrow of `terminal` across the teardown below.
     let drawn: anyhow::Result<()> = terminal
