@@ -1175,10 +1175,10 @@ pub(super) fn handle_editor_modal(
             use crate::console::widgets::source_picker::SourceChoice;
             let outcome = source.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
-            // sets `generating_token_target` (and clears
-            // `pending_auth_form_return`), so the generate branch is
-            // reachable only on that path and the provide arms below stay
-            // untouched.
+            // sets `generating_token_target` (and stashes the form into
+            // `pending_auth_form_return` for the post-mint re-mount), so
+            // the generate branch is reachable only on that path and the
+            // provide arms below stay untouched.
             if editor.generating_token_target.is_some() {
                 match outcome {
                     ModalOutcome::Commit(SourceChoice::Plain) => {
@@ -1187,9 +1187,13 @@ pub(super) fn handle_editor_modal(
                     ModalOutcome::Commit(SourceChoice::Op) => {
                         open_create_op_picker_for_generate(editor, op_cache);
                     }
+                    // Cancel before minting: restore the stashed form so
+                    // the operator lands back on the Edit-auth dialog
+                    // unchanged (matches the provide-path source-picker
+                    // cancel below).
                     ModalOutcome::Cancel => {
                         editor.generating_token_target = None;
-                        editor.clear_modal_chain();
+                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
                     }
                     ModalOutcome::Continue => {}
                 }
@@ -1363,15 +1367,17 @@ fn generate_scope_for_target(
 }
 
 /// Plain-text generate branch from the source picker: queue a
-/// [`PendingTokenGenerate`] that mints the token and stores it as a
-/// literal in config (no `OpPicker`, no storage-location drill-down).
+/// [`PendingTokenGenerate`] that mints the token. The minted literal is
+/// staged into the stashed auth form (via the re-mount the loop runs on
+/// completion) and persisted only when the operator Saves — the form
+/// stash in `pending_auth_form_return` survives `clear_modal_chain`.
 fn start_plain_token_generate(editor: &mut EditorState<'_>) {
     let Some(target) = editor.generating_token_target.take() else {
-        editor.clear_modal_chain();
+        super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
     };
     let Some(scope) = generate_scope_for_target(editor, &target) else {
-        editor.clear_modal_chain();
+        super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
     };
     editor.pending_token_generate = Some(crate::console::manager::state::PendingTokenGenerate {
@@ -1393,7 +1399,7 @@ fn open_create_op_picker_for_generate(
 ) {
     let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
         editor.generating_token_target = None;
-        editor.clear_modal_chain();
+        super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
     };
     let workspace_name = name.clone();
@@ -1423,7 +1429,7 @@ fn handle_token_generate_pick(
     use crate::workspace::token_setup::{EditExistingTarget, TokenSetupArgs};
 
     let Some(scope) = generate_scope_for_target(editor, &target) else {
-        editor.clear_modal_chain();
+        super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
     };
 
@@ -1471,10 +1477,10 @@ fn handle_token_generate_pick(
             editor.generating_token_target = Some(target);
             return;
         }
-        // `Existing` is unreachable in Create mode; a Cancel pops the
-        // chain. Both just close without minting.
+        // `Existing` is unreachable in Create mode; a Cancel restores
+        // the stashed form. Both just close without minting.
         ModalOutcome::Commit(OpPickerSelection::Existing(_)) | ModalOutcome::Cancel => {
-            editor.clear_modal_chain();
+            super::auth::restore_auth_form_after_op_picker_cancel(editor);
             return;
         }
     };

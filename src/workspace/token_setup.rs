@@ -192,28 +192,79 @@ pub fn run_setup(
     )
 }
 
-/// Test-injectable variant. Takes:
-/// - a pre-resolved Claude CLI probe (skips re-running `claude --version`);
-///   `None` on the `--reuse` path because no token capture happens,
-/// - a closure that returns the captured token (`capture_setup_token`
-///   in production; a fixture in tests),
-/// - an [`OpRunner`] for read-back validation, and
-/// - an [`OpWriteRunner`] for the actual create.
+/// Production entry the TUI calls to mint a Claude OAuth token (or
+/// adopt a reuse reference) and return the wired [`EnvValue`] WITHOUT
+/// writing any jackin config.
 ///
-/// The orchestrator's mutation path is gated behind these injection
-/// seams so the unit tests in this module never spawn `op` or
-/// `claude`.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-pub fn run_setup_with_runner<F>(
+/// The op item create + post-write validation still run, and the
+/// expiry stamp is still written; only the `[claude]` / `[env]` config
+/// edit is skipped. The TUI stages the wiring into the open auth form
+/// and persists it when the operator Saves, mirroring the provide
+/// path. The CLI keeps using [`run_setup`] (full mint + persist)
+/// because it has no form to return to.
+pub fn mint_token_value(
     paths: &JackinPaths,
-    config: &mut AppConfig,
+    config: &AppConfig,
+    scope: &TokenSetupScope,
+    args: &TokenSetupArgs,
+) -> anyhow::Result<EnvValue> {
+    let op_cli = op_cli_for_scope(config, scope, args.account.as_deref());
+    let probe = if args.reuse.is_some() {
+        None
+    } else {
+        Some(host_claude::probe_claude_cli()?)
+    };
+    let outcome = mint_token_value_with_runner(
+        paths,
+        config,
+        scope,
+        args,
+        probe.as_ref(),
+        host_claude::capture_setup_token,
+        &op_cli,
+        &op_cli,
+    )?;
+    Ok(outcome.env_value)
+}
+
+/// The mint-only result: the wired [`EnvValue`] plus the metadata
+/// [`run_setup_with_runner`] folds into a [`TokenSetupReport`].
+struct MintOutcome {
+    wired: WiredValue,
+    env_value: EnvValue,
+    token_sha256_prefix: String,
+    created: bool,
+}
+
+/// Mint + validate (and stamp expiry) WITHOUT persisting jackin config.
+///
+/// Everything-up-to-validation logic split out of
+/// [`run_setup_with_runner`] so the TUI can mint and obtain the wired
+/// [`EnvValue`] (an `OpRef` for the op paths, a `Plain` literal for
+/// `--plain`) without writing config — the form Save handles
+/// persistence on the TUI generate path. [`run_setup_with_runner`]
+/// calls this then does the config edit, so there is no duplication.
+///
+/// The op-item create + post-write read-back validation live here (that
+/// safety is not tied to the config persist): a vault-routing surprise
+/// must never leave a wired-but-broken slot. The expiry stamp is
+/// written here too (the token was minted; issuance is known) — a
+/// harmless cache even if the operator later cancels the Save.
+///
+/// Takes the same injection seams as [`run_setup_with_runner`]: a
+/// pre-resolved Claude probe (`None` on `--reuse`), a capture closure,
+/// an [`OpRunner`] for read-back, and an [`OpWriteRunner`] for create.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn mint_token_value_with_runner<F>(
+    paths: &JackinPaths,
+    config: &AppConfig,
     scope: &TokenSetupScope,
     args: &TokenSetupArgs,
     probe: Option<&host_claude::ClaudeProbe>,
     capture: F,
     op_reader: &dyn OpRunner,
     op_writer: &dyn OpWriteRunner,
-) -> anyhow::Result<TokenSetupReport>
+) -> anyhow::Result<MintOutcome>
 where
     F: FnOnce() -> anyhow::Result<secrecy::SecretString>,
 {
@@ -313,12 +364,78 @@ where
         }
     }
 
-    // Single derivation of the env value persisted in every scope arm:
+    // Single derivation of the env value wired into every scope arm:
     // op reference for the op paths, literal token for plain-text.
     let env_value = match &wired {
         WiredValue::Op(op_ref) => EnvValue::OpRef(op_ref.clone()),
         WiredValue::Plain(secret) => EnvValue::Plain(secret.expose_secret().to_string()),
     };
+
+    // Stamp the expiry estimate into the local cache so the launch
+    // diagnostic can render an `expires in N days` banner without
+    // re-reading the 1P item's `notesPlain`. Only do this on the
+    // `created` path — for `--reuse` we did not mint the token, so
+    // the issuance date is unknown and any stamp would mislead. If
+    // the cache write fails (filesystem full / permission), the
+    // operator is told.
+    //
+    // The expiry stamp is keyed per workspace; the launch banner that
+    // reads it is per-workspace too, so the `Global` scope has no
+    // banner to feed and skips the stamp entirely.
+    if let (true, Some(workspace)) = (created, scope.workspace()) {
+        let expiry = upstream_expiry_stamp();
+        if let Err(e) = write_expiry_stamp(paths, workspace, &expiry) {
+            eprintln!(
+                "[jackin] note: token stored, but expiry banner cache \
+                 write failed: {e} — launch banner will not show 'expires in N days' \
+                 for this workspace until the next setup."
+            );
+        }
+    }
+
+    Ok(MintOutcome {
+        wired,
+        env_value,
+        token_sha256_prefix,
+        created,
+    })
+}
+
+/// Test-injectable variant of the full CLI path: mint + validate (via
+/// [`mint_token_value_with_runner`]) then persist the `[claude]` /
+/// `[env]` config edit. Takes:
+/// - a pre-resolved Claude CLI probe (skips re-running `claude --version`);
+///   `None` on the `--reuse` path because no token capture happens,
+/// - a closure that returns the captured token (`capture_setup_token`
+///   in production; a fixture in tests),
+/// - an [`OpRunner`] for read-back validation, and
+/// - an [`OpWriteRunner`] for the actual create.
+///
+/// The orchestrator's mutation path is gated behind these injection
+/// seams so the unit tests in this module never spawn `op` or
+/// `claude`.
+#[allow(clippy::too_many_arguments)]
+pub fn run_setup_with_runner<F>(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    scope: &TokenSetupScope,
+    args: &TokenSetupArgs,
+    probe: Option<&host_claude::ClaudeProbe>,
+    capture: F,
+    op_reader: &dyn OpRunner,
+    op_writer: &dyn OpWriteRunner,
+) -> anyhow::Result<TokenSetupReport>
+where
+    F: FnOnce() -> anyhow::Result<secrecy::SecretString>,
+{
+    let MintOutcome {
+        wired,
+        env_value,
+        token_sha256_prefix,
+        created,
+    } = mint_token_value_with_runner(
+        paths, config, scope, args, probe, capture, op_reader, op_writer,
+    )?;
 
     // Persist the config last: a partial failure earlier must never
     // leave a wired-but-broken slot.
@@ -369,33 +486,17 @@ where
         TokenSetupScope::Global => args.account.clone(),
     };
 
-    // Stamp the expiry estimate into the local cache so the launch
-    // diagnostic can render an `expires in N days` banner without
-    // re-reading the 1P item's `notesPlain`. Only do this on the
-    // `created` path — for `--reuse` we did not mint the token, so
-    // the issuance date is unknown and any stamp would mislead. If
-    // the cache write fails (filesystem full / permission), the
-    // operator is told and the report's `expiry_estimate` is set to
-    // `None` so it matches what the launch banner will see.
-    //
-    // The expiry stamp is keyed per workspace; the launch banner that
-    // reads it is per-workspace too, so the `Global` scope has no
-    // banner to feed and skips the stamp entirely.
+    // The expiry stamp landed inside `mint_token_value_with_runner`;
+    // re-derive the report's estimate from the on-disk cache so a
+    // write failure (which the mint path already warned about) is
+    // reflected as `None` here too, matching what the launch banner
+    // will read. Only the `created` + workspace-scoped path has a
+    // stamp to read back.
     let expiry_estimate = match (created, scope.workspace()) {
-        (true, Some(workspace)) => {
-            let expiry = upstream_expiry_stamp();
-            match write_expiry_stamp(paths, workspace, &expiry) {
-                Ok(()) => Some(expiry),
-                Err(e) => {
-                    eprintln!(
-                        "[jackin] note: token stored, but expiry banner cache \
-                         write failed: {e} — launch banner will not show 'expires in N days' \
-                         for this workspace until the next setup."
-                    );
-                    None
-                }
-            }
-        }
+        (true, Some(workspace)) => std::fs::read_to_string(expiry_cache_path(paths, workspace))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
         _ => None,
     };
 

@@ -393,28 +393,6 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
     out.flush()
 }
 
-/// Read the canonical `CLAUDE_CODE_OAUTH_TOKEN` value `run_setup` just
-/// wrote at `scope`, so the editor working copy mirrors whatever was
-/// persisted (an `OpRef` for the op paths, a `Plain` literal for
-/// `--plain`) without re-deriving it from the report.
-fn wired_token_value(
-    config: &AppConfig,
-    scope: &crate::workspace::token_setup::TokenSetupScope,
-) -> Option<crate::operator_env::EnvValue> {
-    use crate::workspace::token_setup::TokenSetupScope;
-    let key = crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV;
-    match scope {
-        TokenSetupScope::Workspace(ws) => config.workspaces.get(ws).and_then(|w| w.env.get(key)),
-        TokenSetupScope::WorkspaceRole { workspace, role } => config
-            .workspaces
-            .get(workspace)
-            .and_then(|w| w.roles.get(role))
-            .and_then(|r| r.env.get(key)),
-        TokenSetupScope::Global => config.env.get(key),
-    }
-    .cloned()
-}
-
 /// Hand the real terminal back to a child process: leave raw-mode +
 /// alt-screen and stop debug buffering, mirroring `TerminalGuard::drop`
 /// minus the input drain (the child reads stdin directly). Paired with
@@ -768,68 +746,54 @@ pub async fn run_console(
                 "\nGenerating Claude OAuth token for {label} — complete the browser \
                  sign-in, then paste the code below.\n",
             );
-            let mint =
-                crate::workspace::token_setup::run_setup(paths, &mut config, &req.scope, &req.args);
+            // Mint without persisting: the op item is created / the
+            // literal is captured and validated, but jackin config is NOT
+            // written here. The minted value is staged into the stashed
+            // auth form (re-mounted below) and persisted only when the
+            // operator Saves — mirroring the provide path's "pick a value
+            // → form re-mounts with the credential, focus Save → Save".
+            let mint = crate::workspace::token_setup::mint_token_value(
+                paths, &config, &req.scope, &req.args,
+            );
             let _ = resume_console_terminal(&mut out);
             // Force a full redraw next frame so leftover child output is
             // cleared before the TUI repaints.
             let _ = terminal.clear();
             match mint {
-                // The wired credential is read back from `config` below
-                // (it lands there uniformly for op and plain), so the
-                // report itself is not needed on the Ok path.
-                Ok(_report) => {
+                Ok(env_value) => {
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         match &mut ms.stage {
-                            // Sync the editor's working copy so the Auth tab
-                            // reflects the freshly-wired credential without a
-                            // reopen. `run_setup` already persisted to disk,
-                            // so mirror both pending + original to leave no
-                            // diff. The populated Auth row is the operator's
-                            // confirmation.
-                            ManagerStage::Editor(ed) => {
-                                let claude = crate::config::AgentAuthConfig {
-                                    auth_forward: crate::config::AuthForwardMode::OAuthToken,
-                                };
-                                let key = crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string();
-                                // Read the wired value back from the now-
-                                // persisted config so op and plain-text land
-                                // identically — `run_setup` already wrote the
-                                // EnvValue (OpRef or Plain) at this scope. A
-                                // missing slot leaves the working copy
-                                // untouched (it should always be present on Ok).
-                                if let Some(val) = wired_token_value(&config, &req.scope) {
-                                    if let crate::workspace::token_setup::TokenSetupScope::WorkspaceRole {
-                                        role,
-                                        ..
-                                    } = &req.scope
-                                    {
-                                        let p = ed.pending.roles.entry(role.clone()).or_default();
-                                        p.claude = Some(claude.clone());
-                                        p.env.insert(key.clone(), val.clone());
-                                        let o = ed.original.roles.entry(role.clone()).or_default();
-                                        o.claude = Some(claude);
-                                        o.env.insert(key, val);
-                                    } else {
-                                        ed.pending.claude = Some(claude.clone());
-                                        ed.original.claude = Some(claude);
-                                        ed.pending.env.insert(key.clone(), val.clone());
-                                        ed.original.env.insert(key, val);
-                                    }
-                                }
-                            }
-                            // Rebuild the settings Auth view from the now-
-                            // persisted config so the Claude row shows
-                            // oauth_token + the op ref. Only `auth` is
-                            // rebuilt: an in-flight Auth-tab edit would be
-                            // for the same row the operator just minted, and
-                            // other tabs' unsaved drafts are preserved.
-                            ManagerStage::Settings(s) => {
-                                s.auth =
-                                    crate::console::manager::state::SettingsAuthState::from_config(
-                                        &config,
+                            // Re-mount the stashed auth form with the minted
+                            // credential applied (op vs. plain), focus Save —
+                            // the same helpers the provide path uses. The
+                            // operator's Save then runs the normal
+                            // persist_form → editor save that writes config.
+                            ManagerStage::Editor(ed) => match env_value {
+                                crate::operator_env::EnvValue::OpRef(op_ref) => {
+                                    crate::console::manager::input::auth::apply_op_picker_to_auth_form(
+                                        ed, op_ref,
                                     );
-                            }
+                                }
+                                crate::operator_env::EnvValue::Plain(value) => {
+                                    crate::console::manager::input::auth::apply_plain_text_to_auth_form(
+                                        ed, &value,
+                                    );
+                                }
+                            },
+                            // Settings (global Claude) re-mounts via its own
+                            // equivalents on the stashed settings auth form.
+                            ManagerStage::Settings(s) => match env_value {
+                                crate::operator_env::EnvValue::OpRef(op_ref) => {
+                                    crate::console::manager::input::apply_op_picker_to_settings_auth_form(
+                                        &mut s.auth, op_ref,
+                                    );
+                                }
+                                crate::operator_env::EnvValue::Plain(value) => {
+                                    crate::console::manager::input::apply_plain_text_to_settings_auth_form(
+                                        &mut s.auth, &value,
+                                    );
+                                }
+                            },
                             _ => {}
                         }
                     }

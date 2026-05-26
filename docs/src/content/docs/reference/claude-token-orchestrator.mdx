@@ -138,6 +138,10 @@ Once validation has succeeded, the orchestrator opens a `ConfigEditor` and appli
 
 The editor is opened **after** validation succeeds. A failure between item-create and editor-open leaves the 1P item live but no config wired; re-running `setup` is safe because validation re-creates a fresh item rather than mutating the orphan.
 
+### Mint without persist (console generate path)
+
+Everything up to and including validation — capture, item create, post-write read-back, and the expiry stamp — lives in `mint_token_value_with_runner`, which returns the wired `EnvValue` (an `OpRef` for the op paths, a `Plain` literal for `--plain`) **without** opening `ConfigEditor`. `run_setup_with_runner` calls it and then does the persist block above, so the CLI path is mint + persist in one step. The console `G` generate flow instead calls the production `mint_token_value` entry, which mints + validates but writes no config: the minted value is staged into the open Edit-auth dialog (re-mounted with focus on Save by the same helpers the *provide* flow uses) and persisted only when the operator Saves through the editor's normal save path. The op-item create and read-back validation deliberately live in the mint-only function — that safety is not tied to the config write — and the expiry stamp is written there too (the token was minted, so issuance is known; the stamp is a harmless cache even if the operator later cancels the Save).
+
 The CLI's `config env unset` and the TUI's auth panel both refuse to delete `CLAUDE_CODE_OAUTH_TOKEN` while `auth_forward = "oauth_token"` is active; the only supported clear path is `jackin workspace claude-token revoke`, which switches both keys atomically.
 
 ## OAuthToken provisioning inside the container
@@ -198,7 +202,8 @@ Every entry point that talks to the world (`claude setup-token`, `op`, the host 
 
 | Entry point   | `_with_runner` variant         | Injected dependencies |
 |---|---|---|
-| `run_setup`   | `run_setup_with_runner`        | `Option<&ClaudeProbe>`, capture closure, `&dyn OpRunner`, `&dyn OpWriteRunner` |
+| `run_setup` (CLI: mint + persist)   | `run_setup_with_runner`        | `Option<&ClaudeProbe>`, capture closure, `&dyn OpRunner`, `&dyn OpWriteRunner` |
+| `mint_token_value` (console: mint only) | `mint_token_value_with_runner` | `Option<&ClaudeProbe>`, capture closure, `&dyn OpRunner`, `&dyn OpWriteRunner` |
 | `run_revoke`  | `run_revoke_with_runner`       | `&dyn OpWriteRunner` |
 | `run_doctor`  | `run_doctor_with_runner`       | `&dyn OpRunner` |
 | `delete_prior_op_item` (rotate cleanup) | `delete_prior_op_item_with_runner` | `&dyn OpWriteRunner` |

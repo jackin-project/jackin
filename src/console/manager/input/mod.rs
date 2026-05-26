@@ -19,6 +19,13 @@ use crate::paths::JackinPaths;
 
 pub use mouse::{handle_mouse, handle_mouse_with_config};
 
+// Re-exported for the `run_console` token-generate loop, which re-mounts
+// the settings auth form after a mint (the `global_mounts` module is
+// `pub(super)`, so the loop reaches the helpers through this seam).
+pub(in crate::console) use global_mounts::{
+    apply_op_picker_to_settings_auth_form, apply_plain_text_to_settings_auth_form,
+};
+
 #[derive(Debug)]
 pub enum InputOutcome {
     /// Stay in the manager.
@@ -157,6 +164,14 @@ pub fn handle_key(
         });
         if dismiss {
             settings.error_popup = None;
+            // A token-generate mint failure surfaces through this popup
+            // while the auth form is stashed in `pending_auth_form_return`
+            // (the `g`/`G` trigger detached it). Restore it on dismiss so
+            // the operator lands back on the Edit-auth dialog, parallel to
+            // the editor's `Modal::ErrorPopup` recovery.
+            if settings.auth.pending_auth_form_return.is_some() {
+                global_mounts::restore_settings_auth_form_after_error(&mut settings.auth);
+            }
         }
         return Ok(InputOutcome::Continue);
     }
