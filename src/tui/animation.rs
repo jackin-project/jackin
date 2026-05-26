@@ -129,7 +129,7 @@ pub(crate) fn random_char(seed: &mut u64) -> char {
     RAIN_CHARS[(xorshift(seed) as usize) % RAIN_CHARS.len()] as char
 }
 
-const REVEAL_BANNER: &[&str] = &[
+pub(crate) const REVEAL_BANNER: &[&str] = &[
     "\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2577}  \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502}",
     "\u{2502} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2575} \u{2577} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2502}\u{2575}\u{2502}",
     "\u{2575}  \u{2575} \u{2575} \u{2575}  \u{2502}  \u{2575} \u{2575} \u{2575} \u{2575} \u{2575}",

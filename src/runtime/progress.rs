@@ -580,7 +580,80 @@ fn render_body(
         .constraints([Constraint::Min(0), Constraint::Length(2)])
         .split(inner);
     render_rain(frame, parts[0], rain);
+    render_logo_and_standup(frame, parts[0], view, frozen);
     render_progress(frame, parts[1], view, frozen);
+}
+
+/// Matrix-flavored lines cycled beneath the logo while the operator waits — the
+/// container load can take a while, so this gives the screen a pulse.
+const STANDUP_LINES: &[&str] = &[
+    "Wake up, operator.",
+    "The Construct is loading.",
+    "Follow the green.",
+    "Free your mind.",
+    "They're already inside.",
+    "Stand up.",
+];
+/// Frames per standup line (~2s at the 50ms render tick).
+const STANDUP_PERIOD: usize = 40;
+
+/// Overlay the persistent jackin' logo (centered, never moving) and a rotating
+/// standup line over the rain. The logo sits on a cleared patch so the rain
+/// does not bleed through its gaps; the rain still falls around it.
+fn render_logo_and_standup(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+    let logo = crate::tui::animation::REVEAL_BANNER;
+    let logo_w = u16::try_from(logo.iter().map(|l| l.chars().count()).max().unwrap_or(0))
+        .unwrap_or(0);
+    let logo_h = u16::try_from(logo.len()).unwrap_or(0);
+    // Need room for the logo plus a blank row and the standup line beneath it.
+    if area.width < logo_w || area.height < logo_h + 2 {
+        return;
+    }
+    let top = area.y + area.height.saturating_sub(logo_h + 2) / 2;
+    let left = area.x + area.width.saturating_sub(logo_w) / 2;
+    let logo_rect = Rect {
+        x: left,
+        y: top,
+        width: logo_w,
+        height: logo_h,
+    };
+    frame.render_widget(Clear, logo_rect);
+    let logo_lines: Vec<Line<'static>> = logo
+        .iter()
+        .map(|l| {
+            Line::from(Span::styled(
+                (*l).to_string(),
+                Style::default().fg(PHOSPHOR_GREEN),
+            ))
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(logo_lines), logo_rect);
+
+    // Rotating standup line, centered two rows below the logo.
+    let idx = if frozen {
+        0
+    } else {
+        (view.frame / STANDUP_PERIOD) % STANDUP_LINES.len()
+    };
+    let msg = STANDUP_LINES[idx];
+    let msg_w = u16::try_from(msg.chars().count()).unwrap_or(0);
+    let msg_row = top + logo_h + 1;
+    if msg_w <= area.width && msg_row < area.y + area.height {
+        let msg_rect = Rect {
+            x: area.x + area.width.saturating_sub(msg_w) / 2,
+            y: msg_row,
+            width: msg_w,
+            height: 1,
+        };
+        frame.render_widget(Clear, msg_rect);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                msg.to_string(),
+                Style::default().fg(PHOSPHOR_DIM),
+            ))),
+            msg_rect,
+        );
+    }
 }
 
 /// Dim, non-green rain palette for the loading cockpit: a recessive steel-blue
