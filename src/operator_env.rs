@@ -878,6 +878,15 @@ fn run_op_json(
     })
 }
 
+/// Append `--account <id>` to an `op` argument vector when an account is
+/// pinned, so every subcommand builder emits the flag identically.
+fn push_account_arg<'a>(args: &mut Vec<&'a str>, account: Option<&'a str>) {
+    if let Some(id) = account {
+        args.push("--account");
+        args.push(id);
+    }
+}
+
 impl OpStructRunner for OpCli {
     fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
         let bytes = run_op_json(
@@ -892,10 +901,7 @@ impl OpStructRunner for OpCli {
 
     fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
         let mut args: Vec<&str> = vec!["vault", "list"];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let raw: Vec<RawOpVault> = serde_json::from_slice(&bytes)
@@ -905,10 +911,7 @@ impl OpStructRunner for OpCli {
 
     fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
         let mut args: Vec<&str> = vec!["item", "list", "--vault", vault_id];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let raw: Vec<RawOpItem> = serde_json::from_slice(&bytes)
@@ -923,10 +926,7 @@ impl OpStructRunner for OpCli {
         account: Option<&str>,
     ) -> anyhow::Result<Vec<OpField>> {
         let mut args: Vec<&str> = vec!["item", "get", item_id, "--vault", vault_id];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let detail: RawOpItemDetail = serde_json::from_slice(&bytes)
@@ -1333,10 +1333,7 @@ impl OpWriteRunner for OpCli {
         // sets the account on the call itself.
         let effective_account = account.or(self.account.as_deref());
         let mut args: Vec<&str> = Vec::new();
-        if let Some(acc) = effective_account {
-            args.push("--account");
-            args.push(acc);
-        }
+        push_account_arg(&mut args, effective_account);
         args.extend_from_slice(&["item", "delete", item_id, "--vault", vault_id]);
         let _ = run_op_with_timeout(&self.binary, &args, self.timeout)?;
         Ok(())
@@ -1350,10 +1347,7 @@ impl OpWriteRunner for OpCli {
     ) -> anyhow::Result<Vec<String>> {
         let effective_account = account.or(self.account.as_deref());
         let mut args: Vec<&str> = Vec::new();
-        if let Some(acc) = effective_account {
-            args.push("--account");
-            args.push(acc);
-        }
+        push_account_arg(&mut args, effective_account);
         args.extend_from_slice(&[
             "item", "get", item_id, "--vault", vault_id, "--format", "json",
         ]);
@@ -1386,10 +1380,7 @@ impl OpWriteRunner for OpCli {
         // Step 1: fetch the full item JSON so we can modify one field
         // while preserving all other fields and metadata.
         let mut get_args: Vec<&str> = Vec::new();
-        if let Some(acc) = self.account.as_deref() {
-            get_args.push("--account");
-            get_args.push(acc);
-        }
+        push_account_arg(&mut get_args, self.account.as_deref());
         get_args.extend_from_slice(&[
             "item", "get", item_id, "--vault", vault_id, "--format", "json",
         ]);

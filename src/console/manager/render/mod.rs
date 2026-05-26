@@ -118,7 +118,7 @@ pub fn render(
 
         let footer_items: Vec<HintSpan<'static>> = match &state.stage {
             ManagerStage::List => {
-                if state.inline_agent_picker.is_some() {
+                let picker_footer = || {
                     let mut items = vec![
                         HintSpan::Key("\u{2191}\u{2193}"),
                         HintSpan::Sep,
@@ -134,21 +134,13 @@ pub fn render(
                         items.push(HintSpan::Text("scroll block"));
                     }
                     items
+                };
+                if state.inline_agent_picker.is_some() {
+                    picker_footer()
                 } else if state.inline_role_picker.is_some() {
-                    let mut items = vec![
-                        HintSpan::Key("\u{2191}\u{2193}"),
-                        HintSpan::Sep,
-                        HintSpan::Key("Enter"),
-                        HintSpan::Text("launch"),
-                        HintSpan::GroupSep,
-                        HintSpan::Key("Esc"),
-                        HintSpan::Text("return to workspaces"),
-                    ];
-                    if state.list_scroll_focus.is_some() {
-                        items.push(HintSpan::GroupSep);
-                        items.push(HintSpan::Key("←/→"));
-                        items.push(HintSpan::Text("scroll block"));
-                    }
+                    // The role picker can quit the app; the agent picker is
+                    // reached mid-flow and only returns to workspaces.
+                    let mut items = picker_footer();
                     items.push(HintSpan::GroupSep);
                     items.push(HintSpan::Key("Q"));
                     items.push(HintSpan::Text("quit"));

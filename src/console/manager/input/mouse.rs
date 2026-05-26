@@ -261,20 +261,28 @@ fn settings_trust_clickable(
         && point_in(mouse, settings_content_area(term_size))
 }
 
+/// Resolve the active file-browser modal and its state from whichever stage
+/// owns it (editor or create-prelude). Shared by the URL-row hit-test and the
+/// click handler so their modal resolution can't drift out of step.
+fn file_browser_modal_and_state<'a, 'b>(
+    state: &'a ManagerState<'b>,
+) -> Option<(&'a Modal<'b>, &'a FileBrowserState)> {
+    let modal = match &state.stage {
+        ManagerStage::Editor(editor) => editor.modal.as_ref(),
+        ManagerStage::CreatePrelude(prelude) => prelude.modal.as_ref(),
+        _ => return None,
+    }?;
+    match modal {
+        Modal::FileBrowser { state, .. } => Some((modal, state)),
+        _ => None,
+    }
+}
+
 /// Whether the pointer is over a file-browser git-prompt URL row (side-effect
-/// free; does not open the URL). Mirrors `try_open_file_browser_git_url`'s
-/// modal resolution.
+/// free; does not open the URL).
 fn file_browser_url_row_at(state: &ManagerState<'_>, mouse: MouseEvent, term_size: Rect) -> bool {
-    let (modal, fb_state): (&Modal<'_>, &FileBrowserState) = match &state.stage {
-        ManagerStage::Editor(editor) => match editor.modal.as_ref() {
-            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
-            _ => return false,
-        },
-        ManagerStage::CreatePrelude(prelude) => match prelude.modal.as_ref() {
-            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
-            _ => return false,
-        },
-        _ => return false,
+    let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
+        return false;
     };
     let modal_area = super::super::render::modal_outer_rect(modal, term_size);
     fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
@@ -1053,16 +1061,8 @@ fn try_open_file_browser_git_url(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let (modal, fb_state): (&Modal<'_>, &FileBrowserState) = match &state.stage {
-        ManagerStage::Editor(editor) => match editor.modal.as_ref() {
-            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
-            _ => return false,
-        },
-        ManagerStage::CreatePrelude(prelude) => match prelude.modal.as_ref() {
-            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
-            _ => return false,
-        },
-        _ => return false,
+    let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
+        return false;
     };
     let modal_area = super::super::render::modal_outer_rect(modal, term_size);
     fb_state.maybe_open_url_on_click(modal_area, mouse.column, mouse.row)
