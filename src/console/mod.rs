@@ -397,7 +397,7 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
 /// Owns the terminal for an entire launch flow so it never flashes the shell.
 ///
 /// Holds the alternate screen, raw mode, and mouse capture across console →
-/// loading cockpit → capsule → exit summary so the terminal never drops back
+/// loading cockpit → capsule → exit outro so the terminal never drops back
 /// to the cooked primary screen between surfaces. Each sub-surface checks
 /// [`crate::tui::host_screen_owned`] and skips its own enter/leave while this
 /// guard is alive; `Drop` restores the terminal exactly once, on every exit

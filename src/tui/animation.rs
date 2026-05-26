@@ -480,46 +480,6 @@ pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
     clear_screen();
 }
 
-/// Exit "still running" summary, styled like the intro phrase screens.
-///
-/// A centered white block — a headline plus one line per still-running
-/// workspace/role and a generic folder count — with the brand pill at the
-/// bottom. Brief, then clears.
-pub fn outro_summary(headline: &str, rows: &[String]) {
-    clear_screen();
-    let _ = hold_resizable(std::time::Duration::from_millis(2800), || {
-        draw_brand_pill_bottom();
-        let (cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
-        let line_at = |row: u16, text: &str, bold: bool| {
-            if row == 0 || row > term_rows {
-                return;
-            }
-            let col = center_col(cols, text.chars().count());
-            if bold {
-                eprint!("\x1b[{row};{col}H{}", text.bold().color(rgb(WHITE)));
-            } else {
-                eprint!("\x1b[{row};{col}H{}", text.color(rgb(WHITE)));
-            }
-        };
-        // Center the block (headline + blank + rows) vertically, leaving room
-        // above the bottom pill.
-        let block_h = rows.len() + 2;
-        let top = u16::try_from((term_rows as usize).saturating_sub(block_h + 2) / 2 + 1)
-            .unwrap_or(1)
-            .max(1);
-        line_at(top, headline, true);
-        for (i, r) in rows.iter().enumerate() {
-            line_at(
-                top.saturating_add(2)
-                    .saturating_add(u16::try_from(i).unwrap_or(0)),
-                r,
-                false,
-            );
-        }
-    });
-    clear_screen();
-}
-
 fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
     let t = t.clamp(0.0, 1.0);
     (f32::from(b) - f32::from(a))

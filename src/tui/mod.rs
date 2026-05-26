@@ -40,7 +40,7 @@ static HOST_SCREEN_OWNED: AtomicBool = AtomicBool::new(false);
 ///
 /// The guard holds the alternate screen, raw mode, and mouse capture across
 /// console → loading → capsule → exit. The individual surfaces (console
-/// manager, launch cockpit, exit summary) check this and skip their own
+/// manager, launch cockpit, exit outro) check this and skip their own
 /// enter/leave so the flow never drops back to the cooked terminal between
 /// screens. Driven only by the owning guard's lifetime.
 pub fn set_host_screen_owned(owned: bool) {
@@ -56,7 +56,7 @@ pub fn host_screen_owned() -> bool {
 ///
 /// A baked capsule still drops `?1049l` on detach and returns the terminal to
 /// the primary screen; re-asserting the moment the `docker exec` returns means
-/// the post-attach work (outcome inspection, the exit summary) renders on the
+/// the post-attach work (outcome inspection, the exit outro) renders on the
 /// alternate screen instead of flashing the operator's shell. No-op unless a
 /// host guard owns the screen.
 pub fn reassert_alt_screen() {
@@ -182,11 +182,11 @@ pub mod animation;
 pub mod output;
 pub mod prompt;
 
-pub use animation::{outro_summary, warp_end_caption, warp_intro, warp_out};
+pub use animation::{warp_end_caption, warp_intro, warp_out};
 pub use output::{
     CodexSyncState, agent_outcome_notice, auth_mode_notice, clear_screen, codex_auth_notice, fatal,
     github_auth_notice, hint, print_config_table, print_deploying, print_logo, set_terminal_title,
-    shorten_home, step_fail, step_quiet, step_shimmer,
+    shorten_home, step_fail, step_quiet,
 };
 pub use prompt::{prompt_choice, require_interactive_stdin, spin_wait};
 

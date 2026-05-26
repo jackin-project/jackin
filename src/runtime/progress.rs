@@ -263,13 +263,9 @@ fn initial_view() -> LaunchView {
 }
 
 impl LaunchProgress {
-    pub fn new(
-        diagnostics: Arc<RunDiagnostics>,
-        no_tui: bool,
-        no_motion: bool,
-    ) -> anyhow::Result<Self> {
+    pub fn new(diagnostics: Arc<RunDiagnostics>, no_motion: bool) -> anyhow::Result<Self> {
         let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
-        let renderer = if rich_terminal_supported() && !no_tui {
+        let renderer = if rich_terminal_supported() {
             let rich = RichRenderer::enter(no_motion)?;
             Renderer::Rich(RichDriver::spawn(
                 rich,

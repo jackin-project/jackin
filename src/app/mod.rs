@@ -36,6 +36,21 @@ fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
         .map_err(|_| anyhow::anyhow!("unknown agent {raw:?}; expected one of: claude, codex, amp"))
 }
 
+async fn play_construct_intro_if_needed(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+) -> runtime::EntryClaim {
+    let claim = runtime::claim_construct_entry(paths, docker).await;
+    if claim.start_kind() == runtime::StartKind::FreshConstruct
+        && runtime::progress::rich_terminal_supported()
+    {
+        // The intro is two screens: the opening phrase/brand screen, then the
+        // accelerating warp into the Construct.
+        crate::tui::warp_intro();
+    }
+    claim
+}
+
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::large_stack_frames)]
 pub async fn run(cli: Cli) -> Result<()> {
@@ -72,8 +87,6 @@ pub async fn run(cli: Cli) -> Result<()> {
             target,
             mounts,
             rebuild,
-            no_rain,
-            no_tui,
             force,
             agent,
             role_branch,
@@ -121,7 +134,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let mut opts = runtime::LoadOptions::for_load(no_rain, no_tui, debug, rebuild);
+            let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
             opts.force = force;
             opts.agent = match agent {
                 Some(explicit) => Some(explicit),
@@ -134,6 +147,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host
             // sleep). Post-launch reconcile below catches the new role.
+            let entry_claim = play_construct_intro_if_needed(&paths, &docker).await;
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(
                 &paths,
@@ -152,6 +166,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 &class,
                 &result,
             );
+            if result.is_err() {
+                runtime::release_entry_if_idle(&paths, &docker, &entry_claim).await;
+            }
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
@@ -167,12 +184,6 @@ pub async fn run(cli: Cli) -> Result<()> {
             // terminal. Sub-surfaces detect this and skip their own
             // enter/leave; the guard tears the terminal down once, on drop.
             let screen = console::HostScreen::enter()?;
-
-            // Entering the construct: a hyperspace warp (with a "start your
-            // day" quote) plays once at the very start of the console session.
-            // Subsequent launches within the session do not replay it — the
-            // operator is already inside.
-            crate::tui::warp_intro();
 
             let Some(outcome) =
                 console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?
@@ -227,6 +238,7 @@ pub async fn run(cli: Cli) -> Result<()> {
 
             let mut opts = runtime::LoadOptions::for_launch(debug);
             opts.agent = agent;
+            let entry_claim = play_construct_intro_if_needed(&paths, &docker).await;
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(
                 &paths,
@@ -239,8 +251,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             )
             .await;
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
+            if result.is_err() {
+                runtime::release_entry_if_idle(&paths, &docker, &entry_claim).await;
+            }
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            // `screen` drops here, after the exit summary, restoring the
+            // `screen` drops here, after any exit outro, restoring the
             // terminal exactly once.
             result
         }

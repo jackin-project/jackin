@@ -1,17 +1,15 @@
-//! Exit "still running" summary.
+//! Exit "still running" summary data.
 //!
-//! When the operator leaves the foreground session and other jackin' instances
-//! are still running, this shows a brief centered white block — styled like the
-//! intro phrase screens, with the brand pill at the bottom. It lists which
-//! saved workspaces still have running instances (workspace · role ×count) and
-//! a generic count of ad-hoc folders (their paths are never shown). Non-rich
-//! terminals fall back to a plain line.
+//! When the operator leaves one foreground session while other jackin'
+//! instances are still running, the rich boundary outro does not play: the
+//! operator is still inside the Construct. We still build a compact,
+//! privacy-preserving summary for diagnostics. Saved workspaces contribute
+//! `workspace · role ×count`; ad-hoc folders collapse to a generic count so
+//! their paths are never surfaced.
 
 use std::collections::{BTreeMap, HashSet};
 
 use crate::instance::InstanceIndex;
-use crate::paths::JackinPaths;
-use crate::runtime::LoadOptions;
 
 /// Build the headline + rows from the still-running instances.
 ///
@@ -19,7 +17,7 @@ use crate::runtime::LoadOptions;
 /// ×count`. Ad-hoc directories (no saved workspace) collapse to a single
 /// generic `N folders` row — their paths are never surfaced. The headline
 /// counts all still-running instances ("agents" = instances).
-fn summary(running_bases: &[String], index: &InstanceIndex) -> (String, Vec<String>) {
+pub(super) fn summary(running_bases: &[String], index: &InstanceIndex) -> (String, Vec<String>) {
     let running: HashSet<&str> = running_bases.iter().map(String::as_str).collect();
     let mut saved: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
     let mut folders: HashSet<String> = HashSet::new();
@@ -54,25 +52,6 @@ fn summary(running_bases: &[String], index: &InstanceIndex) -> (String, Vec<Stri
         if total == 1 { "" } else { "s" }
     );
     (headline, rows)
-}
-
-/// Show the exit summary: a centered white block with the brand pill on a rich
-/// terminal, or a plain line otherwise.
-pub fn show(paths: &JackinPaths, running_bases: &[String], opts: &LoadOptions) {
-    let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap_or(InstanceIndex {
-        version: 0,
-        instances: Vec::new(),
-    });
-    let (headline, rows) = summary(running_bases, &index);
-
-    if opts.no_rain || opts.no_tui || !super::progress::rich_terminal_supported() {
-        eprintln!("{headline}");
-        for row in &rows {
-            eprintln!("  {row}");
-        }
-        return;
-    }
-    crate::tui::outro_summary(&headline, &rows);
 }
 
 #[cfg(test)]

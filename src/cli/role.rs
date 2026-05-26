@@ -42,12 +42,6 @@ pub struct LoadArgs {
     /// Force rebuild the Docker image and refresh agent CLI install layers
     #[arg(long, default_value_t = false)]
     pub rebuild: bool,
-    /// Disable the full boundary rain animation.
-    #[arg(long = "no-rain", alias = "no-intro", default_value_t = false)]
-    pub no_rain: bool,
-    /// Disable the rich launch progress TUI and use compact output.
-    #[arg(long = "no-tui", default_value_t = false)]
-    pub no_tui: bool,
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
@@ -268,7 +262,6 @@ mod tests {
             Some(Command::Load(super::LoadArgs {
                 selector: Some(ref s),
                 target: None,
-                no_rain: false,
                 ..
             })) if s == "agent-smith"
         ));
@@ -386,6 +379,16 @@ mod tests {
             assert!(
                 Cli::try_parse_from(["jackin", "console", flag]).is_err(),
                 "console should reject {flag}"
+            );
+        }
+    }
+
+    #[test]
+    fn load_rejects_removed_surface_flags() {
+        for flag in ["--no-rain", "--no-tui", "--no-intro"] {
+            assert!(
+                Cli::try_parse_from(["jackin", "load", flag]).is_err(),
+                "load should reject {flag}"
             );
         }
     }

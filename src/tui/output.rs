@@ -1,7 +1,7 @@
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, rgb};
+use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb};
 
 // ── Color palette ────────────────────────────────────────────────────────
 
@@ -48,40 +48,7 @@ pub fn print_config_table(rows: &[(String, String)]) {
     );
 }
 
-// ── Step shimmer ─────────────────────────────────────────────────────────
-
-pub fn step_shimmer(n: u32, text: &str) {
-    let prefix = format!("  {n:>2}.  ");
-    let chars: Vec<char> = text.chars().collect();
-    let frames = chars.len() + 6;
-
-    let mg = rgb(PHOSPHOR_GREEN);
-
-    for frame in 0..frames {
-        eprint!("\r");
-        eprint!("{}", prefix.color(mg).bold());
-        for (i, ch) in chars.iter().enumerate() {
-            let dist = (frame as i32 - i as i32).abs();
-            let color = if dist == 0 {
-                WHITE
-            } else if dist == 1 {
-                (150, 255, 170)
-            } else if dist == 2 {
-                PHOSPHOR_GREEN
-            } else {
-                PHOSPHOR_DIM
-            };
-            eprint!("{}", ch.color(rgb(color)).bold());
-        }
-        let _ = io::stderr().flush();
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
-    eprint!("\r");
-    eprint!("{}", prefix.color(mg).bold());
-    eprintln!("{}", text.color(rgb(PHOSPHOR_DIM)).bold());
-}
-
-/// Minimal step message without animation (used in `--no-intro` mode).
+/// Minimal step message without animation (used by compact launch progress).
 pub fn step_quiet(n: u32, text: &str) {
     let prefix = format!("  {n:>2}.  ");
     let mg = rgb(PHOSPHOR_GREEN);

@@ -5,7 +5,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 **Status**: Partially implemented — the core runtime/TUI has shipped; remaining work is hardening and richer diagnostics tooling
 
-The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, boundary rain gating, structured launch stages, compact/rich/test renderers, console-triggered launch reuse, `--no-rain`, `--no-tui`, and `JACKIN_NO_MOTION=1`. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and add deeper startup parallelism beyond the initial independent preflight overlap.
+The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, instance-lifecycle boundary rain gating, structured launch stages, compact/rich/test renderers, console-triggered launch reuse, and `JACKIN_NO_MOTION=1`. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and add deeper startup parallelism beyond the initial independent preflight overlap.
 
 ## Problem
 
@@ -148,7 +148,7 @@ The current launch code calls the intro animation before the launch and the outr
 
 The count must use runtime discovery managed by jackin' rather than raw Docker process guesses. It should include containers preserved because active Capsule sessions remain, and it should exclude stale records that are not actually running. If discovery fails, the safe default is to skip the boundary animation and record the reason in diagnostics; a failed count should not block launch or exit.
 
-The existing no-intro concept should become an explicit no-rain control. The user-facing flag should be `--no-rain`; internally, avoid carrying `no_intro` naming forward. `--no-rain` disables boundary rain only. It does not disable the rich launch TUI.
+Earlier sketches included manual controls for disabling boundary rain or the rich launch surface. The shipped model removes those toggles: boundary rain is a lifecycle signal, and compact progress is selected automatically when the terminal cannot host the rich surface.
 
 ## Stage vocabulary
 
@@ -245,7 +245,7 @@ The exact Rust shape can differ, but the boundary should exist. Renderers then b
 | Renderer | Used when | Behavior |
 |---|---|---|
 | Rich TUI renderer | Interactive TTY with `TERM` not `dumb`, no CI signal, and at least an 80x24 viewport | Full-screen ratatui launch surface with bounded rain, stage list, identity panel, footer, and error dialog. Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and comparable terminals should land here without an allowlist. |
-| Compact renderer | TTY without rich support or explicit `--no-tui` mode | Same events as short line output. `--no-tui` disables the rich launch renderer, not boundary rain. |
+| Compact renderer | TTY without rich support | Same events as short line output. Compact progress is the automatic fallback for terminals that cannot host the rich launch surface. |
 | Non-interactive renderer | Script/CI/no TTY | Deterministic compact text, no cursor control, no animation. |
 | Test renderer | Unit/integration tests | Captures events for assertions without terminal I/O. |
 
@@ -309,7 +309,7 @@ The design may add host-side JSONL diagnostics artifacts under `~/.jackin/data/d
 - Full digital rain appears only at first-container start and last-container exit.
 - `jackin load` and console-triggered launch share the same progress vocabulary native to jackin' and the same renderer selection.
 - Rich terminals get a full-screen launch progress TUI; non-rich and non-interactive environments get compact deterministic output.
-- `--no-tui` disables the rich launch progress TUI and keeps compact output; `--no-rain` disables boundary rain only.
+- There are no manual rich-surface/rain disable flags; compact output is the automatic fallback for unsupported terminals and non-interactive runs.
 - Every `jackin ...` command receives a run ID, and launch progress renders that run ID as the diagnostics handle.
 - Diagnostics artifacts are JSONL files under `~/.jackin/data/diagnostics/runs/`, with automatic cleanup and prune coverage.
 - `--debug` increases diagnostics artifact detail without dumping raw debug text into the TUI; without `--debug`, detailed traces are absent rather than hidden behind a missing diagnostics command.

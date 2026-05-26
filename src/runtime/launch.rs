@@ -25,7 +25,7 @@ use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_ho
 use super::image::build_agent_image;
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
-    format_role_display, image_name, image_name_for_branch,
+    image_name, image_name_for_branch,
 };
 use super::repo_cache::{
     RepoResolveOptions, confirm_repo_removal_interactive, resolve_agent_repo_with,
@@ -34,13 +34,8 @@ use crate::docker_client::DockerApi;
 
 const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
 
-// Launch-time toggles all map
-// directly to CLI flags; bundling them into nested structs would obscure
-// rather than clarify the call sites.
-#[allow(clippy::struct_excessive_bools)]
+#[derive(Default)]
 pub struct LoadOptions {
-    pub no_rain: bool,
-    pub no_tui: bool,
     pub debug: bool,
     pub rebuild: bool,
 
@@ -81,44 +76,19 @@ pub struct LoadOptions {
 
 impl LoadOptions {
     /// Build options for `jackin load`.
-    #[allow(clippy::fn_params_excessive_bools)]
-    pub fn for_load(no_rain: bool, no_tui: bool, debug: bool, rebuild: bool) -> Self {
+    pub fn for_load(debug: bool, rebuild: bool) -> Self {
         Self {
-            no_rain,
-            no_tui,
             debug,
             rebuild,
             ..Self::default()
         }
     }
 
-    /// Build options for the operator console (`jackin console`). The console
-    /// is always the full experience, so rain and the rich TUI are never
-    /// disabled here.
+    /// Build options for the operator console (`jackin console`).
     pub fn for_launch(debug: bool) -> Self {
         Self {
-            no_rain: false,
-            no_tui: false,
             debug,
             ..Self::default()
-        }
-    }
-}
-
-impl Default for LoadOptions {
-    fn default() -> Self {
-        Self {
-            no_rain: true,
-            no_tui: true,
-            debug: false,
-            rebuild: false,
-            force: false,
-            op_runner: None,
-            host_env: None,
-            agent: None,
-            role_branch: None,
-            restore_container_base: None,
-            restore_role_source_git: None,
         }
     }
 }
@@ -148,17 +118,15 @@ fn validate_agent_supported(
 
 struct StepCounter {
     current: u32,
-    quiet: bool,
     role_name: String,
     current_stage: Option<super::progress::LaunchStage>,
     progress: Option<super::progress::LaunchProgress>,
 }
 
 impl StepCounter {
-    fn new(quiet: bool, role_name: &str) -> Self {
+    fn new(role_name: &str) -> Self {
         Self {
             current: 0,
-            quiet,
             role_name: role_name.to_string(),
             current_stage: None,
             progress: None,
@@ -179,10 +147,8 @@ impl StepCounter {
         self.current_stage = Some(stage);
         if let Some(progress) = &mut self.progress {
             progress.stage_started(stage, text);
-        } else if self.quiet {
-            tui::step_quiet(self.current, text);
         } else {
-            tui::step_shimmer(self.current, text);
+            tui::step_quiet(self.current, text);
         }
     }
 
@@ -1592,21 +1558,11 @@ async fn load_role_with(
         (git, host)
     });
 
-    // The intro rain + logo plays once at the very start of an interactive
-    // session (console/load entry), not per launch — see `app::run`. Here we
-    // only record when the construct began: a fresh start (no containers were
-    // running) stamps "now"; an ongoing session keeps its original start, so
-    // the exit ritual can report how long the operator was in the construct.
-    let active_before_launch = list_running_agent_names(docker)
-        .await
-        .map(|names| names.len())
-        .ok();
-    let start_kind = if active_before_launch == Some(0) {
-        super::universe::StartKind::FreshConstruct
-    } else {
-        super::universe::StartKind::ResumeExisting
-    };
-    super::universe::mark_start(paths, start_kind);
+    // `app::run` claims the first-entry boundary immediately before a real
+    // launch so the two-screen intro only plays from an empty construct. Direct
+    // test/internal callers still need the elapsed-time marker for the last-exit
+    // outro, so this idempotently writes one if the app layer did not.
+    super::universe::mark_start(paths, super::universe::StartKind::ResumeExisting);
 
     // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
     // not a name. Recover the name by matching workdir, mirroring the
@@ -1617,11 +1573,10 @@ async fn load_role_with(
         .find(|(_, w)| w.workdir == workspace.workdir)
         .map(|(name, _)| name.clone());
 
-    let mut steps = StepCounter::new(opts.no_tui, &selector.name);
+    let mut steps = StepCounter::new(&selector.name);
     if let Some(run) = crate::diagnostics::active_run() {
         let mut progress = super::progress::LaunchProgress::new(
             run,
-            opts.no_tui,
             std::env::var_os("JACKIN_NO_MOTION").is_some(),
         )?;
         progress.started(super::progress::LaunchIdentity {
@@ -1823,17 +1778,13 @@ async fn load_role_with(
                 let load_result = hardline_agent(paths, &container, docker, runner)
                     .await
                     .map(|()| container);
-                let agent_display_name = match &load_result {
-                    Ok(container_name) => format_role_display(container_name, &agent_display_name),
-                    Err(_) => agent_display_name,
-                };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, paths, docker, opts).await;
+                        render_exit(paths, docker).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, paths, docker, opts).await;
+                        render_exit(paths, docker).await;
                         return Err(error);
                     }
                 }
@@ -1853,17 +1804,13 @@ async fn load_role_with(
                 )
                 .await
                 .map(|()| manifest.container_base);
-                let agent_display_name = match &load_result {
-                    Ok(container_name) => format_role_display(container_name, &agent_display_name),
-                    Err(_) => agent_display_name,
-                };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, paths, docker, opts).await;
+                        render_exit(paths, docker).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, paths, docker, opts).await;
+                        render_exit(paths, docker).await;
                         return Err(error);
                     }
                 }
@@ -2588,14 +2535,9 @@ async fn load_role_with(
         Ok(container_name)
     }.await;
 
-    let agent_display_name = match &load_result {
-        Ok(container_name) => format_role_display(container_name, &agent_display_name),
-        Err(_) => agent_display_name,
-    };
-
     match load_result {
         Ok(_) => {
-            render_exit(&agent_display_name, paths, docker, opts).await;
+            render_exit(paths, docker).await;
             Ok(())
         }
         Err(error) => {
@@ -2617,7 +2559,7 @@ async fn load_role_with(
             // before the success path's pre-handoff teardown runs, so without
             // this the background task keeps drawing frames over the warp.
             steps.finish_progress();
-            render_exit(&agent_display_name, paths, docker, opts).await;
+            render_exit(paths, docker).await;
             Err(error)
         }
     }
@@ -2660,49 +2602,53 @@ fn resolve_launch_role_source(
     Ok((source, is_new, false))
 }
 
-async fn render_exit(
-    // The exit summary no longer names the exiting agent (it lists who remains),
-    // but callers still thread it for the diagnostics/outro paths.
-    _agent_display_name: &str,
-    paths: &JackinPaths,
-    docker: &impl DockerApi,
-    opts: &LoadOptions,
-) {
-    // Defensive: the attach paths already re-assert the alt screen the moment
-    // the capsule exec returns, so the post-attach work never flashes the
-    // shell. Re-assert once more here in case render_exit is reached by a path
-    // that did not go through the attach.
-    crate::tui::reassert_alt_screen();
+async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
     let running = match list_running_agent_names(docker).await {
         Ok(names) => names,
         Err(e) => {
             if let Some(run) = crate::diagnostics::active_run() {
                 run.compact(
                     "exit_summary",
-                    &format!("skipping exit summary; running-container list failed: {e:#}"),
+                    &format!("skipping boundary outro; running-container list failed: {e:#}"),
                 );
             }
-            Vec::new()
+            return;
         }
     };
-    // The decel warp plays on every exit, so leaving the foreground always
-    // feels like dropping out of hyperspace.
-    if !opts.no_rain {
-        tui::warp_out();
-    }
-    if running.is_empty() {
-        // Last container left the construct: clear the session marker and show
-        // the closing caption (brand pill, wind-down quote, time in the
-        // Construct).
-        let elapsed = super::universe::take_elapsed(paths);
-        if !opts.no_rain {
-            tui::warp_end_caption(elapsed);
+
+    if !running.is_empty() {
+        if let Some(run) = crate::diagnostics::active_run() {
+            let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap_or(InstanceIndex {
+                version: 0,
+                instances: Vec::new(),
+            });
+            let (headline, rows) = super::exit_summary::summary(&running, &index);
+            run.compact(
+                "exit_summary",
+                &format!("{headline}; boundary outro skipped"),
+            );
+            for row in rows {
+                run.compact("exit_summary", &row);
+            }
         }
         return;
     }
-    // Others remain: show the grouped "still here" summary after the warp so
-    // the operator can see who to reconnect to.
-    super::exit_summary::show(paths, &running, opts);
+
+    // Last container left the construct: clear the session marker and show the
+    // two-screen outro (decelerating warp, then closing caption). Exits that
+    // leave other instances running skip this entirely because the operator is
+    // still inside the Construct.
+    let elapsed = super::universe::take_elapsed(paths);
+    if !super::progress::rich_terminal_supported() {
+        return;
+    }
+    // Defensive: the attach paths already re-assert the alt screen the moment
+    // the capsule exec returns, so the post-attach work never flashes the
+    // shell. Re-assert once more before the rich outro in case render_exit is
+    // reached by a path that did not go through the attach.
+    crate::tui::reassert_alt_screen();
+    tui::warp_out();
+    tui::warp_end_caption(elapsed);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2947,8 +2893,6 @@ fn related_restore_load_options(
     manifest: &InstanceManifest,
 ) -> anyhow::Result<LoadOptions> {
     Ok(LoadOptions {
-        no_rain: current.no_rain,
-        no_tui: current.no_tui,
         debug: current.debug,
         rebuild: current.rebuild,
         force: current.force,
@@ -7666,36 +7610,80 @@ plugins = []
     }
 
     #[tokio::test]
-    async fn load_options_debug_does_not_disable_rain_for_load() {
-        let opts = LoadOptions::for_load(false, false, true, false);
-        assert!(!opts.no_rain, "debug mode must not disable boundary rain");
-        assert!(opts.debug);
-    }
-
-    #[tokio::test]
-    async fn load_options_no_rain_flag_for_load() {
-        let opts = LoadOptions::for_load(true, false, false, false);
-        assert!(opts.no_rain, "explicit no_rain must be respected");
-        assert!(!opts.debug);
-    }
-
-    #[tokio::test]
-    async fn load_options_intro_plays_when_no_flags_for_load() {
-        let opts = LoadOptions::for_load(false, false, false, false);
-        assert!(!opts.no_rain, "intro should play when no flags set");
-    }
-
-    #[tokio::test]
-    async fn load_options_for_launch_always_enables_rain_and_tui() {
+    async fn load_options_for_launch_carries_debug() {
         let opts = LoadOptions::for_launch(true);
-        assert!(!opts.no_rain, "console always plays the boundary rain");
-        assert!(!opts.no_tui, "console is always the rich experience");
         assert!(opts.debug);
 
         let opts = LoadOptions::for_launch(false);
-        assert!(!opts.no_rain);
-        assert!(!opts.no_tui);
         assert!(!opts.debug);
+    }
+
+    #[tokio::test]
+    async fn render_exit_clears_universe_marker_only_when_no_instances_remain() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        super::super::universe::mark_start(
+            &paths,
+            super::super::universe::StartKind::FreshConstruct,
+        );
+        let marker = paths.data_dir.join("universe-since");
+        let docker = crate::docker_client::FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
+            ..Default::default()
+        };
+        render_exit(&paths, &docker).await;
+
+        assert!(!marker.exists(), "last-instance exit clears the marker");
+    }
+
+    #[tokio::test]
+    async fn render_exit_preserves_universe_marker_when_instances_remain() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        super::super::universe::mark_start(
+            &paths,
+            super::super::universe::StartKind::FreshConstruct,
+        );
+        let marker = paths.data_dir.join("universe-since");
+        let docker = crate::docker_client::FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
+                crate::docker_client::ContainerRow {
+                    name: "jk-still-running".to_string(),
+                    labels: std::collections::HashMap::new(),
+                },
+            ]])),
+            ..Default::default()
+        };
+        render_exit(&paths, &docker).await;
+
+        assert!(
+            marker.exists(),
+            "leaving one of multiple instances keeps the universe open"
+        );
+    }
+
+    #[tokio::test]
+    async fn render_exit_preserves_universe_marker_when_running_list_fails() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        super::super::universe::mark_start(
+            &paths,
+            super::super::universe::StartKind::FreshConstruct,
+        );
+        let marker = paths.data_dir.join("universe-since");
+        let docker = crate::docker_client::FakeDockerClient {
+            fail_with: vec![("docker ps".to_string(), "daemon down".to_string())],
+            ..Default::default()
+        };
+        render_exit(&paths, &docker).await;
+
+        assert!(
+            marker.exists(),
+            "unknown Docker state must not close the universe"
+        );
     }
 
     #[tokio::test]
@@ -8573,12 +8561,10 @@ plugins = []
         );
         manifest.agent_runtime = "codex".to_string();
         manifest.role_source_ref = Some("restore-ref".to_string());
-        let current = LoadOptions::for_load(false, true, true, false);
+        let current = LoadOptions::for_load(true, false);
 
         let opts = related_restore_load_options(&current, &manifest).unwrap();
 
-        assert!(!opts.no_rain);
-        assert!(opts.no_tui);
         assert!(opts.debug);
         assert_eq!(opts.agent, Some(crate::agent::Agent::Codex));
         assert_eq!(opts.role_branch.as_deref(), Some("restore-ref"));
