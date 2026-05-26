@@ -225,11 +225,12 @@ struct WarpStar {
     speed: f32,
 }
 
-/// Column where a centered line of `width` chars starts (1-based).
+/// 1-based column where a centered line of `width` chars starts. The `+ 1`
+/// converts the 0-based margin to a 1-based ANSI column so the line sits truly
+/// centered (equal margins) rather than one cell left.
 fn center_col(cols: u16, width: usize) -> u16 {
-    u16::try_from((cols as usize).saturating_sub(width) / 2)
-        .unwrap_or(0)
-        .max(1)
+    let margin = (cols as usize).saturating_sub(width) / 2;
+    u16::try_from(margin + 1).unwrap_or(1)
 }
 
 /// The canonical jackin' logo text — the ` jackin' ` brand pill the host and
