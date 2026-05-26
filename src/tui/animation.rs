@@ -232,10 +232,29 @@ fn center_col(cols: u16, width: usize) -> u16 {
         .max(1)
 }
 
+/// The canonical jackin' logo text — the ` jackin' ` brand pill the host and
+/// capsule status bars render (black bold on phosphor-green).
+const BRAND_PILL: &str = " jackin' ";
+
+/// Draw the brand pill centered near the bottom of the screen.
+fn draw_brand_pill_bottom() {
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let row = rows.saturating_sub(2).max(1);
+    let col = center_col(cols, BRAND_PILL.chars().count());
+    eprint!(
+        "\x1b[{row};{col}H{}",
+        BRAND_PILL
+            .bold()
+            .color(rgb((0, 0, 0)))
+            .on_color(rgb(PHOSPHOR_GREEN))
+    );
+}
+
 /// Type `text` centered on screen one character at a time, then hold. Returns
 /// `true` if the operator skipped with Enter/Esc.
 fn type_centered(text: &str, color: (u8, u8, u8), char_ms: u64, hold_ms: u64) -> bool {
     clear_screen();
+    draw_brand_pill_bottom();
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
     eprint!("\x1b[{row};{col}H");
@@ -253,6 +272,7 @@ fn type_centered(text: &str, color: (u8, u8, u8), char_ms: u64, hold_ms: u64) ->
 /// words), then hold. Returns `true` if skipped.
 fn glitch_centered(text: &str, color: (u8, u8, u8), hold_ms: u64) -> bool {
     clear_screen();
+    draw_brand_pill_bottom();
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let chars: Vec<char> = text.chars().collect();
     let (row, col) = (rows / 2, center_col(cols, chars.len()));
@@ -295,13 +315,11 @@ fn intro_phrases() {
     clear_screen();
 }
 
-/// Entry ritual — the opening phrases, then a hyperspace jump *into* the
-/// Construct (a starfield accelerating to lightspeed), then a calm caption with
-/// the phrase of the day.
+/// Entry ritual — the opening phrases (with the brand pill), then a hyperspace
+/// jump *into* the Construct (a starfield accelerating to lightspeed).
 pub fn warp_intro() {
     intro_phrases();
     warp(true);
-    warp_caption(super::quotes::pick(super::quotes::START_QUOTES), None);
 }
 
 /// Exit ritual — dropping *out* of hyperspace.
@@ -313,12 +331,32 @@ pub fn warp_out() {
     warp(false);
 }
 
-/// The closing caption shown only when the *last* container left (the universe
-/// is empty): the brand pill, a wind-down quote, and how long the operator was
-/// in the Construct.
+/// The closing screen shown only when the *last* container left (the universe
+/// is empty): the brand pill, and how long the operator was in the Construct.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
-    let footer = elapsed.map(|d| format!("in the Construct for {}", format_universe_duration(d)));
-    warp_caption(super::quotes::pick(super::quotes::END_QUOTES), footer.as_deref());
+    clear_screen();
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let mid = rows / 2;
+    let pill_col = center_col(cols, BRAND_PILL.chars().count());
+    eprint!(
+        "\x1b[{mid};{pill_col}H{}",
+        BRAND_PILL
+            .bold()
+            .color(rgb((0, 0, 0)))
+            .on_color(rgb(PHOSPHOR_GREEN))
+    );
+    if let Some(d) = elapsed {
+        let line = format!("in the Construct for {}", format_universe_duration(d));
+        let col = center_col(cols, line.chars().count());
+        eprint!(
+            "\x1b[{};{col}H{}",
+            mid.saturating_add(2),
+            line.color(rgb(PHOSPHOR_DIM))
+        );
+    }
+    let _ = io::stderr().flush();
+    let _ = skippable_sleep(std::time::Duration::from_millis(2400));
+    clear_screen();
 }
 
 fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
@@ -458,73 +496,6 @@ fn warp(accelerating: bool) {
     }
     eprint!("\x1b[H\x1b[?25h"); // home + show cursor
     let _ = io::stderr().flush();
-}
-
-/// The canonical jackin' logo text — the same ` jackin' ` brand pill the host
-/// and capsule status bars render (black bold on phosphor-green).
-const BRAND_PILL: &str = " jackin' ";
-
-/// Calm caption shown after the warp settles: the jackin' brand pill (the same
-/// green ` jackin' ` logo the status bars use), then the phrase of the day,
-/// then an optional footer line. Centered as one block. Brief, then clears.
-fn warp_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
-    clear_screen();
-    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    let cols = term_cols as usize;
-    let truncate = |s: &str| -> String {
-        let max = cols.saturating_sub(4).max(8);
-        if s.chars().count() > max {
-            let mut t: String = s.chars().take(max.saturating_sub(1)).collect();
-            t.push('\u{2026}');
-            t
-        } else {
-            s.to_string()
-        }
-    };
-    let center = |row: u16, text: &str, color: (u8, u8, u8)| {
-        if row == 0 || row > term_rows {
-            return;
-        }
-        let t = truncate(text);
-        let col = (cols.saturating_sub(t.chars().count()) / 2).max(1);
-        eprint!("\x1b[{row};{col}H{}", t.color(rgb(color)));
-    };
-
-    // Vertically center the block: brand pill + blank + quote(2) + footer(2).
-    let mut block = 2u16;
-    if quote.is_some() {
-        block += 2;
-    }
-    if footer.is_some() {
-        block += 2;
-    }
-    let top = term_rows.saturating_sub(block) / 2 + 1;
-
-    // The brand pill — the canonical jackin' logo, identical to the status-bar
-    // pill: black bold ` jackin' ` on a phosphor-green background.
-    let pill_col = u16::try_from(cols.saturating_sub(BRAND_PILL.chars().count()) / 2)
-        .unwrap_or(0)
-        .max(1);
-    eprint!(
-        "\x1b[{top};{pill_col}H{}",
-        BRAND_PILL
-            .bold()
-            .color(rgb((0, 0, 0)))
-            .on_color(rgb(PHOSPHOR_GREEN))
-    );
-
-    let mut row = top + 2;
-    if let Some(q) = quote {
-        center(row, &format!("\u{201C}{}\u{201D}", q.text), WHITE);
-        center(row + 1, &format!("\u{2014} {}", q.author), PHOSPHOR_DIM);
-        row += 3;
-    }
-    if let Some(f) = footer {
-        center(row, f, PHOSPHOR_DIM);
-    }
-    let _ = io::stderr().flush();
-    let _ = skippable_sleep(std::time::Duration::from_millis(2600));
-    clear_screen();
 }
 
 /// Format a session duration compactly: `2h 14m`, `7m 30s`, or `45s`.

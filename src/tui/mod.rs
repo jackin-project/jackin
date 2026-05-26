@@ -159,7 +159,6 @@ const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
 pub mod animation;
 pub mod output;
 pub mod prompt;
-pub mod quotes;
 
 pub use animation::{warp_end_caption, warp_intro, warp_out};
 pub use output::{
