@@ -1037,7 +1037,20 @@ fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailu
     let height = error_popup::required_height(&state, inner_w, area.height.saturating_sub(2));
     let rect = centered_rect(popup_w, height, area);
     error_popup::render(frame, rect, &state);
+    // The popup draws no hint of its own (footer-only-hints rule); show the
+    // dismiss keys on the bottom row, over the now-frozen status bar.
+    let hint_row = Rect {
+        x: area.x,
+        y: area.y + area.height.saturating_sub(1),
+        width: area.width,
+        height: 1,
+    };
+    crate::console::widgets::hints::render(frame, hint_row, FAILURE_HINT);
 }
+
+/// Footer-hint keys for the launch failure popup (dismiss only).
+const FAILURE_HINT: &[HintSpan<'static>] =
+    &[HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")];
 
 /// Footer-hint keys for the forced-choice launch picker.
 const PICKER_HINT: &[HintSpan<'static>] = &[
@@ -1264,7 +1277,7 @@ mod tests {
         let rendered = format!("{:?}", terminal.backend().buffer());
         assert!(rendered.contains("Docker unavailable"));
         assert!(rendered.contains("docker daemon is not responding"));
-        // The reused error_popup carries its own dismiss hint.
-        assert!(rendered.contains("Enter/O"));
+        // The dismiss hint shows in the footer (the popup draws none itself).
+        assert!(rendered.contains("dismiss"));
     }
 }

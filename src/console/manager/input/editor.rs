@@ -1173,7 +1173,33 @@ pub(super) fn handle_editor_modal(
         }
         Modal::AuthSourcePicker { state: source } => {
             use crate::console::widgets::source_picker::SourceChoice;
-            match source.handle_key(key) {
+            let outcome = source.handle_key(key);
+            // Generate wins over the provide dispatch: the `g`/`G` trigger
+            // sets `generating_token_target` (and stashes the form into
+            // `pending_auth_form_return` for the post-mint re-mount), so
+            // the generate branch is reachable only on that path and the
+            // provide arms below stay untouched.
+            if editor.generating_token_target.is_some() {
+                match outcome {
+                    ModalOutcome::Commit(SourceChoice::Plain) => {
+                        start_plain_token_generate(editor);
+                    }
+                    ModalOutcome::Commit(SourceChoice::Op) => {
+                        open_create_op_picker_for_generate(editor, op_cache);
+                    }
+                    // Cancel before minting: restore the stashed form so
+                    // the operator lands back on the Edit-auth dialog
+                    // unchanged (matches the provide-path source-picker
+                    // cancel below).
+                    ModalOutcome::Cancel => {
+                        editor.generating_token_target = None;
+                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                    }
+                    ModalOutcome::Continue => {}
+                }
+                return;
+            }
+            match outcome {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
                     super::auth::apply_plain_source_picker_to_auth_form(editor);
                 }
@@ -1213,8 +1239,24 @@ pub(super) fn handle_editor_modal(
             ModalOutcome::Continue => {}
         },
         Modal::OpPicker { state: picker } => {
-            match picker.handle_key(key) {
-                ModalOutcome::Commit(op_ref) => {
+            let outcome = picker.handle_key(key);
+            // Token-generate wins over both browse and provide dispatch:
+            // `generating_token_target` is set exactly when the picker was
+            // opened by the auth-form `g`/`G` trigger (Create mode), so the
+            // create variants are reachable only on this path.
+            if let Some(target) = editor.generating_token_target.take() {
+                handle_token_generate_pick(editor, target, outcome);
+                return;
+            }
+            match outcome {
+                // Browse-mode caller: only `Existing` is reachable.
+                ModalOutcome::Commit(
+                    crate::console::widgets::op_picker::OpPickerSelection::NewItem { .. }
+                    | crate::console::widgets::op_picker::OpPickerSelection::EditItemField { .. },
+                ) => unreachable!("Secrets-tab OpPicker runs in Browse mode"),
+                ModalOutcome::Commit(
+                    crate::console::widgets::op_picker::OpPickerSelection::Existing(op_ref),
+                ) => {
                     // Auth-form round trip wins over the Secrets-tab
                     // dispatch: the auth form sets
                     // `pending_auth_form_return` exactly when it's the
@@ -1295,6 +1337,157 @@ fn open_secrets_picker_modal(
     editor.modal = Some(Modal::OpPicker {
         state: Box::new(OpPickerState::new_with_cache(op_cache)),
     });
+}
+
+/// Derive the [`TokenSetupScope`](crate::workspace::token_setup::TokenSetupScope)
+/// from the auth-form generate target and the editor's Edit-mode
+/// workspace name: a per-role override generates for that role, the
+/// workspace form for all roles. Returns `None` when the editor is not
+/// in Edit mode (Create mode has no workspace to wire yet).
+fn generate_scope_for_target(
+    editor: &EditorState<'_>,
+    target: &crate::console::manager::state::AuthFormTarget,
+) -> Option<crate::workspace::token_setup::TokenSetupScope> {
+    use crate::workspace::token_setup::TokenSetupScope;
+    let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
+        return None;
+    };
+    let workspace = name.clone();
+    Some(match target {
+        crate::console::manager::state::AuthFormTarget::WorkspaceRole { role, .. } => {
+            TokenSetupScope::WorkspaceRole {
+                workspace,
+                role: role.clone(),
+            }
+        }
+        crate::console::manager::state::AuthFormTarget::Workspace { .. } => {
+            TokenSetupScope::Workspace(workspace)
+        }
+    })
+}
+
+/// Plain-text generate branch from the source picker: queue a
+/// [`PendingTokenGenerate`] that mints the token. The minted literal is
+/// staged into the stashed auth form (via the re-mount the loop runs on
+/// completion) and persisted only when the operator Saves — the form
+/// stash in `pending_auth_form_return` survives `clear_modal_chain`.
+fn start_plain_token_generate(editor: &mut EditorState<'_>) {
+    let Some(target) = editor.generating_token_target.take() else {
+        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+        return;
+    };
+    let Some(scope) = generate_scope_for_target(editor, &target) else {
+        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+        return;
+    };
+    editor.pending_token_generate = Some(crate::console::manager::state::PendingTokenGenerate {
+        scope,
+        args: crate::workspace::token_setup::TokenSetupArgs {
+            plain_text: true,
+            ..Default::default()
+        },
+    });
+    editor.clear_modal_chain();
+}
+
+/// 1Password generate branch from the source picker: re-arm the target
+/// and mount the Create-mode `OpPicker` so the operator chooses where the
+/// freshly minted token lands (this is the pre-source-picker behaviour).
+fn open_create_op_picker_for_generate(
+    editor: &mut EditorState<'_>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+) {
+    let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
+        editor.generating_token_target = None;
+        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+        return;
+    };
+    let workspace_name = name.clone();
+    // `generating_token_target` stays set so the OpPicker commit routes
+    // back through `handle_token_generate_pick`.
+    editor.modal = Some(Modal::OpPicker {
+        state: Box::new(OpPickerState::new_create_with_cache(
+            op_cache,
+            crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE.replace("{ws}", &workspace_name),
+            crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
+        )),
+    });
+}
+
+/// Translate a Create-mode `OpPicker` commit into a
+/// [`PendingTokenGenerate`] request that the `run_console` loop drains
+/// to mint the token. `Existing` cannot occur in Create mode; a Cancel
+/// (or stray `Existing`) just closes the chain. On `Continue` the picker
+/// is still drilling, so `target` is re-armed and the modal stays open.
+/// The workspace name comes from `editor.mode` Edit.
+fn handle_token_generate_pick(
+    editor: &mut EditorState<'_>,
+    target: crate::console::manager::state::AuthFormTarget,
+    outcome: ModalOutcome<crate::console::widgets::op_picker::OpPickerSelection>,
+) {
+    use crate::console::widgets::op_picker::OpPickerSelection;
+    use crate::workspace::token_setup::{EditExistingTarget, TokenSetupArgs};
+
+    let Some(scope) = generate_scope_for_target(editor, &target) else {
+        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+        return;
+    };
+
+    let args = match outcome {
+        ModalOutcome::Commit(OpPickerSelection::NewItem {
+            account,
+            vault,
+            item_name,
+            section,
+            field_label,
+        }) => TokenSetupArgs {
+            vault: Some(vault.id),
+            item_name: Some(item_name),
+            account: account.map(|a| a.id),
+            reuse: None,
+            field_label: Some(field_label),
+            section,
+            edit_existing: None,
+            plain_text: false,
+        },
+        ModalOutcome::Commit(OpPickerSelection::EditItemField {
+            account,
+            vault,
+            item,
+            section,
+            field,
+        }) => TokenSetupArgs {
+            vault: None,
+            item_name: None,
+            account: account.map(|a| a.id),
+            reuse: None,
+            field_label: None,
+            section: None,
+            edit_existing: Some(EditExistingTarget {
+                vault_id: vault.id,
+                item_id: item.id,
+                field,
+                section,
+            }),
+            plain_text: false,
+        },
+        // Still drilling — re-arm the marker the caller took and leave
+        // the picker open.
+        ModalOutcome::Continue => {
+            editor.generating_token_target = Some(target);
+            return;
+        }
+        // `Existing` is unreachable in Create mode; a Cancel restores
+        // the stashed form. Both just close without minting.
+        ModalOutcome::Commit(OpPickerSelection::Existing(_)) | ModalOutcome::Cancel => {
+            super::auth::restore_auth_form_after_op_picker_cancel(editor);
+            return;
+        }
+    };
+
+    editor.pending_token_generate =
+        Some(crate::console::manager::state::PendingTokenGenerate { scope, args });
+    editor.clear_modal_chain();
 }
 
 const fn scope_label(scope: &SecretsScopeTag) -> &str {
@@ -3389,6 +3582,7 @@ plugins = []
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc-vault/abc-item/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
 
@@ -3433,6 +3627,7 @@ plugins = []
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc-vault/abc-item/api-token".into(),
                 path: "Personal/api/token".into(),
+                account: None,
             }),
         );
         ws.roles.insert(
@@ -3621,6 +3816,7 @@ plugins = []
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc-vault/abc-item/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
         let mut state = ManagerState::from_config(&config, tmp.path());

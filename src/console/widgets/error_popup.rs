@@ -18,7 +18,6 @@ use ratatui::{
 use super::ModalOutcome;
 
 use super::WHITE;
-use jackin_tui::HintSpan;
 const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 
 #[derive(Debug, Clone)]
@@ -79,8 +78,11 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
     result
 }
 
-/// Total rows the popup wants. Layout: top border + blank + N message
-/// rows + blank + button + blank + hint + bottom border.
+/// Total rows the popup wants.
+///
+/// Layout: top border + blank + N message rows + blank + button + blank +
+/// bottom border. The dismiss hint is NOT drawn inside the popup — per the
+/// footer-only-hints rule it lives in the surface's bottom hint bar.
 ///
 /// `max_rows` is the upper bound the caller is willing to allocate
 /// (typically terminal height minus its own chrome). Long anyhow chains
@@ -88,14 +90,14 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
 /// 15 rows, and a fixed cap silently truncates the bottom of the
 /// message where the root cause usually lives.
 ///
-/// The chrome floor is 8 (2 borders + 4 spacer/button/hint rows + 1 message
+/// The chrome floor is 7 (2 borders + 3 spacer/button rows + 1 message
 /// row). At smaller `max_rows` the renderer would produce a zero-row body
 /// chunk and the message would disappear, which is worse than the popup
 /// overflowing the terminal.
 #[must_use]
 pub fn required_height(state: &ErrorPopupState, inner_width: u16, max_rows: u16) -> u16 {
     let body = estimated_message_rows(state, inner_width);
-    body.saturating_add(7).min(max_rows.max(8))
+    body.saturating_add(6).min(max_rows.max(7))
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
@@ -111,9 +113,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Reserve rows for blank/button/blank/hint (4 rows); the rest
-    // belongs to the wrapped message.
-    let body_rows = inner.height.saturating_sub(5); // blank + blank + button + blank + hint
+    // Reserve rows for blank/button/blank (3 rows); the rest belongs to
+    // the wrapped message. The dismiss hint is NOT drawn here — it lives
+    // in the surface's bottom hint bar (footer-only-hints rule).
+    let body_rows = inner.height.saturating_sub(3); // blank + blank + button
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -121,8 +124,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
             Constraint::Length(body_rows), // message (wrapped)
             Constraint::Length(1),         // blank
             Constraint::Length(1),         // button
-            Constraint::Length(1),         // blank
-            Constraint::Length(1),         // hint
         ])
         .split(inner);
 
@@ -142,19 +143,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
         Paragraph::new(Line::from(Span::styled("  OK  ", focused_style)))
             .alignment(Alignment::Center),
         chunks[3],
-    );
-
-    // Footer hint via the shared renderer (one styling source for every footer).
-    crate::console::widgets::hints::render(
-        frame,
-        chunks[5],
-        &[
-            HintSpan::Key("Enter/O"),
-            HintSpan::Text("ok"),
-            HintSpan::Sep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("close"),
-        ],
     );
 }
 
@@ -227,10 +215,10 @@ mod tests {
         let s = ErrorPopupState::new("Save failed", "word ".repeat(500));
         assert!(required_height(&s, 30, 15) <= 15);
         assert!(required_height(&s, 30, 40) <= 40);
-        // Floor: caller passing too-small max still yields the 8-row
+        // Floor: caller passing too-small max still yields the 7-row
         // chrome floor so the renderer's body chunk is never zero rows
         // (which would make the message vanish).
-        assert!(required_height(&s, 30, 1) >= 8);
+        assert!(required_height(&s, 30, 1) >= 7);
     }
 
     #[test]

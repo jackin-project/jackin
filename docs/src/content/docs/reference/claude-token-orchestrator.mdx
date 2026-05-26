@@ -74,11 +74,18 @@ The token never crosses `argv`. `OpWriteRunner::item_create` serialises the item
 
 Reasoning: `argv` is visible via `/proc/<pid>/cmdline` to any local unprivileged reader; the `op item create --field value=<token>` form would expose the token for the lifetime of the `op` process. Stdin is not visible the same way.
 
-The trait deliberately omits an `item_edit_field` method:
+### In-place field edit — `item_field_set`
 
-> The upstream `op` CLI has no documented stdin form for `op item edit`, and any argv form would violate the stdin-only contract this trait declares. Rotation is implemented as `item_create` (new item) + `item_delete` (old item once the new one is wired and validated).
->
-> — `OpWriteRunner` doc comment in <RepoFile path="src/operator_env.rs" />
+`OpWriteRunner::item_field_set(item_id, vault_id, field_id, field_label, value, section)` writes a new token value into a specific field of an existing 1Password item without touching any other fields or metadata. The pure JSON transform lives in the testable `apply_field_edit` helper. It follows the same never-on-argv contract as `item_create` via a two-step GET → piped-template-EDIT sequence:
+
+1. **GET** — `op item get <id> --vault <vault> --format json` fetches the full item as a `serde_json::Value`. The raw bytes are decoded as generic JSON (not into a typed struct) so all unrecognised properties are preserved verbatim.
+2. **Modify in-process** — when `field_id` is `Some` (overwriting a field the picker resolved), the `fields` array is matched on that exact op id, the field's `value` is replaced, its `type` is set to `CONCEALED`, and its existing `section` is left untouched — overwriting a value must never re-parent the field, and a same-labeled field in another section is never clobbered. When `field_id` is `None` (appending), the array is matched by `field_label`; if no match a new field object (`{ id, label, type: "CONCEALED", value }`) is appended, placed in `section` when one is supplied (its slug is added to the item's top-level `sections` array if absent). Section placement and registration happen only on the append path.
+3. **piped-template-EDIT** — the modified JSON is serialised and piped to stdin of `op item edit <item_id> --vault <vault> --format json`. `op item edit` documents this `cat updated.json | op item edit <item>` form: the item is named by the positional id, and the full JSON template is read from stdin (the `--template` flag is the file-based alternative and is mutually exclusive with piped input, so it is not used). The token value therefore rides in stdin, never in `argv` or `/proc/<pid>/cmdline`. The positional MUST be the real item id — passing `-` makes `op` treat `-` as the item name (the stdin sentinel is an `op item create` convention, not `op item edit`).
+4. **Reference extraction** — the JSON returned by `op item edit` is scanned for the target field by exact `field_id` (overwrite) or by label (case-insensitive, append); the resulting `op://` reference is built from UUIDs (vault `id`, item `id`, field `id`) so it stays stable across renames.
+
+This method is used by the `--interactive` setup path when the operator selects an existing 1Password item: the same OAuth token capture flow runs, but instead of creating a fresh item via `item_create`, the captured value is written in-place via `item_field_set`, leaving all other fields and item metadata untouched.
+
+Rotation (the day-to-day `jackin workspace claude-token rotate` path) continues to use `item_create` + `item_delete` — a new item is always created, validated, wired, and only then the prior item is deleted. `item_field_set` is only for the interactive adopt-existing-item case where the operator explicitly chose a specific field to overwrite.
 
 ### Stdout safety on parse
 
@@ -88,7 +95,7 @@ If the JSON shape ever drifts (upstream renames a field, returns empty `fields`)
 
 ### Account pinning
 
-`OpCli::with_account(Some(id))` pins every subprocess invocation to `op --account <id>`. The orchestrator constructs one `OpCli` per run via the `op_cli_for(config, workspace, explicit) -> OpCli` helper which folds the rule "explicit `--op-account` flag wins over the workspace's stored `op_account` field". The same helper is used by every `run_*` entry point, so account resolution lives in one place.
+`OpCli::with_account(Some(id))` pins every subprocess invocation to `op --account <id>`. The orchestrator constructs one `OpCli` per run via the `op_cli_for_scope(config, scope, explicit) -> OpCli` helper which folds the rule "explicit `--op-account` flag wins over the account recorded on the scope's stored `op://` reference (`OpRef::account`)". The same helper is used by every `run_*` entry point, so account resolution lives in one place. Its `interactive` flag picks the timeout: the write paths (`run_setup`, `mint_token_value`, rotate) pass `true` for `OpCli::new_interactive()` (a 5-minute budget) because the `op item create` / `op item edit` write may block on a biometric or SSO unlock the operator completes in a browser; read-only `run_doctor` and `run_revoke` pass `false` for the default 30-second ceiling so a locked or stalled `op` fails fast instead of hanging a quick health check. `item_create` / `item_field_set` stamp the run's pinned account onto the `OpRef` they return, so the wired env value records the account it was created under; reads later rebind to that per-ref account via `OpRunner::read_with_account`.
 
 `OpWriteRunner::item_delete` accepts a per-call account override that wins over the pinned `OpCli::account` — used by the orphan-cleanup path so a stale account context never causes a delete to land in the wrong vault.
 
@@ -124,13 +131,16 @@ The only constructor is `OrphanCleanup::run(op_writer, &op_ref, account)`. Parse
 Once validation has succeeded, the orchestrator opens a `ConfigEditor` and applies, **in order**:
 
 1. `set_workspace_auth_forward(workspace, Agent::Claude, AuthForwardMode::OAuthToken)`.
-2. `set_env_var(EnvScope::Workspace(ws), CLAUDE_OAUTH_TOKEN_ENV, EnvValue::OpRef(op_ref))`.
-3. If `--op-account` was passed AND differs from any stored `op_account`, `set_workspace_op_account(ws, Some(account))`.
-4. `editor.save()` — single atomic write back to disk.
+2. `set_env_var(EnvScope::Workspace(ws), CLAUDE_OAUTH_TOKEN_ENV, EnvValue::OpRef(op_ref))` — the `op_ref` already carries its `account`, so no separate workspace-level account write is needed.
+3. `editor.save()` — single atomic write back to disk.
 
 `ConfigEditor` preserves the surrounding TOML's comments and key ordering, so the operator's hand-edits survive a setup run.
 
 The editor is opened **after** validation succeeds. A failure between item-create and editor-open leaves the 1P item live but no config wired; re-running `setup` is safe because validation re-creates a fresh item rather than mutating the orphan.
+
+### Mint without persist (console generate path)
+
+Everything up to and including validation — capture, item create, post-write read-back, and the expiry stamp — lives in `mint_token_value_with_runner`, which returns the wired `EnvValue` (an `OpRef` for the op paths, a `Plain` literal for `--plain`) **without** opening `ConfigEditor`. `run_setup_with_runner` calls it and then does the persist block above, so the CLI path is mint + persist in one step. The console `G` generate flow instead calls the production `mint_token_value` entry, which mints + validates but writes no config: the minted value is staged into the open Edit-auth dialog (re-mounted with focus on Save by the same helpers the *provide* flow uses) and persisted only when the operator Saves through the editor's normal save path. The op-item create and read-back validation deliberately live in the mint-only function — that safety is not tied to the config write — and the expiry stamp is written there too (the token was minted, so issuance is known; the stamp is a harmless cache even if the operator later cancels the Save).
 
 The CLI's `config env unset` and the TUI's auth panel both refuse to delete `CLAUDE_CODE_OAUTH_TOKEN` while `auth_forward = "oauth_token"` is active; the only supported clear path is `jackin workspace claude-token revoke`, which switches both keys atomically.
 
@@ -170,9 +180,9 @@ The `--reuse` setup path does **not** write a stamp. jackin did not mint the tok
 
 `rotate` is `setup` + `delete_prior_op_item`:
 
-1. Read the prior workspace slot. If it holds an `op://` reference, default `--vault` to the prior item's vault — without this, the documented `rotate <ws>` form would hard-error inside `create_op_item` *after* the operator completes the PTY token capture. See `vault_for_rotate` for the precedence rule.
+1. Read the prior slot for the scope being rotated (workspace-level, or the per-role slot when `--role` is passed) via `prior_token_slot`, so a role-scoped token wired by `setup --role` is found and its item is the one reused/deleted. A flag-supplied `--role` is validated against the workspace's allowed roles first. If the slot holds an `op://` reference, default `--vault` to the prior item's vault — without this, the documented `rotate <ws>` form would hard-error inside `create_op_item` *after* the operator completes the PTY token capture. See `vault_for_rotate` for the precedence rule.
 2. Run `run_setup` end-to-end. Validation, config persistence, and the new expiry stamp all complete first.
-3. `delete_prior_op_item(prior, &report.op_ref, account)` — parses the prior `op://`, calls `item_delete` with the parsed UUIDs.
+3. `delete_prior_op_item(prior, &report.op_ref, account)` — parses the prior `op://`, then **only deletes an item jackin created**. It calls `item_tags` on the prior item and proceeds with `item_delete` only when the item carries the `JACKIN_TAG`. An item the operator adopted (`--reuse` or interactive edit-in-place) has no jackin tag and may hold the operator's other fields, so it is left untouched with a printed note; a tag-read error also fails safe (skip the delete) rather than risk destroying a shared item.
 4. If the delete fails, the rotate exits non-zero with a copy-pasteable `op item delete <id> --vault <vault>` recovery command. The new item is wired and live; the orphan needs hand-removal.
 5. The same-ref guard (`prior_ref.op == new_ref.op`) prevents rotate from deleting the new item it just created if a deeper bug ever causes them to match. The guard's eprintln tells the operator the situation is unexpected and to run `doctor` to verify.
 
@@ -192,7 +202,8 @@ Every entry point that talks to the world (`claude setup-token`, `op`, the host 
 
 | Entry point   | `_with_runner` variant         | Injected dependencies |
 |---|---|---|
-| `run_setup`   | `run_setup_with_runner`        | `Option<&ClaudeProbe>`, capture closure, `&dyn OpRunner`, `&dyn OpWriteRunner` |
+| `run_setup` (CLI: mint + persist)   | `run_setup_with_runner`        | `Option<&ClaudeProbe>`, capture closure, `&dyn OpRunner`, `&dyn OpWriteRunner` |
+| `mint_token_value` (console: mint only) | `mint_token_value_with_runner` | `Option<&ClaudeProbe>`, capture closure, `&dyn OpRunner`, `&dyn OpWriteRunner` |
 | `run_revoke`  | `run_revoke_with_runner`       | `&dyn OpWriteRunner` |
 | `run_doctor`  | `run_doctor_with_runner`       | `&dyn OpRunner` |
 | `delete_prior_op_item` (rotate cleanup) | `delete_prior_op_item_with_runner` | `&dyn OpWriteRunner` |

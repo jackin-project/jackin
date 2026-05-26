@@ -2,7 +2,7 @@
 //! if a modal is open, events go to the modal handler; otherwise they
 //! go to the active stage's handler.
 
-pub(super) mod auth;
+pub mod auth;
 pub(super) mod editor;
 pub(super) mod global_mounts;
 pub(super) mod list;
@@ -18,6 +18,13 @@ use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
 pub use mouse::{handle_mouse, handle_mouse_with_config};
+
+// Re-exported for the `run_console` token-generate loop, which re-mounts
+// the settings auth form after a mint (the `global_mounts` module is
+// `pub(super)`, so the loop reaches the helpers through this seam).
+pub(in crate::console) use global_mounts::{
+    apply_op_picker_to_settings_auth_form, apply_plain_text_to_settings_auth_form,
+};
 
 #[derive(Debug)]
 pub enum InputOutcome {
@@ -157,6 +164,14 @@ pub fn handle_key(
         });
         if dismiss {
             settings.error_popup = None;
+            // A token-generate mint failure surfaces through this popup
+            // while the auth form is stashed in `pending_auth_form_return`
+            // (the `g`/`G` trigger detached it). Restore it on dismiss so
+            // the operator lands back on the Edit-auth dialog, parallel to
+            // the editor's `Modal::ErrorPopup` recovery.
+            if settings.auth.pending_auth_form_return.is_some() {
+                global_mounts::restore_settings_auth_form_after_error(&mut settings.auth);
+            }
         }
         return Ok(InputOutcome::Continue);
     }
@@ -180,6 +195,7 @@ pub fn handle_key(
         global_mounts::handle_settings_auth_modal(
             &mut settings.auth,
             &mut settings.env,
+            &mut settings.pending_token_generate,
             key,
             op_available,
             op_cache,

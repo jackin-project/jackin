@@ -5,7 +5,7 @@ use anyhow::{Context, bail};
 use toml_edit::DocumentMut;
 
 pub const CURRENT_CONFIG_VERSION: &str = "v1alpha5";
-pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha4";
+pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha5";
 pub const LEGACY_VERSION: &str = "legacy";
 
 pub type Migration = fn(&mut DocumentMut) -> anyhow::Result<()>;
@@ -62,10 +62,90 @@ const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     },
     MigrationStep {
         from: "v1alpha3",
-        to: CURRENT_WORKSPACE_VERSION,
+        to: "v1alpha4",
         migrate: noop_migration,
     },
+    MigrationStep {
+        from: "v1alpha4",
+        to: CURRENT_WORKSPACE_VERSION,
+        migrate: migrate_workspace_op_account_to_refs,
+    },
 ];
+
+/// v1alpha4 → v1alpha5: the workspace-level `op_account` moves onto each
+/// `op://` env ref as a per-ref `account` key, so a workspace holding
+/// refs from several 1Password accounts resolves each correctly.
+///
+/// Walks every env table that can hold op refs (`[env]`,
+/// `[roles.<role>.env]`, `[github.env]`, `[roles.<role>.github.env]`)
+/// and stamps the old top-level `op_account` onto each inline-table
+/// value carrying an `op` key that lacks an `account`. Plain string
+/// values are skipped. Absent `op_account` is a no-op.
+///
+/// Exposed beyond the migration registry so the legacy-config split in
+/// `persist.rs` can reuse this exact transform: the typed-struct round-trip
+/// there drops the legacy `op_account` before the version-driven migration
+/// would see it, so the split re-injects it and calls this directly.
+pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Result<()> {
+    // Absent op_account is a legitimate no-op (single-account / never-set
+    // workspace). A present-but-non-string value is operator data we must
+    // not silently drop: bail loudly so the standard startup parser error
+    // surfaces, rather than discarding the account and presenting a
+    // downstream phantom "missing credential" at next launch.
+    let acct = match doc.get("op_account") {
+        None => return Ok(()),
+        Some(item) => match item.as_str() {
+            Some(s) => s.to_string(),
+            None => bail!(
+                "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
+                 found {item:?}"
+            ),
+        },
+    };
+
+    stamp_account_in_env(doc.as_table_mut(), &acct);
+    if let Some(roles) = doc.get_mut("roles").and_then(toml_edit::Item::as_table_mut) {
+        for (_, role) in roles.iter_mut() {
+            if let Some(role_tbl) = role.as_table_mut() {
+                stamp_account_in_env(role_tbl, &acct);
+            }
+        }
+    }
+
+    doc.remove("op_account");
+    Ok(())
+}
+
+/// Stamp `account` onto every op ref inside `table`'s `[env]` and
+/// `[github.env]` sub-tables. An op ref is a table — inline (`KEY = { op
+/// = … }`) or standard (`[env.KEY]`) — with an `op` key; refs already
+/// carrying `account` are left untouched.
+fn stamp_account_in_env(table: &mut toml_edit::Table, acct: &str) {
+    stamp_account_in_env_table(table.get_mut("env"), acct);
+    if let Some(github) = table
+        .get_mut("github")
+        .and_then(toml_edit::Item::as_table_mut)
+    {
+        stamp_account_in_env_table(github.get_mut("env"), acct);
+    }
+}
+
+fn stamp_account_in_env_table(env: Option<&mut toml_edit::Item>, acct: &str) {
+    let Some(env) = env.and_then(toml_edit::Item::as_table_like_mut) else {
+        return;
+    };
+    for (_, value) in env.iter_mut() {
+        // Match both the inline-table form (written by the editor) and the
+        // standard-table form (`[env.KEY]`, as a serde round-trip emits) so
+        // the legacy-config split is stamped the same as a normal migration.
+        if let Some(tbl) = value.as_table_like_mut()
+            && tbl.contains_key("op")
+            && !tbl.contains_key("account")
+        {
+            tbl.insert("account", toml_edit::value(acct));
+        }
+    }
+}
 
 /// Schema version of a jackin-owned configuration file.
 ///
@@ -411,7 +491,7 @@ mod tests {
         assert!(migrate_workspace_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
         let parsed: toml::Value = toml::from_str(&out).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha4");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -421,7 +501,7 @@ mod tests {
         let path = temp.path().join("prod.toml");
         std::fs::write(
             &path,
-            "version = \"v1alpha4\"\nworkdir = \"/workspace/prod\"\n",
+            "version = \"v1alpha5\"\nworkdir = \"/workspace/prod\"\n",
         )
         .unwrap();
 
@@ -774,6 +854,109 @@ mod tests {
     }
 
     #[test]
+    fn op_account_moves_onto_each_op_ref_and_top_level_key_removed() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("prod.toml");
+        std::fs::write(
+            &path,
+            r#"version = "v1alpha4"
+workdir = "/workspace/prod"
+op_account = "ACCT123"
+
+[env]
+TOKEN = { op = "op://v/i/f", path = "V/I/F" }
+PLAIN = "literal"
+
+[github.env]
+GH = { op = "op://gv/gi/gf", path = "GV/GI/GF" }
+
+[roles."org/agent".env]
+RT = { op = "op://rv/ri/rf", path = "RV/RI/RF" }
+
+[roles."org/agent".github.env]
+RG = { op = "op://rgv/rgi/rgf", path = "RGV/RGI/RGF" }
+"#,
+        )
+        .unwrap();
+
+        assert!(migrate_workspace_file_if_needed(&path).unwrap());
+        let out = std::fs::read_to_string(&path).unwrap();
+        let parsed: toml::Value = toml::from_str(&out).unwrap();
+
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
+        assert!(
+            !out.contains("op_account"),
+            "top-level key must be gone:\n{out}"
+        );
+        assert_eq!(parsed["env"]["TOKEN"]["account"].as_str(), Some("ACCT123"));
+        assert!(
+            parsed["env"]["PLAIN"].as_str() == Some("literal"),
+            "plain string untouched:\n{out}"
+        );
+        assert_eq!(
+            parsed["github"]["env"]["GH"]["account"].as_str(),
+            Some("ACCT123")
+        );
+        assert_eq!(
+            parsed["roles"]["org/agent"]["env"]["RT"]["account"].as_str(),
+            Some("ACCT123")
+        );
+        assert_eq!(
+            parsed["roles"]["org/agent"]["github"]["env"]["RG"]["account"].as_str(),
+            Some("ACCT123")
+        );
+    }
+
+    #[test]
+    fn workspace_without_op_account_leaves_refs_unaccounted() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("prod.toml");
+        std::fs::write(
+            &path,
+            r#"version = "v1alpha4"
+workdir = "/workspace/prod"
+
+[env]
+TOKEN = { op = "op://v/i/f", path = "V/I/F" }
+"#,
+        )
+        .unwrap();
+
+        assert!(migrate_workspace_file_if_needed(&path).unwrap());
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !out.contains("account"),
+            "no account key without op_account:\n{out}"
+        );
+    }
+
+    #[test]
+    fn workspace_with_non_string_op_account_bails_loudly() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("prod.toml");
+        std::fs::write(
+            &path,
+            r#"version = "v1alpha4"
+workdir = "/workspace/prod"
+op_account = 123
+
+[env]
+TOKEN = { op = "op://v/i/f", path = "V/I/F" }
+"#,
+        )
+        .unwrap();
+
+        let err = migrate_workspace_file_if_needed(&path).unwrap_err();
+        // The framework wraps the step error with a "running … migration"
+        // context, so check the full chain (alternate Display) for our message.
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("op_account") && chain.contains("must be a string"),
+            "non-string op_account must bail loudly, not silently drop: {chain}"
+        );
+    }
+
+    #[test]
     fn version_field_is_migrated_to_first_line() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("prod.toml");
@@ -781,7 +964,7 @@ mod tests {
 
         assert!(migrate_workspace_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
-        assert!(out.starts_with("version = \"v1alpha4\""), "{out}");
+        assert!(out.starts_with("version = \"v1alpha5\""), "{out}");
         assert!(out.contains("workdir = \"/workspace/prod\""), "{out}");
         assert!(out.contains("# trailing comment"), "{out}");
     }

@@ -173,6 +173,7 @@ mod tests {
         OpRef {
             op: "op://uuid/test".into(),
             path: "Test/api/key".into(),
+            account: None,
         }
     }
 
@@ -240,18 +241,21 @@ mod tests {
         f.set_op_ref(OpRef {
             op: String::new(),
             path: String::new(),
+            account: None,
         });
         assert!(!f.can_save());
         // Empty `op` alone: rejected.
         f.set_op_ref(OpRef {
             op: String::new(),
             path: "Test/api/key".into(),
+            account: None,
         });
         assert!(!f.can_save());
         // Empty `path` alone: rejected.
         f.set_op_ref(OpRef {
             op: "op://uuid/test".into(),
             path: String::new(),
+            account: None,
         });
         assert!(!f.can_save());
     }
@@ -422,6 +426,7 @@ mod tests {
         let attempted = OpRef {
             op: "op://uuid/missing".into(),
             path: "Vault/Missing/field".into(),
+            account: None,
         };
         let result = f.try_commit_op_ref(&FailRunner, attempted);
         assert!(result.is_err(), "failed op read must not commit");
@@ -439,6 +444,7 @@ mod tests {
         let r = OpRef {
             op: "op://uuid/anthropic".into(),
             path: "Work/Anthropic/api-key".into(),
+            account: None,
         };
         let result = f.try_commit_op_ref(&GoodRunner, r.clone());
         assert!(result.is_ok());

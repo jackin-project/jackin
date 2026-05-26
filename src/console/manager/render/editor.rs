@@ -13,7 +13,7 @@ use ratatui::{
 };
 use std::cmp::Ordering;
 
-use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
+use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, Modal, SecretsScopeTag};
 use super::list::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
     render_mount_header,
@@ -52,7 +52,20 @@ fn editor_footer_items(
     op_available: bool,
 ) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
-        return super::modal::modal_footer_items(modal);
+        let mut items = super::modal::modal_footer_items(modal);
+        // The auth-form `g`/`G` generate trigger is gated to the
+        // workspace-level Claude oauth_token slot in Edit mode; surface
+        // the hint only when that gate holds.
+        if matches!(modal, Modal::AuthForm { .. })
+            && super::super::input::auth::auth_form_can_generate_token(state)
+        {
+            items.extend([
+                HintSpan::GroupSep,
+                HintSpan::Key("G"),
+                HintSpan::Text("generate"),
+            ]);
+        }
+        return items;
     }
     if state.tab_bar_focused {
         let mut items = vec![
@@ -2323,6 +2336,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2376,6 +2390,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://Personal/API Keys/auth/secret_key".into(),
                 path: "Personal/API Keys/auth/secret_key".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2424,6 +2439,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2472,6 +2488,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2670,6 +2687,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude[alexey@zhokhov.com]/security/auth token".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2718,6 +2736,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/fld?attribute=otp".into(),
                 path: "Private/GitHub/one-time password?attribute=otp".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2759,6 +2778,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/sec/fld?attribute=otp".into(),
                 path: "Private/Claude[alexey@zhokhov.com]/security/auth token?attribute=otp".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2833,6 +2853,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude/security/auth token".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2866,6 +2887,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "garbage-no-slashes".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {

@@ -107,6 +107,9 @@ pub(crate) fn render_brand_header(frame: &mut Frame, area: Rect, label: &str) {
     );
 }
 
+/// Braille spinner animation shared across all modal loading panels.
+pub(crate) const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 pub mod agent_choice;
 pub mod auth_panel;
 pub mod confirm;

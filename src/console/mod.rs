@@ -460,6 +460,31 @@ impl Drop for HostScreen {
     }
 }
 
+/// Hand the real terminal back to a child process: leave raw-mode +
+/// alt-screen and stop debug buffering, mirroring `TerminalGuard::drop`
+/// minus the input drain (the child reads stdin directly). Paired with
+/// [`resume_console_terminal`] around a contained suspend → run → resume.
+fn suspend_console_terminal(stdout: &mut std::io::Stdout) {
+    use crossterm::ExecutableCommand;
+    let _ = disable_console_mouse_capture(stdout);
+    let _ = crossterm::terminal::disable_raw_mode();
+    let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+    let _ = stdout.execute(crossterm::cursor::Show);
+    crate::tui::end_debug_buffering();
+}
+
+/// Re-enter raw-mode + alt-screen after a [`suspend_console_terminal`]
+/// detour, mirroring `run_console`'s initial setup so the TUI resumes
+/// where it left off.
+fn resume_console_terminal(stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
+    use crossterm::ExecutableCommand;
+    crate::tui::begin_debug_buffering();
+    crossterm::terminal::enable_raw_mode()?;
+    stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
+    enable_console_mouse_capture(stdout)?;
+    Ok(())
+}
+
 async fn open_inline_agent_picker(
     state: &mut ConsoleState,
     paths: &JackinPaths,
@@ -510,6 +535,23 @@ where
     })?;
     ms.status_overlay = None;
     Ok(())
+}
+
+/// Drop the cached item list (and that item's field list) for the
+/// account/vault/item a freshly-minted op ref points at, so a picker
+/// reopened in the same session re-fetches and shows the new entry. The
+/// ref's `op` field is UUID-form `op://<vault>/<item>/[<section>/]<field>`.
+fn invalidate_op_cache_for_ref(
+    op_cache: &std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_ref: &crate::operator_env::OpRef,
+) {
+    let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
+        return;
+    };
+    let account = op_ref.account.as_deref();
+    let mut cache = op_cache.borrow_mut();
+    cache.invalidate_items(account, &parts.vault);
+    cache.invalidate_fields(account, &parts.vault, &parts.item);
 }
 
 fn show_role_resolution_error(
@@ -722,6 +764,8 @@ pub async fn run_console(
 
     use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 
+    use crate::console::manager::state::{ManagerStage, Modal};
+
     let mut state = ConsoleState::new(&config, cwd)?;
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
@@ -736,6 +780,128 @@ pub async fn run_console(
     let mut last_mouse_event_at: Option<std::time::Instant> = None;
 
     let result = 'main: loop {
+        // Drain a pending token-generate request before render: suspend
+        // the TUI, run the interactive `claude setup-token` mint + the
+        // 1Password write, then resume. Done at the top of the loop (no
+        // live `&mut state.stage` borrow, `config`/`paths`/`terminal` all
+        // in scope) so a request set by the previous iteration's input is
+        // handled before the next frame.
+        let pending = if let ConsoleStage::Manager(ms) = &mut state.stage {
+            match &mut ms.stage {
+                ManagerStage::Editor(ed) => ed.pending_token_generate.take(),
+                ManagerStage::Settings(s) => s.pending_token_generate.take(),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(req) = pending {
+            use crate::workspace::token_setup::TokenSetupScope;
+            let mut out = std::io::stdout();
+            suspend_console_terminal(&mut out);
+            let label = match &req.scope {
+                TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
+                TokenSetupScope::WorkspaceRole { workspace, role } => {
+                    format!("workspace {workspace:?} role {role:?}")
+                }
+                TokenSetupScope::Global => "global config".to_string(),
+            };
+            println!(
+                "\nGenerating Claude OAuth token for {label} — complete the browser \
+                 sign-in, then paste the code below.\n",
+            );
+            // Mint without persisting: the op item is created / the
+            // literal is captured and validated, but jackin config is NOT
+            // written here. The minted value is staged into the stashed
+            // auth form (re-mounted below) and persisted only when the
+            // operator Saves — mirroring the provide path's "pick a value
+            // → form re-mounts with the credential, focus Save → Save".
+            let mint = crate::workspace::token_setup::mint_token_value(
+                paths, &config, &req.scope, &req.args,
+            );
+            let _ = resume_console_terminal(&mut out);
+            // Force a full redraw next frame so leftover child output is
+            // cleared before the TUI repaints.
+            let _ = terminal.clear();
+            match mint {
+                Ok(env_value) => {
+                    // A successful op mint created or edited an item/field;
+                    // drop the stale cached item/field lists so a reopened
+                    // picker shows the new entry without a manual refresh.
+                    if let (
+                        crate::operator_env::EnvValue::OpRef(op_ref),
+                        ConsoleStage::Manager(ms),
+                    ) = (&env_value, &state.stage)
+                    {
+                        invalidate_op_cache_for_ref(&ms.op_cache, op_ref);
+                    }
+                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        match &mut ms.stage {
+                            // Re-mount the stashed auth form with the minted
+                            // credential applied (op vs. plain), focus Save —
+                            // the same helpers the provide path uses. The
+                            // operator's Save then runs the normal
+                            // persist_form → editor save that writes config.
+                            ManagerStage::Editor(ed) => match env_value {
+                                crate::operator_env::EnvValue::OpRef(op_ref) => {
+                                    crate::console::manager::input::auth::apply_op_picker_to_auth_form(
+                                        ed, op_ref,
+                                    );
+                                }
+                                crate::operator_env::EnvValue::Plain(value) => {
+                                    crate::console::manager::input::auth::apply_plain_text_to_auth_form(
+                                        ed, &value,
+                                    );
+                                }
+                            },
+                            // Settings (global Claude) re-mounts via its own
+                            // equivalents on the stashed settings auth form.
+                            ManagerStage::Settings(s) => match env_value {
+                                crate::operator_env::EnvValue::OpRef(op_ref) => {
+                                    crate::console::manager::input::apply_op_picker_to_settings_auth_form(
+                                        &mut s.auth, op_ref,
+                                    );
+                                }
+                                crate::operator_env::EnvValue::Plain(value) => {
+                                    crate::console::manager::input::apply_plain_text_to_settings_auth_form(
+                                        &mut s.auth, &value,
+                                    );
+                                }
+                            },
+                            _ => {}
+                        }
+                    }
+                }
+                Err(e) => {
+                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        match &mut ms.stage {
+                            ManagerStage::Editor(ed) => {
+                                ed.modal = Some(Modal::ErrorPopup {
+                                    state:
+                                        crate::console::widgets::error_popup::ErrorPopupState::new(
+                                            "Token generation failed",
+                                            e.to_string(),
+                                        ),
+                                });
+                            }
+                            // Settings surfaces errors through its top-level
+                            // error popup slot (same widget as the editor).
+                            ManagerStage::Settings(s) => {
+                                s.error_popup = Some(
+                                    crate::console::widgets::error_popup::ErrorPopupState::new(
+                                        "Token generation failed",
+                                        e.to_string(),
+                                    ),
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
@@ -1234,6 +1400,68 @@ mod quit_confirm_tests {
         assert!(
             matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
             "Failed outcome must surface the error popup regardless of restore policy"
+        );
+    }
+}
+
+#[cfg(test)]
+mod op_cache_invalidation_tests {
+    use super::invalidate_op_cache_for_ref;
+    use crate::console::op_cache::OpCache;
+    use crate::operator_env::{OpField, OpItem, OpRef};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn invalidate_op_cache_for_ref_drops_items_and_fields() {
+        let cache = Rc::new(RefCell::new(OpCache::default()));
+        let account = Some("ACCT");
+        cache.borrow_mut().put_items(
+            account,
+            "v1",
+            vec![OpItem {
+                id: "i1".into(),
+                name: "Claude".into(),
+                subtitle: String::new(),
+            }],
+        );
+        cache.borrow_mut().put_fields(
+            account,
+            "v1",
+            "i1",
+            vec![OpField {
+                id: "f1".into(),
+                label: "token".into(),
+                field_type: "CONCEALED".into(),
+                concealed: true,
+                reference: String::new(),
+            }],
+        );
+
+        invalidate_op_cache_for_ref(
+            &cache,
+            &OpRef {
+                op: "op://v1/i1/f1".into(),
+                path: "Work/Claude/token".into(),
+                account: Some("ACCT".into()),
+            },
+        );
+
+        assert!(cache.borrow().get_items(account, "v1").is_none());
+        assert!(cache.borrow().get_fields(account, "v1", "i1").is_none());
+    }
+
+    #[test]
+    fn invalidate_op_cache_for_ref_ignores_unparseable_ref() {
+        let cache = Rc::new(RefCell::new(OpCache::default()));
+        // A non-op:// literal must be a no-op, not a panic.
+        invalidate_op_cache_for_ref(
+            &cache,
+            &OpRef {
+                op: "not-a-ref".into(),
+                path: String::new(),
+                account: None,
+            },
         );
     }
 }
