@@ -276,7 +276,7 @@ Examples:
         #[arg(long = "item-name")]
         item_name: Option<String>,
         /// Pin this run to a specific 1Password account (UUID,
-        /// label, or email). Persists to `[workspaces.<ws>].op_account`.
+        /// label, or email). Recorded on the created `op://` ref.
         #[arg(long = "op-account")]
         op_account: Option<String>,
         /// Reuse an existing `op://` reference instead of generating

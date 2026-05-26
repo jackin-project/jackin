@@ -347,6 +347,7 @@ mod form_render_tests {
         form.set_op_ref(OpRef {
             op: "op://uuid/anthropic".into(),
             path: "Work/Anthropic/api-key".into(),
+            account: None,
         });
         let s = dump_form(&form);
         assert!(
@@ -366,6 +367,7 @@ mod form_render_tests {
         form.set_op_ref(OpRef {
             op: "op://uuid/oauth".into(),
             path: "Boris/Roblox/token".into(),
+            account: None,
         });
         let s = dump_form(&form);
         assert!(

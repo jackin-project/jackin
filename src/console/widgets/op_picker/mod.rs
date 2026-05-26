@@ -1385,7 +1385,11 @@ pub(crate) fn build_op_ref_on_commit(
         }
     };
 
-    crate::operator_env::OpRef { op, path }
+    crate::operator_env::OpRef {
+        op,
+        path,
+        account: state.selected_account_id(),
+    }
 }
 
 /// Classifies by stderr substring because `anyhow::Error` has no

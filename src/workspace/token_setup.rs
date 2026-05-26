@@ -71,8 +71,8 @@ pub struct TokenSetupArgs {
     pub vault: Option<String>,
     /// Override the auto-generated item title. `{ws}` is substituted.
     pub item_name: Option<String>,
-    /// Pin this run to a specific 1P account; falls back to
-    /// `WorkspaceConfig.op_account`, then `op`'s default.
+    /// Pin this run to a specific 1P account; falls back to the account
+    /// the workspace's stored ref was created under, then `op`'s default.
     pub account: Option<String>,
     /// If set, skip token generation and adopt the supplied
     /// `op://...` reference verbatim. Used for setup-from-existing
@@ -335,15 +335,6 @@ where
                 CLAUDE_OAUTH_TOKEN_ENV,
                 env_value,
             )?;
-            if let Some(account) = args.account.as_deref()
-                && config
-                    .workspaces
-                    .get(workspace)
-                    .and_then(|ws| ws.op_account.as_deref())
-                    != Some(account)
-            {
-                editor.set_workspace_op_account(workspace, Some(account));
-            }
         }
         TokenSetupScope::WorkspaceRole { workspace, role } => {
             editor.set_workspace_role_auth_forward(
@@ -360,23 +351,11 @@ where
                 CLAUDE_OAUTH_TOKEN_ENV,
                 env_value,
             )?;
-            // op_account is a workspace-level field — write it there, same
-            // as the plain workspace scope.
-            if let Some(account) = args.account.as_deref()
-                && config
-                    .workspaces
-                    .get(workspace)
-                    .and_then(|ws| ws.op_account.as_deref())
-                    != Some(account)
-            {
-                editor.set_workspace_op_account(workspace, Some(account));
-            }
         }
         TokenSetupScope::Global => {
             editor
                 .set_global_auth_forward(crate::agent::Agent::Claude, AuthForwardMode::OAuthToken);
             editor.set_env_var(&EnvScope::Global, CLAUDE_OAUTH_TOKEN_ENV, env_value)?;
-            // No op_account write for global: op_account is a per-workspace field.
         }
     }
     let saved = editor.save()?;
@@ -606,7 +585,7 @@ pub fn run_doctor_with_runner(
     let token = match token_decl {
         EnvValue::Plain(t) => t.clone(),
         EnvValue::OpRef(r) => op_reader
-            .read(&r.op)
+            .read_with_account(&r.op, r.account.as_deref())
             .map_err(|e| anyhow::anyhow!("op read for {:?} failed: {e}", r.path))?,
     };
     let prefix = sha256_prefix(&token);
@@ -689,17 +668,28 @@ fn create_op_item(
     op_writer.item_create(params)
 }
 
+/// The 1Password account a workspace's stored `CLAUDE_CODE_OAUTH_TOKEN`
+/// ref was created under, recovered from `OpRef::account`. `revoke` /
+/// `doctor` pin `op` to this so the slot resolves against the same
+/// account that minted it.
+fn stored_op_account<'a>(config: &'a AppConfig, workspace: &str) -> Option<&'a str> {
+    match config
+        .workspaces
+        .get(workspace)?
+        .env
+        .get(CLAUDE_OAUTH_TOKEN_ENV)
+    {
+        Some(EnvValue::OpRef(r)) => r.account.as_deref(),
+        _ => None,
+    }
+}
+
 fn effective_account<'a>(
     config: &'a AppConfig,
     workspace: &str,
     explicit: Option<&'a str>,
 ) -> Option<&'a str> {
-    explicit.or_else(|| {
-        config
-            .workspaces
-            .get(workspace)
-            .and_then(|ws| ws.op_account.as_deref())
-    })
+    explicit.or_else(|| stored_op_account(config, workspace))
 }
 
 /// Single seam for the `effective_account` → `OpCli::with_account`
@@ -714,8 +704,9 @@ fn op_cli_for(
 }
 
 /// Scope-aware `OpCli` builder for `run_setup`. The `Workspace` variant
-/// folds in the workspace's stored `op_account`; `Global` has no
-/// workspace to read, so it uses only the explicit `--account`.
+/// folds in the account the workspace's stored ref was created under;
+/// `Global` has no workspace to read, so it uses only the explicit
+/// `--account`.
 fn op_cli_for_scope(
     config: &AppConfig,
     scope: &TokenSetupScope,
@@ -936,6 +927,7 @@ mod tests {
                 produced_ref: OpRef {
                     op: "op://_/_/_".into(),
                     path: "_/_/_".into(),
+                    account: None,
                 },
                 recorded_value: RefCell::new(None),
                 fail_create: true,
@@ -1069,6 +1061,7 @@ mod tests {
         OpRef {
             op: "op://VID/IID/FID".into(),
             path: "Personal/jackin · proj · claude-token/token".into(),
+            account: None,
         }
     }
 
@@ -1418,6 +1411,7 @@ mod tests {
                 reuse: Some(OpRef {
                     op: "op://Other/Item/Field".into(),
                     path: "Other/Item/Field".into(),
+                    account: None,
                 }),
                 ..Default::default()
             },
@@ -1452,6 +1446,7 @@ mod tests {
                 reuse: Some(OpRef {
                     op: "op://VID/IID/FID".into(),
                     path: "Personal/Existing/token".into(),
+                    account: None,
                 }),
                 ..Default::default()
             },
@@ -1559,6 +1554,7 @@ mod tests {
                 reuse: Some(OpRef {
                     op: "op://Other/Item/Field".into(),
                     path: "Other/Item/Field".into(),
+                    account: None,
                 }),
                 ..Default::default()
             },
@@ -1636,6 +1632,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://VID/IID/FID".into(),
                 path: "Personal/Item/token".into(),
+                account: None,
             }),
         );
         cfg.workspaces.insert("proj".into(), ws);
@@ -1673,6 +1670,7 @@ mod tests {
         let prior = EnvValue::OpRef(OpRef {
             op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
             path: "Personal/jackin · proj · claude-token/token".into(),
+            account: None,
         });
         assert_eq!(
             vault_for_rotate(None, Some(&prior)),
@@ -1689,6 +1687,7 @@ mod tests {
         let prior = EnvValue::OpRef(OpRef {
             op: "op://OldVault/ITEM/FIELD".into(),
             path: "OldVault/Item/token".into(),
+            account: None,
         });
         assert_eq!(
             vault_for_rotate(Some("NewVault".into()), Some(&prior)),
@@ -1781,6 +1780,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://VID/IID/FID".into(),
                 path: "Personal/Item/token".into(),
+                account: None,
             }),
         );
         cfg.workspaces.insert("proj".into(), ws);
@@ -1807,6 +1807,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
                 path: "Personal/Item/token".into(),
+                account: None,
             }),
         );
         cfg.workspaces.insert("proj".into(), ws);
@@ -1883,6 +1884,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://VID/IID/FID".into(),
                 path: "Personal/Item/token".into(),
+                account: None,
             }),
         );
         cfg.workspaces.insert("proj".into(), ws);
@@ -1950,6 +1952,7 @@ mod tests {
         let bogus_ref = OpRef {
             op: "garbage-not-an-op-uri".into(),
             path: "Personal/Item/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::new(bogus_ref);
         let reader = FakeOpReader::err("op read failed: bogus URI");

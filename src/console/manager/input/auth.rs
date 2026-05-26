@@ -645,7 +645,10 @@ pub(super) fn apply_op_picker_to_auth_form(
     editor: &mut EditorState<'_>,
     op_ref: crate::operator_env::OpRef,
 ) {
-    apply_op_picker_to_auth_form_with_runner(editor, op_ref, &crate::operator_env::OpCli::new());
+    // Pin the read-back to the account the picker committed onto the ref
+    // so a vault in a non-default account resolves.
+    let runner = crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
+    apply_op_picker_to_auth_form_with_runner(editor, op_ref, &runner);
 }
 
 /// Restore the auth-form modal unchanged after the operator cancels
@@ -1541,6 +1544,7 @@ mod tests {
         let picked = OpRef {
             op: "op://uuid/anthropic-vault".into(),
             path: "Work/Anthropic/api-key".into(),
+            account: None,
         };
         super::apply_op_picker_to_auth_form_with_runner(editor, picked.clone(), &StubRunner);
 
@@ -1596,6 +1600,7 @@ mod tests {
         let picked = OpRef {
             op: "op://uuid/missing".into(),
             path: "Vault/Missing/field".into(),
+            account: None,
         };
         super::apply_op_picker_to_auth_form_with_runner(editor, picked, &FailRunner);
 
@@ -1683,6 +1688,7 @@ mod tests {
             state.credential = CredentialInput::OpRef(OpRef {
                 op: String::new(),
                 path: String::new(),
+                account: None,
             });
         } else {
             panic!("auth form must still be open");

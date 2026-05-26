@@ -453,7 +453,7 @@ LOCAL = "only-prod"
         assert!(!global.contains("[workspaces."), "{global}");
 
         let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
-        assert!(workspace.contains(r#"version = "v1alpha4""#), "{workspace}");
+        assert!(workspace.contains(r#"version = "v1alpha5""#), "{workspace}");
         assert!(
             workspace.contains(r#"workdir = "/workspace/prod""#),
             "{workspace}"
@@ -622,7 +622,7 @@ dst = "/workspace/prod"
 
         let prod_on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
         let prod_parsed: toml::Value = toml::from_str(&prod_on_disk).unwrap();
-        assert_eq!(prod_parsed["version"].as_str().unwrap(), "v1alpha4");
+        assert_eq!(prod_parsed["version"].as_str().unwrap(), "v1alpha5");
 
         // Re-running is a no-op: file content stays byte-identical.
         let global_before = std::fs::read(&paths.config_file).unwrap();
@@ -655,7 +655,7 @@ dst = "/workspace/prod"
 
         let on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
         let parsed: toml::Value = toml::from_str(&on_disk).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha4");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
         assert!(on_disk.contains("# keep me"), "{on_disk}");
     }
 

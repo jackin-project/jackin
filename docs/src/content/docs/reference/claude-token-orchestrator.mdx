@@ -95,7 +95,7 @@ If the JSON shape ever drifts (upstream renames a field, returns empty `fields`)
 
 ### Account pinning
 
-`OpCli::with_account(Some(id))` pins every subprocess invocation to `op --account <id>`. The orchestrator constructs one `OpCli` per run via the `op_cli_for(config, workspace, explicit) -> OpCli` helper which folds the rule "explicit `--op-account` flag wins over the workspace's stored `op_account` field". The same helper is used by every `run_*` entry point, so account resolution lives in one place.
+`OpCli::with_account(Some(id))` pins every subprocess invocation to `op --account <id>`. The orchestrator constructs one `OpCli` per run via the `op_cli_for(config, workspace, explicit) -> OpCli` helper which folds the rule "explicit `--op-account` flag wins over the account recorded on the workspace's stored `op://` reference (`OpRef::account`)". The same helper is used by every `run_*` entry point, so account resolution lives in one place. `item_create` / `item_field_set` stamp the run's pinned account onto the `OpRef` they return, so the wired env value records the account it was created under; reads later rebind to that per-ref account via `OpRunner::read_with_account`.
 
 `OpWriteRunner::item_delete` accepts a per-call account override that wins over the pinned `OpCli::account` — used by the orphan-cleanup path so a stale account context never causes a delete to land in the wrong vault.
 
@@ -131,9 +131,8 @@ The only constructor is `OrphanCleanup::run(op_writer, &op_ref, account)`. Parse
 Once validation has succeeded, the orchestrator opens a `ConfigEditor` and applies, **in order**:
 
 1. `set_workspace_auth_forward(workspace, Agent::Claude, AuthForwardMode::OAuthToken)`.
-2. `set_env_var(EnvScope::Workspace(ws), CLAUDE_OAUTH_TOKEN_ENV, EnvValue::OpRef(op_ref))`.
-3. If `--op-account` was passed AND differs from any stored `op_account`, `set_workspace_op_account(ws, Some(account))`.
-4. `editor.save()` — single atomic write back to disk.
+2. `set_env_var(EnvScope::Workspace(ws), CLAUDE_OAUTH_TOKEN_ENV, EnvValue::OpRef(op_ref))` — the `op_ref` already carries its `account`, so no separate workspace-level account write is needed.
+3. `editor.save()` — single atomic write back to disk.
 
 `ConfigEditor` preserves the surrounding TOML's comments and key ordering, so the operator's hand-edits survive a setup run.
 

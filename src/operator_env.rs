@@ -5,6 +5,15 @@
 pub trait OpRunner {
     fn read(&self, reference: &str) -> anyhow::Result<String>;
 
+    /// Read pinned to a specific 1Password account. The production
+    /// `OpCli` rebinds itself to `account` before invoking `op` so a
+    /// ref whose vault lives in a non-default account resolves. Default
+    /// ignores `account` and delegates to `read`, keeping mock runners
+    /// trivial.
+    fn read_with_account(&self, reference: &str, _account: Option<&str>) -> anyhow::Result<String> {
+        self.read(reference)
+    }
+
     /// Probed once per launch so a missing `op` surfaces as a single
     /// install-link error rather than one-per-key noise. Default no-op
     /// keeps mock runners trivial.
@@ -41,12 +50,14 @@ where
 {
     match value {
         EnvValue::Plain(s) => dispatch_plain(layer_label, var_name, s, host_env),
-        EnvValue::OpRef(r) => op_runner.read(&r.op).map_err(|e| {
-            anyhow::anyhow!(
-                "{layer_label} env var {var_name:?}: 1Password reference {:?} failed: {e}",
-                r.path
-            )
-        }),
+        EnvValue::OpRef(r) => op_runner
+            .read_with_account(&r.op, r.account.as_deref())
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "{layer_label} env var {var_name:?}: 1Password reference {:?} failed: {e}",
+                    r.path
+                )
+            }),
     }
 }
 
@@ -134,6 +145,12 @@ pub struct OpRef {
     /// `[subtitle]` is embedded only when the item shares its name with
     /// another item in the same vault at write time.
     pub path: String,
+
+    /// 1Password account (id/email) the ref resolves against. `None` =
+    /// op's default/only account. Reads pin to this so multi-account
+    /// vaults resolve. Serialized only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 impl EnvValue {
@@ -259,9 +276,10 @@ pub struct OpCli {
     timeout: std::time::Duration,
     /// Pinned 1P account forwarded as `op --account <id>` on every
     /// invocation. `None` lets `op` fall back to its default-account
-    /// context. Set per-workspace at launch via
-    /// `WorkspaceConfig::op_account` so multi-account operators get
-    /// deterministic resolution regardless of which account they last
+    /// context. Write paths set this so the minted ref records the
+    /// account it was created under (`OpRef::account`); reads rebind to
+    /// the ref's own account via `read_with_account` so multi-account
+    /// vaults resolve regardless of which account was last
     /// `op signin`-ed.
     account: Option<String>,
 }
@@ -443,6 +461,20 @@ fn op_spawn_error(binary: &str, error: &std::io::Error) -> anyhow::Error {
 }
 
 impl OpRunner for OpCli {
+    fn read_with_account(&self, reference: &str, account: Option<&str>) -> anyhow::Result<String> {
+        // A per-ref account overrides the instance default so a workspace
+        // holding refs from several accounts resolves each against its own.
+        match account {
+            Some(_) => Self {
+                binary: self.binary.clone(),
+                timeout: self.timeout,
+                account: account.map(str::to_string),
+            }
+            .read(reference),
+            None => self.read(reference),
+        }
+    }
+
     fn read(&self, reference: &str) -> anyhow::Result<String> {
         use std::io::Read;
         use std::process::{Command, Stdio};
@@ -1139,7 +1171,11 @@ impl OpWriteRunner for OpCli {
         };
         let path = format!("{}/{}/{}", vault_name, raw.title, params.field_label);
 
-        Ok(OpRef { op: op_uri, path })
+        Ok(OpRef {
+            op: op_uri,
+            path,
+            account: self.account.clone(),
+        })
     }
 
     fn item_delete(
@@ -1343,7 +1379,11 @@ impl OpWriteRunner for OpCli {
             .unwrap_or(field_label);
         let path = format!("{vault_name}/{item_title}/{field_label_display}");
 
-        Ok(OpRef { op: op_uri, path })
+        Ok(OpRef {
+            op: op_uri,
+            path,
+            account: self.account.clone(),
+        })
     }
 }
 
@@ -1624,6 +1664,7 @@ pub fn resolve_op_uri_to_ref(
     Ok(OpRef {
         op: op_uri,
         path: display_path,
+        account: account.map(str::to_string),
     })
 }
 
@@ -1699,14 +1740,9 @@ pub fn resolve_operator_env(
     role_selector: Option<&str>,
     workspace_name: Option<&str>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
-    // Pin `op` to the workspace's chosen 1Password account when one is
-    // configured (`[workspaces.X].op_account`). Multi-account operators
-    // rely on this so resolution doesn't silently use whichever account
-    // they last `op signin`-ed.
-    let op_account = workspace_name
-        .and_then(|ws| config.workspaces.get(ws))
-        .and_then(|ws| ws.op_account.clone());
-    let runner = OpCli::new().with_account(op_account);
+    // Each `op://` ref pins its own account at read time
+    // (`OpRef::account`), so the runner carries no instance-level account.
+    let runner = OpCli::new();
     resolve_operator_env_with(config, role_selector, workspace_name, &runner, |name| {
         std::env::var(name)
     })
@@ -1993,6 +2029,7 @@ mod tests {
         let v = EnvValue::OpRef(OpRef {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude/auth".into(),
+            account: None,
         });
         assert_eq!(v.as_display_str(), "Private/Claude/auth");
     }
@@ -2067,6 +2104,7 @@ mod tests {
         let v = EnvValue::OpRef(OpRef {
             op: "op://abc/def/fld".into(),
             path: "Vault/Item/Field".into(),
+            account: None,
         });
         let r = resolve_env_value("test", "X", &v, &runner, |_| {
             Err(std::env::VarError::NotPresent)
@@ -2086,6 +2124,7 @@ mod tests {
         let v = EnvValue::OpRef(OpRef {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude/security/auth token".into(),
+            account: None,
         });
         let err = resolve_env_value("workspace foo", "TOKEN", &v, &runner, |_| {
             Err(std::env::VarError::NotPresent)
@@ -2662,6 +2701,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field-a".to_string(),
                 path: "Personal/ItemA/field-a".to_string(),
+                account: None,
             }),
         );
         cfg.env.insert(
@@ -2669,6 +2709,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field-b".to_string(),
                 path: "Personal/ItemA/field-b".to_string(),
+                account: None,
             }),
         );
         let runner = ProbeCountingRunner {
@@ -2736,6 +2777,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field-a".to_string(),
                 path: "Personal/ItemA/field-a".to_string(),
+                account: None,
             }),
         );
         cfg.env.insert(
@@ -2743,6 +2785,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field-b".to_string(),
                 path: "Personal/ItemA/field-b".to_string(),
+                account: None,
             }),
         );
         let err = resolve_operator_env_with(&cfg, None, None, &FailingProbeRunner, |_| {
@@ -2764,6 +2807,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/token".to_string(),
                 path: "Personal/BrokenItem/token".to_string(),
+                account: None,
             }),
         );
 
@@ -2816,6 +2860,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field".to_string(),
                 path: "Personal/item/field".to_string(),
+                account: None,
             }),
         );
         let resolved: std::collections::BTreeMap<String, String> = [
@@ -2853,6 +2898,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field".to_string(),
                 path: "Personal/item/field".to_string(),
+                account: None,
             }),
         );
         let resolved: std::collections::BTreeMap<String, String> = [
@@ -3169,6 +3215,7 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
             Some(&EnvValue::OpRef(OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "Vault/Item/Field".into(),
+                account: None,
             }))
         );
 

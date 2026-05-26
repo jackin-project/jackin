@@ -3576,6 +3576,7 @@ plugins = []
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc-vault/abc-item/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
 
@@ -3620,6 +3621,7 @@ plugins = []
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc-vault/abc-item/api-token".into(),
                 path: "Personal/api/token".into(),
+                account: None,
             }),
         );
         ws.roles.insert(
@@ -3808,6 +3810,7 @@ plugins = []
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc-vault/abc-item/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
         let mut state = ManagerState::from_config(&config, tmp.path());

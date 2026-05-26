@@ -728,7 +728,6 @@ pub async fn run(cli: Cli) -> Result<()> {
                     keep_awake: crate::workspace::KeepAwakeConfig {
                         enabled: keep_awake,
                     },
-                    op_account: None,
                     claude: None,
                     codex: None,
                     amp: None,
@@ -3236,7 +3235,6 @@ mod auth_set_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,
@@ -3431,11 +3429,13 @@ mod auth_set_tests {
             crate::operator_env::OpRef {
                 op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
                 path: "Personal/Prior/token".into(),
+                account: None,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
             path: "Personal/New/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
@@ -3453,6 +3453,7 @@ mod auth_set_tests {
         let new_ref = crate::operator_env::OpRef {
             op: "op://V/I/F".into(),
             path: "Personal/New/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(None, &new_ref, &writer).unwrap();
@@ -3477,6 +3478,7 @@ mod auth_set_tests {
         let same = crate::operator_env::OpRef {
             op: "op://V/I/F".into(),
             path: "Personal/Item/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::new();
         delete_prior_op_item_with_runner(
@@ -3497,11 +3499,13 @@ mod auth_set_tests {
             crate::operator_env::OpRef {
                 op: "op://V_UUID/I_UUID/F".into(),
                 path: "Personal/Prior/token".into(),
+                account: None,
             },
         ));
         let new_ref = crate::operator_env::OpRef {
             op: "op://V_UUID/I_NEW/F".into(),
             path: "Personal/New/token".into(),
+            account: None,
         };
         let writer = FakeOpWriter::failing();
         let err = delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap_err();

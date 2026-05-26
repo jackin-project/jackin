@@ -2319,6 +2319,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2372,6 +2373,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://Personal/API Keys/auth/secret_key".into(),
                 path: "Personal/API Keys/auth/secret_key".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2420,6 +2422,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2468,6 +2471,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://Work/db/password".into(),
                 path: "Work/db/password".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2666,6 +2670,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude[alexey@zhokhov.com]/security/auth token".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2714,6 +2719,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/fld?attribute=otp".into(),
                 path: "Private/GitHub/one-time password?attribute=otp".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2755,6 +2761,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/sec/fld?attribute=otp".into(),
                 path: "Private/Claude[alexey@zhokhov.com]/security/auth token?attribute=otp".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2829,6 +2836,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude/security/auth token".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {
@@ -2862,6 +2870,7 @@ mod secrets_tab_render_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "garbage-no-slashes".into(),
+                account: None,
             }),
         );
         let ws = WorkspaceConfig {

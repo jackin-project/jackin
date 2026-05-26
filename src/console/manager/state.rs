@@ -3093,7 +3093,6 @@ mod tests {
             env: BTreeMap::default(),
             roles: BTreeMap::default(),
             keep_awake: KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,
