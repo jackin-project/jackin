@@ -2694,14 +2694,13 @@ async fn resolve_restore_candidate(
     )
     .await?;
 
-    if candidates.is_empty() {
-        return if related.is_empty() {
-            Ok(RestoreResolution::StartFresh)
-        } else {
-            prompt_related_restore_candidate(workspace_label, &related)
-        };
+    if candidates.is_empty() && related.is_empty() {
+        return Ok(RestoreResolution::StartFresh);
     }
 
+    // One dialog for every stale-state decision — same-role candidates and
+    // related-role candidates alike — so the operator always sees the rich
+    // forced-choice picker inside the TUI, never a divergent stdin prompt.
     present_restore_choice(progress, paths, workspace_label, role_key, candidates, &related)
 }
 
@@ -2830,32 +2829,6 @@ async fn related_restore_candidates(
     Ok(candidates)
 }
 
-fn prompt_related_restore_candidate(
-    workspace_label: &str,
-    candidates: &[RelatedRestoreCandidate],
-) -> anyhow::Result<RestoreResolution> {
-    if !std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "unfinished jackin instances exist for workspace `{workspace_label}` under a different role or agent; run `jackin hardline <instance>` to inspect or recover them before starting a fresh load"
-        );
-    }
-
-    let mut options: Vec<String> = candidates
-        .iter()
-        .map(related_restore_candidate_action_label)
-        .collect();
-    options.push("Start fresh instead".to_string());
-    let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-    let choice = tui::prompt_choice(
-        &format!("Unfinished jackin instances exist for workspace `{workspace_label}`."),
-        &option_refs,
-    )?;
-    if let Some(candidate) = candidates.get(choice) {
-        return recover_related_restore_candidate(candidate);
-    }
-    Ok(RestoreResolution::StartFresh)
-}
-
 fn recover_related_restore_candidate(
     candidate: &RelatedRestoreCandidate,
 ) -> anyhow::Result<RestoreResolution> {
@@ -2906,35 +2879,6 @@ fn related_restore_load_options(
     })
 }
 
-fn related_restore_candidate_action_label(candidate: &RelatedRestoreCandidate) -> String {
-    match candidate.docker_state {
-        ContainerState::Running
-        | ContainerState::Paused
-        | ContainerState::Restarting
-        | ContainerState::Stopped { .. } => {
-            format!(
-                "Recover now {}",
-                related_restore_candidate_label_for_prompt(candidate)
-            )
-        }
-        ContainerState::NotFound
-        | ContainerState::Created
-        | ContainerState::Removing
-        | ContainerState::Dead => {
-            format!(
-                "Rebuild now {}",
-                related_restore_candidate_label_for_prompt(candidate)
-            )
-        }
-        ContainerState::InspectUnavailable(_) => {
-            format!(
-                "Recover with hardline {}",
-                related_restore_candidate_label_for_prompt(candidate)
-            )
-        }
-    }
-}
-
 fn related_restore_candidate_label(
     paths: &JackinPaths,
     candidate: &RelatedRestoreCandidate,
@@ -2943,18 +2887,6 @@ fn related_restore_candidate_label(
         "{} docker:{}",
         restore_candidate_label(paths, &candidate.manifest),
         candidate.docker_state.short_label()
-    )
-}
-
-fn related_restore_candidate_label_for_prompt(candidate: &RelatedRestoreCandidate) -> String {
-    format!(
-        "{} role:{} agent:{} status:{} docker:{} updated:{}",
-        candidate.manifest.instance_id,
-        candidate.manifest.role_key,
-        candidate.manifest.agent_runtime,
-        candidate.manifest.status.label(),
-        candidate.docker_state.short_label(),
-        candidate.manifest.updated_at
     )
 }
 
@@ -8413,12 +8345,15 @@ plugins = []
             .await
             .unwrap_err();
 
+        // The related-only case now flows through the unified restore dialog,
+        // which on a non-interactive stdin bails rather than silently starting
+        // fresh.
         let message = error.to_string();
         assert!(
-            message.contains("different role or agent"),
+            message.contains("stdin is not interactive"),
             "unexpected error: {message}"
         );
-        assert!(message.contains("jackin hardline <instance>"), "{message}");
+        assert!(message.contains("agent-smith"), "{message}");
     }
 
     #[tokio::test]
@@ -8521,7 +8456,6 @@ plugins = []
             resolution,
             RestoreResolution::RecoverRelatedRole(container_name.to_string())
         );
-        assert!(related_restore_candidate_action_label(&candidate).starts_with("Recover now"));
     }
 
     #[tokio::test]
@@ -8544,7 +8478,6 @@ plugins = []
             RestoreResolution::RebuildRelatedRole(ref manifest)
                 if manifest.container_base == container_name
         ));
-        assert!(related_restore_candidate_action_label(&candidate).starts_with("Rebuild now"));
     }
 
     #[tokio::test]
@@ -8571,13 +8504,6 @@ plugins = []
         assert_eq!(
             opts.restore_role_source_git.as_deref(),
             Some("https://example.invalid/the-architect.git")
-        );
-        assert!(
-            related_restore_candidate_action_label(&RelatedRestoreCandidate {
-                manifest,
-                docker_state: ContainerState::NotFound,
-            })
-            .starts_with("Rebuild now")
         );
     }
 
