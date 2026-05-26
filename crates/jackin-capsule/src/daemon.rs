@@ -3280,20 +3280,19 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         launch_config.workdir.as_str()
     );
 
-    let mut mux = Multiplexer::new(rows, cols, launch_config);
-    // Defer the first pane until the first attach Hello has supplied
-    // real outer-terminal dimensions. Later panes already spawn after
-    // attach-time resize; routing the first pane through the same
-    // path removes first-tab-only scrollback/chrome differences.
     let initial_provider_env = launch_config
         .initial_provider
         .as_ref()
         .map(|p| p.env_overrides.clone())
         .unwrap_or_default();
-    let mut pending_initial_spawn = Some(initial_spawn_request(
-        &initial_agent,
-        launch_config.initial_provider.as_ref(),
-    ));
+    let initial_spawn =
+        initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
+    let mut mux = Multiplexer::new(rows, cols, launch_config);
+    // Defer the first pane until the first attach Hello has supplied
+    // real outer-terminal dimensions. Later panes already spawn after
+    // attach-time resize; routing the first pane through the same
+    // path removes first-tab-only scrollback/chrome differences.
+    let mut pending_initial_spawn = Some(initial_spawn);
 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
