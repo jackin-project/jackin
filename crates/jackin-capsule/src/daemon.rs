@@ -5331,6 +5331,7 @@ mod tests {
                 agents: Vec::new(),
                 models: std::collections::BTreeMap::new(),
                 zai_key: None,
+                initial_provider: None,
             },
         )
     }
@@ -5575,10 +5576,10 @@ mod tests {
     #[test]
     fn initial_spawn_request_is_data_only_agent_or_shell() {
         assert_eq!(
-            initial_spawn_request("codex"),
+            initial_spawn_request("codex", None),
             SpawnRequest::Agent("codex".to_string())
         );
-        assert_eq!(initial_spawn_request(""), SpawnRequest::Shell);
+        assert_eq!(initial_spawn_request("", None), SpawnRequest::Shell);
     }
 
     #[test]

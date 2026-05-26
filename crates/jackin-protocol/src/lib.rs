@@ -20,7 +20,6 @@ pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
 
 /// Host-validated role/session facts Capsule needs to spawn panes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct CapsuleConfig {
     pub role: String,
     pub workdir: String,
