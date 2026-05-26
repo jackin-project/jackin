@@ -783,13 +783,13 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
             } else {
                 (1.0 - (i as f32 - peak).abs() / 5.0).max(0.0)
             };
-            let color = if kind == 1 {
-                // Role: white, brightening dim-white → full white on the ripple.
+            let color = if kind == 0 {
+                // "Loading" / "in": green, dim → bright on the ripple.
+                Color::Rgb(lerp(0, 120, bright), lerp(140, 255, bright), lerp(30, 120, bright))
+            } else {
+                // Role + path: white, brightening dim-white → full white.
                 let v = lerp(170, 255, bright);
                 Color::Rgb(v, v, v)
-            } else {
-                // Loading / in / path: green, dim → bright on the ripple.
-                Color::Rgb(lerp(0, 120, bright), lerp(140, 255, bright), lerp(30, 120, bright))
             };
             let mut style = Style::default().fg(color);
             if kind != 0 {
