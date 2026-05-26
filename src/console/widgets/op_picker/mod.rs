@@ -83,6 +83,10 @@ pub enum OpPickerStage {
     Account,
     Vault,
     Item,
+    /// Section picker between Item and Field (Create mode only). Browse
+    /// mode never lands here — it goes Item → Field with a flat,
+    /// collapsible-header field list.
+    Section,
     Field,
     /// Text input for a brand-new item's title (Create mode).
     NewItemName,
@@ -90,6 +94,21 @@ pub enum OpPickerStage {
     FieldLabel,
     /// Text input for a new section name (Create mode).
     NewSectionName,
+}
+
+/// Which stage the operator was on when they entered the `FieldLabel`
+/// text-input sub-stage. Drives the `FieldLabel` Esc back-nav so it
+/// returns to the correct origin (Create mode has three).
+// The shared `New` prefix mirrors the three `+ New X` creation rows.
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FieldLabelOrigin {
+    /// `+ New item` → `NewItemName` → `FieldLabel`.
+    NewItem,
+    /// `+ New field` on the (section-scoped) `Field` stage → `FieldLabel`.
+    NewField,
+    /// `+ New section` on the `Section` stage → `NewSectionName` → `FieldLabel`.
+    NewSection,
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +181,11 @@ pub struct OpPickerState {
 
     pub fields: Vec<OpField>,
     pub field_list_state: ListState,
+    pub section_list_state: ListState,
+    /// The section chosen on the Section stage (Create mode), scoping the
+    /// Field stage. `None` = the unsectioned `(root)` choice. Reset to
+    /// `None` whenever a fresh item's fields load.
+    pub selected_section: Option<String>,
     /// Section names currently collapsed in the field picker.
     /// Absent ⟹ expanded. Cleared whenever a fresh field list loads.
     pub collapsed_sections: HashSet<String>,
@@ -179,6 +203,9 @@ pub struct OpPickerState {
     /// Captured by the New-section flow, consumed when the final
     /// `OpPickerSelection` is built at commit.
     pub pending_section: Option<String>,
+    /// The stage the `FieldLabel` sub-stage was entered from, so its Esc
+    /// returns to the right origin (Create mode has three entry points).
+    field_label_origin: FieldLabelOrigin,
 
     /// `Arc` so spawned worker threads share the same trait object
     /// (test injectees included).
@@ -203,6 +230,7 @@ impl std::fmt::Debug for OpPickerState {
             .field("items", &self.items)
             .field("selected_item", &self.selected_item)
             .field("fields", &self.fields)
+            .field("selected_section", &self.selected_section)
             .field("collapsed_sections", &self.collapsed_sections)
             .field("load_state", &self.load_state)
             .field("mode", &self.mode)
@@ -299,6 +327,8 @@ impl OpPickerState {
             selected_item: None,
             fields: Vec::new(),
             field_list_state: ListState::default(),
+            section_list_state: ListState::default(),
+            selected_section: None,
             collapsed_sections: HashSet::new(),
             load_state: OpLoadState::Loading { spinner_tick: 0 },
             mode,
@@ -306,6 +336,7 @@ impl OpPickerState {
             field_label_input: TextInputState::new("Field label", field_default),
             section_name_input: TextInputState::new("Section name", ""),
             pending_section: None,
+            field_label_origin: FieldLabelOrigin::NewItem,
             runner,
             rx: None,
             op_cache,
@@ -526,9 +557,19 @@ impl OpPickerState {
                 );
                 self.fields = fields;
                 self.collapsed_sections.clear();
-                let display_count = self.build_field_display_rows().len();
-                self.field_list_state
-                    .select(if display_count == 0 { None } else { Some(0) });
+                self.selected_section = None;
+                if self.mode.is_create() {
+                    // Create mode inserts a Section stage between Item and
+                    // Field; sections derive from the just-loaded fields.
+                    self.stage = OpPickerStage::Section;
+                    let section_count = self.section_choices().len() + 1; // + New section sentinel
+                    self.section_list_state
+                        .select(if section_count == 0 { None } else { Some(0) });
+                } else {
+                    let display_count = self.build_field_display_rows().len();
+                    self.field_list_state
+                        .select(if display_count == 0 { None } else { Some(0) });
+                }
                 self.load_state = OpLoadState::Ready;
             }
             Err(mpsc::TryRecvError::Empty) => {}
@@ -602,14 +643,39 @@ impl OpPickerState {
             .collect()
     }
 
+    /// Distinct sections present in the loaded fields, in first-appearance
+    /// order, with a leading `None` (`(root)`) entry. Drives the Section
+    /// stage list (Create mode). The render appends a `+ New section`
+    /// sentinel after these choices.
+    pub fn section_choices(&self) -> Vec<Option<String>> {
+        let mut out: Vec<Option<String>> = vec![None];
+        for f in &self.fields {
+            if let Some(name) =
+                crate::operator_env::parse_op_reference(&f.reference).and_then(|p| p.section)
+                && !out.iter().any(|s| s.as_deref() == Some(name.as_str()))
+            {
+                out.push(Some(name));
+            }
+        }
+        out
+    }
+
     /// Build the ordered display rows for the field picker.
     ///
-    /// Unsectioned fields (no `section` segment in `OpField::reference`)
-    /// are emitted first; each named section follows with a collapsible
-    /// `SectionHeader` row. Sections with zero visible (filtered) fields
-    /// are omitted. The `field_idx` values inside `Field` rows index into
-    /// `self.filtered_fields()`.
+    /// Browse mode: unsectioned fields (no `section` segment in
+    /// `OpField::reference`) are emitted first; each named section follows
+    /// with a collapsible `SectionHeader` row. Sections with zero visible
+    /// (filtered) fields are omitted.
+    ///
+    /// Create mode: the Field stage is already scoped to `selected_section`
+    /// (chosen on the Section stage), so the rows are just that section's
+    /// fields followed by a `+ New field` sentinel — no headers, no
+    /// `+ New section` row. The `field_idx` values inside `Field` rows index
+    /// into `self.filtered_fields()`.
     pub fn build_field_display_rows(&self) -> Vec<FieldDisplayRow> {
+        if self.mode.is_create() {
+            return self.build_create_field_rows();
+        }
         let visible = self.filtered_fields();
         let mut unsectioned: Vec<usize> = Vec::new();
         let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
@@ -646,11 +712,26 @@ impl OpPickerState {
             }
         }
 
-        if self.mode.is_create() {
-            rows.push(FieldDisplayRow::NewFieldSentinel);
-            rows.push(FieldDisplayRow::NewSectionSentinel);
-        }
+        rows
+    }
 
+    /// Field rows for the Create-mode Field stage: only the fields whose
+    /// section matches `selected_section`, followed by a `+ New field`
+    /// sentinel. No section headers and no `+ New section` row — the
+    /// section was already chosen on the Section stage.
+    fn build_create_field_rows(&self) -> Vec<FieldDisplayRow> {
+        let mut rows: Vec<FieldDisplayRow> = self
+            .filtered_fields()
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| {
+                let section =
+                    crate::operator_env::parse_op_reference(&f.reference).and_then(|p| p.section);
+                section.as_deref() == self.selected_section.as_deref()
+            })
+            .map(|(idx, _)| FieldDisplayRow::Field { field_idx: idx })
+            .collect();
+        rows.push(FieldDisplayRow::NewFieldSentinel);
         rows
     }
 
@@ -666,6 +747,7 @@ impl OpPickerState {
             OpPickerStage::Account
             | OpPickerStage::Vault
             | OpPickerStage::Item
+            | OpPickerStage::Section
             | OpPickerStage::Field => None,
         }
     }
@@ -704,6 +786,7 @@ impl OpPickerState {
             OpPickerStage::Account => self.handle_account_key(key),
             OpPickerStage::Vault => self.handle_vault_key(key),
             OpPickerStage::Item => self.handle_item_key(key),
+            OpPickerStage::Section => self.handle_section_key(key),
             OpPickerStage::Field => self.handle_field_key(key),
             OpPickerStage::NewItemName
             | OpPickerStage::FieldLabel
@@ -898,6 +981,69 @@ impl OpPickerState {
         }
     }
 
+    /// Create-mode Section stage: pick `(root)` / an existing section /
+    /// `+ New section`. The list has `section_choices().len()` choice rows
+    /// followed by a single `+ New section` sentinel. No filtering — sections
+    /// are few, so `Char` input is ignored here.
+    fn handle_section_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
+        let choices = self.section_choices();
+        let sentinel_idx = choices.len();
+        match key.code {
+            KeyCode::Esc => {
+                // Mirror the Field-stage Esc back to Item.
+                self.stage = OpPickerStage::Item;
+                self.filter_buf.clear();
+                self.fields.clear();
+                self.collapsed_sections.clear();
+                self.selected_section = None;
+                self.selected_item = None;
+                ModalOutcome::Continue
+            }
+            KeyCode::Up => {
+                cycle_select(&mut self.section_list_state, sentinel_idx + 1, -1);
+                ModalOutcome::Continue
+            }
+            KeyCode::Down => {
+                cycle_select(&mut self.section_list_state, sentinel_idx + 1, 1);
+                ModalOutcome::Continue
+            }
+            KeyCode::Enter => {
+                let cur = self.section_list_state.selected.unwrap_or(0);
+                if cur == sentinel_idx {
+                    self.section_name_input = TextInputState::new("Section name", "");
+                    self.stage = OpPickerStage::NewSectionName;
+                } else if let Some(choice) = choices.get(cur) {
+                    self.selected_section.clone_from(choice);
+                    self.stage = OpPickerStage::Field;
+                    self.filter_buf.clear();
+                    let n = self.build_field_display_rows().len();
+                    self.field_list_state
+                        .select(if n == 0 { None } else { Some(0) });
+                }
+                ModalOutcome::Continue
+            }
+            _ => ModalOutcome::Continue,
+        }
+    }
+
+    /// Esc back-nav from the Field stage. Create mode steps back to the
+    /// Section stage (keeping the loaded fields); Browse steps back to Item.
+    fn field_stage_back(&mut self) {
+        self.filter_buf.clear();
+        if self.mode.is_create() {
+            self.stage = OpPickerStage::Section;
+            self.selected_section = None;
+            let section_count = self.section_choices().len() + 1;
+            self.section_list_state
+                .select(if section_count == 0 { None } else { Some(0) });
+        } else {
+            self.stage = OpPickerStage::Item;
+            self.fields.clear();
+            self.collapsed_sections.clear();
+            self.selected_item = None;
+        }
+    }
+
     fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -924,11 +1070,7 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Esc => {
-                self.stage = OpPickerStage::Item;
-                self.filter_buf.clear();
-                self.fields.clear();
-                self.collapsed_sections.clear();
-                self.selected_item = None;
+                self.field_stage_back();
                 ModalOutcome::Continue
             }
             KeyCode::Up => {
@@ -977,13 +1119,15 @@ impl OpPickerState {
                         }
                     }
                     Some(FieldDisplayRow::NewFieldSentinel) => {
-                        self.pending_section = None;
+                        // The Field stage is scoped to the chosen section, so
+                        // the new field lands there too.
+                        self.pending_section = self.selected_section.clone();
+                        self.field_label_origin = FieldLabelOrigin::NewField;
                         self.stage = OpPickerStage::FieldLabel;
                     }
-                    Some(FieldDisplayRow::NewSectionSentinel) => {
-                        self.stage = OpPickerStage::NewSectionName;
-                    }
-                    None => {}
+                    // Create mode no longer surfaces NewSectionSentinel on the
+                    // Field stage — section creation lives on the Section stage.
+                    Some(FieldDisplayRow::NewSectionSentinel) | None => {}
                 }
                 ModalOutcome::Continue
             }
@@ -1004,6 +1148,7 @@ impl OpPickerState {
             }
             // selected_item stays None → FieldLabel commit takes the new-item path.
             ModalOutcome::Commit(_) => {
+                self.field_label_origin = FieldLabelOrigin::NewItem;
                 self.stage = OpPickerStage::FieldLabel;
                 ModalOutcome::Continue
             }
@@ -1014,11 +1159,13 @@ impl OpPickerState {
     fn handle_new_section_name_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match self.section_name_input.handle_key(key) {
             ModalOutcome::Cancel => {
-                self.stage = OpPickerStage::Field;
+                // The `+ New section` entry point lives on the Section stage.
+                self.stage = OpPickerStage::Section;
                 ModalOutcome::Continue
             }
             ModalOutcome::Commit(name) => {
                 self.pending_section = Some(name);
+                self.field_label_origin = FieldLabelOrigin::NewSection;
                 self.stage = OpPickerStage::FieldLabel;
                 ModalOutcome::Continue
             }
@@ -1029,10 +1176,10 @@ impl OpPickerState {
     fn handle_field_label_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match self.field_label_input.handle_key(key) {
             ModalOutcome::Cancel => {
-                self.stage = if self.selected_item.is_some() {
-                    OpPickerStage::Field
-                } else {
-                    OpPickerStage::NewItemName
+                self.stage = match self.field_label_origin {
+                    FieldLabelOrigin::NewItem => OpPickerStage::NewItemName,
+                    FieldLabelOrigin::NewField => OpPickerStage::Field,
+                    FieldLabelOrigin::NewSection => OpPickerStage::NewSectionName,
                 };
                 ModalOutcome::Continue
             }
@@ -1092,7 +1239,7 @@ impl OpPickerState {
                     .selected_item
                     .clone()
                     .expect("item set before field commit"),
-                section: None,
+                section: self.selected_section.clone(),
                 field_label: field.label.clone(),
             };
         }
@@ -1121,8 +1268,10 @@ impl OpPickerState {
                 self.field_list_state
                     .select(if n == 0 { None } else { Some(0) });
             }
-            // Naming sub-stages are text input — no list selection to reset.
-            OpPickerStage::NewItemName
+            // Section stage does not filter (selection reset on entry);
+            // naming sub-stages are text input — neither has a filterable list.
+            OpPickerStage::Section
+            | OpPickerStage::NewItemName
             | OpPickerStage::FieldLabel
             | OpPickerStage::NewSectionName => {}
         }
@@ -1695,14 +1844,85 @@ mod tests {
         }
     }
 
-    #[test]
-    fn create_mode_existing_field_commits_edit_item_field() {
+    /// Create-mode picker drilled to the Section stage with the given
+    /// fields loaded, mirroring what `poll_load` produces after a field
+    /// load. Section selection starts on `(root)` (index 0).
+    fn create_at_section(fields: Vec<OpField>) -> OpPickerState {
         let mut s = create_ready();
         s.selected_vault = Some(vault("Personal"));
         s.selected_item = Some(item("login"));
-        s.fields = vec![field("token", "CONCEALED", true)];
-        s.stage = OpPickerStage::Field;
-        // Unsectioned field → display rows: [Field{0}, NewFieldSentinel, NewSectionSentinel].
+        s.fields = fields;
+        s.selected_section = None;
+        s.stage = OpPickerStage::Section;
+        s.section_list_state.select(Some(0));
+        s
+    }
+
+    #[test]
+    fn create_mode_existing_item_lands_on_section_stage() {
+        // poll_load's Fields arm routes Create mode to the Section stage
+        // (Browse mode goes to Field). Invoke that arm directly via the
+        // worker drain so we exercise the real sequencing.
+        let runner = Arc::new(StubRunner {
+            accounts: Mutex::new(vec![account(
+                "acct1",
+                "single@example.com",
+                "single.1password.com",
+            )]),
+            last_vault_list_account: Mutex::new(None),
+        });
+        let mut s = OpPickerState::new_create_with_runner_and_cache(
+            runner,
+            Rc::new(RefCell::new(OpCache::default())),
+            "default-item",
+            "token",
+        );
+        drain_initial_account_load(&mut s);
+        s.rx = None;
+        s.selected_vault = Some(vault("Personal"));
+        s.selected_item = Some(item("login"));
+        // Drive the existing-item Enter through start_field_load + drain.
+        s.start_field_load("i-login".into(), "v-Personal".into(), None);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while s.rx.is_some() && std::time::Instant::now() < deadline {
+            s.poll_load();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(
+            s.stage,
+            OpPickerStage::Section,
+            "Create mode must land on the Section stage after a field load"
+        );
+        assert_eq!(s.selected_section, None, "selected_section resets on load");
+    }
+
+    #[test]
+    fn section_choices_returns_root_plus_distinct_sections() {
+        let s = create_at_section(vec![
+            field_with_reference("user", "op://Personal/login/user"),
+            field_with_reference("api", "op://Personal/login/auth/api"),
+            field_with_reference("key", "op://Personal/login/auth/key"),
+            field_with_reference("note", "op://Personal/login/extra/note"),
+        ]);
+        let choices = s.section_choices();
+        assert_eq!(
+            choices,
+            vec![None, Some("auth".to_string()), Some("extra".to_string()),],
+            "root first, then distinct sections in first-appearance order"
+        );
+    }
+
+    #[test]
+    fn create_mode_existing_field_commits_edit_item_field() {
+        let mut s = create_at_section(vec![field("token", "CONCEALED", true)]);
+        // Select `(root)` → Field stage scoped to root.
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(s.stage, OpPickerStage::Field);
+        assert_eq!(s.selected_section, None);
+        // Root field "token" → display rows: [Field{0}, NewFieldSentinel].
         s.field_list_state.select(Some(0));
         match s.handle_key(key(KeyCode::Enter)) {
             ModalOutcome::Commit(OpPickerSelection::EditItemField {
@@ -1720,14 +1940,76 @@ mod tests {
     }
 
     #[test]
-    fn create_mode_new_section_flow_threads_section_into_commit() {
-        let mut s = create_ready();
-        s.selected_vault = Some(vault("Personal"));
-        s.selected_item = Some(item("login"));
-        s.fields = vec![];
-        s.stage = OpPickerStage::Field;
-        // Empty field list → display rows: [NewFieldSentinel(0), NewSectionSentinel(1)].
+    fn create_mode_selecting_section_scopes_field_stage() {
+        let mut s = create_at_section(vec![
+            field_with_reference("user", "op://Personal/login/user"),
+            field_with_reference("api", "op://Personal/login/auth/api"),
+            field_with_reference("key", "op://Personal/login/auth/key"),
+        ]);
+        // section_choices: [None, Some("auth")]; select "auth" (index 1).
+        s.section_list_state.select(Some(1));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(s.stage, OpPickerStage::Field);
+        assert_eq!(s.selected_section, Some("auth".to_string()));
+        // Field stage shows only the two "auth" fields + NewFieldSentinel.
+        let rows = s.build_field_display_rows();
+        assert_eq!(rows.len(), 3, "two auth fields + new-field sentinel");
+        assert!(matches!(rows[2], FieldDisplayRow::NewFieldSentinel));
+        // Selecting the first scoped field commits with section Some("auth").
+        s.field_list_state.select(Some(0));
+        match s.handle_key(key(KeyCode::Enter)) {
+            ModalOutcome::Commit(OpPickerSelection::EditItemField {
+                section,
+                field_label,
+                ..
+            }) => {
+                assert_eq!(section, Some("auth".to_string()));
+                assert_eq!(field_label, "api");
+            }
+            other => panic!("expected Commit(EditItemField), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_mode_new_field_in_root_commits_section_none() {
+        let mut s = create_at_section(vec![field_with_reference(
+            "user",
+            "op://Personal/login/user",
+        )]);
+        // Select `(root)`.
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(s.stage, OpPickerStage::Field);
+        // Rows: [Field{0}, NewFieldSentinel] → select the sentinel.
         s.field_list_state.select(Some(1));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(s.stage, OpPickerStage::FieldLabel);
+        match s.handle_key(key(KeyCode::Enter)) {
+            ModalOutcome::Commit(OpPickerSelection::EditItemField {
+                section,
+                field_label,
+                ..
+            }) => {
+                assert_eq!(section, None, "new field in root → section None");
+                assert_eq!(field_label, "token");
+            }
+            other => panic!("expected Commit(EditItemField), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_mode_new_section_flow_threads_section_into_commit() {
+        let mut s = create_at_section(vec![]);
+        // section_choices: [None]; sentinel `+ New section` at index 1.
+        s.section_list_state.select(Some(1));
         assert!(matches!(
             s.handle_key(key(KeyCode::Enter)),
             ModalOutcome::Continue
@@ -1753,6 +2035,30 @@ mod tests {
             }
             other => panic!("expected Commit(EditItemField) with section, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn create_mode_esc_chain_field_to_section_to_item() {
+        let mut s = create_at_section(vec![field_with_reference(
+            "api",
+            "op://Personal/login/auth/api",
+        )]);
+        // Drill into "auth", then Esc back to Section, then Esc back to Item.
+        s.section_list_state.select(Some(1));
+        let _ = s.handle_key(key(KeyCode::Enter));
+        assert_eq!(s.stage, OpPickerStage::Field);
+
+        let _ = s.handle_key(key(KeyCode::Esc));
+        assert_eq!(s.stage, OpPickerStage::Section, "Field Esc → Section");
+        assert_eq!(s.selected_section, None, "section cleared on back-nav");
+        assert!(s.selected_item.is_some(), "item kept on Field→Section Esc");
+
+        let _ = s.handle_key(key(KeyCode::Esc));
+        assert_eq!(s.stage, OpPickerStage::Item, "Section Esc → Item");
+        assert!(
+            s.selected_item.is_none(),
+            "item cleared on Section→Item Esc"
+        );
     }
 
     #[test]

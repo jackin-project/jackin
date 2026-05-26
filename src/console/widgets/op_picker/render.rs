@@ -61,7 +61,9 @@ pub fn breadcrumb_title(
                 vault_name.to_string()
             }
         }
-        OpPickerStage::Field => {
+        // Section stage sits between Item and Field; its breadcrumb shows
+        // the chosen item (the section is the choice being made here).
+        OpPickerStage::Section | OpPickerStage::Field => {
             if multi_account {
                 format!("{account_email} \u{2192} {vault_name} \u{2192} {item_name}")
             } else {
@@ -170,6 +172,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         OpPickerStage::Account => render_account_lines(state),
         OpPickerStage::Vault => render_vault_lines(state),
         OpPickerStage::Item => render_item_lines(state),
+        OpPickerStage::Section => render_section_lines(state),
         OpPickerStage::Field => render_field_lines(state),
         OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName => {
             Vec::new()
@@ -187,6 +190,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
             OpPickerStage::Account => state.account_list_state.selected,
             OpPickerStage::Vault => state.vault_list_state.selected,
             OpPickerStage::Item => state.item_list_state.selected,
+            OpPickerStage::Section => state.section_list_state.selected,
             OpPickerStage::Field => state.field_list_state.selected,
             OpPickerStage::NewItemName
             | OpPickerStage::FieldLabel
@@ -285,6 +289,37 @@ fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
             )
         })
         .collect()
+}
+
+/// Section stage (Create mode): `(root)`, each named section, then a
+/// trailing `+ New section` sentinel — same selected/prefix styling as the
+/// vault/item lists.
+fn render_section_lines(state: &OpPickerState) -> Vec<Line<'static>> {
+    let selected = state.section_list_state.selected;
+    let choices = state.section_choices();
+    let sentinel_idx = choices.len();
+    let mut lines: Vec<Line<'static>> = choices
+        .into_iter()
+        .enumerate()
+        .map(|(i, choice)| {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let style = if is_selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            let label = choice.unwrap_or_else(|| "(root)".to_string());
+            Line::from(Span::styled(format!("{prefix}{label}"), style))
+        })
+        .collect();
+    lines.push(sentinel_line(
+        "+ New section",
+        Some(sentinel_idx) == selected,
+    ));
+    lines
 }
 
 /// `+ New X` creation row, styled like the existing list rows
@@ -431,11 +466,13 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
                 format!("loading {i_name} ({i_subtitle})\u{2026}")
             }
         }
-        // Naming stages never load; only reachable if a stale Loading
-        // state lingers — fall back to a neutral descriptor.
-        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName => {
-            "loading\u{2026}".to_string()
-        }
+        // The Section stage only becomes current after the field load
+        // completes; a lingering Loading state here is the field load.
+        // Naming stages never load. Both fall back to a neutral descriptor.
+        OpPickerStage::Section
+        | OpPickerStage::NewItemName
+        | OpPickerStage::FieldLabel
+        | OpPickerStage::NewSectionName => "loading\u{2026}".to_string(),
     };
 
     let rows = Layout::default()

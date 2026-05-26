@@ -260,6 +260,22 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<FooterItem> {
             FooterItem::Key("Esc"),
             FooterItem::Text("cancel"),
         ],
+        // The Section stage is a short list with no filter — drop the
+        // `type filter` hint that the other picker list stages carry.
+        Modal::OpPicker { state }
+            if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
+        {
+            vec![
+                FooterItem::Key("\u{2191}\u{2193}"),
+                FooterItem::Text("navigate"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Enter"),
+                FooterItem::Text("select"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Esc"),
+                FooterItem::Text("cancel"),
+            ]
+        }
         Modal::OpPicker { .. }
         | Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }
@@ -445,6 +461,20 @@ pub(super) fn settings_auth_modal_footer_items(
             FooterItem::Key("Esc"),
             FooterItem::Text("cancel"),
         ],
+        SettingsAuthModal::OpPicker { state }
+            if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
+        {
+            vec![
+                FooterItem::Key("\u{2191}\u{2193}"),
+                FooterItem::Text("navigate"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Enter"),
+                FooterItem::Text("select"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Esc"),
+                FooterItem::Text("cancel"),
+            ]
+        }
         SettingsAuthModal::OpPicker { .. } => vec![
             FooterItem::Key("\u{2191}\u{2193}"),
             FooterItem::Text("navigate"),

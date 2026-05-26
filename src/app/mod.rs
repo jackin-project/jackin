@@ -1796,7 +1796,8 @@ fn prompt_interactive_token_store(
     }
 
     let item = &items[item_choice - 1];
-    let field_label = prompt_existing_item_field(&op, account_id.as_deref(), &vault.id, &item.id)?;
+    let (section, field_label) =
+        prompt_existing_item_section_and_field(&op, account_id.as_deref(), &vault.id, &item.id)?;
 
     Ok(token_setup::TokenSetupArgs {
         vault: None,
@@ -1808,28 +1809,75 @@ fn prompt_interactive_token_store(
             vault_id: vault.id.clone(),
             item_id: item.id.clone(),
             field_label,
-            section: None,
+            section,
         }),
         section: None,
         plain_text: false,
     })
 }
 
-/// Prompt for which field of an existing 1Password item the token should
-/// land in: an existing field (overwrite in place) or `[ + New field ]`
-/// (append). Returns the chosen field label.
-fn prompt_existing_item_field(
+/// Prompt for which section and field of an existing 1Password item the
+/// token should land in. Mirrors the TUI Create-mode drill: first pick a
+/// section (`(root)`, an existing named section, or `[ + New section ]`),
+/// then pick a field scoped to that section (an existing field to
+/// overwrite, or `[ + New field ]` to append). Returns the chosen
+/// `(section, field_label)` — section is `None` for `(root)`.
+fn prompt_existing_item_section_and_field(
     op: &crate::operator_env::OpCli,
     account_id: Option<&str>,
     vault_id: &str,
     item_id: &str,
-) -> Result<String> {
-    use crate::operator_env::OpStructRunner;
+) -> Result<(Option<String>, String)> {
+    use crate::operator_env::{OpStructRunner, parse_op_reference};
     use crate::workspace::token_setup;
 
     let fields = op.item_get(item_id, vault_id, account_id)?;
+
+    // Distinct sections in first-appearance order; `None` is `(root)`.
+    let mut sections: Vec<Option<String>> = vec![None];
+    for f in &fields {
+        if let Some(name) = parse_op_reference(&f.reference).and_then(|p| p.section)
+            && !sections.iter().any(|s| s.as_deref() == Some(name.as_str()))
+        {
+            sections.push(Some(name));
+        }
+    }
+
+    let mut section_labels: Vec<String> = sections
+        .iter()
+        .map(|s| s.clone().unwrap_or_else(|| "(root)".to_string()))
+        .collect();
+    section_labels.push("[ + New section ]".to_string());
+
+    let section_choice = dialoguer::Select::new()
+        .with_prompt("Section")
+        .items(&section_labels)
+        .default(0)
+        .interact()?;
+
+    let section: Option<String> = if section_choice == sections.len() {
+        Some(
+            dialoguer::Input::new()
+                .with_prompt("New section name")
+                .interact_text()?,
+        )
+    } else {
+        sections[section_choice].clone()
+    };
+
+    // Fields scoped to the chosen section.
+    let scoped: Vec<&crate::operator_env::OpField> = fields
+        .iter()
+        .filter(|f| {
+            parse_op_reference(&f.reference)
+                .and_then(|p| p.section)
+                .as_deref()
+                == section.as_deref()
+        })
+        .collect();
+
     let mut field_labels: Vec<String> = vec!["[ + New field ]".to_string()];
-    field_labels.extend(fields.iter().map(|f| {
+    field_labels.extend(scoped.iter().map(|f| {
         let label = if f.label.is_empty() { &f.id } else { &f.label };
         let kind = if f.concealed {
             "concealed".to_string()
@@ -1845,17 +1893,19 @@ fn prompt_existing_item_field(
         .interact()?;
 
     if field_choice == 0 {
-        return Ok(dialoguer::Input::new()
+        let field_label: String = dialoguer::Input::new()
             .with_prompt("New field label")
             .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
-            .interact_text()?);
+            .interact_text()?;
+        return Ok((section, field_label));
     }
-    let f = &fields[field_choice - 1];
-    Ok(if f.label.is_empty() {
+    let f = scoped[field_choice - 1];
+    let field_label = if f.label.is_empty() {
         f.id.clone()
     } else {
         f.label.clone()
-    })
+    };
+    Ok((section, field_label))
 }
 
 #[derive(tabled::Tabled)]
