@@ -19,12 +19,6 @@ use ratatui::{
 
 use super::{DEBUG_AMBER, LINK_BLUE, WHITE};
 
-/// Render the white status bar into `area`. `left` is the current-activity
-/// text (black, bold). `right` is the primary link chip (blue, bold,
-/// right-aligned) — typically a clickable id; pass an empty string to omit.
-/// `right_debug`, when present, is a second chip rendered in amber to the
-/// right of `right` — used for the debug-mode run id so debug is
-/// unmistakable.
 /// Dim `color` toward black by `alpha` (0.0 = black, 1.0 = full), so the bar can
 /// fade up from black. Non-RGB colors (e.g. `Color::Black`) pass through.
 fn faded(color: Color, alpha: f32) -> Color {
@@ -37,6 +31,11 @@ fn faded(color: Color, alpha: f32) -> Color {
     }
 }
 
+/// Render the white status bar into `area`. `left` is the current-activity
+/// text (black, bold). `right` is the primary link chip (blue, bold,
+/// right-aligned) — typically a clickable id; pass an empty string to omit.
+/// `right_debug`, when present, is a second chip rendered in amber to the right
+/// of `right` — used for the debug-mode run id so debug is unmistakable.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render(
     frame: &mut Frame,

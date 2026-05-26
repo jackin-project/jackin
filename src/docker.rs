@@ -22,11 +22,6 @@ pub struct RunOptions {
     /// [`crate::runtime::build_log`] sink so the loading cockpit can show a
     /// live view. Only the derived-image `docker build` sets this.
     pub tee_to_build_log: bool,
-    /// The command's captured output is a credential (a token-printing command
-    /// routed through `run` rather than `capture_secret`). When set, captured
-    /// stdout/stderr are never written to the diagnostics run file — the same
-    /// suppression `capture_secret` applies, but for the `run` path.
-    pub secret_output: bool,
 }
 
 impl Default for RunOptions {
@@ -40,7 +35,6 @@ impl Default for RunOptions {
             stream_captured_output: true,
             interactive: false,
             tee_to_build_log: false,
-            secret_output: false,
         }
     }
 }
@@ -98,7 +92,6 @@ impl ShellRunner {
             stream_captured_output: _,
             interactive: _,
             tee_to_build_log: _,
-            secret_output: _,
         } = opts;
         if *null_stdin {
             cmd.stdin(std::process::Stdio::null());
@@ -200,6 +193,14 @@ impl CommandRunner for ShellRunner {
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
         self.log_command(program, args, cwd);
+
+        // `interactive` must own the real terminal, so the arms below resolve it
+        // before any capture arm — meaning interactive + capture silently drops
+        // the capture. Catch that illegal combination in tests/debug builds.
+        debug_assert!(
+            !(opts.interactive && (opts.capture_stdout || opts.capture_stderr)),
+            "RunOptions::interactive is mutually exclusive with capture_stdout/stderr"
+        );
 
         if opts.interactive {
             // Interactive commands (the `docker exec -it` multiplexer / shell
@@ -323,11 +324,7 @@ impl ShellRunner {
         let stdout_buf = stdout_result?;
         let stderr_buf = stderr_result?;
         let status = status?;
-        // A secret-output command's stdout (and possibly stderr) is the
-        // credential itself; never write it to the diagnostics run file.
-        if !opts.secret_output {
-            self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
-        }
+        self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
         if !status.success() {
             if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
                 anyhow::bail!("command failed: {} {}", program, args.join(" "));

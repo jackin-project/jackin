@@ -328,7 +328,11 @@ fn settings_trust_row_at(
     if !point_in(mouse, area) {
         return None;
     }
-    let row = usize::from(mouse.row.saturating_sub(area.y + 1));
+    // Add the rendered vertical scroll: the Trust list is drawn through
+    // `render_scrollable_block` scrolled by `trust.scroll_y`, so the visible row
+    // under the pointer maps to a row that many entries further down the list.
+    let row =
+        usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(settings.trust.scroll_y);
     (row < settings.trust.pending.len()).then_some(row)
 }
 
@@ -443,8 +447,10 @@ fn try_select_settings_trust_row(
     if !point_in(mouse, area) {
         return false;
     }
-    // Row 0 is the header; rows 1.. are trust entries.
-    let clicked_row = usize::from(mouse.row.saturating_sub(area.y + 1));
+    // Account for the rendered vertical scroll (same `trust.scroll_y` the
+    // scrollable block was drawn with) so clicks land on the visible entry.
+    let clicked_row =
+        usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(settings.trust.scroll_y);
     if clicked_row < settings.trust.pending.len() {
         settings.trust.selected = clicked_row;
     }
@@ -471,7 +477,10 @@ fn editor_mount_index_at(
     {
         return None;
     }
-    let row = usize::from(mouse.row.saturating_sub(area.y + 1));
+    // The Mounts list is drawn through `render_scrollable_block` scrolled by
+    // `tab_scroll_y`; convert the viewport row to a full-content visual row so
+    // the lookup matches what the operator sees after scrolling.
+    let row = usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(editor.tab_scroll_y);
     editor_mount_index_at_visual_row(editor, row)
 }
 

@@ -279,6 +279,11 @@ pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     // otherwise it leaks into the parsed `field`.
     let path = path.split('?').next().unwrap_or(path);
     let parts: Vec<&str> = path.split('/').collect();
+    // Every segment must be non-empty: `op:////` or `op://v//f` is malformed,
+    // not a reference with blank vault/section/field names.
+    if parts.iter().any(|s| s.is_empty()) {
+        return None;
+    }
     match parts.as_slice() {
         [vault, item, field] => Some(OpReferenceParts {
             vault: (*vault).to_string(),
@@ -2312,6 +2317,9 @@ mod tests {
         assert!(parse_op_reference("op://only/two").is_none());
         assert!(parse_op_reference("op://a/b/c/d/e").is_none());
         assert!(parse_op_reference("op://").is_none());
+        // Empty segments are malformed, not blank-named references.
+        assert!(parse_op_reference("op:////").is_none());
+        assert!(parse_op_reference("op://vault//field").is_none());
     }
 
     /// `OpReferenceParts::manual_delete_hint` is the canonical CLI

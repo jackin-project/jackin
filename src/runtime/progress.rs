@@ -103,7 +103,6 @@ pub struct LaunchIdentity {
     pub agent: String,
     pub target_kind: LaunchTargetKind,
     pub target_label: String,
-    pub workdir: String,
     /// Mounts whose host source differs from the container destination,
     /// pre-formatted for display. Same-path mounts are omitted upstream.
     pub mounts: Vec<String>,
@@ -496,11 +495,6 @@ fn hit_activity(view: &LaunchView, col: u16, row: u16) -> bool {
     col <= width
 }
 
-/// Drain queued terminal input and fold it into the build-log overlay state.
-///
-/// Called only while the render task owns the renderer (no forced-choice picker
-/// is reading events), so this poll cannot steal a picker's keystrokes. Polling
-/// with a zero timeout keeps the 33 ms render cadence intact.
 /// Switch the terminal pointer to the hand/`pointer` shape over a clickable
 /// element, or back to `default`, via OSC 22 — the same mechanism the
 /// in-container multiplexer uses. Terminals without OSC 22 support ignore the
@@ -518,6 +512,12 @@ fn set_cockpit_pointer(pointer: bool) {
     let _ = out.flush();
 }
 
+/// Drain queued terminal input and fold it into the build-log overlay / failure
+/// state.
+///
+/// Called only while the render task owns the renderer (no forced-choice picker
+/// is reading events), so this poll cannot steal a picker's keystrokes. Polling
+/// with a zero timeout keeps the 33 ms render cadence intact.
 fn handle_cockpit_input(view: &SharedView) {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
     while event::poll(Duration::ZERO).unwrap_or(false) {
@@ -1279,6 +1279,48 @@ mod tests {
     use super::*;
     use ratatui::backend::TestBackend;
 
+    fn test_diagnostics() -> std::sync::Arc<RunDiagnostics> {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        RunDiagnostics::start(&paths, false, "load").unwrap()
+    }
+
+    fn dummy_failure() -> LaunchFailure {
+        LaunchFailure {
+            title: "boom".to_string(),
+            summary: "it failed".to_string(),
+            next_step: None,
+            stage: LaunchStage::Network,
+        }
+    }
+
+    #[tokio::test]
+    async fn stage_failed_does_not_block_on_non_rich_renderer() {
+        // The Rich path waits for an operator Enter/Esc dismiss; the Test/Compact
+        // path must return immediately, or a non-TTY / CI launch would hang
+        // forever on the first failure.
+        let mut progress = LaunchProgress::for_test(test_diagnostics());
+        tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            progress.stage_failed(dummy_failure()),
+        )
+        .await
+        .expect("stage_failed must not block on a non-rich renderer");
+        assert!(progress.view.lock().unwrap().failure.is_some());
+        assert!(!progress.view.lock().unwrap().failure_ack);
+    }
+
+    #[tokio::test]
+    async fn stage_failed_resets_prior_ack() {
+        // A second failure must start un-acked: a stale ack left over from a
+        // previously dismissed popup would otherwise auto-dismiss the new one.
+        let mut progress = LaunchProgress::for_test(test_diagnostics());
+        progress.stage_failed(dummy_failure()).await;
+        progress.view.lock().unwrap().failure_ack = true;
+        progress.stage_failed(dummy_failure()).await;
+        assert!(!progress.view.lock().unwrap().failure_ack);
+    }
+
     #[test]
     fn stage_labels_are_stable() {
         let labels: Vec<&str> = LaunchStage::ALL.iter().map(|stage| stage.label()).collect();
@@ -1309,7 +1351,6 @@ mod tests {
                 agent: "claude".to_string(),
                 target_kind: LaunchTargetKind::Workspace,
                 target_label: "big-monorepo".to_string(),
-                workdir: "~/Projects/app".to_string(),
                 mounts: vec!["~/big-monorepo → /workspace".to_string()],
                 image: Some("jk_agent-smith:latest".to_string()),
                 container: Some("jk-k7p9m2xq-bigmonorepo-agentsmith".to_string()),
