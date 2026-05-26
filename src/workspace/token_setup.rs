@@ -88,6 +88,11 @@ pub struct TokenSetupArgs {
     /// Optional 1Password section label for the field on the new-item
     /// path. `None` leaves the field unsectioned.
     pub section: Option<String>,
+    /// Mint the token and store it as a literal value in config
+    /// (cleartext `CLAUDE_CODE_OAUTH_TOKEN`) instead of writing a
+    /// 1Password item. Mutually exclusive with `reuse` and
+    /// `edit_existing` (both are op-only). No vault is required.
+    pub plain_text: bool,
 }
 
 /// Where a generated token's config wiring lands.
@@ -142,7 +147,10 @@ pub struct TokenSetupReport {
     /// Probed `claude` CLI version. `None` on `--reuse` because the
     /// orchestrator does not invoke `claude` on that path.
     pub claude_cli_version: Option<String>,
-    pub op_ref: OpRef,
+    /// `Some` for op-backed wiring (the canonical UUID-form reference);
+    /// `None` for the plain-text path, where the token is stored as a
+    /// literal in config and there is no op item to reference.
+    pub op_ref: Option<OpRef>,
     pub op_account: Option<String>,
     pub token_sha256_prefix: String,
     pub created: bool,
@@ -213,7 +221,18 @@ where
         config.require_workspace(workspace)?;
     }
 
-    let (op_ref, token_sha256_prefix, created) = if let Some(reuse_ref) = args.reuse.as_ref() {
+    // plain_text is op-incompatible: `reuse` adopts an existing op
+    // reference and `edit_existing` writes into an existing op item, so
+    // neither has a literal value to store. Bail before any capture.
+    if args.plain_text && (args.reuse.is_some() || args.edit_existing.is_some()) {
+        anyhow::bail!(
+            "--plain is mutually exclusive with --reuse and the edit-existing path: \
+             both wire a 1Password reference, while --plain stores the minted token \
+             as a literal in config. Pick one."
+        );
+    }
+
+    let (wired, token_sha256_prefix, created) = if let Some(reuse_ref) = args.reuse.as_ref() {
         let value = op_reader.read(&reuse_ref.op).map_err(|e| {
             anyhow::anyhow!(
                 "validation of --reuse reference {:?} failed: {e} \
@@ -222,7 +241,17 @@ where
             )
         })?;
         let prefix = sha256_prefix(&value);
-        (reuse_ref.clone(), prefix, false)
+        (WiredValue::Op(reuse_ref.clone()), prefix, false)
+    } else if args.plain_text {
+        // Mint, then store the literal in config — no op item, so no
+        // vault requirement and no post-write read-back to validate.
+        let probe = probe.ok_or_else(|| {
+            anyhow::anyhow!("internal error: claude probe missing on capture path")
+        })?;
+        let _ = probe;
+        let secret = capture()?;
+        let prefix = sha256_prefix(secret.expose_secret());
+        (WiredValue::Plain(secret), prefix, true)
     } else {
         // Validate that a destination is specified before launching the
         // OAuth flow so the operator is not prompted to complete
@@ -232,7 +261,8 @@ where
                 "no --vault supplied; `jackin workspace claude-token setup` and \
                  `jackin workspace claude-token rotate` need --vault <name-or-uuid> \
                  so the new item lands somewhere explicit. Pass --reuse if you \
-                 already have an op:// reference to adopt instead."
+                 already have an op:// reference to adopt instead, or --plain to \
+                 store the minted token as a literal in config."
             );
         }
         let probe = probe.ok_or_else(|| {
@@ -251,17 +281,18 @@ where
         } else {
             create_op_item(op_writer, scope, args, &secret, &prefix, probe)?
         };
-        (op_ref, prefix, true)
+        (WiredValue::Op(op_ref), prefix, true)
     };
 
     // Validate the write BEFORE persisting any on-disk config: a wired
     // slot pointing at an item whose value the operator never saw
     // would silently inject a mystery token at the next launch. Skip
-    // on `--reuse` — both reads target the same pre-existing item, so
-    // the comparison is meaningless and only doubles the biometric
-    // prompt count.
-    if created {
-        let cleanup_orphan = || OrphanCleanup::run(op_writer, &op_ref, args.account.as_deref());
+    // on `--reuse` (both reads target the same pre-existing item, so
+    // the comparison is meaningless) and on the plain-text path (the
+    // literal lands directly in config — there is no op item to read
+    // back).
+    if let (true, WiredValue::Op(op_ref)) = (created, &wired) {
+        let cleanup_orphan = || OrphanCleanup::run(op_writer, op_ref, args.account.as_deref());
         let resolved = op_reader.read(&op_ref.op).map_err(|e| {
             let cleanup = cleanup_orphan();
             anyhow::anyhow!(
@@ -282,6 +313,13 @@ where
         }
     }
 
+    // Single derivation of the env value persisted in every scope arm:
+    // op reference for the op paths, literal token for plain-text.
+    let env_value = match &wired {
+        WiredValue::Op(op_ref) => EnvValue::OpRef(op_ref.clone()),
+        WiredValue::Plain(secret) => EnvValue::Plain(secret.expose_secret().to_string()),
+    };
+
     // Persist the config last: a partial failure earlier must never
     // leave a wired-but-broken slot.
     let mut editor = ConfigEditor::open(paths)?;
@@ -295,7 +333,7 @@ where
             editor.set_env_var(
                 &EnvScope::Workspace(workspace.clone()),
                 CLAUDE_OAUTH_TOKEN_ENV,
-                EnvValue::OpRef(op_ref.clone()),
+                env_value,
             )?;
             if let Some(account) = args.account.as_deref()
                 && config
@@ -320,7 +358,7 @@ where
                     role: role.clone(),
                 },
                 CLAUDE_OAUTH_TOKEN_ENV,
-                EnvValue::OpRef(op_ref.clone()),
+                env_value,
             )?;
             // op_account is a workspace-level field — write it there, same
             // as the plain workspace scope.
@@ -337,11 +375,7 @@ where
         TokenSetupScope::Global => {
             editor
                 .set_global_auth_forward(crate::agent::Agent::Claude, AuthForwardMode::OAuthToken);
-            editor.set_env_var(
-                &EnvScope::Global,
-                CLAUDE_OAUTH_TOKEN_ENV,
-                EnvValue::OpRef(op_ref.clone()),
-            )?;
+            editor.set_env_var(&EnvScope::Global, CLAUDE_OAUTH_TOKEN_ENV, env_value)?;
             // No op_account write for global: op_account is a per-workspace field.
         }
     }
@@ -375,7 +409,7 @@ where
                 Ok(()) => Some(expiry),
                 Err(e) => {
                     eprintln!(
-                        "[jackin] note: token cached in 1Password, but expiry banner cache \
+                        "[jackin] note: token stored, but expiry banner cache \
                          write failed: {e} — launch banner will not show 'expires in N days' \
                          for this workspace until the next setup."
                     );
@@ -389,12 +423,27 @@ where
     Ok(TokenSetupReport {
         workspace: scope.label().to_string(),
         claude_cli_version: probe.map(|p| p.version.clone()),
-        op_ref,
+        op_ref: match wired {
+            WiredValue::Op(op_ref) => Some(op_ref),
+            WiredValue::Plain(_) => None,
+        },
         op_account,
         token_sha256_prefix,
         created,
         expiry_estimate,
     })
+}
+
+/// The value the orchestrator wires into the canonical
+/// `CLAUDE_CODE_OAUTH_TOKEN` slot: a 1Password reference (reuse / edit /
+/// create paths) or the minted token as a literal (plain-text path).
+///
+/// `Plain` holds the secret in [`secrecy::SecretString`] so it never
+/// reaches argv or a log line; the only place the cleartext leaves it is
+/// the `EnvValue::Plain` written to config.
+enum WiredValue {
+    Op(OpRef),
+    Plain(secrecy::SecretString),
 }
 
 /// Revoke the workspace's token: clear the canonical slot, switch
@@ -1423,7 +1472,111 @@ mod tests {
             !expiry_cache_path(&paths, "proj").exists(),
             "reuse path must not write the expiry stamp"
         );
-        assert_eq!(report.op_ref.path, "Personal/Existing/token");
+        assert_eq!(
+            report.op_ref.as_ref().unwrap().path,
+            "Personal/Existing/token"
+        );
+    }
+
+    /// The plain-text path mints the token, stores it as a literal in
+    /// the workspace env block, and never touches the op writer. The
+    /// report carries no op reference.
+    #[test]
+    fn run_setup_with_runner_plain_text_wires_literal_and_skips_op_writer() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let writer = FakeOpWriter::new(dummy_op_ref());
+        let token = "sk-ant-oat01-PLAIN";
+        // Reader must never be consulted on the plain path — a panic
+        // here proves no post-write validation read fired.
+        let reader = FakeOpReader::ok("UNUSED-ON-PLAIN-PATH");
+        let probe = dummy_probe();
+
+        let report = run_setup_with_runner(
+            &paths,
+            &mut cfg,
+            &TokenSetupScope::Workspace("proj".into()),
+            &TokenSetupArgs {
+                plain_text: true,
+                ..Default::default()
+            },
+            Some(&probe),
+            || Ok(secrecy::SecretString::from(token.to_string())),
+            &reader,
+            &writer,
+        )
+        .unwrap();
+
+        // Op writer was never invoked (no create, no edit, no delete).
+        assert!(
+            writer.last_create.borrow().is_none(),
+            "plain-text path must not call the op writer"
+        );
+        assert!(writer.deletes.borrow().is_empty());
+        // No op read-back validation happened.
+        assert!(
+            reader.last_ref.borrow().is_empty(),
+            "plain-text path must not read back from op"
+        );
+
+        // Token wired as a literal, not an op ref.
+        let env_val = cfg
+            .workspaces
+            .get("proj")
+            .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"));
+        assert_eq!(env_val, Some(&EnvValue::Plain(token.to_string())));
+
+        // auth_forward still flips to oauth_token.
+        let claude = cfg
+            .workspaces
+            .get("proj")
+            .and_then(|w| w.claude.as_ref())
+            .unwrap();
+        assert_eq!(claude.auth_forward, AuthForwardMode::OAuthToken);
+
+        // Report carries no op ref; created + expiry stamp still set
+        // because jackin minted the token.
+        assert!(report.op_ref.is_none(), "plain path has no op reference");
+        assert!(report.created);
+        assert_eq!(report.token_sha256_prefix, sha256_prefix(token));
+        assert!(report.expiry_estimate.is_some());
+    }
+
+    /// `plain_text` combined with `reuse` is rejected before any
+    /// capture: the two pick different storage targets.
+    #[test]
+    fn run_setup_with_runner_plain_text_with_reuse_bails() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let writer = FakeOpWriter::new(dummy_op_ref());
+        let reader = FakeOpReader::ok("ignored");
+        let probe = dummy_probe();
+        let capture_called = std::cell::Cell::new(false);
+        let err = run_setup_with_runner(
+            &paths,
+            &mut cfg,
+            &TokenSetupScope::Workspace("proj".into()),
+            &TokenSetupArgs {
+                plain_text: true,
+                reuse: Some(OpRef {
+                    op: "op://Other/Item/Field".into(),
+                    path: "Other/Item/Field".into(),
+                }),
+                ..Default::default()
+            },
+            Some(&probe),
+            || {
+                capture_called.set(true);
+                Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string()))
+            },
+            &reader,
+            &writer,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("--plain is mutually exclusive"));
+        assert!(
+            !capture_called.get(),
+            "no mint must start when --plain conflicts with --reuse"
+        );
+        assert!(writer.last_create.borrow().is_none());
     }
 
     /// `expiry_days_for_launch` distinguishes "absent" (Ok(None))

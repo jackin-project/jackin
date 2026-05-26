@@ -332,15 +332,15 @@ fn current_mode_and_credential(
 /// `Modal::AuthSourcePicker` — passed through from `EditorState` so
 /// the form doesn't reprobe the `op` binary on every keypress.
 ///
-/// `op_cache` is threaded through (rather than only into
-/// `open_op_picker_from_auth_source`) so the `g`/`G` generate trigger
-/// can mount the Create-mode `OpPicker` from here; the provide-path
-/// `OpPicker` is still opened later by `open_op_picker_from_auth_source`.
+/// The `g`/`G` generate trigger opens the shared source picker (which
+/// needs only `op_available` to dim the disabled 1Password choice); the
+/// Create-mode `OpPicker` for the 1Password generate branch is mounted
+/// later from the source-picker commit handler in `editor.rs`, which
+/// owns `op_cache`.
 pub(super) fn handle_auth_form_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
     op_available: bool,
-    op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
 ) -> bool {
     if !matches!(editor.modal, Some(Modal::AuthForm { .. })) {
         return false;
@@ -361,10 +361,13 @@ pub(super) fn handle_auth_form_key(
         return true;
     }
 
-    // `g`/`G` at any focus mints a Claude OAuth token into a new/edited
-    // 1Password location. Gated to the workspace-level Claude oauth_token
-    // slot in Edit mode; a no-op everywhere else.
-    if matches!(key.code, KeyCode::Char('g' | 'G')) && try_start_token_generate(editor, op_cache) {
+    // `g`/`G` at any focus mints a Claude OAuth token. It opens the
+    // shared source picker (plain literal vs. 1Password) as the first
+    // step. Gated to the workspace-level Claude oauth_token slot in Edit
+    // mode; a no-op everywhere else.
+    if matches!(key.code, KeyCode::Char('g' | 'G'))
+        && try_start_token_generate(editor, op_available)
+    {
         return true;
     }
 
@@ -420,31 +423,35 @@ pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
         )
 }
 
-/// Mint-path trigger: when the gate holds, stash the target and mount a
-/// Create-mode `OpPicker` so the operator chooses where the freshly
-/// minted token lands. Returns `false` (a no-op) when the gate fails.
-fn try_start_token_generate(
-    editor: &mut EditorState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
-) -> bool {
+/// Mint-path trigger: when the gate holds, stash the target and mount
+/// the shared source picker so the operator first chooses where the
+/// freshly minted token is stored (plain literal vs. 1Password). The
+/// source picker's commit (in `editor.rs`) routes to GENERATE because
+/// `generating_token_target` is set. Returns `false` (a no-op) when the
+/// gate fails.
+fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) -> bool {
     if !auth_form_can_generate_token(editor) {
         return false;
     }
-    let crate::console::manager::state::EditorMode::Edit { name } = &editor.mode else {
+    if !matches!(
+        editor.mode,
+        crate::console::manager::state::EditorMode::Edit { .. }
+    ) {
         return false;
-    };
-    let workspace_name = name.clone();
+    }
     let Some(Modal::AuthForm { target, .. }) = editor.modal.as_ref() else {
         return false;
     };
+    // Drain the provide-path stash: the source picker about to open is a
+    // generate step, disambiguated from the provide flow by the
+    // `generating_token_target` marker, not by `pending_auth_form_return`.
     editor.generating_token_target = Some(target.clone());
     editor.pending_auth_form_return = None;
-    editor.modal = Some(Modal::OpPicker {
-        state: Box::new(OpPickerState::new_create_with_cache(
-            op_cache,
-            crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE.replace("{ws}", &workspace_name),
-            crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
-        )),
+    editor.modal = Some(Modal::AuthSourcePicker {
+        state: crate::console::widgets::source_picker::SourcePickerState::new(
+            "generated token".to_string(),
+            op_available,
+        ),
     });
     true
 }
@@ -1030,7 +1037,7 @@ mod tests {
     /// Test wrapper around `handle_auth_form_key` with
     /// `op_available = true`.
     fn drive_key(editor: &mut EditorState<'_>, k: KeyEvent) -> bool {
-        handle_auth_form_key(editor, k, true, fresh_op_cache())
+        handle_auth_form_key(editor, k, true)
     }
 
     /// Return the flat-row index for `WorkspaceMode { Claude }`.
@@ -1439,12 +1446,12 @@ mod tests {
     }
 
     /// `g` on the workspace × Claude `oauth_token` form opens the
-    /// `OpPicker` in Create mode and arms `generating_token_target`,
-    /// driving the token-generate (mint) path.
+    /// shared source picker (plain vs. 1Password) and arms
+    /// `generating_token_target`, driving the token-generate (mint)
+    /// path. The storage-target choice (op vs. plain) happens at the
+    /// source picker, not before it.
     #[test]
-    fn auth_form_generate_opens_create_op_picker_and_arms_target() {
-        use crate::console::widgets::op_picker::OpPickerMode;
-
+    fn auth_form_generate_opens_source_picker_and_arms_target() {
         let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
@@ -1459,12 +1466,13 @@ mod tests {
 
         let closed = drive_key(editor, key(KeyCode::Char('g')));
         assert!(closed, "generate must consume the keystroke");
-        let Some(Modal::OpPicker { state: picker }) = editor.modal.as_ref() else {
-            panic!("generate must open the OpPicker")
-        };
         assert!(
-            matches!(picker.mode, OpPickerMode::Create { .. }),
-            "generate must open the OpPicker in Create mode"
+            matches!(editor.modal, Some(Modal::AuthSourcePicker { .. })),
+            "generate must open the source picker as the first step"
+        );
+        assert!(
+            editor.pending_auth_form_return.is_none(),
+            "generate is disambiguated by the generate marker, not the provide stash"
         );
         assert!(
             matches!(

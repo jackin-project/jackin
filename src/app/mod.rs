@@ -1406,6 +1406,7 @@ fn handle_claude_token(
             item_name,
             op_account,
             reuse,
+            plain,
             interactive,
         } => {
             config.require_workspace(&workspace)?;
@@ -1421,7 +1422,23 @@ fn handle_claude_token(
                     Some(r) => Some(r),
                     None => prompt_interactive_role(config, &workspace)?,
                 };
-                let args = prompt_interactive_token_store(&workspace, op_account)?;
+                let args = match prompt_interactive_token_source()? {
+                    InteractiveTokenSource::Plain => token_setup::TokenSetupArgs {
+                        account: op_account,
+                        plain_text: true,
+                        ..Default::default()
+                    },
+                    InteractiveTokenSource::Op => {
+                        prompt_interactive_token_store(&workspace, op_account)?
+                    }
+                };
+                (args, role)
+            } else if plain {
+                let args = token_setup::TokenSetupArgs {
+                    account: op_account,
+                    plain_text: true,
+                    ..Default::default()
+                };
                 (args, role)
             } else {
                 let reuse_ref = reuse
@@ -1436,6 +1453,7 @@ fn handle_claude_token(
                     field_label: None,
                     edit_existing: None,
                     section: None,
+                    plain_text: false,
                 };
                 (args, role)
             };
@@ -1473,6 +1491,7 @@ fn handle_claude_token(
                 field_label: None,
                 edit_existing: None,
                 section: None,
+                plain_text: false,
             };
             let report = token_setup::run_setup(
                 paths,
@@ -1481,7 +1500,13 @@ fn handle_claude_token(
                 &args,
             )?;
             print_token_setup_report(&report);
-            delete_prior_op_item(prior, &report.op_ref, report.op_account)?;
+            // Rotate is an op-only flow (it always mints into a new 1P
+            // item), so the report always carries an op ref here.
+            let new_ref = report
+                .op_ref
+                .as_ref()
+                .expect("rotate always wires an op reference");
+            delete_prior_op_item(prior, new_ref, report.op_account)?;
             Ok(())
         }
         cli::WorkspaceClaudeTokenCommand::Revoke {
@@ -1588,11 +1613,15 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
     if let Some(version) = report.claude_cli_version.as_deref() {
         println!("Claude CLI       {version}");
     }
-    println!("op:// reference  {}", report.op_ref.path);
-    println!(
-        "op_account       {}",
-        report.op_account.as_deref().unwrap_or("(default)")
-    );
+    if let Some(op_ref) = report.op_ref.as_ref() {
+        println!("op:// reference  {}", op_ref.path);
+        println!(
+            "op_account       {}",
+            report.op_account.as_deref().unwrap_or("(default)")
+        );
+    } else {
+        println!("stored           plain text in workspace/role config");
+    }
     println!(
         "token sha256     {}… (12 hex prefix; matches stored value)",
         report.token_sha256_prefix
@@ -1602,7 +1631,9 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
     }
     println!("auth_forward     oauth_token (synthesised CLAUDE_CODE_OAUTH_TOKEN)");
     println!();
-    if report.created {
+    if report.op_ref.is_none() {
+        println!("New token captured and stored as a literal in config.");
+    } else if report.created {
         println!("New token captured and stored in 1Password.");
     } else {
         println!("Existing op:// reference adopted; no new item created.");
@@ -1636,6 +1667,38 @@ fn prompt_interactive_role(config: &AppConfig, workspace: &str) -> Result<Option
         None
     } else {
         Some(roles[idx - 1].clone())
+    })
+}
+
+/// Storage target chosen at the top of the `--interactive` flow.
+enum InteractiveTokenSource {
+    /// Store the minted token as a literal in config.
+    Plain,
+    /// Walk the 1Password account → vault → item → field drill-down.
+    Op,
+}
+
+/// First `--interactive` step: pick where the minted token is stored.
+/// Plain-text skips the 1Password account/vault/item/field prompts
+/// entirely.
+fn prompt_interactive_token_source() -> Result<InteractiveTokenSource> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "--interactive requires a TTY. Pass --vault <name-or-uuid> or --plain for \
+             non-interactive use."
+        );
+    }
+    let idx = dialoguer::Select::new()
+        .with_prompt("Store token in")
+        .items(["Plain text", "1Password"])
+        .default(0)
+        .interact()?;
+    Ok(if idx == 0 {
+        InteractiveTokenSource::Plain
+    } else {
+        InteractiveTokenSource::Op
     })
 }
 
@@ -1728,6 +1791,7 @@ fn prompt_interactive_token_store(
             field_label: Some(field_label),
             edit_existing: None,
             section: None,
+            plain_text: false,
         });
     }
 
@@ -1747,6 +1811,7 @@ fn prompt_interactive_token_store(
             section: None,
         }),
         section: None,
+        plain_text: false,
     })
 }
 

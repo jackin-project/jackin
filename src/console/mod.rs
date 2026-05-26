@@ -393,6 +393,28 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
     out.flush()
 }
 
+/// Read the canonical `CLAUDE_CODE_OAUTH_TOKEN` value `run_setup` just
+/// wrote at `scope`, so the editor working copy mirrors whatever was
+/// persisted (an `OpRef` for the op paths, a `Plain` literal for
+/// `--plain`) without re-deriving it from the report.
+fn wired_token_value(
+    config: &AppConfig,
+    scope: &crate::workspace::token_setup::TokenSetupScope,
+) -> Option<crate::operator_env::EnvValue> {
+    use crate::workspace::token_setup::TokenSetupScope;
+    let key = crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV;
+    match scope {
+        TokenSetupScope::Workspace(ws) => config.workspaces.get(ws).and_then(|w| w.env.get(key)),
+        TokenSetupScope::WorkspaceRole { workspace, role } => config
+            .workspaces
+            .get(workspace)
+            .and_then(|w| w.roles.get(role))
+            .and_then(|r| r.env.get(key)),
+        TokenSetupScope::Global => config.env.get(key),
+    }
+    .cloned()
+}
+
 /// Hand the real terminal back to a child process: leave raw-mode +
 /// alt-screen and stop debug buffering, mirroring `TerminalGuard::drop`
 /// minus the input drain (the child reads stdin directly). Paired with
@@ -753,7 +775,10 @@ pub async fn run_console(
             // cleared before the TUI repaints.
             let _ = terminal.clear();
             match mint {
-                Ok(report) => {
+                // The wired credential is read back from `config` below
+                // (it lands there uniformly for op and plain), so the
+                // report itself is not needed on the Ok path.
+                Ok(_report) => {
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         match &mut ms.stage {
                             // Sync the editor's working copy so the Auth tab
@@ -767,24 +792,30 @@ pub async fn run_console(
                                     auth_forward: crate::config::AuthForwardMode::OAuthToken,
                                 };
                                 let key = crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV.to_string();
-                                let val =
-                                    crate::operator_env::EnvValue::OpRef(report.op_ref.clone());
-                                if let crate::workspace::token_setup::TokenSetupScope::WorkspaceRole {
-                                    role,
-                                    ..
-                                } = &req.scope
-                                {
-                                    let p = ed.pending.roles.entry(role.clone()).or_default();
-                                    p.claude = Some(claude.clone());
-                                    p.env.insert(key.clone(), val.clone());
-                                    let o = ed.original.roles.entry(role.clone()).or_default();
-                                    o.claude = Some(claude);
-                                    o.env.insert(key, val);
-                                } else {
-                                    ed.pending.claude = Some(claude.clone());
-                                    ed.original.claude = Some(claude);
-                                    ed.pending.env.insert(key.clone(), val.clone());
-                                    ed.original.env.insert(key, val);
+                                // Read the wired value back from the now-
+                                // persisted config so op and plain-text land
+                                // identically — `run_setup` already wrote the
+                                // EnvValue (OpRef or Plain) at this scope. A
+                                // missing slot leaves the working copy
+                                // untouched (it should always be present on Ok).
+                                if let Some(val) = wired_token_value(&config, &req.scope) {
+                                    if let crate::workspace::token_setup::TokenSetupScope::WorkspaceRole {
+                                        role,
+                                        ..
+                                    } = &req.scope
+                                    {
+                                        let p = ed.pending.roles.entry(role.clone()).or_default();
+                                        p.claude = Some(claude.clone());
+                                        p.env.insert(key.clone(), val.clone());
+                                        let o = ed.original.roles.entry(role.clone()).or_default();
+                                        o.claude = Some(claude);
+                                        o.env.insert(key, val);
+                                    } else {
+                                        ed.pending.claude = Some(claude.clone());
+                                        ed.original.claude = Some(claude);
+                                        ed.pending.env.insert(key.clone(), val.clone());
+                                        ed.original.env.insert(key, val);
+                                    }
                                 }
                             }
                             // Rebuild the settings Auth view from the now-

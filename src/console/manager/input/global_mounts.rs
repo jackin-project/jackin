@@ -412,23 +412,20 @@ pub(super) fn handle_settings_auth_modal(
                 auth.pending_auth_form_return = None;
                 return;
             }
-            // `g`/`G` at any focus mints a global Claude OAuth token into
-            // a new/edited 1Password location. Gated to the global Claude
-            // `oauth_token` slot; a no-op for any other kind/mode.
+            // `g`/`G` at any focus mints a global Claude OAuth token. It
+            // opens the shared source picker (plain literal vs. 1Password)
+            // first. Gated to the global Claude `oauth_token` slot; a
+            // no-op for any other kind/mode.
             if matches!(key.code, KeyCode::Char('g' | 'G'))
                 && state.kind == crate::console::manager::auth_kind::AuthKind::Claude
                 && state.mode == Some(crate::console::manager::auth_kind::AuthMode::OAuthToken)
             {
                 auth.generating_token = true;
                 auth.pending_auth_form_return = None;
-                auth.modal = Some(SettingsAuthModal::OpPicker {
-                    state: Box::new(
-                        crate::console::widgets::op_picker::OpPickerState::new_create_with_cache(
-                            op_cache,
-                            crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE
-                                .replace("{ws}", "global"),
-                            crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
-                        ),
+                auth.modal = Some(SettingsAuthModal::SourcePicker {
+                    state: crate::console::widgets::source_picker::SourcePickerState::new(
+                        "generated token".to_string(),
+                        op_available,
                     ),
                 });
                 return;
@@ -518,7 +515,44 @@ pub(super) fn handle_settings_auth_modal(
         }
         SettingsAuthModal::SourcePicker { state } => {
             use crate::console::widgets::source_picker::SourceChoice;
-            match state.handle_key(key) {
+            let outcome = state.handle_key(key);
+            // Generate wins over the provide dispatch: the `g`/`G` trigger
+            // sets `generating_token` (and clears `pending_auth_form_return`),
+            // so the generate branch is reachable only on that path and the
+            // provide arms below stay untouched.
+            if auth.generating_token {
+                match outcome {
+                    ModalOutcome::Commit(SourceChoice::Plain) => {
+                        auth.generating_token = false;
+                        *pending_token_generate = Some(super::super::state::PendingTokenGenerate {
+                            scope: crate::workspace::token_setup::TokenSetupScope::Global,
+                            args: crate::workspace::token_setup::TokenSetupArgs {
+                                plain_text: true,
+                                ..Default::default()
+                            },
+                        });
+                    }
+                    ModalOutcome::Commit(SourceChoice::Op) => {
+                        // `generating_token` stays set so the Create-mode
+                        // OpPicker commit routes through
+                        // `handle_settings_token_generate_pick`.
+                        auth.modal = Some(SettingsAuthModal::OpPicker {
+                            state: Box::new(
+                                crate::console::widgets::op_picker::OpPickerState::new_create_with_cache(
+                                    op_cache,
+                                    crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE
+                                        .replace("{ws}", "global"),
+                                    crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
+                                ),
+                            ),
+                        });
+                    }
+                    ModalOutcome::Cancel => auth.generating_token = false,
+                    ModalOutcome::Continue => auth.modal = Some(modal),
+                }
+                return;
+            }
+            match outcome {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
                     let literal = auth
                         .pending_auth_form_return
@@ -638,6 +672,7 @@ fn handle_settings_token_generate_pick(
             field_label: Some(field_label),
             section,
             edit_existing: None,
+            plain_text: false,
         },
         ModalOutcome::Commit(OpPickerSelection::EditItemField {
             account,
@@ -658,6 +693,7 @@ fn handle_settings_token_generate_pick(
                 field_label,
                 section,
             }),
+            plain_text: false,
         },
         // Still drilling — leave the picker open and stay armed.
         ModalOutcome::Continue => {
@@ -2241,12 +2277,12 @@ mod tests {
     }
 
     /// `g` on the global Claude `oauth_token` auth form opens the
-    /// `OpPicker` in Create mode and arms `generating_token`, driving
-    /// the global token-generate (mint) path.
+    /// shared source picker (plain vs. 1Password) and arms
+    /// `generating_token`, driving the global token-generate (mint)
+    /// path. The storage-target choice happens at the source picker.
     #[test]
-    fn settings_auth_generate_opens_create_op_picker_and_arms_flag() {
+    fn settings_auth_generate_opens_source_picker_and_arms_flag() {
         use crate::console::manager::auth_kind::{AuthKind, AuthMode};
-        use crate::console::widgets::op_picker::OpPickerMode;
 
         let config = AppConfig::default();
         let mut settings = SettingsState::from_config(&config);
@@ -2275,13 +2311,16 @@ mod tests {
             op_cache,
         );
 
-        let Some(SettingsAuthModal::OpPicker { state: picker }) = settings.auth.modal.as_ref()
-        else {
-            panic!("generate must open the OpPicker");
-        };
         assert!(
-            matches!(picker.mode, OpPickerMode::Create { .. }),
-            "generate must open the OpPicker in Create mode"
+            matches!(
+                settings.auth.modal,
+                Some(SettingsAuthModal::SourcePicker { .. })
+            ),
+            "generate must open the source picker as the first step"
+        );
+        assert!(
+            settings.auth.pending_auth_form_return.is_none(),
+            "generate is disambiguated by the generate flag, not the provide stash"
         );
         assert!(
             settings.auth.generating_token,
@@ -2289,7 +2328,7 @@ mod tests {
         );
         assert!(
             pending.is_none(),
-            "no mint request is built until the picker commits"
+            "no mint request is built until the source/picker commits"
         );
     }
 
