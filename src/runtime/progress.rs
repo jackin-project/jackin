@@ -592,9 +592,20 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
     if area.width == 0 || area.height == 0 {
         return;
     }
+    // Fade the rain to black over the bottom rows so it dissolves into a gap
+    // above the progress bar instead of colliding with it: the bottommost row
+    // is fully extinguished and brightness ramps back to full a few rows up.
+    let fade_rows = (area.height / 3).clamp(3, 7);
     let lines: Vec<Line<'static>> = (0..area.height)
         .map(|y| {
             let grid_y = usize::from(area.y + y);
+            let rows_from_bottom = area.height - 1 - y;
+            let fade = if rows_from_bottom >= fade_rows {
+                1.0
+            } else {
+                f32::from(rows_from_bottom) / f32::from(fade_rows)
+            };
+            let dim = |c: u8| (f32::from(c) * fade) as u8;
             let spans: Vec<Span<'static>> = (0..area.width)
                 .map(|x| {
                     let grid_x = usize::from(area.x + x);
@@ -609,7 +620,10 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
                         .map_or_else(
                             || Span::raw(" "),
                             |(ch, (r, g, b))| {
-                                Span::styled(ch.to_string(), Style::default().fg(Color::Rgb(r, g, b)))
+                                Span::styled(
+                                    ch.to_string(),
+                                    Style::default().fg(Color::Rgb(dim(r), dim(g), dim(b))),
+                                )
                             },
                         )
                 })
