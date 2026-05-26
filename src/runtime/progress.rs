@@ -600,6 +600,7 @@ impl Drop for LaunchProgress {
         // terminal — the host-screen guard is the ultimate safety net.
         if let Renderer::Rich(driver) = &self.renderer {
             driver.stop.store(true, Ordering::Relaxed);
+            crate::tui::set_rich_surface_active(false);
         }
         // Non-rich launches print the run-id trailer on completion.
         if matches!(self.renderer, Renderer::Compact { .. }) {

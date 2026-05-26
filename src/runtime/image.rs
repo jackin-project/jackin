@@ -320,12 +320,7 @@ fn should_stream_build_output(debug: bool) -> bool {
 }
 
 fn emit_compact_image_warning(message: &str) {
-    if let Some(run) = crate::diagnostics::active_run() {
-        run.compact("warning", message);
-    }
-    if !crate::tui::rich_surface_active() {
-        eprintln!("{}", compact_image_warning_line(message));
-    }
+    crate::tui::emit_compact_line("warning", &compact_image_warning_line(message));
 }
 
 fn compact_image_warning_line(message: &str) -> String {

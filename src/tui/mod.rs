@@ -134,6 +134,19 @@ pub fn emit_debug_line(category: &str, message: &str) {
     }
 }
 
+/// Emit a compact operator-visible line unless a rich surface owns the terminal.
+///
+/// The line is always mirrored into the active diagnostics run when one exists,
+/// so suppressed rich-surface output remains recoverable.
+pub fn emit_compact_line(kind: &str, line: &str) {
+    if let Some(run) = crate::diagnostics::active_run() {
+        run.compact(kind, line);
+    }
+    if !rich_surface_active() {
+        eprintln!("{line}");
+    }
+}
+
 /// Verbose-trace helper for `--debug` runs. No-op when the flag is off
 /// — formatting is deferred behind the gate so disabled call sites cost
 /// only an atomic load.
@@ -248,5 +261,25 @@ mod tests {
             "debug line must not buffer/print while a non-capturing run is active"
         );
         end_debug_buffering();
+    }
+
+    #[test]
+    fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
+        let _lock = DEBUG_BUFFER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        set_rich_surface_active(false);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+
+        set_rich_surface_active(true);
+        emit_compact_line("warning", "jackin: warning: hidden by cockpit");
+        set_rich_surface_active(false);
+
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"warning\""), "{jsonl}");
+        assert!(jsonl.contains("hidden by cockpit"), "{jsonl}");
     }
 }

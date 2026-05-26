@@ -27,7 +27,9 @@ use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
     format_role_display, image_name, image_name_for_branch,
 };
-use super::repo_cache::resolve_agent_repo;
+use super::repo_cache::{
+    RepoResolveOptions, confirm_repo_removal_interactive, resolve_agent_repo_with,
+};
 use crate::docker_client::DockerApi;
 
 const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
@@ -202,6 +204,16 @@ impl StepCounter {
         }
         self.progress = None;
     }
+}
+
+fn release_rich_progress_for_plain_io(steps: &mut StepCounter, reason: &str) {
+    if !crate::tui::rich_surface_active() {
+        return;
+    }
+    if let Some(run) = crate::diagnostics::active_run() {
+        run.compact("launch_prompt", reason);
+    }
+    steps.finish_progress();
 }
 
 fn stage_for_step_text(text: &str) -> super::progress::LaunchStage {
@@ -833,8 +845,11 @@ async fn launch_role_runtime(
     {
         id
     } else {
-        eprintln!(
-            "warning: instance_id_from_container_base could not parse {container_name:?}; falling back to full container name as JACKIN_INSTANCE_ID — chrome chip will render the full name"
+        crate::tui::emit_compact_line(
+            "warning",
+            &format!(
+                "warning: instance_id_from_container_base could not parse {container_name:?}; falling back to full container name as JACKIN_INSTANCE_ID — chrome chip will render the full name"
+            ),
         );
         container_name
     };
@@ -1677,13 +1692,20 @@ async fn load_role_with(
     // Step 1: Resolve role identity (clone or update repo)
     steps.next("Resolving role identity");
 
-    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo(
+    let mut confirm_repo_removal = || {
+        release_rich_progress_for_plain_io(
+            &mut steps,
+            "plain cached-repo recovery prompt required",
+        );
+        confirm_repo_removal_interactive()
+    };
+    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
         paths,
         selector,
         &source.git,
         runner,
-        opts.debug,
-        opts.role_branch.as_deref(),
+        RepoResolveOptions::interactive(opts.debug).with_branch(opts.role_branch.as_deref()),
+        &mut confirm_repo_removal,
     )
     .await?;
 
@@ -1691,6 +1713,7 @@ async fn load_role_with(
     let newly_trusted = if source.trusted {
         false
     } else {
+        release_rich_progress_for_plain_io(&mut steps, "plain trust prompt required");
         confirm_trust(selector, &source)?;
         // Mutate the in-memory copy so callers downstream see the trust
         // without a reload; persist via editor below.
@@ -1716,20 +1739,40 @@ async fn load_role_with(
     let agent = match opts.agent.or(workspace.default_agent) {
         Some(a) => a,
         None if supported_agents.len() == 1 => supported_agents[0],
-        None if std::io::stdin().is_terminal() && supported_agents.len() >= 2 => {
+        None if supported_agents.len() >= 2 => {
             let labels: Vec<String> = supported_agents
                 .iter()
                 .map(|a| a.slug().to_string())
                 .collect();
-            let selection = dialoguer::Select::new()
-                .with_prompt(format!(
-                    "Role \"{}\" supports multiple agents. Choose one",
-                    selector.key()
-                ))
-                .items(&labels)
-                .default(0)
-                .interact()?;
-            supported_agents[selection]
+            if let Some(progress) = steps.progress_mut()
+                && let Some(selection) =
+                    progress.select_choice("Choose launch agent", labels.clone())?
+            {
+                supported_agents[selection]
+            } else if std::io::stdin().is_terminal() {
+                release_rich_progress_for_plain_io(
+                    &mut steps,
+                    "plain multi-agent role prompt required",
+                );
+                let selection = dialoguer::Select::new()
+                    .with_prompt(format!(
+                        "Role \"{}\" supports multiple agents. Choose one",
+                        selector.key()
+                    ))
+                    .items(&labels)
+                    .default(0)
+                    .interact()?;
+                supported_agents[selection]
+            } else {
+                anyhow::bail!(
+                    "role \"{}\" supports multiple agents ({:?}); pass --agent or set the workspace `default_agent` for non-interactive launches",
+                    selector.key(),
+                    supported_agents
+                        .iter()
+                        .map(|a| a.slug())
+                        .collect::<Vec<_>>()
+                )
+            }
         }
         None if supported_agents.is_empty() => anyhow::bail!(
             "role \"{}\" declares no supported agents in its manifest",
@@ -1749,6 +1792,7 @@ async fn load_role_with(
     // Branch trust gate: fires even for already-trusted roles because the
     // operator trusted the default branch, not this unreviewed PR branch.
     if let Some(branch) = opts.role_branch.as_deref() {
+        release_rich_progress_for_plain_io(&mut steps, "plain branch trust prompt required");
         confirm_branch(selector, &source, branch)?;
     }
 
@@ -1874,6 +1918,14 @@ async fn load_role_with(
     let manifest_resolved = if validated_repo.manifest.env.is_empty() {
         crate::env_resolver::ResolvedEnv { vars: vec![] }
     } else {
+        if validated_repo
+            .manifest
+            .env
+            .values()
+            .any(|decl| decl.interactive)
+        {
+            release_rich_progress_for_plain_io(&mut steps, "plain manifest env prompt required");
+        }
         let prompter = crate::terminal_prompter::TerminalPrompter;
         crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
     };
