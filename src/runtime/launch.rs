@@ -1580,7 +1580,15 @@ async fn load_role_with(
     });
 
     // The intro rain + logo plays once at the very start of an interactive
-    // session (console/load entry), not per launch — see `app::run`.
+    // session (console/load entry), not per launch — see `app::run`. Here we
+    // only record when the construct began: a fresh start (no containers were
+    // running) stamps "now"; an ongoing session keeps its original start, so
+    // the exit ritual can report how long the operator was in the construct.
+    let active_before_launch = list_running_agent_names(docker)
+        .await
+        .map(|names| names.len())
+        .ok();
+    super::universe::mark_start(paths, active_before_launch == Some(0));
 
     // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
     // not a name. Recover the name by matching workdir, mirroring the
@@ -2615,10 +2623,12 @@ async fn render_exit(
         }
     };
     if running.is_empty() {
-        // Last container left the construct — the fast rain + logo plays,
-        // unless the operator opted out via `--no-rain` (jackin load only).
+        // Last container left the construct. Clear the session marker and, when
+        // rain is enabled, play the fast rain + logo with a wind-down quote and
+        // how long the operator was in the construct.
+        let elapsed = super::universe::take_elapsed(paths);
         if !opts.no_rain {
-            tui::rain_logo();
+            tui::rain_logo_outro(elapsed);
         }
         return;
     }

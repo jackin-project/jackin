@@ -11,6 +11,7 @@ mod naming;
 pub mod progress;
 mod repo_cache;
 pub mod snapshot;
+mod universe;
 
 #[cfg(test)]
 pub mod test_support;

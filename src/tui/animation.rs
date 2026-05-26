@@ -408,18 +408,101 @@ pub(crate) fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
 
 // ── Session rain + logo ──────────────────────────────────────────────────
 
-/// Fast digital rain that resolves into the jackin' logo.
-///
-/// Played once at the very start of a console session (entering the construct)
-/// and once when the last container exits (leaving it). No text, no prompts —
-/// just the rain and the logo, then it clears.
-pub fn rain_logo() {
+/// Entry ritual: fast rain resolving into the logo, with a "start your day"
+/// quote in the corner. Played once when the console opens.
+pub fn rain_logo_intro() {
+    rain_logo_with(super::quotes::pick(super::quotes::START_QUOTES), None);
+}
+
+/// Exit ritual: fast rain resolving into the logo, with a "wind down" quote in
+/// the corner and — when known — how long the operator was in the construct.
+/// Played when the last container leaves.
+pub fn rain_logo_outro(elapsed: Option<std::time::Duration>) {
+    let footer = elapsed.map(|d| format!("in the construct for {}", format_universe_duration(d)));
+    rain_logo_with(super::quotes::pick(super::quotes::END_QUOTES), footer.as_deref());
+}
+
+/// Fast digital rain that resolves into the jackin' logo, then holds on the
+/// logo with an optional corner quote and footer line before clearing. No
+/// prose body — just the rain, the logo, and the corner text.
+fn rain_logo_with(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
     clear_screen();
     // Brief, brisk rainfall that reveals the logo (the reveal + hold happen
     // inside digital_rain when a banner is supplied).
     digital_rain(900, Some(REVEAL_BANNER));
-    // Linger on the revealed logo, then wipe so the next surface — the console
-    // manager on entry, or the shell on exit — starts on a clean screen.
-    let _ = skippable_sleep(std::time::Duration::from_millis(450));
+    print_corner(quote, footer);
+    // Linger so the quote is readable, then wipe so the next surface — the
+    // console manager on entry, or the shell on exit — starts clean.
+    let _ = skippable_sleep(std::time::Duration::from_millis(1900));
     clear_screen();
+}
+
+/// Render the quote (bottom-right) and an optional footer line (bottom-left)
+/// over the revealed logo, using absolute cursor moves like `digital_rain`.
+fn print_corner(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
+    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let cols = term_cols as usize;
+    let truncate = |s: &str| -> String {
+        let max = cols.saturating_sub(4).max(8);
+        if s.chars().count() > max {
+            let mut t: String = s.chars().take(max.saturating_sub(1)).collect();
+            t.push('\u{2026}');
+            t
+        } else {
+            s.to_string()
+        }
+    };
+    let right = |row: u16, text: &str, color: (u8, u8, u8)| {
+        let t = truncate(text);
+        let col = cols.saturating_sub(t.chars().count() + 2).max(1);
+        eprint!("\x1b[{row};{col}H{}", t.color(rgb(color)));
+    };
+    if let Some(q) = quote {
+        right(
+            term_rows.saturating_sub(3),
+            &format!("\u{201C}{}\u{201D}", q.text),
+            PHOSPHOR_DIM,
+        );
+        right(
+            term_rows.saturating_sub(2),
+            &format!("\u{2014} {}", q.author),
+            PHOSPHOR_DARK,
+        );
+    }
+    if let Some(f) = footer {
+        eprint!(
+            "\x1b[{};3H{}",
+            term_rows.saturating_sub(2),
+            truncate(f).color(rgb(PHOSPHOR_DIM))
+        );
+    }
+    let _ = io::stderr().flush();
+}
+
+/// Format a session duration compactly: `2h 14m`, `7m 30s`, or `45s`.
+#[must_use]
+pub fn format_universe_duration(d: std::time::Duration) -> String {
+    let secs = d.as_secs();
+    let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
+    if h > 0 {
+        format!("{h}h {m}m")
+    } else if m > 0 {
+        format!("{m}m {s}s")
+    } else {
+        format!("{s}s")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_universe_duration;
+    use std::time::Duration;
+
+    #[test]
+    fn formats_session_duration_compactly() {
+        assert_eq!(format_universe_duration(Duration::from_secs(45)), "45s");
+        assert_eq!(format_universe_duration(Duration::from_secs(450)), "7m 30s");
+        assert_eq!(format_universe_duration(Duration::from_secs(8040)), "2h 14m");
+        assert_eq!(format_universe_duration(Duration::from_secs(0)), "0s");
+    }
 }
