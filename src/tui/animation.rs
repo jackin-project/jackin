@@ -230,11 +230,7 @@ struct WarpStar {
 /// caption with the phrase of the day.
 pub fn warp_intro() {
     warp(true);
-    warp_caption(
-        "entering the Construct",
-        super::quotes::pick(super::quotes::START_QUOTES),
-        None,
-    );
+    warp_caption(super::quotes::pick(super::quotes::START_QUOTES), None);
 }
 
 /// Exit ritual — dropping *out* of hyperspace: the starfield decelerates from
@@ -243,11 +239,7 @@ pub fn warp_intro() {
 pub fn warp_outro(elapsed: Option<std::time::Duration>) {
     warp(false);
     let footer = elapsed.map(|d| format!("in the Construct for {}", format_universe_duration(d)));
-    warp_caption(
-        "leaving the Construct",
-        super::quotes::pick(super::quotes::END_QUOTES),
-        footer.as_deref(),
-    );
+    warp_caption(super::quotes::pick(super::quotes::END_QUOTES), footer.as_deref());
 }
 
 fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
@@ -306,13 +298,18 @@ fn warp(accelerating: bool) {
         for star in &mut stars {
             let prev = star.radius;
             star.radius += star.speed * warp;
-            if star.radius >= max_r {
+            let (dx, dy) = (star.angle.cos() * 2.0, star.angle.sin());
+            // Respawn once the head leaves the screen rather than at a fixed
+            // radius, so stars travel all the way to the edges and corners and
+            // the field fills the whole terminal instead of a central disc.
+            let head_x = cx + dx * star.radius;
+            let head_y = cy + dy * star.radius;
+            if head_x < 0.0 || head_x >= cols as f32 || head_y < 0.0 || head_y >= rows as f32 {
                 star.angle = (xorshift(&mut seed) % 36000) as f32 / 36000.0 * 2.0 * PI;
                 star.radius = (xorshift(&mut seed) % 60) as f32 / 100.0;
                 star.speed = 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0;
                 continue;
             }
-            let (dx, dy) = (star.angle.cos() * 2.0, star.angle.sin());
             let steps = (1.0 + warp * 1.4) as usize;
             for s in 0..=steps {
                 let rr = prev + (star.radius - prev) * (s as f32 / steps as f32);
@@ -371,10 +368,20 @@ fn warp(accelerating: bool) {
     let _ = io::stderr().flush();
 }
 
-/// Centered caption shown after the warp settles: the tagline (bright green)
-/// with the phrase of the day and an optional footer line beneath it. Brief,
-/// then clears.
-fn warp_caption(tagline: &str, quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
+/// The jackin' logo, drawn on the calm caption screen after the warp.
+const LOGO: &[&str] = &[
+    "\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2577}  \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502}",
+    "\u{2502} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2575} \u{2577} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2502}\u{2575}\u{2502}",
+    "\u{2575}  \u{2575} \u{2575} \u{2575}  \u{2502}  \u{2575} \u{2575} \u{2575} \u{2575} \u{2575}",
+    "           \u{2575}",
+    "      j a c k i n",
+    "   operator terminal",
+];
+
+/// Calm caption shown after the warp settles: the jackin' logo, then the
+/// phrase of the day, then an optional footer line. Centered as one block.
+/// Brief, then clears.
+fn warp_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
     clear_screen();
     let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let cols = term_cols as usize;
@@ -396,22 +403,37 @@ fn warp_caption(tagline: &str, quote: Option<&super::quotes::Quote>, footer: Opt
         let col = (cols.saturating_sub(t.chars().count()) / 2).max(1);
         eprint!("\x1b[{row};{col}H{}", t.color(rgb(color)));
     };
-    let mid = term_rows / 2;
-    center(mid.saturating_sub(1), tagline, PHOSPHOR_GREEN);
+
+    let logo_h = u16::try_from(LOGO.len()).unwrap_or(0);
+    // Vertically center the whole block: logo + blank + quote(2) + footer(2).
+    let mut block = logo_h + 1;
+    if quote.is_some() {
+        block += 2;
+    }
+    if footer.is_some() {
+        block += 2;
+    }
+    let top = term_rows.saturating_sub(block) / 2 + 1;
+
+    // Logo lines share one left column so the art stays aligned (per-line
+    // centering would skew the rows that carry leading spaces).
+    let logo_w = LOGO.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let logo_col = u16::try_from(cols.saturating_sub(logo_w) / 2).unwrap_or(0).max(1);
+    for (i, line) in LOGO.iter().enumerate() {
+        let row = top + u16::try_from(i).unwrap_or(0);
+        if row <= term_rows {
+            eprint!("\x1b[{row};{logo_col}H{}", line.color(rgb(PHOSPHOR_GREEN)));
+        }
+    }
+
+    let mut row = top + logo_h + 1;
     if let Some(q) = quote {
-        center(
-            mid.saturating_add(1),
-            &format!("\u{201C}{}\u{201D}", q.text),
-            WHITE,
-        );
-        center(
-            mid.saturating_add(2),
-            &format!("\u{2014} {}", q.author),
-            PHOSPHOR_DIM,
-        );
+        center(row, &format!("\u{201C}{}\u{201D}", q.text), WHITE);
+        center(row + 1, &format!("\u{2014} {}", q.author), PHOSPHOR_DIM);
+        row += 3;
     }
     if let Some(f) = footer {
-        center(mid.saturating_add(4), f, PHOSPHOR_DIM);
+        center(row, f, PHOSPHOR_DIM);
     }
     let _ = io::stderr().flush();
     let _ = skippable_sleep(std::time::Duration::from_millis(1700));
