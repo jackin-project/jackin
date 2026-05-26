@@ -271,15 +271,28 @@ fn warp(accelerating: bool) {
     let cx = cols as f32 / 2.0;
     let cy = rows as f32 / 2.0;
     // Terminal cells are about twice as tall as wide, so the horizontal
-    // projection is stretched ×2 below; size the field to the half-width.
+    // projection is stretched ×2 below; `max_r` is just a brightness scale.
     let max_r = (cx / 2.0).hypot(cy).max(1.0);
+    // The radius at which a star at `angle` leaves the screen — used to seed
+    // each star along its own radial all the way to the edge, so the field
+    // fills the whole terminal from the first frame, not a central disc.
+    let edge_radius = |angle: f32| -> f32 {
+        let dx = (angle.cos() * 2.0).abs();
+        let dy = angle.sin().abs();
+        let rx = if dx > 1e-3 { cx / dx } else { f32::MAX };
+        let ry = if dy > 1e-3 { cy / dy } else { f32::MAX };
+        rx.min(ry).max(1.0)
+    };
 
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
-    let mut stars: Vec<WarpStar> = (0..(cols * rows / 5).clamp(60, 1500))
-        .map(|_| WarpStar {
-            angle: (xorshift(&mut seed) % 36000) as f32 / 36000.0 * 2.0 * PI,
-            radius: (xorshift(&mut seed) % 1000) as f32 / 1000.0 * max_r,
-            speed: 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0,
+    let mut stars: Vec<WarpStar> = (0..(cols * rows / 4).clamp(80, 2400))
+        .map(|_| {
+            let angle = (xorshift(&mut seed) % 36000) as f32 / 36000.0 * 2.0 * PI;
+            WarpStar {
+                angle,
+                radius: (xorshift(&mut seed) % 1000) as f32 / 1000.0 * edge_radius(angle),
+                speed: 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0,
+            }
         })
         .collect();
 
@@ -368,19 +381,13 @@ fn warp(accelerating: bool) {
     let _ = io::stderr().flush();
 }
 
-/// The jackin' logo, drawn on the calm caption screen after the warp.
-const LOGO: &[&str] = &[
-    "\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2577}  \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502}",
-    "\u{2502} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2575} \u{2577} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2502}\u{2575}\u{2502}",
-    "\u{2575}  \u{2575} \u{2575} \u{2575}  \u{2502}  \u{2575} \u{2575} \u{2575} \u{2575} \u{2575}",
-    "           \u{2575}",
-    "      j a c k i n",
-    "   operator terminal",
-];
+/// The canonical jackin' logo text — the same ` jackin' ` brand pill the host
+/// and capsule status bars render (black bold on phosphor-green).
+const BRAND_PILL: &str = " jackin' ";
 
-/// Calm caption shown after the warp settles: the jackin' logo, then the
-/// phrase of the day, then an optional footer line. Centered as one block.
-/// Brief, then clears.
+/// Calm caption shown after the warp settles: the jackin' brand pill (the same
+/// green ` jackin' ` logo the status bars use), then the phrase of the day,
+/// then an optional footer line. Centered as one block. Brief, then clears.
 fn warp_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
     clear_screen();
     let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -404,9 +411,8 @@ fn warp_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
         eprint!("\x1b[{row};{col}H{}", t.color(rgb(color)));
     };
 
-    let logo_h = u16::try_from(LOGO.len()).unwrap_or(0);
-    // Vertically center the whole block: logo + blank + quote(2) + footer(2).
-    let mut block = logo_h + 1;
+    // Vertically center the block: brand pill + blank + quote(2) + footer(2).
+    let mut block = 2u16;
     if quote.is_some() {
         block += 2;
     }
@@ -415,18 +421,20 @@ fn warp_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
     }
     let top = term_rows.saturating_sub(block) / 2 + 1;
 
-    // Logo lines share one left column so the art stays aligned (per-line
-    // centering would skew the rows that carry leading spaces).
-    let logo_w = LOGO.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-    let logo_col = u16::try_from(cols.saturating_sub(logo_w) / 2).unwrap_or(0).max(1);
-    for (i, line) in LOGO.iter().enumerate() {
-        let row = top + u16::try_from(i).unwrap_or(0);
-        if row <= term_rows {
-            eprint!("\x1b[{row};{logo_col}H{}", line.color(rgb(PHOSPHOR_GREEN)));
-        }
-    }
+    // The brand pill — the canonical jackin' logo, identical to the status-bar
+    // pill: black bold ` jackin' ` on a phosphor-green background.
+    let pill_col = u16::try_from(cols.saturating_sub(BRAND_PILL.chars().count()) / 2)
+        .unwrap_or(0)
+        .max(1);
+    eprint!(
+        "\x1b[{top};{pill_col}H{}",
+        BRAND_PILL
+            .bold()
+            .color(rgb((0, 0, 0)))
+            .on_color(rgb(PHOSPHOR_GREEN))
+    );
 
-    let mut row = top + logo_h + 1;
+    let mut row = top + 2;
     if let Some(q) = quote {
         center(row, &format!("\u{201C}{}\u{201D}", q.text), WHITE);
         center(row + 1, &format!("\u{2014} {}", q.author), PHOSPHOR_DIM);
