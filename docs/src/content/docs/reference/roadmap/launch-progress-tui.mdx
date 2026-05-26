@@ -3,9 +3,9 @@ title: "Launch Progress TUI"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — core runtime/TUI shipped in PR #452; remaining work is hardening and richer diagnostics tooling
+**Status**: Partially implemented — the core runtime/TUI has shipped; remaining work is hardening and richer diagnostics tooling
 
-PR #452 implemented the shared launch progress spine: run IDs for every command, JSONL run diagnostics, boundary rain gating, structured launch stages, compact/rich/test renderers, console-triggered launch reuse, `--no-rain`, `--no-tui`, and `JACKIN_NO_MOTION=1`. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and add deeper startup parallelism beyond the initial independent preflight overlap.
+The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, boundary rain gating, structured launch stages, compact/rich/test renderers, console-triggered launch reuse, `--no-rain`, `--no-tui`, and `JACKIN_NO_MOTION=1`. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and add deeper startup parallelism beyond the initial independent preflight overlap.
 
 ## Problem
 
