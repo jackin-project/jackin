@@ -75,9 +75,11 @@ pub(super) fn cursor_scroll_for_panel(
     cursor: usize,
     scroll_y: u16,
     term: ratatui::layout::Rect,
+    footer_h: u16,
 ) -> u16 {
-    // 9 = header(3) + tab-strip(2) + block-borders(2) + footer(≈2)
-    let viewport_h = (term.height.saturating_sub(9) as usize).max(1);
+    // header(3) + tab-strip(2) + block-borders(2) + the renderer's dynamic footer.
+    let chrome = 7u16.saturating_add(footer_h);
+    let viewport_h = (term.height.saturating_sub(chrome) as usize).max(1);
     // content_height - viewport_h = u16::MAX exactly: max_offset returns u16::MAX without
     // tripping its debug_assert, while the upper clamp on cursor rows stays unreachable.
     let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
