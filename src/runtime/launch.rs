@@ -2555,6 +2555,11 @@ async fn load_role_with(
                     })
                     .await;
             }
+            // Stop the cockpit render task and release the rich surface before
+            // the exit warp writes to the terminal. A pre-attach failure returns
+            // before the success path's pre-handoff teardown runs, so without
+            // this the background task keeps drawing frames over the warp.
+            steps.finish_progress();
             render_exit(&agent_display_name, paths, docker, opts).await;
             Err(error)
         }
