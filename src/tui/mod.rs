@@ -111,6 +111,15 @@ pub fn emit_debug_line(category: &str, message: &str) {
     if crate::diagnostics::active_debug(category, &line) {
         return;
     }
+    // A diagnostics run is active but not capturing (a non-`--debug` run): the
+    // firehose stays off, so the line is dropped here rather than streamed to
+    // the screen. Skipping this drop lets debug-tier output `eprintln!` over a
+    // live rich surface (the launch cockpit owns the screen with no buffering),
+    // violating the never-spew-over-a-rich-TUI rule. The buffer/stderr fallback
+    // below is only for contexts with no active run (early startup, tests).
+    if crate::diagnostics::active_run().is_some() {
+        return;
+    }
     if DEBUG_BUFFER_ACTIVE.load(Ordering::Relaxed) {
         let mut guard = debug_buffer()
             .lock()
@@ -213,6 +222,30 @@ mod tests {
         assert_eq!(
             drain_debug_buffer(),
             vec!["[jackin debug role] resolving test role".to_string()]
+        );
+        end_debug_buffering();
+    }
+
+    #[test]
+    fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
+        let _lock = DEBUG_BUFFER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
+        let _ = drain_debug_buffer();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+
+        // A non-`--debug` run owns debug-tier output: the line is neither
+        // buffered nor printed, so it can never reach a live rich surface.
+        begin_debug_buffering();
+        emit_debug_line("role", "should be dropped");
+        assert!(
+            drain_debug_buffer().is_empty(),
+            "debug line must not buffer/print while a non-capturing run is active"
         );
         end_debug_buffering();
     }
