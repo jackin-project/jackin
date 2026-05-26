@@ -654,11 +654,15 @@ fn render_body(
         horizontal: 1,
         vertical: 0,
     });
-    // Digital rain fills the space; the block progress + stage words sit just
-    // above the status bar.
+    // Digital rain fills the space; the block progress + stage words sit above
+    // a blank gap so the bar does not stick to the status bar.
     let parts = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(2)])
+        .constraints([
+            Constraint::Min(0),    // rain
+            Constraint::Length(2), // progress blocks + stage words
+            Constraint::Length(2), // gap above the status bar
+        ])
         .split(inner);
     render_rain(frame, parts[0], rain);
     render_progress(frame, parts[1], view, frozen);
@@ -740,8 +744,8 @@ fn render_cockpit_header(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, f
 fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
     let Some(id) = view.identity.as_ref() else {
         return vec![Span::styled(
-            "Preparing launch\u{2026}",
-            Style::default().fg(PHOSPHOR_GREEN),
+            "Preparing launch...",
+            Style::default().fg(WHITE),
         )];
     };
     let prep = " in ";
@@ -775,11 +779,9 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
             } else {
                 (1.0 - (i as f32 - peak).abs() / 5.0).max(0.0)
             };
-            let color = Color::Rgb(
-                lerp(0, 200, bright),
-                lerp(140, 255, bright),
-                lerp(30, 200, bright),
-            );
+            // White, with the ripple brightening dim-white → full white.
+            let v = lerp(150, 255, bright);
+            let color = Color::Rgb(v, v, v);
             let mut style = Style::default().fg(color);
             if bold {
                 style = style.add_modifier(Modifier::BOLD);

@@ -282,10 +282,10 @@ fn glitch_centered(text: &str, color: (u8, u8, u8), hold_ms: u64) -> bool {
 /// white, before the warp. Each lands, holds, then gives way to the next.
 /// Skippable with Enter/Esc.
 fn intro_phrases() {
-    if type_centered("Stand up, operator\u{2026}", WHITE, 60, 950) {
+    if type_centered("Stand up, operator...", WHITE, 60, 950) {
         return;
     }
-    if type_centered("They're already inside\u{2026}", WHITE, 55, 950) {
+    if type_centered("They're already inside...", WHITE, 55, 950) {
         return;
     }
     if type_centered("Follow the green.", WHITE, 50, 850) {
