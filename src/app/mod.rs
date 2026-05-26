@@ -1593,7 +1593,10 @@ fn delete_prior_op_item_with_runner(
         return Ok(());
     };
     op_writer
-        .item_delete(&parts.item, &parts.vault, None)
+        // The prior item lives in the account that minted it, which can
+        // differ from the new ref's account on a cross-account rotate.
+        // Pinning the delete to the new account would orphan it.
+        .item_delete(&parts.item, &parts.vault, prior_ref.account.as_deref())
         .map_err(|e| {
             anyhow::anyhow!(
                 "rotate: prior item ({path}) was NOT deleted: {e} \
@@ -3371,7 +3374,10 @@ mod auth_set_tests {
     /// Test fake for [`crate::operator_env::OpWriteRunner`] used by
     /// the rotate-cleanup tests below.
     struct FakeOpWriter {
-        deletes: std::cell::RefCell<Vec<(String, String)>>,
+        /// Records every `item_delete` call as `(vault, item, account)`
+        /// so the rotate-cleanup tests can assert the per-call account
+        /// override (the account the prior item lives in).
+        deletes: std::cell::RefCell<Vec<(String, String, Option<String>)>>,
         fail_delete: bool,
     }
     impl FakeOpWriter {
@@ -3399,11 +3405,13 @@ mod auth_set_tests {
             &self,
             item_id: &str,
             vault_id: &str,
-            _account: Option<&str>,
+            account: Option<&str>,
         ) -> anyhow::Result<()> {
-            self.deletes
-                .borrow_mut()
-                .push((vault_id.to_string(), item_id.to_string()));
+            self.deletes.borrow_mut().push((
+                vault_id.to_string(),
+                item_id.to_string(),
+                account.map(str::to_string),
+            ));
             if self.fail_delete {
                 anyhow::bail!("simulated item_delete failure");
             }
@@ -3441,7 +3449,40 @@ mod auth_set_tests {
         delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
         assert_eq!(
             *writer.deletes.borrow(),
-            vec![("VAULT_UUID".to_string(), "OLD_ITEM".to_string())],
+            vec![("VAULT_UUID".to_string(), "OLD_ITEM".to_string(), None)],
+        );
+    }
+
+    /// Cross-account rotate: the prior item lives in account A, the new
+    /// item in account B. The delete must target account A (the prior
+    /// ref's own account) via the per-call override, NOT the new ref's
+    /// account — otherwise the prior item is orphaned.
+    #[test]
+    fn delete_prior_op_item_targets_prior_refs_account() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
+                path: "Personal/Prior/token".into(),
+                account: Some("account-A".into()),
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
+            path: "Personal/New/token".into(),
+            account: Some("account-B".into()),
+        };
+        // The OpCli is pinned to the NEW account; the per-call override
+        // (the prior ref's account) must still win.
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
+        assert_eq!(
+            *writer.deletes.borrow(),
+            vec![(
+                "VAULT_UUID".to_string(),
+                "OLD_ITEM".to_string(),
+                Some("account-A".to_string()),
+            )],
+            "delete must target the account the prior item actually lives in"
         );
     }
 

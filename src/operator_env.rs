@@ -1246,6 +1246,11 @@ impl OpWriteRunner for OpCli {
             field["type"] = serde_json::Value::String("CONCEALED".to_string());
             if let Some(id) = section_id.as_deref() {
                 field["section"] = serde_json::json!({ "id": id });
+            } else if let Some(obj) = field.as_object_mut() {
+                // Re-targeting a previously-sectioned field to root: drop
+                // any stale `section` so the field is no longer pinned to
+                // the old section.
+                obj.remove("section");
             }
         } else {
             let mut field = serde_json::json!({

@@ -283,57 +283,73 @@ where
         );
     }
 
-    let (wired, token_sha256_prefix, created) = if let Some(reuse_ref) = args.reuse.as_ref() {
-        let value = op_reader.read(&reuse_ref.op).map_err(|e| {
-            anyhow::anyhow!(
-                "validation of --reuse reference {:?} failed: {e} \
-                 (vault / item / field correct?)",
-                reuse_ref.path
-            )
-        })?;
-        let prefix = sha256_prefix(&value);
-        (WiredValue::Op(reuse_ref.clone()), prefix, false)
-    } else if args.plain_text {
-        // Mint, then store the literal in config — no op item, so no
-        // vault requirement and no post-write read-back to validate.
-        let probe = probe.ok_or_else(|| {
-            anyhow::anyhow!("internal error: claude probe missing on capture path")
-        })?;
-        let _ = probe;
-        let secret = capture()?;
-        let prefix = sha256_prefix(secret.expose_secret());
-        (WiredValue::Plain(secret), prefix, true)
-    } else {
-        // Validate that a destination is specified before launching the
-        // OAuth flow so the operator is not prompted to complete
-        // authentication only to hit a required-arg error afterward.
-        if args.vault.is_none() && args.reuse.is_none() && args.edit_existing.is_none() {
-            anyhow::bail!(
-                "no --vault supplied; `jackin workspace claude-token setup` and \
+    // `created_new_item` is true ONLY when jackin minted a brand-new op
+    // item it owns (the `create_op_item` path). It gates orphan deletion:
+    // the `edit_existing` path writes one field into the operator's
+    // PRE-EXISTING item, so a validation failure must never delete that
+    // item (it would take the operator's other fields with it).
+    let (wired, token_sha256_prefix, created, created_new_item) =
+        if let Some(reuse_ref) = args.reuse.as_ref() {
+            let value = op_reader
+                .read_with_account(&reuse_ref.op, reuse_ref.account.as_deref())
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "validation of --reuse reference {:?} failed: {e} \
+                     (vault / item / field correct?)",
+                        reuse_ref.path
+                    )
+                })?;
+            let prefix = sha256_prefix(&value);
+            (WiredValue::Op(reuse_ref.clone()), prefix, false, false)
+        } else if args.plain_text {
+            // Mint, then store the literal in config — no op item, so no
+            // vault requirement and no post-write read-back to validate.
+            let probe = probe.ok_or_else(|| {
+                anyhow::anyhow!("internal error: claude probe missing on capture path")
+            })?;
+            let _ = probe;
+            let secret = capture()?;
+            let prefix = sha256_prefix(secret.expose_secret());
+            (WiredValue::Plain(secret), prefix, true, false)
+        } else {
+            // Validate that a destination is specified before launching the
+            // OAuth flow so the operator is not prompted to complete
+            // authentication only to hit a required-arg error afterward.
+            if args.vault.is_none() && args.reuse.is_none() && args.edit_existing.is_none() {
+                anyhow::bail!(
+                    "no --vault supplied; `jackin workspace claude-token setup` and \
                  `jackin workspace claude-token rotate` need --vault <name-or-uuid> \
                  so the new item lands somewhere explicit. Pass --reuse if you \
                  already have an op:// reference to adopt instead, or --plain to \
                  store the minted token as a literal in config."
-            );
-        }
-        let probe = probe.ok_or_else(|| {
-            anyhow::anyhow!("internal error: claude probe missing on capture path")
-        })?;
-        let secret = capture()?;
-        let prefix = sha256_prefix(secret.expose_secret());
-        let op_ref = if let Some(target) = args.edit_existing.as_ref() {
-            op_writer.item_field_set(
-                &target.item_id,
-                &target.vault_id,
-                &target.field_label,
-                secret.expose_secret(),
-                target.section.as_deref(),
-            )?
-        } else {
-            create_op_item(op_writer, scope, args, &secret, &prefix, probe)?
+                );
+            }
+            let probe = probe.ok_or_else(|| {
+                anyhow::anyhow!("internal error: claude probe missing on capture path")
+            })?;
+            let secret = capture()?;
+            let prefix = sha256_prefix(secret.expose_secret());
+            let (op_ref, created_new_item) = if let Some(target) = args.edit_existing.as_ref() {
+                // Writing a field into the operator's existing item: not a
+                // deletable orphan on validation failure.
+                let op_ref = op_writer.item_field_set(
+                    &target.item_id,
+                    &target.vault_id,
+                    &target.field_label,
+                    secret.expose_secret(),
+                    target.section.as_deref(),
+                )?;
+                (op_ref, false)
+            } else {
+                // jackin minted a brand-new item it owns: safe to delete if
+                // validation fails.
+                (
+                    create_op_item(op_writer, scope, args, &secret, &prefix, probe)?,
+                    true,
+                )
+            };
+            (WiredValue::Op(op_ref), prefix, true, created_new_item)
         };
-        (WiredValue::Op(op_ref), prefix, true)
-    };
 
     // Validate the write BEFORE persisting any on-disk config: a wired
     // slot pointing at an item whose value the operator never saw
@@ -343,22 +359,38 @@ where
     // literal lands directly in config — there is no op item to read
     // back).
     if let (true, WiredValue::Op(op_ref)) = (created, &wired) {
-        let cleanup_orphan = || OrphanCleanup::run(op_writer, op_ref, args.account.as_deref());
-        let resolved = op_reader.read(&op_ref.op).map_err(|e| {
-            let cleanup = cleanup_orphan();
-            anyhow::anyhow!(
-                "post-write validation failed: re-reading {:?} returned: {e} \
-                 (no on-disk config was changed). {cleanup}",
-                op_ref.path
-            )
-        })?;
+        // On failure, only the new-item path may delete: it created an
+        // item jackin owns. The edit-existing path wrote one field into
+        // the operator's pre-existing item — deleting it would destroy
+        // their other fields — so it reports the failure without cleanup.
+        let cleanup = |reason: PostWriteCleanup| {
+            if created_new_item {
+                PostWriteCleanup::Orphan(OrphanCleanup::run(
+                    op_writer,
+                    op_ref,
+                    args.account.as_deref(),
+                ))
+            } else {
+                reason
+            }
+        };
+        let resolved = op_reader
+            .read_with_account(&op_ref.op, op_ref.account.as_deref())
+            .map_err(|e| {
+                let outcome = cleanup(PostWriteCleanup::EditedExistingKept);
+                anyhow::anyhow!(
+                    "post-write validation failed: re-reading {:?} returned: {e} \
+                     (no on-disk config was changed). {outcome}",
+                    op_ref.path
+                )
+            })?;
         let resolved_prefix = sha256_prefix(&resolved);
         if resolved_prefix != token_sha256_prefix {
-            let cleanup = cleanup_orphan();
+            let outcome = cleanup(PostWriteCleanup::EditedExistingKept);
             anyhow::bail!(
                 "post-write validation failed: {:?} resolved to a value whose SHA-256 prefix \
                  ({resolved_prefix}) does not match the captured value ({token_sha256_prefix}). \
-                 No on-disk config was changed. {cleanup} Re-run setup if the orphan is gone.",
+                 No on-disk config was changed. {outcome}",
                 op_ref.path,
             );
         }
@@ -478,13 +510,7 @@ where
     let saved = editor.save()?;
     *config = saved;
 
-    let op_account = match scope {
-        TokenSetupScope::Workspace(workspace)
-        | TokenSetupScope::WorkspaceRole { workspace, .. } => {
-            effective_account(config, workspace, args.account.as_deref()).map(str::to_string)
-        }
-        TokenSetupScope::Global => args.account.clone(),
-    };
+    let op_account = effective_account(config, scope, args.account.as_deref()).map(str::to_string);
 
     // The expiry stamp landed inside `mint_token_value_with_runner`;
     // re-derive the report's estimate from the on-disk cache so a
@@ -542,7 +568,11 @@ pub fn run_revoke(
     workspace: &str,
     delete_op_item: bool,
 ) -> anyhow::Result<RevokeReport> {
-    let op_cli = op_cli_for(config, workspace, None);
+    let op_cli = op_cli_for_scope(
+        config,
+        &TokenSetupScope::Workspace(workspace.to_string()),
+        None,
+    );
     run_revoke_with_runner(paths, config, workspace, delete_op_item, &op_cli)
 }
 
@@ -660,7 +690,11 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
 /// observe the auth banner; doctor's job is to confirm the
 /// canonical-slot config plumbing resolves without errors.
 pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorReport> {
-    let op_cli = op_cli_for(config, workspace, None);
+    let op_cli = op_cli_for_scope(
+        config,
+        &TokenSetupScope::Workspace(workspace.to_string()),
+        None,
+    );
     run_doctor_with_runner(config, workspace, &op_cli)
 }
 
@@ -682,7 +716,12 @@ pub fn run_doctor_with_runner(
              run `jackin workspace claude-token setup` first"
         )
     })?;
-    let account = effective_account(config, workspace, None).map(str::to_string);
+    let account = effective_account(
+        config,
+        &TokenSetupScope::Workspace(workspace.to_string()),
+        None,
+    )
+    .map(str::to_string);
     let token = match token_decl {
         EnvValue::Plain(t) => t.clone(),
         EnvValue::OpRef(r) => op_reader
@@ -769,17 +808,32 @@ fn create_op_item(
     op_writer.item_create(params)
 }
 
-/// The 1Password account a workspace's stored `CLAUDE_CODE_OAUTH_TOKEN`
+/// The 1Password account the scope's stored `CLAUDE_CODE_OAUTH_TOKEN`
 /// ref was created under, recovered from `OpRef::account`. `revoke` /
-/// `doctor` pin `op` to this so the slot resolves against the same
-/// account that minted it.
-fn stored_op_account<'a>(config: &'a AppConfig, workspace: &str) -> Option<&'a str> {
-    match config
-        .workspaces
-        .get(workspace)?
-        .env
-        .get(CLAUDE_OAUTH_TOKEN_ENV)
-    {
+/// `doctor` / `setup` pin `op` to this so the slot resolves against the
+/// same account that minted it.
+///
+/// Reads the env slot that matches the scope — the workspace-level slot
+/// for `Workspace`, the role-level slot for `WorkspaceRole`, the global
+/// slot for `Global` — so a per-role override created under account A is
+/// not resolved against the workspace slot's account B.
+fn stored_op_account<'a>(config: &'a AppConfig, scope: &TokenSetupScope) -> Option<&'a str> {
+    let slot = match scope {
+        TokenSetupScope::Workspace(workspace) => config
+            .workspaces
+            .get(workspace)?
+            .env
+            .get(CLAUDE_OAUTH_TOKEN_ENV),
+        TokenSetupScope::WorkspaceRole { workspace, role } => config
+            .workspaces
+            .get(workspace)?
+            .roles
+            .get(role)?
+            .env
+            .get(CLAUDE_OAUTH_TOKEN_ENV),
+        TokenSetupScope::Global => config.env.get(CLAUDE_OAUTH_TOKEN_ENV),
+    };
+    match slot {
         Some(EnvValue::OpRef(r)) => r.account.as_deref(),
         _ => None,
     }
@@ -787,41 +841,23 @@ fn stored_op_account<'a>(config: &'a AppConfig, workspace: &str) -> Option<&'a s
 
 fn effective_account<'a>(
     config: &'a AppConfig,
-    workspace: &str,
+    scope: &TokenSetupScope,
     explicit: Option<&'a str>,
 ) -> Option<&'a str> {
-    explicit.or_else(|| stored_op_account(config, workspace))
+    explicit.or_else(|| stored_op_account(config, scope))
 }
 
 /// Single seam for the `effective_account` → `OpCli::with_account`
-/// prelude shared by `run_setup` / `run_revoke` / `run_doctor`.
-fn op_cli_for(
-    config: &AppConfig,
-    workspace: &str,
-    explicit: Option<&str>,
-) -> crate::operator_env::OpCli {
-    let account = effective_account(config, workspace, explicit).map(str::to_string);
-    crate::operator_env::OpCli::new().with_account(account)
-}
-
-/// Scope-aware `OpCli` builder for `run_setup`. The `Workspace` variant
-/// folds in the account the workspace's stored ref was created under;
-/// `Global` has no workspace to read, so it uses only the explicit
-/// `--account`.
+/// prelude shared by `run_setup` / `run_revoke` / `run_doctor`. Prefers
+/// the explicit `--account`, else the account the scope's stored ref was
+/// created under (see [`stored_op_account`] for the per-scope slot).
 fn op_cli_for_scope(
     config: &AppConfig,
     scope: &TokenSetupScope,
     explicit: Option<&str>,
 ) -> crate::operator_env::OpCli {
-    match scope {
-        TokenSetupScope::Workspace(workspace)
-        | TokenSetupScope::WorkspaceRole { workspace, .. } => {
-            op_cli_for(config, workspace, explicit)
-        }
-        TokenSetupScope::Global => {
-            crate::operator_env::OpCli::new().with_account(explicit.map(str::to_string))
-        }
-    }
+    let account = effective_account(config, scope, explicit).map(str::to_string);
+    crate::operator_env::OpCli::new().with_account(account)
 }
 
 /// Outcome of the post-write orphan-cleanup attempt that runs when
@@ -863,6 +899,26 @@ impl std::fmt::Display for OrphanCleanup {
             Self::DeleteFailed { err, hint } => write!(
                 f,
                 "The just-created 1P item was NOT deleted ({err}); remove by hand: `{hint}`."
+            ),
+        }
+    }
+}
+
+/// What the post-write validation failure did about the written item.
+/// The new-item path may delete the orphan it just created; the
+/// edit-existing path must keep the operator's pre-existing item intact.
+enum PostWriteCleanup {
+    Orphan(OrphanCleanup),
+    EditedExistingKept,
+}
+
+impl std::fmt::Display for PostWriteCleanup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Orphan(o) => o.fmt(f),
+            Self::EditedExistingKept => f.write_str(
+                "The field was written into your existing 1Password item, which was left \
+                 intact — verify or fix that field by hand.",
             ),
         }
     }
@@ -2080,6 +2136,55 @@ mod tests {
         assert!(
             writer.deletes.borrow().is_empty(),
             "no delete must fire on unparseable op-ref"
+        );
+    }
+
+    /// Edit-existing path with a post-write validation failure: the
+    /// field was written into the operator's PRE-EXISTING item, so a
+    /// mismatch must NOT delete that item (deleting it would destroy the
+    /// operator's other fields). The bail message must say the item was
+    /// kept intact.
+    #[test]
+    fn run_setup_with_runner_edit_existing_validation_failure_keeps_item() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let writer = FakeOpWriter::new(dummy_op_ref());
+        // Reader resolves the ref to a DIFFERENT value than the captured
+        // token, so the SHA-256 prefix check fails and the post-write
+        // validation bails.
+        let reader = FakeOpReader::ok("sk-ant-oat01-DIFFERENT");
+        let probe = dummy_probe();
+        let err = run_setup_with_runner(
+            &paths,
+            &mut cfg,
+            &TokenSetupScope::Workspace("proj".into()),
+            &TokenSetupArgs {
+                edit_existing: Some(EditExistingTarget {
+                    vault_id: "VID".into(),
+                    item_id: "IID".into(),
+                    field_label: "token".into(),
+                    section: None,
+                }),
+                ..Default::default()
+            },
+            Some(&probe),
+            || {
+                Ok(secrecy::SecretString::from(
+                    "sk-ant-oat01-CAPTURED".to_string(),
+                ))
+            },
+            &reader,
+            &writer,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("post-write validation failed"), "got: {msg}");
+        assert!(
+            msg.contains("left intact"),
+            "bail message must say the existing item was kept: {msg}"
+        );
+        assert!(
+            writer.deletes.borrow().is_empty(),
+            "edit-existing validation failure must NEVER delete the operator's item"
         );
     }
 

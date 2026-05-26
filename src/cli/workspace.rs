@@ -285,15 +285,15 @@ Examples:
         #[arg(long, conflicts_with = "vault")]
         reuse: Option<String>,
         /// Mint and store the token as a plaintext literal in config
-        /// instead of 1Password. Mutually exclusive with `--vault` and
-        /// `--reuse`.
-        #[arg(long, conflicts_with_all = ["vault", "reuse"])]
+        /// instead of 1Password. Mutually exclusive with `--vault`,
+        /// `--reuse`, and `--interactive`.
+        #[arg(long, conflicts_with_all = ["vault", "reuse", "interactive"])]
         plain: bool,
         /// Interactively choose the 1Password account, vault, item, and
         /// field with CLI prompts instead of passing them as flags.
         /// Offers `[ + New item ]` / `[ + New field ]`. Mutually
-        /// exclusive with `--vault` and `--reuse`.
-        #[arg(short = 'i', long, conflicts_with_all = ["vault", "reuse"])]
+        /// exclusive with `--vault`, `--reuse`, and `--plain`.
+        #[arg(short = 'i', long, conflicts_with_all = ["vault", "reuse", "plain"])]
         interactive: bool,
     },
     /// Generate a fresh token and overwrite the workspace's existing

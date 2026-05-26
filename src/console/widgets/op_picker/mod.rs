@@ -206,6 +206,12 @@ pub struct OpPickerState {
     /// The stage the `FieldLabel` sub-stage was entered from, so its Esc
     /// returns to the right origin (Create mode has three entry points).
     field_label_origin: FieldLabelOrigin,
+    /// Set by the Field-stage `R` refresh before re-issuing the field
+    /// load so the Fields-loaded arm rebuilds the field rows in place
+    /// rather than bouncing back to the Section stage (Create mode). The
+    /// initial item-selection load leaves it `false` and lands on Section
+    /// as usual. Cleared the moment the refreshed fields arrive.
+    field_refresh_in_place: bool,
 
     /// `Arc` so spawned worker threads share the same trait object
     /// (test injectees included).
@@ -337,6 +343,7 @@ impl OpPickerState {
             section_name_input: TextInputState::new("Section name", ""),
             pending_section: None,
             field_label_origin: FieldLabelOrigin::NewItem,
+            field_refresh_in_place: false,
             runner,
             rx: None,
             op_cache,
@@ -557,15 +564,26 @@ impl OpPickerState {
                 );
                 self.fields = fields;
                 self.collapsed_sections.clear();
-                self.selected_section = None;
-                if self.mode.is_create() {
-                    // Create mode inserts a Section stage between Item and
-                    // Field; sections derive from the just-loaded fields.
+                if self.field_refresh_in_place {
+                    // Field-stage `R` (Create mode): the operator already
+                    // chose a section. Keep `selected_section`, rebuild the
+                    // section-scoped field rows, and stay on Field.
+                    self.field_refresh_in_place = false;
+                    let display_count = self.build_field_display_rows().len();
+                    self.field_list_state
+                        .select(if display_count == 0 { None } else { Some(0) });
+                } else if self.mode.is_create() {
+                    // Initial item-selection load (Create mode) inserts a
+                    // Section stage between Item and Field; sections derive
+                    // from the just-loaded fields.
+                    self.selected_section = None;
                     self.stage = OpPickerStage::Section;
-                    let section_count = self.section_choices().len() + 1; // + New section sentinel
-                    self.section_list_state
-                        .select(if section_count == 0 { None } else { Some(0) });
+                    // `section_choices()` always yields at least the `(root)`
+                    // entry and the list always appends a `+ New section`
+                    // sentinel, so index 0 is always valid.
+                    self.section_list_state.select(Some(0));
                 } else {
+                    self.selected_section = None;
                     let display_count = self.build_field_display_rows().len();
                     self.field_list_state
                         .select(if display_count == 0 { None } else { Some(0) });
@@ -1033,9 +1051,9 @@ impl OpPickerState {
         if self.mode.is_create() {
             self.stage = OpPickerStage::Section;
             self.selected_section = None;
-            let section_count = self.section_choices().len() + 1;
-            self.section_list_state
-                .select(if section_count == 0 { None } else { Some(0) });
+            // `section_choices()` + the `+ New section` sentinel always
+            // yield at least two rows, so index 0 is always valid.
+            self.section_list_state.select(Some(0));
         } else {
             self.stage = OpPickerStage::Item;
             self.fields.clear();
@@ -1066,6 +1084,11 @@ impl OpPickerState {
                 self.fields.clear();
                 self.field_list_state = ListState::default();
                 self.collapsed_sections.clear();
+                // In-place refresh: the operator is already on the Field
+                // stage with a chosen section. Flag the reload so the
+                // Fields-loaded arm rebuilds the rows here instead of
+                // kicking back to Section (Create mode). No-op in Browse.
+                self.field_refresh_in_place = self.mode.is_create();
                 self.start_field_load(item_id, vault_id, account_id);
                 ModalOutcome::Continue
             }
@@ -1898,6 +1921,52 @@ mod tests {
             "Create mode must land on the Section stage after a field load"
         );
         assert_eq!(s.selected_section, None, "selected_section resets on load");
+    }
+
+    /// Field-stage `R` (Create mode) reloads the fields in place: it must
+    /// keep `selected_section` and stay on the Field stage rather than
+    /// bouncing back to Section. Drives the `poll_load` Fields arm with
+    /// `field_refresh_in_place` set, the way the `r` handler leaves it.
+    #[test]
+    fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
+        let mut s = create_at_section(vec![
+            field_with_reference("user", "op://Personal/login/user"),
+            field_with_reference("api", "op://Personal/login/auth/api"),
+        ]);
+        // Operator already drilled into the "auth" section on the Field stage.
+        s.stage = OpPickerStage::Field;
+        s.selected_section = Some("auth".to_string());
+        // `r` clears `fields`/`field_list_state` and sets the in-place flag.
+        s.fields.clear();
+        s.field_refresh_in_place = true;
+        // Publish the reloaded fields through the same arm the worker uses.
+        let (tx, rx) = mpsc::channel();
+        tx.send(LoadResult::Fields(Ok(vec![
+            field_with_reference("user", "op://Personal/login/user"),
+            field_with_reference("api", "op://Personal/login/auth/api"),
+        ])))
+        .unwrap();
+        s.rx = Some(rx);
+        s.poll_load();
+
+        assert_eq!(
+            s.stage,
+            OpPickerStage::Field,
+            "in-place refresh must NOT bounce back to Section"
+        );
+        assert_eq!(
+            s.selected_section,
+            Some("auth".to_string()),
+            "in-place refresh must preserve the chosen section"
+        );
+        assert!(
+            !s.field_refresh_in_place,
+            "the flag is cleared once the refreshed fields arrive"
+        );
+        // Rows are re-scoped to "auth": one field + the new-field sentinel.
+        let rows = s.build_field_display_rows();
+        assert_eq!(rows.len(), 2, "one auth field + new-field sentinel");
+        assert!(matches!(rows[1], FieldDisplayRow::NewFieldSentinel));
     }
 
     #[test]

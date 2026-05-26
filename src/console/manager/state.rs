@@ -812,6 +812,11 @@ impl SettingsState<'_> {
         self.env.discard();
         self.auth.discard();
         self.trust.discard();
+        // A generate request queued just before the discard would
+        // otherwise still be drained by the `run_console` loop and launch
+        // an unwanted mint. `auth.discard()` already cleared
+        // `generating_token`; the queued request lives here.
+        self.pending_token_generate = None;
     }
 
     pub fn save_to_config(

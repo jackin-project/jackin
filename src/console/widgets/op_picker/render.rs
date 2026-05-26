@@ -380,7 +380,13 @@ fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
                     ])
                 }
                 FieldDisplayRow::Field { field_idx } => {
-                    let f = visible[field_idx];
+                    // Defensive: a row/field-list desync must not panic the
+                    // whole TUI mid-render. Matches the `.get()` guard in
+                    // `handle_field_key`; an empty line is dropped on the
+                    // next rebuild.
+                    let Some(f) = visible.get(field_idx) else {
+                        return Line::default();
+                    };
                     let prefix = if is_selected { "\u{25b8} " } else { "  " };
                     let label = display_label(f);
                     let pad = label_w.saturating_sub(label.chars().count());
