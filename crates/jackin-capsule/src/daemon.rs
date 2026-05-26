@@ -1327,7 +1327,33 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
-                self.spawn_session(Some(slug), env_overrides, Some(&provider_label))
+                let resolved_env = if provider_label == "Z.AI" {
+                    let mut env: Vec<(String, String)> = env_overrides.to_vec();
+                    let has_token = env
+                        .iter()
+                        .any(|(k, v)| k == "ANTHROPIC_AUTH_TOKEN" && !v.is_empty());
+                    if !has_token {
+                        if let Some(ref key) = self.zai_key {
+                            if let Some(entry) =
+                                env.iter_mut().find(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN")
+                            {
+                                entry.1 = key.clone();
+                            } else {
+                                env.push(("ANTHROPIC_AUTH_TOKEN".to_string(), key.clone()));
+                            }
+                        }
+                    }
+                    if !env.iter().any(|(k, _)| k == "ANTHROPIC_BASE_URL") {
+                        env.push((
+                            "ANTHROPIC_BASE_URL".to_string(),
+                            "https://api.z.ai/api/anthropic".to_string(),
+                        ));
+                    }
+                    env
+                } else {
+                    env_overrides.to_vec()
+                };
+                self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))
             }
             SpawnRequest::Shell => self.spawn_session(None, env_overrides, None),
         }

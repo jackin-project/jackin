@@ -1971,12 +1971,23 @@ async fn load_role_with(
             .find(|(k, _)| k == "ZAI_API_KEY")
             .map(|(_, v)| v.clone())
             .filter(|v| !v.is_empty());
+        let mut initial_provider = opts.initial_provider();
+        if let Some(ref mut provider) = initial_provider
+            && provider.label == "Z.AI"
+            && let Some(ref key) = zai_key
+        {
+            for (k, v) in &mut provider.env_overrides {
+                if k == "ANTHROPIC_AUTH_TOKEN" && v.is_empty() {
+                    key.clone_into(v);
+                }
+            }
+        }
         let launch_config = capsule_config(
             selector,
             &workspace.workdir,
             &validated_repo.manifest,
             zai_key,
-            opts.initial_provider(),
+            initial_provider,
         );
         let ctx = LaunchContext {
             container_name: &container_name,

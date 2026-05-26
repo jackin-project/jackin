@@ -686,33 +686,30 @@ where
     }
 }
 
+fn zai_key_present(config: &AppConfig, workspace_name: &str) -> bool {
+    config
+        .workspaces
+        .get(workspace_name)
+        .and_then(|ws| ws.env.get("ZAI_API_KEY"))
+        .or_else(|| config.env.get("ZAI_API_KEY"))
+        .is_some()
+}
+
 fn providers_for_launch(
     config: &AppConfig,
     workspace_name: &str,
     agent: crate::agent::Agent,
 ) -> Vec<(String, Vec<(String, String)>)> {
-    if agent != crate::agent::Agent::Claude {
+    if agent != crate::agent::Agent::Claude || !zai_key_present(config, workspace_name) {
         return vec![];
     }
-    let zai_key = config
-        .workspaces
-        .get(workspace_name)
-        .and_then(|ws| ws.env.get("ZAI_API_KEY"))
-        .or_else(|| config.env.get("ZAI_API_KEY"))
-        .and_then(|v| {
-            if let crate::operator_env::EnvValue::Plain(s) = v {
-                Some(s.clone())
-            } else {
-                None
-            }
-        });
-    let Some(key) = zai_key else { return vec![] };
     vec![
         ("Anthropic".to_string(), vec![]),
         (
             "Z.AI".to_string(),
+            // Placeholder — actual key resolved from op:// at launch time.
             vec![
-                ("ANTHROPIC_AUTH_TOKEN".to_string(), key),
+                ("ANTHROPIC_AUTH_TOKEN".to_string(), String::new()),
                 (
                     "ANTHROPIC_BASE_URL".to_string(),
                     "https://api.z.ai/api/anthropic".to_string(),

@@ -152,33 +152,25 @@ pub(super) fn handle_list_key(
                             crate::agent::Agent::ALL.to_vec(),
                         );
                     let ws_name = state.workspaces.get(ws_idx).map(|w| w.name.as_str());
-                    let zai_key = ws_name
+                    let has_zai_key = ws_name
                         .and_then(|name| config.workspaces.get(name))
                         .and_then(|ws| ws.env.get("ZAI_API_KEY"))
                         .or_else(|| config.env.get("ZAI_API_KEY"))
-                        .and_then(|v| {
-                            if let crate::operator_env::EnvValue::Plain(s) = v {
-                                Some(s.clone())
-                            } else {
-                                None
-                            }
-                        });
-                    let providers: Vec<(String, Vec<(String, String)>)> =
-                        zai_key.map_or_else(Vec::new, |key| {
-                            vec![
-                                ("Anthropic".to_string(), vec![]),
-                                (
-                                    "Z.AI".to_string(),
-                                    vec![
-                                        ("ANTHROPIC_AUTH_TOKEN".to_string(), key),
-                                        (
-                                            "ANTHROPIC_BASE_URL".to_string(),
-                                            "https://api.z.ai/api/anthropic".to_string(),
-                                        ),
-                                    ],
-                                ),
-                            ]
-                        });
+                        .is_some();
+                    let providers: Vec<(String, Vec<(String, String)>)> = if has_zai_key {
+                        vec![
+                            ("Anthropic".to_string(), vec![]),
+                            (
+                                "Z.AI".to_string(),
+                                vec![(
+                                    "ANTHROPIC_BASE_URL".to_string(),
+                                    "https://api.z.ai/api/anthropic".to_string(),
+                                )],
+                            ),
+                        ]
+                    } else {
+                        vec![]
+                    };
                     state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
                     state.list_modal = Some(Modal::ErrorPopup {
