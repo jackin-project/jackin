@@ -34,6 +34,9 @@ pub(crate) const WHITE: Color = Color::Rgb(
     tui_palette::WHITE.b,
 );
 
+/// Braille spinner animation shared across all modal loading panels.
+pub(crate) const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 pub mod agent_choice;
 pub mod auth_panel;
 pub mod confirm;

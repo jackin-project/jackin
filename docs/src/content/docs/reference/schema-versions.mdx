@@ -26,14 +26,45 @@ The split-workspace layout described in [Configuration File](/reference/configur
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
 | `~/.config/jackin/config.toml` | `v1alpha5` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha4` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha5` | jackin | Automatic on startup |
 | `jackin.role.toml` | `v1alpha4` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
 
-### `v1alpha5` — 2026-05-17
+### Workspace `v1alpha5` — 2026-05-26
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Workspace (`workspaces/<name>.toml`) | `v1alpha4` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-v1alpha4/meta.toml" /> |
+
+**Summary**: moves the workspace-level `op_account` onto each `op://` env reference as a per-ref `account` key, then removes the top-level `op_account`. A workspace can hold references from different 1Password accounts; a single workspace-level account cannot serve them, so a reference whose vault lives in a non-default account previously failed to resolve. Each reference now records the account it was created under, and reads pin to it. The migration walks `[env]`, every `[roles.<role>.env]`, `[github.env]`, and every `[roles.<role>.github.env]` table, stamping `account` onto each op reference; plain string values are untouched. A workspace with no `op_account` is a no-op restamp.
+
+**Before** (v1alpha4 workspace):
+
+```toml
+version = "v1alpha4"
+workdir = "/workspace/prod"
+op_account = "ACCT123"
+
+[env]
+CLAUDE_CODE_OAUTH_TOKEN = { op = "op://v/i/f", path = "Vault/Item/Field" }
+PLAIN_ENV = "literal-value"
+```
+
+**After** (v1alpha5):
+
+```toml
+version = "v1alpha5"
+workdir = "/workspace/prod"
+
+[env]
+CLAUDE_CODE_OAUTH_TOKEN = { op = "op://v/i/f", path = "Vault/Item/Field", account = "ACCT123" }
+PLAIN_ENV = "literal-value"
+```
+
+### Config `v1alpha5` — 2026-05-17
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
@@ -271,19 +302,18 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha4`
+### `v1alpha5`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha4` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha5` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
 | `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, or `opencode`; omitted lets launch resolution use the role manifest or prompt |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
-| `op_account` | string | No | `legacy` | 1Password account selector |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
-| `[env]` | table | No | `legacy` | Workspace operator env layer |
+| `[env]` | table | No | `legacy` | Workspace operator env layer; each `op://` reference carries an optional `account` (the 1Password account it resolves against), since `v1alpha5` |
 | `[[mounts]]` | array of tables | No | `legacy` | Workspace mounts |
 | `[[mounts]].src` | string | Yes | `legacy` | Host path |
 | `[[mounts]].dst` | string | Yes | `legacy` | Container path |
@@ -296,15 +326,15 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `[kimi].auth_forward` | string | No | `v1alpha4` | Workspace Kimi auth override |
 | `[opencode].auth_forward` | string | No | `v1alpha3` | Workspace OpenCode auth override |
 | `[github].auth_forward` | string | No | `legacy` | Workspace GitHub auth override |
-| `[github.env]` | table | No | `legacy` | Workspace GitHub token env values |
-| `[roles.<role>.env]` | table | No | `legacy` | Per-workspace, per-role env override |
+| `[github.env]` | table | No | `legacy` | Workspace GitHub token env values; `op://` references carry the per-ref `account` since `v1alpha5` |
+| `[roles.<role>.env]` | table | No | `legacy` | Per-workspace, per-role env override; `op://` references carry the per-ref `account` since `v1alpha5` |
 | `[roles.<role>.claude].auth_forward` | string | No | `legacy` | Per-workspace, per-role Claude auth override |
 | `[roles.<role>.codex].auth_forward` | string | No | `legacy` | Per-workspace, per-role Codex auth override |
 | `[roles.<role>.amp].auth_forward` | string | No | `legacy` | Per-workspace, per-role Amp auth override |
 | `[roles.<role>.kimi].auth_forward` | string | No | `v1alpha4` | Per-workspace, per-role Kimi auth override |
 | `[roles.<role>.opencode].auth_forward` | string | No | `v1alpha3` | Per-workspace, per-role OpenCode auth override |
 | `[roles.<role>.github].auth_forward` | string | No | `legacy` | Per-workspace, per-role GitHub auth override |
-| `[roles.<role>.github.env]` | table | No | `legacy` | Per-workspace, per-role GitHub token env values |
+| `[roles.<role>.github.env]` | table | No | `legacy` | Per-workspace, per-role GitHub token env values; `op://` references carry the per-ref `account` since `v1alpha5` |
 
 ## `jackin.role.toml`
 

@@ -8554,6 +8554,7 @@ plugins = []
             EnvValue::OpRef(OpRef {
                 op: "op://uuid/test/field".into(),
                 path: "Test/api/key".into(),
+                account: None,
             }),
         );
         let mut ws = WorkspaceConfig::default();

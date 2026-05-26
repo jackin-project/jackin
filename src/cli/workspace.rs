@@ -252,6 +252,7 @@ pub enum WorkspaceClaudeTokenCommand {
         after_long_help = "\
 Examples:
   jackin workspace claude-token setup my-app --vault Personal
+  jackin workspace claude-token setup my-app --interactive
   jackin workspace claude-token setup my-app --vault Personal --item-name \"jackin · {ws} · claude\"
   jackin workspace claude-token setup my-app --reuse op://Personal/Existing/token
   jackin workspace claude-token setup my-app --vault Work --op-account Work"
@@ -260,9 +261,14 @@ Examples:
         /// Workspace whose `[workspaces.<NAME>.claude]` block should
         /// be wired
         workspace: String,
+        /// Wire the token for a specific role override
+        /// (`[workspaces.<ws>.roles.<role>]`) instead of all roles in
+        /// the workspace. Omit to wire the workspace-level slot.
+        #[arg(long)]
+        role: Option<String>,
         /// 1Password vault name or UUID for the new item. Required
-        /// unless `--reuse` is supplied. Mutually exclusive with
-        /// `--reuse`.
+        /// unless `--reuse` or `--interactive` is supplied. Mutually
+        /// exclusive with `--reuse`.
         #[arg(long, conflicts_with = "reuse")]
         vault: Option<String>,
         /// Override the default item title — `{ws}` substitutes the
@@ -270,7 +276,7 @@ Examples:
         #[arg(long = "item-name")]
         item_name: Option<String>,
         /// Pin this run to a specific 1Password account (UUID,
-        /// label, or email). Persists to `[workspaces.<ws>].op_account`.
+        /// label, or email). Recorded on the created `op://` ref.
         #[arg(long = "op-account")]
         op_account: Option<String>,
         /// Reuse an existing `op://` reference instead of generating
@@ -278,6 +284,17 @@ Examples:
         /// vault is implicit in the supplied reference).
         #[arg(long, conflicts_with = "vault")]
         reuse: Option<String>,
+        /// Mint and store the token as a plaintext literal in config
+        /// instead of 1Password. Mutually exclusive with `--vault`,
+        /// `--reuse`, and `--interactive`.
+        #[arg(long, conflicts_with_all = ["vault", "reuse", "interactive"])]
+        plain: bool,
+        /// Interactively choose the 1Password account, vault, item, and
+        /// field with CLI prompts instead of passing them as flags.
+        /// Offers `[ + New item ]` / `[ + New field ]`. Mutually
+        /// exclusive with `--vault`, `--reuse`, and `--plain`.
+        #[arg(short = 'i', long, conflicts_with_all = ["vault", "reuse", "plain"])]
+        interactive: bool,
     },
     /// Generate a fresh token and overwrite the workspace's existing
     /// canonical slot.
@@ -291,11 +308,17 @@ Examples:
         after_long_help = "\
 Examples:
   jackin workspace claude-token rotate my-app
-  jackin workspace claude-token rotate my-app --vault Personal"
+  jackin workspace claude-token rotate my-app --vault Personal
+  jackin workspace claude-token rotate my-app --role chainargos/the-architect"
     )]
     Rotate {
         /// Workspace name
         workspace: String,
+        /// Rotate the token for a specific role override
+        /// (`[workspaces.<ws>.roles.<role>]`) instead of the
+        /// workspace-level slot. Must match the scope `setup` wired.
+        #[arg(long)]
+        role: Option<String>,
         /// Override vault for the new item (defaults to the vault
         /// that holds the prior item)
         #[arg(long)]

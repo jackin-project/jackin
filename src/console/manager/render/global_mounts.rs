@@ -38,8 +38,8 @@ pub(super) fn render_settings(
     let area = frame.area();
     // When a modal is open, show its keys in the footer (the "behind" keys are unreachable).
     // Check in priority order: auth modal > env modal > mounts modal > no modal.
-    let footer = if let Some(modal) = &state.auth.modal {
-        settings_auth_modal_footer_items(modal)
+    let footer = if state.auth.modal.is_some() {
+        settings_auth_modal_footer_items(&state.auth)
     } else if let Some(modal) = &state.env.modal {
         settings_env_modal_footer_items(modal)
     } else if let Some(modal) = &state.mounts.modal {
@@ -835,7 +835,13 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &mut Settings
             crate::console::widgets::text_input::render(frame, area, state);
         }
         SettingsAuthModal::OpPicker { state } => {
-            let area = super::modal::op_picker_rect(frame.area());
+            // A naming sub-stage is a plain input box, sized like every
+            // other text-input modal; drill-down stages use the picker rect.
+            let area = if state.naming_stage_input().is_some() {
+                super::modal::text_input_rect(frame.area())
+            } else {
+                super::modal::op_picker_rect(frame.area())
+            };
             crate::console::widgets::op_picker::render::render(frame, area, state);
         }
     }

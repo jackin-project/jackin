@@ -1942,7 +1942,6 @@ mod subpanel_padding_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,
@@ -2764,6 +2763,7 @@ mod subpanel_padding_tests {
             crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
                 op: "op://abc-vault/abc-item/field".into(),
                 path: "Vault/Item/field".into(),
+                account: None,
             }),
         );
 

@@ -277,7 +277,6 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,
