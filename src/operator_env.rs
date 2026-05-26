@@ -1943,7 +1943,6 @@ pub fn print_launch_diagnostic(
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) {
-    use std::io::Write;
     let mut out = Vec::new();
     write_launch_diagnostic(
         &mut out,
@@ -1954,7 +1953,21 @@ pub fn print_launch_diagnostic(
         debug,
     )
     .expect("writing to Vec<u8> is infallible");
-    let _ = std::io::stderr().write_all(&out);
+    emit_launch_diagnostic(
+        std::str::from_utf8(&out).expect("diagnostic formatter emits UTF-8"),
+        debug,
+        &mut std::io::stderr(),
+    );
+}
+
+fn emit_launch_diagnostic<W: std::io::Write>(rendered: &str, debug: bool, stderr: &mut W) {
+    if let Some(run) = crate::diagnostics::active_run() {
+        run.compact("operator_env", rendered.trim_end());
+    }
+    if debug || crate::tui::rich_surface_active() {
+        return;
+    }
+    let _ = stderr.write_all(rendered.as_bytes());
 }
 
 #[cfg(test)]
@@ -2071,6 +2084,8 @@ fn classify_env_value(value: &EnvValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static LAUNCH_DIAGNOSTIC_OUTPUT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn op_section_id_slugifies_labels() {
@@ -3259,6 +3274,62 @@ mod tests {
         assert!(rendered.contains("literal"), "{rendered}");
         assert!(!rendered.contains("super-secret"), "{rendered}");
         assert!(!rendered.contains("op-value-secret"), "{rendered}");
+    }
+
+    #[test]
+    fn launch_diagnostic_routes_to_run_file_while_rich_surface_is_active() {
+        let _lock = LAUNCH_DIAGNOSTIC_OUTPUT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::tui::set_rich_surface_active(false);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+
+        crate::tui::set_rich_surface_active(true);
+        let mut stderr = Vec::new();
+        emit_launch_diagnostic(
+            "[jackin] operator env: 1 resolved (1 op://, 0 host ref, 0 literal)\n",
+            false,
+            &mut stderr,
+        );
+        crate::tui::set_rich_surface_active(false);
+
+        assert!(
+            stderr.is_empty(),
+            "rich launch surface must not receive stderr diagnostics"
+        );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+        assert!(jsonl.contains("1 resolved"), "{jsonl}");
+    }
+
+    #[test]
+    fn launch_diagnostic_debug_mode_routes_to_run_file_not_stderr() {
+        let _lock = LAUNCH_DIAGNOSTIC_OUTPUT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::tui::set_rich_surface_active(false);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+        let _active = run.activate();
+
+        let mut stderr = Vec::new();
+        emit_launch_diagnostic(
+            "[jackin] operator env:\n  TOKEN  op://...  (global)\n",
+            true,
+            &mut stderr,
+        );
+
+        assert!(
+            stderr.is_empty(),
+            "debug launch diagnostics belong in the run file"
+        );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+        assert!(jsonl.contains("TOKEN"), "{jsonl}");
     }
 
     // ---- OpStructRunner tests --------------------------------------------
