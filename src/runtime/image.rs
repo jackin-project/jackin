@@ -7,7 +7,6 @@ use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
 use crate::version_check;
 use anyhow::Context as _;
-use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
 use super::naming::{
@@ -153,14 +152,12 @@ pub(super) async fn build_agent_image(
     if debug {
         let dockerfile_body = std::fs::read_to_string(&build.dockerfile_path)
             .unwrap_or_else(|e| format!("<read failed: {e}>"));
-        eprintln!(
-            "{}",
-            format!(
-                r"[debug] DerivedDockerfile ({}):
-{dockerfile_body}",
+        crate::tui::emit_debug_line(
+            "image",
+            &format!(
+                "DerivedDockerfile ({}):\n{dockerfile_body}",
                 build.dockerfile_path.display(),
-            )
-            .dimmed()
+            ),
         );
     }
     let image = local_image_name.clone();
@@ -413,12 +410,15 @@ async fn extract_agent_version(
         return;
     }
     if debug {
-        eprintln!("        {display} {version}");
+        crate::tui::emit_debug_line("image", &format!("{display} {version}"));
     }
     if let Some(semver) = parse(version) {
         store(paths, image, semver);
     } else if debug {
-        eprintln!("warning: unexpected {slug} --version output: {version:?}");
+        crate::tui::emit_debug_line(
+            "image",
+            &format!("unexpected {slug} --version output: {version:?}"),
+        );
     }
 }
 

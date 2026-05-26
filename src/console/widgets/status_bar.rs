@@ -161,7 +161,7 @@ mod tests {
                 "s9994y2n",
                 Some("jk-run-3d7e23"),
                 1.0,
-            )
+            );
         })
         .unwrap();
         let buf = term.backend().buffer();

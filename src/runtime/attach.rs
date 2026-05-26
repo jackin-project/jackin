@@ -227,7 +227,15 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         args.push(id);
     }
     let outcome = runner
-        .run("docker", &args, None, &RunOptions::default())
+        .run(
+            "docker",
+            &args,
+            None,
+            &RunOptions {
+                interactive: true,
+                ..RunOptions::default()
+            },
+        )
         .await;
     // The capsule has detached; re-claim the alt screen before any post-attach
     // work so the exit flow does not flash the operator's shell.
@@ -336,7 +344,15 @@ pub async fn spawn_shell_session(
         args.insert(1, flag);
     }
     let result = runner
-        .run("docker", &args, None, &RunOptions::default())
+        .run(
+            "docker",
+            &args,
+            None,
+            &RunOptions {
+                interactive: true,
+                ..RunOptions::default()
+            },
+        )
         .await;
     crate::tui::reassert_alt_screen();
     eprintln!();
@@ -402,7 +418,15 @@ pub async fn spawn_agent_session(
         exec_args.insert(1, flag);
     }
     let result = runner
-        .run("docker", &exec_args, None, &RunOptions::default())
+        .run(
+            "docker",
+            &exec_args,
+            None,
+            &RunOptions {
+                interactive: true,
+                ..RunOptions::default()
+            },
+        )
         .await;
     crate::tui::reassert_alt_screen();
     eprintln!();

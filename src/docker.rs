@@ -12,6 +12,12 @@ pub struct RunOptions {
     pub extra_env: Vec<(String, String)>,
     pub null_stdin: bool,
     pub stream_captured_output: bool,
+    /// The command needs the real terminal (an interactive `docker exec -it`
+    /// multiplexer/shell client). Such commands must inherit stdio and are
+    /// never captured — capturing denies the TTY and blocks forever on the
+    /// long-lived session, even under `--debug` or while a rich surface was
+    /// active.
+    pub interactive: bool,
 }
 
 impl Default for RunOptions {
@@ -23,6 +29,7 @@ impl Default for RunOptions {
             extra_env: Vec::new(),
             null_stdin: false,
             stream_captured_output: true,
+            interactive: false,
         }
     }
 }
@@ -78,6 +85,7 @@ impl ShellRunner {
             extra_env,
             null_stdin,
             stream_captured_output: _,
+            interactive: _,
         } = opts;
         if *null_stdin {
             cmd.stdin(std::process::Stdio::null());
@@ -161,7 +169,22 @@ impl CommandRunner for ShellRunner {
     ) -> anyhow::Result<()> {
         self.log_command(program, args, cwd);
 
-        if opts.quiet {
+        if opts.interactive {
+            // Interactive commands (the `docker exec -it` multiplexer / shell
+            // client) must inherit the real terminal. The --debug and
+            // rich-surface arms below would otherwise capture this output,
+            // denying the client its TTY and blocking forever on the
+            // long-lived session — so inherit stdio directly and never capture.
+            let mut cmd = Self::build_command(program, args, cwd);
+            Self::apply_run_opts(&mut cmd, opts);
+            let status = cmd.status().await?;
+            anyhow::ensure!(
+                status.success(),
+                "command failed: {} {}",
+                program,
+                args.join(" ")
+            );
+        } else if opts.quiet {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
             let status = cmd

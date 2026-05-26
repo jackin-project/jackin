@@ -316,9 +316,32 @@ fn intro_phrases() {
     clear_screen();
 }
 
+/// Discard input events already queued before the intro starts.
+///
+/// Under `--debug` the operator presses Enter at the plain-CLI "press Enter to
+/// continue" gate immediately before this animation. Without draining, that
+/// keystroke is still queued when the first `skippable_sleep` polls, so the
+/// intro instantly skips itself. Drain once up front so only a keypress made
+/// *during* the intro skips it.
+fn drain_pending_input() {
+    let owns_raw = !crate::tui::host_screen_owned();
+    if owns_raw {
+        let _ = crossterm::terminal::enable_raw_mode();
+    }
+    while crossterm::event::poll(std::time::Duration::ZERO).unwrap_or(false) {
+        if crossterm::event::read().is_err() {
+            break;
+        }
+    }
+    if owns_raw {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
+}
+
 /// Entry ritual — the opening phrases (with the brand pill), then a hyperspace
 /// jump *into* the Construct (a starfield accelerating to lightspeed).
 pub fn warp_intro() {
+    drain_pending_input();
     intro_phrases();
     warp(true);
 }
@@ -567,7 +590,7 @@ mod tests {
     fn formats_session_duration_compactly() {
         assert_eq!(format_universe_duration(Duration::from_secs(45)), "45s");
         assert_eq!(format_universe_duration(Duration::from_secs(450)), "7m 30s");
-        assert_eq!(format_universe_duration(Duration::from_secs(8040)), "2h 14m");
+        assert_eq!(format_universe_duration(Duration::from_mins(134)), "2h 14m");
         assert_eq!(format_universe_duration(Duration::from_secs(0)), "0s");
     }
 }
