@@ -664,54 +664,7 @@ fn render_body(
         .constraints([Constraint::Min(0), Constraint::Length(2)])
         .split(inner);
     render_rain(frame, parts[0], rain);
-    render_standup(frame, parts[0], view, frozen);
     render_progress(frame, parts[1], view, frozen);
-}
-
-/// Matrix-flavored lines cycled beneath the logo while the operator waits — the
-/// container load can take a while, so this gives the screen a pulse.
-const STANDUP_LINES: &[&str] = &[
-    "Wake up, operator.",
-    "The Construct is loading.",
-    "Follow the green.",
-    "Free your mind.",
-    "They're already inside.",
-    "Stand up.",
-];
-/// Frames per standup line (~2s at the 50ms render tick).
-const STANDUP_PERIOD: usize = 40;
-
-/// Overlay a rotating standup line centered over the rain. No logo on the
-/// cockpit — the jackin' logo belongs to the intro/outro only; here the line
-/// gives the wait a pulse without competing with the stage bar.
-fn render_standup(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    let idx = if frozen {
-        0
-    } else {
-        (view.frame / STANDUP_PERIOD) % STANDUP_LINES.len()
-    };
-    let msg = STANDUP_LINES[idx];
-    let msg_w = u16::try_from(msg.chars().count()).unwrap_or(0);
-    if msg_w == 0 || msg_w > area.width {
-        return;
-    }
-    let rect = Rect {
-        x: area.x + area.width.saturating_sub(msg_w) / 2,
-        y: area.y + area.height / 2,
-        width: msg_w,
-        height: 1,
-    };
-    frame.render_widget(Clear, rect);
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            msg.to_string(),
-            Style::default().fg(PHOSPHOR_DIM),
-        ))),
-        rect,
-    );
 }
 
 /// Paint the shared rain engine's grid into `area`. The grid is sized to the
