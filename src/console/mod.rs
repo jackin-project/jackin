@@ -394,6 +394,72 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
     out.flush()
 }
 
+/// Owns the terminal for an entire launch flow so it never flashes the shell.
+///
+/// Holds the alternate screen, raw mode, and mouse capture across console →
+/// loading cockpit → capsule → exit summary so the terminal never drops back
+/// to the cooked primary screen between surfaces. Each sub-surface checks
+/// [`crate::tui::host_screen_owned`] and skips its own enter/leave while this
+/// guard is alive; `Drop` restores the terminal exactly once, on every exit
+/// path.
+pub struct HostScreen {
+    _private: (),
+}
+
+impl HostScreen {
+    /// Enter raw mode + the alternate screen + mouse capture and mark the
+    /// screen owned. The caller holds the returned guard for the whole flow.
+    pub fn enter() -> std::io::Result<Self> {
+        use crossterm::ExecutableCommand;
+        let mut stdout = std::io::stdout();
+        crossterm::terminal::enable_raw_mode()?;
+        crate::tui::begin_debug_buffering();
+        stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
+        enable_console_mouse_capture(&mut stdout)?;
+        crate::tui::set_host_screen_owned(true);
+        Ok(Self { _private: () })
+    }
+
+    /// Drop to the cooked primary screen for the duration of `f`, then restore
+    /// the full-screen session. Used for the rare interim prompts that sit
+    /// between the console and the loading cockpit (sensitive-mount confirm,
+    /// agent choice) and expect a normal line-buffered terminal.
+    pub fn suspend<T>(&self, f: impl FnOnce() -> T) -> std::io::Result<T> {
+        use crossterm::ExecutableCommand;
+        let mut stdout = std::io::stdout();
+        let _ = disable_console_mouse_capture(&mut stdout);
+        crossterm::terminal::disable_raw_mode()?;
+        stdout.execute(crossterm::terminal::LeaveAlternateScreen)?;
+        stdout.execute(crossterm::cursor::Show)?;
+        crate::tui::set_host_screen_owned(false);
+        let out = f();
+        crossterm::terminal::enable_raw_mode()?;
+        stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
+        enable_console_mouse_capture(&mut stdout)?;
+        crate::tui::set_host_screen_owned(true);
+        Ok(out)
+    }
+}
+
+impl Drop for HostScreen {
+    fn drop(&mut self) {
+        use crossterm::ExecutableCommand;
+        let mut stdout = std::io::stdout();
+        drain_pending_terminal_events_until_quiet(
+            MAX_TEARDOWN_DRAIN_EVENTS,
+            std::time::Duration::from_millis(TEARDOWN_DRAIN_QUIET_MS),
+        );
+        let _ = disable_console_mouse_capture(&mut stdout);
+        drain_pending_terminal_events(MAX_TEARDOWN_DRAIN_EVENTS);
+        flush_terminal_input_queue();
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+        let _ = stdout.execute(crossterm::cursor::Show);
+        crate::tui::set_host_screen_owned(false);
+        crate::tui::end_debug_buffering();
+    }
+}
+
 async fn open_inline_agent_picker(
     state: &mut ConsoleState,
     paths: &JackinPaths,
@@ -654,38 +720,18 @@ pub async fn run_console(
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
-    use crossterm::ExecutableCommand;
     use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-    use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
-
-    // EnableMouseCapture disables native text selection; operators
-    // hold Shift (Terminal.app, iTerm2) or Option (iTerm2) to bypass.
-    struct TerminalGuard;
-    impl Drop for TerminalGuard {
-        fn drop(&mut self) {
-            let mut stdout = std::io::stdout();
-            drain_pending_terminal_events_until_quiet(
-                MAX_TEARDOWN_DRAIN_EVENTS,
-                std::time::Duration::from_millis(TEARDOWN_DRAIN_QUIET_MS),
-            );
-            let _ = disable_console_mouse_capture(&mut stdout);
-            drain_pending_terminal_events(MAX_TEARDOWN_DRAIN_EVENTS);
-            flush_terminal_input_queue();
-            let _ = crossterm::terminal::disable_raw_mode();
-            let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
-            let _ = stdout.execute(crossterm::cursor::Show);
-            crate::tui::end_debug_buffering();
-        }
-    }
 
     let mut state = ConsoleState::new(&config, cwd)?;
-    let mut stdout = std::io::stdout();
-    enable_raw_mode()?;
-    let guard = TerminalGuard;
-    crate::tui::begin_debug_buffering();
-    stdout.execute(EnterAlternateScreen)?;
-    enable_console_mouse_capture(&mut stdout)?;
-    let backend = ratatui::backend::CrosstermBackend::new(stdout);
+    // When the launch flow in `app` already owns the host screen, draw into it
+    // and leave teardown to that guard; otherwise own the screen here for the
+    // lifetime of the console (standalone `jackin console` with no launch).
+    let owned_screen = if crate::tui::host_screen_owned() {
+        None
+    } else {
+        Some(HostScreen::enter()?)
+    };
+    let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut last_mouse_event_at: Option<std::time::Instant> = None;
 
@@ -891,7 +937,10 @@ pub async fn run_console(
         }
     };
 
-    drop(guard);
+    // Tears down only when the console owns the screen standalone. When the
+    // launch flow owns it, this is `None` and teardown waits for that guard so
+    // the console → loading transition stays on one alternate screen.
+    drop(owned_screen);
     result
 }
 

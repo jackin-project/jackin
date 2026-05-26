@@ -14,7 +14,12 @@ const DIM: (u8, u8, u8) = (120, 120, 120);
 fn skippable_sleep(duration: std::time::Duration) -> bool {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
-    let _ = crossterm::terminal::enable_raw_mode();
+    // Under the host guard raw mode is already on for the whole flow; toggling
+    // it here would hand control back to the cooked terminal mid-animation.
+    let owns_raw = !crate::tui::host_screen_owned();
+    if owns_raw {
+        let _ = crossterm::terminal::enable_raw_mode();
+    }
     let skipped = if crossterm::event::poll(duration).unwrap_or(false) {
         matches!(
             event::read(),
@@ -24,7 +29,9 @@ fn skippable_sleep(duration: std::time::Duration) -> bool {
     } else {
         false
     };
-    let _ = crossterm::terminal::disable_raw_mode();
+    if owns_raw {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
     skipped
 }
 

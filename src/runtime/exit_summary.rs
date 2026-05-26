@@ -169,8 +169,11 @@ pub async fn show(paths: &JackinPaths, running_bases: &[String], exited: &str, o
 }
 
 async fn show_rich(exited: &str, groups: &[ExitGroup]) -> anyhow::Result<()> {
+    let owns_screen = !crate::tui::host_screen_owned();
     let mut stdout = std::io::stdout();
-    stdout.execute(EnterAlternateScreen)?;
+    if owns_screen {
+        stdout.execute(EnterAlternateScreen)?;
+    }
     stdout.execute(crossterm::cursor::Hide)?;
     crate::tui::set_rich_surface_active(true);
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
@@ -187,7 +190,9 @@ async fn show_rich(exited: &str, groups: &[ExitGroup]) -> anyhow::Result<()> {
     crate::tui::set_rich_surface_active(false);
     let backend = terminal.backend_mut();
     let _ = backend.execute(crossterm::cursor::Show);
-    let _ = backend.execute(LeaveAlternateScreen);
+    if owns_screen {
+        let _ = backend.execute(LeaveAlternateScreen);
+    }
     let _ = std::io::Write::flush(&mut std::io::stdout());
     drawn
 }

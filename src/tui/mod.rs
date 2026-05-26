@@ -34,6 +34,24 @@ pub fn rich_surface_active() -> bool {
     RICH_SURFACE_ACTIVE.load(Ordering::Relaxed)
 }
 
+static HOST_SCREEN_OWNED: AtomicBool = AtomicBool::new(false);
+
+/// Set while a single host-side guard owns the screen for a whole launch flow.
+///
+/// The guard holds the alternate screen, raw mode, and mouse capture across
+/// console → loading → capsule → exit. The individual surfaces (console
+/// manager, launch cockpit, exit summary) check this and skip their own
+/// enter/leave so the flow never drops back to the cooked terminal between
+/// screens. Driven only by the owning guard's lifetime.
+pub fn set_host_screen_owned(owned: bool) {
+    HOST_SCREEN_OWNED.store(owned, Ordering::Relaxed);
+}
+
+#[must_use]
+pub fn host_screen_owned() -> bool {
+    HOST_SCREEN_OWNED.load(Ordering::Relaxed)
+}
+
 /// Format a single debug-log line. Pure (no I/O) so unit tests can
 /// assert on the wire format without touching global state or stderr.
 #[must_use]

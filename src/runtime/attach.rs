@@ -194,6 +194,15 @@ fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
 /// host-supplied pane focus on its first Hello frame; `None` falls
 /// through to "attach at whatever the daemon thinks is focused"
 /// (the default reattach contract).
+/// `docker exec` env flag that tells the in-container capsule client not to
+/// toggle its own alternate screen, set only while the host orchestrator owns
+/// one continuous alternate screen for the whole launch flow. Returns `None`
+/// for standalone capsule invocations (e.g. `jackin hardline`), where the
+/// client manages its own screen.
+fn host_alt_screen_exec_flag() -> Option<&'static str> {
+    crate::tui::host_screen_owned().then_some("-e=JACKIN_HOST_ALT_SCREEN=1")
+}
+
 pub(super) async fn reconnect_or_create_session_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -210,6 +219,9 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         container_name,
         "/jackin/runtime/jackin-capsule",
     ];
+    if let Some(flag) = host_alt_screen_exec_flag() {
+        args.insert(1, flag);
+    }
     if let Some(ref id) = focus_arg {
         args.push("--focus");
         args.push(id);
@@ -309,19 +321,18 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
+    let mut args: Vec<&str> = vec![
+        "exec",
+        "-it",
+        container_name,
+        "/jackin/runtime/jackin-capsule",
+        "new",
+    ];
+    if let Some(flag) = host_alt_screen_exec_flag() {
+        args.insert(1, flag);
+    }
     let result = runner
-        .run(
-            "docker",
-            &[
-                "exec",
-                "-it",
-                container_name,
-                "/jackin/runtime/jackin-capsule",
-                "new",
-            ],
-            None,
-            &RunOptions::default(),
-        )
+        .run("docker", &args, None, &RunOptions::default())
         .await;
     eprintln!();
     result?;
@@ -381,6 +392,9 @@ pub async fn spawn_agent_session(
     if let Some(ref env) = dco_env {
         dco_env_flag = format!("-e={env}");
         exec_args.insert(1, dco_env_flag.as_str());
+    }
+    if let Some(flag) = host_alt_screen_exec_flag() {
+        exec_args.insert(1, flag);
     }
     let result = runner
         .run("docker", &exec_args, None, &RunOptions::default())

@@ -387,7 +387,11 @@ struct RichRenderer {
 impl RichRenderer {
     fn enter(no_motion: bool) -> anyhow::Result<Self> {
         let mut stdout = std::io::stdout();
-        stdout.execute(EnterAlternateScreen)?;
+        // When the launch flow's host guard already owns the alternate screen,
+        // draw into it; only enter it ourselves when running standalone.
+        if !crate::tui::host_screen_owned() {
+            stdout.execute(EnterAlternateScreen)?;
+        }
         stdout.execute(crossterm::cursor::Hide)?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
         let terminal = ratatui::Terminal::new(backend)?;
@@ -437,9 +441,16 @@ impl RichRenderer {
         title: &str,
         items: Vec<String>,
     ) -> anyhow::Result<usize> {
-        crossterm::terminal::enable_raw_mode().context("entering raw mode for launch picker")?;
+        // The host guard already holds raw mode for the whole flow; only
+        // toggle it when this renderer is running standalone.
+        let owns_raw = !crate::tui::host_screen_owned();
+        if owns_raw {
+            crossterm::terminal::enable_raw_mode().context("entering raw mode for launch picker")?;
+        }
         let outcome = self.select_loop(view, run_id, title, items);
-        let _ = crossterm::terminal::disable_raw_mode();
+        if owns_raw {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
         outcome
     }
 
@@ -477,7 +488,11 @@ impl Drop for RichRenderer {
     fn drop(&mut self) {
         crate::tui::set_rich_surface_active(false);
         let _ = self.terminal.backend_mut().execute(crossterm::cursor::Show);
-        let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
+        // Leave the alternate screen only when we entered it; under the host
+        // guard the screen persists into the capsule attach.
+        if !crate::tui::host_screen_owned() {
+            let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
+        }
         let _ = std::io::stdout().flush();
     }
 }

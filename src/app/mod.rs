@@ -161,6 +161,13 @@ pub async fn run(cli: Cli) -> Result<()> {
                 paths: paths.clone(),
                 debug,
             };
+
+            // One alternate screen owns the entire console → loading → capsule
+            // → exit flow so transitions never flash back to the cooked
+            // terminal. Sub-surfaces detect this and skip their own
+            // enter/leave; the guard tears the terminal down once, on drop.
+            let screen = console::HostScreen::enter()?;
+
             let Some(outcome) =
                 console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?
             else {
@@ -176,6 +183,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                     (class, workspace, selected_agent)
                 }
                 outcome @ console::ConsoleOutcome::InstanceAction { .. } => {
+                    // The action owns the terminal with its own foreground
+                    // process; hand it back the cooked screen.
+                    drop(screen);
                     return handle_console_instance_action(
                         &paths,
                         &mut config,
@@ -187,16 +197,30 @@ pub async fn run(cli: Cli) -> Result<()> {
                 }
             };
 
+            // The sensitive-mount confirm and agent-choice prompts are
+            // line-buffered (dialoguer) and rare; run them on the cooked screen
+            // and restore the full-screen session afterward. The common path
+            // (agent pre-picked, no sensitive mounts) never suspends.
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
-            if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
-                anyhow::bail!("aborted — sensitive mount paths were not confirmed");
-            }
+            let default_agent = workspace.default_agent;
+            let agent = if sensitive.is_empty() && selected_agent.is_some() {
+                selected_agent
+            } else {
+                screen.suspend(|| -> anyhow::Result<Option<crate::agent::Agent>> {
+                    if !sensitive.is_empty()
+                        && !crate::workspace::confirm_sensitive_mounts(&sensitive)?
+                    {
+                        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+                    }
+                    selected_agent.map_or_else(
+                        || prompt_agent_choice_if_needed(&paths, &class, default_agent),
+                        |agent| Ok(Some(agent)),
+                    )
+                })??
+            };
 
             let mut opts = runtime::LoadOptions::for_launch(no_rain, no_tui, debug);
-            opts.agent = match selected_agent {
-                Some(agent) => Some(agent),
-                None => prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?,
-            };
+            opts.agent = agent;
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(
                 &paths,
@@ -210,6 +234,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             .await;
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+            // `screen` drops here, after the exit summary, restoring the
+            // terminal exactly once.
             result
         }
         Command::Hardline(HardlineArgs {
