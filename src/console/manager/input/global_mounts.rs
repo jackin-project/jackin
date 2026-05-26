@@ -750,6 +750,11 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
         target, mut state, ..
     }) = auth.pending_auth_form_return.take()
     else {
+        crate::debug_log!(
+            "auth",
+            "apply_plain_text_to_settings_auth_form: pending_auth_form_return missing — \
+             minted plain token dropped"
+        );
         return;
     };
     state.set_literal(value.to_string());
@@ -790,6 +795,15 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
         literal_buffer,
     }) = auth.pending_auth_form_return.take()
     else {
+        // Mirrors the editor twin's missing-stash breadcrumb: a minted
+        // global token with no form to return to would otherwise vanish
+        // silently. Should be unreachable (the `g`/`G` trigger always
+        // stashes), so a hit here means a broken stash invariant.
+        crate::debug_log!(
+            "auth",
+            "apply_op_picker_to_settings_auth_form: pending_auth_form_return missing — \
+             minted op ref dropped"
+        );
         return;
     };
     match state.try_commit_op_ref(runner, op_ref) {

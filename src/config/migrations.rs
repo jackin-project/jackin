@@ -81,16 +81,21 @@ const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
 /// and stamps the old top-level `op_account` onto each inline-table
 /// value carrying an `op` key that lacks an `account`. Plain string
 /// values are skipped. Absent `op_account` is a no-op.
-// Returns Result to match the `Migration` fn-pointer type, like noop_migration.
-#[allow(clippy::unnecessary_wraps)]
 fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Result<()> {
-    let Some(acct) = doc
-        .get("op_account")
-        .and_then(toml_edit::Item::as_str)
-        .map(str::to_string)
-    else {
-        doc.remove("op_account");
-        return Ok(());
+    // Absent op_account is a legitimate no-op (single-account / never-set
+    // workspace). A present-but-non-string value is operator data we must
+    // not silently drop: bail loudly so the standard startup parser error
+    // surfaces, rather than discarding the account and presenting a
+    // downstream phantom "missing credential" at next launch.
+    let acct = match doc.get("op_account") {
+        None => return Ok(()),
+        Some(item) => match item.as_str() {
+            Some(s) => s.to_string(),
+            None => bail!(
+                "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
+                 found {item:?}"
+            ),
+        },
     };
 
     stamp_account_in_env(doc.as_table_mut(), &acct);
@@ -913,6 +918,32 @@ TOKEN = { op = "op://v/i/f", path = "V/I/F" }
         assert!(
             !out.contains("account"),
             "no account key without op_account:\n{out}"
+        );
+    }
+
+    #[test]
+    fn workspace_with_non_string_op_account_bails_loudly() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("prod.toml");
+        std::fs::write(
+            &path,
+            r#"version = "v1alpha4"
+workdir = "/workspace/prod"
+op_account = 123
+
+[env]
+TOKEN = { op = "op://v/i/f", path = "V/I/F" }
+"#,
+        )
+        .unwrap();
+
+        let err = migrate_workspace_file_if_needed(&path).unwrap_err();
+        // The framework wraps the step error with a "running … migration"
+        // context, so check the full chain (alternate Display) for our message.
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("op_account") && chain.contains("must be a string"),
+            "non-string op_account must bail loudly, not silently drop: {chain}"
         );
     }
 
