@@ -1,8 +1,9 @@
 ---
 title: "Workspace Claude Token Setup"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, and in-container OAuth-token onboarding are shipped; canonical `oauth_token` auth slot, TUI generate action, Apple Keychain backend, pre-launch validity probe, and bulk migration remain
+**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, and host-side PTY OAuth-token onboarding (driven through `claude setup-token` from <RepoFile path="src/host_claude.rs" />) are shipped; canonical `oauth_token` auth slot, TUI generate action, Apple Keychain backend, pre-launch validity probe, and bulk migration remain
 
 **Parent**: [Reliable Claude Authentication Strategy](/reference/roadmap/claude-auth-strategy/)
 
