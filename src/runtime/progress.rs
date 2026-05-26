@@ -9,13 +9,12 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Clear, Paragraph};
 
 use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::{
-    BORDER_GRAY, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
-    render_brand_header,
+    ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
 };
 use crate::diagnostics::RunDiagnostics;
 
@@ -497,8 +496,9 @@ impl RichRenderer {
 
     fn render(&mut self, view: &LaunchView, run_id: &str) -> anyhow::Result<()> {
         let no_motion = self.no_motion;
-        // Keep the rain engine sized to the terminal and advance it once per
-        // render (paused under no-motion). render_rain reads its grid.
+        // Keep the rain engine sized to the terminal. Advance it every other
+        // render so the rainfall reads at the calmer main-branch speed while
+        // the frame still redraws smoothly (~30fps). Paused under no-motion.
         if let Ok(size) = self.terminal.size() {
             let (cols, rows) = (size.width as usize, size.height as usize);
             let stale = self
@@ -509,6 +509,7 @@ impl RichRenderer {
                 self.rain = Some(crate::tui::animation::RainState::new(cols, rows));
             }
             if !no_motion
+                && view.frame.is_multiple_of(2)
                 && let Some(rain) = &mut self.rain
             {
                 crate::tui::animation::tick_rain(rain);
@@ -631,7 +632,7 @@ fn render_launch_frame(
     // live cue keeps moving behind the modal.
     let frozen = no_motion || view.failure.is_some();
 
-    render_brand_header(frame, rows[0], "loading");
+    render_cockpit_header(frame, rows[0], view, frozen);
     render_body(frame, rows[1], view, frozen, rain);
     render_footer(frame, rows[2], view, run_id);
 
@@ -647,18 +648,14 @@ fn render_body(
     frozen: bool,
     rain: Option<&crate::tui::animation::RainState>,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(BORDER_GRAY))
-        .title(box_title_line(view, frozen));
-    let inner = block.inner(area).inner(ratatui::layout::Margin {
-        horizontal: 2,
-        vertical: 1,
+    // No border — the rain fills the whole body; a one-cell side margin keeps
+    // glyphs off the screen edge.
+    let inner = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 0,
     });
-    frame.render_widget(block, area);
-
-    // Digital rain fills the upper space ("entering the construct"); the
-    // block progress + stage words sit just above the status bar.
+    // Digital rain fills the space; the block progress + stage words sit just
+    // above the status bar.
     let parts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(2)])
@@ -719,33 +716,77 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-/// The box title, coloured so the operator reads what is loading at a glance:
-/// the agent role in phosphor green and the target workspace/path in link
-/// blue, both pulsing brighter (to white) as the launch progresses.
-fn box_title_line(view: &LaunchView, frozen: bool) -> Line<'static> {
+/// Top header: the ` jackin' ` brand pill, a separator, then the loading line
+/// (`Loading <role> in <path>`) — replacing both the old brand-header label and
+/// the box title.
+fn render_cockpit_header(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+    let mut spans = vec![
+        Span::styled(
+            " jackin' ",
+            Style::default()
+                .bg(PHOSPHOR_GREEN)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ·  ", Style::default().fg(PHOSPHOR_DARK)),
+    ];
+    spans.extend(loading_line_spans(view, frozen));
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// The `Loading <role> in <path>` line: one green colour throughout, the role
+/// and the path **bold**, with a brightness ripple sweeping left→right so the
+/// text reads as actively loading.
+fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
     let Some(id) = view.identity.as_ref() else {
-        return Line::from(Span::styled(
-            " Preparing launch ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+        return vec![Span::styled(
+            "Preparing launch\u{2026}",
+            Style::default().fg(PHOSPHOR_GREEN),
+        )];
     };
-    let prep = match id.target_kind {
-        LaunchTargetKind::Workspace => "into",
-        LaunchTargetKind::Directory => "in",
-    };
-    let pulse = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
-    let accent = |base: Color| {
-        Style::default()
-            .fg(if pulse { WHITE } else { base })
-            .add_modifier(Modifier::BOLD)
-    };
-    Line::from(vec![
-        Span::styled(" Loading ", Style::default().fg(PHOSPHOR_DIM)),
-        Span::styled(id.role.clone(), accent(PHOSPHOR_GREEN)),
-        Span::styled(format!(" {prep} "), Style::default().fg(PHOSPHOR_DIM)),
-        Span::styled(id.target_label.clone(), accent(LINK_BLUE)),
-        Span::raw(" "),
-    ])
+    let prep = " in ";
+    // Flatten to (char, bold) so the ripple can colour every glyph uniformly
+    // while the role + path stay bold.
+    let mut chars: Vec<(char, bool)> = Vec::new();
+    for ch in "Loading ".chars() {
+        chars.push((ch, false));
+    }
+    for ch in id.role.chars() {
+        chars.push((ch, true));
+    }
+    for ch in prep.chars() {
+        chars.push((ch, false));
+    }
+    for ch in id.target_label.chars() {
+        chars.push((ch, true));
+    }
+
+    let len = chars.len();
+    let lerp = |a: u8, b: u8, t: f32| (f32::from(b) - f32::from(a)).mul_add(t, f32::from(a)) as u8;
+    // A bright band sweeps across the line every ~len+16 frames.
+    let period = (len + 16) as f32;
+    let peak = (view.frame as f32 % period) - 8.0;
+    chars
+        .into_iter()
+        .enumerate()
+        .map(|(i, (ch, bold))| {
+            let bright = if frozen {
+                0.0
+            } else {
+                (1.0 - (i as f32 - peak).abs() / 5.0).max(0.0)
+            };
+            let color = Color::Rgb(
+                lerp(0, 200, bright),
+                lerp(140, 255, bright),
+                lerp(30, 200, bright),
+            );
+            let mut style = Style::default().fg(color);
+            if bold {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            Span::styled(ch.to_string(), style)
+        })
+        .collect()
 }
 
 fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
@@ -1032,7 +1073,7 @@ mod tests {
             .unwrap();
 
         let rendered = format!("{:?}", terminal.backend().buffer());
-        assert!(rendered.contains("Loading agent-smith into big-monorepo"));
+        assert!(rendered.contains("Loading agent-smith in big-monorepo"));
         assert!(rendered.contains("construct"));
         // Footer chip shows the short instance id derived from the container.
         assert!(rendered.contains("k7p9m2xq"));
