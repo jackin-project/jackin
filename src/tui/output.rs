@@ -1,8 +1,7 @@
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
-use std::sync::atomic::Ordering;
 
-use super::{DEBUG_MODE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, rgb};
+use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, rgb};
 
 // ── Color palette ────────────────────────────────────────────────────────
 
@@ -145,9 +144,6 @@ pub fn set_terminal_title(title: &str) {
 }
 
 pub fn clear_screen() {
-    if DEBUG_MODE.load(Ordering::Relaxed) {
-        return;
-    }
     eprint!("\x1b[2J\x1b[H");
     let _ = io::stderr().flush();
 }

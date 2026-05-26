@@ -31,6 +31,77 @@ fn skippable_sleep(duration: std::time::Duration) -> bool {
     skipped
 }
 
+/// Outcome of a resize-aware wait.
+enum WaitOutcome {
+    /// The full duration elapsed with no interruption.
+    Elapsed,
+    /// The operator pressed Enter/Esc to skip.
+    Skipped,
+    /// The terminal was resized; the caller should redraw at the new size.
+    Resized,
+}
+
+/// Wait up to `duration`, returning early on a skip key (Enter/Esc) or a
+/// terminal resize. Same raw-mode handling as `skippable_sleep`. Non-skip,
+/// non-resize events (stray mouse, focus) are consumed without ending the wait.
+fn wait_or_event(duration: std::time::Duration) -> WaitOutcome {
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+    let owns_raw = !crate::tui::host_screen_owned();
+    if owns_raw {
+        let _ = crossterm::terminal::enable_raw_mode();
+    }
+    let deadline = std::time::Instant::now() + duration;
+    let outcome = loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break WaitOutcome::Elapsed;
+        }
+        if event::poll(remaining).unwrap_or(false) {
+            match event::read() {
+                Ok(Event::Key(k))
+                    if k.kind == KeyEventKind::Press
+                        && matches!(k.code, KeyCode::Enter | KeyCode::Esc) =>
+                {
+                    break WaitOutcome::Skipped;
+                }
+                Ok(Event::Resize(_, _)) => break WaitOutcome::Resized,
+                Ok(_) => {}
+                Err(_) => break WaitOutcome::Elapsed,
+            }
+        } else {
+            break WaitOutcome::Elapsed;
+        }
+    };
+    if owns_raw {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
+    outcome
+}
+
+/// Show a static screen for `total`, calling `draw` once up front and again
+/// (after a clear) on every terminal resize so the surface always fills and
+/// centers to the current size. Returns `true` if the operator skipped.
+fn hold_resizable(total: std::time::Duration, mut draw: impl FnMut()) -> bool {
+    draw();
+    let _ = io::stderr().flush();
+    let deadline = std::time::Instant::now() + total;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        match wait_or_event(remaining) {
+            WaitOutcome::Skipped => return true,
+            WaitOutcome::Resized => {
+                clear_screen();
+                draw();
+                let _ = io::stderr().flush();
+            }
+            WaitOutcome::Elapsed => return false,
+        }
+    }
+}
+
 // ── Digital rain ─────────────────────────────────────────────────────────
 
 pub(crate) struct RainCell {
@@ -266,7 +337,13 @@ fn type_centered(text: &str, color: (u8, u8, u8), char_ms: u64, hold_ms: u64) ->
             return true;
         }
     }
-    skippable_sleep(std::time::Duration::from_millis(hold_ms))
+    // Hold, re-centering the full phrase + pill on every resize.
+    hold_resizable(std::time::Duration::from_millis(hold_ms), || {
+        draw_brand_pill_bottom();
+        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
+        eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
+    })
 }
 
 /// Glitch-reveal `text` centered on screen (random glyphs settling into the
@@ -296,7 +373,13 @@ fn glitch_centered(text: &str, color: (u8, u8, u8), hold_ms: u64) -> bool {
     }
     eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
     let _ = io::stderr().flush();
-    skippable_sleep(std::time::Duration::from_millis(hold_ms))
+    // Hold, re-centering the settled text + pill on every resize.
+    hold_resizable(std::time::Duration::from_millis(hold_ms), || {
+        draw_brand_pill_bottom();
+        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let (row, col) = (rows / 2, center_col(cols, chars.len()));
+        eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
+    })
 }
 
 /// The opening cyberpunk-style call — each phrase shown on its own, centered,
@@ -359,27 +442,27 @@ pub fn warp_out() {
 /// is empty): the brand pill, and how long the operator was in the Construct.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
     clear_screen();
-    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    let mid = rows / 2;
-    let pill_col = center_col(cols, BRAND_PILL.chars().count());
-    eprint!(
-        "\x1b[{mid};{pill_col}H{}",
-        BRAND_PILL
-            .bold()
-            .color(rgb((0, 0, 0)))
-            .on_color(rgb(PHOSPHOR_GREEN))
-    );
-    if let Some(d) = elapsed {
-        let line = format!("in the Construct for {}", format_universe_duration(d));
-        let col = center_col(cols, line.chars().count());
+    let _ = hold_resizable(std::time::Duration::from_millis(2400), || {
+        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let mid = rows / 2;
+        let pill_col = center_col(cols, BRAND_PILL.chars().count());
         eprint!(
-            "\x1b[{};{col}H{}",
-            mid.saturating_add(2),
-            line.color(rgb(PHOSPHOR_DIM))
+            "\x1b[{mid};{pill_col}H{}",
+            BRAND_PILL
+                .bold()
+                .color(rgb((0, 0, 0)))
+                .on_color(rgb(PHOSPHOR_GREEN))
         );
-    }
-    let _ = io::stderr().flush();
-    let _ = skippable_sleep(std::time::Duration::from_millis(2400));
+        if let Some(d) = elapsed {
+            let line = format!("in the Construct for {}", format_universe_duration(d));
+            let col = center_col(cols, line.chars().count());
+            eprint!(
+                "\x1b[{};{col}H{}",
+                mid.saturating_add(2),
+                line.color(rgb(PHOSPHOR_DIM))
+            );
+        }
+    });
     clear_screen();
 }
 
@@ -390,37 +473,37 @@ pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
 /// bottom. Brief, then clears.
 pub fn outro_summary(headline: &str, rows: &[String]) {
     clear_screen();
-    draw_brand_pill_bottom();
-    let (cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    let line_at = |row: u16, text: &str, bold: bool| {
-        if row == 0 || row > term_rows {
-            return;
-        }
-        let col = center_col(cols, text.chars().count());
-        let styled = if bold {
-            text.bold().color(rgb(WHITE)).to_string()
-        } else {
-            text.color(rgb(WHITE)).to_string()
+    let _ = hold_resizable(std::time::Duration::from_millis(2800), || {
+        draw_brand_pill_bottom();
+        let (cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let line_at = |row: u16, text: &str, bold: bool| {
+            if row == 0 || row > term_rows {
+                return;
+            }
+            let col = center_col(cols, text.chars().count());
+            let styled = if bold {
+                text.bold().color(rgb(WHITE)).to_string()
+            } else {
+                text.color(rgb(WHITE)).to_string()
+            };
+            eprint!("\x1b[{row};{col}H{styled}");
         };
-        eprint!("\x1b[{row};{col}H{styled}");
-    };
-    // Center the block (headline + blank + rows) vertically, leaving room above
-    // the bottom pill.
-    let block_h = rows.len() + 2;
-    let top = u16::try_from((term_rows as usize).saturating_sub(block_h + 2) / 2 + 1)
-        .unwrap_or(1)
-        .max(1);
-    line_at(top, headline, true);
-    for (i, r) in rows.iter().enumerate() {
-        line_at(
-            top.saturating_add(2)
-                .saturating_add(u16::try_from(i).unwrap_or(0)),
-            r,
-            false,
-        );
-    }
-    let _ = io::stderr().flush();
-    let _ = skippable_sleep(std::time::Duration::from_millis(2800));
+        // Center the block (headline + blank + rows) vertically, leaving room
+        // above the bottom pill.
+        let block_h = rows.len() + 2;
+        let top = u16::try_from((term_rows as usize).saturating_sub(block_h + 2) / 2 + 1)
+            .unwrap_or(1)
+            .max(1);
+        line_at(top, headline, true);
+        for (i, r) in rows.iter().enumerate() {
+            line_at(
+                top.saturating_add(2)
+                    .saturating_add(u16::try_from(i).unwrap_or(0)),
+                r,
+                false,
+            );
+        }
+    });
     clear_screen();
 }
 
@@ -447,32 +530,20 @@ fn warp(accelerating: bool) {
     eprint!("\x1b[?25l"); // hide cursor
     let _ = io::stderr().flush();
 
-    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    let cols = term_cols as usize;
-    let rows = (term_rows as usize).saturating_sub(1).max(1);
-    let cx = cols as f32 / 2.0;
-    let cy = rows as f32 / 2.0;
-    // Terminal cells are about twice as tall as wide, so the horizontal
-    // projection is stretched ×2 below; `max_r` is just a brightness scale.
-    let max_r = (cx / 2.0).hypot(cy).max(1.0);
-    // The radius at which a star at `angle` leaves the screen — used to seed
-    // each star along its own radial all the way to the edge, so the field
-    // fills the whole terminal from the first frame, not a central disc.
-    let edge_radius = |angle: f32| -> f32 {
-        let dx = (angle.cos() * 2.0).abs();
-        let dy = angle.sin().abs();
-        let rx = if dx > 1e-3 { cx / dx } else { f32::MAX };
-        let ry = if dy > 1e-3 { cy / dy } else { f32::MAX };
-        rx.min(ry).max(1.0)
+    // Initial size only seeds the star field; the loop re-reads the live size
+    // every frame so the warp tracks terminal resizes.
+    let (cols0, rows0) = {
+        let (c, r) = crossterm::terminal::size().unwrap_or((80, 24));
+        (c as usize, (r as usize).saturating_sub(1).max(1))
     };
-
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
-    let mut stars: Vec<WarpStar> = (0..(cols * rows / 4).clamp(80, 2400))
+    let mut stars: Vec<WarpStar> = (0..(cols0 * rows0 / 4).clamp(80, 2400))
         .map(|_| {
             let angle = (xorshift(&mut seed) % 36000) as f32 / 36000.0 * 2.0 * PI;
             WarpStar {
                 angle,
-                radius: (xorshift(&mut seed) % 1000) as f32 / 1000.0 * edge_radius(angle),
+                radius: (xorshift(&mut seed) % 1000) as f32 / 1000.0
+                    * warp_edge_radius(angle, cols0 as f32 / 2.0, rows0 as f32 / 2.0),
                 speed: 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0,
             }
         })
@@ -480,7 +551,23 @@ fn warp(accelerating: bool) {
 
     let frame_ms = 30;
     let frames: usize = 104;
+    let mut last_size = (cols0, rows0);
     for f in 0..frames {
+        // Re-read the terminal each frame so a resize mid-warp adapts; clear
+        // once on a size change so shrunk-away cells don't linger.
+        let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let cols = term_cols as usize;
+        let rows = (term_rows as usize).saturating_sub(1).max(1);
+        if (cols, rows) != last_size {
+            clear_screen();
+            last_size = (cols, rows);
+        }
+        let cx = cols as f32 / 2.0;
+        let cy = rows as f32 / 2.0;
+        // Terminal cells are about twice as tall as wide, so the horizontal
+        // projection is stretched ×2 below; `max_r` is just a brightness scale.
+        let max_r = (cx / 2.0).hypot(cy).max(1.0);
+
         let t = f as f32 / frames as f32;
         // Ease the warp factor: accelerate in (slow → blast), decelerate out.
         let warp = if accelerating {
@@ -560,11 +647,20 @@ fn warp(accelerating: bool) {
         }
     }
 
-    for r in 0..rows {
-        eprint!("\x1b[{};1H\x1b[2K", r + 1);
-    }
+    clear_screen();
     eprint!("\x1b[H\x1b[?25h"); // home + show cursor
     let _ = io::stderr().flush();
+}
+
+/// Radius at which a star at `angle` leaves a `cx`×`cy` half-screen — seeds
+/// each star along its own radial out to the edge so the field fills the whole
+/// terminal from the first frame instead of a central disc.
+fn warp_edge_radius(angle: f32, cx: f32, cy: f32) -> f32 {
+    let dx = (angle.cos() * 2.0).abs();
+    let dy = angle.sin().abs();
+    let rx = if dx > 1e-3 { cx / dx } else { f32::MAX };
+    let ry = if dy > 1e-3 { cy / dy } else { f32::MAX };
+    rx.min(ry).max(1.0)
 }
 
 /// Format a session duration compactly: `2h 14m`, `7m 30s`, or `45s`.
