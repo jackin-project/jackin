@@ -583,9 +583,25 @@ fn render_body(
     render_progress(frame, parts[1], view, frozen);
 }
 
+/// Dim, non-green rain palette for the loading cockpit: a recessive steel-blue
+/// ramp so the rain reads as ambient texture and the eye stays on the green
+/// stage bar. Age ranges mirror the engine's own fade so cell lifetimes match;
+/// the bright Matrix-green is reserved for the boundary intro/outro rain.
+const fn cockpit_rain_color(age: u16) -> Option<(u8, u8, u8)> {
+    match age {
+        0 => Some((96, 124, 168)),
+        1..=2 => Some((72, 96, 136)),
+        3..=5 => Some((54, 74, 108)),
+        6..=10 => Some((40, 56, 84)),
+        11..=16 => Some((30, 42, 64)),
+        17..=24 => Some((22, 30, 46)),
+        _ => None,
+    }
+}
+
 /// Paint the shared rain engine's grid into `area`. The grid is sized to the
-/// whole terminal, so `area` is a window onto a continuous rainfall; each
-/// cell maps to its glyph and the engine's age-based green fade.
+/// whole terminal, so `area` is a window onto a continuous rainfall; each cell
+/// maps to its glyph and the dim cockpit rain ramp.
 fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::animation::RainState>) {
     let Some(rain) = rain else {
         return;
@@ -614,10 +630,7 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
                         .get(grid_y)
                         .and_then(|row| row.get(grid_x))
                         .and_then(|cell| cell.as_ref())
-                        .and_then(|cell| {
-                            crate::tui::animation::age_to_color(cell.age)
-                                .map(|rgb| (cell.ch, rgb))
-                        })
+                        .and_then(|cell| cockpit_rain_color(cell.age).map(|rgb| (cell.ch, rgb)))
                         .map_or_else(
                             || Span::raw(" "),
                             |(ch, (r, g, b))| {
