@@ -1457,6 +1457,13 @@ fn handle_claude_token(
                 (args, role)
             };
 
+            // A flag-supplied role is taken verbatim, so reject one the
+            // workspace doesn't allow before minting — otherwise the OAuth
+            // round-trip runs and wires a token to a dead role scope. The
+            // interactive prompt already only offers allowed roles.
+            if let Some(role) = role.as_deref() {
+                validate_setup_role_allowed(config, &workspace, role)?;
+            }
             let scope = match role {
                 Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
                 None => token_setup::TokenSetupScope::Workspace(workspace),
@@ -1467,15 +1474,24 @@ fn handle_claude_token(
         }
         cli::WorkspaceClaudeTokenCommand::Rotate {
             workspace,
+            role,
             vault,
             item_name,
             op_account,
         } => {
-            let prior = config
-                .workspaces
-                .get(&workspace)
-                .and_then(|w| w.env.get(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV))
-                .cloned();
+            // Reject a disallowed flag-supplied role before minting, same
+            // as setup — otherwise rotate wires a token to a dead scope.
+            if let Some(role) = role.as_deref() {
+                validate_setup_role_allowed(config, &workspace, role)?;
+            }
+            let scope = match role {
+                Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
+                None => token_setup::TokenSetupScope::Workspace(workspace),
+            };
+            // Read the prior token from the SAME scope being rotated so a
+            // role-scoped token (wired by `setup --role`) is found and its
+            // vault/op-item are reused, not the workspace-level slot.
+            let prior = token_setup::prior_token_slot(config, &scope);
             // Default rotate to the prior item's vault when
             // `--vault` is not supplied. Without this, the
             // documented `rotate my-app` form errors inside
@@ -1492,12 +1508,7 @@ fn handle_claude_token(
                 section: None,
                 plain_text: false,
             };
-            let report = token_setup::run_setup(
-                paths,
-                config,
-                &token_setup::TokenSetupScope::Workspace(workspace),
-                &args,
-            )?;
+            let report = token_setup::run_setup(paths, config, &scope, &args)?;
             print_token_setup_report(&report);
             // Rotate is an op-only flow (it always mints into a new 1P
             // item), so the report always carries an op ref here.
@@ -1592,6 +1603,35 @@ fn delete_prior_op_item_with_runner(
         );
         return Ok(());
     };
+    // Only delete an item jackin created. An item the operator adopted via
+    // `--reuse` or interactive edit-in-place carries no jackin tag and may
+    // hold the operator's other fields, so deleting the whole item would be
+    // data loss — leave it. Fail safe on a read error: don't delete what we
+    // can't verify.
+    match op_writer.item_tags(&parts.item, &parts.vault, prior_ref.account.as_deref()) {
+        Ok(tags) if crate::workspace::token_setup::tags_indicate_jackin_owned(&tags) => {}
+        Ok(_) => {
+            eprintln!(
+                "[jackin] rotate: prior item ({path}) is not jackin-managed (no `{tag}` tag) — \
+                 leaving it untouched so none of your other fields are deleted. The new token is \
+                 wired and live; remove the old field by hand if you want: `{hint}`",
+                path = prior_ref.path,
+                tag = crate::workspace::token_setup::JACKIN_TAG,
+                hint = parts.manual_delete_hint(),
+            );
+            return Ok(());
+        }
+        Err(e) => {
+            eprintln!(
+                "[jackin] rotate: could not verify whether prior item ({path}) is jackin-managed: \
+                 {e} — leaving it untouched to avoid deleting an adopted item. Delete by hand if \
+                 needed: `{hint}`",
+                path = prior_ref.path,
+                hint = parts.manual_delete_hint(),
+            );
+            return Ok(());
+        }
+    }
     op_writer
         // The prior item lives in the account that minted it, which can
         // differ from the new ref's account on a cross-account rotate.
@@ -1640,6 +1680,21 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
     } else {
         println!("Existing op:// reference adopted; no new item created.");
     }
+}
+
+/// Reject a flag-supplied `--role` the workspace does not allow, before
+/// any token mint runs. Empty `allowed_roles` is the "any role" shorthand
+/// (see [`crate::console::manager::agent_allow`]).
+fn validate_setup_role_allowed(config: &AppConfig, workspace: &str, role: &str) -> Result<()> {
+    use crate::console::manager::agent_allow::agent_is_effectively_allowed;
+    let ws = config.require_workspace(workspace)?;
+    if !agent_is_effectively_allowed(ws, role) {
+        anyhow::bail!(
+            "role {role:?} is not allowed in workspace {workspace:?}; allowed roles: {}",
+            ws.allowed_roles.join(", ")
+        );
+    }
+    Ok(())
 }
 
 /// Prompt for the token scope: all roles in the workspace, or a specific
@@ -1785,12 +1840,14 @@ fn prompt_interactive_token_store(
             .with_prompt("Field label")
             .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
             .interact_text()?;
+        // Trim so padding can't reach the op item title / field id+label,
+        // matching the TUI picker's commit trimming.
         return Ok(token_setup::TokenSetupArgs {
             vault: Some(vault.id.clone()),
-            item_name: Some(item_name),
+            item_name: Some(item_name.trim().to_string()),
             account: account_id,
             reuse: None,
-            field_label: Some(field_label),
+            field_label: Some(field_label.trim().to_string()),
             edit_existing: None,
             section: None,
             plain_text: false,
@@ -1798,7 +1855,7 @@ fn prompt_interactive_token_store(
     }
 
     let item = &items[item_choice - 1];
-    let (section, field_label) =
+    let (section, field) =
         prompt_existing_item_section_and_field(&op, account_id.as_deref(), &vault.id, &item.id)?;
 
     Ok(token_setup::TokenSetupArgs {
@@ -1810,7 +1867,7 @@ fn prompt_interactive_token_store(
         edit_existing: Some(token_setup::EditExistingTarget {
             vault_id: vault.id.clone(),
             item_id: item.id.clone(),
-            field_label,
+            field,
             section,
         }),
         section: None,
@@ -1822,15 +1879,17 @@ fn prompt_interactive_token_store(
 /// token should land in. Mirrors the TUI Create-mode drill: first pick a
 /// section (`(root)`, an existing named section, or `[ + New section ]`),
 /// then pick a field scoped to that section (an existing field to
-/// overwrite, or `[ + New field ]` to append). Returns the chosen
-/// `(section, field_label)` — section is `None` for `(root)`.
+/// overwrite, or `[ + New field ]` to append). Returns the chosen section
+/// (`None` for `(root)`) and a [`FieldTarget`] — `Existing` when an
+/// existing field was picked (so the write targets that exact field and
+/// preserves its placement), `New` for an appended field.
 fn prompt_existing_item_section_and_field(
     op: &crate::operator_env::OpCli,
     account_id: Option<&str>,
     vault_id: &str,
     item_id: &str,
-) -> Result<(Option<String>, String)> {
-    use crate::operator_env::{OpStructRunner, parse_op_reference};
+) -> Result<(Option<String>, crate::operator_env::FieldTarget)> {
+    use crate::operator_env::{FieldTarget, OpStructRunner, parse_op_reference};
     use crate::workspace::token_setup;
 
     let fields = op.item_get(item_id, vault_id, account_id)?;
@@ -1858,11 +1917,11 @@ fn prompt_existing_item_section_and_field(
         .interact()?;
 
     let section: Option<String> = if section_choice == sections.len() {
-        Some(
-            dialoguer::Input::new()
-                .with_prompt("New section name")
-                .interact_text()?,
-        )
+        let name: String = dialoguer::Input::new()
+            .with_prompt("New section name")
+            .interact_text()?;
+        // Trim to match the TUI picker so padding can't reach the section label.
+        Some(name.trim().to_string())
     } else {
         sections[section_choice].clone()
     };
@@ -1899,15 +1958,26 @@ fn prompt_existing_item_section_and_field(
             .with_prompt("New field label")
             .default(token_setup::DEFAULT_FIELD_LABEL.to_string())
             .interact_text()?;
-        return Ok((section, field_label));
+        return Ok((
+            section,
+            FieldTarget::New {
+                label: field_label.trim().to_string(),
+            },
+        ));
     }
     let f = scoped[field_choice - 1];
-    let field_label = if f.label.is_empty() {
+    let label = if f.label.is_empty() {
         f.id.clone()
     } else {
         f.label.clone()
     };
-    Ok((section, field_label))
+    Ok((
+        section,
+        FieldTarget::Existing {
+            id: f.id.clone(),
+            label,
+        },
+    ))
 }
 
 #[derive(tabled::Tabled)]
@@ -3298,6 +3368,38 @@ mod auth_set_tests {
     }
 
     #[test]
+    fn validate_setup_role_rejects_disallowed_and_accepts_allowed() {
+        let mut config = AppConfig::default();
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            allowed_roles: vec!["alpha".into(), "beta".into()],
+            ..Default::default()
+        };
+        config.workspaces.insert("proj".into(), ws);
+
+        validate_setup_role_allowed(&config, "proj", "alpha").expect("allowed role passes");
+        let err = validate_setup_role_allowed(&config, "proj", "typo").unwrap_err();
+        assert!(
+            err.to_string().contains("not allowed"),
+            "disallowed role must bail: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_setup_role_allows_any_when_allowed_roles_empty() {
+        let mut config = AppConfig::default();
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            allowed_roles: vec![],
+            ..Default::default()
+        };
+        config.workspaces.insert("proj".into(), ws);
+        validate_setup_role_allowed(&config, "proj", "anything").expect("empty list = any role");
+    }
+
+    #[test]
     fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
         let temp = tempfile::tempdir().unwrap();
         let global_src = temp.path().join("secrets");
@@ -3379,18 +3481,45 @@ mod auth_set_tests {
         /// override (the account the prior item lives in).
         deletes: std::cell::RefCell<Vec<(String, String, Option<String>)>>,
         fail_delete: bool,
+        /// Tags returned by `item_tags`. Defaults to jackin-owned so the
+        /// rotate-cleanup tests exercise the delete; set empty to model an
+        /// operator-adopted item the delete guard must spare.
+        tags: Vec<String>,
+        /// When `true`, `item_tags` returns `Err` to exercise the rotate
+        /// guard's fail-safe (skip delete) path.
+        fail_tags: bool,
     }
     impl FakeOpWriter {
         fn new() -> Self {
             Self {
                 deletes: std::cell::RefCell::new(Vec::new()),
                 fail_delete: false,
+                tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_string()],
+                fail_tags: false,
             }
         }
         fn failing() -> Self {
             Self {
                 deletes: std::cell::RefCell::new(Vec::new()),
                 fail_delete: true,
+                tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_string()],
+                fail_tags: false,
+            }
+        }
+        fn adopted() -> Self {
+            Self {
+                deletes: std::cell::RefCell::new(Vec::new()),
+                fail_delete: false,
+                tags: Vec::new(),
+                fail_tags: false,
+            }
+        }
+        fn tag_read_fails() -> Self {
+            Self {
+                deletes: std::cell::RefCell::new(Vec::new()),
+                fail_delete: false,
+                tags: Vec::new(),
+                fail_tags: true,
             }
         }
     }
@@ -3421,11 +3550,22 @@ mod auth_set_tests {
             &self,
             _item_id: &str,
             _vault_id: &str,
-            _field_label: &str,
+            _target: &crate::operator_env::FieldTarget,
             _value: &str,
             _section: Option<&str>,
         ) -> anyhow::Result<crate::operator_env::OpRef> {
             anyhow::bail!("rotate-cleanup tests do not exercise item_field_set")
+        }
+        fn item_tags(
+            &self,
+            _item_id: &str,
+            _vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<String>> {
+            if self.fail_tags {
+                anyhow::bail!("simulated item_tags read failure");
+            }
+            Ok(self.tags.clone())
         }
     }
 
@@ -3450,6 +3590,56 @@ mod auth_set_tests {
         assert_eq!(
             *writer.deletes.borrow(),
             vec![("VAULT_UUID".to_string(), "OLD_ITEM".to_string(), None)],
+        );
+    }
+
+    /// The prior item the operator adopted (no jackin tag) must NOT be
+    /// deleted on rotate — it may hold the operator's other fields.
+    #[test]
+    fn delete_prior_op_item_spares_operator_adopted_item() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://VAULT_UUID/SHARED_ITEM/token".into(),
+                path: "Personal/My Vault Item/token".into(),
+                account: None,
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
+            path: "Personal/New/token".into(),
+            account: None,
+        };
+        let writer = FakeOpWriter::adopted();
+        delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
+        assert!(
+            writer.deletes.borrow().is_empty(),
+            "an adopted (non-jackin-tagged) prior item must never be deleted"
+        );
+    }
+
+    /// If the ownership tag-read fails (auth/network), rotate must fail safe:
+    /// skip the delete (don't risk destroying an item we can't verify) and
+    /// still return Ok so the freshly-wired token stands.
+    #[test]
+    fn delete_prior_op_item_skips_delete_on_tag_read_error() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://VAULT_UUID/OLD_ITEM/token".into(),
+                path: "Personal/Prior/token".into(),
+                account: None,
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
+            path: "Personal/New/token".into(),
+            account: None,
+        };
+        let writer = FakeOpWriter::tag_read_fails();
+        delete_prior_op_item_with_runner(prior, &new_ref, &writer)
+            .expect("tag-read failure must not fail the rotate");
+        assert!(
+            writer.deletes.borrow().is_empty(),
+            "an unverifiable prior item must never be deleted"
         );
     }
 

@@ -308,11 +308,17 @@ Examples:
         after_long_help = "\
 Examples:
   jackin workspace claude-token rotate my-app
-  jackin workspace claude-token rotate my-app --vault Personal"
+  jackin workspace claude-token rotate my-app --vault Personal
+  jackin workspace claude-token rotate my-app --role chainargos/the-architect"
     )]
     Rotate {
         /// Workspace name
         workspace: String,
+        /// Rotate the token for a specific role override
+        /// (`[workspaces.<ws>.roles.<role>]`) instead of the
+        /// workspace-level slot. Must match the scope `setup` wired.
+        #[arg(long)]
+        role: Option<String>,
         /// Override vault for the new item (defaults to the vault
         /// that holds the prior item)
         #[arg(long)]

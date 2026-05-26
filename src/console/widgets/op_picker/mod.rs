@@ -74,7 +74,9 @@ pub enum OpPickerSelection {
         vault: crate::operator_env::OpVault,
         item: crate::operator_env::OpItem,
         section: Option<String>,
-        field_label: String,
+        /// Which field to write: an exact existing field (overwrite,
+        /// placement preserved) or a new field by label.
+        field: crate::operator_env::FieldTarget,
     },
 }
 
@@ -1111,7 +1113,7 @@ impl OpPickerState {
                 if let Some(FieldDisplayRow::SectionHeader { name, .. }) =
                     self.build_field_display_rows().into_iter().nth(cur)
                 {
-                    self.collapsed_sections.insert(name);
+                    self.set_section_collapsed(name, true);
                 }
                 ModalOutcome::Continue
             }
@@ -1120,7 +1122,7 @@ impl OpPickerState {
                 if let Some(FieldDisplayRow::SectionHeader { name, .. }) =
                     self.build_field_display_rows().into_iter().nth(cur)
                 {
-                    self.collapsed_sections.remove(name.as_str());
+                    self.set_section_collapsed(name, false);
                 }
                 ModalOutcome::Continue
             }
@@ -1187,7 +1189,9 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             ModalOutcome::Commit(name) => {
-                self.pending_section = Some(name);
+                // Trim so a whitespace-padded section name can't reach the
+                // op section label / derived id.
+                self.pending_section = Some(name.trim().to_string());
                 self.field_label_origin = FieldLabelOrigin::NewSection;
                 self.stage = OpPickerStage::FieldLabel;
                 ModalOutcome::Continue
@@ -1204,6 +1208,11 @@ impl OpPickerState {
                     FieldLabelOrigin::NewField => OpPickerStage::Field,
                     FieldLabelOrigin::NewSection => OpPickerStage::NewSectionName,
                 };
+                // The section was staged immediately before this stage
+                // (new-section name or the drilled section for a new field);
+                // backing out discards that choice so it cannot leak into a
+                // later commit on a different path.
+                self.pending_section = None;
                 ModalOutcome::Continue
             }
             ModalOutcome::Commit(label) => {
@@ -1211,13 +1220,17 @@ impl OpPickerState {
                     .selected_vault
                     .clone()
                     .expect("vault set before field-label commit");
+                // Trim the field label so leading/trailing whitespace can't
+                // reach the op field id/label (item_name is trimmed too).
+                let field_label = label.trim().to_string();
                 if let Some(item) = self.selected_item.clone() {
                     ModalOutcome::Commit(OpPickerSelection::EditItemField {
                         account: self.selected_account.clone(),
                         vault,
                         item,
                         section: self.pending_section.take(),
-                        field_label: label,
+                        // Typed label = a new field to append.
+                        field: crate::operator_env::FieldTarget::New { label: field_label },
                     })
                 } else {
                     ModalOutcome::Commit(OpPickerSelection::NewItem {
@@ -1225,7 +1238,7 @@ impl OpPickerState {
                         vault,
                         item_name: self.item_name_input.trimmed_value(),
                         section: self.pending_section.take(),
-                        field_label: label,
+                        field_label,
                     })
                 }
             }
@@ -1234,12 +1247,20 @@ impl OpPickerState {
     }
 
     fn toggle_section_collapse(&mut self, name: String) {
-        if self.collapsed_sections.contains(name.as_str()) {
-            self.collapsed_sections.remove(name.as_str());
-        } else {
+        let collapsed = self.collapsed_sections.contains(name.as_str());
+        self.set_section_collapsed(name, !collapsed);
+    }
+
+    /// Collapse (`collapsed = true`) or expand a section header, then clamp
+    /// the field selection so it never dangles past the new row count.
+    /// All three entry points (Enter toggle, Left collapse, Right expand)
+    /// route here so the selection clamp stays in lockstep with the rows.
+    fn set_section_collapsed(&mut self, name: String, collapsed: bool) {
+        if collapsed {
             self.collapsed_sections.insert(name);
+        } else {
+            self.collapsed_sections.remove(name.as_str());
         }
-        // Clamp selection in case the row count shrank.
         let new_len = self.build_field_display_rows().len();
         if new_len == 0 {
             self.field_list_state.select(None);
@@ -1248,8 +1269,10 @@ impl OpPickerState {
         }
     }
 
-    /// Browse: commit the field's `op://` reference. Create: overwrite
-    /// the field in place (section recovered by the commit consumer).
+    /// Browse: commit the field's `op://` reference. Create: overwrite the
+    /// field by its exact id — the consumer matches on `field_id` and
+    /// preserves the field's existing section, so `selected_section` rides
+    /// along only for display, not placement.
     fn commit_existing_field(&self, field: &OpField) -> OpPickerSelection {
         if self.mode.is_create() {
             return OpPickerSelection::EditItemField {
@@ -1263,7 +1286,10 @@ impl OpPickerState {
                     .clone()
                     .expect("item set before field commit"),
                 section: self.selected_section.clone(),
-                field_label: field.label.clone(),
+                field: crate::operator_env::FieldTarget::Existing {
+                    id: field.id.clone(),
+                    label: field.label.clone(),
+                },
             };
         }
         OpPickerSelection::Existing(build_op_ref_on_commit(self, field))
@@ -2000,12 +2026,20 @@ mod tests {
         match s.handle_key(key(KeyCode::Enter)) {
             ModalOutcome::Commit(OpPickerSelection::EditItemField {
                 item,
-                field_label,
+                field,
                 section,
                 ..
             }) => {
                 assert_eq!(item.id, "i-login");
-                assert_eq!(field_label, "token");
+                // The real field id is forwarded so the write targets this
+                // exact field (not the first label match) and preserves it.
+                assert_eq!(
+                    field,
+                    crate::operator_env::FieldTarget::Existing {
+                        id: "token".into(),
+                        label: "token".into(),
+                    }
+                );
                 assert_eq!(section, None);
             }
             other => panic!("expected Commit(EditItemField), got {other:?}"),
@@ -2034,13 +2068,9 @@ mod tests {
         // Selecting the first scoped field commits with section Some("auth").
         s.field_list_state.select(Some(0));
         match s.handle_key(key(KeyCode::Enter)) {
-            ModalOutcome::Commit(OpPickerSelection::EditItemField {
-                section,
-                field_label,
-                ..
-            }) => {
+            ModalOutcome::Commit(OpPickerSelection::EditItemField { section, field, .. }) => {
                 assert_eq!(section, Some("auth".to_string()));
-                assert_eq!(field_label, "api");
+                assert_eq!(field.label(), "api");
             }
             other => panic!("expected Commit(EditItemField), got {other:?}"),
         }
@@ -2066,13 +2096,9 @@ mod tests {
         ));
         assert_eq!(s.stage, OpPickerStage::FieldLabel);
         match s.handle_key(key(KeyCode::Enter)) {
-            ModalOutcome::Commit(OpPickerSelection::EditItemField {
-                section,
-                field_label,
-                ..
-            }) => {
+            ModalOutcome::Commit(OpPickerSelection::EditItemField { section, field, .. }) => {
                 assert_eq!(section, None, "new field in root → section None");
-                assert_eq!(field_label, "token");
+                assert_eq!(field.label(), "token");
             }
             other => panic!("expected Commit(EditItemField), got {other:?}"),
         }
@@ -2098,16 +2124,102 @@ mod tests {
         ));
         assert_eq!(s.stage, OpPickerStage::FieldLabel);
         match s.handle_key(key(KeyCode::Enter)) {
-            ModalOutcome::Commit(OpPickerSelection::EditItemField {
-                section,
-                field_label,
-                ..
-            }) => {
+            ModalOutcome::Commit(OpPickerSelection::EditItemField { section, field, .. }) => {
                 assert_eq!(section, Some("creds".to_string()));
-                assert_eq!(field_label, "token");
+                assert_eq!(field.label(), "token");
             }
             other => panic!("expected Commit(EditItemField) with section, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn field_label_cancel_clears_pending_section() {
+        // New-section flow stages pending_section, then backing out of the
+        // field-label stage must discard it so it cannot leak into a later
+        // commit on a different path.
+        let mut s = create_at_section(vec![]);
+        s.section_list_state.select(Some(1)); // `+ New section` sentinel
+        let _ = s.handle_key(key(KeyCode::Enter));
+        assert_eq!(s.stage, OpPickerStage::NewSectionName);
+        for c in "foo".chars() {
+            let _ = s.handle_key(key(KeyCode::Char(c)));
+        }
+        let _ = s.handle_key(key(KeyCode::Enter));
+        assert_eq!(s.stage, OpPickerStage::FieldLabel);
+        assert_eq!(s.pending_section.as_deref(), Some("foo"));
+        // Esc cancels the field-label stage.
+        let _ = s.handle_key(key(KeyCode::Esc));
+        assert_eq!(s.stage, OpPickerStage::NewSectionName);
+        assert!(
+            s.pending_section.is_none(),
+            "abandoned section must not survive the field-label cancel"
+        );
+    }
+
+    #[test]
+    fn field_label_commit_trims_whitespace() {
+        let mut s = create_at_section(vec![]);
+        // Drill `(root)` → Field stage, then `+ New field`.
+        let _ = s.handle_key(key(KeyCode::Enter));
+        assert_eq!(s.stage, OpPickerStage::Field);
+        s.field_label_input = TextInputState::new("Field", "  oauth-token  ");
+        s.field_label_origin = FieldLabelOrigin::NewField;
+        s.stage = OpPickerStage::FieldLabel;
+        match s.handle_key(key(KeyCode::Enter)) {
+            ModalOutcome::Commit(OpPickerSelection::EditItemField { field, .. }) => {
+                assert_eq!(field.label(), "oauth-token", "field label must be trimmed");
+            }
+            other => panic!("expected Commit(EditItemField), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_section_name_commit_trims_whitespace() {
+        let mut s = create_at_section(vec![]);
+        s.section_list_state.select(Some(1));
+        let _ = s.handle_key(key(KeyCode::Enter));
+        s.section_name_input = TextInputState::new("Section name", "  creds  ");
+        let _ = s.handle_key(key(KeyCode::Enter));
+        assert_eq!(s.pending_section.as_deref(), Some("creds"));
+    }
+
+    #[test]
+    fn left_collapse_via_header_keeps_selection_in_range() {
+        // Browse-mode flat field list with a collapsible header. Left on the
+        // header collapses it and (like the Enter toggle) clamps the field
+        // selection so it never points past the shrunken row list.
+        let mut s = picker_ready();
+        s.selected_vault = Some(OpVault {
+            id: "v-Personal".into(),
+            name: "Personal".into(),
+        });
+        s.selected_item = Some(item("login"));
+        s.fields = vec![
+            field_with_reference("api", "op://Personal/login/auth/api"),
+            field_with_reference("key", "op://Personal/login/auth/key"),
+        ];
+        s.stage = OpPickerStage::Field;
+        // Rows: [SectionHeader(auth), Field, Field]. Park on the last field.
+        let last = s.build_field_display_rows().len() - 1;
+        s.field_list_state.select(Some(last));
+        // Move up onto the header row, then collapse with Left.
+        let header_idx = s
+            .build_field_display_rows()
+            .iter()
+            .position(|r| matches!(r, FieldDisplayRow::SectionHeader { .. }))
+            .expect("a section header row");
+        s.field_list_state.select(Some(header_idx));
+        let _ = s.handle_key(key(KeyCode::Left));
+        assert!(
+            s.collapsed_sections.contains("auth"),
+            "Left must collapse the section"
+        );
+        let new_len = s.build_field_display_rows().len();
+        let sel = s.field_list_state.selected.expect("selection retained");
+        assert!(
+            sel < new_len,
+            "selection {sel} must stay within {new_len} rows"
+        );
     }
 
     #[test]

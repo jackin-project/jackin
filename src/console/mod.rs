@@ -470,6 +470,23 @@ where
     Ok(())
 }
 
+/// Drop the cached item list (and that item's field list) for the
+/// account/vault/item a freshly-minted op ref points at, so a picker
+/// reopened in the same session re-fetches and shows the new entry. The
+/// ref's `op` field is UUID-form `op://<vault>/<item>/[<section>/]<field>`.
+fn invalidate_op_cache_for_ref(
+    op_cache: &std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_ref: &crate::operator_env::OpRef,
+) {
+    let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
+        return;
+    };
+    let account = op_ref.account.as_deref();
+    let mut cache = op_cache.borrow_mut();
+    cache.invalidate_items(account, &parts.vault);
+    cache.invalidate_fields(account, &parts.vault, &parts.item);
+}
+
 fn show_role_resolution_error(
     state: &mut ConsoleState,
     role: &RoleSelector,
@@ -761,6 +778,16 @@ pub async fn run_console(
             let _ = terminal.clear();
             match mint {
                 Ok(env_value) => {
+                    // A successful op mint created or edited an item/field;
+                    // drop the stale cached item/field lists so a reopened
+                    // picker shows the new entry without a manual refresh.
+                    if let (
+                        crate::operator_env::EnvValue::OpRef(op_ref),
+                        ConsoleStage::Manager(ms),
+                    ) = (&env_value, &state.stage)
+                    {
+                        invalidate_op_cache_for_ref(&ms.op_cache, op_ref);
+                    }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         match &mut ms.stage {
                             // Re-mount the stashed auth form with the minted
@@ -1323,6 +1350,68 @@ mod quit_confirm_tests {
         assert!(
             matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
             "Failed outcome must surface the error popup regardless of restore policy"
+        );
+    }
+}
+
+#[cfg(test)]
+mod op_cache_invalidation_tests {
+    use super::invalidate_op_cache_for_ref;
+    use crate::console::op_cache::OpCache;
+    use crate::operator_env::{OpField, OpItem, OpRef};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn invalidate_op_cache_for_ref_drops_items_and_fields() {
+        let cache = Rc::new(RefCell::new(OpCache::default()));
+        let account = Some("ACCT");
+        cache.borrow_mut().put_items(
+            account,
+            "v1",
+            vec![OpItem {
+                id: "i1".into(),
+                name: "Claude".into(),
+                subtitle: String::new(),
+            }],
+        );
+        cache.borrow_mut().put_fields(
+            account,
+            "v1",
+            "i1",
+            vec![OpField {
+                id: "f1".into(),
+                label: "token".into(),
+                field_type: "CONCEALED".into(),
+                concealed: true,
+                reference: String::new(),
+            }],
+        );
+
+        invalidate_op_cache_for_ref(
+            &cache,
+            &OpRef {
+                op: "op://v1/i1/f1".into(),
+                path: "Work/Claude/token".into(),
+                account: Some("ACCT".into()),
+            },
+        );
+
+        assert!(cache.borrow().get_items(account, "v1").is_none());
+        assert!(cache.borrow().get_fields(account, "v1", "i1").is_none());
+    }
+
+    #[test]
+    fn invalidate_op_cache_for_ref_ignores_unparseable_ref() {
+        let cache = Rc::new(RefCell::new(OpCache::default()));
+        // A non-op:// literal must be a no-op, not a panic.
+        invalidate_op_cache_for_ref(
+            &cache,
+            &OpRef {
+                op: "not-a-ref".into(),
+                path: String::new(),
+                account: None,
+            },
         );
     }
 }

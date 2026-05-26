@@ -52,6 +52,14 @@ pub const JACKIN_TAG: &str = "jackin";
 /// Per-workspace tag prefix (`workspace=<name>`).
 pub const WORKSPACE_TAG_PREFIX: &str = "workspace=";
 
+/// True when an item's tags mark it as jackin-created (and therefore safe
+/// for rotate to delete). Keeps the [`JACKIN_TAG`] ownership rule in one
+/// place so callers don't re-derive the predicate.
+#[must_use]
+pub fn tags_indicate_jackin_owned(tags: &[String]) -> bool {
+    tags.iter().any(|t| t == JACKIN_TAG)
+}
+
 /// Approximate validity window of an upstream-issued OAuth token.
 /// 1Password stores the absolute date; the orchestrator computes it
 /// at write time so the operator can see expiry-relative timing in
@@ -129,14 +137,16 @@ impl TokenSetupScope {
 
 /// Identifies an existing 1Password item and field to update in-place
 /// during the interactive `--interactive` token-setup path.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct EditExistingTarget {
     pub vault_id: String,
     pub item_id: String,
-    /// Field label to overwrite, or name of a new field to append.
-    pub field_label: String,
-    /// Optional 1Password section label for the field on the
-    /// edit/new-field path. `None` leaves the field unsectioned.
+    /// Which field to write: an exact existing field id (overwrite,
+    /// placement preserved) or a new field by label (see [`FieldTarget`]).
+    pub field: crate::operator_env::FieldTarget,
+    /// Optional 1Password section label for a newly appended field.
+    /// Ignored when overwriting an existing field (its placement is
+    /// preserved). `None` leaves an appended field unsectioned.
     pub section: Option<String>,
 }
 
@@ -171,7 +181,12 @@ pub fn run_setup(
     scope: &TokenSetupScope,
     args: &TokenSetupArgs,
 ) -> anyhow::Result<TokenSetupReport> {
-    let op_cli = op_cli_for_scope(config, scope, args.account.as_deref());
+    let op_cli = op_cli_for_scope(
+        config,
+        scope,
+        args.account.as_deref(),
+        OpTimeoutBudget::Interactive,
+    );
     // Probe `claude` only when we will actually mint a fresh token.
     // `--reuse` adopts an existing `op://` reference and never invokes
     // claude, so requiring it on PATH would block a legitimate flow.
@@ -208,7 +223,12 @@ pub fn mint_token_value(
     scope: &TokenSetupScope,
     args: &TokenSetupArgs,
 ) -> anyhow::Result<EnvValue> {
-    let op_cli = op_cli_for_scope(config, scope, args.account.as_deref());
+    let op_cli = op_cli_for_scope(
+        config,
+        scope,
+        args.account.as_deref(),
+        OpTimeoutBudget::Interactive,
+    );
     let probe = if args.reuse.is_some() {
         None
     } else {
@@ -335,7 +355,7 @@ where
                 let op_ref = op_writer.item_field_set(
                     &target.item_id,
                     &target.vault_id,
-                    &target.field_label,
+                    &target.field,
                     secret.expose_secret(),
                     target.section.as_deref(),
                 )?;
@@ -572,6 +592,7 @@ pub fn run_revoke(
         config,
         &TokenSetupScope::Workspace(workspace.to_string()),
         None,
+        OpTimeoutBudget::Quick,
     );
     run_revoke_with_runner(paths, config, workspace, delete_op_item, &op_cli)
 }
@@ -694,6 +715,7 @@ pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorR
         config,
         &TokenSetupScope::Workspace(workspace.to_string()),
         None,
+        OpTimeoutBudget::Quick,
     );
     run_doctor_with_runner(config, workspace, &op_cli)
 }
@@ -818,7 +840,19 @@ fn create_op_item(
 /// slot for `Global` — so a per-role override created under account A is
 /// not resolved against the workspace slot's account B.
 fn stored_op_account<'a>(config: &'a AppConfig, scope: &TokenSetupScope) -> Option<&'a str> {
-    let slot = match scope {
+    match scope_token_slot(config, scope) {
+        Some(EnvValue::OpRef(r)) => r.account.as_deref(),
+        _ => None,
+    }
+}
+
+/// The canonical Claude-token env slot for a scope: the workspace-level
+/// slot for `Workspace`, the role-level slot for `WorkspaceRole`, the
+/// global slot for `Global`. Single lookup shared by account resolution
+/// and the rotate prior-slot read so both agree on where a scope's token
+/// lives.
+fn scope_token_slot<'a>(config: &'a AppConfig, scope: &TokenSetupScope) -> Option<&'a EnvValue> {
+    match scope {
         TokenSetupScope::Workspace(workspace) => config
             .workspaces
             .get(workspace)?
@@ -832,11 +866,14 @@ fn stored_op_account<'a>(config: &'a AppConfig, scope: &TokenSetupScope) -> Opti
             .env
             .get(CLAUDE_OAUTH_TOKEN_ENV),
         TokenSetupScope::Global => config.env.get(CLAUDE_OAUTH_TOKEN_ENV),
-    };
-    match slot {
-        Some(EnvValue::OpRef(r)) => r.account.as_deref(),
-        _ => None,
     }
+}
+
+/// The prior Claude-token value at a scope, cloned for the rotate flow so
+/// it can derive the prior item's vault and delete it after the new mint.
+#[must_use]
+pub fn prior_token_slot(config: &AppConfig, scope: &TokenSetupScope) -> Option<EnvValue> {
+    scope_token_slot(config, scope).cloned()
 }
 
 fn effective_account<'a>(
@@ -855,9 +892,28 @@ fn op_cli_for_scope(
     config: &AppConfig,
     scope: &TokenSetupScope,
     explicit: Option<&str>,
+    budget: OpTimeoutBudget,
 ) -> crate::operator_env::OpCli {
     let account = effective_account(config, scope, explicit).map(str::to_string);
-    crate::operator_env::OpCli::new().with_account(account)
+    let cli = match budget {
+        OpTimeoutBudget::Interactive => crate::operator_env::OpCli::new_interactive(),
+        OpTimeoutBudget::Quick => crate::operator_env::OpCli::new(),
+    };
+    cli.with_account(account)
+}
+
+/// Timeout ceiling for an [`OpCli`](crate::operator_env::OpCli) built by
+/// [`op_cli_for_scope`].
+#[derive(Clone, Copy)]
+enum OpTimeoutBudget {
+    /// 5-minute budget for the write paths (`run_setup`, `mint_token_value`,
+    /// rotate): an `op item create`/`edit` may block on a biometric or SSO
+    /// round-trip the operator completes in a browser, which the default
+    /// ceiling would time out.
+    Interactive,
+    /// Default 30s ceiling for read-only `doctor` and `revoke` so a locked
+    /// or stalled `op` fails fast instead of hanging a quick check.
+    Quick,
 }
 
 /// Outcome of the post-write orphan-cleanup attempt that runs when
@@ -1057,6 +1113,14 @@ mod tests {
         last_create: RefCell<Option<(String, String, String)>>, // (vault, title, field)
         produced_ref: OpRef,
         recorded_value: RefCell<Option<String>>,
+        /// Records the `field_id` passed to the last `item_field_set`
+        /// call so the edit-existing threading can be asserted. Outer
+        /// `Option` = was the method called; inner = the `field_id` arg.
+        #[allow(
+            clippy::option_option,
+            reason = "outer = call-recorded, inner = the Option<&str> arg"
+        )]
+        recorded_field_id: RefCell<Option<Option<String>>>,
         /// When `true`, `item_create` returns Err instead of recording.
         fail_create: bool,
         /// When `true`, `item_delete` records the call AND returns Err
@@ -1073,6 +1137,7 @@ mod tests {
                 last_create: RefCell::new(None),
                 produced_ref,
                 recorded_value: RefCell::new(None),
+                recorded_field_id: RefCell::new(None),
                 fail_create: false,
                 fail_delete: false,
                 deletes: RefCell::new(Vec::new()),
@@ -1087,6 +1152,7 @@ mod tests {
                     account: None,
                 },
                 recorded_value: RefCell::new(None),
+                recorded_field_id: RefCell::new(None),
                 fail_create: true,
                 fail_delete: false,
                 deletes: RefCell::new(Vec::new()),
@@ -1129,7 +1195,7 @@ mod tests {
             &self,
             _item_id: &str,
             _vault_id: &str,
-            field_label: &str,
+            target: &crate::operator_env::FieldTarget,
             value: &str,
             _section: Option<&str>,
         ) -> anyhow::Result<OpRef> {
@@ -1139,10 +1205,21 @@ mod tests {
             *self.last_create.borrow_mut() = Some((
                 "existing-vault".to_string(),
                 "existing-item".to_string(),
-                field_label.to_string(),
+                target.label().to_string(),
             ));
+            *self.recorded_field_id.borrow_mut() = Some(target.id().map(str::to_string));
             *self.recorded_value.borrow_mut() = Some(value.to_string());
             Ok(self.produced_ref.clone())
+        }
+        fn item_tags(
+            &self,
+            _item_id: &str,
+            _vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<String>> {
+            // The setup/rotate-into-fresh-item tests never reach the
+            // prior-item ownership check (that lives in app::rotate).
+            anyhow::bail!("token_setup tests do not exercise item_tags")
         }
     }
 
@@ -1220,6 +1297,92 @@ mod tests {
             path: "Personal/jackin · proj · claude-token/token".into(),
             account: None,
         }
+    }
+
+    #[test]
+    fn prior_token_slot_reads_the_scoped_slot() {
+        use crate::workspace::WorkspaceRoleOverride;
+
+        let mut cfg = AppConfig::default();
+        let mut ws = workspace("proj");
+        ws.env.insert(
+            CLAUDE_OAUTH_TOKEN_ENV.to_string(),
+            EnvValue::Plain("ws-level".into()),
+        );
+        let mut role_override = WorkspaceRoleOverride::default();
+        role_override.env.insert(
+            CLAUDE_OAUTH_TOKEN_ENV.to_string(),
+            EnvValue::Plain("role-level".into()),
+        );
+        ws.roles.insert("org/agent".into(), role_override);
+        cfg.workspaces.insert("proj".into(), ws);
+
+        // Workspace scope reads the workspace-level slot.
+        let ws_scope = TokenSetupScope::Workspace("proj".into());
+        assert!(matches!(
+            prior_token_slot(&cfg, &ws_scope),
+            Some(EnvValue::Plain(v)) if v == "ws-level"
+        ));
+
+        // Role scope reads the role override slot, not the workspace one.
+        let role_scope = TokenSetupScope::WorkspaceRole {
+            workspace: "proj".into(),
+            role: "org/agent".into(),
+        };
+        assert!(matches!(
+            prior_token_slot(&cfg, &role_scope),
+            Some(EnvValue::Plain(v)) if v == "role-level"
+        ));
+
+        // A role with no slot returns None (rotate then needs --vault).
+        let empty_role = TokenSetupScope::WorkspaceRole {
+            workspace: "proj".into(),
+            role: "org/other".into(),
+        };
+        assert!(prior_token_slot(&cfg, &empty_role).is_none());
+    }
+
+    #[test]
+    fn run_setup_with_runner_role_scope_wires_role_override_not_workspace() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let writer = FakeOpWriter::new(dummy_op_ref());
+        let token = "sk-ant-oat01-ROLE";
+        let reader = FakeOpReader::ok(token);
+        let probe = dummy_probe();
+
+        run_setup_with_runner(
+            &paths,
+            &mut cfg,
+            &TokenSetupScope::WorkspaceRole {
+                workspace: "proj".into(),
+                role: "org/agent".into(),
+            },
+            &TokenSetupArgs {
+                vault: Some("Personal".into()),
+                ..Default::default()
+            },
+            Some(&probe),
+            || Ok(secrecy::SecretString::from(token.to_string())),
+            &reader,
+            &writer,
+        )
+        .unwrap();
+
+        let ws = cfg.workspaces.get("proj").unwrap();
+        // Token lands in the role override slot...
+        let role_val = ws
+            .roles
+            .get("org/agent")
+            .and_then(|r| r.env.get("CLAUDE_CODE_OAUTH_TOKEN"));
+        assert!(
+            matches!(role_val, Some(EnvValue::OpRef(_))),
+            "role-scoped token must wire into roles.<role>.env"
+        );
+        // ...and NOT the workspace-level slot.
+        assert!(
+            !ws.env.contains_key("CLAUDE_CODE_OAUTH_TOKEN"),
+            "role scope must not write the workspace-level slot"
+        );
     }
 
     #[test]
@@ -2161,7 +2324,10 @@ mod tests {
                 edit_existing: Some(EditExistingTarget {
                     vault_id: "VID".into(),
                     item_id: "IID".into(),
-                    field_label: "token".into(),
+                    field: crate::operator_env::FieldTarget::Existing {
+                        id: "fld-real-id".into(),
+                        label: "token".into(),
+                    },
                     section: None,
                 }),
                 ..Default::default()
@@ -2185,6 +2351,13 @@ mod tests {
         assert!(
             writer.deletes.borrow().is_empty(),
             "edit-existing validation failure must NEVER delete the operator's item"
+        );
+        // The picked field's real id must reach the writer so the overwrite
+        // targets that exact field rather than the first label match.
+        assert_eq!(
+            *writer.recorded_field_id.borrow(),
+            Some(Some("fld-real-id".to_string())),
+            "edit-existing must thread the field id to item_field_set"
         );
     }
 

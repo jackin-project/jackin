@@ -1455,7 +1455,7 @@ fn handle_token_generate_pick(
             vault,
             item,
             section,
-            field_label,
+            field,
         }) => TokenSetupArgs {
             vault: None,
             item_name: None,
@@ -1466,7 +1466,7 @@ fn handle_token_generate_pick(
             edit_existing: Some(EditExistingTarget {
                 vault_id: vault.id,
                 item_id: item.id,
-                field_label,
+                field,
                 section,
             }),
             plain_text: false,

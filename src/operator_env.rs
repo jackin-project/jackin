@@ -153,6 +153,46 @@ pub struct OpRef {
     pub account: Option<String>,
 }
 
+/// Which field an `item_field_set` write targets in an existing item.
+///
+/// Fusing the field id and label into one type makes the two states the
+/// write distinguishes explicit and mutually exclusive: an overwrite
+/// always carries the exact op id (so a same-labeled field in another
+/// section is never clobbered, and a stale id cannot silently fall through
+/// to an append), while an append carries only the label. This is the
+/// invariant the picker and the CLI interactive flow both encode at
+/// construction time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldTarget {
+    /// Overwrite the field with this exact op id. `label` rides along for
+    /// the read-back error message and the ref's display `path`; the id is
+    /// authoritative for locating and matching the field.
+    Existing { id: String, label: String },
+    /// Append a new field with this label — or, if a field with the same
+    /// label already exists, overwrite it in place.
+    New { label: String },
+}
+
+impl FieldTarget {
+    /// The exact op field id to match on, or `None` for the append path.
+    #[must_use]
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            Self::Existing { id, .. } => Some(id),
+            Self::New { .. } => None,
+        }
+    }
+
+    /// The field label — for an append it names the new field; for an
+    /// overwrite it is display/read-back context only.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Existing { label, .. } | Self::New { label } => label,
+        }
+    }
+}
+
 impl EnvValue {
     /// View the value as the string we'd pass to a downstream container
     /// for `Plain`, or the UUID-form `op://` URI for `OpRef` (see
@@ -916,25 +956,26 @@ pub trait OpWriteRunner {
 
     /// Overwrite (or add) a single field in an existing 1Password item.
     ///
-    /// If a field whose `label` or `id` matches `field_label` already
-    /// exists, its `value` is overwritten and its type is set to
-    /// `CONCEALED`. If no such field exists, a new `CONCEALED` field
-    /// with that label is appended. All other fields and item metadata
-    /// are preserved.
+    /// For [`FieldTarget::Existing`] the field is located by its exact op
+    /// id, its `value` is overwritten, its type is set to `CONCEALED`, and
+    /// its existing section placement is left untouched — overwriting a
+    /// value must never re-parent the field. For [`FieldTarget::New`] the
+    /// field is located by label (overwrite if present); if no such field
+    /// exists a new `CONCEALED` field is appended, placed in `section` when
+    /// one is given. All other fields and item metadata are preserved.
     ///
     /// The secret value reaches `op` via stdin (GET → modify in-process
     /// → EDIT via stdin), following the same never-on-argv contract as
     /// `item_create`. The implementation issues two `op` invocations:
     /// 1. `op item get <id> --vault <vault> --format json` — fetch the
     ///    full item template.
-    /// 2. `op item edit - --vault <vault> --format json` — pipe the
-    ///    modified template back; `op` identifies the item from the
-    ///    `id` field in the template.
+    /// 2. `op item edit <id> --vault <vault> --format json` — pipe the
+    ///    modified template back on stdin.
     fn item_field_set(
         &self,
         item_id: &str,
         vault_id: &str,
-        field_label: &str,
+        target: &FieldTarget,
         value: &str,
         section: Option<&str>,
     ) -> anyhow::Result<OpRef>;
@@ -949,6 +990,18 @@ pub trait OpWriteRunner {
         vault_id: &str,
         account: Option<&str>,
     ) -> anyhow::Result<()>;
+
+    /// Read an item's `tags` array. Used by the rotate flow to decide
+    /// whether the prior item is jackin-owned (and therefore safe to
+    /// delete) versus an item the operator adopted via `--reuse` /
+    /// interactive edit-in-place (which jackin must not delete, since it
+    /// may hold the operator's other fields).
+    fn item_tags(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        account: Option<&str>,
+    ) -> anyhow::Result<Vec<String>>;
 }
 
 /// Parameters for [`OpWriteRunner::item_create`]. Borrowed-form to
@@ -1028,6 +1081,84 @@ fn op_section_id(label: &str) -> String {
     } else {
         id
     }
+}
+
+/// Apply a single concealed-field edit to a parsed `op item get` JSON
+/// value in place, ready to pipe back to `op item edit`.
+///
+/// [`FieldTarget::Existing`] is located by its exact op id, so a same-
+/// labeled field in another section is never clobbered, and the field's
+/// existing `section` is left untouched — overwriting a value must not
+/// re-parent the field (GUI-created section ids are opaque, not the
+/// `label` slug). A stale id (gone since it was picked) bails loudly
+/// rather than appending a stray field. [`FieldTarget::New`] places a new
+/// `CONCEALED` field (overwriting a same-label field if one exists),
+/// in `section` when one is supplied, registering that section if missing.
+fn apply_field_edit(
+    item: &mut serde_json::Value,
+    target: &FieldTarget,
+    value: &str,
+    section: Option<&str>,
+) -> anyhow::Result<()> {
+    let fields = item["fields"]
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
+
+    let label = target.label();
+    let found = match target {
+        FieldTarget::Existing { id, .. } => {
+            fields.iter_mut().find(|f| f["id"].as_str() == Some(id))
+        }
+        FieldTarget::New { label } => fields.iter_mut().find(|f| {
+            f["label"].as_str() == Some(label.as_str()) || f["id"].as_str() == Some(label.as_str())
+        }),
+    };
+
+    let section_id = section.map(op_section_id);
+    let mut appended_in_section = false;
+    match (found, target) {
+        (Some(field), _) => {
+            field["value"] = serde_json::Value::String(value.to_string());
+            field["type"] = serde_json::Value::String("CONCEALED".to_string());
+        }
+        // A specific field id was requested but is gone (renamed/deleted in
+        // 1Password since it was picked, or read from a stale cache). Fail
+        // loudly instead of appending a stray label-named field — the
+        // read-back would then miss the id and error anyway, but only after
+        // mutating the operator's item.
+        (None, FieldTarget::Existing { id, .. }) => anyhow::bail!(
+            "field id {id:?} not found in the item — it may have been renamed or deleted in \
+             1Password since it was picked; re-open the picker to refresh and retry"
+        ),
+        (None, FieldTarget::New { .. }) => {
+            let mut field = serde_json::json!({
+                "id": label,
+                "label": label,
+                "type": "CONCEALED",
+                "value": value,
+            });
+            if let Some(id) = section_id.as_deref() {
+                field["section"] = serde_json::json!({ "id": id });
+                appended_in_section = true;
+            }
+            fields.push(field);
+        }
+    }
+
+    // Register the section only when a new field was actually placed in
+    // it; an overwrite never creates or moves sections.
+    if appended_in_section && let (Some(id), Some(label)) = (section_id.as_deref(), section) {
+        if !item["sections"].is_array() {
+            item["sections"] = serde_json::Value::Array(Vec::new());
+        }
+        let sections = item["sections"]
+            .as_array_mut()
+            .expect("sections coerced to array above");
+        if !sections.iter().any(|s| s["id"].as_str() == Some(id)) {
+            sections.push(serde_json::json!({ "id": id, "label": label }));
+        }
+    }
+    Ok(())
 }
 
 impl OpWriteRunner for OpCli {
@@ -1201,12 +1332,41 @@ impl OpWriteRunner for OpCli {
         Ok(())
     }
 
-    #[allow(clippy::too_many_lines)]
+    fn item_tags(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        account: Option<&str>,
+    ) -> anyhow::Result<Vec<String>> {
+        let effective_account = account.or(self.account.as_deref());
+        let mut args: Vec<&str> = Vec::new();
+        if let Some(acc) = effective_account {
+            args.push("--account");
+            args.push(acc);
+        }
+        args.extend_from_slice(&[
+            "item", "get", item_id, "--vault", vault_id, "--format", "json",
+        ]);
+        let raw = run_op_with_timeout(&self.binary, &args, self.timeout)
+            .map_err(|e| anyhow::anyhow!("`op item get` (tags) failed: {e}"))?;
+        let item: serde_json::Value = serde_json::from_slice(&raw)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
+        let tags = item["tags"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|t| t.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(tags)
+    }
+
     fn item_field_set(
         &self,
         item_id: &str,
         vault_id: &str,
-        field_label: &str,
+        target: &FieldTarget,
         value: &str,
         section: Option<&str>,
     ) -> anyhow::Result<OpRef> {
@@ -1231,52 +1391,7 @@ impl OpWriteRunner for OpCli {
         let mut item: serde_json::Value = serde_json::from_slice(&raw_bytes)
             .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
 
-        let fields = item["fields"]
-            .as_array_mut()
-            .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
-
-        let section_id = section.map(op_section_id);
-
-        let found = fields.iter_mut().find(|f| {
-            f["label"].as_str() == Some(field_label) || f["id"].as_str() == Some(field_label)
-        });
-
-        if let Some(field) = found {
-            field["value"] = serde_json::Value::String(value.to_string());
-            field["type"] = serde_json::Value::String("CONCEALED".to_string());
-            if let Some(id) = section_id.as_deref() {
-                field["section"] = serde_json::json!({ "id": id });
-            } else if let Some(obj) = field.as_object_mut() {
-                // Re-targeting a previously-sectioned field to root: drop
-                // any stale `section` so the field is no longer pinned to
-                // the old section.
-                obj.remove("section");
-            }
-        } else {
-            let mut field = serde_json::json!({
-                "id": field_label,
-                "label": field_label,
-                "type": "CONCEALED",
-                "value": value,
-            });
-            if let Some(id) = section_id.as_deref() {
-                field["section"] = serde_json::json!({ "id": id });
-            }
-            fields.push(field);
-        }
-
-        if let (Some(id), Some(label)) = (section_id.as_deref(), section) {
-            if !item["sections"].is_array() {
-                item["sections"] = serde_json::Value::Array(Vec::new());
-            }
-            let sections = item["sections"]
-                .as_array_mut()
-                .expect("sections coerced to array above");
-            let exists = sections.iter().any(|s| s["id"].as_str() == Some(id));
-            if !exists {
-                sections.push(serde_json::json!({ "id": id, "label": label }));
-            }
-        }
+        apply_field_edit(&mut item, target, value, section)?;
 
         let body = serde_json::to_vec(&item)
             .map_err(|e| anyhow::anyhow!("failed to re-encode item JSON: {e}"))?;
@@ -1334,62 +1449,78 @@ impl OpWriteRunner for OpCli {
             );
         }
 
-        // Step 4: parse the returned item JSON and locate the field
-        // reference by matching label (case-insensitive).
+        // Step 4: parse the returned item JSON and build the ref.
         let updated: serde_json::Value = serde_json::from_slice(&out.stdout)
             .map_err(|e| anyhow::anyhow!("failed to parse `op item edit` JSON: {e}"))?;
 
-        let updated_fields = updated["fields"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("updated item has no `fields` array"))?;
+        resolve_edited_field_ref(&updated, target, vault_id, item_id, self.account.clone())
+    }
+}
 
-        let field = updated_fields
-            .iter()
-            .find(|f| {
+/// Locate the edited field in the JSON `op item edit` returns and build the
+/// UUID-form `OpRef`. [`FieldTarget::Existing`] matches by the exact id
+/// (stable across the edit); [`FieldTarget::New`] matches by label (case-
+/// insensitive), since `op` assigns the new field's id. The `op://` ref is
+/// built from UUIDs (vault/item/field ids) so it survives renames; `path`
+/// carries the human-readable names for display, same three-segment shape.
+fn resolve_edited_field_ref(
+    updated: &serde_json::Value,
+    target: &FieldTarget,
+    vault_id: &str,
+    item_id: &str,
+    account: Option<String>,
+) -> anyhow::Result<OpRef> {
+    let label = target.label();
+    let updated_fields = updated["fields"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("updated item has no `fields` array"))?;
+
+    let field = updated_fields
+        .iter()
+        .find(|f| match target {
+            FieldTarget::Existing { id, .. } => f["id"].as_str() == Some(id),
+            FieldTarget::New { label } => {
                 f["label"]
                     .as_str()
-                    .is_some_and(|l| l.eq_ignore_ascii_case(field_label))
-                    || f["id"].as_str() == Some(field_label)
-            })
-            .ok_or_else(|| {
-                let labels: Vec<&str> = updated_fields
-                    .iter()
-                    .filter_map(|f| f["label"].as_str())
-                    .collect();
-                anyhow::anyhow!(
-                    "`op item edit` returned no field with label {field_label:?}; \
-                     observed labels: {labels:?}"
-                )
-            })?;
-
-        // Always use UUID-based op:// so the reference is stable across
-        // renames. `path` carries human-readable names for display and
-        // must have the same three-segment structure as the `op` URI.
-        let vid = updated["vault"]["id"].as_str().unwrap_or(vault_id);
-        let iid = updated["id"].as_str().unwrap_or(item_id);
-        let fid = field["id"].as_str().unwrap_or(field_label);
-        let op_uri = format!("op://{vid}/{iid}/{fid}");
-
-        let vault_name = updated["vault"]["name"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(vault_id);
-        let item_title = updated["title"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(item_id);
-        let field_label_display = field["label"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(field_label);
-        let path = format!("{vault_name}/{item_title}/{field_label_display}");
-
-        Ok(OpRef {
-            op: op_uri,
-            path,
-            account: self.account.clone(),
+                    .is_some_and(|l| l.eq_ignore_ascii_case(label))
+                    || f["id"].as_str() == Some(label)
+            }
         })
-    }
+        .ok_or_else(|| {
+            let labels: Vec<&str> = updated_fields
+                .iter()
+                .filter_map(|f| f["label"].as_str())
+                .collect();
+            anyhow::anyhow!(
+                "`op item edit` returned no field matching {target:?}; \
+                 observed labels: {labels:?}"
+            )
+        })?;
+
+    let vid = updated["vault"]["id"].as_str().unwrap_or(vault_id);
+    let iid = updated["id"].as_str().unwrap_or(item_id);
+    let fid = field["id"].as_str().unwrap_or(label);
+    let op_uri = format!("op://{vid}/{iid}/{fid}");
+
+    let vault_name = updated["vault"]["name"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(vault_id);
+    let item_title = updated["title"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(item_id);
+    let field_label_display = field["label"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(label);
+    let path = format!("{vault_name}/{item_title}/{field_label_display}");
+
+    Ok(OpRef {
+        op: op_uri,
+        path,
+        account,
+    })
 }
 
 /// Source layer of an env value, attached to error messages and
@@ -1950,6 +2081,193 @@ mod tests {
         assert_eq!(op_section_id("  "), "section");
         assert_eq!(op_section_id("!!"), "section");
         assert_eq!(op_section_id(""), "section");
+    }
+
+    #[test]
+    fn apply_field_edit_overwrite_by_id_preserves_section() {
+        // Two fields share the label "token": one in a GUI-created section
+        // with an opaque id, one in root. Editing by the sectioned field's
+        // real id must overwrite THAT field and leave its section intact.
+        let mut item = serde_json::json!({
+            "fields": [
+                { "id": "f_sectioned", "label": "token", "type": "CONCEALED",
+                  "value": "old", "section": { "id": "Section_opaque99" } },
+                { "id": "f_root", "label": "token", "type": "CONCEALED", "value": "root" },
+            ],
+            "sections": [ { "id": "Section_opaque99", "label": "Auth" } ],
+        });
+
+        apply_field_edit(
+            &mut item,
+            &FieldTarget::Existing {
+                id: "f_sectioned".into(),
+                label: "token".into(),
+            },
+            "new",
+            Some("Auth"),
+        )
+        .unwrap();
+
+        let fields = item["fields"].as_array().unwrap();
+        // Sectioned field overwritten, section id untouched (not re-slugged).
+        assert_eq!(fields[0]["value"], "new");
+        assert_eq!(fields[0]["section"]["id"], "Section_opaque99");
+        // The same-labeled root field is left alone.
+        assert_eq!(fields[1]["value"], "root");
+        // No duplicate section created.
+        assert_eq!(item["sections"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn apply_field_edit_stale_field_id_bails_without_mutating() {
+        // The picker resolved a field id that no longer exists (renamed or
+        // deleted out-of-band). Overwriting by id must error rather than
+        // append a stray label-named field that the read-back would then miss.
+        let mut item = serde_json::json!({
+            "id": "i1",
+            "fields": [
+                { "id": "f_live", "label": "token", "type": "CONCEALED", "value": "old" },
+            ],
+        });
+        let err = apply_field_edit(
+            &mut item,
+            &FieldTarget::Existing {
+                id: "f_gone".into(),
+                label: "token".into(),
+            },
+            "new",
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "stale field id must bail: {err}"
+        );
+        // No stray field appended; the live field is untouched.
+        let fields = item["fields"].as_array().unwrap();
+        assert_eq!(fields.len(), 1, "no stray field appended");
+        assert_eq!(fields[0]["value"], "old", "live field left unmodified");
+    }
+
+    #[test]
+    fn resolve_edited_field_ref_overwrite_matches_exact_id_not_label() {
+        // Two fields share label "token"; the overwrite resolves the one
+        // with the requested id, building the ref from its UUID.
+        let updated = serde_json::json!({
+            "id": "i1",
+            "title": "Claude",
+            "vault": { "id": "v1", "name": "Personal" },
+            "fields": [
+                { "id": "f_other", "label": "token" },
+                { "id": "f_target", "label": "token" },
+            ],
+        });
+        let r = resolve_edited_field_ref(
+            &updated,
+            &FieldTarget::Existing {
+                id: "f_target".into(),
+                label: "token".into(),
+            },
+            "v1",
+            "i1",
+            None,
+        )
+        .unwrap();
+        assert_eq!(r.op, "op://v1/i1/f_target");
+        assert_eq!(r.path, "Personal/Claude/token");
+    }
+
+    #[test]
+    fn resolve_edited_field_ref_append_falls_back_to_label() {
+        let updated = serde_json::json!({
+            "id": "i1",
+            "title": "Claude",
+            "vault": { "id": "v1", "name": "Personal" },
+            "fields": [ { "id": "op_assigned_id", "label": "OAuth-Token" } ],
+        });
+        // Append path (field_id None) matches label case-insensitively.
+        let r = resolve_edited_field_ref(
+            &updated,
+            &FieldTarget::New {
+                label: "oauth-token".into(),
+            },
+            "v1",
+            "i1",
+            None,
+        )
+        .unwrap();
+        assert_eq!(r.op, "op://v1/i1/op_assigned_id");
+    }
+
+    #[test]
+    fn resolve_edited_field_ref_missing_id_errors() {
+        let updated = serde_json::json!({
+            "id": "i1",
+            "fields": [ { "id": "f_live", "label": "token" } ],
+        });
+        let err = resolve_edited_field_ref(
+            &updated,
+            &FieldTarget::Existing {
+                id: "f_gone".into(),
+                label: "token".into(),
+            },
+            "v1",
+            "i1",
+            None,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("no field matching"), "{err}");
+    }
+
+    #[test]
+    fn apply_field_edit_append_places_new_field_in_section() {
+        let mut item = serde_json::json!({ "fields": [] });
+        apply_field_edit(
+            &mut item,
+            &FieldTarget::New {
+                label: "oauth-token".into(),
+            },
+            "secret",
+            Some("Creds"),
+        )
+        .unwrap();
+
+        let field = &item["fields"].as_array().unwrap()[0];
+        assert_eq!(field["label"], "oauth-token");
+        assert_eq!(field["value"], "secret");
+        assert_eq!(field["type"], "CONCEALED");
+        assert_eq!(field["section"]["id"], "creds");
+        // The section is registered on the item.
+        let sections = item["sections"].as_array().unwrap();
+        assert_eq!(sections[0]["id"], "creds");
+        assert_eq!(sections[0]["label"], "Creds");
+    }
+
+    #[test]
+    fn apply_field_edit_overwrite_by_label_does_not_re_section() {
+        // Append-by-label that collides with an existing sectioned field
+        // overwrites it without re-parenting (section param is ignored on
+        // overwrite).
+        let mut item = serde_json::json!({
+            "fields": [
+                { "id": "f1", "label": "token", "type": "CONCEALED",
+                  "value": "old", "section": { "id": "Section_real" } },
+            ],
+        });
+        apply_field_edit(
+            &mut item,
+            &FieldTarget::New {
+                label: "token".into(),
+            },
+            "new",
+            Some("Different"),
+        )
+        .unwrap();
+        let field = &item["fields"].as_array().unwrap()[0];
+        assert_eq!(field["value"], "new");
+        assert_eq!(field["section"]["id"], "Section_real");
+        // No "different" section was registered (overwrite path).
+        assert!(item["sections"].as_array().is_none_or(Vec::is_empty));
     }
 
     #[test]
