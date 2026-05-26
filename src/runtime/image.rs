@@ -249,17 +249,21 @@ pub(super) async fn build_agent_image(
             .as_ref()
             .and_then(|token| match tempfile::NamedTempFile::new() {
                 Err(e) => {
-                    eprintln!(
-                        "warning: failed to create tempfile for GitHub token: {e}; \
-                     build will use unauthenticated GitHub API"
+                    crate::tui::emit_debug_line(
+                        "image",
+                        &format!(
+                            "warning: failed to create tempfile for GitHub token: {e}; build will use unauthenticated GitHub API"
+                        ),
                     );
                     None
                 }
                 Ok(mut f) => match std::io::Write::write_all(&mut f, token.as_bytes()) {
                     Err(e) => {
-                        eprintln!(
-                            "warning: failed to write GitHub token to tempfile: {e}; \
-                         build will use unauthenticated GitHub API"
+                        crate::tui::emit_debug_line(
+                            "image",
+                            &format!(
+                                "warning: failed to write GitHub token to tempfile: {e}; build will use unauthenticated GitHub API"
+                            ),
                         );
                         None
                     }
@@ -331,18 +335,22 @@ async fn published_image_is_stale(
     docker: &impl DockerApi,
 ) -> bool {
     if let Err(e) = docker.pull_image(published).await {
-        eprintln!(
-            "warning: docker pull {published} failed ({e}); \
-             treating published image as stale and rebuilding from workspace Dockerfile"
+        crate::tui::emit_debug_line(
+            "image",
+            &format!(
+                "warning: docker pull {published} failed ({e}); treating published image as stale and rebuilding from workspace Dockerfile"
+            ),
         );
         return true;
     }
 
     let labels = match docker.inspect_image_labels(published).await {
         Err(e) => {
-            eprintln!(
-                "warning: could not read labels from {published} ({e}); \
-                 treating published image as stale"
+            crate::tui::emit_debug_line(
+                "image",
+                &format!(
+                    "warning: could not read labels from {published} ({e}); treating published image as stale"
+                ),
             );
             return true;
         }
@@ -402,7 +410,10 @@ async fn extract_agent_version(
         )
         .await
     else {
-        eprintln!("warning: could not probe {display} version from {image}; version check skipped");
+        crate::tui::emit_debug_line(
+            "image",
+            &format!("warning: could not probe {display} version from {image}; version check skipped"),
+        );
         return;
     };
     let version = raw.trim();
