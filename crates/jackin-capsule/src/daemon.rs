@@ -3583,6 +3583,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.send_output(frame_data);
                     continue;
                 }
+                // A modal owns the whole screen behind an opaque backdrop;
+                // repainting the status/branch chrome here would draw it
+                // back over the fill. The hidden tab-state glyph has nothing
+                // to refresh, so skip the chrome frame while a dialog is open.
+                if mux.dialog_open() {
+                    continue;
+                }
                 mux.refresh_tab_labels();
                 let sbuf = mux.compose_chrome_hover_frame();
                 mux.send_output(sbuf);
