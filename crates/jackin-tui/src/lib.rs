@@ -472,6 +472,14 @@ pub mod ansi {
     pub const BG_DARK: &str = "\x1b[48;2;0;0;0m";
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
+
+    /// OSC 22 cursor-shape escapes. `POINTER_HAND` switches the terminal
+    /// pointer to the hand/`pointer` shape over a clickable element;
+    /// `POINTER_DEFAULT` restores it. Shared by every TUI surface so the
+    /// "this is clickable" cue is identical (terminals without OSC 22 ignore
+    /// the sequence harmlessly).
+    pub const POINTER_HAND: &str = "\x1b]22;pointer\x1b\\";
+    pub const POINTER_DEFAULT: &str = "\x1b]22;default\x1b\\";
     pub const INVERSE: &str = "\x1b[7m";
 
     /// Emit a `1;1`-origin cursor positioning sequence.

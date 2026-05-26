@@ -491,13 +491,13 @@ fn hit_activity(view: &LaunchView, col: u16, row: u16) -> bool {
 /// it never interleaves with a frame write.
 fn set_cockpit_pointer(pointer: bool) {
     use std::io::Write as _;
-    let seq: &[u8] = if pointer {
-        b"\x1b]22;pointer\x1b\\"
+    let seq = if pointer {
+        jackin_tui::ansi::POINTER_HAND
     } else {
-        b"\x1b]22;default\x1b\\"
+        jackin_tui::ansi::POINTER_DEFAULT
     };
     let mut out = std::io::stdout();
-    let _ = out.write_all(seq);
+    let _ = out.write_all(seq.as_bytes());
     let _ = out.flush();
 }
 

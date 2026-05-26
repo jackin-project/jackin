@@ -778,6 +778,10 @@ pub async fn run_console(
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut last_mouse_event_at: Option<std::time::Instant> = None;
+    // Tracks whether the terminal pointer is currently the hand/`pointer`
+    // shape, so OSC 22 is emitted only when the hover crosses a clickable
+    // boundary rather than on every motion event.
+    let mut pointer_is_hand = false;
 
     let result = 'main: loop {
         // Drain a pending token-generate request before render: suspend
@@ -1096,6 +1100,21 @@ pub async fn run_console(
                             term_size,
                             Some(&config),
                         );
+                        // Switch the terminal pointer to the hand shape over any
+                        // clickable element (and back off it), per the clickable
+                        // affordance rule — only when the state changes.
+                        let hand = manager::input::clickable_at(ms, mouse, term_size, Some(&config));
+                        if hand != pointer_is_hand {
+                            pointer_is_hand = hand;
+                            let seq = if hand {
+                                jackin_tui::ansi::POINTER_HAND
+                            } else {
+                                jackin_tui::ansi::POINTER_DEFAULT
+                            };
+                            let mut out = std::io::stdout();
+                            let _ = std::io::Write::write_all(&mut out, seq.as_bytes());
+                            let _ = std::io::Write::flush(&mut out);
+                        }
                     }
                 }
                 _ => {}

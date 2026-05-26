@@ -200,6 +200,43 @@ pub fn handle_mouse_with_config(
     }
 }
 
+/// Whether a left-click at the pointer would act on a clickable element.
+///
+/// Drives the OSC 22 hand-pointer cue (per the *Clickable targets must look
+/// clickable* TUI rule). Reuses the same hit-tests as the click handlers so
+/// the pointer cue and the click action can never disagree. The seam column is
+/// a resize affordance, not a click target, so it is excluded here.
+#[must_use]
+pub fn clickable_at(
+    state: &ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+) -> bool {
+    let _ = config;
+    if term_size.width < MIN_DRAGGABLE_WIDTH {
+        return false;
+    }
+    match &state.stage {
+        ManagerStage::Editor(editor) if editor.modal.is_none() => editor_tab_at(mouse).is_some(),
+        ManagerStage::Settings(settings)
+            if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
+        {
+            settings_tab_at(mouse).is_some()
+        }
+        ManagerStage::List if state.list_modal.is_none() => {
+            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            if near_seam(mouse.column, seam_x) {
+                return false;
+            }
+            list_content_row_index(state, mouse, term_size, seam_x)
+                .and_then(|row| state.index_of_row(row))
+                .is_some()
+        }
+        _ => false,
+    }
+}
+
 fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return false;
