@@ -408,45 +408,55 @@ pub(crate) fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
 
 // ── Session rain + logo ──────────────────────────────────────────────────
 
-/// Entry ritual: fast rain resolving into the logo, with a "start your day"
-/// quote in the corner. Played once when the console opens.
+/// Entry ritual: fast rain resolving into the logo, tagged "entering the
+/// Construct", with a "start your day" phrase at the bottom. Played once when
+/// the console opens.
 pub fn rain_logo_intro() {
-    rain_logo_with(super::quotes::pick(super::quotes::START_QUOTES), None);
+    rain_logo_with(
+        "entering the Construct",
+        super::quotes::pick(super::quotes::START_QUOTES),
+        None,
+    );
 }
 
-/// Exit ritual: fast rain resolving into the logo, with a "wind down" quote in
-/// the corner and — when known — how long the operator was in the construct.
-/// Played when the last container leaves.
+/// Exit ritual: fast rain resolving into the logo, played when the last
+/// container leaves.
+///
+/// Tagged "leaving the Construct", with a "wind down" phrase and — when known —
+/// how long the operator was in the Construct.
 pub fn rain_logo_outro(elapsed: Option<std::time::Duration>) {
-    let footer = elapsed.map(|d| format!("in the construct for {}", format_universe_duration(d)));
-    rain_logo_with(super::quotes::pick(super::quotes::END_QUOTES), footer.as_deref());
+    let footer = elapsed.map(|d| format!("in the Construct for {}", format_universe_duration(d)));
+    rain_logo_with(
+        "leaving the Construct",
+        super::quotes::pick(super::quotes::END_QUOTES),
+        footer.as_deref(),
+    );
 }
 
-/// Fast digital rain that resolves into the jackin' logo, then holds on the
-/// logo with an optional corner quote and footer line before clearing. No
-/// prose body — just the rain, the logo, and the corner text.
-fn rain_logo_with(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
+/// Fast digital rain that resolves into the jackin' logo, then holds.
+///
+/// While holding it shows a tagline beneath the logo, the phrase of the day at
+/// the bottom, and an optional footer line, then clears. No prose body — just
+/// rain, logo, and captions.
+fn rain_logo_with(tagline: &str, quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
     clear_screen();
     // Brief, brisk rainfall that reveals the logo (the reveal + hold happen
     // inside digital_rain when a banner is supplied).
     digital_rain(900, Some(REVEAL_BANNER));
-    print_logo_caption(quote, footer);
+    print_logo_caption(tagline, quote, footer);
     // Linger so the quote is readable, then wipe so the next surface — the
     // console manager on entry, or the shell on exit — starts clean.
     let _ = skippable_sleep(std::time::Duration::from_millis(1900));
     clear_screen();
 }
 
-/// Render the quote centered just below the revealed logo (where the operator
-/// is already looking), bright/white so it reads, with the author and any
-/// footer line dimmer beneath it. Uses absolute cursor moves like `digital_rain`.
-fn print_logo_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
+/// Render the "phrase of the day" anchored to the bottom of the logo screen,
+/// centered and bright/white so it reads, with the author and any footer line
+/// (e.g. time in the construct) dimmer beneath it. Uses absolute cursor moves
+/// like `digital_rain`. The logo stays centered; this fills the lower margin.
+fn print_logo_caption(tagline: &str, quote: Option<&super::quotes::Quote>, footer: Option<&str>) {
     let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let cols = term_cols as usize;
-    // The logo is vertically centered (see `banner_grid`); start the caption one
-    // blank row beneath it.
-    let logo_top = (term_rows as usize).saturating_sub(REVEAL_BANNER.len()) / 2;
-    let mut row = u16::try_from(logo_top + REVEAL_BANNER.len() + 1).unwrap_or(term_rows);
     let truncate = |s: &str| -> String {
         let max = cols.saturating_sub(4).max(8);
         if s.chars().count() > max {
@@ -465,13 +475,27 @@ fn print_logo_caption(quote: Option<&super::quotes::Quote>, footer: Option<&str>
         let col = (cols.saturating_sub(t.chars().count()) / 2).max(1);
         eprint!("\x1b[{row};{col}H{}", t.color(rgb(color)));
     };
-    if let Some(q) = quote {
-        center(row, &format!("\u{201C}{}\u{201D}", q.text), WHITE);
-        center(row.saturating_add(1), &format!("\u{2014} {}", q.author), PHOSPHOR_DIM);
-        row = row.saturating_add(3);
+    // Tagline ("entering / leaving the Construct") one blank row below the
+    // vertically-centered logo (see `banner_grid`).
+    if !tagline.is_empty() {
+        let logo_top = (term_rows as usize).saturating_sub(REVEAL_BANNER.len()) / 2;
+        let row = u16::try_from(logo_top + REVEAL_BANNER.len() + 1).unwrap_or(term_rows);
+        center(row, tagline, PHOSPHOR_GREEN);
     }
+    // Anchor to the bottom: the footer (if any) on the lowest line, the author
+    // above it, the quote above that — leaving the very last row as margin.
+    let mut row = term_rows.saturating_sub(1);
     if let Some(f) = footer {
         center(row, f, PHOSPHOR_DIM);
+        row = row.saturating_sub(1);
+    }
+    if let Some(q) = quote {
+        center(row, &format!("\u{2014} {}", q.author), PHOSPHOR_DIM);
+        center(
+            row.saturating_sub(1),
+            &format!("\u{201C}{}\u{201D}", q.text),
+            WHITE,
+        );
     }
     let _ = io::stderr().flush();
 }
