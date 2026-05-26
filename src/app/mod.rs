@@ -1401,6 +1401,7 @@ fn handle_claude_token(
     match action {
         cli::WorkspaceClaudeTokenCommand::Setup {
             workspace,
+            role,
             vault,
             item_name,
             op_account,
@@ -1413,14 +1414,21 @@ fn handle_claude_token(
             // plain CLI prompts (account → vault → item → field) when
             // --interactive is set. The rich TUI drill-down lives only in
             // `jackin console`; the CLI stays CLI.
-            let args = if interactive {
-                prompt_interactive_token_store(&workspace, op_account)?
+            let (args, role) = if interactive {
+                // --role flag wins; otherwise prompt for the scope so the
+                // interactive path selects everything.
+                let role = match role {
+                    Some(r) => Some(r),
+                    None => prompt_interactive_role(config, &workspace)?,
+                };
+                let args = prompt_interactive_token_store(&workspace, op_account)?;
+                (args, role)
             } else {
                 let reuse_ref = reuse
                     .as_deref()
                     .map(|r| parse_reuse(r, op_account.as_deref()))
                     .transpose()?;
-                token_setup::TokenSetupArgs {
+                let args = token_setup::TokenSetupArgs {
                     vault,
                     item_name,
                     account: op_account,
@@ -1428,15 +1436,15 @@ fn handle_claude_token(
                     field_label: None,
                     edit_existing: None,
                     section: None,
-                }
+                };
+                (args, role)
             };
 
-            let report = token_setup::run_setup(
-                paths,
-                config,
-                &token_setup::TokenSetupScope::Workspace(workspace),
-                &args,
-            )?;
+            let scope = match role {
+                Some(role) => token_setup::TokenSetupScope::WorkspaceRole { workspace, role },
+                None => token_setup::TokenSetupScope::Workspace(workspace),
+            };
+            let report = token_setup::run_setup(paths, config, &scope, &args)?;
             print_token_setup_report(&report);
             Ok(())
         }
@@ -1599,6 +1607,36 @@ fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupRe
     } else {
         println!("Existing op:// reference adopted; no new item created.");
     }
+}
+
+/// Prompt for the token scope: all roles in the workspace, or a specific
+/// role override. Returns `None` for the workspace level (all roles) and
+/// `Some(role)` for a per-role override. Falls back to `None` when stdin
+/// is not a TTY or the workspace has no allowed roles to scope to.
+fn prompt_interactive_role(config: &AppConfig, workspace: &str) -> Result<Option<String>> {
+    use std::io::IsTerminal;
+
+    let roles: Vec<String> = config
+        .workspaces
+        .get(workspace)
+        .map(|w| w.allowed_roles.clone())
+        .unwrap_or_default();
+    if roles.is_empty() || !std::io::stdin().is_terminal() {
+        return Ok(None);
+    }
+
+    let mut labels: Vec<String> = vec!["All roles (workspace level)".to_string()];
+    labels.extend(roles.iter().cloned());
+    let idx = dialoguer::Select::new()
+        .with_prompt("Scope")
+        .items(&labels)
+        .default(0)
+        .interact()?;
+    Ok(if idx == 0 {
+        None
+    } else {
+        Some(roles[idx - 1].clone())
+    })
 }
 
 /// Plain-CLI interactive selection of where a Claude token should land in

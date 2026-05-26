@@ -261,6 +261,11 @@ Examples:
         /// Workspace whose `[workspaces.<NAME>.claude]` block should
         /// be wired
         workspace: String,
+        /// Wire the token for a specific role override
+        /// (`[workspaces.<ws>.roles.<role>]`) instead of all roles in
+        /// the workspace. Omit to wire the workspace-level slot.
+        #[arg(long)]
+        role: Option<String>,
         /// 1Password vault name or UUID for the new item. Required
         /// unless `--reuse` or `--interactive` is supplied. Mutually
         /// exclusive with `--reuse`.
