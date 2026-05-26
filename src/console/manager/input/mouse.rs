@@ -72,11 +72,12 @@ pub fn handle_mouse_with_config(
         return;
     }
 
-    // Pointer motion only repaints the hovered tab / list row; it never selects
-    // or drags.
+    // Pointer motion only repaints the hovered tab / row; it never selects or
+    // drags.
     if matches!(mouse.kind, MouseEventKind::Moved) {
         update_tab_hover(state, mouse);
         update_list_row_hover(state, mouse, term_size);
+        update_row_hover(state, mouse, term_size);
         return;
     }
 
@@ -299,6 +300,40 @@ fn update_list_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_s
         } else {
             None
         };
+}
+
+/// Track the hovered row on the editor Mounts tab and the Settings Trust tab so
+/// their renderers can lift it, mirroring the tab/list hover cue. Cleared off
+/// the relevant content area.
+fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            editor.hovered_mount_row = editor_mount_index_at(editor, mouse, term_size);
+        }
+        ManagerStage::Settings(settings) => {
+            settings.trust.hovered = settings_trust_row_at(settings, mouse, term_size);
+        }
+        _ => {}
+    }
+}
+
+/// Trust-tab row index under the pointer, or `None`. Matches the click
+/// handler's geometry (raw row offset inside the content area; no scroll
+/// adjustment, same as `try_select_settings_trust_row`).
+fn settings_trust_row_at(
+    settings: &super::super::state::SettingsState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> Option<usize> {
+    if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
+        return None;
+    }
+    let area = settings_content_area(term_size);
+    if !point_in(mouse, area) {
+        return None;
+    }
+    let row = usize::from(mouse.row.saturating_sub(area.y + 1));
+    (row < settings.trust.pending.len()).then_some(row)
 }
 
 fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {

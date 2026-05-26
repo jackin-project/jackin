@@ -463,6 +463,8 @@ pub struct SettingsTrustState {
     pub scroll_x: u16,
     pub scroll_y: u16,
     pub scroll_focused: bool,
+    /// Row the pointer is hovering (lifts its background like a hovered tab).
+    pub hovered: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -630,6 +632,9 @@ pub struct EditorState<'a> {
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
     pub workspace_mounts_scroll_x: u16,
     pub workspace_mounts_scroll_focused: bool,
+    /// Mounts-tab row the pointer is hovering (lifts its background like a
+    /// hovered tab). Transient; set on mouse motion.
+    pub hovered_mount_row: Option<usize>,
     /// Horizontal scroll offset shared across non-Mounts editor content tabs.
     /// Reset to 0 on every tab change so each tab starts at the left edge.
     pub tab_scroll_x: u16,
@@ -1122,6 +1127,7 @@ impl SettingsTrustState {
             scroll_x: 0,
             scroll_y: 0,
             scroll_focused: false,
+            hovered: None,
         }
     }
 
@@ -2206,6 +2212,7 @@ impl EditorState<'_> {
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
+            hovered_mount_row: None,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_scroll_focused: false,
@@ -2241,6 +2248,7 @@ impl EditorState<'_> {
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
+            hovered_mount_row: None,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_scroll_focused: false,

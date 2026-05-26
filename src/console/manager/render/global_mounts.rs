@@ -741,13 +741,18 @@ fn trust_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     }
     for (i, row) in state.trust.pending.iter().enumerate() {
         let selected = state.trust.selected == i;
-        let style = if selected {
+        let mut style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(PHOSPHOR_GREEN)
         };
+        // Hover lift: graphite background on the hovered (non-selected) row,
+        // matching the tab/list hover cue.
+        if !selected && state.trust.hovered == Some(i) {
+            style = style.bg(super::TAB_BG_INACTIVE_HOVER);
+        }
         let prefix = if selected { "▸ " } else { "  " };
         let trust = if row.trusted { "trusted" } else { "untrusted" };
         lines.push(Line::from(Span::styled(

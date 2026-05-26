@@ -601,6 +601,11 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>)
 
     for (i, row) in rows.iter().enumerate() {
         let selected = i == cursor;
+        // Hover lift: graphite background on the hovered (non-selected) mount
+        // row, matching the tab/list hover cue. Applied to every span (and the
+        // column gaps) so the row's background is contiguous.
+        let hovered = !selected && state.hovered_mount_row == Some(i);
+        let hb = |s: Style| if hovered { s.bg(TAB_BG_INACTIVE_HOVER) } else { s };
         let prefix = if selected { "▸ " } else { "  " };
         let base_style = if selected {
             Style::default()
@@ -615,21 +620,21 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>)
         lines.push(Line::from(vec![
             Span::styled(
                 format!("{prefix}{:<path_w$}  ", row.destination),
-                base_style,
+                hb(base_style),
             ),
             Span::styled(
                 format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                Style::default().fg(PHOSPHOR_DIM),
+                hb(Style::default().fg(PHOSPHOR_DIM)),
             ),
             // Two-space gap before the iso column — matches the header.
-            Span::raw("  "),
+            Span::styled("  ", hb(Style::default())),
             Span::styled(
                 format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                Style::default().fg(PHOSPHOR_DIM),
+                hb(Style::default().fg(PHOSPHOR_DIM)),
             ),
             // Two-space gap before the type column — matches the header.
-            Span::raw("  "),
-            Span::styled(row.kind.clone(), dim_style),
+            Span::styled("  ", hb(Style::default())),
+            Span::styled(row.kind.clone(), hb(dim_style)),
         ]));
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
