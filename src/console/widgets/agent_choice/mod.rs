@@ -4,9 +4,10 @@
 
 use crate::agent::Agent;
 use crate::console::widgets::ModalOutcome;
+use jackin_tui::HintSpan;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -116,18 +117,17 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
         .collect();
     frame.render_widget(Paragraph::new(lines), rows[0]);
 
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let hint = Paragraph::new(Line::from(vec![
-        Span::styled("Enter", key_style),
-        Span::styled(" commit", text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("Esc", key_style),
-        Span::styled(" cancel", text_style),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(hint, rows[2]);
+    crate::console::widgets::hints::render(
+        frame,
+        rows[2],
+        &[
+            HintSpan::Key("Enter"),
+            HintSpan::Text("commit"),
+            HintSpan::Sep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
+        ],
+    );
 }
 
 #[cfg(test)]

@@ -15,6 +15,7 @@ use ratatui::{
 };
 
 use super::ModalOutcome;
+use jackin_tui::HintSpan;
 
 /// Outcome of the mount-destination modal.
 ///
@@ -173,24 +174,20 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
         chunks[3],
     );
 
-    // Footer hint — mirrors save_discard styling (key WHITE+BOLD, label
-    // PHOSPHOR_GREEN, separator PHOSPHOR_DARK).
-    let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(phosphor);
-    let sep_style = Style::default().fg(phosphor_dark);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("M", key_style),
-            Span::styled(" mount", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("E", key_style),
-            Span::styled(" edit", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("C/Esc", key_style),
-            Span::styled(" cancel", text_style),
-        ]))
-        .alignment(Alignment::Center),
+    // Footer hint via the shared renderer (one styling source for every footer).
+    crate::console::widgets::hints::render(
+        frame,
         chunks[5],
+        &[
+            HintSpan::Key("M"),
+            HintSpan::Text("mount"),
+            HintSpan::Sep,
+            HintSpan::Key("E"),
+            HintSpan::Text("edit"),
+            HintSpan::Sep,
+            HintSpan::Key("C/Esc"),
+            HintSpan::Text("cancel"),
+        ],
     );
 }
 

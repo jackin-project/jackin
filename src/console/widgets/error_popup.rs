@@ -17,7 +17,8 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use super::WHITE;
+use jackin_tui::HintSpan;
 const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 
 #[derive(Debug, Clone)]
@@ -143,21 +144,18 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
         chunks[3],
     );
 
-    // Hint — PHOSPHOR_DIM would be ideal but we lean on the canonical
-    // KEY/TEXT/SEP scheme the cross-widget consistency test enforces:
-    // WHITE+BOLD key + PHOSPHOR_GREEN label.
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let hint = Paragraph::new(Line::from(vec![
-        Span::styled("Enter/O", key_style),
-        Span::styled(" ok", text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("Esc", key_style),
-        Span::styled(" close", text_style),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(hint, chunks[5]);
+    // Footer hint via the shared renderer (one styling source for every footer).
+    crate::console::widgets::hints::render(
+        frame,
+        chunks[5],
+        &[
+            HintSpan::Key("Enter/O"),
+            HintSpan::Text("ok"),
+            HintSpan::Sep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("close"),
+        ],
+    );
 }
 
 #[cfg(test)]

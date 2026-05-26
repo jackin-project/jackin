@@ -140,37 +140,34 @@ fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 /// Render the bottom footer legend. Swaps the usual nav+`s` legend for a
 /// prompt-focused legend when the git-repo confirm overlay is active.
 fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
-    use ratatui::layout::Alignment;
-    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text = Style::default().fg(PHOSPHOR_GREEN);
-    let sep = Style::default().fg(PHOSPHOR_DARK);
-    let line = if state.pending_git_prompt.is_some() {
-        Line::from(vec![
-            Span::styled("Enter", key),
-            Span::styled(" confirm", text),
-            Span::styled(" \u{b7} ", sep),
-            Span::styled("Esc", key),
-            Span::styled(" cancel", text),
-        ])
+    use jackin_tui::HintSpan;
+    let spans = if state.pending_git_prompt.is_some() {
+        vec![
+            HintSpan::Key("Enter"),
+            HintSpan::Text("confirm"),
+            HintSpan::Sep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
+        ]
     } else {
-        Line::from(vec![
-            Span::styled("\u{2191}\u{2193}", key),
-            Span::styled(" navigate", text),
-            Span::styled(" \u{b7} ", sep),
-            Span::styled("Enter", key),
-            Span::styled(" open", text),
-            Span::styled(" \u{b7} ", sep),
-            Span::styled("H/\u{2190}", key),
-            Span::styled(" up", text),
-            Span::raw("   "),
-            Span::styled("S", key),
-            Span::styled(" select", text),
-            Span::raw("   "),
-            Span::styled("Esc", key),
-            Span::styled(" up/cancel", text),
-        ])
+        vec![
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::Sep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("open"),
+            HintSpan::Sep,
+            HintSpan::Key("H/\u{2190}"),
+            HintSpan::Text("up"),
+            HintSpan::GroupSep,
+            HintSpan::Key("S"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("up/cancel"),
+        ]
     };
-    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
+    crate::console::widgets::hints::render(frame, area, &spans);
 }
 
 #[cfg(test)]
