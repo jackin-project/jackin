@@ -424,6 +424,9 @@ fn warp(accelerating: bool) {
         } else {
             0.2 + (1.0 - t).powi(2) * 5.0
         };
+        // Ease the whole field up from black over the first frames so the warp
+        // fades in instead of popping on at full brightness.
+        let entry_fade = (f as f32 / 8.0).min(1.0);
 
         let mut grid: Vec<Vec<Option<(char, (u8, u8, u8))>>> = vec![vec![None; cols]; rows];
         for star in &mut stars {
@@ -464,10 +467,11 @@ fn warp(accelerating: bool) {
                 // Blue core deepening to bright white streaks toward the edge
                 // at speed.
                 let bright = (frac * 0.7 + warp / 5.2 * 0.3).clamp(0.0, 1.0);
+                let scale = |c: u8| (f32::from(c) * entry_fade) as u8;
                 let color = (
-                    lerp_channel(60, 235, bright),
-                    lerp_channel(150, 245, bright),
-                    255,
+                    scale(lerp_channel(60, 235, bright)),
+                    scale(lerp_channel(150, 245, bright)),
+                    scale(255),
                 );
                 grid[yu][xu] = Some((glyph, color));
             }

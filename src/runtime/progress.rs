@@ -752,20 +752,21 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
         )];
     };
     let prep = " in ";
-    // Flatten to (char, bold) so the ripple can colour every glyph uniformly
-    // while the role + path stay bold.
-    let mut chars: Vec<(char, bool)> = Vec::new();
+    // Flatten to (char, kind): 0 = normal ("Loading" / "in"), 1 = role,
+    // 2 = path. The role renders white so it pops; the rest stays green. Role
+    // and path are bold. The ripple brightens every glyph uniformly.
+    let mut chars: Vec<(char, u8)> = Vec::new();
     for ch in "Loading ".chars() {
-        chars.push((ch, false));
+        chars.push((ch, 0));
     }
     for ch in id.role.chars() {
-        chars.push((ch, true));
+        chars.push((ch, 1));
     }
     for ch in prep.chars() {
-        chars.push((ch, false));
+        chars.push((ch, 0));
     }
     for ch in id.target_label.chars() {
-        chars.push((ch, true));
+        chars.push((ch, 2));
     }
 
     let len = chars.len();
@@ -776,17 +777,22 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
     chars
         .into_iter()
         .enumerate()
-        .map(|(i, (ch, bold))| {
+        .map(|(i, (ch, kind))| {
             let bright = if frozen {
                 0.0
             } else {
                 (1.0 - (i as f32 - peak).abs() / 5.0).max(0.0)
             };
-            // White, with the ripple brightening dim-white → full white.
-            let v = lerp(150, 255, bright);
-            let color = Color::Rgb(v, v, v);
+            let color = if kind == 1 {
+                // Role: white, brightening dim-white → full white on the ripple.
+                let v = lerp(170, 255, bright);
+                Color::Rgb(v, v, v)
+            } else {
+                // Loading / in / path: green, dim → bright on the ripple.
+                Color::Rgb(lerp(0, 120, bright), lerp(140, 255, bright), lerp(30, 120, bright))
+            };
             let mut style = Style::default().fg(color);
-            if bold {
+            if kind != 0 {
                 style = style.add_modifier(Modifier::BOLD);
             }
             Span::styled(ch.to_string(), style)
@@ -896,12 +902,17 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &
     // operator is never unsure whether they are in a debug run; the blue
     // instance-id chip always shows once the container is named.
     let debug_chip = crate::tui::is_debug_mode().then_some(run_id);
+    // Fade the bar up from black over the first ~30 frames so it appears
+    // gradually with the rain rather than popping in.
+    #[allow(clippy::cast_precision_loss)]
+    let alpha = (view.frame as f32 / 30.0).min(1.0);
     crate::console::widgets::status_bar::render(
         frame,
         area,
         &format_activity(&view.status),
         &instance,
         debug_chip,
+        alpha,
     );
 }
 

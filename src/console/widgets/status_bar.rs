@@ -25,17 +25,31 @@ use super::{DEBUG_AMBER, LINK_BLUE, WHITE};
 /// `right_debug`, when present, is a second chip rendered in amber to the
 /// right of `right` — used for the debug-mode run id so debug is
 /// unmistakable.
+/// Dim `color` toward black by `alpha` (0.0 = black, 1.0 = full), so the bar can
+/// fade up from black. Non-RGB colors (e.g. `Color::Black`) pass through.
+fn faded(color: Color, alpha: f32) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => {
+            let s = |c: u8| (f32::from(c) * alpha.clamp(0.0, 1.0)) as u8;
+            Color::Rgb(s(r), s(g), s(b))
+        }
+        other => other,
+    }
+}
+
 pub(crate) fn render(
     frame: &mut Frame,
     area: Rect,
     left: &str,
     right: &str,
     right_debug: Option<&str>,
+    alpha: f32,
 ) {
     // White band across the whole row first, so the inter-chunk gap is also
-    // white rather than the terminal default.
+    // white rather than the terminal default. `alpha` fades the band up from
+    // black so it appears gradually with the rest of the cockpit chrome.
     frame.render_widget(
-        Block::default().style(Style::default().bg(WHITE).fg(Color::Black)),
+        Block::default().style(Style::default().bg(faded(WHITE, alpha)).fg(Color::Black)),
         area,
     );
 
@@ -44,8 +58,8 @@ pub(crate) fn render(
         right_spans.push(Span::styled(
             format!(" {right} "),
             Style::default()
-                .bg(WHITE)
-                .fg(LINK_BLUE)
+                .bg(faded(WHITE, alpha))
+                .fg(faded(LINK_BLUE, alpha))
                 .add_modifier(Modifier::BOLD),
         ));
     }
@@ -53,8 +67,8 @@ pub(crate) fn render(
         right_spans.push(Span::styled(
             format!(" {debug} "),
             Style::default()
-                .bg(WHITE)
-                .fg(DEBUG_AMBER)
+                .bg(faded(WHITE, alpha))
+                .fg(faded(DEBUG_AMBER, alpha))
                 .add_modifier(Modifier::BOLD),
         ));
     }
@@ -76,7 +90,7 @@ pub(crate) fn render(
         Span::styled(
             left.to_string(),
             Style::default()
-                .bg(WHITE)
+                .bg(faded(WHITE, alpha))
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD),
         ),
@@ -99,7 +113,7 @@ mod tests {
     fn dump(left: &str, right: &str, w: u16) -> String {
         let backend = TestBackend::new(w, 1);
         let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| render(f, Rect::new(0, 0, w, 1), left, right, None))
+        term.draw(|f| render(f, Rect::new(0, 0, w, 1), left, right, None, 1.0))
             .unwrap();
         let buf = term.backend().buffer();
         (0..w).map(|x| buf[(x, 0)].symbol().to_string()).collect()
@@ -126,7 +140,7 @@ mod tests {
     fn bar_fills_white_background_across_the_row() {
         let backend = TestBackend::new(30, 1);
         let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| render(f, Rect::new(0, 0, 30, 1), "x", "y", None))
+        term.draw(|f| render(f, Rect::new(0, 0, 30, 1), "x", "y", None, 1.0))
             .unwrap();
         let buf = term.backend().buffer();
         // Every cell carries the white background, including the gap.
@@ -146,6 +160,7 @@ mod tests {
                 "building",
                 "s9994y2n",
                 Some("jk-run-3d7e23"),
+                1.0,
             )
         })
         .unwrap();
