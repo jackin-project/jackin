@@ -81,7 +81,12 @@ const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
 /// and stamps the old top-level `op_account` onto each inline-table
 /// value carrying an `op` key that lacks an `account`. Plain string
 /// values are skipped. Absent `op_account` is a no-op.
-fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Result<()> {
+///
+/// Exposed beyond the migration registry so the legacy-config split in
+/// `persist.rs` can reuse this exact transform: the typed-struct round-trip
+/// there drops the legacy `op_account` before the version-driven migration
+/// would see it, so the split re-injects it and calls this directly.
+pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Result<()> {
     // Absent op_account is a legitimate no-op (single-account / never-set
     // workspace). A present-but-non-string value is operator data we must
     // not silently drop: bail loudly so the standard startup parser error
@@ -112,8 +117,9 @@ fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Result
 }
 
 /// Stamp `account` onto every op ref inside `table`'s `[env]` and
-/// `[github.env]` sub-tables. An op ref is an inline table with an `op`
-/// key; refs already carrying `account` are left untouched.
+/// `[github.env]` sub-tables. An op ref is a table — inline (`KEY = { op
+/// = … }`) or standard (`[env.KEY]`) — with an `op` key; refs already
+/// carrying `account` are left untouched.
 fn stamp_account_in_env(table: &mut toml_edit::Table, acct: &str) {
     stamp_account_in_env_table(table.get_mut("env"), acct);
     if let Some(github) = table
@@ -129,11 +135,14 @@ fn stamp_account_in_env_table(env: Option<&mut toml_edit::Item>, acct: &str) {
         return;
     };
     for (_, value) in env.iter_mut() {
-        if let Some(inline) = value.as_inline_table_mut()
-            && inline.contains_key("op")
-            && !inline.contains_key("account")
+        // Match both the inline-table form (written by the editor) and the
+        // standard-table form (`[env.KEY]`, as a serde round-trip emits) so
+        // the legacy-config split is stamped the same as a normal migration.
+        if let Some(tbl) = value.as_table_like_mut()
+            && tbl.contains_key("op")
+            && !tbl.contains_key("account")
         {
-            inline.insert("account", acct.into());
+            tbl.insert("account", toml_edit::value(acct));
         }
     }
 }
