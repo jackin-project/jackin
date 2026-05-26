@@ -3,10 +3,6 @@ use std::io::{self, Write};
 
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, clear_screen, rgb};
 
-// ── Color palette ────────────────────────────────────────────────────────
-
-const DIM: (u8, u8, u8) = (120, 120, 120);
-
 // ── Skippable sleep ─────────────────────────────────────────────────────
 
 /// Sleep for `duration`, but return `true` immediately if Enter or Esc is pressed.
@@ -409,181 +405,21 @@ pub(crate) fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
     let _ = io::stderr().flush();
 }
 
-// ── Text effects ─────────────────────────────────────────────────────────
 
-/// Returns `true` if skipped by keypress.
-fn type_text(text: &str, color: (u8, u8, u8), char_ms: u64) -> bool {
-    eprint!("  ");
-    for ch in text.chars() {
-        eprint!("{}", ch.color(rgb(color)));
-        let _ = io::stderr().flush();
-        if skippable_sleep(std::time::Duration::from_millis(char_ms)) {
-            // Print remainder instantly
-            eprintln!();
-            return true;
-        }
-    }
-    eprintln!();
-    false
-}
+// ── Session rain + logo ──────────────────────────────────────────────────
 
-/// Returns `true` if skipped by keypress.
-fn glitch_text(text: &str, color: (u8, u8, u8)) -> bool {
-    let chars: Vec<char> = text.chars().collect();
-    let mut seed: u64 = 0xCAFE_BABE_1337;
-
-    for _ in 0..4 {
-        eprint!("\r  ");
-        for &ch in &chars {
-            let s = xorshift(&mut seed);
-            let display = if s.is_multiple_of(4) {
-                random_char(&mut seed)
-            } else {
-                ch
-            };
-            let (r, g, b) = if s.is_multiple_of(3) {
-                PHOSPHOR_GREEN
-            } else {
-                color
-            };
-            eprint!("{}", display.color(owo_colors::Rgb(r, g, b)));
-        }
-        let _ = io::stderr().flush();
-        if skippable_sleep(std::time::Duration::from_millis(80)) {
-            eprint!("\r  ");
-            eprintln!("{}", text.color(rgb(color)));
-            return true;
-        }
-    }
-    eprint!("\r  ");
-    eprintln!("{}", text.color(rgb(color)));
-    false
-}
-
-// ── Intro / outro animation ──────────────────────────────────────────────
-
-pub fn intro_animation(operator_name: &str) {
+/// Fast digital rain that resolves into the jackin' logo.
+///
+/// Played once at the very start of a console session (entering the construct)
+/// and once when the last container exits (leaving it). No text, no prompts —
+/// just the rain and the logo, then it clears.
+pub fn rain_logo() {
     clear_screen();
-
-    digital_rain(2000, Some(REVEAL_BANNER));
-
+    // Brief, brisk rainfall that reveals the logo (the reveal + hold happen
+    // inside digital_rain when a banner is supplied).
+    digital_rain(900, Some(REVEAL_BANNER));
+    // Linger on the revealed logo, then wipe so the next surface — the console
+    // manager on entry, or the shell on exit — starts on a clean screen.
+    let _ = skippable_sleep(std::time::Duration::from_millis(450));
     clear_screen();
-    if skippable_sleep(std::time::Duration::from_millis(300)) {
-        return;
-    }
-
-    eprintln!();
-    if type_text(&format!("Stand up, {operator_name}..."), PHOSPHOR_GREEN, 65) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(800)) {
-        clear_screen();
-        return;
-    }
-
-    eprintln!();
-    if type_text("They're already inside...", PHOSPHOR_GREEN, 55) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(600)) {
-        clear_screen();
-        return;
-    }
-
-    eprintln!();
-    if type_text("Follow the green.", PHOSPHOR_GREEN, 50) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(400)) {
-        clear_screen();
-        return;
-    }
-
-    eprintln!();
-    glitch_text(&format!("Knock, knock, {operator_name}."), PHOSPHOR_GREEN);
-    if skippable_sleep(std::time::Duration::from_millis(600)) {
-        clear_screen();
-        return;
-    }
-
-    clear_screen();
-    let _ = skippable_sleep(std::time::Duration::from_millis(200));
-}
-
-pub fn outro_animation(role_name: &str, remaining: &[String]) {
-    clear_screen();
-
-    digital_rain(1500, None);
-
-    clear_screen();
-    if skippable_sleep(std::time::Duration::from_millis(300)) {
-        return;
-    }
-
-    eprintln!();
-    if type_text(
-        &format!("{role_name} has left the container."),
-        PHOSPHOR_GREEN,
-        40,
-    ) {
-        eprintln!();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(400)) {
-        eprintln!();
-        return;
-    }
-
-    eprintln!();
-    let skipped = if remaining.is_empty() {
-        type_text("No roles remaining.", PHOSPHOR_DIM, 35)
-    } else {
-        type_text(
-            &format!(
-                "{} role(s) still running: {}",
-                remaining.len(),
-                remaining.join(", ")
-            ),
-            PHOSPHOR_DIM,
-            30,
-        )
-    };
-    if skipped {
-        eprintln!();
-        return;
-    }
-
-    if skippable_sleep(std::time::Duration::from_millis(400)) {
-        eprintln!();
-        return;
-    }
-    eprintln!();
-    type_text("Connection closed.", PHOSPHOR_DARK, 45);
-    let _ = skippable_sleep(std::time::Duration::from_millis(500));
-    eprintln!();
-}
-
-pub fn simple_outro(role_name: &str, remaining: &[String]) {
-    eprintln!();
-    eprintln!(
-        "  {}",
-        format!("{role_name} has left the container.").color(rgb(PHOSPHOR_DIM))
-    );
-    if remaining.is_empty() {
-        eprintln!("  {}", "No roles remaining.".color(rgb(PHOSPHOR_DIM)));
-    } else {
-        eprintln!(
-            "  {}",
-            format!(
-                "{} role(s) still running: {}",
-                remaining.len(),
-                remaining.join(", ")
-            )
-            .color(rgb(DIM))
-        );
-    }
-    eprintln!();
 }

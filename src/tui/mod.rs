@@ -143,7 +143,7 @@ pub mod animation;
 pub mod output;
 pub mod prompt;
 
-pub use animation::{intro_animation, outro_animation, simple_outro};
+pub use animation::rain_logo;
 pub use output::{
     CodexSyncState, agent_outcome_notice, auth_mode_notice, clear_screen, codex_auth_notice, fatal,
     github_auth_notice, hint, print_config_table, print_deploying, print_logo, set_terminal_title,

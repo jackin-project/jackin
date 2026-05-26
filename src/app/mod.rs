@@ -155,12 +155,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
-        Command::Console(ConsoleArgs {
-            no_rain,
-            no_tui,
-            intro,
-            outro,
-        }) => {
+        Command::Console(ConsoleArgs {}) => {
             let cwd = std::env::current_dir()?;
             let mut in_place = ConsoleInPlaceHandler {
                 paths: paths.clone(),
@@ -172,6 +167,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             // terminal. Sub-surfaces detect this and skip their own
             // enter/leave; the guard tears the terminal down once, on drop.
             let screen = console::HostScreen::enter()?;
+
+            // Entering the construct: a fast rain + logo plays once at the very
+            // start of the console session. Subsequent launches within the
+            // session do not replay it — the operator is already inside.
+            crate::tui::rain_logo();
 
             let Some(outcome) =
                 console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?
@@ -224,9 +224,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 })??
             };
 
-            let mut opts = runtime::LoadOptions::for_launch(no_rain, no_tui, debug);
-            opts.force_intro = intro;
-            opts.force_outro = outro;
+            let mut opts = runtime::LoadOptions::for_launch(debug);
             opts.agent = agent;
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(

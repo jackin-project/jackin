@@ -15,16 +15,14 @@ The expectation is **most people use the TUI, and reach for the CLI only when th
 ## Synopsis
 
 ```bash
-jackin console [--debug] [--no-rain] [--no-tui] [--intro] [--outro]
+jackin console [--debug]
 ```
 
 Opens the operator console — an interactive terminal UI for picking a workspace and an agent, managing saved workspaces, editing per-workspace settings, and launching agents into isolated containers.
 
 Running `jackin` with no subcommand opens the same console when stdout is attached to an interactive terminal. On non-interactive shells (piped output, CI, very small terminals) bare `jackin` silently prints top-level help instead. `jackin console` makes the intent explicit and errors out when the terminal cannot host the TUI.
 
-When a console launch leaves the manager, it uses the same launch progress surface as [`jackin load`](/commands/load/). Rich terminals get the full launch cockpit; `--no-tui` uses compact progress lines; `--no-rain` disables only the full boundary rain animation. `--debug` writes detailed evidence to the run diagnostics artifact instead of turning the launch screen into raw logs.
-
-By default the full-screen intro rain plays only when you start the first container of a session (you are entering an empty construct), and the outro rain plays only when the last container exits (you are leaving an empty construct); when other containers are still running, the exit instead shows a compact summary of who remains. Pass `--intro` to force the opening rain even when containers are already running, and `--outro` to force the closing rain even when others remain — useful when you want the full cinematic regardless of session state. `--intro` and `--outro` override `--no-rain` for their respective rituals.
+The console is always the full experience and has no flags to scale it back: a short digital-rain intro with the jackin' logo plays when you open it (entering the construct), launches show the rich progress cockpit, and a closing rain + logo plays when the last container exits (leaving the construct). When other containers are still running, exiting instead shows a compact summary of which roles are working on which projects, so you can reconnect. `--debug` writes detailed evidence to the run diagnostics artifact instead of turning the screen into raw logs. (The lower-level [`jackin load`](/commands/load/) keeps `--no-rain` / `--no-tui` for scripted, non-interactive launches.)
 
 ## What the console gives you
 
