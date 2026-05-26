@@ -225,10 +225,101 @@ struct WarpStar {
     speed: f32,
 }
 
-/// Entry ritual — a hyperspace jump *into* the Construct: a starfield that
-/// streaks outward from the center and accelerates to lightspeed, then a calm
-/// caption with the phrase of the day.
+/// Type `text` one character at a time. Returns `true` if the operator skipped
+/// it with Enter/Esc.
+fn type_text(text: &str, color: (u8, u8, u8), char_ms: u64) -> bool {
+    eprint!("  ");
+    for ch in text.chars() {
+        eprint!("{}", ch.color(rgb(color)));
+        let _ = io::stderr().flush();
+        if skippable_sleep(std::time::Duration::from_millis(char_ms)) {
+            eprintln!();
+            return true;
+        }
+    }
+    eprintln!();
+    false
+}
+
+/// Briefly scramble `text` with random glyphs before resolving it — a glitch
+/// reveal. Returns `true` if skipped.
+fn glitch_text(text: &str, color: (u8, u8, u8)) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    let mut seed: u64 = 0xCAFE_BABE_1337;
+    for _ in 0..4 {
+        eprint!("\r  ");
+        for &ch in &chars {
+            let s = xorshift(&mut seed);
+            let display = if s.is_multiple_of(4) {
+                random_char(&mut seed)
+            } else {
+                ch
+            };
+            let (r, g, b) = if s.is_multiple_of(3) { PHOSPHOR_GREEN } else { color };
+            eprint!("{}", display.color(owo_colors::Rgb(r, g, b)));
+        }
+        let _ = io::stderr().flush();
+        if skippable_sleep(std::time::Duration::from_millis(80)) {
+            eprint!("\r  ");
+            eprintln!("{}", text.color(rgb(color)));
+            return true;
+        }
+    }
+    eprint!("\r  ");
+    eprintln!("{}", text.color(rgb(color)));
+    false
+}
+
+/// The opening Matrix-style call — a few typed phrases that land before the
+/// warp, setting the "you're being pulled into another world" tone. Skippable
+/// with Enter/Esc.
+fn intro_phrases() {
+    clear_screen();
+    if skippable_sleep(std::time::Duration::from_millis(300)) {
+        return;
+    }
+    eprintln!();
+    if type_text("Stand up, operator...", PHOSPHOR_GREEN, 65) {
+        clear_screen();
+        return;
+    }
+    if skippable_sleep(std::time::Duration::from_millis(800)) {
+        clear_screen();
+        return;
+    }
+    eprintln!();
+    if type_text("They're already inside...", PHOSPHOR_GREEN, 55) {
+        clear_screen();
+        return;
+    }
+    if skippable_sleep(std::time::Duration::from_millis(600)) {
+        clear_screen();
+        return;
+    }
+    eprintln!();
+    if type_text("Follow the green.", PHOSPHOR_GREEN, 50) {
+        clear_screen();
+        return;
+    }
+    if skippable_sleep(std::time::Duration::from_millis(400)) {
+        clear_screen();
+        return;
+    }
+    eprintln!();
+    glitch_text("Knock, knock, operator.", PHOSPHOR_GREEN);
+    if skippable_sleep(std::time::Duration::from_millis(600)) {
+        clear_screen();
+        return;
+    }
+    clear_screen();
+    let _ = skippable_sleep(std::time::Duration::from_millis(200));
+}
+
+/// Entry ritual — the opening phrases, then a hyperspace jump *into* the
+/// Construct (a starfield accelerating to lightspeed), then a calm caption with
+/// the phrase of the day.
 pub fn warp_intro() {
+    intro_phrases();
     warp(true);
     warp_caption(super::quotes::pick(super::quotes::START_QUOTES), None);
 }
