@@ -30,7 +30,7 @@ A file with no `version` is ambiguous: it could be a file that was never created
 `config.toml` and every per-workspace file use a top-level Kubernetes-style `version` field:
 
 ```toml
-version = "v1alpha4"
+version = "v1alpha5"
 
 [claude]
 auth_forward = "sync"
@@ -39,7 +39,7 @@ auth_forward = "sync"
 
 Absence of `version` is treated as the legacy pre-versioning era. On load, jackin' compares the file's version to the current expected version baked into the binary. If the file is older and jackin' still has the migration path, jackin' runs the migration chain before the config reaches any caller. If the file is too old for the current binary, jackin' errors and asks the operator to upgrade through an older jackin' first.
 
-The main config file and workspace files are versioned independently. A workspace-only schema change bumps `CURRENT_WORKSPACE_VERSION`; a global config-only change bumps `CURRENT_CONFIG_VERSION`.
+The main config file and workspace files are versioned independently. A workspace-only schema change bumps `CURRENT_WORKSPACE_VERSION` (currently `v1alpha4`); a global config-only change bumps `CURRENT_CONFIG_VERSION` (currently `v1alpha5`). The example above shows a `config.toml` snippet; a per-workspace file under `~/.config/jackin/workspaces/<name>.toml` would carry `version = "v1alpha4"` instead.
 
 ### Role manifest version field
 
