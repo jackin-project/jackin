@@ -138,7 +138,7 @@ impl StepCounter {
         self.progress = Some(progress);
     }
 
-    fn next(&mut self, text: &str) {
+    async fn next(&mut self, text: &str) {
         if let (Some(progress), Some(stage)) = (&mut self.progress, self.current_stage) {
             progress.stage_done(stage, completion_label(stage));
         }
@@ -148,6 +148,7 @@ impl StepCounter {
         self.current_stage = Some(stage);
         if let Some(progress) = &mut self.progress {
             progress.stage_started(stage, text);
+            progress.settle_stage_visual().await;
         } else {
             tui::step_quiet(self.current, text);
         }
@@ -792,7 +793,7 @@ async fn launch_role_runtime(
     }
 
     // Step 4: Mount volumes and launch
-    steps.next("Launching role");
+    steps.next("Launching role").await;
     steps.done();
 
     if steps.progress.is_none() {
@@ -1111,6 +1112,7 @@ async fn launch_role_runtime(
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(super::progress::LaunchStage::Capsule, "ready");
         progress.opening_hardline();
+        progress.settle_stage_visual().await;
     }
     // Tear down the loading cockpit before the interactive attach: the
     // capsule's `docker exec -it` must own a clean terminal, and leaving the
@@ -1646,7 +1648,7 @@ async fn load_role_with(
         resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
 
     // Step 1: Resolve role identity (clone or update repo)
-    steps.next("Resolving role identity");
+    steps.next("Resolving role identity").await;
 
     let mut confirm_repo_removal = || {
         release_rich_progress_for_plain_io(
@@ -1992,7 +1994,7 @@ async fn load_role_with(
             );
             progress.stage_done(super::progress::LaunchStage::Construct, "online");
         }
-        steps.next("Building Docker image");
+        steps.next("Building Docker image").await;
         let image_build = build_agent_image(
             paths,
             selector,
@@ -2287,7 +2289,7 @@ async fn load_role_with(
         }
 
         // Step 3: Create network and start Docker-in-Docker
-        steps.next("Starting Docker-in-Docker");
+        steps.next("Starting Docker-in-Docker").await;
 
         let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest);
         let ctx = LaunchContext {

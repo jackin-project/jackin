@@ -168,6 +168,7 @@ pub struct LaunchFailure {
 }
 
 type SharedView = Arc<std::sync::Mutex<LaunchView>>;
+const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
 
 pub struct LaunchProgress {
     diagnostics: Arc<RunDiagnostics>,
@@ -402,6 +403,18 @@ impl LaunchProgress {
 
     pub fn opening_hardline(&mut self) {
         self.stage_started(LaunchStage::Hardline, "opening hardline");
+    }
+
+    /// Give the rich renderer at least one visible frame after a stage change.
+    ///
+    /// Fast Docker/cache paths can otherwise advance from one stage to the next
+    /// before the 33ms render tick observes the intermediate state, making the
+    /// progress rail appear to skip labels. Compact/test renderers do not draw
+    /// asynchronously, so they should not pay this delay.
+    pub async fn settle_stage_visual(&self) {
+        if matches!(self.renderer, Renderer::Rich(_)) {
+            tokio::time::sleep(STAGE_VISUAL_SETTLE).await;
+        }
     }
 
     /// Stop the render task and release the rich surface before the interactive
@@ -1493,6 +1506,14 @@ mod tests {
                 "hardline"
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn test_renderer_does_not_delay_stage_settle() {
+        let progress = LaunchProgress::for_test(test_diagnostics());
+        tokio::time::timeout(Duration::from_millis(20), progress.settle_stage_visual())
+            .await
+            .expect("test renderer should not sleep");
     }
 
     #[test]

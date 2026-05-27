@@ -71,7 +71,7 @@ Every `jackin ...` invocation mints a run diagnostics ID before command-specific
 9. **Start the agent container detached** (`docker run -d ... <image> <agent>`) with `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the initial tab; it is not a container-level environment variable.
 10. **Attach the operator terminal** via `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and renders the in-container multiplexer.
 
-Launch progress is emitted through <RepoFile path="src/runtime/progress.rs" />. Rich terminals render the Ratatui launch cockpit; low-capability or non-interactive terminals receive compact deterministic stage lines. The public stages are stable (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even when implementation details change underneath.
+Launch progress is emitted through <RepoFile path="src/runtime/progress.rs" />. Rich terminals render the Ratatui launch cockpit; low-capability or non-interactive terminals receive compact deterministic stage lines. The public stages are stable (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even when implementation details change underneath. The rich cockpit may briefly dwell on stage changes so very fast work still produces a legible full-sequence rail before the terminal is handed to the Capsule client.
 
 | Stage label | Technical work behind the label |
 |---|---|
