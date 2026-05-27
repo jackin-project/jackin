@@ -2548,10 +2548,12 @@ async fn load_role_with(
             if let Some(progress) = steps.progress_mut() {
                 progress
                     .stage_failed(super::progress::LaunchFailure {
-                        title: launch_failure_title(&error),
-                        summary: short_launch_diagnosis(&error),
+                        title: launch_failure_title(failed_stage, &error),
+                        summary: short_launch_diagnosis(failed_stage, &error),
                         next_step: None,
                         stage: failed_stage,
+                        diagnostics_path: None,
+                        command_output_path: None,
                     })
                     .await;
             }
@@ -2566,7 +2568,10 @@ async fn load_role_with(
     }
 }
 
-fn launch_failure_title(error: &anyhow::Error) -> String {
+fn launch_failure_title(stage: super::progress::LaunchStage, error: &anyhow::Error) -> String {
+    if stage == super::progress::LaunchStage::DerivedImage {
+        return "Docker build failed".to_string();
+    }
     let text = error.to_string().to_ascii_lowercase();
     if text.contains("docker") {
         "Docker unavailable".to_string()
@@ -2577,7 +2582,10 @@ fn launch_failure_title(error: &anyhow::Error) -> String {
     }
 }
 
-fn short_launch_diagnosis(error: &anyhow::Error) -> String {
+fn short_launch_diagnosis(stage: super::progress::LaunchStage, error: &anyhow::Error) -> String {
+    if stage == super::progress::LaunchStage::DerivedImage {
+        return "Building the Docker container failed.".to_string();
+    }
     error.chain().next().map_or_else(
         || "launch did not complete".to_string(),
         ToString::to_string,

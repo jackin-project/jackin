@@ -1,6 +1,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::process::ExitStatus;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -94,6 +95,52 @@ impl RunDiagnostics {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn command_output_path(&self, name: &str) -> PathBuf {
+        self.path.with_file_name(format!(
+            "{}.{}.log",
+            self.run_id,
+            sanitize_artifact_name(name)
+        ))
+    }
+
+    pub fn write_command_output(
+        &self,
+        name: &str,
+        command: &str,
+        cwd: Option<&Path>,
+        status: ExitStatus,
+        stdout: &[u8],
+        stderr: &[u8],
+    ) -> Option<PathBuf> {
+        let path = self.command_output_path(name);
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&path)
+            .ok()?;
+        let cwd = cwd.map_or_else(
+            || "(current process cwd)".to_string(),
+            |path| path.display().to_string(),
+        );
+        let _ = writeln!(file, "run: {}", self.run_id);
+        let _ = writeln!(file, "command: {command}");
+        let _ = writeln!(file, "cwd: {cwd}");
+        let _ = writeln!(file, "status: {status}");
+        let _ = writeln!(file);
+        let _ = writeln!(file, "----- stdout -----");
+        let _ = file.write_all(stdout);
+        if !stdout.ends_with(b"\n") {
+            let _ = writeln!(file);
+        }
+        let _ = writeln!(file, "----- stderr -----");
+        let _ = file.write_all(stderr);
+        if !stderr.ends_with(b"\n") {
+            let _ = writeln!(file);
+        }
+        Some(path)
     }
 
     pub fn compact(&self, kind: &str, message: &str) {
@@ -221,12 +268,49 @@ fn remove_run_entry(path: &Path) -> std::io::Result<()> {
     if metadata.file_type().is_dir() {
         fs::remove_dir_all(path)
     } else {
+        if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+            remove_run_sidecars(path);
+        }
         fs::remove_file(path)
+    }
+}
+
+fn remove_run_sidecars(run_path: &Path) {
+    let Some(dir) = run_path.parent() else {
+        return;
+    };
+    let Some(stem) = run_path.file_stem().and_then(|stem| stem.to_str()) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let prefix = format!("{stem}.");
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with(&prefix) && path != run_path {
+            let _ = fs::remove_file(path);
+        }
     }
 }
 
 fn run_dir(paths: &JackinPaths) -> PathBuf {
     paths.data_dir.join(RUN_DIR)
+}
+
+fn sanitize_artifact_name(name: &str) -> String {
+    let mut out = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').chars().take(64).collect()
 }
 
 fn mint_run_id() -> String {

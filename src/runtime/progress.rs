@@ -1,4 +1,5 @@
 use std::io::{IsTerminal, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -162,6 +163,8 @@ pub struct LaunchFailure {
     pub summary: String,
     pub next_step: Option<String>,
     pub stage: LaunchStage,
+    pub diagnostics_path: Option<PathBuf>,
+    pub command_output_path: Option<PathBuf>,
 }
 
 type SharedView = Arc<std::sync::Mutex<LaunchView>>;
@@ -358,10 +361,17 @@ impl LaunchProgress {
         self.compact_line(stage, StageStatus::Skipped, &reason);
     }
 
-    pub async fn stage_failed(&mut self, failure: LaunchFailure) {
+    pub async fn stage_failed(&mut self, mut failure: LaunchFailure) {
         let stage = failure.stage;
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
+        failure.diagnostics_path = Some(self.diagnostics.path().to_path_buf());
+        if failure.command_output_path.is_none() {
+            let docker_output = self.diagnostics.command_output_path("docker-build");
+            if docker_output.exists() {
+                failure.command_output_path = Some(docker_output);
+            }
+        }
         self.with_view(|v| {
             update_stage(v, stage, StageStatus::Failed, &summary);
             v.status.clone_from(&summary);
@@ -990,7 +1000,10 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
 fn labels_line(view: &LaunchView, frozen: bool) -> Line<'static> {
     let active = active_stage_index(view);
     let bright = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
-    let active_style = if bright {
+    let active_failed = view.stages[active].status == StageStatus::Failed;
+    let active_style = if active_failed {
+        Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD)
+    } else if bright {
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
     } else {
         Style::default()
@@ -1042,7 +1055,12 @@ fn format_activity(status: &str) -> String {
 fn active_stage_index(view: &LaunchView) -> usize {
     view.stages
         .iter()
-        .position(|row| row.status == StageStatus::Running)
+        .position(|row| row.status == StageStatus::Failed)
+        .or_else(|| {
+            view.stages
+                .iter()
+                .position(|row| row.status == StageStatus::Running)
+        })
         .or_else(|| {
             view.stages
                 .iter()
@@ -1088,8 +1106,18 @@ fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailu
         .as_deref()
         .map(|next| format!("\n\n{next}"))
         .unwrap_or_default();
+    let diagnostics = failure
+        .diagnostics_path
+        .as_ref()
+        .map(|path| format!("\nrun diagnostics · {}", path.display()))
+        .unwrap_or_default();
+    let command_output = failure
+        .command_output_path
+        .as_ref()
+        .map(|path| format!("\ndocker output · {}", path.display()))
+        .unwrap_or_default();
     let message = format!(
-        "{}\n\nstage · {}{next}\n\ndiagnostics · {run_id}",
+        "{}\n\nstage · {}\nrun · {run_id}{diagnostics}{command_output}{next}",
         failure.summary,
         failure.stage.label(),
     );
@@ -1141,10 +1169,10 @@ const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
 
 /// Full-screen opaque overlay over the live docker-build output, scrollable.
 /// Opened by clicking the footer activity; dismissed by `Esc`/`q` or a click.
-/// Lines are not wrapped so one log line maps to one row — that keeps the
-/// tail-follow and scroll offset exact; long lines clip at the right edge (the
-/// full output is in the diagnostics run file under `--debug`). The key hint
-/// renders in the bottom footer row, never inside the box (TUI design rule).
+/// Long lines wrap inside the modal instead of requiring horizontal scroll;
+/// continuation rows carry a visible prefix so wrapped Docker output remains
+/// easy to distinguish from separate log lines. The key hint renders in the
+/// bottom footer row, never inside the box (TUI design rule).
 fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
     use crate::console::widgets::scrollable::{render_scrollable_block, viewport_height};
 
@@ -1175,13 +1203,14 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     // scrollbar is correct. Cloning the (capped) buffer is acceptable here: the
     // overlay is a transient, operator-opened modal, not the steady cockpit.
     let raw = crate::runtime::build_log::snapshot();
+    let viewport_w = crate::console::widgets::scrollable::viewport_width(box_area);
     let lines: Vec<Line<'_>> = if raw.is_empty() {
         vec![Line::from(Span::styled(
             "(waiting for docker build output…)",
             Style::default().fg(PHOSPHOR_DIM),
         ))]
     } else {
-        raw.into_iter().map(Line::from).collect()
+        wrap_build_log_lines(raw, viewport_w)
     };
 
     // `build_log_scroll` counts lines up from the tail (0 = follow newest).
@@ -1203,6 +1232,75 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     );
 
     crate::console::widgets::hints::render(frame, hint_area, BUILD_LOG_HINT);
+}
+
+const BUILD_LOG_WRAP_PREFIX: &str = "↳ ";
+
+fn wrap_build_log_lines(raw: Vec<String>, width: usize) -> Vec<Line<'static>> {
+    let width = width.max(1);
+    raw.into_iter()
+        .flat_map(|line| wrap_build_log_line(&line, width))
+        .collect()
+}
+
+fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
+    if line.is_empty() {
+        return vec![Line::from(String::new())];
+    }
+
+    let mut lines = Vec::new();
+    let mut rest = line.trim_end();
+    let continuation_width = width
+        .saturating_sub(BUILD_LOG_WRAP_PREFIX.chars().count())
+        .max(1);
+    let mut first = true;
+    while !rest.is_empty() {
+        let limit = if first { width } else { continuation_width };
+        let (segment, next) = split_wrapped_segment(rest, limit);
+        if first {
+            lines.push(Line::from(segment));
+            first = false;
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled(BUILD_LOG_WRAP_PREFIX, Style::default().fg(PHOSPHOR_DIM)),
+                Span::raw(segment),
+            ]));
+        }
+        rest = next;
+    }
+    lines
+}
+
+fn split_wrapped_segment(input: &str, limit: usize) -> (String, &str) {
+    if input.chars().count() <= limit {
+        return (input.to_string(), "");
+    }
+
+    let mut hard_end = input.len();
+    let mut last_space = None;
+    let mut after_last_space = 0;
+    for (count, (idx, ch)) in input.char_indices().enumerate() {
+        if count == limit {
+            hard_end = idx;
+            break;
+        }
+        if ch.is_whitespace() && count > 0 {
+            last_space = Some(idx);
+            after_last_space = idx + ch.len_utf8();
+        }
+    }
+
+    if let Some(space) = last_space {
+        let segment = input[..space].trim_end().to_string();
+        let rest = input[after_last_space..].trim_start();
+        if !segment.is_empty() && !rest.is_empty() {
+            return (segment, rest);
+        }
+    }
+
+    let segment = input[..hard_end].to_string();
+    let rest = input[hard_end..].trim_start();
+    (segment, rest)
 }
 
 fn draw_select(
@@ -1288,6 +1386,8 @@ mod tests {
             summary: "it failed".to_string(),
             next_step: None,
             stage: LaunchStage::Network,
+            diagnostics_path: None,
+            command_output_path: None,
         }
     }
 
@@ -1370,6 +1470,107 @@ mod tests {
     }
 
     #[test]
+    fn failed_stage_is_the_active_progress_label() {
+        let mut view = initial_view();
+        update_stage(
+            &mut view,
+            LaunchStage::Credentials,
+            StageStatus::Done,
+            "ready",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::Construct,
+            StageStatus::Done,
+            "ready",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::DerivedImage,
+            StageStatus::Failed,
+            "Building the Docker container failed.",
+        );
+
+        assert_eq!(
+            view.stages[active_stage_index(&view)].stage,
+            LaunchStage::DerivedImage
+        );
+        let labels = labels_line(&view, true);
+        let failed = labels
+            .spans
+            .iter()
+            .find(|span| span.content == "derived image")
+            .expect("failed stage label should be visible");
+        assert_eq!(failed.style.fg, Some(DANGER_RED));
+    }
+
+    #[test]
+    fn build_log_lines_wrap_with_visible_continuation() {
+        let lines = wrap_build_log_lines(
+            vec![
+                "#5 RUN current_gid=\"$(id -g agent)\" && current_uid=\"$(id -u agent)\""
+                    .to_string(),
+            ],
+            32,
+        );
+
+        assert!(lines.len() > 1);
+        assert!(crate::console::widgets::scrollable::max_line_width(&lines) <= 32);
+        let rendered = lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| &*span.content)
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rendered[0], "#5 RUN current_gid=\"$(id -g");
+        assert!(
+            rendered[1].starts_with(BUILD_LOG_WRAP_PREFIX),
+            "continuation row must be visually marked: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
+        crate::runtime::build_log::begin();
+        crate::runtime::build_log::push_line(
+            "#4 FROM docker.io/projectjackin/jackin-the-architect:latest@sha256:08d62f4027f941d8f5ee1742b6b0ba9e8a3e276ab7626967b0e1de27917a0e94",
+        );
+        crate::runtime::build_log::end();
+
+        let backend = TestBackend::new(56, 12);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let view = LaunchView {
+            identity: None,
+            stages: Vec::new(),
+            status: String::new(),
+            failure: None,
+            failure_ack: false,
+            frame: 0,
+            build_log_open: true,
+            build_log_scroll: 0,
+            build_log_hover: false,
+        };
+        terminal
+            .draw(|frame| render_build_log_dialog(frame, frame.area(), &view))
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let rendered = format!("{buffer:?}");
+        assert!(rendered.contains(BUILD_LOG_WRAP_PREFIX));
+        let bottom = 10;
+        let horizontal_scroll_cells = (1..55)
+            .filter(|x| ["━", "·"].contains(&buffer[(*x, bottom)].symbol()))
+            .count();
+        assert_eq!(
+            horizontal_scroll_cells, 0,
+            "wrapped lines should fit the viewport and avoid horizontal scrollbar"
+        );
+    }
+
+    #[test]
     fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
         let backend = TestBackend::new(120, 28);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -1422,6 +1623,8 @@ mod tests {
             summary: "docker daemon is not responding".to_string(),
             next_step: Some("Start Docker and run the command again.".to_string()),
             stage: LaunchStage::Network,
+            diagnostics_path: None,
+            command_output_path: None,
         });
         terminal
             .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true, None))
