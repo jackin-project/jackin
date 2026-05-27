@@ -31,10 +31,138 @@ The connective tissue across all four is the shared design-component crate (`jac
 
 - **One pattern, one component — zero duplication.** If a visual pattern, widget, block, or piece of UI logic can appear twice, it is a single shared implementation with one source of truth, instantiated per use site — never a second copy kept in sync by hand. Copying code to produce a variant is forbidden; the correct move is to parameterize or extend the one implementation so all instances advance together. This operationalizes the existing "Component Reuse — Strict Rule" in [TUI Design Decisions](/reference/tui-design-decisions/) structurally rather than by review discipline: with the shared component crate in place, the duplication becomes hard to introduce, not merely discouraged.
 - **One design system, every terminal surface.** The host console, launch cockpit, and capsule render the same brand language (PHOSPHOR palette, tight chrome, footer-only hints, identical confirm / picker / modal shapes). They must consume the *same* components from the *same* crate, so a confirm dialog is literally the same code everywhere — not two copies a rule says must match.
+- **Frontend-team workflow, terminal edition.** Agents should work like a frontend team using Storybook and a component library: pick an existing component from the catalog, pass props/state, wire messages/effects, and ship. They should not invent a new dialog, picker, footer, list row, or panel while implementing a feature.
 - **Recognizable, not bespoke.** A contributor (or agent) reading the code should recognize the component vocabulary immediately: `Panel`, `ScrollableBlock`, `ConfirmDialog`, `FilterList`, `TabStrip`, `HintBar`, `Modal`. New screens compose existing components; a genuinely new component is added only when none fits, with operator sign-off per the strict-reuse rule.
 - **Idiomatic Ratatui.** Components are `StatefulWidget` / `WidgetRef` implementations with their own `State`, the shape the Ratatui ecosystem recognizes and the [component template](https://ratatui.rs/templates/component/project-structure/) is built around — so the codebase reads like a Ratatui app, not a one-off renderer.
 - **One source of truth for tokens.** Color values, spacing, tab gap, and hint formatting are defined once and converted per surface (raw-ANSI `Rgb` today, `ratatui::Color` for widgets), never re-declared inline.
 - **Async-first rendering — never block the loop.** Every animated or progress-bearing surface keeps drawing on its own cadence *while work is in flight*. Rendering and long-running work (Docker calls, image pulls, network waits, git, daemon round-trips, disk inspection) run on independent async tasks: an interval-/`Message`-driven loop repaints shared state, and the work mutates that state from a `tokio::select!` arm, a `tokio::spawn`d task, or `spawn_blocking` — never inline with the draw. A surface that only repaints *between* sequential blocking steps freezes the instant a step is slow: the digital rain stalls, the active-stage pulse stops, the spinner hangs, and the operator cannot tell whether jackin' is working or wedged. Steady motion regardless of how long the underlying step takes is what makes the TUI feel native, snappy, and alive — and that "snappy and alive" feel is an explicit operator goal for this item, not a nice-to-have side effect. The acceptance test for any new long-running step on an animated surface: *does the animation keep moving smoothly while the step runs?* If it stutters, the step is on the render loop and must move off it. The concrete sites to migrate are enumerated in the [blocking-work inventory](#blocking-work-inventory--async-migration-targets) below.
+
+## Product goal — component library first
+
+The end state should feel like a mature frontend codebase:
+
+- A contributor opens the **TUI lookbook**, finds `ConfirmDialog`, `FilterListPicker`, `StatusFooter`, `ScrollablePanel`, or `TabStrip`, and uses it.
+- Component pages show real rendered states, accepted props/state, emitted messages, keyboard/mouse contract, layout constraints, accessibility notes, screenshots/SVGs, and usage examples.
+- New feature work starts from "which existing component expresses this?" not "draw a block and spans."
+- Design-system work has its own review path: add or change a component once, update its stories/tests, then consume it in product screens.
+- Product screens compose components; product screens do not own palette constants, border glyphs, hint rendering, button styling, modal chrome, list-row highlight rules, scrollbar math, or text-input behavior.
+
+The practical rule: **feature PRs may use components; component PRs may create components.** If a feature needs a new reusable widget, split that into a component-library step first unless the feature is a tiny one-off with a written reason. This mirrors frontend teams that keep design-system primitives separate from app screens, and it makes agents less likely to create near-copy UI.
+
+### Component maturity ladder
+
+Every repeated TUI pattern should move through this ladder:
+
+| Level | State | Allowed use |
+|---|---|---|
+| 0 — scattered | Inline spans/layout in product code | Existing debt only |
+| 1 — local helper | Helper in `src/console/widgets` or capsule raw ANSI | May be used by one surface, not copied |
+| 2 — shared model | Shared state/input model in `jackin-tui`, per-surface renderer | Good for capsule-before-Ratatui transition |
+| 3 — shared Ratatui widget | `StatefulWidget` / pure renderer in `jackin-tui` | Default for host + launch |
+| 4 — catalogued component | Widget has stories, snapshot/SVG lookbook, usage docs, tokens, states | Required before broad reuse |
+| 5 — cross-surface canonical | Host, launch, capsule all consume one implementation | Target state |
+
+This lets the migration be incremental without pretending partial sharing is complete.
+
+### Component contract
+
+Each `jackin-tui` component should expose the same shape:
+
+| Contract piece | Purpose |
+|---|---|
+| `Props` | Immutable inputs from product model: labels, rows, mode, disabled state, severity |
+| `State` | Local UI state: focus, filter text, scroll offset, hover, caret, selected row |
+| `Message` / `Outcome` | Semantic output: `Selected(id)`, `Cancelled`, `FilterChanged`, `Scrolled`, `Copied` |
+| `Effect` hooks | Optional typed requests: clipboard copy, diagnostics note, async load trigger |
+| `render(&Props, &State, area)` | Pure Ratatui render, no I/O, no mutation |
+| `update(&mut State, ComponentEvent) -> ComponentOutcome` | Key/mouse/focus handling local to the component |
+| stories/tests | Render all states through `TestBackend`; pin keyboard/mouse behavior |
+
+Current code already hints at this contract: many widgets have `State`, `handle_key`, `render`, and `ModalOutcome`. The refactor should preserve that useful shape and promote it into `jackin-tui` instead of replacing it with a vague abstraction.
+
+### Local audit — what is already reusable but misplaced
+
+The codebase is not starting from zero. The useful shape already exists in fragments:
+
+| Existing surface | Reusable thing hiding there | Migration target |
+|---|---|---|
+| <RepoFile path="src/console/widgets/role_picker.rs" />, <RepoFile path="src/console/widgets/github_picker.rs" />, <RepoFile path="src/console/widgets/workdir_pick.rs" /> | filtered list picker with local state, filter input, selected row, `ModalOutcome` | generic `FilterListPicker<T>` with typed row IDs and section headers |
+| <RepoFile path="src/console/widgets/agent_choice/mod.rs" />, <RepoFile path="src/console/widgets/source_picker.rs" />, <RepoFile path="src/console/widgets/scope_picker.rs" /> | small option chooser with button/list focus | `ChoiceDialog<T>` / `SegmentedChoice<T>` |
+| <RepoFile path="src/console/widgets/confirm.rs" />, <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | confirm dialog, default focus, button strip | one `ConfirmDialog` with `severity`, `body`, `default_focus`, and `trust_variant` props |
+| <RepoFile path="src/console/widgets/text_input.rs" />, <RepoFile path="crates/jackin-tui/src/lib.rs" /> | text-entry model plus rendered dialog | consolidate on `TextField` + Ratatui `TextInputDialog`; retire `ratatui-textarea` unless a feature gap remains |
+| <RepoFile path="src/console/widgets/scrollable.rs" /> | scroll math, selected-line render helpers, proportional scrollbars | `ScrollablePanel`, `Scrollbar`, and shared clamp/update helpers |
+| <RepoFile path="src/console/widgets/hints.rs" />, <RepoFile path="src/console/widgets/status_bar.rs" />, <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> | footer hints, status bars, tab/chrome tokens | `HintBar`, `StatusFooter`, `TabStrip`, `BrandHeader` |
+| <RepoFile path="src/console/widgets/error_popup.rs" />, <RepoFile path="src/runtime/progress.rs" /> | error popup already reused by launch, but through console internals | move to `jackin-tui::components::ErrorDialog` |
+| <RepoFile path="src/console/widgets/file_browser/mod.rs" />, <RepoFile path="src/console/widgets/op_picker/mod.rs" />, <RepoFile path="src/console/widgets/auth_panel/mod.rs" /> | larger composed flows built from list, text input, status, footer, and modal primitives | keep app/domain state local; replace private drawing with shared primitives |
+
+The current file layout already proves the frontend-style component model is compatible with the codebase: most widgets have a state object, a key handler, a renderer, and narrow tests. The roadmap should therefore prefer **promotion and generalization** over replacement. The first refactor pass should move those pieces into `jackin-tui` with minimal behavior change, then make product screens consume them.
+
+### Refactor targets — remove these drift sources first
+
+The same audit found concrete places where a component library would pay off immediately:
+
+| Drift source | Evidence | Fix |
+|---|---|---|
+| Local palette constants | `Color::Rgb(0,255,65)` is re-declared in save/source/scope widgets, file browser, save input code, capsule dialogs/status bar, and runtime progress animation code | only token modules may define RGB values; all product code imports semantic tokens |
+| Runtime imports console widgets | <RepoFile path="src/runtime/progress.rs" /> uses console widget modules for launch UI | move reused widgets into `jackin-tui`; runtime imports the design crate only |
+| Capsule raw ANSI copies dialog chrome | <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> has its own `render_box`, filter input, row, hint row, confirm, and picker code | share models/tokens first; replace renderer once capsule has a Ratatui frame |
+| Multiple picker implementations | host role/github/workdir pickers, launch select list, capsule palette/agent/split pickers | one generic picker primitive plus app-specific row adapters |
+| Multiple button-strip styles | confirm, save/discard, source/scope choices, capsule menus | `ButtonStrip` owns focus, layout, disabled state, and default action |
+| Render mutates state | scroll clamping and geometry cache writes happen during draw | components expose `layout_snapshot`/`Geometry` outputs from update or post-render measurement, not hidden mutation in view |
+
+### Proposed `jackin-tui` package layout
+
+Keep the existing crate and grow it deliberately:
+
+```text
+crates/jackin-tui/src/
+  tokens.rs          # Rgb, semantic tokens, spacing, glyphs, timing
+  theme.rs           # Ratatui + ANSI adapters, terminal capability fallback
+  geometry.rs        # centering, clamp, scrollbar, tab layout, text measurement
+  runtime/
+    message.rs       # shared event/message traits and common input events
+    effect.rs        # typed side-effect vocabulary used by host runtime
+    dirty.rs         # Dirty flags and redraw scheduler types
+    subscription.rs  # ticks, terminal events, long-lived external streams
+  components/
+    panel.rs
+    modal.rs
+    hint_bar.rs
+    status_footer.rs
+    button_strip.rs
+    text_input.rs
+    filter_list.rs
+    scrollable.rs
+    tab_strip.rs
+    confirm.rs
+    error_dialog.rs
+    file_browser.rs  # composed, only after primitives are stable
+```
+
+The `runtime/` module can start as small shared traits and types if moving the full host loop into the crate is too much at first. The important boundary is that product crates own domain data and effects, while `jackin-tui` owns reusable UI state machines, rendering, tokens, and layout math.
+
+### Component extraction order
+
+1. **Freeze the component inventory.** Add a tracked table of components, owners, current call sites, states, and maturity level. New TUI work must name the component it uses or the reason it cannot.
+2. **Promote tokens and geometry.** Move every inline RGB value, spacing constant, border glyph, scrollbar helper, tab layout helper, and centering helper behind `jackin-tui` tokens/adapters.
+3. **Promote pure models.** `TextField`, `HintSpan`, `TabCell`, `ModalOutcome`, picker row IDs, button focus, and scroll state become reusable model types before renderers move.
+4. **Promote primitives.** `Panel`, `ModalFrame`, `HintBar`, `StatusFooter`, `ButtonStrip`, `TextInput`, `FilterInput`, `ScrollablePanel`, `Scrollbar`, and `TabStrip` land in `jackin-tui` with `TestBackend` snapshots.
+5. **Promote dialogs.** Rebuild confirm, error, text-input, filter-list, choice, save/discard, and status popups from primitives. Existing app-specific dialogs become thin props/state adapters.
+6. **Consolidate launch.** Launch progress stops importing `src/console/widgets`; it consumes `jackin-tui` components and emits app messages/effects.
+7. **Bridge capsule.** Capsule consumes shared tokens/models with raw-ANSI adapters until Phase 6 gives it a Ratatui frame.
+8. **Replace capsule renderers.** Once capsule renders through Ratatui, delete raw dialog/picker/status renderer copies and consume canonical components.
+9. **Generate lookbook.** Every canonical component gets stories, snapshots, generated SVG previews, and usage examples.
+
+### Guardrails that make reuse enforceable
+
+These are implementation rules for future PRs under this item:
+
+- No new direct `Color::Rgb(...)` in product code. RGB values belong in `jackin-tui` tokens or a documented adapter test.
+- No new raw ANSI color literals for jackin-owned chrome. Capsule may have an adapter, but it consumes shared `Rgb` tokens.
+- No product screen hand-rolls a bordered modal, button row, footer hint line, tab strip, filter row, scrollbar, or selectable list once the matching component exists.
+- No new `src/runtime` dependency on `src/console/widgets`; both surfaces import `jackin-tui`.
+- No component becomes canonical without keyboard/mouse tests, `TestBackend` snapshots, and a lookbook story.
+- No app-specific component is promoted until its domain data is separated from UI state. Example: the 1Password picker can keep vault/item domain loading locally, but list selection, filter text, loading/error chrome, and button behavior must be shared.
 
 ## Relationship to existing roadmap work
 
@@ -168,6 +296,46 @@ Supporting practices:
 <Aside type="caution">
 Dogmatic TEA clones the whole model on every update. jackin's state is large, so a clone-per-keystroke model is impractical. The realistic target is Ratatui's documented **mutable** variant: `fn update(&mut self, msg: Message)` mutating the model in place, paired with a strictly **pure** `fn view(&self, frame)`. The win is the `Message` boundary and the pure view, not literal immutability.
 </Aside>
+
+## Additional research pass — stronger architecture ideas
+
+The post-#452 re-analysis should not stop at "move files into components." A broader research pass across Ratatui, Bubble Tea, Textual, `tui-realm`, and `tui-term` suggests a better target: **a small jackin-owned TUI runtime**, not a generic framework dependency and not a loose convention.
+
+### Source ideas worth adopting
+
+| Source | Useful idea | jackin' adaptation |
+|---|---|---|
+| [Ratatui application patterns](https://ratatui.rs/concepts/application-patterns/) | Ratatui explicitly frames TEA, component architecture, and Flux as app-level patterns rather than renderer features. | Treat Ratatui as the renderer; jackin' owns the app runtime around it. |
+| [Ratatui FAQ — async](https://ratatui.rs/faq/#when-should-i-use-tokio-and-asyncawait) | `terminal.draw` is the only Ratatui call that must touch the terminal; async mainly matters for input and app work. | Enforce one draw owner; all Docker, 1Password, filesystem, capsule, and diagnostics work is an effect that returns a message. |
+| [Ratatui component template](https://ratatui.rs/templates/component/project-structure/) | `action.rs`, `app.rs`, `tui.rs`, and `components/` keep update, terminal lifecycle, and components apart. | Use the same separation, but adapted to the existing crate layout instead of importing a template wholesale. |
+| [Bubble Tea](https://github.com/charmbracelet/bubbletea) | `Model.Init`, `Model.Update`, `Model.View`, plus `Cmd` for async side effects, gives a concise runtime contract; Bubbles separates shared components from apps. | Add typed `Effect`s returned by `update`; put reusable UI in `jackin-tui`, with app-specific state in host/capsule modules. |
+| [Textual reactivity](https://textual.textualize.io/guide/reactivity/) | Smart refresh: state changes mark widgets dirty and coalesce refreshes; watch hooks react to changes. | Do not add magic descriptors in Rust; do add explicit invalidation: messages declare `Dirty::Layout`, `Dirty::View(ComponentId)`, or `Dirty::Animation`. |
+| [`tui-realm`](https://github.com/veeso/tui-realm) | A React/Elm-inspired ratatui framework proves the shape is viable: components, event updates, declarative rendering. | Use as a design reference, not a dependency: jackin' needs container attach, diagnostics, and host-suspend effects that are too project-specific. |
+| [`tui-term`](https://docs.rs/tui-term/) | A Ratatui pseudo-terminal widget already maps `vt100::Screen` into Ratatui. | Keep it as the benchmark baseline for capsule pane bodies; decide with throughput and allocation measurements. |
+
+### The higher bar: `TuiRuntime`, not just `Message`
+
+The roadmap should target an internal runtime with these contracts:
+
+1. **One draw owner.** A `TuiRuntime` owns the terminal backend, raw mode, alternate screen, mouse capture, diagnostics routing, and `terminal.draw`. No component, launch step, or capsule adapter may call `draw` directly.
+2. **Messages are facts, not commands.** `Message` values describe what happened (`KeyPressed`, `StageDone`, `InstancesRefreshed`, `CapsuleDetached`, `BuildLogClicked`). They do not perform I/O.
+3. **Effects are the only side-effect door.** `update(&mut Model, Message) -> Effects` returns typed effects such as `DockerBuild`, `OpLoad`, `InspectMounts`, `SuspendForPrompt`, `AttachCapsule`, `WriteDiagnostics`, `SetTerminalTitle`, `ClipboardCopy`, `TickAfter`, or `Quit`. Effects run outside the draw/update path and return messages.
+4. **Subscriptions own long-lived inputs.** Keyboard/mouse/focus/resize events, animation ticks, build-log updates, capsule socket events, Docker instance refresh, and diagnostics lifecycle updates are `Subscription`s. The runtime starts/stops them based on the active view and component tree.
+5. **Dirty state is explicit.** Every message/update marks what changed. The runtime coalesces dirty flags and redraws only when state, layout, or animation actually changed. Animations register their own tick subscription; idle views do not redraw at 20 Hz.
+6. **Components are pure renderers plus local update.** A component owns its local UI state, handles component-scoped messages, emits effects, and renders from immutable input. Cross-component mutation happens only through parent messages.
+7. **Terminal suspension is an effect.** Cooked prompts, token generation, external editors, and `docker exec -it` attach are `SuspendTerminal` / `AttachTerminal` effects with explicit restore semantics, not inline calls sprinkled through event loops.
+8. **Diagnostics are a runtime concern.** Since a rich surface owns the terminal, debug output routes through the active diagnostics run from the runtime. Components emit structured diagnostics events; they never print.
+9. **Replay is possible by construction.** A recorded sequence of messages plus effect results should replay the state machine in a headless `TestBackend`. This unlocks regression tests for console → launch → attach transitions that screenshots alone cannot cover.
+
+### Why not adopt a framework?
+
+The external frameworks validate the pattern, but jackin' should not depend on one wholesale:
+
+- The host flow has project-specific effects: sensitive host prompts, container attach, diagnostics run files, Capsule socket events, host-alt-screen inheritance, and no-debug-spew guarantees.
+- The capsule needs a custom backend that serializes Ratatui buffer diffs to an attach socket, not a normal local terminal.
+- The shared `jackin-tui` crate already exists and already owns tokens and pure layout helpers. The right move is to grow it into the project-specific runtime/component layer rather than route through a generic framework and then fight its assumptions.
+
+The implementation can still borrow proven vocabulary: Bubble Tea's `Cmd` becomes jackin's typed `Effect`; Textual's smart refresh becomes explicit dirty invalidation; Ratatui's component template supplies the file boundary; `tui-term` supplies the pane-body benchmark baseline.
 
 ## Gap analysis
 
