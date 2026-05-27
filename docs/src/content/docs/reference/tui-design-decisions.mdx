@@ -121,6 +121,16 @@ When a launch finds unfinished jackin instances for the target workspace, the op
 
 jackin' shows digital rain in three places. Two are **session-boundary** rituals tied to the global instance lifecycle. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and plays only before a launch when no jackin-managed role containers are active and no launch has already claimed the empty construct. The outro is two screens too — the decelerating warp, then the closing logo/time-in-construct caption — and plays only after the foreground session when no role containers remain. Starting or leaving a second concurrent instance does not play either boundary ritual because the operator is still inside the construct. There is no manual rain-off or rich-TUI-off switch: non-interactive shells, CI, `TERM=dumb`, and terminals below the supported viewport simply do not enter the rich boundary or launch surfaces. The third rain surface is the **in-box loading rain** inside the loading cockpit's body box — deliberate per-launch ambiance while the operator waits, not a boundary ritual. `JACKIN_NO_MOTION=1` keeps the same layout while freezing every animated accent — the in-box rain, the active-block pulse, and the stage-word pulse all go static.
 
+Boundary ritual verification is env-gated instead of CLI-flagged so the operator-facing command surface stays lifecycle-driven. These variables are for local development and visual QA only; they affect only the current process invocation and are not config:
+
+```bash
+JACKIN_FORCE_BOUNDARY_INTRO=1 jackin load
+JACKIN_FORCE_BOUNDARY_OUTRO=1 jackin load
+JACKIN_FORCE_BOUNDARY_RITUALS=1 jackin load
+```
+
+`JACKIN_FORCE_BOUNDARY_INTRO=1` plays the two-screen intro even when other jackin-managed role containers are already running. `JACKIN_FORCE_BOUNDARY_OUTRO=1` plays the two-screen outro after the foreground session returns even when other role containers remain. When forced while other containers remain, the outro is a visual verification path only and does not consume the final-exit marker; the real last-exit outro is still owned by the process that observes zero running role containers and successfully consumes that marker. `JACKIN_FORCE_BOUNDARY_RITUALS=1` enables both force paths. Empty, `0`, `false`, `no`, and `off` values are treated as disabled.
+
 ### One continuous alternate screen across the launch flow
 
 A console-triggered launch moves through several full-screen surfaces in sequence — the console manager, the loading cockpit, the in-container capsule multiplexer, and, when the last role container exits, the exit outro. The terminal must stay on **one** alternate screen for the whole sequence; it must never drop back to the cooked primary screen between surfaces. A flash of the operator's shell mid-launch is a chrome-consistency bug.

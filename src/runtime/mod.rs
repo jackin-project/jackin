@@ -39,7 +39,8 @@ pub use self::launch::{LoadOptions, load_role};
 pub use self::naming::matching_family;
 pub(crate) use self::repo_cache::{RepoError, normalize_github_url};
 pub(crate) use self::universe::{
-    EntryClaim, StartKind, claim_entry as claim_construct_entry, release_entry_if_idle,
+    EntryClaim, StartKind, claim_entry as claim_construct_entry, force_boundary_intro_enabled,
+    release_entry_if_idle,
 };
 
 pub use self::launch::resolve_supported_agents_for_console;

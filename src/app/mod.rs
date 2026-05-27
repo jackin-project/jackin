@@ -41,7 +41,8 @@ async fn play_construct_intro_if_needed(
     docker: &impl DockerApi,
 ) -> runtime::EntryClaim {
     let claim = runtime::claim_construct_entry(paths, docker).await;
-    if claim.start_kind() == runtime::StartKind::FreshConstruct
+    if (claim.start_kind() == runtime::StartKind::FreshConstruct
+        || runtime::force_boundary_intro_enabled())
         && runtime::progress::rich_terminal_supported()
     {
         // The intro is two screens: the opening phrase/brand screen, then the

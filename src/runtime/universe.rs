@@ -11,6 +11,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::docker_client::DockerApi;
 use crate::paths::JackinPaths;
 
+const FORCE_BOUNDARY_RITUALS_ENV: &str = "JACKIN_FORCE_BOUNDARY_RITUALS";
+const FORCE_BOUNDARY_INTRO_ENV: &str = "JACKIN_FORCE_BOUNDARY_INTRO";
+const FORCE_BOUNDARY_OUTRO_ENV: &str = "JACKIN_FORCE_BOUNDARY_OUTRO";
+
 static CLAIM_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn marker_path(paths: &JackinPaths) -> PathBuf {
@@ -36,6 +40,33 @@ fn claim_token() -> String {
     format!("{}-{}-{counter}", std::process::id(), now_millis())
 }
 
+fn env_flag_enabled(value: Option<impl AsRef<std::ffi::OsStr>>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    let Some(value) = value.as_ref().to_str() else {
+        return true;
+    };
+    !matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "" | "0" | "false" | "no" | "off"
+    )
+}
+
+fn force_boundary_rituals_enabled() -> bool {
+    env_flag_enabled(std::env::var_os(FORCE_BOUNDARY_RITUALS_ENV))
+}
+
+#[must_use]
+pub fn force_boundary_intro_enabled() -> bool {
+    force_boundary_rituals_enabled() || env_flag_enabled(std::env::var_os(FORCE_BOUNDARY_INTRO_ENV))
+}
+
+#[must_use]
+pub fn force_boundary_outro_enabled() -> bool {
+    force_boundary_rituals_enabled() || env_flag_enabled(std::env::var_os(FORCE_BOUNDARY_OUTRO_ENV))
+}
+
 /// Whether a launch enters an empty construct or joins one already running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartKind {
@@ -55,6 +86,12 @@ pub enum StartKind {
 pub struct EntryClaim {
     kind: StartKind,
     token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExitClaim {
+    Missing,
+    Claimed { elapsed: Option<Duration> },
 }
 
 impl EntryClaim {
@@ -87,7 +124,7 @@ impl EntryClaim {
 /// Claim the construct-entry boundary for an actual launch.
 ///
 /// A fresh launch is one where Docker reports no running role containers and
-/// no marker or pending claim exists for an already-starting launch.
+/// no pending claim exists for an already-starting launch.
 pub async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryClaim {
     let Ok(names) = super::discovery::list_running_agent_names(docker).await else {
         return EntryClaim::none(StartKind::ResumeExisting);
@@ -157,22 +194,17 @@ fn remove_empty_pending_dir(paths: &JackinPaths) {
     }
 }
 
-/// Read the construct's start instant, delete the marker, and return the
-/// elapsed span. Returns `None` when no marker exists or it cannot be parsed.
-#[must_use]
-pub fn take_elapsed(paths: &JackinPaths) -> Option<Duration> {
-    take_exit_claim(paths)?
-}
-
 /// Claim the construct-exit boundary.
 ///
 /// The marker is the single-consumer close claim: whichever exit path removes
 /// it is the one that may render the rich outro. A malformed marker still
 /// grants the claim, but omits the elapsed line from the caption.
 #[must_use]
-pub(crate) fn take_exit_claim(paths: &JackinPaths) -> Option<Option<Duration>> {
+pub fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
     let file = marker_path(paths);
-    let content = std::fs::read_to_string(&file).ok()?;
+    let Ok(content) = std::fs::read_to_string(&file) else {
+        return ExitClaim::Missing;
+    };
     let _ = std::fs::remove_file(&file);
     let _ = std::fs::remove_dir_all(pending_dir(paths));
     let elapsed = content
@@ -181,7 +213,7 @@ pub(crate) fn take_exit_claim(paths: &JackinPaths) -> Option<Option<Duration>> {
         .ok()
         .and_then(|started| now_millis().checked_sub(started))
         .map(|elapsed_ms| Duration::from_millis(u64::try_from(elapsed_ms).unwrap_or(u64::MAX)));
-    Some(elapsed)
+    ExitClaim::Claimed { elapsed }
 }
 
 #[cfg(test)]
@@ -199,13 +231,46 @@ mod tests {
         mark_start(&paths, StartKind::FreshConstruct);
         assert!(marker_path(&paths).exists(), "marker written");
 
-        let elapsed = take_elapsed(&paths).expect("elapsed available");
+        let ExitClaim::Claimed {
+            elapsed: Some(elapsed),
+        } = take_exit_claim(&paths)
+        else {
+            panic!("elapsed claim available");
+        };
         assert!(
             elapsed < Duration::from_secs(5),
             "just-started span is small"
         );
         assert!(!marker_path(&paths).exists(), "marker cleared after take");
-        assert!(take_elapsed(&paths).is_none(), "second take is empty");
+        assert_eq!(
+            take_exit_claim(&paths),
+            ExitClaim::Missing,
+            "second take is empty"
+        );
+    }
+
+    #[test]
+    fn env_flag_falsey_values_are_disabled() {
+        for value in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("false"),
+            Some("no"),
+            Some("off"),
+        ] {
+            assert!(
+                !env_flag_enabled(value),
+                "value should be falsey: {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn env_flag_truthy_values_are_enabled() {
+        for value in [Some("1"), Some("true"), Some("yes"), Some("anything")] {
+            assert!(env_flag_enabled(value), "value should be truthy: {value:?}");
+        }
     }
 
     #[test]
@@ -216,12 +281,10 @@ mod tests {
 
         mark_start(&paths, StartKind::FreshConstruct);
 
-        assert!(
-            take_exit_claim(&paths).is_some(),
-            "first exit receives the close claim"
-        );
-        assert!(
-            take_exit_claim(&paths).is_none(),
+        assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
+        assert_eq!(
+            take_exit_claim(&paths),
+            ExitClaim::Missing,
             "second exit does not receive a duplicate outro claim"
         );
     }
@@ -234,7 +297,9 @@ mod tests {
 
         std::fs::write(marker_path(&paths), "not-a-timestamp").unwrap();
 
-        let elapsed = take_exit_claim(&paths).expect("marker grants close claim");
+        let ExitClaim::Claimed { elapsed } = take_exit_claim(&paths) else {
+            panic!("marker grants close claim");
+        };
         assert_eq!(elapsed, None, "malformed marker omits elapsed caption");
         assert!(
             !marker_path(&paths).exists(),

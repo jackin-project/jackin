@@ -30,6 +30,7 @@ use super::naming::{
 use super::repo_cache::{
     RepoResolveOptions, confirm_repo_removal_interactive, resolve_agent_repo_with,
 };
+use super::universe::ExitClaim;
 use crate::docker_client::DockerApi;
 
 const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
@@ -2603,6 +2604,7 @@ fn resolve_launch_role_source(
 }
 
 async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
+    let force_outro = super::universe::force_boundary_outro_enabled();
     let running = match list_running_agent_names(docker).await {
         Ok(names) => names,
         Err(e) => {
@@ -2631,15 +2633,23 @@ async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
                 run.compact("exit_summary", &row);
             }
         }
-        return;
+        if !force_outro {
+            return;
+        }
     }
 
     // Last container left the construct: clear the session marker and show the
     // two-screen outro (decelerating warp, then closing caption). Exits that
     // leave other instances running skip this entirely because the operator is
     // still inside the Construct.
-    let Some(elapsed) = super::universe::take_exit_claim(paths) else {
-        return;
+    let elapsed = if force_outro && !running.is_empty() {
+        None
+    } else {
+        match super::universe::take_exit_claim(paths) {
+            ExitClaim::Claimed { elapsed } => elapsed,
+            ExitClaim::Missing if force_outro => None,
+            ExitClaim::Missing => return,
+        }
     };
     if !super::progress::rich_terminal_supported() {
         return;
