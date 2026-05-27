@@ -53,6 +53,39 @@ pub const WHITE: Rgb = Rgb::new(255, 255, 255);
 /// "this is where you type" cue.
 pub const INPUT_BG_DIM: Rgb = Rgb::new(20, 24, 22);
 
+/// Tab-cell backgrounds shared by the in-container multiplexer status bar
+/// (`jackin-capsule`) and the host console tab strips (workspace editor,
+/// settings) so the two surfaces render identical tab chrome. Inactive
+/// tabs sit on a subtle dark grey; the active tab lifts to a graphite that
+/// stays distinct from the brand-green pill; hover lifts each one cell
+/// further.
+pub const TAB_BG_INACTIVE: Rgb = Rgb::new(30, 30, 30);
+pub const TAB_BG_INACTIVE_HOVER: Rgb = Rgb::new(48, 48, 48);
+pub const TAB_BG_ACTIVE: Rgb = Rgb::new(42, 42, 42);
+pub const TAB_BG_ACTIVE_HOVER: Rgb = Rgb::new(58, 58, 58);
+
+/// Link/clickable foreground used on the white bottom status bar (the
+/// container/instance-id chip) by both the in-container multiplexer and the
+/// host loading screen, so a clickable id reads the same on both surfaces.
+pub const LINK_BLUE: Rgb = Rgb::new(0, 80, 180);
+
+/// Burnt orange marking debug-mode chrome — the run-id chip on the status
+/// bar renders in this so the operator can tell at a glance they are inside
+/// a `--debug` run. Readable on the white status-bar band.
+pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
+
+/// Neutral gray for unfocused chrome borders — the in-container multiplexer's
+/// inactive pane border and the host's full-screen non-interactive frames
+/// (the launch cockpit box, the exit summary box) so chrome reads identically
+/// across surfaces and stays out of the way of focused, brand-green content.
+pub const BORDER_GRAY: Rgb = Rgb::new(80, 80, 80);
+
+/// Error/danger accent — failed launch stages, error-popup borders, invalid
+/// input fields, and danger labels. Shared across every TUI surface so the
+/// "something went wrong" colour never drifts between the console widgets and
+/// the launch cockpit.
+pub const DANGER_RED: Rgb = Rgb::new(255, 94, 122);
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.
@@ -70,14 +103,24 @@ pub struct TabCell<'a> {
 /// jackin-capsule both follow this spacing.
 pub const TAB_GAP: u16 = 1;
 
-/// One footer-hint span. Each consumer renders the same hint list
-/// in its own format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One footer-hint span — the single hint vocabulary shared by every TUI
+/// surface (host cockpit, workspace manager, in-container multiplexer). Each
+/// backend has its own renderer over these spans, but the vocabulary and
+/// styling rule are one: `Key` white + bold, `Text`/`Dyn` phosphor green /
+/// dim, `Sep` a gray dot, `GroupSep` a wide gap.
+///
+/// Not `Copy`: `Dyn` owns a runtime `String` (e.g. "3 items selected"), which
+/// `Key`/`Text` static spans cannot express. Static hint lists stay `const`
+/// (`&[HintSpan]` of borrowed variants); only runtime-built lists allocate.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HintSpan<'a> {
     /// Hotkey glyph(s) — white + bold in rendered output.
     Key(&'a str),
     /// Action label following a key — phosphor green in rendered output.
     Text(&'a str),
+    /// Runtime action label whose text is only known at render time —
+    /// rendered dim to set it apart from the static `Text` labels.
+    Dyn(String),
     /// Single dot separator (`" · "`) between two related items in
     /// the same group.
     Sep,
@@ -87,13 +130,14 @@ pub enum HintSpan<'a> {
 
 impl HintSpan<'_> {
     /// Display-column width contribution of a single span. Mirrors
-    /// the rendering rule that `Text` spans render with a leading
+    /// the rendering rule that `Text` / `Dyn` spans render with a leading
     /// space and `Sep`/`GroupSep` each occupy three columns.
     #[must_use]
     pub fn display_cols(&self) -> usize {
         match self {
             Self::Key(k) => k.chars().count(),
             Self::Text(t) => 1 + t.chars().count(),
+            Self::Dyn(t) => 1 + t.chars().count(),
             Self::Sep | Self::GroupSep => 3,
         }
     }
@@ -219,6 +263,18 @@ pub fn lay_out_tabs<'a>(labels: &[(&'a str, bool)], start_col: u16) -> Vec<TabCe
         col = col.saturating_add(cell_cols).saturating_add(TAB_GAP);
     }
     out
+}
+
+/// Index of the tab cell whose column range contains `col`, if any. Shared
+/// by every tab strip (console editor/settings, in-container status bar) so
+/// click and hover hit-testing resolve the same tab as `lay_out_tabs`
+/// painted — no surface re-derives the column maths. `col` and the cells'
+/// `start_col` are in the same 0-based column space.
+#[must_use]
+pub fn tab_at_column(cells: &[TabCell<'_>], col: u16) -> Option<usize> {
+    cells.iter().position(|cell| {
+        col >= cell.start_col && col < cell.start_col.saturating_add(cell.cell_cols)
+    })
 }
 
 /// Cross-surface single-line text-input model. Holds the buffer,
@@ -422,6 +478,14 @@ pub mod ansi {
     pub const BG_DARK: &str = "\x1b[48;2;0;0;0m";
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
+
+    /// OSC 22 cursor-shape escapes. `POINTER_HAND` switches the terminal
+    /// pointer to the hand/`pointer` shape over a clickable element;
+    /// `POINTER_DEFAULT` restores it. Shared by every TUI surface so the
+    /// "this is clickable" cue is identical (terminals without OSC 22 ignore
+    /// the sequence harmlessly).
+    pub const POINTER_HAND: &str = "\x1b]22;pointer\x1b\\";
+    pub const POINTER_DEFAULT: &str = "\x1b]22;default\x1b\\";
     pub const INVERSE: &str = "\x1b[7m";
 
     /// Emit a `1;1`-origin cursor positioning sequence.

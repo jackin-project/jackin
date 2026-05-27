@@ -89,8 +89,17 @@ mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
 which jackin
+```
 
-# Keep this final line for PRs touching crates/jackin-capsule/; drop it otherwise.
+<Capsule fence — keep ONLY for PRs touching `crates/jackin-capsule/`, drop it
+entirely otherwise. It is a separate paste, not a line appended to the block
+above, so the operator can run it on its own. It must still come before any
+`### User smoke` / `### jackin-capsule smoke` step, since every later `jackin`
+launch consumes whichever capsule binary `ensure_available` resolves first.>
+
+Then build and export the jackin-capsule binary so the smoke steps below use it:
+
+```sh
 eval "$(cargo run --bin build-jackin-capsule -- --export)"
 ```
 

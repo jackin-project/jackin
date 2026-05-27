@@ -3,10 +3,6 @@ use std::io::{self, Write};
 
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, clear_screen, rgb};
 
-// ── Color palette ────────────────────────────────────────────────────────
-
-const DIM: (u8, u8, u8) = (120, 120, 120);
-
 // ── Skippable sleep ─────────────────────────────────────────────────────
 
 /// Sleep for `duration`, but return `true` immediately if Enter or Esc is pressed.
@@ -14,7 +10,12 @@ const DIM: (u8, u8, u8) = (120, 120, 120);
 fn skippable_sleep(duration: std::time::Duration) -> bool {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
-    let _ = crossterm::terminal::enable_raw_mode();
+    // Under the host guard raw mode is already on for the whole flow; toggling
+    // it here would hand control back to the cooked terminal mid-animation.
+    let owns_raw = !crate::tui::host_screen_owned();
+    if owns_raw {
+        let _ = crossterm::terminal::enable_raw_mode();
+    }
     let skipped = if crossterm::event::poll(duration).unwrap_or(false) {
         matches!(
             event::read(),
@@ -24,8 +25,81 @@ fn skippable_sleep(duration: std::time::Duration) -> bool {
     } else {
         false
     };
-    let _ = crossterm::terminal::disable_raw_mode();
+    if owns_raw {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
     skipped
+}
+
+/// Outcome of a resize-aware wait.
+enum WaitOutcome {
+    /// The full duration elapsed with no interruption.
+    Elapsed,
+    /// The operator pressed Enter/Esc to skip.
+    Skipped,
+    /// The terminal was resized; the caller should redraw at the new size.
+    Resized,
+}
+
+/// Wait up to `duration`, returning early on a skip key (Enter/Esc) or a
+/// terminal resize. Same raw-mode handling as `skippable_sleep`. Non-skip,
+/// non-resize events (stray mouse, focus) are consumed without ending the wait.
+fn wait_or_event(duration: std::time::Duration) -> WaitOutcome {
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+    let owns_raw = !crate::tui::host_screen_owned();
+    if owns_raw {
+        let _ = crossterm::terminal::enable_raw_mode();
+    }
+    let deadline = std::time::Instant::now() + duration;
+    let outcome = loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break WaitOutcome::Elapsed;
+        }
+        if event::poll(remaining).unwrap_or(false) {
+            match event::read() {
+                Ok(Event::Key(k))
+                    if k.kind == KeyEventKind::Press
+                        && matches!(k.code, KeyCode::Enter | KeyCode::Esc) =>
+                {
+                    break WaitOutcome::Skipped;
+                }
+                Ok(Event::Resize(_, _)) => break WaitOutcome::Resized,
+                Ok(_) => {}
+                Err(_) => break WaitOutcome::Elapsed,
+            }
+        } else {
+            break WaitOutcome::Elapsed;
+        }
+    };
+    if owns_raw {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
+    outcome
+}
+
+/// Show a static screen for `total`, calling `draw` once up front and again
+/// (after a clear) on every terminal resize so the surface always fills and
+/// centers to the current size. Returns `true` if the operator skipped.
+fn hold_resizable(total: std::time::Duration, mut draw: impl FnMut()) -> bool {
+    draw();
+    let _ = io::stderr().flush();
+    let deadline = std::time::Instant::now() + total;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        match wait_or_event(remaining) {
+            WaitOutcome::Skipped => return true,
+            WaitOutcome::Resized => {
+                clear_screen();
+                draw();
+                let _ = io::stderr().flush();
+            }
+            WaitOutcome::Elapsed => return false,
+        }
+    }
 }
 
 // ── Digital rain ─────────────────────────────────────────────────────────
@@ -126,34 +200,6 @@ pub(crate) fn random_char(seed: &mut u64) -> char {
     RAIN_CHARS[(xorshift(seed) as usize) % RAIN_CHARS.len()] as char
 }
 
-const REVEAL_BANNER: &[&str] = &[
-    "\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2577}  \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502}",
-    "\u{2502} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2575} \u{2577} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2502}\u{2575}\u{2502}",
-    "\u{2575}  \u{2575} \u{2575} \u{2575}  \u{2502}  \u{2575} \u{2575} \u{2575} \u{2575} \u{2575}",
-    "           \u{2575}",
-    "      j a c k i n",
-    "   operator terminal",
-];
-
-fn banner_grid(banner: &[&str], cols: usize, rows: usize) -> Vec<Vec<Option<char>>> {
-    let banner_height = banner.len();
-    let banner_width = banner.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-    let offset_row = (rows.saturating_sub(banner_height)) / 2;
-    let offset_col = (cols.saturating_sub(banner_width)) / 2;
-
-    let mut grid = vec![vec![None; cols]; rows];
-    for (i, line) in banner.iter().enumerate() {
-        for (j, ch) in line.chars().enumerate() {
-            let r = offset_row + i;
-            let c = offset_col + j;
-            if r < rows && c < cols {
-                grid[r][c] = Some(ch);
-            }
-        }
-    }
-    grid
-}
-
 /// Advance the rain state by one tick: age existing cells and move column
 /// heads forward. This is the simulation step; call `render_rain_frame`
 /// afterward to draw the result.
@@ -222,361 +268,411 @@ pub(crate) fn tick_rain(state: &mut RainState) {
 /// (area-bounded). Does not clear the background — callers that need
 /// a clear should emit it before calling this.
 pub(crate) fn render_rain_frame(state: &RainState, area: (u16, u16, u16, u16)) {
+    use std::cell::RefCell;
+    use std::fmt::Write as _;
     let (col_start, row_start, width, height) = area;
 
-    for r in 0..height as usize {
-        eprint!("\x1b[{};{}H", row_start as usize + r + 1, col_start + 1);
-        for c in 0..width as usize {
-            match state.grid.get(r).and_then(|row| row.get(c)) {
-                None | Some(None) => eprint!(" "),
-                Some(Some(cell)) => match age_to_color(cell.age) {
-                    None => eprint!(" "),
-                    Some((red, g, b)) => {
-                        eprint!("{}", cell.ch.color(owo_colors::Rgb(red, g, b)));
-                    }
-                },
+    // Build the whole frame into one buffer and emit a single write, rather than
+    // one syscall per cell (width × height per frame on the hot animation path).
+    // The buffer is reused across frames so the per-frame allocation is paid
+    // once, not on every tick.
+    thread_local! {
+        static SCRATCH: RefCell<String> = const { RefCell::new(String::new()) };
+    }
+    SCRATCH.with_borrow_mut(|out| {
+        out.clear();
+        for r in 0..height as usize {
+            let _ = write!(
+                out,
+                "\x1b[{};{}H",
+                row_start as usize + r + 1,
+                col_start + 1
+            );
+            for c in 0..width as usize {
+                match state.grid.get(r).and_then(|row| row.get(c)) {
+                    None | Some(None) => out.push(' '),
+                    Some(Some(cell)) => match age_to_color(cell.age) {
+                        None => out.push(' '),
+                        Some((red, g, b)) => {
+                            let _ = write!(out, "{}", cell.ch.color(owo_colors::Rgb(red, g, b)));
+                        }
+                    },
+                }
             }
         }
-    }
-
+        eprint!("{out}");
+    });
     let _ = io::stderr().flush();
 }
 
-#[allow(clippy::too_many_lines)]
-pub(crate) fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
-    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    let cols = term_cols as usize;
-    // Reserve last row to avoid scroll when writing to it
-    let rows = (term_rows as usize).saturating_sub(1).max(1);
-    let frame_ms = 35;
-    let total_frames = duration_ms / frame_ms;
+// ── Session warp (hyperspace intro / outro) ───────────────────────────────
 
-    let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
-
-    let columns: Vec<RainColumn> = (0..cols)
-        .map(|_| {
-            let s = xorshift(&mut seed);
-            let s2 = xorshift(&mut seed);
-            RainColumn {
-                head: -((s % (rows as u64 + 6)) as i32),
-                speed: 1 + (s % 4) as u32,
-                fade: 1 + (s2 % 3) as u16,
-                active: !s.is_multiple_of(3),
-                cooldown: 0,
-            }
-        })
-        .collect();
-
-    let grid: Vec<Vec<Option<RainCell>>> = (0..rows)
-        .map(|_| (0..cols).map(|_| None).collect())
-        .collect();
-
-    let mut state = RainState {
-        grid,
-        columns,
-        cols,
-        rows,
-        seed,
-        frame: 0,
-    };
-
-    eprint!("\x1b[?25l"); // hide cursor
-
-    // ── Phase 1: Pure rain ──────────────────────────────────────────────
-    let mut skipped = false;
-    for _ in 0..total_frames {
-        if skipped {
-            break;
-        }
-        tick_rain(&mut state);
-        render_rain_frame(&state, (0, 0, cols as u16, rows as u16));
-        skipped = skippable_sleep(std::time::Duration::from_millis(frame_ms));
-    }
-
-    // Sync seed back for reveal phase (seed was updated inside state)
-    // ── Phase 2 & 3: Reveal + Hold (only if reveal banner provided) ─────
-    if let Some(banner) = reveal {
-        let target = banner_grid(banner, cols, rows);
-
-        // Assign a random flip frame to each banner cell within the reveal window
-        let reveal_frames = 1000 / frame_ms;
-        let mut flip_at: Vec<Vec<u64>> =
-            (0..rows).map(|_| (0..cols).map(|_| 0).collect()).collect();
-        let mut locked: Vec<Vec<bool>> = vec![vec![false; cols]; rows];
-
-        for (r, row) in target.iter().enumerate() {
-            for (c, cell) in row.iter().enumerate() {
-                if cell.is_some() {
-                    flip_at[r][c] = xorshift(&mut state.seed) % reveal_frames;
-                }
-            }
-        }
-
-        // Stop spawning new heads — deactivate all columns permanently
-        for column in &mut state.columns {
-            column.active = false;
-            column.cooldown = u32::MAX;
-        }
-
-        // Reveal phase animation
-        for frame in 0..reveal_frames {
-            if skipped {
-                break;
-            }
-            // Age existing non-locked cells
-            for (r, row) in state.grid.iter_mut().enumerate() {
-                for (c, cell) in row.iter_mut().enumerate() {
-                    if locked[r][c] {
-                        continue;
-                    }
-                    if let Some(rc) = cell {
-                        rc.age += 3;
-                        if age_to_color(rc.age).is_none() {
-                            *cell = None;
-                        } else if should_mutate(rc.age, &mut state.seed) {
-                            rc.ch = random_char(&mut state.seed);
-                        }
-                    }
-                }
-            }
-
-            // Lock banner cells that have reached their flip frame
-            for (r, row) in target.iter().enumerate() {
-                for (c, target_ch) in row.iter().enumerate() {
-                    if let Some(ch) = target_ch
-                        && !locked[r][c]
-                        && frame >= flip_at[r][c]
-                    {
-                        locked[r][c] = true;
-                        if *ch == ' ' {
-                            state.grid[r][c] = None;
-                        } else {
-                            state.grid[r][c] = Some(RainCell {
-                                ch: *ch,
-                                age: 0,
-                                fade: 1,
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Render
-            for (r, row) in state.grid.iter().enumerate() {
-                eprint!("\x1b[{};1H", r + 1);
-                for (c, cell) in row.iter().enumerate() {
-                    if locked[r][c] {
-                        if let Some(rc) = cell {
-                            eprint!("{}", rc.ch.color(rgb(PHOSPHOR_GREEN)));
-                        } else {
-                            eprint!(" ");
-                        }
-                    } else {
-                        match cell {
-                            None => eprint!(" "),
-                            Some(rc) => {
-                                let (cr, cg, cb) = age_to_color(rc.age).unwrap_or(PHOSPHOR_DARK);
-                                eprint!("{}", rc.ch.color(owo_colors::Rgb(cr, cg, cb)));
-                            }
-                        }
-                    }
-                }
-            }
-
-            let _ = io::stderr().flush();
-            skipped = skippable_sleep(std::time::Duration::from_millis(frame_ms));
-        }
-
-        // Hold the revealed logo briefly
-        if !skipped {
-            let _ = skippable_sleep(std::time::Duration::from_millis(1500));
-        }
-    }
-
-    // Clear rain area
-    for r in 0..rows {
-        eprint!("\x1b[{};1H\x1b[2K", r + 1);
-    }
-    eprint!("\x1b[H");
-    eprint!("\x1b[?25h"); // show cursor
-    let _ = io::stderr().flush();
+struct WarpStar {
+    angle: f32,
+    radius: f32,
+    speed: f32,
 }
 
-// ── Text effects ─────────────────────────────────────────────────────────
+/// 1-based column where a centered line of `width` chars starts. The `+ 1`
+/// converts the 0-based margin to a 1-based ANSI column so the line sits truly
+/// centered (equal margins) rather than one cell left.
+fn center_col(cols: u16, width: usize) -> u16 {
+    let margin = (cols as usize).saturating_sub(width) / 2;
+    u16::try_from(margin + 1).unwrap_or(1)
+}
 
-/// Returns `true` if skipped by keypress.
-fn type_text(text: &str, color: (u8, u8, u8), char_ms: u64) -> bool {
-    eprint!("  ");
+/// The canonical jackin' logo text — the ` jackin' ` brand pill the host and
+/// capsule status bars render (black bold on phosphor-green).
+const BRAND_PILL: &str = " jackin' ";
+
+/// Draw the brand pill centered near the bottom of the screen.
+fn draw_brand_pill_bottom() {
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let row = rows.saturating_sub(2).max(1);
+    let col = center_col(cols, BRAND_PILL.chars().count());
+    eprint!(
+        "\x1b[{row};{col}H{}",
+        BRAND_PILL
+            .bold()
+            .color(rgb((0, 0, 0)))
+            .on_color(rgb(PHOSPHOR_GREEN))
+    );
+}
+
+/// Draw `text` centered on screen with the brand pill below it. This is the
+/// held frame shared by the intro phrase animations; it re-reads the live size
+/// so callers can re-draw it on every resize.
+fn draw_centered_phrase(text: &str, color: (u8, u8, u8)) {
+    draw_brand_pill_bottom();
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
+    eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
+}
+
+/// Type `text` centered on screen one character at a time, then hold. Returns
+/// `true` if the operator skipped with Enter/Esc.
+fn type_centered(text: &str, color: (u8, u8, u8), char_ms: u64, hold_ms: u64) -> bool {
+    clear_screen();
+    draw_brand_pill_bottom();
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let (row, col) = (rows / 2, center_col(cols, text.chars().count()));
+    eprint!("\x1b[{row};{col}H");
     for ch in text.chars() {
         eprint!("{}", ch.color(rgb(color)));
         let _ = io::stderr().flush();
         if skippable_sleep(std::time::Duration::from_millis(char_ms)) {
-            // Print remainder instantly
-            eprintln!();
             return true;
         }
     }
-    eprintln!();
-    false
+    // Hold, re-centering the full phrase + pill on every resize.
+    hold_resizable(std::time::Duration::from_millis(hold_ms), || {
+        draw_centered_phrase(text, color);
+    })
 }
 
-/// Returns `true` if skipped by keypress.
-fn glitch_text(text: &str, color: (u8, u8, u8)) -> bool {
+/// Glitch-reveal `text` centered on screen (random glyphs settling into the
+/// words), then hold. Returns `true` if skipped.
+fn glitch_centered(text: &str, color: (u8, u8, u8), hold_ms: u64) -> bool {
+    clear_screen();
+    draw_brand_pill_bottom();
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let chars: Vec<char> = text.chars().collect();
+    let (row, col) = (rows / 2, center_col(cols, chars.len()));
     let mut seed: u64 = 0xCAFE_BABE_1337;
-
-    for _ in 0..4 {
-        eprint!("\r  ");
+    for _ in 0..5 {
+        eprint!("\x1b[{row};{col}H");
         for &ch in &chars {
             let s = xorshift(&mut seed);
-            let display = if s.is_multiple_of(4) {
+            let display = if s.is_multiple_of(3) {
                 random_char(&mut seed)
             } else {
                 ch
             };
-            let (r, g, b) = if s.is_multiple_of(3) {
-                PHOSPHOR_GREEN
-            } else {
-                color
-            };
-            eprint!("{}", display.color(owo_colors::Rgb(r, g, b)));
+            eprint!("{}", display.color(rgb(color)));
         }
         let _ = io::stderr().flush();
-        if skippable_sleep(std::time::Duration::from_millis(80)) {
-            eprint!("\r  ");
-            eprintln!("{}", text.color(rgb(color)));
-            return true;
+        if skippable_sleep(std::time::Duration::from_millis(70)) {
+            break;
         }
     }
-    eprint!("\r  ");
-    eprintln!("{}", text.color(rgb(color)));
-    false
+    eprint!("\x1b[{row};{col}H{}", text.color(rgb(color)));
+    let _ = io::stderr().flush();
+    // Hold, re-centering the settled text + pill on every resize.
+    hold_resizable(std::time::Duration::from_millis(hold_ms), || {
+        draw_centered_phrase(text, color);
+    })
 }
 
-// ── Intro / outro animation ──────────────────────────────────────────────
-
-pub fn intro_animation(operator_name: &str) {
+/// The opening cyberpunk-style call — each phrase shown on its own, centered,
+/// in white, before the warp. Each lands, holds, then gives way to the next.
+/// Skippable with Enter/Esc.
+fn intro_phrases() {
+    if type_centered("Stand up, operator...", WHITE, 60, 950) {
+        return;
+    }
+    if type_centered("They're already inside...", WHITE, 55, 950) {
+        return;
+    }
+    if type_centered("Follow the green.", WHITE, 50, 850) {
+        return;
+    }
+    let _ = glitch_centered("Knock, knock, operator.", WHITE, 850);
     clear_screen();
-
-    digital_rain(2000, Some(REVEAL_BANNER));
-
-    clear_screen();
-    if skippable_sleep(std::time::Duration::from_millis(300)) {
-        return;
-    }
-
-    eprintln!();
-    if type_text(&format!("Stand up, {operator_name}..."), PHOSPHOR_GREEN, 65) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(800)) {
-        clear_screen();
-        return;
-    }
-
-    eprintln!();
-    if type_text("They're already inside...", PHOSPHOR_GREEN, 55) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(600)) {
-        clear_screen();
-        return;
-    }
-
-    eprintln!();
-    if type_text("Follow the green.", PHOSPHOR_GREEN, 50) {
-        clear_screen();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(400)) {
-        clear_screen();
-        return;
-    }
-
-    eprintln!();
-    glitch_text(&format!("Knock, knock, {operator_name}."), PHOSPHOR_GREEN);
-    if skippable_sleep(std::time::Duration::from_millis(600)) {
-        clear_screen();
-        return;
-    }
-
-    clear_screen();
-    let _ = skippable_sleep(std::time::Duration::from_millis(200));
 }
 
-pub fn outro_animation(role_name: &str, remaining: &[String]) {
+/// Discard input events already queued before the intro starts.
+///
+/// Under `--debug` the operator presses Enter at the plain-CLI "press Enter to
+/// continue" gate immediately before this animation. Without draining, that
+/// keystroke is still queued when the first `skippable_sleep` polls, so the
+/// intro instantly skips itself. Drain once up front so only a keypress made
+/// *during* the intro skips it.
+fn drain_pending_input() {
+    let owns_raw = !crate::tui::host_screen_owned();
+    if owns_raw {
+        let _ = crossterm::terminal::enable_raw_mode();
+    }
+    while crossterm::event::poll(std::time::Duration::ZERO).unwrap_or(false) {
+        if crossterm::event::read().is_err() {
+            break;
+        }
+    }
+    if owns_raw {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
+}
+
+/// Entry ritual — the opening phrases (with the brand pill), then a hyperspace
+/// jump *into* the Construct (a starfield accelerating to lightspeed).
+pub fn warp_intro() {
+    drain_pending_input();
+    intro_phrases();
+    warp(true);
+}
+
+/// Exit ritual — dropping *out* of hyperspace.
+///
+/// The starfield decelerates from lightspeed to a drift. Played whenever the
+/// operator leaves the foreground session, so leaving always feels like slowing
+/// down out of the universe.
+pub fn warp_out() {
+    warp(false);
+}
+
+/// The closing screen shown only when the *last* container left (the universe
+/// is empty): the brand pill, and how long the operator was in the Construct.
+pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
     clear_screen();
+    let _ = hold_resizable(std::time::Duration::from_millis(2400), || {
+        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let mid = rows / 2;
+        draw_brand_pill_bottom();
+        if let Some(d) = elapsed {
+            let line = format!("in the Construct for {}", format_universe_duration(d));
+            let col = center_col(cols, line.chars().count());
+            eprint!(
+                "\x1b[{};{col}H{}",
+                mid.saturating_add(2),
+                line.color(rgb(PHOSPHOR_DIM))
+            );
+        }
+    });
+    clear_screen();
+}
 
-    digital_rain(1500, None);
+fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
+    let t = t.clamp(0.0, 1.0);
+    (f32::from(b) - f32::from(a))
+        .mul_add(t, f32::from(a))
+        .round() as u8
+}
+
+/// Hyperspace starfield. `accelerating` ramps the warp speed up (entering the
+/// universe at increasing velocity); otherwise it ramps back down (dropping to
+/// sublight on the way out). Stars stream radially from the center; their
+/// trails lengthen and brighten toward white with speed for the lightspeed
+/// "wow". Renders raw ANSI like the rest of this module.
+#[allow(
+    clippy::too_many_lines,
+    clippy::suboptimal_flops,
+    clippy::type_complexity
+)]
+fn warp(accelerating: bool) {
+    use std::f32::consts::PI;
+    use std::fmt::Write as _;
 
     clear_screen();
-    if skippable_sleep(std::time::Duration::from_millis(300)) {
-        return;
-    }
+    // Hide the cursor and turn off autowrap (DECAWM) for the duration: the warp
+    // fills every cell including the bottom-right one, which would scroll the
+    // terminal with autowrap on. Off, the field can use the full height.
+    eprint!("\x1b[?25l\x1b[?7l");
+    let _ = io::stderr().flush();
 
-    eprintln!();
-    if type_text(
-        &format!("{role_name} has left the container."),
-        PHOSPHOR_GREEN,
-        40,
-    ) {
-        eprintln!();
-        return;
-    }
-    if skippable_sleep(std::time::Duration::from_millis(400)) {
-        eprintln!();
-        return;
-    }
-
-    eprintln!();
-    let skipped = if remaining.is_empty() {
-        type_text("No roles remaining.", PHOSPHOR_DIM, 35)
-    } else {
-        type_text(
-            &format!(
-                "{} role(s) still running: {}",
-                remaining.len(),
-                remaining.join(", ")
-            ),
-            PHOSPHOR_DIM,
-            30,
-        )
+    // Initial size only seeds the star field; the loop re-reads the live size
+    // every frame so the warp tracks terminal resizes.
+    let (cols0, rows0) = {
+        let (c, r) = crossterm::terminal::size().unwrap_or((80, 24));
+        (c as usize, (r as usize).max(1))
     };
-    if skipped {
-        eprintln!();
-        return;
+    let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut stars: Vec<WarpStar> = (0..(cols0 * rows0 / 4).clamp(80, 2400))
+        .map(|_| {
+            let angle = (xorshift(&mut seed) % 36000) as f32 / 36000.0 * 2.0 * PI;
+            WarpStar {
+                angle,
+                radius: (xorshift(&mut seed) % 1000) as f32 / 1000.0
+                    * warp_edge_radius(angle, cols0 as f32 / 2.0, rows0 as f32 / 2.0),
+                speed: 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0,
+            }
+        })
+        .collect();
+
+    let frame_ms = 30;
+    let frames: usize = 104;
+    let mut last_size = (cols0, rows0);
+    // Reused across frames; only re-allocated on a terminal resize, otherwise
+    // cleared in place so the 104-frame render loop allocates nothing per frame.
+    let mut grid: Vec<Vec<Option<(char, (u8, u8, u8))>>> = vec![vec![None; cols0]; rows0];
+    let mut out = String::with_capacity(cols0 * rows0 + rows0 * 8);
+    for f in 0..frames {
+        // Re-read the terminal each frame so a resize mid-warp adapts; clear
+        // once on a size change so shrunk-away cells don't linger.
+        let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let cols = term_cols as usize;
+        let rows = (term_rows as usize).max(1);
+        if (cols, rows) == last_size {
+            for row in &mut grid {
+                row.fill(None);
+            }
+        } else {
+            clear_screen();
+            last_size = (cols, rows);
+            grid = vec![vec![None; cols]; rows];
+        }
+        let cx = cols as f32 / 2.0;
+        let cy = rows as f32 / 2.0;
+        // Terminal cells are about twice as tall as wide, so the horizontal
+        // projection is stretched ×2 below; `max_r` is just a brightness scale.
+        let max_r = (cx / 2.0).hypot(cy).max(1.0);
+
+        let t = f as f32 / frames as f32;
+        // Ease the warp factor: accelerate in (slow → blast), decelerate out.
+        let warp = if accelerating {
+            0.2 + t * t * 5.0
+        } else {
+            0.2 + (1.0 - t).powi(2) * 5.0
+        };
+        // Ease the whole field up from black over the first frames so the warp
+        // fades in instead of popping on at full brightness.
+        let entry_fade = (f as f32 / 8.0).min(1.0);
+
+        for star in &mut stars {
+            let prev = star.radius;
+            star.radius += star.speed * warp;
+            let (dx, dy) = (star.angle.cos() * 2.0, star.angle.sin());
+            // Respawn once the head leaves the screen rather than at a fixed
+            // radius, so stars travel all the way to the edges and corners and
+            // the field fills the whole terminal instead of a central disc.
+            let head_x = cx + dx * star.radius;
+            let head_y = cy + dy * star.radius;
+            if head_x < 0.0 || head_x >= cols as f32 || head_y < 0.0 || head_y >= rows as f32 {
+                star.angle = (xorshift(&mut seed) % 36000) as f32 / 36000.0 * 2.0 * PI;
+                star.radius = (xorshift(&mut seed) % 60) as f32 / 100.0;
+                star.speed = 0.5 + (xorshift(&mut seed) % 100) as f32 / 100.0;
+                continue;
+            }
+            let steps = ((1.0 + warp * 1.4) as usize).max(1);
+            for s in 0..=steps {
+                let rr = prev + (star.radius - prev) * (s as f32 / steps as f32);
+                let x = (cx + dx * rr).round();
+                let y = (cy + dy * rr).round();
+                if x < 0.0 || y < 0.0 {
+                    continue;
+                }
+                let (xu, yu) = (x as usize, y as usize);
+                if xu >= cols || yu >= rows {
+                    continue;
+                }
+                let frac = (rr / max_r).clamp(0.0, 1.0);
+                let glyph = if frac > 0.66 {
+                    if warp > 2.5 { '─' } else { '*' }
+                } else if frac > 0.33 {
+                    '+'
+                } else {
+                    '·'
+                };
+                // Blue core deepening to bright white streaks toward the edge
+                // at speed.
+                let bright = (frac * 0.7 + warp / 5.2 * 0.3).clamp(0.0, 1.0);
+                let scale = |c: u8| (f32::from(c) * entry_fade) as u8;
+                let color = (
+                    scale(lerp_channel(60, 235, bright)),
+                    scale(lerp_channel(150, 245, bright)),
+                    scale(255),
+                );
+                grid[yu][xu] = Some((glyph, color));
+            }
+        }
+
+        out.clear();
+        for (r, row) in grid.iter().enumerate() {
+            let _ = write!(out, "\x1b[{};1H", r + 1);
+            for cell in row {
+                match cell {
+                    None => out.push(' '),
+                    Some((ch, (cr, cg, cb))) => {
+                        let _ = write!(out, "{}", ch.color(owo_colors::Rgb(*cr, *cg, *cb)));
+                    }
+                }
+            }
+        }
+        eprint!("{out}");
+        let _ = io::stderr().flush();
+        if skippable_sleep(std::time::Duration::from_millis(frame_ms)) {
+            break;
+        }
     }
 
-    if skippable_sleep(std::time::Duration::from_millis(400)) {
-        eprintln!();
-        return;
-    }
-    eprintln!();
-    type_text("Connection closed.", PHOSPHOR_DARK, 45);
-    let _ = skippable_sleep(std::time::Duration::from_millis(500));
-    eprintln!();
+    clear_screen();
+    eprint!("\x1b[H\x1b[?25h\x1b[?7h"); // home + show cursor + restore autowrap
+    let _ = io::stderr().flush();
 }
 
-pub fn simple_outro(role_name: &str, remaining: &[String]) {
-    eprintln!();
-    eprintln!(
-        "  {}",
-        format!("{role_name} has left the container.").color(rgb(PHOSPHOR_DIM))
-    );
-    if remaining.is_empty() {
-        eprintln!("  {}", "No roles remaining.".color(rgb(PHOSPHOR_DIM)));
+/// Radius at which a star at `angle` leaves a `cx`×`cy` half-screen — seeds
+/// each star along its own radial out to the edge so the field fills the whole
+/// terminal from the first frame instead of a central disc.
+fn warp_edge_radius(angle: f32, cx: f32, cy: f32) -> f32 {
+    let dx = (angle.cos() * 2.0).abs();
+    let dy = angle.sin().abs();
+    let rx = if dx > 1e-3 { cx / dx } else { f32::MAX };
+    let ry = if dy > 1e-3 { cy / dy } else { f32::MAX };
+    rx.min(ry).max(1.0)
+}
+
+/// Format a session duration compactly: `2h 14m`, `7m 30s`, or `45s`.
+#[must_use]
+pub fn format_universe_duration(d: std::time::Duration) -> String {
+    let secs = d.as_secs();
+    let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
+    if h > 0 {
+        format!("{h}h {m}m")
+    } else if m > 0 {
+        format!("{m}m {s}s")
     } else {
-        eprintln!(
-            "  {}",
-            format!(
-                "{} role(s) still running: {}",
-                remaining.len(),
-                remaining.join(", ")
-            )
-            .color(rgb(DIM))
-        );
+        format!("{s}s")
     }
-    eprintln!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_universe_duration;
+    use std::time::Duration;
+
+    #[test]
+    fn formats_session_duration_compactly() {
+        assert_eq!(format_universe_duration(Duration::from_secs(45)), "45s");
+        assert_eq!(format_universe_duration(Duration::from_secs(450)), "7m 30s");
+        assert_eq!(format_universe_duration(Duration::from_mins(134)), "2h 14m");
+        assert_eq!(format_universe_duration(Duration::from_secs(0)), "0s");
+    }
 }

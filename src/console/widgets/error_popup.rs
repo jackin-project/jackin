@@ -17,8 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::WHITE;
-const DANGER_RED: Color = Color::Rgb(255, 94, 122);
+use super::{DANGER_RED, WHITE};
 
 #[derive(Debug, Clone)]
 pub struct ErrorPopupState {

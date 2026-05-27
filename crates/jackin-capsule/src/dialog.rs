@@ -1033,12 +1033,15 @@ impl Dialog {
         term_cols: u16,
         github: Option<&GithubContextView<'_>>,
     ) {
-        if term_rows < 3 {
+        if term_rows == 0 {
             return;
         }
+        // Bottom row of the (now opaque, full-screen) modal. The hint row
+        // fills full-width with the same solid black as the backdrop, so there
+        // is no off-colour band; the old blank spacer used the terminal default
+        // background and showed as a lighter strip — dropped.
         let spans = self.footer_hint_spans(github);
-        render_blank_row(buf, term_rows - 2, term_cols);
-        render_hint_row(buf, term_rows - 3, term_cols, spans);
+        render_hint_row(buf, term_rows - 1, term_cols, spans);
     }
 
     fn footer_hint_spans(
@@ -2192,6 +2195,13 @@ fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpa
                 buf.extend_from_slice(t.as_bytes());
                 buf.extend_from_slice(RESET.as_bytes());
             }
+            HintSpan::Dyn(t) => {
+                buf.extend_from_slice(BG_DARK.as_bytes());
+                buf.extend_from_slice(FG_DIM.as_bytes());
+                buf.push(b' ');
+                buf.extend_from_slice(t.as_bytes());
+                buf.extend_from_slice(RESET.as_bytes());
+            }
             HintSpan::Sep => {
                 buf.extend_from_slice(BG_DARK.as_bytes());
                 buf.extend_from_slice(FG_BORDER.as_bytes());
@@ -2207,15 +2217,6 @@ fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpa
     buf.extend_from_slice(FG_BORDER.as_bytes());
     buf.extend_from_slice("  ".as_bytes());
     buf.extend_from_slice(RESET.as_bytes());
-    let _ = FG_DIM; // reserved for future Dyn spans (e.g., "N items selected")
-}
-
-fn render_blank_row(buf: &mut Vec<u8>, row: u16, term_cols: u16) {
-    move_to(buf, row, 0);
-    buf.extend_from_slice(RESET.as_bytes());
-    for _ in 0..term_cols {
-        buf.push(b' ');
-    }
 }
 
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
@@ -2903,7 +2904,7 @@ mod tests {
     }
 
     #[test]
-    fn github_context_hint_renders_above_bottom_status_row() {
+    fn github_context_hint_renders_on_bottom_row() {
         let pr = pull_request_fixture();
         let view = github_view_for_fixture(&pr);
         let d = Dialog::GitHubContext { copied: false };
@@ -2911,23 +2912,20 @@ mod tests {
         let term_cols = 120;
         let padded_cols = hint_row_cols(GITHUB_CONTEXT_HINT) + 4;
         let expected_col = ((term_cols as usize).saturating_sub(padded_cols) / 2) as u16;
-        let hint_row = term_rows - 2;
-        let spacer_row = term_rows - 1;
+        // The full-screen opaque modal puts the hint on the very bottom row
+        // (1-based == term_rows), filling it with the same solid backdrop so
+        // there is no off-colour spacer band above or below it.
+        let hint_row = term_rows;
 
         let mut buf = Vec::new();
         d.render_with_hover(&mut buf, term_rows, term_cols, false, Some(&view));
         d.render_footer_hint(&mut buf, term_rows, term_cols, Some(&view));
         let rendered = String::from_utf8_lossy(&buf);
         let cursor = format!("\x1b[{};{}H", hint_row, expected_col + 1);
-        let spacer_cursor = format!("\x1b[{};1H", spacer_row);
 
         assert!(
             rendered.contains(&cursor),
-            "hint should render above the spacer/status rows at {cursor:?}: {rendered:?}"
-        );
-        assert!(
-            rendered.contains(&spacer_cursor),
-            "spacer row should be cleared above the bottom status row: {rendered:?}"
+            "hint should render on the bottom row at {cursor:?}: {rendered:?}"
         );
         assert!(rendered.contains("copy GitHub URL"));
     }

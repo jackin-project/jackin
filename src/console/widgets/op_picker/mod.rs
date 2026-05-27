@@ -7,11 +7,10 @@
 //! path from display names mishandled sections, slashes, and
 //! whitespace.
 //!
-//! Account scope is *not* encoded in the committed `op://` path —
-//! launch-time `op read` resolves against `op`'s default-account
-//! context, so the operator must `op signin` the right account or the
-//! resolution fails with "item not found". Per-value account override
-//! in the on-disk format is a future PR.
+//! The selected account is recorded on the committed `OpRef` (its `account`
+//! field), and launch-time `op read` pins resolution to that account, so a
+//! multi-account operator's reference resolves against the account it was
+//! authored under rather than whichever happens to be the `op` default.
 //!
 //! `OpStructRunner` calls run on background threads, results routed
 //! through an `mpsc` channel; the spinner ticks until the receiver

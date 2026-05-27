@@ -58,6 +58,8 @@ Automation stays on the small role-focused binary in <RepoFile path="src/bin/rol
 
 ### Loading an agent
 
+Every `jackin ...` invocation mints a run diagnostics ID before command-specific work starts. Launch paths write compact breadcrumbs to `~/.jackin/data/diagnostics/runs/<run_id>.jsonl`; `--debug` adds detailed command, Docker, resolver, auth, cache, materialization, cleanup, and build traces to that artifact. The operator-facing launch surface shows only product-level progress and the run handle.
+
 1. **Resolve role** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
 2. **Validate the repo contract** — require `jackin.role.toml` and a valid Dockerfile path, validate manifest strictly
 3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
@@ -68,6 +70,23 @@ Automation stays on the small role-focused binary in <RepoFile path="src/bin/rol
 8. **Write Capsule launch config** — serialize the role key, workspace workdir, ordered supported-agent list, and manifest model overrides to `~/.jackin/sockets/<container>/agent.toml`, which is bind-mounted at `/jackin/run/agent.toml`.
 9. **Start the agent container detached** (`docker run -d ... <image> <agent>`) with `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the initial tab; it is not a container-level environment variable.
 10. **Attach the operator terminal** via `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and renders the in-container multiplexer.
+
+Launch progress is emitted through <RepoFile path="src/runtime/progress.rs" />. Rich terminals render the Ratatui launch cockpit; low-capability or non-interactive terminals receive compact deterministic stage lines. The public stages are stable (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even when implementation details change underneath. The rich cockpit may briefly dwell on stage changes so very fast work still produces a legible full-sequence rail before the terminal is handed to the Capsule client.
+
+| Stage label | Technical work behind the label |
+|---|---|
+| `identity` | Resolve the launch target, workspace/path label, role selector, requested agent, instance name, image tag, run diagnostics handle, and operator-visible loading title. |
+| `role` | Resolve the role source from config or command flags, acquire/update the role-repo cache, check out the requested ref/branch, and load the role manifest. |
+| `credentials` | Inspect host-side agent/GitHub/1Password credential availability read-only, materialize per-instance auth state under jackin-owned state, and prepare the credential mounts/env that the container receives. |
+| `construct` | Verify or pull the shared construct base image (`projectjackin/construct:trixie`) that the derived role image builds from. |
+| `derived image` | Generate the role-specific `DerivedDockerfile`, assemble the temporary Docker build context, include runtime assets such as `jackin-capsule`, run `docker build`, and capture Docker stdout/stderr to a plain run sidecar log on failure. |
+| `workspace` | Prepare the mounted workspace/directory, optional workspace git-pull-on-entry work, per-instance manifest/index records, runtime directories, mount list, and Capsule launch config. |
+| `network` | Create or reconcile the per-instance Docker network and related host-side runtime names. |
+| `sidecar` | Start or recover the DinD sidecar container and its certs volume for the role container. |
+| `capsule` | Start the detached role container with `jackin-capsule` as PID 1, the selected agent argv, resolved mounts, runtime config, labels, and environment. |
+| `hardline` | Attach the foreground terminal to the running Capsule client with `docker exec -it`, then classify the post-session container state for cleanup, preservation, or recovery. |
+
+The cinematic launch animations are gated by jackin-managed role-container discovery. A hyperspace-warp intro (preceded by typed cyberpunk-style phrases) plays before entering the first container, and a decelerating warp outro plays on foreground exit — followed by a duration caption when no role containers remain, or a still-running summary when others do. Digital rain itself lives only in the loading cockpit, not at these boundaries. Discovery failure skips the animation and records the reason in diagnostics instead of blocking launch.
 
 The detached-start + exec split decouples the container's lifetime from the foreground attach: closing the operator's terminal detaches from the client, while the PID 1 daemon and live PTYs keep running. `jackin hardline` reconnects to the daemon or asks it to spawn a new session. Cleanup distinguishes three post-session states:
 

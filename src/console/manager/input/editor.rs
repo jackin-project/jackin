@@ -248,6 +248,7 @@ pub(super) fn handle_editor_key(
                 next,
                 editor.tab_scroll_y,
                 state.cached_term_size,
+                editor.cached_footer_h,
             );
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
@@ -274,6 +275,7 @@ pub(super) fn handle_editor_key(
                 new_cursor,
                 editor.tab_scroll_y,
                 state.cached_term_size,
+                editor.cached_footer_h,
             );
         }
         KeyCode::Enter => match editor.active_tab {
