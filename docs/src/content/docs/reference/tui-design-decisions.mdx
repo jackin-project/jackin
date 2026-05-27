@@ -124,12 +124,12 @@ jackin' shows digital rain in three places. Two are **session-boundary** rituals
 Boundary ritual verification is env-gated instead of CLI-flagged so the operator-facing command surface stays lifecycle-driven. These variables are for local development and visual QA only; they affect only the current process invocation and are not config:
 
 ```bash
-JACKIN_FORCE_BOUNDARY_INTRO=1 jackin load
+JACKIN_FORCE_BOUNDARY_INTRO=1 jackin console
 JACKIN_FORCE_BOUNDARY_OUTRO=1 jackin load
-JACKIN_FORCE_BOUNDARY_RITUALS=1 jackin load
+JACKIN_FORCE_BOUNDARY_RITUALS=1 jackin console
 ```
 
-`JACKIN_FORCE_BOUNDARY_INTRO=1` plays the two-screen intro even when other jackin-managed role containers are already running. `JACKIN_FORCE_BOUNDARY_OUTRO=1` plays the two-screen outro after the foreground session returns even when other role containers remain. When forced while other containers remain, the outro is a visual verification path only and does not consume the final-exit marker; the real last-exit outro is still owned by the process that observes zero running role containers and successfully consumes that marker. `JACKIN_FORCE_BOUNDARY_RITUALS=1` enables both force paths. Empty, `0`, `false`, `no`, and `off` values are treated as disabled.
+`JACKIN_FORCE_BOUNDARY_INTRO=1` plays the two-screen intro even when other jackin-managed role containers are already running; `jackin console` plays it immediately on console entry, while `jackin load` plays it before the launch flow. `JACKIN_FORCE_BOUNDARY_OUTRO=1` plays the two-screen outro after the foreground session returns even when other role containers remain. When forced while other containers remain, the outro is a visual verification path only and does not consume the final-exit marker; the real last-exit outro is still owned by the process that observes zero running role containers and successfully consumes that marker. `JACKIN_FORCE_BOUNDARY_RITUALS=1` enables both force paths. Empty, `0`, `false`, `no`, and `off` values are treated as disabled.
 
 ### One continuous alternate screen across the launch flow
 

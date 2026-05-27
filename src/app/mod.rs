@@ -186,9 +186,19 @@ pub async fn run(cli: Cli) -> Result<()> {
             // enter/leave; the guard tears the terminal down once, on drop.
             let screen = console::HostScreen::enter()?;
 
+            let mut console_entry = if let Ok(docker) = connect_docker() {
+                let claim = play_construct_intro_if_needed(&paths, &docker).await;
+                Some((docker, claim))
+            } else {
+                None
+            };
+
             let Some(outcome) =
                 console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?
             else {
+                if let Some((docker, claim)) = &console_entry {
+                    runtime::release_entry_if_idle(&paths, docker, claim).await;
+                }
                 return Ok(());
             };
 
@@ -203,6 +213,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 outcome @ console::ConsoleOutcome::InstanceAction { .. } => {
                     // The action owns the terminal with its own foreground
                     // process; hand it back the cooked screen.
+                    if let Some((docker, claim)) = &console_entry {
+                        runtime::release_entry_if_idle(&paths, docker, claim).await;
+                    }
                     drop(screen);
                     return handle_console_instance_action(
                         &paths,
@@ -239,7 +252,11 @@ pub async fn run(cli: Cli) -> Result<()> {
 
             let mut opts = runtime::LoadOptions::for_launch(debug);
             opts.agent = agent;
-            let entry_claim = play_construct_intro_if_needed(&paths, &docker).await;
+            let entry_claim = if let Some((_entry_docker, claim)) = console_entry.take() {
+                claim
+            } else {
+                play_construct_intro_if_needed(&paths, &docker).await
+            };
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(
                 &paths,
