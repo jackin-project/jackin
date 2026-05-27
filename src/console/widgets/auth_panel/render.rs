@@ -16,8 +16,7 @@ use crate::console::manager::auth_kind::AuthMode;
 use crate::console::manager::render::editor::push_op_breadcrumb_spans;
 use crate::console::manager::state::AuthFormFocus;
 
-use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-pub(crate) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
+use super::super::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 // Width chosen so the longest credential env-var name
 // (`CLAUDE_CODE_OAUTH_TOKEN`, 23 chars) fits without overflow and the
 // Mode value column lines up with the credential value column when

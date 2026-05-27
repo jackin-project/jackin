@@ -20,24 +20,23 @@ use super::attach::{
     reconnect_or_create_session_with_focus, start_or_reconnect_capsule_client,
 };
 use super::cleanup::gc_orphaned_resources;
-use super::discovery::list_running_agent_display_names;
+use super::discovery::list_running_agent_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
 use super::image::build_agent_image;
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
-    format_role_display, image_name, image_name_for_branch,
+    image_name, image_name_for_branch,
 };
-use super::repo_cache::resolve_agent_repo;
+use super::repo_cache::{
+    RepoResolveOptions, confirm_repo_removal_interactive, resolve_agent_repo_with,
+};
+use super::universe::ExitClaim;
 use crate::docker_client::DockerApi;
 
 const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
 
-// Four launch-time toggles (no_intro / debug / rebuild / force) all map
-// directly to CLI flags; bundling them into nested structs would obscure
-// rather than clarify the call sites.
-#[allow(clippy::struct_excessive_bools)]
+#[derive(Default)]
 pub struct LoadOptions {
-    pub no_intro: bool,
     pub debug: bool,
     pub rebuild: bool,
 
@@ -77,10 +76,9 @@ pub struct LoadOptions {
 }
 
 impl LoadOptions {
-    /// Build options for `jackin load`. Debug mode implies `no_intro`.
-    pub fn for_load(no_intro: bool, debug: bool, rebuild: bool) -> Self {
+    /// Build options for `jackin load`.
+    pub fn for_load(debug: bool, rebuild: bool) -> Self {
         Self {
-            no_intro: no_intro || debug,
             debug,
             rebuild,
             ..Self::default()
@@ -88,29 +86,10 @@ impl LoadOptions {
     }
 
     /// Build options for the operator console (`jackin console`).
-    /// Debug mode implies `no_intro`.
     pub fn for_launch(debug: bool) -> Self {
         Self {
-            no_intro: debug,
             debug,
             ..Self::default()
-        }
-    }
-}
-
-impl Default for LoadOptions {
-    fn default() -> Self {
-        Self {
-            no_intro: true,
-            debug: false,
-            rebuild: false,
-            force: false,
-            op_runner: None,
-            host_env: None,
-            agent: None,
-            role_branch: None,
-            restore_container_base: None,
-            restore_role_source_git: None,
         }
     }
 }
@@ -140,33 +119,129 @@ fn validate_agent_supported(
 
 struct StepCounter {
     current: u32,
-    quiet: bool,
     role_name: String,
+    current_stage: Option<super::progress::LaunchStage>,
+    progress: Option<super::progress::LaunchProgress>,
 }
 
 impl StepCounter {
-    fn new(quiet: bool, role_name: &str) -> Self {
+    fn new(role_name: &str) -> Self {
         Self {
             current: 0,
-            quiet,
             role_name: role_name.to_string(),
+            current_stage: None,
+            progress: None,
         }
     }
 
-    fn next(&mut self, text: &str) {
+    fn start_progress(&mut self, progress: super::progress::LaunchProgress) {
+        self.progress = Some(progress);
+    }
+
+    async fn next(&mut self, text: &str) {
+        if let (Some(progress), Some(stage)) = (&mut self.progress, self.current_stage) {
+            progress.stage_done(stage, completion_label(stage));
+        }
         self.current += 1;
         tui::set_terminal_title(&format!("{} \u{2014} {text}", self.role_name));
-        if self.quiet {
-            tui::step_quiet(self.current, text);
+        let stage = stage_for_step_text(text);
+        self.current_stage = Some(stage);
+        if let Some(progress) = &mut self.progress {
+            progress.stage_started(stage, text);
+            progress.settle_stage_visual().await;
         } else {
-            tui::step_shimmer(self.current, text);
+            tui::step_quiet(self.current, text);
         }
     }
 
     fn done(&self) {
         tui::set_terminal_title(&self.role_name);
     }
+
+    const fn progress_mut(&mut self) -> Option<&mut super::progress::LaunchProgress> {
+        self.progress.as_mut()
+    }
+
+    /// Stop the rich loading surface's render task and clear
+    /// `rich_surface_active`. Call this before handing the terminal to an
+    /// interactive `docker exec -it` session, otherwise the capsule attach
+    /// can't own the PTY and hangs.
+    fn finish_progress(&mut self) {
+        if let Some(progress) = self.progress.as_mut() {
+            progress.finish();
+        }
+        self.progress = None;
+    }
 }
+
+fn release_rich_progress_for_plain_io(steps: &mut StepCounter, reason: &str) {
+    if !crate::tui::rich_surface_active() {
+        return;
+    }
+    if let Some(run) = crate::diagnostics::active_run() {
+        run.compact("launch_prompt", reason);
+    }
+    steps.finish_progress();
+}
+
+fn stage_for_step_text(text: &str) -> super::progress::LaunchStage {
+    match text {
+        "Resolving role identity" => super::progress::LaunchStage::Role,
+        "Building Docker image" => super::progress::LaunchStage::DerivedImage,
+        "Starting Docker-in-Docker" => super::progress::LaunchStage::Sidecar,
+        "Launching role" => super::progress::LaunchStage::Capsule,
+        _ => super::progress::LaunchStage::Identity,
+    }
+}
+
+const fn completion_label(stage: super::progress::LaunchStage) -> &'static str {
+    match stage {
+        super::progress::LaunchStage::Identity | super::progress::LaunchStage::Credentials => {
+            "resolved"
+        }
+        super::progress::LaunchStage::Role => "trusted source",
+        super::progress::LaunchStage::Construct => "online",
+        super::progress::LaunchStage::DerivedImage | super::progress::LaunchStage::Capsule => {
+            "ready"
+        }
+        super::progress::LaunchStage::Workspace => "materialized",
+        super::progress::LaunchStage::Network => "isolated",
+        super::progress::LaunchStage::Sidecar => "awake",
+        super::progress::LaunchStage::Hardline => "open",
+    }
+}
+
+const fn launch_target_kind(workspace_name: Option<&str>) -> super::progress::LaunchTargetKind {
+    if workspace_name.is_some() {
+        super::progress::LaunchTargetKind::Workspace
+    } else {
+        super::progress::LaunchTargetKind::Directory
+    }
+}
+
+fn launch_target_label(
+    workspace_name: Option<&str>,
+    workspace: &crate::workspace::ResolvedWorkspace,
+) -> String {
+    workspace_name.map_or_else(|| tui::shorten_home(&workspace.workdir), str::to_string)
+}
+
+/// Human-readable lines for the mounts whose host source differs from the
+/// container destination. Same-path mounts (the current-directory launch
+/// case) carry no information for the operator and are omitted entirely, so
+/// a directory launch shows no mount line at all.
+fn launch_mount_lines(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<String> {
+    workspace
+        .mounts
+        .iter()
+        .filter(|mount| mount.src.trim_end_matches('/') != mount.dst.trim_end_matches('/'))
+        .map(|mount| {
+            let ro = if mount.readonly { " (ro)" } else { "" };
+            format!("{} → {}{ro}", tui::shorten_home(&mount.src), mount.dst)
+        })
+        .collect()
+}
+
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
 /// idiom for `docker run -v`.
 ///
@@ -443,16 +518,11 @@ fn confirm_branch_trust(
         );
     }
 
-    eprintln!();
-    eprintln!(
-        "{}",
-        "!! Unreviewed branch — verify before proceeding !!"
-            .red()
-            .bold()
+    print_trust_banner(
+        "!! Unreviewed branch — verify before proceeding !!",
+        selector,
+        source,
     );
-    eprintln!();
-    eprintln!("  role:   {}", selector.to_string().bold());
-    eprintln!("  source: {}", source.git.yellow());
     eprintln!("  branch: {}", branch.yellow().bold());
     eprintln!();
     eprintln!(
@@ -469,20 +539,34 @@ fn confirm_branch_trust(
     );
     eprintln!();
 
-    let confirmed = dialoguer::Confirm::new()
-        .with_prompt(format!(
-            "Have you reviewed branch \"{branch}\" and verified it is safe to build?"
-        ))
-        .default(false)
-        .interact()?;
-
-    if !confirmed {
-        anyhow::bail!(
+    confirm_trust_or_bail(
+        &format!("Have you reviewed branch \"{branch}\" and verified it is safe to build?"),
+        &format!(
             "branch \"{branch}\" not confirmed — aborting.\n\
              Review the Dockerfile and scripts on that branch before loading it."
-        );
-    }
+        ),
+    )
+}
 
+/// Shared red headline + role/source identity for the two trust prompts. Each
+/// caller prints its own explanation body and confirmation prompt after this.
+fn print_trust_banner(heading: &str, selector: &RoleSelector, source: &crate::config::RoleSource) {
+    eprintln!();
+    eprintln!("{}", heading.red().bold());
+    eprintln!();
+    eprintln!("  role:   {}", selector.to_string().bold());
+    eprintln!("  source: {}", source.git.yellow());
+}
+
+/// Final yes/no trust gate. Defaults to "no"; declining aborts with `abort`.
+fn confirm_trust_or_bail(prompt: &str, abort: &str) -> anyhow::Result<()> {
+    let confirmed = dialoguer::Confirm::new()
+        .with_prompt(prompt)
+        .default(false)
+        .interact()?;
+    if !confirmed {
+        anyhow::bail!("{abort}");
+    }
     Ok(())
 }
 
@@ -498,11 +582,7 @@ fn confirm_agent_trust(
         );
     }
 
-    eprintln!();
-    eprintln!("{}", "!! Untrusted role source !!".red().bold());
-    eprintln!();
-    eprintln!("  role:  {}", selector.to_string().bold());
-    eprintln!("  source: {}", source.git.yellow());
+    print_trust_banner("!! Untrusted role source !!", selector, source);
     eprintln!();
     eprintln!(
         "  {}",
@@ -527,19 +607,13 @@ fn confirm_agent_trust(
     eprintln!("  {}", "Review the repository before trusting it.".dimmed());
     eprintln!();
 
-    let confirmed = dialoguer::Confirm::new()
-        .with_prompt("Do you trust this role source and want to proceed?")
-        .default(false)
-        .interact()?;
-
-    if !confirmed {
-        anyhow::bail!(
+    confirm_trust_or_bail(
+        "Do you trust this role source and want to proceed?",
+        &format!(
             "role source \"{selector}\" not trusted — aborting.\n\
              To trust it later, run `jackin config trust grant {selector}` or try loading again."
-        );
-    }
-
-    Ok(())
+        ),
+    )
 }
 
 struct LaunchContext<'a> {
@@ -647,6 +721,12 @@ async fn launch_role_runtime(
         ..RunOptions::default()
     };
 
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            super::progress::LaunchStage::Network,
+            "wiring private network",
+        );
+    }
     // Create Docker network
     let role_label = format!("jackin.role={container_name}");
     let network_labels = [LABEL_MANAGED, role_label.as_str()]
@@ -657,6 +737,9 @@ async fn launch_role_runtime(
         })
         .collect();
     docker.create_network(network, network_labels).await?;
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(super::progress::LaunchStage::Network, "isolated");
+    }
 
     // Start Docker-in-Docker with TLS.
     //
@@ -695,17 +778,27 @@ async fn launch_role_runtime(
         &certs_dind_mount,
         "docker:dind",
     ];
-    runner
-        .run("docker", &dind_args, None, &docker_run_opts)
-        .await?;
+    let run_dind = runner.run("docker", &dind_args, None, &docker_run_opts);
+    if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(run_dind).await?;
+    } else {
+        run_dind.await?;
+    }
 
-    wait_for_dind(dind, &certs_volume, docker).await?;
+    let dind_ready = wait_for_dind(dind, &certs_volume, docker);
+    if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(dind_ready).await?;
+    } else {
+        dind_ready.await?;
+    }
 
     // Step 4: Mount volumes and launch
-    steps.next("Launching role");
+    steps.next("Launching role").await;
     steps.done();
 
-    tui::print_deploying(agent_display_name);
+    if steps.progress.is_none() {
+        tui::print_deploying(agent_display_name);
+    }
 
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display_name={agent_display_name}");
@@ -720,8 +813,11 @@ async fn launch_role_runtime(
     {
         id
     } else {
-        eprintln!(
-            "warning: instance_id_from_container_base could not parse {container_name:?}; falling back to full container name as JACKIN_INSTANCE_ID — chrome chip will render the full name"
+        crate::tui::emit_compact_line(
+            "warning",
+            &format!(
+                "warning: instance_id_from_container_base could not parse {container_name:?}; falling back to full container name as JACKIN_INSTANCE_ID — chrome chip will render the full name"
+            ),
         );
         container_name
     };
@@ -988,9 +1084,12 @@ async fn launch_role_runtime(
     // daemon uses it only to choose the first tab; per-session
     // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
     run_args.push(agent.slug());
-    runner
-        .run("docker", &run_args, None, &docker_run_opts)
-        .await?;
+    let run_role = runner.run("docker", &run_args, None, &docker_run_opts);
+    if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(run_role).await?;
+    } else {
+        run_role.await?;
+    }
 
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
@@ -1010,6 +1109,15 @@ async fn launch_role_runtime(
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
     // to answer `status`; jackin-capsule detects PID != 1 and then runs in
     // client mode, connecting to that daemon socket inside the container.
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(super::progress::LaunchStage::Capsule, "ready");
+        progress.opening_hardline();
+        progress.settle_stage_visual().await;
+    }
+    // Tear down the loading cockpit before the interactive attach: the
+    // capsule's `docker exec -it` must own a clean terminal, and leaving the
+    // rich surface active would force-capture its PTY and hang the handoff.
+    steps.finish_progress();
     let session_result =
         reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
@@ -1040,6 +1148,9 @@ async fn launch_role_runtime(
             return Ok(());
         }
         return Err(err);
+    }
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(super::progress::LaunchStage::Hardline, "open");
     }
 
     Ok(())
@@ -1217,37 +1328,51 @@ pub async fn inspect_attach_outcome(
 }
 
 enum GitPullResult {
-    Success { stdout: String },
+    Success { src: String, stdout: String },
     Failure { src: String, stderr: String },
     SpawnError { src: String, error: std::io::Error },
     JoinError { src: String },
 }
 
-fn pull_workspace_repos(workspace: &crate::workspace::ResolvedWorkspace, debug: bool) {
-    pull_workspace_repos_with_git(workspace, debug, std::path::Path::new("git"));
-}
-
+#[cfg(test)]
 fn pull_workspace_repos_with_git(
     workspace: &crate::workspace::ResolvedWorkspace,
     debug: bool,
     git_program: &std::path::Path,
-) {
-    let mut pulls = Vec::new();
-    let mut seen_srcs = std::collections::HashSet::new();
+) -> Vec<GitPullResult> {
+    pull_git_sources_with_git(git_pull_sources(workspace), debug, git_program, true)
+}
 
+fn git_pull_sources(workspace: &crate::workspace::ResolvedWorkspace) -> Vec<String> {
+    let mut sources = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for mount in &workspace.mounts {
-        let src = std::path::Path::new(&mount.src);
-        if !src.join(".git").exists() {
-            continue;
+        if std::path::Path::new(&mount.src).join(".git").exists() && seen.insert(mount.src.clone())
+        {
+            sources.push(mount.src.clone());
         }
-        let src = mount.src.clone();
-        if !seen_srcs.insert(src.clone()) {
-            continue;
-        }
+    }
+    sources
+}
+
+fn pull_git_sources_with_git(
+    sources: Vec<String>,
+    debug: bool,
+    git_program: &std::path::Path,
+    print_starts: bool,
+) -> Vec<GitPullResult> {
+    let mut pulls = Vec::new();
+
+    for src in sources {
         if debug {
-            eprintln!("[jackin debug] git pull in {}", mount.src);
+            crate::diagnostics::active_debug("git_pull", &format!("git pull in {src}"));
+            if crate::diagnostics::active_run().is_none() {
+                eprintln!("[jackin debug] git pull in {src}");
+            }
         }
-        eprintln!("  Pulling {} …", crate::tui::shorten_home(&mount.src));
+        if print_starts {
+            eprintln!("  Pulling {} …", crate::tui::shorten_home(&src));
+        }
         let git_program = git_program.to_path_buf();
         pulls.push((
             src.clone(),
@@ -1257,6 +1382,7 @@ fn pull_workspace_repos_with_git(
                     .output()
                 {
                     Ok(out) if out.status.success() => GitPullResult::Success {
+                        src,
                         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
                     },
                     Ok(out) => GitPullResult::Failure {
@@ -1269,13 +1395,17 @@ fn pull_workspace_repos_with_git(
         ));
     }
 
-    for (src, handle) in pulls {
-        match handle.join().unwrap_or(GitPullResult::JoinError { src }) {
-            GitPullResult::Success { stdout } => {
-                let trimmed = stdout.trim();
-                if !trimmed.is_empty() {
-                    eprintln!("    {trimmed}");
-                }
+    pulls
+        .into_iter()
+        .map(|(src, handle)| handle.join().unwrap_or(GitPullResult::JoinError { src }))
+        .collect()
+}
+
+fn print_git_pull_results(results: &[GitPullResult]) {
+    for result in results {
+        match result {
+            GitPullResult::Success { stdout, .. } => {
+                print_git_pull_stdout(stdout);
             }
             GitPullResult::Failure { src, stderr } => {
                 eprintln!("  Warning: git pull failed in {}: {}", src, stderr.trim());
@@ -1288,6 +1418,55 @@ fn pull_workspace_repos_with_git(
             }
         }
     }
+}
+
+fn print_git_pull_stdout(stdout: &str) {
+    let trimmed = stdout.trim();
+    if !trimmed.is_empty() {
+        eprintln!("    {trimmed}");
+    }
+}
+
+fn record_git_pull_results(results: &[GitPullResult]) -> (usize, usize) {
+    let mut ok = 0;
+    let mut failed = 0;
+    for result in results {
+        match result {
+            GitPullResult::Success { src, stdout } => {
+                ok += 1;
+                crate::diagnostics::active_debug(
+                    "git_pull",
+                    &format!("git pull in {src} succeeded: {}", stdout.trim()),
+                );
+            }
+            GitPullResult::Failure { src, stderr } => {
+                failed += 1;
+                if let Some(run) = crate::diagnostics::active_run() {
+                    run.compact("git_pull", &format!("git pull failed in {src}"));
+                }
+                crate::diagnostics::active_debug(
+                    "git_pull",
+                    &format!("git pull in {src} failed: {}", stderr.trim()),
+                );
+            }
+            GitPullResult::SpawnError { src, error } => {
+                failed += 1;
+                if let Some(run) = crate::diagnostics::active_run() {
+                    run.compact(
+                        "git_pull",
+                        &format!("could not run git pull in {src}: {error}"),
+                    );
+                }
+            }
+            GitPullResult::JoinError { src } => {
+                failed += 1;
+                if let Some(run) = crate::diagnostics::active_run() {
+                    run.compact("git_pull", &format!("git pull thread panicked in {src}"));
+                }
+            }
+        }
+    }
+    (ok, failed)
 }
 
 // Boxed future required: load_role calls itself recursively via
@@ -1375,43 +1554,116 @@ async fn load_role_with(
     confirm_trust: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
     confirm_branch: impl FnOnce(&RoleSelector, &crate::config::RoleSource, &str) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    // Pre-launch garbage collection: remove orphaned DinD containers and
-    // networks left behind by hard kills, terminal closures, or startup
-    // failures.  Best-effort — errors are silently ignored.
-    gc_orphaned_resources(docker).await;
+    // Pre-launch garbage collection is independent from host identity probes.
+    let ((), (git, host)) = tokio::join!(gc_orphaned_resources(docker), async {
+        let git = load_git_identity(runner).await;
+        let host = load_host_identity(runner).await;
+        (git, host)
+    });
 
-    let git = load_git_identity(runner).await;
-    let host = load_host_identity(runner).await;
+    // `app::run` claims the first-entry boundary immediately before a real
+    // launch so the two-screen intro only plays from an empty construct. Direct
+    // test/internal callers still need the elapsed-time marker for the last-exit
+    // outro, so this idempotently writes one if the app layer did not.
+    super::universe::mark_start(paths, super::universe::StartKind::ResumeExisting);
 
-    // Intro animation
-    if !opts.no_intro {
-        let intro_name = if git.user_name.is_empty() {
-            "operator"
-        } else {
-            &git.user_name
-        };
-        tui::intro_animation(intro_name);
+    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
+    // not a name. Recover the name by matching workdir, mirroring the
+    // identification rule used by `jackin workspace show`.
+    let workspace_name = config
+        .workspaces
+        .iter()
+        .find(|(_, w)| w.workdir == workspace.workdir)
+        .map(|(name, _)| name.clone());
+
+    let mut steps = StepCounter::new(&selector.name);
+    if let Some(run) = crate::diagnostics::active_run() {
+        let mut progress = super::progress::LaunchProgress::new(
+            run,
+            std::env::var_os("JACKIN_NO_MOTION").is_some(),
+        )?;
+        progress.started(super::progress::LaunchIdentity {
+            role: selector.name.clone(),
+            agent: opts
+                .agent
+                .or(workspace.default_agent)
+                .map_or_else(|| "resolving".to_string(), |agent| agent.slug().to_string()),
+            target_kind: launch_target_kind(workspace_name.as_deref()),
+            target_label: launch_target_label(workspace_name.as_deref(), workspace),
+            mounts: launch_mount_lines(workspace),
+            image: None,
+            container: None,
+        });
+        progress.stage_done(super::progress::LaunchStage::Identity, "resolved operator");
+        steps.start_progress(progress);
     }
 
     if workspace.git_pull_on_entry {
-        pull_workspace_repos(workspace, opts.debug);
+        let sources = git_pull_sources(workspace);
+        if let Some(progress) = steps.progress_mut() {
+            if sources.is_empty() {
+                progress.stage_skipped(
+                    super::progress::LaunchStage::Workspace,
+                    "no mounted git repositories",
+                );
+            } else {
+                progress.stage_started(
+                    super::progress::LaunchStage::Workspace,
+                    format!("polling {} workspace repositories", sources.len()),
+                );
+                let debug = opts.debug;
+                let git_program = std::path::PathBuf::from("git");
+                let pull = tokio::task::spawn_blocking(move || {
+                    pull_git_sources_with_git(sources, debug, &git_program, false)
+                });
+                let results = progress
+                    .while_waiting(async move {
+                        pull.await
+                            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
+                    })
+                    .await?;
+                let (ok, failed) = record_git_pull_results(&results);
+                let detail = if failed == 0 {
+                    format!("{ok} repositories current")
+                } else {
+                    format!("{ok} repositories current; {failed} failed")
+                };
+                progress.stage_done(super::progress::LaunchStage::Workspace, detail);
+            }
+        } else if !sources.is_empty() {
+            // Run the blocking git pulls on a blocking-pool thread so the
+            // single-threaded executor is never parked on the join.
+            let debug = opts.debug;
+            let git_program = std::path::PathBuf::from("git");
+            let results = tokio::task::spawn_blocking(move || {
+                pull_git_sources_with_git(sources, debug, &git_program, true)
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
+            print_git_pull_results(&results);
+        }
     }
 
     let (source, is_new, restore_source_override) =
         resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
 
-    let mut steps = StepCounter::new(opts.no_intro, &selector.name);
-
     // Step 1: Resolve role identity (clone or update repo)
-    steps.next("Resolving role identity");
+    steps.next("Resolving role identity").await;
 
-    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo(
+    let mut confirm_repo_removal = || {
+        release_rich_progress_for_plain_io(
+            &mut steps,
+            "plain cached-repo recovery prompt required",
+        );
+        confirm_repo_removal_interactive()
+    };
+    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
         paths,
         selector,
         &source.git,
         runner,
-        opts.debug,
-        opts.role_branch.as_deref(),
+        RepoResolveOptions::interactive(opts.debug).with_branch(opts.role_branch.as_deref()),
+        &mut confirm_repo_removal,
     )
     .await?;
 
@@ -1419,6 +1671,7 @@ async fn load_role_with(
     let newly_trusted = if source.trusted {
         false
     } else {
+        release_rich_progress_for_plain_io(&mut steps, "plain trust prompt required");
         confirm_trust(selector, &source)?;
         // Mutate the in-memory copy so callers downstream see the trust
         // without a reload; persist via editor below.
@@ -1444,20 +1697,40 @@ async fn load_role_with(
     let agent = match opts.agent.or(workspace.default_agent) {
         Some(a) => a,
         None if supported_agents.len() == 1 => supported_agents[0],
-        None if std::io::stdin().is_terminal() && supported_agents.len() >= 2 => {
+        None if supported_agents.len() >= 2 => {
             let labels: Vec<String> = supported_agents
                 .iter()
                 .map(|a| a.slug().to_string())
                 .collect();
-            let selection = dialoguer::Select::new()
-                .with_prompt(format!(
-                    "Role \"{}\" supports multiple agents. Choose one",
-                    selector.key()
-                ))
-                .items(&labels)
-                .default(0)
-                .interact()?;
-            supported_agents[selection]
+            if let Some(progress) = steps.progress_mut()
+                && let Some(selection) =
+                    progress.select_choice("Choose launch agent", labels.clone())?
+            {
+                supported_agents[selection]
+            } else if std::io::stdin().is_terminal() {
+                release_rich_progress_for_plain_io(
+                    &mut steps,
+                    "plain multi-agent role prompt required",
+                );
+                let selection = dialoguer::Select::new()
+                    .with_prompt(format!(
+                        "Role \"{}\" supports multiple agents. Choose one",
+                        selector.key()
+                    ))
+                    .items(&labels)
+                    .default(0)
+                    .interact()?;
+                supported_agents[selection]
+            } else {
+                anyhow::bail!(
+                    "role \"{}\" supports multiple agents ({:?}); pass --agent or set the workspace `default_agent` for non-interactive launches",
+                    selector.key(),
+                    supported_agents
+                        .iter()
+                        .map(|a| a.slug())
+                        .collect::<Vec<_>>()
+                )
+            }
         }
         None if supported_agents.is_empty() => anyhow::bail!(
             "role \"{}\" declares no supported agents in its manifest",
@@ -1477,20 +1750,13 @@ async fn load_role_with(
     // Branch trust gate: fires even for already-trusted roles because the
     // operator trusted the default branch, not this unreviewed PR branch.
     if let Some(branch) = opts.role_branch.as_deref() {
+        release_rich_progress_for_plain_io(&mut steps, "plain branch trust prompt required");
         confirm_branch(selector, &source, branch)?;
     }
 
-    // Logo (if present in role repo)
-    tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
-
-    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
-    // not a name. Recover the name by matching workdir, mirroring the
-    // identification rule used by `jackin workspace show`.
-    let workspace_name = config
-        .workspaces
-        .iter()
-        .find(|(_, w)| w.workdir == workspace.workdir)
-        .map(|(name, _)| name.clone());
+    if steps.progress.is_none() {
+        tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
+    }
 
     let role_key = selector.key();
     let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
@@ -1504,31 +1770,30 @@ async fn load_role_with(
             &role_key,
             agent,
             docker,
+            steps.progress_mut(),
         )
         .await?
         {
             RestoreResolution::StartFresh => None,
             RestoreResolution::RestoreCurrentRole(container) => Some(container),
             RestoreResolution::RecoverRelatedRole(container) => {
+                steps.finish_progress();
                 let load_result = hardline_agent(paths, &container, docker, runner)
                     .await
                     .map(|()| container);
-                let agent_display_name = match &load_result {
-                    Ok(container_name) => format_role_display(container_name, &agent_display_name),
-                    Err(_) => agent_display_name,
-                };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, docker, opts).await;
+                        render_exit(paths, docker).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, docker, opts).await;
+                        render_exit(paths, docker).await;
                         return Err(error);
                     }
                 }
             }
             RestoreResolution::RebuildRelatedRole(manifest) => {
+                steps.finish_progress();
                 let selector = RoleSelector::parse(&manifest.role_key)?;
                 let related_opts = related_restore_load_options(opts, &manifest)?;
                 let load_result = load_role(
@@ -1542,17 +1807,13 @@ async fn load_role_with(
                 )
                 .await
                 .map(|()| manifest.container_base);
-                let agent_display_name = match &load_result {
-                    Ok(container_name) => format_role_display(container_name, &agent_display_name),
-                    Err(_) => agent_display_name,
-                };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, docker, opts).await;
+                        render_exit(paths, docker).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, docker, opts).await;
+                        render_exit(paths, docker).await;
                         return Err(error);
                     }
                 }
@@ -1579,14 +1840,42 @@ async fn load_role_with(
         runner,
     )
     .await;
-    eprintln!();
-    tui::print_config_table(&config_rows);
-    eprintln!();
+    if let Some(progress) = steps.progress_mut() {
+        progress.update_identity(super::progress::LaunchIdentity {
+            role: agent_display_name.clone(),
+            agent: agent.slug().to_string(),
+            target_kind: launch_target_kind(workspace_name.as_deref()),
+            target_label: launch_target_label(workspace_name.as_deref(), workspace),
+            mounts: launch_mount_lines(workspace),
+            image: Some(image_tag.clone()),
+            container: Some(container_name.clone()),
+        });
+        progress.stage_done(super::progress::LaunchStage::Role, "trusted source");
+    } else {
+        eprintln!();
+        tui::print_config_table(&config_rows);
+        eprintln!();
+    }
+
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            super::progress::LaunchStage::Credentials,
+            "resolving launch credentials",
+        );
+    }
 
     // Resolve env vars (interactive prompts happen here, before build)
     let manifest_resolved = if validated_repo.manifest.env.is_empty() {
         crate::env_resolver::ResolvedEnv { vars: vec![] }
     } else {
+        if validated_repo
+            .manifest
+            .env
+            .values()
+            .any(|decl| decl.interactive)
+        {
+            release_rich_progress_for_plain_io(&mut steps, "plain manifest env prompt required");
+        }
         let prompter = crate::terminal_prompter::TerminalPrompter;
         crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
     };
@@ -1663,6 +1952,9 @@ async fn load_role_with(
             opts.debug,
         );
     }
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(super::progress::LaunchStage::Credentials, "resolved");
+    }
 
     let load_result: anyhow::Result<String> = async {
         // Step 2: Build Docker image
@@ -1684,12 +1976,26 @@ async fn load_role_with(
                     crate::agent::Agent::Opencode => "OpenCode",
                     _ => unreachable!(),
                 };
-                eprintln!("        {name} update available — refreshing agent layer");
+                if let Some(progress) = steps.progress_mut() {
+                    progress.stage_progress(
+                        super::progress::LaunchStage::DerivedImage,
+                        format!("{name} update available; refreshing agent layer"),
+                    );
+                } else {
+                    eprintln!("        {name} update available — refreshing agent layer");
+                }
             }
             needs_update
         };
-        steps.next("Building Docker image");
-        let image = build_agent_image(
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_started(
+                super::progress::LaunchStage::Construct,
+                "verifying construct",
+            );
+            progress.stage_done(super::progress::LaunchStage::Construct, "online");
+        }
+        steps.next("Building Docker image").await;
+        let image_build = build_agent_image(
             paths,
             selector,
             &cached_repo,
@@ -1703,7 +2009,12 @@ async fn load_role_with(
             docker,
             runner,
             repo_lock,
-        ).await?;
+        );
+        let image = if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(image_build).await?
+        } else {
+            image_build.await?
+        };
 
         let container_state = paths.data_dir.join(&container_name);
         let network = format!("{container_name}-net");
@@ -1870,7 +2181,14 @@ async fn load_role_with(
             });
 
         if agent == crate::agent::Agent::Codex {
-            tui::codex_auth_notice(resolved_source.as_deref(), (auth_mode, auth_outcome).into());
+            if steps.progress.is_none() {
+                tui::codex_auth_notice(
+                    resolved_source.as_deref(),
+                    (auth_mode, auth_outcome).into(),
+                );
+            } else if let Some(run) = crate::diagnostics::active_run() {
+                run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
+            }
         } else {
             let expiry_days = workspace_name
                 .as_deref()
@@ -1879,25 +2197,31 @@ async fn load_role_with(
                     match crate::workspace::token_setup::expiry_days_for_launch(paths, ws) {
                         Ok(days) => days,
                         Err(e) => {
-                            // Malformed cache stamp: warn so the operator sees
-                            // it once on the next launch instead of having the
-                            // banner silently degrade to "no expiry known".
-                            eprintln!(
+                            let message = format!(
                                 "[jackin] note: token expiry cache for workspace {ws:?} \
                                  is unreadable ({e}); re-run \
                                  `jackin workspace claude-token setup {ws}` to refresh."
                             );
+                            if let Some(run) = crate::diagnostics::active_run() {
+                                run.compact("auth", &message);
+                            } else {
+                                eprintln!("{message}");
+                            }
                             None
                         }
                     }
                 });
-            tui::auth_mode_notice(
-                agent,
-                &auth_mode.to_string(),
-                resolved_source.as_deref(),
-                expiry_days,
-            );
-            tui::agent_outcome_notice(agent, auth_mode, auth_outcome);
+            if steps.progress.is_none() {
+                tui::auth_mode_notice(
+                    agent,
+                    &auth_mode.to_string(),
+                    resolved_source.as_deref(),
+                    expiry_days,
+                );
+                tui::agent_outcome_notice(agent, auth_mode, auth_outcome);
+            } else if let Some(run) = crate::diagnostics::active_run() {
+                run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
+            }
         }
 
         // GitHub auth summary line — agent-neutral. The breadcrumb walks
@@ -1912,7 +2236,14 @@ async fn load_role_with(
                 || gh_token_key.to_string(),
                 |value| auth_token_source_reference(gh_token_key, Some(value.as_display_str())),
             );
-            tui::github_auth_notice(&state.gh_provision_outcome, Some(&token_breadcrumb));
+            if steps.progress.is_none() {
+                tui::github_auth_notice(&state.gh_provision_outcome, Some(&token_breadcrumb));
+            } else if let Some(run) = crate::diagnostics::active_run() {
+                run.compact(
+                    "github_auth",
+                    &format!("resolved GitHub auth from {token_breadcrumb}"),
+                );
+            }
         }
 
         // Materialize workspace mounts: shared mounts pass through;
@@ -1928,22 +2259,37 @@ async fn load_role_with(
             "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
             force = opts.force,
         );
-        let materialized = crate::isolation::materialize::materialize_workspace(
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_started(
+                super::progress::LaunchStage::Workspace,
+                "materializing workspace",
+            );
+        }
+        let materialize_preflight = crate::isolation::materialize::PreflightContext {
+            workspace_name: workspace_label.to_string(),
+            force: opts.force,
+            interactive,
+        };
+        let materialize = crate::isolation::materialize::materialize_workspace(
             workspace,
             &container_state,
-            &selector.key(),
+            &role_key,
             &container_name,
             workspace_label,
-            &crate::isolation::materialize::PreflightContext {
-                workspace_name: workspace_label.to_string(),
-                force: opts.force,
-                interactive,
-            },
+            &materialize_preflight,
             runner,
-        ).await?;
+        );
+        let materialized = if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(materialize).await?
+        } else {
+            materialize.await?
+        };
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_done(super::progress::LaunchStage::Workspace, "materialized");
+        }
 
         // Step 3: Create network and start Docker-in-Docker
-        steps.next("Starting Docker-in-Docker");
+        steps.next("Starting Docker-in-Docker").await;
 
         let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest);
         let ctx = LaunchContext {
@@ -1984,10 +2330,15 @@ async fn load_role_with(
                 &mut instance_manifest,
                 InstanceStatus::FailedSetup,
             ) {
-                eprintln!(
+                let message = format!(
                     "jackin: warning: failed to mark FailedSetup for {container_name} \
-                     after launch error: {status_err:#}; on-disk status may be stale",
+                     after launch error: {status_err:#}; on-disk status may be stale"
                 );
+                if let Some(run) = crate::diagnostics::active_run() {
+                    run.compact("status", &message);
+                } else {
+                    eprintln!("{message}");
+                }
             }
             cleanup.run(docker).await;
         }
@@ -2187,21 +2538,60 @@ async fn load_role_with(
         Ok(container_name)
     }.await;
 
-    let agent_display_name = match &load_result {
-        Ok(container_name) => format_role_display(container_name, &agent_display_name),
-        Err(_) => agent_display_name,
-    };
-
     match load_result {
         Ok(_) => {
-            render_exit(&agent_display_name, docker, opts).await;
+            render_exit(paths, docker).await;
             Ok(())
         }
         Err(error) => {
-            render_exit(&agent_display_name, docker, opts).await;
+            let failed_stage = steps
+                .current_stage
+                .unwrap_or(super::progress::LaunchStage::Capsule);
+            if let Some(progress) = steps.progress_mut() {
+                progress
+                    .stage_failed(super::progress::LaunchFailure {
+                        title: launch_failure_title(failed_stage, &error),
+                        summary: short_launch_diagnosis(failed_stage, &error),
+                        next_step: None,
+                        stage: failed_stage,
+                        diagnostics_path: None,
+                        command_output_path: None,
+                    })
+                    .await;
+            }
+            // Stop the cockpit render task and release the rich surface before
+            // the exit warp writes to the terminal. A pre-attach failure returns
+            // before the success path's pre-handoff teardown runs, so without
+            // this the background task keeps drawing frames over the warp.
+            steps.finish_progress();
+            render_exit(paths, docker).await;
             Err(error)
         }
     }
+}
+
+fn launch_failure_title(stage: super::progress::LaunchStage, error: &anyhow::Error) -> String {
+    if stage == super::progress::LaunchStage::DerivedImage {
+        return "Docker build failed".to_string();
+    }
+    let text = error.to_string().to_ascii_lowercase();
+    if text.contains("docker") {
+        "Docker unavailable".to_string()
+    } else if text.contains("credential") || text.contains("token") || text.contains("auth") {
+        "Credential check failed".to_string()
+    } else {
+        "Launch failed".to_string()
+    }
+}
+
+fn short_launch_diagnosis(stage: super::progress::LaunchStage, error: &anyhow::Error) -> String {
+    if stage == super::progress::LaunchStage::DerivedImage {
+        return "Building the Docker container failed.".to_string();
+    }
+    error.chain().next().map_or_else(
+        || "launch did not complete".to_string(),
+        ToString::to_string,
+    )
 }
 
 fn resolve_launch_role_source(
@@ -2223,21 +2613,64 @@ fn resolve_launch_role_source(
     Ok((source, is_new, false))
 }
 
-async fn render_exit(agent_display_name: &str, docker: &impl DockerApi, opts: &LoadOptions) {
-    if opts.no_intro {
-        return;
-    }
-    let running = match list_running_agent_display_names(docker).await {
+async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
+    let force_outro = super::universe::force_boundary_outro_enabled();
+    let running = match list_running_agent_names(docker).await {
         Ok(names) => names,
         Err(e) => {
-            eprintln!(
-                "  {} could not list running sessions for outro: {e}",
-                "warning:".yellow().bold()
-            );
-            vec![]
+            if let Some(run) = crate::diagnostics::active_run() {
+                run.compact(
+                    "exit_summary",
+                    &format!("skipping boundary outro; running-container list failed: {e:#}"),
+                );
+            }
+            return;
         }
     };
-    tui::outro_animation(agent_display_name, &running);
+
+    if !running.is_empty() {
+        if let Some(run) = crate::diagnostics::active_run() {
+            let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap_or(InstanceIndex {
+                version: 0,
+                instances: Vec::new(),
+            });
+            let (headline, rows) = super::exit_summary::summary(&running, &index);
+            run.compact(
+                "exit_summary",
+                &format!("{headline}; boundary outro skipped"),
+            );
+            for row in rows {
+                run.compact("exit_summary", &row);
+            }
+        }
+        if !force_outro {
+            return;
+        }
+    }
+
+    // Last container left the construct: clear the session marker and show the
+    // two-screen outro (decelerating warp, then closing caption). Exits that
+    // leave other instances running skip this entirely because the operator is
+    // still inside the Construct.
+    let elapsed = if force_outro && !running.is_empty() {
+        None
+    } else {
+        match super::universe::take_exit_claim(paths) {
+            ExitClaim::Claimed { elapsed } => elapsed,
+            ExitClaim::Missing if force_outro => None,
+            ExitClaim::Missing => return,
+        }
+    };
+    if !super::progress::rich_terminal_supported() {
+        return;
+    }
+    // Defensive: the attach paths already re-assert the alt screen the moment
+    // the capsule exec returns, so the post-attach work never flashes the
+    // shell. Re-assert once more before the rich outro in case render_exit is
+    // reached by a path that did not go through the attach.
+    crate::tui::reassert_alt_screen();
+    tui::warp_out();
+    tui::warp_end_caption(elapsed);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2248,7 +2681,7 @@ enum RestoreResolution {
     RebuildRelatedRole(Box<InstanceManifest>),
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -2257,6 +2690,7 @@ async fn resolve_restore_candidate(
     role_key: &str,
     agent: crate::agent::Agent,
     docker: &impl DockerApi,
+    progress: Option<&mut super::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
     let mut candidates = Vec::new();
     for manifest in matching_instance_manifests(
@@ -2301,74 +2735,93 @@ async fn resolve_restore_candidate(
     )
     .await?;
 
-    match candidates.as_slice() {
-        [] if related.is_empty() => Ok(RestoreResolution::StartFresh),
-        [] => prompt_related_restore_candidate(workspace_label, &related),
-        [only] if !std::io::stdin().is_terminal() => anyhow::bail!(
-            "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to inspect it or `jackin load` interactively from the matching workspace to rebuild jackin-managed local state. Run `jackin eject {} --purge` to discard it before starting a fresh load. Anything written only to the deleted container's writable layer is gone and will not be restored, including ad-hoc package installs, global files outside mounted paths, and DinD images.",
-            only.container_base,
-            only.container_base,
-            only.container_base
-        ),
-        [only] => {
-            let mut options = vec![format!("Restore {}", restore_candidate_label(paths, only))];
-            options.extend(related.iter().map(|candidate| {
-                format!(
-                    "Recover other role with hardline {}",
-                    related_restore_candidate_label(paths, candidate)
-                )
-            }));
-            options.push("Start fresh instead".to_string());
-            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-            let choice = tui::prompt_choice(
-                &format!("Unfinished jackin state exists for workspace `{workspace_label}`."),
-                &option_refs,
-            )?;
-            if choice == 0 {
-                Ok(RestoreResolution::RestoreCurrentRole(
-                    only.container_base.clone(),
-                ))
-            } else if let Some(candidate) = related.get(choice.saturating_sub(1)) {
-                recover_related_restore_candidate(candidate)
-            } else {
-                supersede_restore_candidates(paths, candidates)?;
-                Ok(RestoreResolution::StartFresh)
-            }
-        }
-        _ if !std::io::stdin().is_terminal() => anyhow::bail!(
-            "multiple restore candidates exist for role `{role_key}` in workspace `{workspace_label}`; run `jackin hardline <container>` for the instance to recover or purge stale instances before starting a fresh load"
-        ),
-        _ => {
-            let mut options: Vec<String> = candidates
-                .iter()
-                .map(|manifest| format!("Restore {}", restore_candidate_label(paths, manifest)))
-                .collect();
-            options.extend(related.iter().map(|candidate| {
-                format!(
-                    "Recover other role with hardline {}",
-                    related_restore_candidate_label(paths, candidate)
-                )
-            }));
-            options.push("Start fresh instead".to_string());
-            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-            let choice = tui::prompt_choice(
-                &format!(
-                    "Multiple unfinished jackin instances exist for workspace `{workspace_label}`."
-                ),
-                &option_refs,
-            )?;
-            if choice < candidates.len() {
-                Ok(RestoreResolution::RestoreCurrentRole(
-                    candidates[choice].container_base.clone(),
-                ))
-            } else if let Some(candidate) = related.get(choice - candidates.len()) {
-                recover_related_restore_candidate(candidate)
-            } else {
-                supersede_restore_candidates(paths, candidates)?;
-                Ok(RestoreResolution::StartFresh)
-            }
-        }
+    if candidates.is_empty() && related.is_empty() {
+        return Ok(RestoreResolution::StartFresh);
     }
+
+    // One dialog for every stale-state decision — same-role candidates and
+    // related-role candidates alike — so the operator always sees the rich
+    // forced-choice picker inside the TUI, never a divergent stdin prompt.
+    present_restore_choice(
+        progress,
+        paths,
+        workspace_label,
+        role_key,
+        candidates,
+        &related,
+    )
+}
+
+/// Present the stale-instance decision. "Start fresh" is always the
+/// default first option; recoverable instances follow. The rich launch
+/// surface renders it as a forced-choice picker (no cancel); other
+/// surfaces fall back to the stdin prompt. The operator must pick.
+fn present_restore_choice(
+    progress: Option<&mut super::progress::LaunchProgress>,
+    paths: &JackinPaths,
+    workspace_label: &str,
+    role_key: &str,
+    candidates: Vec<InstanceManifest>,
+    related: &[RelatedRestoreCandidate],
+) -> anyhow::Result<RestoreResolution> {
+    let mut labels = vec!["Start fresh instance".to_string()];
+    labels.extend(
+        candidates
+            .iter()
+            .map(|manifest| restore_candidate_label(paths, manifest)),
+    );
+    labels.extend(related.iter().map(|candidate| {
+        format!(
+            "Recover other role with hardline {}",
+            related_restore_candidate_label(paths, candidate)
+        )
+    }));
+
+    let choice = match progress {
+        Some(progress) => {
+            match progress.select_choice("Unfinished jackin instances", labels.clone())? {
+                Some(index) => index,
+                None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
+            }
+        }
+        None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
+    };
+
+    if choice == 0 {
+        supersede_restore_candidates(paths, candidates)?;
+        Ok(RestoreResolution::StartFresh)
+    } else if choice <= candidates.len() {
+        Ok(RestoreResolution::RestoreCurrentRole(
+            candidates[choice - 1].container_base.clone(),
+        ))
+    } else {
+        recover_related_restore_candidate(&related[choice - 1 - candidates.len()])
+    }
+}
+
+/// Plain stdin fallback for the stale-instance decision when no rich
+/// surface owns the screen. Bails when stdin is not interactive — the
+/// decision cannot be made non-interactively.
+fn stdin_restore_choice(
+    workspace_label: &str,
+    role_key: &str,
+    candidates: &[InstanceManifest],
+    labels: &[String],
+) -> anyhow::Result<usize> {
+    if !std::io::stdin().is_terminal() {
+        let hint = candidates.first().map_or_else(
+            || format!("role `{role_key}`"),
+            |manifest| format!("`jackin hardline {}`", manifest.container_base),
+        );
+        anyhow::bail!(
+            "unfinished jackin instances exist for workspace `{workspace_label}` but stdin is not interactive; run {hint} to inspect or recover, or purge stale instances before a fresh load"
+        );
+    }
+    let option_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+    tui::prompt_choice(
+        &format!("Unfinished jackin instances exist for workspace `{workspace_label}`."),
+        &option_refs,
+    )
 }
 
 #[derive(Debug)]
@@ -2426,32 +2879,6 @@ async fn related_restore_candidates(
     Ok(candidates)
 }
 
-fn prompt_related_restore_candidate(
-    workspace_label: &str,
-    candidates: &[RelatedRestoreCandidate],
-) -> anyhow::Result<RestoreResolution> {
-    if !std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "unfinished jackin instances exist for workspace `{workspace_label}` under a different role or agent; run `jackin hardline <instance>` to inspect or recover them before starting a fresh load"
-        );
-    }
-
-    let mut options: Vec<String> = candidates
-        .iter()
-        .map(related_restore_candidate_action_label)
-        .collect();
-    options.push("Start fresh instead".to_string());
-    let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-    let choice = tui::prompt_choice(
-        &format!("Unfinished jackin instances exist for workspace `{workspace_label}`."),
-        &option_refs,
-    )?;
-    if let Some(candidate) = candidates.get(choice) {
-        return recover_related_restore_candidate(candidate);
-    }
-    Ok(RestoreResolution::StartFresh)
-}
-
 fn recover_related_restore_candidate(
     candidate: &RelatedRestoreCandidate,
 ) -> anyhow::Result<RestoreResolution> {
@@ -2488,7 +2915,6 @@ fn related_restore_load_options(
     manifest: &InstanceManifest,
 ) -> anyhow::Result<LoadOptions> {
     Ok(LoadOptions {
-        no_intro: current.no_intro,
         debug: current.debug,
         rebuild: current.rebuild,
         force: current.force,
@@ -2501,35 +2927,6 @@ fn related_restore_load_options(
     })
 }
 
-fn related_restore_candidate_action_label(candidate: &RelatedRestoreCandidate) -> String {
-    match candidate.docker_state {
-        ContainerState::Running
-        | ContainerState::Paused
-        | ContainerState::Restarting
-        | ContainerState::Stopped { .. } => {
-            format!(
-                "Recover now {}",
-                related_restore_candidate_label_for_prompt(candidate)
-            )
-        }
-        ContainerState::NotFound
-        | ContainerState::Created
-        | ContainerState::Removing
-        | ContainerState::Dead => {
-            format!(
-                "Rebuild now {}",
-                related_restore_candidate_label_for_prompt(candidate)
-            )
-        }
-        ContainerState::InspectUnavailable(_) => {
-            format!(
-                "Recover with hardline {}",
-                related_restore_candidate_label_for_prompt(candidate)
-            )
-        }
-    }
-}
-
 fn related_restore_candidate_label(
     paths: &JackinPaths,
     candidate: &RelatedRestoreCandidate,
@@ -2538,18 +2935,6 @@ fn related_restore_candidate_label(
         "{} docker:{}",
         restore_candidate_label(paths, &candidate.manifest),
         candidate.docker_state.short_label()
-    )
-}
-
-fn related_restore_candidate_label_for_prompt(candidate: &RelatedRestoreCandidate) -> String {
-    format!(
-        "{} role:{} agent:{} status:{} docker:{} updated:{}",
-        candidate.manifest.instance_id,
-        candidate.manifest.role_key,
-        candidate.manifest.agent_runtime,
-        candidate.manifest.status.label(),
-        candidate.docker_state.short_label(),
-        candidate.manifest.updated_at
     )
 }
 
@@ -3526,6 +3911,7 @@ mod tests {
             role_key,
             crate::agent::Agent::Claude,
             docker,
+            None,
         )
         .await
     }
@@ -7246,37 +7632,80 @@ plugins = []
     }
 
     #[tokio::test]
-    async fn load_options_debug_disables_intro_for_load() {
-        let opts = LoadOptions::for_load(false, true, false);
-        assert!(opts.no_intro, "debug mode must disable intro for load");
-        assert!(opts.debug);
-    }
-
-    #[tokio::test]
-    async fn load_options_no_intro_flag_for_load() {
-        let opts = LoadOptions::for_load(true, false, false);
-        assert!(opts.no_intro, "explicit no_intro must be respected");
-        assert!(!opts.debug);
-    }
-
-    #[tokio::test]
-    async fn load_options_intro_plays_when_no_flags_for_load() {
-        let opts = LoadOptions::for_load(false, false, false);
-        assert!(!opts.no_intro, "intro should play when no flags set");
-    }
-
-    #[tokio::test]
-    async fn load_options_debug_disables_intro_for_launch() {
+    async fn load_options_for_launch_carries_debug() {
         let opts = LoadOptions::for_launch(true);
-        assert!(opts.no_intro, "debug mode must disable intro for launch");
         assert!(opts.debug);
+
+        let opts = LoadOptions::for_launch(false);
+        assert!(!opts.debug);
     }
 
     #[tokio::test]
-    async fn load_options_intro_plays_when_no_debug_for_launch() {
-        let opts = LoadOptions::for_launch(false);
-        assert!(!opts.no_intro, "intro should play when debug is off");
-        assert!(!opts.debug);
+    async fn render_exit_clears_universe_marker_only_when_no_instances_remain() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        super::super::universe::mark_start(
+            &paths,
+            super::super::universe::StartKind::FreshConstruct,
+        );
+        let marker = paths.data_dir.join("universe-since");
+        let docker = crate::docker_client::FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
+            ..Default::default()
+        };
+        render_exit(&paths, &docker).await;
+
+        assert!(!marker.exists(), "last-instance exit clears the marker");
+    }
+
+    #[tokio::test]
+    async fn render_exit_preserves_universe_marker_when_instances_remain() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        super::super::universe::mark_start(
+            &paths,
+            super::super::universe::StartKind::FreshConstruct,
+        );
+        let marker = paths.data_dir.join("universe-since");
+        let docker = crate::docker_client::FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
+                crate::docker_client::ContainerRow {
+                    name: "jk-still-running".to_string(),
+                    labels: std::collections::HashMap::new(),
+                },
+            ]])),
+            ..Default::default()
+        };
+        render_exit(&paths, &docker).await;
+
+        assert!(
+            marker.exists(),
+            "leaving one of multiple instances keeps the universe open"
+        );
+    }
+
+    #[tokio::test]
+    async fn render_exit_preserves_universe_marker_when_running_list_fails() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        super::super::universe::mark_start(
+            &paths,
+            super::super::universe::StartKind::FreshConstruct,
+        );
+        let marker = paths.data_dir.join("universe-since");
+        let docker = crate::docker_client::FakeDockerClient {
+            fail_with: vec![("docker ps".to_string(), "daemon down".to_string())],
+            ..Default::default()
+        };
+        render_exit(&paths, &docker).await;
+
+        assert!(
+            marker.exists(),
+            "unknown Docker state must not close the universe"
+        );
     }
 
     #[tokio::test]
@@ -7928,7 +8357,7 @@ plugins = []
             .await
             .unwrap_err();
 
-        assert!(error.to_string().contains("restore is available"));
+        assert!(error.to_string().contains("not interactive"));
         assert!(error.to_string().contains(container_name));
     }
 
@@ -8008,12 +8437,15 @@ plugins = []
             .await
             .unwrap_err();
 
+        // The related-only case now flows through the unified restore dialog,
+        // which on a non-interactive stdin bails rather than silently starting
+        // fresh.
         let message = error.to_string();
         assert!(
-            message.contains("different role or agent"),
+            message.contains("stdin is not interactive"),
             "unexpected error: {message}"
         );
-        assert!(message.contains("jackin hardline <instance>"), "{message}");
+        assert!(message.contains("agent-smith"), "{message}");
     }
 
     #[tokio::test]
@@ -8116,7 +8548,6 @@ plugins = []
             resolution,
             RestoreResolution::RecoverRelatedRole(container_name.to_string())
         );
-        assert!(related_restore_candidate_action_label(&candidate).starts_with("Recover now"));
     }
 
     #[tokio::test]
@@ -8139,7 +8570,6 @@ plugins = []
             RestoreResolution::RebuildRelatedRole(ref manifest)
                 if manifest.container_base == container_name
         ));
-        assert!(related_restore_candidate_action_label(&candidate).starts_with("Rebuild now"));
     }
 
     #[tokio::test]
@@ -8153,11 +8583,10 @@ plugins = []
         );
         manifest.agent_runtime = "codex".to_string();
         manifest.role_source_ref = Some("restore-ref".to_string());
-        let current = LoadOptions::for_load(false, true, false);
+        let current = LoadOptions::for_load(true, false);
 
         let opts = related_restore_load_options(&current, &manifest).unwrap();
 
-        assert!(opts.no_intro);
         assert!(opts.debug);
         assert_eq!(opts.agent, Some(crate::agent::Agent::Codex));
         assert_eq!(opts.role_branch.as_deref(), Some("restore-ref"));
@@ -8165,13 +8594,6 @@ plugins = []
         assert_eq!(
             opts.restore_role_source_git.as_deref(),
             Some("https://example.invalid/the-architect.git")
-        );
-        assert!(
-            related_restore_candidate_action_label(&RelatedRestoreCandidate {
-                manifest,
-                docker_state: ContainerState::NotFound,
-            })
-            .starts_with("Rebuild now")
         );
     }
 

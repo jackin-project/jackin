@@ -17,13 +17,9 @@ use super::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 fn render_constraints(has_rejection: bool) -> Vec<ratatui::layout::Constraint> {
     use ratatui::layout::Constraint;
     if has_rejection {
-        vec![
-            Constraint::Length(1),
-            Constraint::Min(3),
-            Constraint::Length(1),
-        ]
+        vec![Constraint::Length(1), Constraint::Min(3)]
     } else {
-        vec![Constraint::Min(3), Constraint::Length(1)]
+        vec![Constraint::Min(3)]
     }
 }
 
@@ -49,7 +45,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 
     frame.render_widget(ratatui::widgets::Clear, area);
 
-    // Layout: [optional rejection banner][listing][nav hint].
+    // Layout: [optional rejection banner][listing]. Hints render in the
+    // screen footer (see `FileBrowserState::footer_items`), not inside the box.
     let rejection = state.rejected_reason.as_ref();
     let constraints = render_constraints(rejection.is_some());
     let chunks = Layout::default()
@@ -70,7 +67,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
     });
 
     render_listing(frame, chunks[listing_idx], state);
-    render_footer_legend(frame, chunks[chunks.len() - 1], state);
 
     // Git-repo prompt overlay — centred inside the listing area so the
     // listing stays visible as context behind the modal.
@@ -135,42 +131,6 @@ fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
-}
-
-/// Render the bottom footer legend. Swaps the usual nav+`s` legend for a
-/// prompt-focused legend when the git-repo confirm overlay is active.
-fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
-    use ratatui::layout::Alignment;
-    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text = Style::default().fg(PHOSPHOR_GREEN);
-    let sep = Style::default().fg(PHOSPHOR_DARK);
-    let line = if state.pending_git_prompt.is_some() {
-        Line::from(vec![
-            Span::styled("Enter", key),
-            Span::styled(" confirm", text),
-            Span::styled(" \u{b7} ", sep),
-            Span::styled("Esc", key),
-            Span::styled(" cancel", text),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("\u{2191}\u{2193}", key),
-            Span::styled(" navigate", text),
-            Span::styled(" \u{b7} ", sep),
-            Span::styled("Enter", key),
-            Span::styled(" open", text),
-            Span::styled(" \u{b7} ", sep),
-            Span::styled("H/\u{2190}", key),
-            Span::styled(" up", text),
-            Span::raw("   "),
-            Span::styled("S", key),
-            Span::styled(" select", text),
-            Span::raw("   "),
-            Span::styled("Esc", key),
-            Span::styled(" up/cancel", text),
-        ])
-    };
-    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
 #[cfg(test)]

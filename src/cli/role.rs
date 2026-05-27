@@ -9,7 +9,7 @@ use super::{BANNER, HELP_STYLES};
 /// destination (~/Projects/my-app:/app), or a saved workspace name.
 /// When omitted, the current directory is used.
 //
-// Five launch-time toggles (rebuild / no_intro / debug / force) plus the
+// Launch-time toggles plus the
 // positional `selector` / `target` / `mounts` map directly to CLI flags;
 // bundling them into nested structs would obscure rather than clarify.
 #[allow(clippy::struct_excessive_bools)]
@@ -42,9 +42,6 @@ pub struct LoadArgs {
     /// Force rebuild the Docker image and refresh agent CLI install layers
     #[arg(long, default_value_t = false)]
     pub rebuild: bool,
-    /// Skip the animated intro sequence
-    #[arg(long, default_value_t = false)]
-    pub no_intro: bool,
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
@@ -109,6 +106,9 @@ pub struct HardlineArgs {
 ///
 /// Running `jackin` with no subcommand on an interactive terminal opens the
 /// same console.
+/// The operator console is always the full experience — rich TUI, intro rain
+/// on entry, outro rain on the last container's exit. There is nothing to
+/// disable, so this carries no flags.
 #[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
 pub struct ConsoleArgs {}
@@ -262,7 +262,6 @@ mod tests {
             Some(Command::Load(super::LoadArgs {
                 selector: Some(ref s),
                 target: None,
-                no_intro: false,
                 ..
             })) if s == "agent-smith"
         ));
@@ -370,6 +369,28 @@ mod tests {
         ));
         // --debug is global on Cli, not on ConsoleArgs.
         assert!(cli.debug);
+    }
+
+    #[test]
+    fn console_rejects_removed_flags() {
+        // The console is always the full experience; the old --no-rain /
+        // --no-tui / --intro / --outro toggles no longer exist.
+        for flag in ["--no-rain", "--no-tui", "--intro", "--outro"] {
+            assert!(
+                Cli::try_parse_from(["jackin", "console", flag]).is_err(),
+                "console should reject {flag}"
+            );
+        }
+    }
+
+    #[test]
+    fn load_rejects_removed_surface_flags() {
+        for flag in ["--no-rain", "--no-tui", "--no-intro"] {
+            assert!(
+                Cli::try_parse_from(["jackin", "load", flag]).is_err(),
+                "load should reject {flag}"
+            );
+        }
     }
 
     #[test]

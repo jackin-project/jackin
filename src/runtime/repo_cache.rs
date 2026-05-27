@@ -188,7 +188,8 @@ pub(super) fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
         .interact()?)
 }
 
-pub(super) async fn resolve_agent_repo(
+#[cfg(test)]
+async fn resolve_agent_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
     git_url: &str,
@@ -196,8 +197,6 @@ pub(super) async fn resolve_agent_repo(
     debug: bool,
     branch_override: Option<&str>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
-    // URL is normalized once inside `resolve_agent_repo_with` — single
-    // chokepoint for the SSH→HTTPS rewrite, no double-allocation.
     resolve_agent_repo_with(
         paths,
         selector,

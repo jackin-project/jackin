@@ -126,7 +126,7 @@ pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepo
 
     let warnings = manifest.validate()?;
     for warning in &warnings {
-        eprintln!("warning: {}", warning.message);
+        crate::tui::emit_compact_line("warning", &format!("warning: {}", warning.message));
     }
 
     Ok(ValidatedRoleRepo {

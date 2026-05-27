@@ -17,11 +17,7 @@
 //! keymap (`h/l` / arrows / `s` / `Esc` handled directly instead of
 //! round-tripping through the explorer's event handler).
 
-use ratatui::style::Color;
-
-pub(super) use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-/// Sandbox-rejection / error red.
-pub(super) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
+pub(super) use super::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 /// Directories excluded from the listing when browsing $HOME.
 pub(super) const EXCLUDED: &[&str] = &[
