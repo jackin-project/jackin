@@ -303,6 +303,41 @@ mod tests {
     }
 
     #[test]
+    fn take_exit_claim_has_exactly_one_winner_under_contention() {
+        use std::sync::{Arc, Barrier};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = Arc::new(JackinPaths::for_tests(tmp.path()));
+        paths.ensure_base_dirs().unwrap();
+        mark_start(&paths, StartKind::FreshConstruct);
+
+        // All threads race the claim at once. The atomic rename guarantees a
+        // single winner; a read-then-remove implementation would let several
+        // threads read the marker and each render a duplicate outro.
+        let threads = 8;
+        let barrier = Arc::new(Barrier::new(threads));
+        // Collect eagerly so every thread is spawned before any is joined;
+        // joining inside the spawn loop would serialize the race away.
+        let mut handles = Vec::with_capacity(threads);
+        for _ in 0..threads {
+            let paths = Arc::clone(&paths);
+            let barrier = Arc::clone(&barrier);
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. })
+            }));
+        }
+
+        let mut winners = 0;
+        for handle in handles {
+            if handle.join().unwrap() {
+                winners += 1;
+            }
+        }
+        assert_eq!(winners, 1, "exactly one exit may claim the outro");
+    }
+
+    #[test]
     fn take_exit_claim_leaves_no_claim_temp_file() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());

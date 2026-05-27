@@ -66,10 +66,7 @@ impl RunDiagnostics {
             .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;
         prune_old_runs_in_dir(&dir, None);
         let path = dir.join(format!("{run_id}.jsonl"));
-        let mut opts = OpenOptions::new();
-        opts.create_new(true).write(true);
-        restrict_to_owner(&mut opts);
-        let file = opts
+        let file = restrict_to_owner(OpenOptions::new().create_new(true).write(true))
             .open(&path)
             .with_context(|| format!("creating diagnostics run artifact {}", path.display()))?;
         let run = Arc::new(Self {
@@ -116,10 +113,10 @@ impl RunDiagnostics {
         stderr: &[u8],
     ) -> Option<PathBuf> {
         let path = self.command_output_path(name);
-        let mut opts = OpenOptions::new();
-        opts.create(true).truncate(true).write(true);
-        restrict_to_owner(&mut opts);
-        let mut file = opts.open(&path).ok()?;
+        let mut file =
+            restrict_to_owner(OpenOptions::new().create(true).truncate(true).write(true))
+                .open(&path)
+                .ok()?;
         let cwd = cwd.map_or_else(
             || "(current process cwd)".to_string(),
             |path| path.display().to_string(),
@@ -276,6 +273,14 @@ fn remove_run_entry(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Remove a diagnostics run's `.jsonl` plus its `{stem}.*` sidecars. The caller
+/// has already established `path` is a run `.jsonl`, so unlike `remove_run_entry`
+/// this skips the dir/file stat.
+fn remove_jsonl_run(path: &Path) {
+    remove_run_sidecars(path);
+    let _ = fs::remove_file(path);
+}
+
 fn remove_run_sidecars(run_path: &Path) {
     let Some(dir) = run_path.parent() else {
         return;
@@ -330,13 +335,15 @@ fn now_ms() -> u128 {
 /// command-output sidecar can carry tokens or credentials captured from
 /// external-command stdout, so they must not be world-readable.
 #[cfg(unix)]
-fn restrict_to_owner(opts: &mut OpenOptions) {
+fn restrict_to_owner(opts: &mut OpenOptions) -> &mut OpenOptions {
     use std::os::unix::fs::OpenOptionsExt as _;
-    opts.mode(0o600);
+    opts.mode(0o600)
 }
 
 #[cfg(not(unix))]
-fn restrict_to_owner(_opts: &mut OpenOptions) {}
+fn restrict_to_owner(opts: &mut OpenOptions) -> &mut OpenOptions {
+    opts
+}
 
 fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
     let Ok(read_dir) = fs::read_dir(dir) else {
@@ -364,8 +371,7 @@ fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
             .duration_since(*modified)
             .is_ok_and(|age| age > MAX_RUN_ARTIFACT_AGE)
         {
-            remove_run_sidecars(path);
-            let _ = fs::remove_file(path);
+            remove_jsonl_run(path);
         }
     }
 
@@ -373,8 +379,7 @@ fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
     entries.sort_by_key(|(_, modified)| *modified);
     let overflow = entries.len().saturating_sub(MAX_RUN_ARTIFACTS);
     for (path, _) in entries.into_iter().take(overflow) {
-        remove_run_sidecars(&path);
-        let _ = fs::remove_file(&path);
+        remove_jsonl_run(&path);
     }
 }
 
@@ -470,9 +475,11 @@ mod tests {
         let old_log = dir.join("jk-run-old.docker-build.log");
         fs::write(&old_jsonl, "{}").unwrap();
         fs::write(&old_log, "build output").unwrap();
-        // Backdate the run past the retention age; the sidecar is matched by
-        // stem, not by its own mtime, so only the .jsonl needs an old time.
-        let ancient = SystemTime::now() - MAX_RUN_ARTIFACT_AGE - Duration::from_hours(1);
+        // Backdate the run well past the retention age; the sidecar is matched
+        // by stem, not by its own mtime, so only the .jsonl needs an old time.
+        // The margin is a whole extra retention window so coarse filesystem
+        // mtime granularity cannot push it back under the threshold.
+        let ancient = SystemTime::now() - MAX_RUN_ARTIFACT_AGE - MAX_RUN_ARTIFACT_AGE;
         OpenOptions::new()
             .write(true)
             .open(&old_jsonl)
@@ -494,5 +501,35 @@ mod tests {
         );
         assert!(keep_jsonl.exists(), "fresh run kept");
         assert!(keep_log.exists(), "fresh run's sidecar kept");
+    }
+
+    #[test]
+    fn prune_overflow_removes_pruned_runs_sidecar() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        // Victim: oldest by mtime but within the retention age, so the overflow
+        // cap (not the age pass) is what prunes it.
+        let victim_jsonl = dir.join("jk-run-victim.jsonl");
+        let victim_log = dir.join("jk-run-victim.docker-build.log");
+        fs::write(&victim_jsonl, "{}").unwrap();
+        fs::write(&victim_log, "build output").unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(&victim_jsonl)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_hours(1))
+            .unwrap();
+        // Fill past the cap with fresh runs so overflow == 1 and the victim is it.
+        for i in 0..MAX_RUN_ARTIFACTS {
+            fs::write(dir.join(format!("jk-run-fill{i:04}.jsonl")), "{}").unwrap();
+        }
+
+        prune_old_runs_in_dir(dir, None);
+
+        assert!(!victim_jsonl.exists(), "overflow pruned the oldest run");
+        assert!(
+            !victim_log.exists(),
+            "overflow pruned the oldest run's sidecar, not orphaned it"
+        );
     }
 }
