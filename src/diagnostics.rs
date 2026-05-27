@@ -519,8 +519,15 @@ mod tests {
             .unwrap()
             .set_modified(SystemTime::now() - Duration::from_hours(1))
             .unwrap();
-        // Fill past the cap with fresh runs so overflow == 1 and the victim is it.
-        for i in 0..MAX_RUN_ARTIFACTS {
+        // A fresh run with a sidecar that must survive — overflow must not touch
+        // a kept run's sidecar.
+        let keep_jsonl = dir.join("jk-run-keep.jsonl");
+        let keep_log = dir.join("jk-run-keep.docker-build.log");
+        fs::write(&keep_jsonl, "{}").unwrap();
+        fs::write(&keep_log, "keep").unwrap();
+        // Fill to one past the cap so overflow == 1 and the backdated victim is
+        // the single oldest entry pruned.
+        for i in 0..(MAX_RUN_ARTIFACTS - 1) {
             fs::write(dir.join(format!("jk-run-fill{i:04}.jsonl")), "{}").unwrap();
         }
 
@@ -531,5 +538,7 @@ mod tests {
             !victim_log.exists(),
             "overflow pruned the oldest run's sidecar, not orphaned it"
         );
+        assert!(keep_jsonl.exists(), "fresh run survived overflow");
+        assert!(keep_log.exists(), "surviving run's sidecar was not touched");
     }
 }

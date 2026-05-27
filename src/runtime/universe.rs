@@ -309,32 +309,38 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let paths = Arc::new(JackinPaths::for_tests(tmp.path()));
         paths.ensure_base_dirs().unwrap();
-        mark_start(&paths, StartKind::FreshConstruct);
 
-        // All threads race the claim at once. The atomic rename guarantees a
-        // single winner; a read-then-remove implementation would let several
-        // threads read the marker and each render a duplicate outro.
         let threads = 8;
-        let barrier = Arc::new(Barrier::new(threads));
-        // Collect eagerly so every thread is spawned before any is joined;
-        // joining inside the spawn loop would serialize the race away.
-        let mut handles = Vec::with_capacity(threads);
-        for _ in 0..threads {
-            let paths = Arc::clone(&paths);
-            let barrier = Arc::clone(&barrier);
-            handles.push(std::thread::spawn(move || {
-                barrier.wait();
-                matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. })
-            }));
-        }
-
-        let mut winners = 0;
-        for handle in handles {
-            if handle.join().unwrap() {
-                winners += 1;
+        // A single 8-thread round catches a non-atomic claim only ~half the
+        // time (the threads often don't interleave tightly enough to double-read
+        // the marker), so one round is a coin-flip guard. Many rounds drive the
+        // miss probability to effectively zero.
+        for round in 0..64 {
+            mark_start(&paths, StartKind::FreshConstruct);
+            let barrier = Arc::new(Barrier::new(threads));
+            // Spawn every thread before joining any; joining in the loop would
+            // serialize the race away.
+            let mut handles = Vec::with_capacity(threads);
+            for _ in 0..threads {
+                let paths = Arc::clone(&paths);
+                let barrier = Arc::clone(&barrier);
+                handles.push(std::thread::spawn(move || {
+                    barrier.wait();
+                    matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. })
+                }));
             }
+
+            let mut winners = 0;
+            for handle in handles {
+                if handle.join().unwrap() {
+                    winners += 1;
+                }
+            }
+            assert_eq!(
+                winners, 1,
+                "round {round}: exactly one exit may claim the outro"
+            );
         }
-        assert_eq!(winners, 1, "exactly one exit may claim the outro");
     }
 
     #[test]
