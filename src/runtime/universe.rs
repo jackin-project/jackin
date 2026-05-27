@@ -303,6 +303,27 @@ mod tests {
     }
 
     #[test]
+    fn take_exit_claim_leaves_no_claim_temp_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        mark_start(&paths, StartKind::FreshConstruct);
+        let _ = take_exit_claim(&paths);
+
+        let leftover = std::fs::read_dir(&paths.data_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("universe-since.claim.")
+            });
+        assert!(!leftover, "claim temp file must be removed after the take");
+    }
+
+    #[test]
     fn malformed_marker_still_grants_exit_claim_without_elapsed() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());

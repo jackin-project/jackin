@@ -461,4 +461,38 @@ mod tests {
         assert!(active.exists(), "active run must remain retrievable");
         assert!(!stale.exists(), "stale run should be pruned");
     }
+
+    #[test]
+    fn prune_removes_over_age_run_with_its_sidecar() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let old_jsonl = dir.join("jk-run-old.jsonl");
+        let old_log = dir.join("jk-run-old.docker-build.log");
+        fs::write(&old_jsonl, "{}").unwrap();
+        fs::write(&old_log, "build output").unwrap();
+        // Backdate the run past the retention age; the sidecar is matched by
+        // stem, not by its own mtime, so only the .jsonl needs an old time.
+        let ancient = SystemTime::now() - MAX_RUN_ARTIFACT_AGE - Duration::from_hours(1);
+        OpenOptions::new()
+            .write(true)
+            .open(&old_jsonl)
+            .unwrap()
+            .set_modified(ancient)
+            .unwrap();
+        // A fresh run plus sidecar that must survive the prune.
+        let keep_jsonl = dir.join("jk-run-keep.jsonl");
+        let keep_log = dir.join("jk-run-keep.docker-build.log");
+        fs::write(&keep_jsonl, "{}").unwrap();
+        fs::write(&keep_log, "keep").unwrap();
+
+        prune_old_runs_in_dir(dir, None);
+
+        assert!(!old_jsonl.exists(), "over-age run pruned");
+        assert!(
+            !old_log.exists(),
+            "over-age run's sidecar must be pruned with it, not orphaned"
+        );
+        assert!(keep_jsonl.exists(), "fresh run kept");
+        assert!(keep_log.exists(), "fresh run's sidecar kept");
+    }
 }

@@ -864,7 +864,7 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
     // `Vec<Line<Span>>`: at 30fps a full field is width × height spans, each its
     // own `String`, every frame. RAIN_CHARS is ASCII (width-1), so one cell maps
     // to one buffer cell. An empty cell only sets its symbol so it keeps the
-    // background already painted behind the rain, matching the old `Span::raw`.
+    // background already painted behind the rain.
     let buf = frame.buffer_mut();
     for y in 0..area.height {
         let grid_y = usize::from(area.y + y);
