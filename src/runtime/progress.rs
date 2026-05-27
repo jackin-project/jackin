@@ -860,41 +860,43 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
     // above the progress bar instead of colliding with it: the bottommost row
     // is fully extinguished and brightness ramps back to full a few rows up.
     let fade_rows = (area.height / 3).clamp(3, 7);
-    let lines: Vec<Line<'static>> = (0..area.height)
-        .map(|y| {
-            let grid_y = usize::from(area.y + y);
-            let rows_from_bottom = area.height - 1 - y;
-            let fade = if rows_from_bottom >= fade_rows {
-                1.0
-            } else {
-                f32::from(rows_from_bottom) / f32::from(fade_rows)
-            };
-            let dim = |c: u8| (f32::from(c) * fade * fade_in) as u8;
-            let spans: Vec<Span<'static>> = (0..area.width)
-                .map(|x| {
-                    let grid_x = usize::from(area.x + x);
-                    rain.grid
-                        .get(grid_y)
-                        .and_then(|row| row.get(grid_x))
-                        .and_then(|cell| cell.as_ref())
-                        .and_then(|cell| {
-                            crate::tui::animation::age_to_color(cell.age).map(|rgb| (cell.ch, rgb))
-                        })
-                        .map_or_else(
-                            || Span::raw(" "),
-                            |(ch, (r, g, b))| {
-                                Span::styled(
-                                    ch.to_string(),
-                                    Style::default().fg(Color::Rgb(dim(r), dim(g), dim(b))),
-                                )
-                            },
-                        )
-                })
-                .collect();
-            Line::from(spans)
-        })
-        .collect();
-    frame.render_widget(Paragraph::new(lines), area);
+    // Write each cell straight into the frame buffer rather than building a
+    // `Vec<Line<Span>>`: at 30fps a full field is width × height spans, each its
+    // own `String`, every frame. RAIN_CHARS is ASCII (width-1), so one cell maps
+    // to one buffer cell. An empty cell only sets its symbol so it keeps the
+    // background already painted behind the rain, matching the old `Span::raw`.
+    let buf = frame.buffer_mut();
+    for y in 0..area.height {
+        let grid_y = usize::from(area.y + y);
+        let rows_from_bottom = area.height - 1 - y;
+        let fade = if rows_from_bottom >= fade_rows {
+            1.0
+        } else {
+            f32::from(rows_from_bottom) / f32::from(fade_rows)
+        };
+        let dim = |c: u8| (f32::from(c) * fade * fade_in) as u8;
+        for x in 0..area.width {
+            let grid_x = usize::from(area.x + x);
+            let lit = rain
+                .grid
+                .get(grid_y)
+                .and_then(|row| row.get(grid_x))
+                .and_then(|cell| cell.as_ref())
+                .and_then(|cell| {
+                    crate::tui::animation::age_to_color(cell.age).map(|rgb| (cell.ch, rgb))
+                });
+            let cell = &mut buf[(area.x + x, area.y + y)];
+            match lit {
+                Some((ch, (r, g, b))) => {
+                    cell.set_char(ch);
+                    cell.set_style(Style::default().fg(Color::Rgb(dim(r), dim(g), dim(b))));
+                }
+                None => {
+                    cell.set_char(' ');
+                }
+            }
+        }
+    }
 }
 
 /// Top header: the ` jackin' ` brand pill, a separator, then the loading line
@@ -948,34 +950,53 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
     // A bright band sweeps across the line every ~len+16 frames.
     let period = (len + 16) as f32;
     let peak = (view.frame as f32 % period) - 8.0;
-    chars
-        .into_iter()
-        .enumerate()
-        .map(|(i, (ch, kind))| {
-            let bright = if frozen {
-                0.0
-            } else {
-                (1.0 - (i as f32 - peak).abs() / 5.0).max(0.0)
-            };
-            let color = if kind == 0 {
-                // "Loading" / "in": green, dim → bright on the ripple.
-                Color::Rgb(
-                    lerp(0, 120, bright),
-                    lerp(140, 255, bright),
-                    lerp(30, 120, bright),
-                )
-            } else {
-                // Role + path: white, brightening dim-white → full white.
-                let v = lerp(170, 255, bright);
-                Color::Rgb(v, v, v)
-            };
-            let mut style = Style::default().fg(color);
-            if kind != 0 {
-                style = style.add_modifier(Modifier::BOLD);
+    coalesce_cells(chars.into_iter().enumerate().map(|(i, (ch, kind))| {
+        let bright = if frozen {
+            0.0
+        } else {
+            (1.0 - (i as f32 - peak).abs() / 5.0).max(0.0)
+        };
+        let color = if kind == 0 {
+            // "Loading" / "in": green, dim → bright on the ripple.
+            Color::Rgb(
+                lerp(0, 120, bright),
+                lerp(140, 255, bright),
+                lerp(30, 120, bright),
+            )
+        } else {
+            // Role + path: white, brightening dim-white → full white.
+            let v = lerp(170, 255, bright);
+            Color::Rgb(v, v, v)
+        };
+        let mut style = Style::default().fg(color);
+        if kind != 0 {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        (ch, style)
+    }))
+}
+
+/// Coalesce per-cell `(char, Style)` pairs into the fewest spans: consecutive
+/// cells sharing a style merge into one span. Render paths that compute a style
+/// per glyph (the loading-line ripple, the wrapped build log) would otherwise
+/// allocate one `Span` plus one `String` per character every frame.
+fn coalesce_cells(cells: impl IntoIterator<Item = (char, Style)>) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut buf = String::new();
+    let mut cur: Option<Style> = None;
+    for (ch, style) in cells {
+        if cur != Some(style) {
+            if let Some(prev) = cur.take() {
+                spans.push(Span::styled(std::mem::take(&mut buf), prev));
             }
-            Span::styled(ch.to_string(), style)
-        })
-        .collect()
+            cur = Some(style);
+        }
+        buf.push(ch);
+    }
+    if let Some(prev) = cur {
+        spans.push(Span::styled(buf, prev));
+    }
+    spans
 }
 
 fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
@@ -1267,16 +1288,11 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
 }
 
 fn wrap_build_log_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
-    let cells = spans
-        .into_iter()
-        .flat_map(|span| {
-            let style = span.style;
-            span.content
-                .chars()
-                .map(move |ch| (ch, style))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+    let mut cells: Vec<(char, Style)> = Vec::new();
+    for span in spans {
+        let style = span.style;
+        cells.extend(span.content.chars().map(|ch| (ch, style)));
+    }
     if cells.is_empty() {
         return vec![Line::from(String::new())];
     }
@@ -1319,10 +1335,7 @@ fn wrap_build_log_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'st
 }
 
 fn spans_from_cells(cells: &[(char, Style)]) -> Vec<Span<'static>> {
-    cells
-        .iter()
-        .map(|(ch, style)| Span::styled(ch.to_string(), *style))
-        .collect()
+    coalesce_cells(cells.iter().copied())
 }
 
 fn push_wrapped_build_line(

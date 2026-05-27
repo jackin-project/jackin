@@ -44,7 +44,7 @@ pub fn line(spans: &[HintSpan<'_>]) -> Line<'static> {
             HintSpan::Key(k) => out.push(Span::styled((*k).to_string(), key)),
             HintSpan::Text(t) => out.push(Span::styled(format!(" {t}"), text)),
             HintSpan::Dyn(t) => out.push(Span::styled(format!(" {t}"), dim)),
-            HintSpan::Sep => out.push(Span::styled(" · ".to_string(), sep)),
+            HintSpan::Sep => out.push(Span::styled(" · ", sep)),
             HintSpan::GroupSep => out.push(Span::raw("   ")),
         }
     }
@@ -149,7 +149,7 @@ fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
         }
         if !row.is_empty() {
             match chunk.sep {
-                SepKind::Dot => row.push(Span::styled(" \u{b7} ".to_string(), sep_style)),
+                SepKind::Dot => row.push(Span::styled(" \u{b7} ", sep_style)),
                 SepKind::Group => row.push(Span::raw("   ")),
             }
             row_w += 3;

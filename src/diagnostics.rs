@@ -66,9 +66,10 @@ impl RunDiagnostics {
             .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;
         prune_old_runs_in_dir(&dir, None);
         let path = dir.join(format!("{run_id}.jsonl"));
-        let file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
+        let mut opts = OpenOptions::new();
+        opts.create_new(true).write(true);
+        restrict_to_owner(&mut opts);
+        let file = opts
             .open(&path)
             .with_context(|| format!("creating diagnostics run artifact {}", path.display()))?;
         let run = Arc::new(Self {
@@ -115,12 +116,10 @@ impl RunDiagnostics {
         stderr: &[u8],
     ) -> Option<PathBuf> {
         let path = self.command_output_path(name);
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&path)
-            .ok()?;
+        let mut opts = OpenOptions::new();
+        opts.create(true).truncate(true).write(true);
+        restrict_to_owner(&mut opts);
+        let mut file = opts.open(&path).ok()?;
         let cwd = cwd.map_or_else(
             || "(current process cwd)".to_string(),
             |path| path.display().to_string(),
@@ -327,6 +326,18 @@ fn now_ms() -> u128 {
         .map_or(0, |duration| duration.as_millis())
 }
 
+/// Owner-only mode for new diagnostics files. The JSONL firehose and the
+/// command-output sidecar can carry tokens or credentials captured from
+/// external-command stdout, so they must not be world-readable.
+#[cfg(unix)]
+fn restrict_to_owner(opts: &mut OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    opts.mode(0o600);
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_opts: &mut OpenOptions) {}
+
 fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
     let Ok(read_dir) = fs::read_dir(dir) else {
         return;
@@ -353,6 +364,7 @@ fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
             .duration_since(*modified)
             .is_ok_and(|age| age > MAX_RUN_ARTIFACT_AGE)
         {
+            remove_run_sidecars(path);
             let _ = fs::remove_file(path);
         }
     }
@@ -361,7 +373,8 @@ fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
     entries.sort_by_key(|(_, modified)| *modified);
     let overflow = entries.len().saturating_sub(MAX_RUN_ARTIFACTS);
     for (path, _) in entries.into_iter().take(overflow) {
-        let _ = fs::remove_file(path);
+        remove_run_sidecars(&path);
+        let _ = fs::remove_file(&path);
     }
 }
 

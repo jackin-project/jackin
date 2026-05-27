@@ -115,7 +115,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         _ => 0,
     };
 
-    let constraints = vec![
+    let constraints = [
         Constraint::Length(banner_height), // optional banner
         Constraint::Length(1),             // filter row
         Constraint::Length(1),             // spacer

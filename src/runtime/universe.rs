@@ -202,10 +202,23 @@ fn remove_empty_pending_dir(paths: &JackinPaths) {
 #[must_use]
 pub fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
     let file = marker_path(paths);
-    let Ok(content) = std::fs::read_to_string(&file) else {
+    // The rename is the claim, not the read: `rename` is atomic on POSIX, so
+    // when parallel exits race only one can move the marker away — the losers
+    // see ENOENT and bow out. A read-then-remove would let every racer observe
+    // the marker first and render a duplicate outro.
+    let claimed = file.with_file_name(format!("universe-since.claim.{}", std::process::id()));
+    if let Err(error) = std::fs::rename(&file, &claimed) {
+        // NotFound is the normal "no marker / already claimed" path. Any other
+        // errno (e.g. a permissions drift on the data dir) is unexpected and
+        // would silently suppress the outro, so leave a breadcrumb under
+        // --debug to tell the two cases apart.
+        if error.kind() != std::io::ErrorKind::NotFound {
+            crate::debug_log!("universe", "exit-claim rename failed: {error}");
+        }
         return ExitClaim::Missing;
-    };
-    let _ = std::fs::remove_file(&file);
+    }
+    let content = std::fs::read_to_string(&claimed).unwrap_or_default();
+    let _ = std::fs::remove_file(&claimed);
     let _ = std::fs::remove_dir_all(pending_dir(paths));
     let elapsed = content
         .trim()
