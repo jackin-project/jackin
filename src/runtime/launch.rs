@@ -2638,7 +2638,9 @@ async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
     // two-screen outro (decelerating warp, then closing caption). Exits that
     // leave other instances running skip this entirely because the operator is
     // still inside the Construct.
-    let elapsed = super::universe::take_elapsed(paths);
+    let Some(elapsed) = super::universe::take_exit_claim(paths) else {
+        return;
+    };
     if !super::progress::rich_terminal_supported() {
         return;
     }

@@ -100,7 +100,7 @@ pub async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryC
     let token = claim_token();
     let wrote_claim = write_pending_claim(paths, &token);
     let pending_count = count_pending_claims(paths).unwrap_or(usize::MAX);
-    let kind = if wrote_claim && pending_count <= 1 && !marker_path(paths).exists() {
+    let kind = if wrote_claim && pending_count <= 1 {
         StartKind::FreshConstruct
     } else {
         StartKind::ResumeExisting
@@ -158,19 +158,30 @@ fn remove_empty_pending_dir(paths: &JackinPaths) {
 }
 
 /// Read the construct's start instant, delete the marker, and return the
-/// elapsed span. Returns `None` when no marker exists or it cannot be parsed
-/// (the elapsed line is then simply omitted from the exit ritual).
+/// elapsed span. Returns `None` when no marker exists or it cannot be parsed.
 #[must_use]
 pub fn take_elapsed(paths: &JackinPaths) -> Option<Duration> {
+    take_exit_claim(paths)?
+}
+
+/// Claim the construct-exit boundary.
+///
+/// The marker is the single-consumer close claim: whichever exit path removes
+/// it is the one that may render the rich outro. A malformed marker still
+/// grants the claim, but omits the elapsed line from the caption.
+#[must_use]
+pub(crate) fn take_exit_claim(paths: &JackinPaths) -> Option<Option<Duration>> {
     let file = marker_path(paths);
     let content = std::fs::read_to_string(&file).ok()?;
     let _ = std::fs::remove_file(&file);
     let _ = std::fs::remove_dir_all(pending_dir(paths));
-    let started: u128 = content.trim().parse().ok()?;
-    let elapsed_ms = now_millis().checked_sub(started)?;
-    Some(Duration::from_millis(
-        u64::try_from(elapsed_ms).unwrap_or(u64::MAX),
-    ))
+    let elapsed = content
+        .trim()
+        .parse::<u128>()
+        .ok()
+        .and_then(|started| now_millis().checked_sub(started))
+        .map(|elapsed_ms| Duration::from_millis(u64::try_from(elapsed_ms).unwrap_or(u64::MAX)));
+    Some(elapsed)
 }
 
 #[cfg(test)]
@@ -195,6 +206,40 @@ mod tests {
         );
         assert!(!marker_path(&paths).exists(), "marker cleared after take");
         assert!(take_elapsed(&paths).is_none(), "second take is empty");
+    }
+
+    #[test]
+    fn exit_claim_is_single_consumer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        mark_start(&paths, StartKind::FreshConstruct);
+
+        assert!(
+            take_exit_claim(&paths).is_some(),
+            "first exit receives the close claim"
+        );
+        assert!(
+            take_exit_claim(&paths).is_none(),
+            "second exit does not receive a duplicate outro claim"
+        );
+    }
+
+    #[test]
+    fn malformed_marker_still_grants_exit_claim_without_elapsed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        std::fs::write(marker_path(&paths), "not-a-timestamp").unwrap();
+
+        let elapsed = take_exit_claim(&paths).expect("marker grants close claim");
+        assert_eq!(elapsed, None, "malformed marker omits elapsed caption");
+        assert!(
+            !marker_path(&paths).exists(),
+            "claim clears malformed marker"
+        );
     }
 
     #[test]
@@ -249,7 +294,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn claim_entry_resumes_when_marker_already_exists() {
+    async fn claim_entry_treats_marker_without_running_containers_as_stale() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -261,9 +306,9 @@ mod tests {
 
         let claim = claim_entry(&paths, &docker).await;
 
-        assert_eq!(claim.start_kind(), StartKind::ResumeExisting);
+        assert_eq!(claim.start_kind(), StartKind::FreshConstruct);
         let kept = std::fs::read_to_string(marker_path(&paths)).unwrap();
-        assert_eq!(kept, "1000", "existing launch marker is preserved");
+        assert_ne!(kept, "1000", "stale launch marker is replaced");
     }
 
     #[tokio::test]
