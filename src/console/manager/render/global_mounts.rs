@@ -6,9 +6,7 @@ use ratatui::{
 };
 use std::collections::BTreeMap;
 
-use super::{
-    FooterItem, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header,
-};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header};
 use crate::console::manager::auth_kind::AuthKind;
 use crate::console::manager::render::list::{
     MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
@@ -18,6 +16,7 @@ use crate::console::manager::state::{
     SettingsTab,
 };
 use crate::operator_env::EnvValue;
+use jackin_tui::HintSpan;
 
 pub(in crate::console::manager) fn global_mounts_content_width(
     rows: &[crate::config::GlobalMountRow],
@@ -38,8 +37,8 @@ pub(super) fn render_settings(
     let area = frame.area();
     // When a modal is open, show its keys in the footer (the "behind" keys are unreachable).
     // Check in priority order: auth modal > env modal > mounts modal > no modal.
-    let footer = if let Some(modal) = &state.auth.modal {
-        settings_auth_modal_footer_items(modal)
+    let footer = if state.auth.modal.is_some() {
+        settings_auth_modal_footer_items(&state.auth)
     } else if let Some(modal) = &state.env.modal {
         settings_env_modal_footer_items(modal)
     } else if let Some(modal) = &state.mounts.modal {
@@ -48,6 +47,8 @@ pub(super) fn render_settings(
         footer_items(state, op_available)
     };
     let footer_h = footer_height(&footer, area.width).max(1);
+    // Cache for mouse hit-testing so it subtracts the same dynamic footer.
+    state.cached_footer_h = footer_h;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -62,7 +63,13 @@ pub(super) fn render_settings(
         .iter()
         .map(|tab| (tab.label(), *tab == state.active_tab))
         .collect::<Vec<_>>();
-    super::editor::render_tab_strip(frame, chunks[1], &labels, state.tab_bar_focused);
+    super::editor::render_tab_strip(
+        frame,
+        chunks[1],
+        &labels,
+        state.tab_bar_focused,
+        state.hovered_tab,
+    );
 
     match state.active_tab {
         SettingsTab::General => render_general_tab(frame, state, chunks[2]),
@@ -125,7 +132,7 @@ fn render_mounts_tab(
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
     super::render_scrollable_block(
@@ -145,7 +152,7 @@ fn render_env_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatu
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
     let mut no_scroll_x = 0u16;
@@ -167,7 +174,7 @@ fn render_auth_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratat
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
     let mut no_scroll_x = 0u16;
@@ -188,7 +195,7 @@ fn render_trust_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: rata
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
     super::render_scrollable_block(
@@ -207,92 +214,86 @@ pub(in crate::console::manager) fn trust_content_width(state: &SettingsState<'_>
     super::max_line_width(&trust_lines(state))
 }
 
-fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem> {
+fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
     if state.tab_bar_focused {
         // Tab bar has focus: show tab-navigation keys, then global actions.
         let mut items = vec![
-            FooterItem::Key("\u{2190}\u{2192}"),
-            FooterItem::Text("switch tab"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Tab/\u{2193}"),
-            FooterItem::Text("enter content"),
+            HintSpan::Key("\u{2190}\u{2192}"),
+            HintSpan::Text("switch tab"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Tab/\u{2193}"),
+            HintSpan::Text("enter content"),
         ];
         items.extend([
-            FooterItem::GroupSep,
-            FooterItem::Key("S"),
-            FooterItem::Text("save settings"),
+            HintSpan::GroupSep,
+            HintSpan::Key("S"),
+            HintSpan::Text("save settings"),
         ]);
         if state.is_dirty() {
-            items.push(FooterItem::Dyn(format!(
-                "({} changes)",
-                state.change_count()
-            )));
+            items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
         }
         items.extend([
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text(if state.is_dirty() { "discard" } else { "back" }),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text(if state.is_dirty() { "discard" } else { "back" }),
         ]);
         return items;
     }
 
     // Content area has focus.
     let mut items = vec![
-        FooterItem::Key("\u{2191}\u{2193}"),
-        FooterItem::Text("navigate"),
+        HintSpan::Key("\u{2191}\u{2193}"),
+        HintSpan::Text("navigate"),
     ];
 
     let row_items = contextual_row_items(state, op_available);
     if !row_items.is_empty() {
-        items.push(FooterItem::GroupSep);
+        items.push(HintSpan::GroupSep);
         items.extend(row_items);
     }
 
     items.extend([
-        FooterItem::GroupSep,
-        FooterItem::Key("BackTab"),
-        FooterItem::Text("tab bar"),
-        FooterItem::GroupSep,
+        HintSpan::GroupSep,
+        HintSpan::Key("BackTab"),
+        HintSpan::Text("tab bar"),
+        HintSpan::GroupSep,
     ]);
-    items.extend([FooterItem::Key("S"), FooterItem::Text("save settings")]);
+    items.extend([HintSpan::Key("S"), HintSpan::Text("save settings")]);
     if state.is_dirty() {
-        items.push(FooterItem::Dyn(format!(
-            "({} changes)",
-            state.change_count()
-        )));
+        items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
     }
     items.extend([
-        FooterItem::GroupSep,
-        FooterItem::Key("Esc"),
-        FooterItem::Text(if state.is_dirty() { "discard" } else { "back" }),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text(if state.is_dirty() { "discard" } else { "back" }),
     ]);
     items
 }
 
 #[allow(clippy::too_many_lines)]
-fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem> {
+fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
     match state.active_tab {
         SettingsTab::General => {
             vec![
-                FooterItem::Key("\u{2191}\u{2193}"),
-                FooterItem::Text("navigate"),
-                FooterItem::Sep,
-                FooterItem::Key("Space"),
-                FooterItem::Text("toggle"),
+                HintSpan::Key("\u{2191}\u{2193}"),
+                HintSpan::Text("navigate"),
+                HintSpan::Sep,
+                HintSpan::Key("Space"),
+                HintSpan::Text("toggle"),
             ]
         }
         SettingsTab::Mounts => {
             let cursor = state.mounts.selected;
             let mount_count = state.mounts.pending.len();
             if cursor == mount_count {
-                vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")]
+                vec![HintSpan::Key("Enter/A"), HintSpan::Text("add")]
             } else {
                 let mut items = vec![
-                    FooterItem::Key("D"),
-                    FooterItem::Text("remove"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add"),
+                    HintSpan::Key("D"),
+                    HintSpan::Text("remove"),
+                    HintSpan::Sep,
+                    HintSpan::Key("A"),
+                    HintSpan::Text("add"),
                 ];
                 if let Some(row) = state.mounts.pending.get(cursor)
                     && matches!(
@@ -303,29 +304,29 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Fo
                         }
                     )
                 {
-                    items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("O"));
-                    items.push(FooterItem::Text("open in GitHub"));
+                    items.push(HintSpan::Sep);
+                    items.push(HintSpan::Key("O"));
+                    items.push(HintSpan::Text("open in GitHub"));
                 }
                 items.extend([
-                    FooterItem::Sep,
-                    FooterItem::Key("R"),
-                    FooterItem::Text("toggle ro/rw"),
-                    FooterItem::Sep,
-                    FooterItem::Key("N"),
-                    FooterItem::Text("rename"),
-                    FooterItem::Sep,
-                    FooterItem::Key("1"),
-                    FooterItem::Text("edit source"),
-                    FooterItem::Sep,
-                    FooterItem::Key("2"),
-                    FooterItem::Text("edit dst"),
-                    FooterItem::Sep,
-                    FooterItem::Key("3"),
-                    FooterItem::Text("edit scope"),
-                    FooterItem::Sep,
-                    FooterItem::Key("H/L"),
-                    FooterItem::Text("scroll"),
+                    HintSpan::Sep,
+                    HintSpan::Key("R"),
+                    HintSpan::Text("toggle ro/rw"),
+                    HintSpan::Sep,
+                    HintSpan::Key("N"),
+                    HintSpan::Text("rename"),
+                    HintSpan::Sep,
+                    HintSpan::Key("1"),
+                    HintSpan::Text("edit source"),
+                    HintSpan::Sep,
+                    HintSpan::Key("2"),
+                    HintSpan::Text("edit dst"),
+                    HintSpan::Sep,
+                    HintSpan::Key("3"),
+                    HintSpan::Text("edit scope"),
+                    HintSpan::Sep,
+                    HintSpan::Key("H/L"),
+                    HintSpan::Text("scroll"),
                 ]);
                 items
             }
@@ -337,16 +338,16 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Fo
                     if settings_env_value_is_op_ref(state, scope, key) =>
                 {
                     let mut items = vec![
-                        FooterItem::Key("Enter"),
-                        FooterItem::Sep,
-                        FooterItem::Key("P"),
-                        FooterItem::Text("re-pick from 1Password"),
-                        FooterItem::Sep,
-                        FooterItem::Key("D"),
-                        FooterItem::Text("delete"),
-                        FooterItem::Sep,
-                        FooterItem::Key("A"),
-                        FooterItem::Text("add"),
+                        HintSpan::Key("Enter"),
+                        HintSpan::Sep,
+                        HintSpan::Key("P"),
+                        HintSpan::Text("re-pick from 1Password"),
+                        HintSpan::Sep,
+                        HintSpan::Key("D"),
+                        HintSpan::Text("delete"),
+                        HintSpan::Sep,
+                        HintSpan::Key("A"),
+                        HintSpan::Text("add"),
                     ];
                     if op_available {
                         // Enter/P both work; if 1Password is unavailable, hint is less useful.
@@ -358,42 +359,42 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Fo
                 }
                 Some(SettingsEnvRow::Key { .. }) => {
                     let mut items = vec![
-                        FooterItem::Key("Enter"),
-                        FooterItem::Text("edit"),
-                        FooterItem::Sep,
-                        FooterItem::Key("D"),
-                        FooterItem::Text("delete"),
-                        FooterItem::Sep,
-                        FooterItem::Key("A"),
-                        FooterItem::Text("add"),
-                        FooterItem::Sep,
-                        FooterItem::Key("M"),
-                        FooterItem::Text("mask/unmask"),
+                        HintSpan::Key("Enter"),
+                        HintSpan::Text("edit"),
+                        HintSpan::Sep,
+                        HintSpan::Key("D"),
+                        HintSpan::Text("delete"),
+                        HintSpan::Sep,
+                        HintSpan::Key("A"),
+                        HintSpan::Text("add"),
+                        HintSpan::Sep,
+                        HintSpan::Key("M"),
+                        HintSpan::Text("mask/unmask"),
                     ];
                     if op_available {
-                        items.push(FooterItem::Sep);
-                        items.push(FooterItem::Key("P"));
-                        items.push(FooterItem::Text("1Password"));
+                        items.push(HintSpan::Sep);
+                        items.push(HintSpan::Key("P"));
+                        items.push(HintSpan::Text("1Password"));
                     }
                     items
                 }
                 Some(SettingsEnvRow::RoleHeader { .. }) => vec![
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("expand"),
-                    FooterItem::Sep,
-                    FooterItem::Key("←/→"),
-                    FooterItem::Text("collapse/expand"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add"),
+                    HintSpan::Key("Enter"),
+                    HintSpan::Text("expand"),
+                    HintSpan::Sep,
+                    HintSpan::Key("←/→"),
+                    HintSpan::Text("collapse/expand"),
+                    HintSpan::Sep,
+                    HintSpan::Key("A"),
+                    HintSpan::Text("add"),
                 ],
                 Some(SettingsEnvRow::GlobalAddSentinel | SettingsEnvRow::RoleAddSentinel(_)) => {
-                    let mut items = vec![FooterItem::Key("Enter"), FooterItem::Text("add")];
+                    let mut items = vec![HintSpan::Key("Enter"), HintSpan::Text("add")];
                     if op_available {
                         items.extend([
-                            FooterItem::Sep,
-                            FooterItem::Key("P"),
-                            FooterItem::Text("1Password"),
+                            HintSpan::Sep,
+                            HintSpan::Key("P"),
+                            HintSpan::Text("1Password"),
                         ]);
                     }
                     items
@@ -403,13 +404,13 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Fo
         }
         SettingsTab::Auth => {
             if state.auth.selected_kind.is_none() {
-                vec![FooterItem::Key("Enter"), FooterItem::Text("manage auth")]
+                vec![HintSpan::Key("Enter"), HintSpan::Text("manage auth")]
             } else if state.auth.selected == 0 {
                 // Esc here pops back to the auth list; the global footer already
                 // shows Esc for the settings-level exit — omit it here to avoid duplication.
-                vec![FooterItem::Key("Enter"), FooterItem::Text("edit mode")]
+                vec![HintSpan::Key("Enter"), HintSpan::Text("edit mode")]
             } else {
-                vec![FooterItem::Key("Enter"), FooterItem::Text("edit source")]
+                vec![HintSpan::Key("Enter"), HintSpan::Text("edit source")]
             }
         }
         SettingsTab::Trust => {
@@ -417,11 +418,11 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Fo
                 Vec::new()
             } else {
                 vec![
-                    FooterItem::Key("Space"),
-                    FooterItem::Text("trust/untrust"),
-                    FooterItem::Sep,
-                    FooterItem::Key("H/L"),
-                    FooterItem::Text("scroll"),
+                    HintSpan::Key("Space"),
+                    HintSpan::Text("trust/untrust"),
+                    HintSpan::Sep,
+                    HintSpan::Key("H/L"),
+                    HintSpan::Text("scroll"),
                 ]
             }
         }
@@ -699,7 +700,7 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
             _ => {
                 spans.push(Span::styled(
                     format!("unset  ({env_name} for {})", mode_str(row.mode)),
-                    Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+                    Style::default().fg(crate::console::widgets::DANGER_RED),
                 ));
             }
         }
@@ -734,13 +735,18 @@ fn trust_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     }
     for (i, row) in state.trust.pending.iter().enumerate() {
         let selected = state.trust.selected == i;
-        let style = if selected {
+        let mut style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(PHOSPHOR_GREEN)
         };
+        // Hover lift: graphite background on the hovered (non-selected) row,
+        // matching the tab/list hover cue.
+        if !selected && state.trust.hovered == Some(i) {
+            style = style.bg(super::TAB_BG_INACTIVE_HOVER);
+        }
         let prefix = if selected { "▸ " } else { "  " };
         let trust = if row.trusted { "trusted" } else { "untrusted" };
         lines.push(Line::from(Span::styled(
@@ -835,7 +841,13 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &mut Settings
             crate::console::widgets::text_input::render(frame, area, state);
         }
         SettingsAuthModal::OpPicker { state } => {
-            let area = super::modal::op_picker_rect(frame.area());
+            // A naming sub-stage is a plain input box, sized like every
+            // other text-input modal; drill-down stages use the picker rect.
+            let area = if state.naming_stage_input().is_some() {
+                super::modal::text_input_rect(frame.area())
+            } else {
+                super::modal::op_picker_rect(frame.area())
+            };
             crate::console::widgets::op_picker::render::render(frame, area, state);
         }
     }

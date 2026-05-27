@@ -369,8 +369,11 @@ pub fn create_derived_build_context(
                 override_trimmed,
             )
         } else {
-            eprintln!(
-                "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
+            crate::tui::emit_compact_line(
+                "warning",
+                &format!(
+                    "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
+                ),
             );
             validated.dockerfile.dockerfile_contents.clone()
         }

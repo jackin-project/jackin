@@ -2135,7 +2135,6 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,
@@ -2371,6 +2370,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc/def/fld".to_string(),
                 path: "Private/Claude/auth".to_string(),
+                account: None,
             }),
         );
 

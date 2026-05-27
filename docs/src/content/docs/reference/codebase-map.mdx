@@ -65,7 +65,10 @@ The container lifecycle lives in `src/runtime/`:
 - <RepoFile path="src/runtime/launch.rs" /> — the load path: clone/update
   role repo, validate the contract, generate a derived Dockerfile, build
   the image on the host Docker engine, start the DinD sidecar and the
-  agent container, attach.
+  agent container, attach. It emits structured launch progress stages
+  rather than writing raw status directly to the terminal.
+- <RepoFile path="src/runtime/progress.rs" /> — launch progress event
+  vocabulary plus rich, compact, non-interactive, and test rendering support.
 - <RepoFile path="src/runtime/attach.rs" /> — the attach + reconnect path
   (`hardline`).
 - <RepoFile path="src/runtime/cleanup.rs" /> — `eject`, `exile`, `purge`,
@@ -176,6 +179,7 @@ into a single module:
 | <RepoFile path="src/derived_image.rs" /> | Generates the derived Dockerfile from the role's repo + the construct base. |
 | <RepoFile path="src/docker.rs" /> | Docker command builder — `CommandRunner` trait (`run`, `capture`, `capture_secret`) and `ShellRunner`. `capture_secret` suppresses stdout from the debug stream and omits stderr from error messages; use it for commands whose output is a credential. |
 | <RepoFile path="src/docker_client.rs" /> | Bollard-based Docker API client — `DockerApi` trait (container/network/image/exec operations), `BollardDockerClient` (production), `FakeDockerClient` (tests), and `ContainerState` enum (all 9 Docker lifecycle states). `BollardDockerClient::connect()` honors a non-empty `DOCKER_HOST` (matching Docker CLI's empty-as-unset semantics); otherwise it asks `docker context inspect` for the active CLI context endpoint (passing any `DOCKER_CONTEXT` override explicitly) and caches the result in a process-wide `OnceLock` so typed API calls and remaining Docker CLI calls target the same daemon without re-spawning the subprocess on every connect. This path supports local-socket and plain HTTP/TCP contexts; SSH and TLS contexts fail clearly instead of dropping Docker CLI transport/TLS settings that this Bollard build cannot mirror. Replaces Docker CLI string-matching for lifecycle, cleanup, and inspect paths. CLI stays CLI for `docker build` (no parsing risk, streaming context complexity), `docker exec -it` / `docker run -it` (TTY-bound; bollard exposes the raw stream but the Docker CLI manages raw-terminal mode, Ctrl-C signal forwarding, and SIGWINCH for free), and `docker run --rm` one-shot commands (fire-and-forget captured stdout; no parsing risk). |
+| <RepoFile path="src/diagnostics.rs" /> | Run-scoped JSONL diagnostics under `~/.jackin/data/diagnostics/runs/`; every command gets a run ID, compact launch breadcrumbs are always written, and detailed debug lines are written only when `--debug` / `JACKIN_DEBUG=1` is active. |
 | <RepoFile path="src/paths.rs" /> | XDG-compliant data and config directory resolution (`JackinPaths`). |
 
 ## Code ↔ docs cross-reference

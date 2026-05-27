@@ -13,20 +13,15 @@ pub(super) const HELP_STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
+// The canonical jackin' logo — the ` jackin' ` brand pill (black bold on
+// phosphor-green), identical to the host and capsule status bars. Used as the
+// help banner so every surface shows the one logo.
 pub(super) const BANNER: &str = concat!(
-    "\n\n\n",
-    "\x1b[94m",
-    "    │ │╷│ │╷│ ╷  │╷│ │╷│ │╷│\n",
-    "    │ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│\n",
-    "    ╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵\n",
-    "               ╵\n",
+    "\n  ",
+    "\x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m",
+    " jackin' ",
     "\x1b[0m",
-    "\x1b[1;97m",
-    "          j a c k i n\n",
-    "\x1b[0m",
-    "\x1b[38;5;67m",
-    "       operator terminal\n",
-    "\x1b[0m",
+    "\n"
 );
 
 pub mod cleanup;
@@ -165,19 +160,13 @@ mod tests {
     // ── Banner tests ────────────────────────────────────────────────────
 
     #[test]
-    fn root_help_shows_banner_with_top_padding() {
+    fn root_help_shows_banner_pill() {
         let help = help_text(&["jackin", "--help"]);
-        // Banner should have an empty line before the circuit art (top padding)
-        let circuit_line = "│ │";
-        let banner_pos = help.find(circuit_line).expect("circuit art missing");
-        let before_banner = &help[..banner_pos];
-        let newline_count = before_banner.chars().filter(|&c| c == '\n').count();
+        // The banner is the ` jackin' ` brand pill at the top of the help.
         assert!(
-            newline_count >= 2,
-            "banner missing top padding (expected >=2 newlines, got {newline_count}): {before_banner:?}"
+            help.trim_start().starts_with("jackin'"),
+            "brand pill should lead the help: {help:?}"
         );
-        assert!(help.contains("j a c k i n"), "banner text missing");
-        assert!(help.contains("operator terminal"), "banner tagline missing");
     }
 
     #[test]
@@ -293,13 +282,8 @@ mod tests {
         for args in &subcommands {
             let help = help_text(args);
             assert!(
-                help.contains("j a c k i n"),
-                "banner missing in: {}",
-                args.join(" ")
-            );
-            assert!(
-                help.contains("operator terminal"),
-                "tagline missing in: {}",
+                help.contains("jackin'"),
+                "brand pill missing in: {}",
                 args.join(" ")
             );
         }

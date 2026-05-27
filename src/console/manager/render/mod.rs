@@ -2,14 +2,12 @@
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::Paragraph,
+    layout::{Constraint, Direction, Layout, Rect},
 };
 
 use super::state::{ManagerListRow, ManagerStage, ManagerState};
 use crate::config::AppConfig;
+use jackin_tui::HintSpan;
 
 pub mod editor;
 pub(super) mod global_mounts;
@@ -32,240 +30,33 @@ pub(in crate::console::manager) use crate::console::widgets::scrollable::{
 pub(super) use crate::console::widgets::scrollable::{
     line_width, max_line_width, render_scrollable_block,
 };
-pub(super) use crate::console::widgets::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+pub(super) use crate::console::widgets::{
+    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER,
+    TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER, WHITE,
+};
 /// Distinct accent for live-state surfaces (instances, sessions).
 /// Cyan contrasts clearly with the phosphor-green config panels.
 pub(super) const CYAN: ratatui::style::Color = ratatui::style::Color::Rgb(0, 180, 180);
 pub(super) const CYAN_DIM: ratatui::style::Color = ratatui::style::Color::Rgb(0, 120, 120);
 
-// ── Footer item model ──────────────────────────────────────────────
+// ── Footer hints ───────────────────────────────────────────────────
 //
-// Structured footer items render with a consistent per-stage styling:
-//   - Key(k):    WHITE + BOLD   — the literal hotkey glyph(s)
-//   - Text(t):   PHOSPHOR_GREEN — the action label after a key
-//   - Dyn(t):    PHOSPHOR_DIM   — free-form dynamic text (e.g. "3 changes")
-//   - Sep:       PHOSPHOR_DARK  — single-dot separator between key+label pairs
-//   - GroupSep:  (three spaces) — wider gap between logical groups
-//
-// Call sites build `Vec<FooterItem>` directly so the grouping is explicit,
-// then hand it to `render_footer`. A convenience `footer_from_str` parser
-// exists for legacy call sites that still own their string literal.
+// Footer hints use the shared `HintSpan` vocabulary (jackin-tui) and the
+// shared host renderer in `console::widgets::hints`, so the manager footer,
+// the launch cockpit, and the in-container multiplexer all read identically.
+// Call sites build `Vec<HintSpan<'static>>` directly so the grouping is
+// explicit, then hand it to `render_footer`. The manager footer can be long,
+// so it uses the wrapped (multi-row) variant of the shared renderer.
 
-#[derive(Debug, Clone)]
-pub(super) enum FooterItem {
-    Key(&'static str),
-    Text(&'static str),
-    Dyn(String),
-    Sep,
-    GroupSep,
-}
-
-/// How many rows the footer needs to display all `items` within `width` columns.
-/// Minimum 1. Callers use this to size the footer area before running layout.
+/// How many rows the footer needs to display all `items` within `width`
+/// columns. Minimum 1. Callers use this to size the footer area before layout.
 #[must_use]
-pub(super) fn footer_height(items: &[FooterItem], width: u16) -> u16 {
-    footer_lines(items, width).len().max(1) as u16
+pub(super) fn footer_height(items: &[HintSpan<'_>], width: u16) -> u16 {
+    crate::console::widgets::hints::wrapped_height(items, width)
 }
 
-pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem]) {
-    let lines = footer_lines(items, area.width);
-    let p = Paragraph::new(lines).alignment(Alignment::Center);
-    frame.render_widget(p, area);
-}
-
-/// Pack footer items into wrapped lines that fit within `width` columns.
-///
-/// Items are first split into "chunks" at every `Sep` and `GroupSep` boundary.
-/// Chunks are then greedily packed onto lines: if the next chunk (plus a
-/// separator) would overflow the line, it starts a new line. A `GroupSep`
-/// between two adjacent chunks on the same line renders as three spaces;
-/// a `Sep` renders as ` · `. Both separators take 3 columns.
-fn footer_lines(items: &[FooterItem], width: u16) -> Vec<Line<'static>> {
-    // A chunk = one logical hint unit (key + optional label), with the separator
-    // flavor that should precede it when it follows another chunk on the same line.
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum SepKind {
-        Group,
-        Dot,
-    }
-
-    struct Chunk {
-        spans: Vec<Span<'static>>,
-        width: usize,
-        sep: SepKind,
-    }
-
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let dyn_style = Style::default().fg(PHOSPHOR_DIM);
-
-    // Build chunks by accumulating spans until a Sep or GroupSep is hit.
-    let mut chunks: Vec<Chunk> = Vec::new();
-    let mut cur_spans: Vec<Span<'static>> = Vec::new();
-    let mut cur_w: usize = 0;
-    let mut next_sep = SepKind::Group;
-
-    let flush =
-        |chunks: &mut Vec<Chunk>, spans: &mut Vec<Span<'static>>, w: &mut usize, sep: SepKind| {
-            if !spans.is_empty() {
-                chunks.push(Chunk {
-                    spans: std::mem::take(spans),
-                    width: *w,
-                    sep,
-                });
-                *w = 0;
-            }
-        };
-
-    for item in items {
-        match item {
-            FooterItem::Key(k) => {
-                cur_w += k.chars().count();
-                cur_spans.push(Span::styled((*k).to_string(), key_style));
-            }
-            FooterItem::Text(t) => {
-                cur_w += 1 + t.chars().count();
-                cur_spans.push(Span::styled(format!(" {t}"), text_style));
-            }
-            FooterItem::Dyn(t) => {
-                cur_w += 1 + t.chars().count();
-                cur_spans.push(Span::styled(format!(" {t}"), dyn_style));
-            }
-            FooterItem::Sep => {
-                flush(&mut chunks, &mut cur_spans, &mut cur_w, next_sep);
-                next_sep = SepKind::Dot;
-            }
-            FooterItem::GroupSep => {
-                flush(&mut chunks, &mut cur_spans, &mut cur_w, next_sep);
-                next_sep = SepKind::Group;
-            }
-        }
-    }
-    flush(&mut chunks, &mut cur_spans, &mut cur_w, next_sep);
-
-    // Greedy line-packing: chunks go on the current line if they fit;
-    // otherwise start a new line. Separator costs 3 columns on same line.
-    let max_w = width as usize;
-
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    let mut line_spans: Vec<Span<'static>> = Vec::new();
-    let mut line_w: usize = 0;
-
-    for chunk in &chunks {
-        let needed = if line_spans.is_empty() {
-            chunk.width
-        } else {
-            3 + chunk.width
-        };
-
-        if !line_spans.is_empty() && line_w + needed > max_w {
-            lines.push(Line::from(std::mem::take(&mut line_spans)));
-            line_w = 0;
-        }
-
-        if !line_spans.is_empty() {
-            match chunk.sep {
-                SepKind::Dot => line_spans.push(Span::styled(" \u{b7} ".to_string(), sep_style)),
-                SepKind::Group => line_spans.push(Span::raw("   ")),
-            }
-            line_w += 3;
-        }
-
-        line_spans.extend(chunk.spans.iter().cloned());
-        line_w += chunk.width;
-    }
-
-    if !line_spans.is_empty() {
-        lines.push(Line::from(line_spans));
-    }
-
-    if lines.is_empty() {
-        lines.push(Line::raw(""));
-    }
-
-    lines
-}
-
-#[cfg(test)]
-mod footer_wrap_tests {
-    use super::*;
-
-    fn text_content(lines: &[Line<'_>]) -> Vec<String> {
-        lines
-            .iter()
-            .map(|l| {
-                l.spans
-                    .iter()
-                    .map(|s| s.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect()
-    }
-
-    #[test]
-    fn short_footer_fits_on_one_line() {
-        let items = vec![
-            FooterItem::Key("S"),
-            FooterItem::Text("save"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("back"),
-        ];
-        let lines = footer_lines(&items, 80);
-        assert_eq!(lines.len(), 1, "should fit on one line at 80 cols");
-    }
-
-    #[test]
-    fn long_footer_wraps_to_two_lines() {
-        // Construct items that definitely exceed a narrow terminal.
-        let items = vec![
-            FooterItem::Key("↑↓"),
-            FooterItem::Text("navigate"),
-            FooterItem::GroupSep,
-            FooterItem::Key("D"),
-            FooterItem::Text("remove"),
-            FooterItem::Sep,
-            FooterItem::Key("A"),
-            FooterItem::Text("add"),
-            FooterItem::Sep,
-            FooterItem::Key("R"),
-            FooterItem::Text("toggle ro/rw"),
-            FooterItem::Sep,
-            FooterItem::Key("N"),
-            FooterItem::Text("rename"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Tab"),
-            FooterItem::Text("switch tab"),
-            FooterItem::GroupSep,
-            FooterItem::Key("S"),
-            FooterItem::Text("save settings"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("back"),
-        ];
-        let lines = footer_lines(&items, 60);
-        assert!(lines.len() > 1, "should wrap at 60 cols; lines={lines:?}");
-        // Every line should fit within 60 chars.
-        for line in &lines {
-            let w = line_width(line);
-            assert!(w <= 60, "line width {w} exceeds 60 cols: {line:?}");
-        }
-    }
-
-    #[test]
-    fn footer_height_matches_line_count() {
-        let items = vec![FooterItem::Key("S"), FooterItem::Text("save")];
-        assert_eq!(footer_height(&items, 80), 1);
-    }
-
-    #[test]
-    fn empty_items_produce_one_blank_line() {
-        let lines = footer_lines(&[], 80);
-        assert_eq!(lines.len(), 1);
-        let content = text_content(&lines);
-        assert_eq!(content[0], "");
-    }
+pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[HintSpan<'_>]) {
+    crate::console::widgets::hints::render_wrapped(frame, area, items);
 }
 
 /// Adjust stored `scroll_y` so the cursor row stays inside the viewport.
@@ -284,9 +75,11 @@ pub(super) fn cursor_scroll_for_panel(
     cursor: usize,
     scroll_y: u16,
     term: ratatui::layout::Rect,
+    footer_h: u16,
 ) -> u16 {
-    // 9 = header(3) + tab-strip(2) + block-borders(2) + footer(≈2)
-    let viewport_h = (term.height.saturating_sub(9) as usize).max(1);
+    // header(3) + tab-strip(2) + block-borders(2) + the renderer's dynamic footer.
+    let chrome = 7u16.saturating_add(footer_h);
+    let viewport_h = (term.height.saturating_sub(chrome) as usize).max(1);
     // content_height - viewport_h = u16::MAX exactly: max_offset returns u16::MAX without
     // tripping its debug_assert, while the upper clamp on cursor rows stays unreachable.
     let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
@@ -312,7 +105,7 @@ pub fn render(
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // header
+                Constraint::Length(2), // header (brand pill + 1 spacer row)
                 Constraint::Min(10),   // body
                 Constraint::Length(2), // footer
             ])
@@ -325,42 +118,34 @@ pub fn render(
             list::render_list_body(frame, chunks[1], state, config, cwd);
         }
 
-        let footer_items: Vec<FooterItem> = match &state.stage {
+        let footer_items: Vec<HintSpan<'static>> = match &state.stage {
             ManagerStage::List => {
-                if state.inline_agent_picker.is_some() {
+                let picker_footer = || {
                     let mut items = vec![
-                        FooterItem::Key("\u{2191}\u{2193}"),
-                        FooterItem::Sep,
-                        FooterItem::Key("Enter"),
-                        FooterItem::Text("launch"),
-                        FooterItem::GroupSep,
-                        FooterItem::Key("Esc"),
-                        FooterItem::Text("return to workspaces"),
+                        HintSpan::Key("\u{2191}\u{2193}"),
+                        HintSpan::Sep,
+                        HintSpan::Key("Enter"),
+                        HintSpan::Text("launch"),
+                        HintSpan::GroupSep,
+                        HintSpan::Key("Esc"),
+                        HintSpan::Text("return to workspaces"),
                     ];
                     if state.list_scroll_focus.is_some() {
-                        items.push(FooterItem::GroupSep);
-                        items.push(FooterItem::Key("←/→"));
-                        items.push(FooterItem::Text("scroll block"));
+                        items.push(HintSpan::GroupSep);
+                        items.push(HintSpan::Key("←/→"));
+                        items.push(HintSpan::Text("scroll block"));
                     }
                     items
+                };
+                if state.inline_agent_picker.is_some() {
+                    picker_footer()
                 } else if state.inline_role_picker.is_some() {
-                    let mut items = vec![
-                        FooterItem::Key("\u{2191}\u{2193}"),
-                        FooterItem::Sep,
-                        FooterItem::Key("Enter"),
-                        FooterItem::Text("launch"),
-                        FooterItem::GroupSep,
-                        FooterItem::Key("Esc"),
-                        FooterItem::Text("return to workspaces"),
-                    ];
-                    if state.list_scroll_focus.is_some() {
-                        items.push(FooterItem::GroupSep);
-                        items.push(FooterItem::Key("←/→"));
-                        items.push(FooterItem::Text("scroll block"));
-                    }
-                    items.push(FooterItem::GroupSep);
-                    items.push(FooterItem::Key("Q"));
-                    items.push(FooterItem::Text("quit"));
+                    // The role picker can quit the app; the agent picker is
+                    // reached mid-flow and only returns to workspaces.
+                    let mut items = picker_footer();
+                    items.push(HintSpan::GroupSep);
+                    items.push(HintSpan::Key("Q"));
+                    items.push(HintSpan::Text("quit"));
                     items
                 } else {
                     // Hidden on current-dir and "+ New workspace" rows because
@@ -378,17 +163,17 @@ pub fn render(
                             // attaches the focused pane; Esc returns
                             // the focus to the instance row itself.
                             vec![
-                                FooterItem::Key("\u{2191}\u{2193}"),
-                                FooterItem::Text("navigate panes"),
-                                FooterItem::Sep,
-                                FooterItem::Key("Enter"),
-                                FooterItem::Text("attach focused pane"),
-                                FooterItem::GroupSep,
-                                FooterItem::Key("Esc"),
-                                FooterItem::Text("back"),
-                                FooterItem::GroupSep,
-                                FooterItem::Key("Q"),
-                                FooterItem::Text("quit"),
+                                HintSpan::Key("\u{2191}\u{2193}"),
+                                HintSpan::Text("navigate panes"),
+                                HintSpan::Sep,
+                                HintSpan::Key("Enter"),
+                                HintSpan::Text("attach focused pane"),
+                                HintSpan::GroupSep,
+                                HintSpan::Key("Esc"),
+                                HintSpan::Text("back"),
+                                HintSpan::GroupSep,
+                                HintSpan::Key("Q"),
+                                HintSpan::Text("quit"),
                             ]
                         } else {
                             let has_snapshot = match state.selected_row() {
@@ -409,35 +194,35 @@ pub fn render(
                                 _ => false,
                             };
                             let mut items = vec![
-                                FooterItem::Key("\u{2191}\u{2193}"),
-                                FooterItem::Sep,
-                                FooterItem::Key("Enter"),
-                                FooterItem::Text("reconnect"),
-                                FooterItem::Sep,
-                                FooterItem::Key("N"),
-                                FooterItem::Text("new session"),
-                                FooterItem::Sep,
-                                FooterItem::Key("X"),
-                                FooterItem::Text("shell"),
-                                FooterItem::Sep,
-                                FooterItem::Key("T"),
-                                FooterItem::Text("stop"),
-                                FooterItem::Sep,
-                                FooterItem::Key("P"),
-                                FooterItem::Text("purge"),
+                                HintSpan::Key("\u{2191}\u{2193}"),
+                                HintSpan::Sep,
+                                HintSpan::Key("Enter"),
+                                HintSpan::Text("reconnect"),
+                                HintSpan::Sep,
+                                HintSpan::Key("N"),
+                                HintSpan::Text("new session"),
+                                HintSpan::Sep,
+                                HintSpan::Key("X"),
+                                HintSpan::Text("shell"),
+                                HintSpan::Sep,
+                                HintSpan::Key("T"),
+                                HintSpan::Text("stop"),
+                                HintSpan::Sep,
+                                HintSpan::Key("P"),
+                                HintSpan::Text("purge"),
                             ];
                             if has_snapshot {
-                                items.push(FooterItem::Sep);
-                                items.push(FooterItem::Key("Tab"));
-                                items.push(FooterItem::Text("into preview"));
+                                items.push(HintSpan::Sep);
+                                items.push(HintSpan::Key("Tab"));
+                                items.push(HintSpan::Text("into preview"));
                             }
                             items.extend([
-                                FooterItem::GroupSep,
-                                FooterItem::Key("\u{2190}"),
-                                FooterItem::Text("back"),
-                                FooterItem::GroupSep,
-                                FooterItem::Key("Q"),
-                                FooterItem::Text("quit"),
+                                HintSpan::GroupSep,
+                                HintSpan::Key("\u{2190}"),
+                                HintSpan::Text("back"),
+                                HintSpan::GroupSep,
+                                HintSpan::Key("Q"),
+                                HintSpan::Text("quit"),
                             ]);
                             items
                         }
@@ -466,82 +251,82 @@ pub fn render(
                         );
                         let scroll_focused = state.list_scroll_focus.is_some();
 
-                        let mut items: Vec<FooterItem> = if scroll_focused {
+                        let mut items: Vec<HintSpan<'static>> = if scroll_focused {
                             vec![
-                                FooterItem::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
-                                FooterItem::Text("scroll block"),
-                                FooterItem::GroupSep,
-                                FooterItem::Key("Enter"),
-                                FooterItem::Text("launch"),
-                                FooterItem::GroupSep,
+                                HintSpan::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
+                                HintSpan::Text("scroll block"),
+                                HintSpan::GroupSep,
+                                HintSpan::Key("Enter"),
+                                HintSpan::Text("launch"),
+                                HintSpan::GroupSep,
                             ]
                         } else {
                             vec![
-                                FooterItem::Key("\u{2191}\u{2193}"),
-                                FooterItem::Sep,
-                                FooterItem::Key("Enter"),
-                                FooterItem::Text("launch"),
-                                FooterItem::GroupSep,
+                                HintSpan::Key("\u{2191}\u{2193}"),
+                                HintSpan::Sep,
+                                HintSpan::Key("Enter"),
+                                HintSpan::Text("launch"),
+                                HintSpan::GroupSep,
                             ]
                         };
                         if is_saved {
                             items.extend([
-                                FooterItem::Key("E"),
-                                FooterItem::Text("edit"),
-                                FooterItem::Sep,
+                                HintSpan::Key("E"),
+                                HintSpan::Text("edit"),
+                                HintSpan::Sep,
                             ]);
                         }
-                        items.extend([FooterItem::Key("N"), FooterItem::Text("new")]);
+                        items.extend([HintSpan::Key("N"), HintSpan::Text("new")]);
                         if is_saved {
                             items.extend([
-                                FooterItem::Sep,
-                                FooterItem::Key("D"),
-                                FooterItem::Text("delete"),
+                                HintSpan::Sep,
+                                HintSpan::Key("D"),
+                                HintSpan::Text("delete"),
                             ]);
                         }
                         items.extend([
-                            FooterItem::Sep,
-                            FooterItem::Key("S"),
-                            FooterItem::Text("settings"),
+                            HintSpan::Sep,
+                            HintSpan::Key("S"),
+                            HintSpan::Text("settings"),
                         ]);
                         if show_expand_hint {
-                            items.push(FooterItem::Sep);
-                            items.push(FooterItem::Key("\u{2192}"));
-                            items.push(FooterItem::Text("expand"));
+                            items.push(HintSpan::Sep);
+                            items.push(HintSpan::Key("\u{2192}"));
+                            items.push(HintSpan::Text("expand"));
                         }
                         if show_collapse_hint {
-                            items.push(FooterItem::Sep);
-                            items.push(FooterItem::Key("\u{2190}"));
-                            items.push(FooterItem::Text("collapse"));
+                            items.push(HintSpan::Sep);
+                            items.push(HintSpan::Key("\u{2190}"));
+                            items.push(HintSpan::Text("collapse"));
                         }
                         if show_open_hint {
-                            items.push(FooterItem::Sep);
-                            items.push(FooterItem::Key("O"));
-                            items.push(FooterItem::Text("open in GitHub"));
+                            items.push(HintSpan::Sep);
+                            items.push(HintSpan::Key("O"));
+                            items.push(HintSpan::Text("open in GitHub"));
                         }
-                        items.push(FooterItem::GroupSep);
-                        items.push(FooterItem::Key("Q"));
-                        items.push(FooterItem::Text("quit"));
+                        items.push(HintSpan::GroupSep);
+                        items.push(HintSpan::Key("Q"));
+                        items.push(HintSpan::Text("quit"));
                         items
                     }
                 }
             }
             ManagerStage::CreatePrelude(_) => vec![
-                FooterItem::Dyn("Create workspace — follow the prompts".to_string()),
-                FooterItem::GroupSep,
-                FooterItem::Key("Esc"),
-                FooterItem::Text("cancel"),
+                HintSpan::Dyn("Create workspace — follow the prompts".to_string()),
+                HintSpan::GroupSep,
+                HintSpan::Key("Esc"),
+                HintSpan::Text("cancel"),
             ],
             ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => {
                 vec![
-                    FooterItem::Key("Y"),
-                    FooterItem::Text("yes"),
-                    FooterItem::Sep,
-                    FooterItem::Key("N"),
-                    FooterItem::Text("no"),
-                    FooterItem::GroupSep,
-                    FooterItem::Key("Esc"),
-                    FooterItem::Text("cancel"),
+                    HintSpan::Key("Y"),
+                    HintSpan::Text("yes"),
+                    HintSpan::Sep,
+                    HintSpan::Key("N"),
+                    HintSpan::Text("no"),
+                    HintSpan::GroupSep,
+                    HintSpan::Key("Esc"),
+                    HintSpan::Text("cancel"),
                 ]
             }
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
@@ -968,16 +753,7 @@ pub(super) fn partition_mounts_by_scope(
 }
 
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
-    let line = Line::from(vec![
-        Span::styled("▓▓▓▓ ", Style::default().fg(PHOSPHOR_GREEN)),
-        Span::styled(
-            "jackin'",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("     · "),
-        Span::styled(title.to_string(), Style::default().fg(PHOSPHOR_DIM)),
-    ]);
-    frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), area);
+    crate::console::widgets::render_brand_header(frame, area, title);
 }
 
 /// Like `centered_rect` but takes a fixed number of rows for the height.
@@ -992,155 +768,6 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
         height: h,
     }
 }
-
-#[cfg(test)]
-mod footer_tests {
-    use super::{FOOTER_KEY, FOOTER_SEP, FOOTER_TEXT, FooterItem, footer_lines};
-
-    // Use a wide terminal width so items stay on one line in these unit tests.
-    const WIDE: u16 = 200;
-
-    // Sanity — the exported style colors match the palette.
-    #[test]
-    fn styling_colors_match_palette() {
-        let key = FOOTER_KEY;
-        let text = FOOTER_TEXT;
-        let sep = FOOTER_SEP;
-        assert_eq!(key.fg, Some(super::WHITE));
-        assert_eq!(text.fg, Some(super::PHOSPHOR_GREEN));
-        assert_eq!(sep.fg, Some(super::PHOSPHOR_DARK));
-    }
-
-    #[test]
-    fn key_and_text_render_with_distinct_styles() {
-        let items = vec![FooterItem::Key("Enter"), FooterItem::Text("launch")];
-        let lines = footer_lines(&items, WIDE);
-        let spans = &lines[0].spans;
-        assert_eq!(spans.len(), 2);
-        assert_eq!(spans[0].content.as_ref(), "Enter");
-        assert_eq!(spans[0].style.fg, Some(super::WHITE));
-        assert_eq!(spans[1].content.as_ref(), " launch");
-        assert_eq!(spans[1].style.fg, Some(super::PHOSPHOR_GREEN));
-    }
-
-    #[test]
-    fn sep_renders_with_phosphor_dark() {
-        let items = vec![
-            FooterItem::Key("E"),
-            FooterItem::Text("edit"),
-            FooterItem::Sep,
-            FooterItem::Key("N"),
-            FooterItem::Text("new"),
-        ];
-        let lines = footer_lines(&items, WIDE);
-        let spans = &lines[0].spans;
-        // spans: [E, edit, " · ", N, new]
-        assert_eq!(spans[2].content.as_ref(), " \u{b7} ");
-        assert_eq!(spans[2].style.fg, Some(super::PHOSPHOR_DARK));
-    }
-
-    #[test]
-    fn group_sep_renders_as_three_raw_spaces() {
-        let items = vec![
-            FooterItem::Key("Enter"),
-            FooterItem::Text("launch"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Q"),
-            FooterItem::Text("quit"),
-        ];
-        let lines = footer_lines(&items, WIDE);
-        let spans = &lines[0].spans;
-        // spans: [Enter, launch, "   ", Q, quit]
-        assert_eq!(spans[2].content.as_ref(), "   ");
-        assert_eq!(spans[2].style.fg, None);
-    }
-
-    #[test]
-    fn dyn_item_uses_phosphor_dim() {
-        let items = vec![FooterItem::Dyn("3 changes".to_string())];
-        let lines = footer_lines(&items, WIDE);
-        let spans = &lines[0].spans;
-        assert_eq!(spans[0].content.as_ref(), " 3 changes");
-        assert_eq!(spans[0].style.fg, Some(super::PHOSPHOR_DIM));
-    }
-
-    // Per-stage smoke tests — the List footer should have all six keys styled
-    // as WHITE+BOLD and two GroupSep separators.
-    #[test]
-    fn list_footer_items_have_expected_structure() {
-        let items: Vec<FooterItem> = vec![
-            FooterItem::Key("\u{2191}\u{2193}"),
-            FooterItem::Sep,
-            FooterItem::Key("Enter"),
-            FooterItem::Text("launch"),
-            FooterItem::GroupSep,
-            FooterItem::Key("E"),
-            FooterItem::Text("edit"),
-            FooterItem::Sep,
-            FooterItem::Key("N"),
-            FooterItem::Text("new"),
-            FooterItem::Sep,
-            FooterItem::Key("D"),
-            FooterItem::Text("delete"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Q"),
-            FooterItem::Text("quit"),
-        ];
-        let lines = footer_lines(&items, WIDE);
-        let spans: Vec<_> = lines.iter().flat_map(|l| l.spans.iter()).collect();
-        // Every Key should be styled WHITE + BOLD; count them.
-        let key_count = spans
-            .iter()
-            .filter(|s| s.style.fg == Some(super::WHITE))
-            .count();
-        assert_eq!(key_count, 6, "↑↓, Enter, E, N, D, Q");
-        // Every Text should be styled PHOSPHOR_GREEN; count them.
-        let text_count = spans
-            .iter()
-            .filter(|s| s.style.fg == Some(super::PHOSPHOR_GREEN))
-            .count();
-        assert_eq!(text_count, 5, "launch, edit, new, delete, quit");
-        // GroupSep count (content == "   ", no fg).
-        let group_sep_count = spans
-            .iter()
-            .filter(|s| s.content.as_ref() == "   " && s.style.fg.is_none())
-            .count();
-        assert_eq!(group_sep_count, 2, "nav | per-row | exit");
-    }
-
-    #[test]
-    fn confirm_delete_footer_items_have_expected_structure() {
-        let items: Vec<FooterItem> = vec![
-            FooterItem::Key("Y"),
-            FooterItem::Text("yes"),
-            FooterItem::Sep,
-            FooterItem::Key("N"),
-            FooterItem::Text("no"),
-            FooterItem::GroupSep,
-            FooterItem::Key("Esc"),
-            FooterItem::Text("cancel"),
-        ];
-        let lines = footer_lines(&items, WIDE);
-        let spans: Vec<_> = lines.iter().flat_map(|l| l.spans.iter()).collect();
-        let keys: Vec<&str> = spans
-            .iter()
-            .filter(|s| s.style.fg == Some(super::WHITE))
-            .map(|s| s.content.as_ref())
-            .collect();
-        assert_eq!(keys, vec!["Y", "N", "Esc"]);
-    }
-}
-
-// Re-export the per-item Styles used in tests so assertions don't need to
-// recompute them from the palette.
-#[cfg(test)]
-const FOOTER_KEY: ratatui::style::Style = ratatui::style::Style::new()
-    .fg(WHITE)
-    .add_modifier(ratatui::style::Modifier::BOLD);
-#[cfg(test)]
-const FOOTER_TEXT: ratatui::style::Style = ratatui::style::Style::new().fg(PHOSPHOR_GREEN);
-#[cfg(test)]
-const FOOTER_SEP: ratatui::style::Style = ratatui::style::Style::new().fg(PHOSPHOR_DARK);
 
 #[cfg(test)]
 mod header_branding_tests {

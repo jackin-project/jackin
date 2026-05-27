@@ -330,11 +330,13 @@ fn current_mode_and_credential(
 ///
 /// `op_available` gates the 1Password choice rendered inside
 /// `Modal::AuthSourcePicker` — passed through from `EditorState` so
-/// the form doesn't reprobe the `op` binary on every keypress. The
-/// `OpPicker` itself is opened by `open_op_picker_from_auth_source`
-/// after the operator selects 1Password from the source picker; that
-/// helper takes its own `op_cache` so this entry point doesn't have
-/// to.
+/// the form doesn't reprobe the `op` binary on every keypress.
+///
+/// The `g`/`G` generate trigger opens the shared source picker (which
+/// needs only `op_available` to dim the disabled 1Password choice); the
+/// Create-mode `OpPicker` for the 1Password generate branch is mounted
+/// later from the source-picker commit handler in `editor.rs`, which
+/// owns `op_cache`.
 pub(super) fn handle_auth_form_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
@@ -356,6 +358,16 @@ pub(super) fn handle_auth_form_key(
     if key.code == KeyCode::Esc {
         editor.modal = None;
         editor.pending_auth_form_return = None;
+        return true;
+    }
+
+    // `g`/`G` at any focus mints a Claude OAuth token. It opens the
+    // shared source picker (plain literal vs. 1Password) as the first
+    // step. Gated to the workspace-level Claude oauth_token slot in Edit
+    // mode; a no-op everywhere else.
+    if matches!(key.code, KeyCode::Char('g' | 'G'))
+        && try_start_token_generate(editor, op_available)
+    {
         return true;
     }
 
@@ -381,6 +393,81 @@ pub(super) fn handle_auth_form_key(
         }
     }
     false
+}
+
+/// Whether the open auth form is eligible for the `g`/`G` generate
+/// trigger: a Claude `oauth_token` slot in an existing (Edit-mode)
+/// workspace, at either the workspace layer or a per-role override. The
+/// scope is taken from the form's target — the operator picks the role
+/// by opening that role's auth form, so generate needs no role step.
+pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
+    if !matches!(
+        editor.mode,
+        crate::console::manager::state::EditorMode::Edit { .. }
+    ) {
+        return false;
+    }
+    let Some(Modal::AuthForm { target, state, .. }) = editor.modal.as_ref() else {
+        return false;
+    };
+    state.kind == AuthKind::Claude
+        && state.mode == Some(AuthMode::OAuthToken)
+        && matches!(
+            target,
+            AuthFormTarget::Workspace {
+                kind: AuthKind::Claude
+            } | AuthFormTarget::WorkspaceRole {
+                kind: AuthKind::Claude,
+                ..
+            }
+        )
+}
+
+/// Mint-path trigger: when the gate holds, stash the open form (so the
+/// post-mint re-mount lands the operator back on the same Edit-auth
+/// dialog with the minted credential staged, focus Save — exactly like
+/// the provide path) and mount the shared source picker so the operator
+/// first chooses where the freshly minted token is stored (plain
+/// literal vs. 1Password). The source picker's commit (in `editor.rs`)
+/// routes to GENERATE because `generating_token_target` is set. Returns
+/// `false` (a no-op) when the gate fails.
+fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) -> bool {
+    if !auth_form_can_generate_token(editor) {
+        return false;
+    }
+    if !matches!(
+        editor.mode,
+        crate::console::manager::state::EditorMode::Edit { .. }
+    ) {
+        return false;
+    }
+    let Some(Modal::AuthForm {
+        target,
+        state,
+        focus,
+        literal_buffer,
+    }) = editor.modal.take()
+    else {
+        return false;
+    };
+    // Stash the form so the mint completion re-mounts it via the same
+    // helpers the provide path uses. The generate vs. provide
+    // disambiguation is the `generating_token_target` marker, which the
+    // source-picker / op-picker commit arms check first.
+    editor.generating_token_target = Some(target.clone());
+    editor.pending_auth_form_return = Some(AuthFormReturnPath {
+        target,
+        state,
+        focus,
+        literal_buffer,
+    });
+    editor.modal = Some(Modal::AuthSourcePicker {
+        state: crate::console::widgets::source_picker::SourcePickerState::new(
+            "generated token".to_string(),
+            op_available,
+        ),
+    });
+    true
 }
 
 /// Keystroke router for the `CredentialSource` row.
@@ -510,8 +597,10 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
 
 /// Commit branch for the credential `Modal::TextInput`. Lifts the
 /// stashed auth form back, applies the typed value via `set_literal`,
-/// and re-mounts the form with focus on Save.
-pub(super) fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) {
+/// and re-mounts the form with focus on Save. Also the post-mint
+/// re-mount target for the plain-text generate path in the
+/// `run_console` loop, hence the wider visibility.
+pub(in crate::console) fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) {
     let Some(AuthFormReturnPath {
         target, mut state, ..
     }) = editor.pending_auth_form_return.take()
@@ -568,11 +657,14 @@ pub(super) fn open_op_picker_from_auth_source(
 /// back on the form with the prior credential unchanged. The
 /// `read-then-commit` invariant on `try_commit_op_ref` guarantees a
 /// broken reference never lands in `editor.pending`.
-pub(super) fn apply_op_picker_to_auth_form(
+pub(in crate::console) fn apply_op_picker_to_auth_form(
     editor: &mut EditorState<'_>,
     op_ref: crate::operator_env::OpRef,
 ) {
-    apply_op_picker_to_auth_form_with_runner(editor, op_ref, &crate::operator_env::OpCli::new());
+    // Pin the read-back to the account the picker committed onto the ref
+    // so a vault in a non-default account resolves.
+    let runner = crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
+    apply_op_picker_to_auth_form_with_runner(editor, op_ref, &runner);
 }
 
 /// Restore the auth-form modal unchanged after the operator cancels
@@ -830,7 +922,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
 /// Clear the `auth_forward` at the form's target layer. Does NOT touch
 /// the credential env var — operators delete those via the Secrets tab
 /// (Claude / Codex) or the Github env block on the workspace × github
-/// layer. Mirrors the existing Claude / Codex behaviour.
+/// layer.
 fn clear_layer(editor: &mut EditorState<'_>, target: &AuthFormTarget) {
     match target {
         AuthFormTarget::Workspace { kind } => {
@@ -1174,7 +1266,6 @@ mod tests {
     }
 
     /// Tab from the last focusable control wraps back to the first.
-    /// Mirrors the convention used by every other modal in the TUI.
     #[test]
     fn auth_form_tab_wraps_around_at_reset() {
         let (cfg, mut state) = build_state();
@@ -1372,6 +1463,172 @@ mod tests {
         );
     }
 
+    /// `g` on the workspace × Claude `oauth_token` form opens the
+    /// shared source picker (plain vs. 1Password) and arms
+    /// `generating_token_target`, driving the token-generate (mint)
+    /// path. The storage-target choice (op vs. plain) happens at the
+    /// source picker, not before it.
+    #[test]
+    fn auth_form_generate_opens_source_picker_and_arms_target() {
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor, &cfg);
+        // Drive the mode to OAuthToken so the generate gate holds.
+        let Some(Modal::AuthForm { state: form, .. }) = editor.modal.as_mut() else {
+            panic!("auth form must be open")
+        };
+        form.set_mode(AuthMode::OAuthToken);
+        assert!(auth_form_can_generate_token(editor));
+
+        let closed = drive_key(editor, key(KeyCode::Char('g')));
+        assert!(closed, "generate must consume the keystroke");
+        assert!(
+            matches!(editor.modal, Some(Modal::AuthSourcePicker { .. })),
+            "generate must open the source picker as the first step"
+        );
+        assert!(
+            editor.pending_auth_form_return.is_some(),
+            "generate must stash the form so the post-mint re-mount can return to it; \
+             generate vs. provide is disambiguated by the generate marker, not the stash"
+        );
+        assert!(
+            matches!(
+                editor.generating_token_target,
+                Some(AuthFormTarget::Workspace {
+                    kind: AuthKind::Claude
+                })
+            ),
+            "generate must arm the workspace × Claude target"
+        );
+    }
+
+    /// After the `g`/`G` generate trigger stashes the form, the mint
+    /// completion re-mounts the Edit-auth dialog with the minted op
+    /// credential applied and focus on Save — the same shape the
+    /// `run_console` loop drives by calling `apply_op_picker_to_auth_form`
+    /// with the wired `OpRef`. The form is NOT persisted here; Save does
+    /// that. Uses an injected stub `OpRunner` so no real `op` binary runs.
+    #[test]
+    fn auth_form_generate_op_mint_remounts_form_focus_save() {
+        struct StubRunner;
+        impl OpRunner for StubRunner {
+            fn read(&self, _r: &str) -> anyhow::Result<String> {
+                Ok("sk-ant-oat01-MINTED".into())
+            }
+        }
+
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        let pending_before = editor.pending.clone();
+
+        // Open the form on workspace × Claude, drive mode to OAuthToken,
+        // then press `g` to start generate (stashes the form).
+        open_auth_form_modal(editor, &cfg);
+        let Some(Modal::AuthForm { state: form, .. }) = editor.modal.as_mut() else {
+            panic!("auth form must be open")
+        };
+        form.set_mode(AuthMode::OAuthToken);
+        let closed = drive_key(editor, key(KeyCode::Char('g')));
+        assert!(closed, "generate must consume the keystroke");
+        assert!(matches!(editor.modal, Some(Modal::AuthSourcePicker { .. })));
+        assert!(
+            editor.pending_auth_form_return.is_some(),
+            "generate must stash the form for the post-mint re-mount"
+        );
+
+        // Simulate the loop's post-mint re-mount with the wired OpRef.
+        let minted = OpRef {
+            op: "op://uuid/claude-vault".into(),
+            path: "Personal/Claude/oauth-token".into(),
+            account: None,
+        };
+        super::apply_op_picker_to_auth_form_with_runner(editor, minted.clone(), &StubRunner);
+
+        // Form is back, focus Save, credential carries the minted ref.
+        let Some(Modal::AuthForm { state, focus, .. }) = &editor.modal else {
+            panic!("mint completion must re-mount the auth form");
+        };
+        assert_eq!(
+            *focus,
+            AuthFormFocus::Save,
+            "post-mint re-mount drops the cursor onto Save"
+        );
+        match &state.credential {
+            CredentialInput::OpRef(r) => assert_eq!(r, &minted),
+            other => panic!("expected OpRef credential after mint; got {other:?}"),
+        }
+        assert!(
+            state.can_save(),
+            "form must be commitable once the minted ref is applied"
+        );
+        assert!(
+            editor.pending_auth_form_return.is_none(),
+            "stash must be drained on the re-mount"
+        );
+        // Persistence is deferred to Save: pending stays untouched.
+        assert_eq!(
+            editor.pending, pending_before,
+            "mint must not persist; only the operator's Save writes pending"
+        );
+    }
+
+    /// The plain-text mint completion re-mounts the form with the minted
+    /// literal applied and focus Save (the `EnvValue::Plain` arm of the
+    /// loop, via `apply_plain_text_to_auth_form`). No persistence until
+    /// Save.
+    #[test]
+    fn auth_form_generate_plain_mint_remounts_form_focus_save() {
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor, &cfg);
+        let Some(Modal::AuthForm { state: form, .. }) = editor.modal.as_mut() else {
+            panic!("auth form must be open")
+        };
+        form.set_mode(AuthMode::OAuthToken);
+        drive_key(editor, key(KeyCode::Char('g')));
+        assert!(editor.pending_auth_form_return.is_some());
+
+        // Simulate the loop's post-mint re-mount with the minted literal.
+        apply_plain_text_to_auth_form(editor, "sk-ant-oat01-PLAIN");
+
+        let Some(Modal::AuthForm { state, focus, .. }) = &editor.modal else {
+            panic!("plain mint completion must re-mount the auth form");
+        };
+        assert_eq!(*focus, AuthFormFocus::Save);
+        match &state.credential {
+            CredentialInput::Literal(s) => assert_eq!(s, "sk-ant-oat01-PLAIN"),
+            other => panic!("expected literal credential after plain mint; got {other:?}"),
+        }
+        assert!(editor.pending_auth_form_return.is_none());
+    }
+
+    /// `g` is a no-op when the mode is not `oauth_token` (here ApiKey):
+    /// the auth form stays open and no target is armed.
+    #[test]
+    fn auth_form_generate_is_noop_for_non_oauth_token_mode() {
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor, &cfg);
+        let Some(Modal::AuthForm { state: form, .. }) = editor.modal.as_mut() else {
+            panic!("auth form must be open")
+        };
+        form.set_mode(AuthMode::ApiKey);
+        assert!(!auth_form_can_generate_token(editor));
+
+        let closed = drive_key(editor, key(KeyCode::Char('g')));
+        assert!(!closed, "g must be a no-op when not oauth_token");
+        assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
+        assert!(editor.generating_token_target.is_none());
+    }
+
     /// Simulating a successful `OpPicker` commit re-mounts the auth
     /// form with the picked `OpRef` applied. `can_save` flips to true
     /// because the form now carries a valid `OpRef` and a committed
@@ -1407,6 +1664,7 @@ mod tests {
         let picked = OpRef {
             op: "op://uuid/anthropic-vault".into(),
             path: "Work/Anthropic/api-key".into(),
+            account: None,
         };
         super::apply_op_picker_to_auth_form_with_runner(editor, picked.clone(), &StubRunner);
 
@@ -1462,6 +1720,7 @@ mod tests {
         let picked = OpRef {
             op: "op://uuid/missing".into(),
             path: "Vault/Missing/field".into(),
+            account: None,
         };
         super::apply_op_picker_to_auth_form_with_runner(editor, picked, &FailRunner);
 
@@ -1549,6 +1808,7 @@ mod tests {
             state.credential = CredentialInput::OpRef(OpRef {
                 op: String::new(),
                 path: String::new(),
+                account: None,
             });
         } else {
             panic!("auth form must still be open");

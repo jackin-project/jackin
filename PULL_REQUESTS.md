@@ -104,14 +104,17 @@ mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
 which jackin
+```
 
-# Keep this final line for PRs touching crates/jackin-capsule/; drop it otherwise.
+For PRs touching `crates/jackin-capsule/` only, follow the checkout block with a **separate** paste that builds and exports the capsule binary (drop it entirely for non-capsule PRs). Keep it as its own fence — not a line appended to the block above — so the operator can run it independently, and keep it before any `jackin console` / `jackin load` smoke step:
+
+```sh
 eval "$(cargo run --bin build-jackin-capsule -- --export)"
 ```
 
 The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches may have been force-pushed after explicit operator approval (DCO amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at - so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
 
-The `cargo build --bin jackin` plus `PATH` export is also required for PR verification that runs jackin' itself. The runtime entrypoint and other `include_str!` assets are embedded into the Rust binary at compile time, so a Homebrew-installed `jackin` can silently launch old embedded content even when the checkout contains the PR changes. Prepending `target/debug` makes every later `jackin ...` command in the same terminal exercise the PR-built binary while leaving the operator's installed binary untouched. The `which jackin` line is the guardrail; it should print the checkout's `target/debug/jackin`, not a Homebrew path. For `crates/jackin-capsule/` PRs, keep the final `eval "$(cargo run --bin build-jackin-capsule -- --export)"` line so every later `jackin console` / `jackin load` uses the freshly built capsule binary through `JACKIN_CAPSULE_BIN`; drop that line for non-capsule PRs.
+The `cargo build --bin jackin` plus `PATH` export is also required for PR verification that runs jackin' itself. The runtime entrypoint and other `include_str!` assets are embedded into the Rust binary at compile time, so a Homebrew-installed `jackin` can silently launch old embedded content even when the checkout contains the PR changes. Prepending `target/debug` makes every later `jackin ...` command in the same terminal exercise the PR-built binary while leaving the operator's installed binary untouched. The `which jackin` line is the guardrail; it should print the checkout's `target/debug/jackin`, not a Homebrew path. For `crates/jackin-capsule/` PRs, keep the separate `eval "$(cargo run --bin build-jackin-capsule -- --export)"` fence after the checkout block so every later `jackin console` / `jackin load` uses the freshly built capsule binary through `JACKIN_CAPSULE_BIN`; drop that fence for non-capsule PRs.
 
 #### Static Checks
 

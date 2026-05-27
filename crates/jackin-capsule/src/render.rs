@@ -59,7 +59,6 @@ pub enum PaneBodyDim {
     #[default]
     Normal,
     Inactive,
-    Backdrop,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -185,9 +184,8 @@ impl PaneBodyCache {
 }
 
 /// Render the screen at `(dest_row, dest_col)` into `buf`, clipped to
-/// `(rect_rows, rect_cols)`. Coordinates are 0-based. Inactive panes
-/// get a light ANSI-dim cue; modal backdrops use the stronger darkened
-/// color treatment so dialogs clearly own the whole terminal.
+/// `(rect_rows, rect_cols)`. Coordinates are 0-based. Inactive (unfocused
+/// multi-pane) panes get a light ANSI-dim cue.
 pub fn render_pane(
     screen: &Screen,
     dest_row: u16,
@@ -404,14 +402,12 @@ fn write_cursor(buf: &mut Vec<u8>, row: u16, col: u16) {
 
 fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dim: PaneBodyDim) {
     buf.extend_from_slice(b"\x1b[0");
-    // Cell-level dim (Amp uses this for its animated bottom-bar) uses
-    // ANSI dim. Dialog backdrop dim is intentionally stronger: ANSI dim
-    // is subtle in many terminals, so modal background cells also get
-    // darkened foreground/background colors below.
+    // Inactive (unfocused multi-pane) panes get a subtle ANSI dim; Amp's
+    // animated bottom-bar uses the same `a.dim` cell attribute.
     if a.dim || dim != PaneBodyDim::Normal {
         buf.extend_from_slice(b";2");
     }
-    if a.bold && dim != PaneBodyDim::Backdrop {
+    if a.bold {
         buf.extend_from_slice(b";1");
     }
     if a.italic {
@@ -423,13 +419,8 @@ fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dim: PaneBodyDim) {
     if a.inverse {
         buf.extend_from_slice(b";7");
     }
-    if dim == PaneBodyDim::Backdrop {
-        emit_backdrop_fg(buf, a.fg);
-        emit_backdrop_bg(buf, a.bg);
-    } else {
-        emit_fg(buf, a.fg);
-        emit_bg(buf, a.bg);
-    }
+    emit_fg(buf, a.fg);
+    emit_bg(buf, a.bg);
     buf.push(b'm');
 }
 
@@ -461,12 +452,6 @@ impl SgrLayer {
             Self::Bg => 48,
         }
     }
-    const fn backdrop_default_rgb(self) -> (u8, u8, u8) {
-        match self {
-            Self::Fg => (58, 58, 58),
-            Self::Bg => (0, 0, 0),
-        }
-    }
 }
 
 fn emit_color(buf: &mut Vec<u8>, layer: SgrLayer, color: ColorKey) {
@@ -495,47 +480,16 @@ fn emit_bg(buf: &mut Vec<u8>, color: ColorKey) {
     emit_color(buf, SgrLayer::Bg, color);
 }
 
-fn emit_backdrop(buf: &mut Vec<u8>, layer: SgrLayer, color: ColorKey) {
-    let (r, g, b) = match color {
-        ColorKey::Default => layer.backdrop_default_rgb(),
-        ColorKey::Idx(n) => dim_indexed_color(n),
-        ColorKey::Rgb(r, g, b) => (strong_dim(r), strong_dim(g), strong_dim(b)),
-    };
-    let _ = write!(buf, ";{};2;{r};{g};{b}", layer.truecolor());
-}
-
-fn emit_backdrop_fg(buf: &mut Vec<u8>, color: ColorKey) {
-    emit_backdrop(buf, SgrLayer::Fg, color);
-}
-
-fn emit_backdrop_bg(buf: &mut Vec<u8>, color: ColorKey) {
-    emit_backdrop(buf, SgrLayer::Bg, color);
-}
-
-const fn strong_dim(value: u8) -> u8 {
-    value / 5
-}
-
-const fn dim_indexed_color(idx: u8) -> (u8, u8, u8) {
-    let (r, g, b) = match idx & 0x0f {
-        0 => (0, 0, 0),
-        1 => (170, 0, 0),
-        2 => (0, 170, 0),
-        3 => (170, 85, 0),
-        4 => (0, 0, 170),
-        5 => (170, 0, 170),
-        6 => (0, 170, 170),
-        7 => (170, 170, 170),
-        8 => (85, 85, 85),
-        9 => (255, 85, 85),
-        10 => (85, 255, 85),
-        11 => (255, 255, 85),
-        12 => (85, 85, 255),
-        13 => (255, 85, 255),
-        14 => (85, 255, 255),
-        _ => (255, 255, 255),
-    };
-    (strong_dim(r), strong_dim(g), strong_dim(b))
+/// Paint the whole terminal with a solid background colour, fully hiding
+/// whatever was beneath. Used as the opaque backdrop behind modal dialogs.
+pub fn fill_screen(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, rgb: (u8, u8, u8)) {
+    let (r, g, b) = rgb;
+    for row in 0..term_rows {
+        let _ = write!(buf, "\x1b[{};1H\x1b[0;48;2;{r};{g};{b}m", row + 1);
+        for _ in 0..term_cols {
+            buf.push(b' ');
+        }
+    }
 }
 
 #[cfg(test)]
@@ -581,28 +535,6 @@ mod tests {
     }
 
     #[test]
-    fn dialog_backdrop_dim_uses_strong_darkened_colors() {
-        let mut parser = Parser::new(1, 10, 0);
-        parser.process(b"\x1b[31mred");
-        let mut buf = Vec::new();
-        render_pane(
-            parser.screen(),
-            0,
-            0,
-            1,
-            10,
-            PaneBodyDim::Backdrop,
-            &mut buf,
-        );
-        let out = String::from_utf8_lossy(&buf);
-
-        assert!(
-            out.contains(";2;38;2;34;0;0;48;2;0;0;0m"),
-            "dialog backdrop should darken colors, not rely on ANSI dim alone: {out:?}"
-        );
-    }
-
-    #[test]
     fn inactive_pane_dim_uses_light_ansi_dim_only() {
         let mut parser = Parser::new(1, 10, 0);
         parser.process(b"\x1b[31mred");
@@ -621,10 +553,6 @@ mod tests {
         assert!(
             out.contains("\x1b[0;2;31mred"),
             "inactive pane should keep normal color codes with ANSI dim: {out:?}"
-        );
-        assert!(
-            !out.contains(";38;2;34;0;0"),
-            "inactive pane should not use the strong dialog-backdrop darkening: {out:?}"
         );
     }
 

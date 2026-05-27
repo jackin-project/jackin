@@ -63,7 +63,10 @@ pub async fn reconcile(
     }
 
     if let Err(err) = reconcile_inner(paths, docker, runner).await {
-        eprintln!("[jackin] keep_awake reconciler: {err}");
+        crate::tui::emit_compact_line(
+            "keep_awake",
+            &format!("[jackin] keep_awake reconciler: {err}"),
+        );
     }
 }
 
@@ -122,8 +125,11 @@ async fn reconcile_inner(
             let pid = spawn_caffeinate(runner).await?;
             if let Err(err) = write_pid_file(&pid_path, pid) {
                 if let Err(stop_err) = stop_caffeinate(runner, pid).await {
-                    eprintln!(
-                        "[jackin] keep_awake: PID file write failed AND cleanup kill of newly-spawned caffeinate (PID {pid}) also failed: {stop_err}; manual `pkill caffeinate` may be required"
+                    crate::tui::emit_compact_line(
+                        "keep_awake",
+                        &format!(
+                            "[jackin] keep_awake: PID file write failed AND cleanup kill of newly-spawned caffeinate (PID {pid}) also failed: {stop_err}; manual `pkill caffeinate` may be required"
+                        ),
                     );
                 }
                 return Err(err);
@@ -156,9 +162,12 @@ async fn reconcile_inner(
             // Acting blind would either orphan a live caffeinate
             // (false → remove PID file) or spawn a duplicate
             // (true → spawn over an unrecorded survivor).
-            eprintln!(
-                "[jackin] keep_awake: ps liveness check inconclusive for recorded PID {} — leaving caffeinate state untouched, will retry on next reconcile",
-                current_pid.expect("Liveness::Unknown implies a recorded PID")
+            crate::tui::emit_compact_line(
+                "keep_awake",
+                &format!(
+                    "[jackin] keep_awake: ps liveness check inconclusive for recorded PID {} — leaving caffeinate state untouched, will retry on next reconcile",
+                    current_pid.expect("Liveness::Unknown implies a recorded PID")
+                ),
             );
         }
     }

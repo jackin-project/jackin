@@ -40,11 +40,6 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
             "JACKIN_CAPSULE_BIN={} does not exist or is not executable",
             path.display()
         );
-        crate::debug_log!(
-            "capsule_binary",
-            "JACKIN_CAPSULE_BIN override: {}",
-            path.display()
-        );
         // Operator-trust note: this override path bypasses the
         // SHA-256 verification that the cache-miss download path
         // applies. The operator pointing at a local file is
@@ -52,9 +47,12 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         // build-jackin-capsule` artifact, the path that test
         // suites and dev iteration use). Production hosts that
         // never set this env var still get the strong checksum
-        // gate from `download_and_cache`.
-        eprintln!(
-            "[jackin] using JACKIN_CAPSULE_BIN override at {} (skipping SHA-256 verification)",
+        // gate from `download_and_cache`. The note is debug-only so
+        // it never streams over the launch progress surface; the
+        // rich launch screen owns the terminal during this call.
+        crate::debug_log!(
+            "capsule_binary",
+            "JACKIN_CAPSULE_BIN override at {} (skipping SHA-256 verification)",
             path.display()
         );
         return Ok(path);
@@ -177,7 +175,10 @@ pub const fn container_arch() -> &'static str {
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let sha_url = format!("{url}.sha256");
-    eprintln!("[jackin] downloading jackin-capsule {version} for linux/{arch}...");
+    crate::debug_log!(
+        "capsule_binary",
+        "downloading jackin-capsule {version} for linux/{arch}"
+    );
     let tmp_archive = dest.with_extension("tar.gz.tmp");
     let tmp = dest.with_extension("tmp");
     let tmp_archive_path_str = tmp_archive.to_str().ok_or_else(|| {
@@ -280,8 +281,9 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     std::fs::rename(&tmp, dest)
         .with_context(|| format!("failed to move jackin-capsule to {}", dest.display()))?;
 
-    eprintln!(
-        "[jackin] jackin-capsule {version} cached at {} (sha256 {})",
+    crate::debug_log!(
+        "capsule_binary",
+        "jackin-capsule {version} cached at {} (sha256 {})",
         dest.display(),
         &actual_sha[..16.min(actual_sha.len())]
     );

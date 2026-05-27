@@ -7,7 +7,6 @@ use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
 use crate::version_check;
 use anyhow::Context as _;
-use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
 use super::naming::{
@@ -99,15 +98,17 @@ pub(super) async fn build_agent_image(
                 None => false,
             };
             if local_is_fresh {
-                eprintln!(
-                    "note: published image {published} is out of date; reusing local workspace image {local_image_name} (role SHA matches)",
+                crate::debug_log!(
+                    "image",
+                    "published image {published} is out of date; reusing local workspace image {local_image_name} (role SHA matches)"
                 );
                 use_prebuilt = false;
                 base_image_override = None;
                 rebuild
             } else {
-                eprintln!(
-                    "note: published image {published} is out of date; rebuilding from workspace Dockerfile",
+                crate::debug_log!(
+                    "image",
+                    "published image {published} is out of date; rebuilding from workspace Dockerfile"
                 );
                 use_prebuilt = false;
                 base_image_override = None;
@@ -151,14 +152,12 @@ pub(super) async fn build_agent_image(
     if debug {
         let dockerfile_body = std::fs::read_to_string(&build.dockerfile_path)
             .unwrap_or_else(|e| format!("<read failed: {e}>"));
-        eprintln!(
-            "{}",
-            format!(
-                r"[debug] DerivedDockerfile ({}):
-{dockerfile_body}",
+        crate::tui::emit_debug_line(
+            "image",
+            &format!(
+                "DerivedDockerfile ({}):\n{dockerfile_body}",
                 build.dockerfile_path.display(),
-            )
-            .dimmed()
+            ),
         );
     }
     let image = local_image_name.clone();
@@ -250,17 +249,17 @@ pub(super) async fn build_agent_image(
             .as_ref()
             .and_then(|token| match tempfile::NamedTempFile::new() {
                 Err(e) => {
-                    eprintln!(
-                        "warning: failed to create tempfile for GitHub token: {e}; \
-                     build will use unauthenticated GitHub API"
+                    emit_compact_image_warning(&format!(
+                        "failed to create tempfile for GitHub token: {e}; build will use unauthenticated GitHub API"
+                    ),
                     );
                     None
                 }
                 Ok(mut f) => match std::io::Write::write_all(&mut f, token.as_bytes()) {
                     Err(e) => {
-                        eprintln!(
-                            "warning: failed to write GitHub token to tempfile: {e}; \
-                         build will use unauthenticated GitHub API"
+                        emit_compact_image_warning(&format!(
+                            "failed to write GitHub token to tempfile: {e}; build will use unauthenticated GitHub API"
+                        ),
                         );
                         None
                     }
@@ -274,13 +273,20 @@ pub(super) async fn build_agent_image(
         build_args.extend(["--secret", s.as_str()]);
     }
 
-    runner
+    // Tee the build's captured output into the live build-log sink so the
+    // loading cockpit can show it on demand (the build is the slowest step).
+    // `end` stops teeing but keeps the captured lines for the dialog.
+    crate::runtime::build_log::begin();
+    let build_result = runner
         .run(
             "docker",
             &build_args,
             None,
             &RunOptions {
                 capture_stderr: true,
+                capture_stdout: true,
+                stream_captured_output: should_stream_build_output(debug),
+                tee_to_build_log: true,
                 extra_env: github_token
                     .as_ref()
                     .map(|_| vec![("DOCKER_BUILDKIT".to_string(), "1".to_string())])
@@ -288,7 +294,9 @@ pub(super) async fn build_agent_image(
                 ..RunOptions::default()
             },
         )
-        .await?;
+        .await;
+    crate::runtime::build_log::end();
+    build_result?;
 
     extract_agent_version(paths, &image, agent, debug, runner).await;
 
@@ -305,6 +313,18 @@ async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) ->
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+fn should_stream_build_output(debug: bool) -> bool {
+    !debug && !crate::tui::rich_surface_active()
+}
+
+fn emit_compact_image_warning(message: &str) {
+    crate::tui::emit_compact_line("warning", &compact_image_warning_line(message));
+}
+
+fn compact_image_warning_line(message: &str) -> String {
+    format!("jackin: warning: {message}")
 }
 
 /// Returns `true` when the published image is out of date relative to the
@@ -330,19 +350,17 @@ async fn published_image_is_stale(
     docker: &impl DockerApi,
 ) -> bool {
     if let Err(e) = docker.pull_image(published).await {
-        eprintln!(
-            "warning: docker pull {published} failed ({e}); \
-             treating published image as stale and rebuilding from workspace Dockerfile"
-        );
+        emit_compact_image_warning(&format!(
+            "docker pull {published} failed ({e}); treating published image as stale and rebuilding from workspace Dockerfile"
+        ));
         return true;
     }
 
     let labels = match docker.inspect_image_labels(published).await {
         Err(e) => {
-            eprintln!(
-                "warning: could not read labels from {published} ({e}); \
-                 treating published image as stale"
-            );
+            emit_compact_image_warning(&format!(
+                "could not read labels from {published} ({e}); treating published image as stale"
+            ));
             return true;
         }
         Ok(map) => map,
@@ -401,7 +419,12 @@ async fn extract_agent_version(
         )
         .await
     else {
-        eprintln!("warning: could not probe {display} version from {image}; version check skipped");
+        if debug {
+            crate::tui::emit_debug_line(
+                "image",
+                &format!("could not probe {display} version from {image}; version check skipped"),
+            );
+        }
         return;
     };
     let version = raw.trim();
@@ -409,12 +432,15 @@ async fn extract_agent_version(
         return;
     }
     if debug {
-        eprintln!("        {display} {version}");
+        crate::tui::emit_debug_line("image", &format!("{display} {version}"));
     }
     if let Some(semver) = parse(version) {
         store(paths, image, semver);
     } else if debug {
-        eprintln!("warning: unexpected {slug} --version output: {version:?}");
+        crate::tui::emit_debug_line(
+            "image",
+            &format!("unexpected {slug} --version output: {version:?}"),
+        );
     }
 }
 
@@ -448,6 +474,27 @@ mod tests {
     use super::*;
     use crate::docker_client::FakeDockerClient;
     use std::collections::HashMap;
+    use std::sync::{Mutex, MutexGuard};
+
+    static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct RichSurfaceTestGuard {
+        _guard: MutexGuard<'static, ()>,
+    }
+
+    impl Drop for RichSurfaceTestGuard {
+        fn drop(&mut self) {
+            crate::tui::set_rich_surface_active(false);
+        }
+    }
+
+    fn rich_surface_test_guard() -> RichSurfaceTestGuard {
+        let guard = RICH_SURFACE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::tui::set_rich_surface_active(false);
+        RichSurfaceTestGuard { _guard: guard }
+    }
 
     fn make_docker(labels: HashMap<String, String>) -> FakeDockerClient {
         let docker = FakeDockerClient::default();
@@ -456,6 +503,28 @@ mod tests {
             .borrow_mut()
             .push_back(labels);
         docker
+    }
+
+    #[test]
+    fn build_output_streams_for_compact_non_debug_runs() {
+        let _guard = rich_surface_test_guard();
+        assert!(should_stream_build_output(false));
+    }
+
+    #[test]
+    fn build_output_is_suppressed_for_debug_or_rich_surface() {
+        let _guard = rich_surface_test_guard();
+        assert!(!should_stream_build_output(true));
+
+        crate::tui::set_rich_surface_active(true);
+        assert!(!should_stream_build_output(false));
+    }
+
+    #[test]
+    fn compact_image_warning_line_is_not_debug_prefixed() {
+        let line = compact_image_warning_line("docker pull image failed");
+        assert_eq!(line, "jackin: warning: docker pull image failed");
+        assert!(!line.contains("[jackin debug"));
     }
 
     #[tokio::test]
