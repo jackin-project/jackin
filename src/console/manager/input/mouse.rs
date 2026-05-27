@@ -29,9 +29,10 @@ const MIN_DRAGGABLE_WIDTH: u16 = 40;
 const SEAM_HIT_SLACK: u16 = 1;
 
 /// Height of the header chunk in the list-view chrome. Mirrors
-/// `Constraint::Length(3)` in `render::render`. Used by mouse hit-testing
-/// to convert a terminal row into a list item index.
-const LIST_HEADER_HEIGHT: u16 = 3;
+/// `Constraint::Length(2)` in `render::render` (brand pill row + one
+/// spacer row). Used by mouse hit-testing to convert a terminal row
+/// into a list item index.
+const LIST_HEADER_HEIGHT: u16 = 2;
 /// Height of the footer chunk in the list-view chrome. Mirrors
 /// `Constraint::Length(2)` in `render::render`.
 const LIST_FOOTER_HEIGHT: u16 = 2;
@@ -68,6 +69,15 @@ pub fn handle_mouse_with_config(
     config: Option<&crate::config::AppConfig>,
 ) {
     if term_size.width < MIN_DRAGGABLE_WIDTH {
+        return;
+    }
+
+    // Pointer motion only repaints the hovered tab / row; it never selects or
+    // drags.
+    if matches!(mouse.kind, MouseEventKind::Moved) {
+        update_tab_hover(state, mouse);
+        update_list_row_hover(state, mouse, term_size);
+        update_row_hover(state, mouse, term_size);
         return;
     }
 
@@ -193,6 +203,148 @@ pub fn handle_mouse_with_config(
     }
 }
 
+/// Whether a left-click at the pointer would act on a clickable element.
+///
+/// Drives the OSC 22 hand-pointer cue (per the *Clickable targets must look
+/// clickable* TUI rule). Reuses the same hit-tests as the click handlers so
+/// the pointer cue and the click action can never disagree. The seam column is
+/// a resize affordance, not a click target, so it is excluded here.
+#[must_use]
+pub fn clickable_at(
+    state: &ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+) -> bool {
+    let _ = config;
+    if term_size.width < MIN_DRAGGABLE_WIDTH {
+        return false;
+    }
+    // The git-prompt URL row is clickable whenever a file-browser modal with a
+    // resolved URL is open, regardless of stage.
+    if file_browser_url_row_at(state, mouse, term_size) {
+        return true;
+    }
+    match &state.stage {
+        ManagerStage::Editor(editor) if editor.modal.is_none() => {
+            editor_tab_at(mouse).is_some()
+                || editor_mount_index_at(editor, mouse, term_size).is_some()
+        }
+        ManagerStage::Settings(settings)
+            if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
+        {
+            settings_tab_at(mouse).is_some() || settings_trust_clickable(settings, mouse, term_size)
+        }
+        ManagerStage::List if state.list_modal.is_none() => {
+            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            if near_seam(mouse.column, seam_x) {
+                return false;
+            }
+            list_content_row_index(state, mouse, term_size, seam_x)
+                .and_then(|row| state.index_of_row(row))
+                .is_some()
+        }
+        _ => false,
+    }
+}
+
+/// Whether the pointer is inside the Settings → Trust content area (a click
+/// there selects a row / activates scroll). Shared by the click handler and the
+/// hover cue.
+fn settings_trust_clickable(
+    settings: &super::super::state::SettingsState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    settings.active_tab == SettingsTab::Trust
+        && settings.mounts.modal.is_none()
+        && point_in(mouse, settings_content_area(settings, term_size))
+}
+
+/// Resolve the active file-browser modal and its state from whichever stage
+/// owns it (editor or create-prelude). Shared by the URL-row hit-test and the
+/// click handler so their modal resolution can't drift out of step.
+fn file_browser_modal_and_state<'a, 'b>(
+    state: &'a ManagerState<'b>,
+) -> Option<(&'a Modal<'b>, &'a FileBrowserState)> {
+    let modal = match &state.stage {
+        ManagerStage::Editor(editor) => editor.modal.as_ref(),
+        ManagerStage::CreatePrelude(prelude) => prelude.modal.as_ref(),
+        _ => return None,
+    }?;
+    match modal {
+        Modal::FileBrowser { state, .. } => Some((modal, state)),
+        _ => None,
+    }
+}
+
+/// Whether the pointer is over a file-browser git-prompt URL row (side-effect
+/// free; does not open the URL).
+fn file_browser_url_row_at(state: &ManagerState<'_>, mouse: MouseEvent, term_size: Rect) -> bool {
+    let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
+        return false;
+    };
+    let modal_area = super::super::render::modal_outer_rect(modal, term_size);
+    fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
+}
+
+/// Track the list row under the pointer so the renderer can lift its
+/// background, mirroring the tab-hover cue. Cleared when off the list pane,
+/// over the seam, or when a list modal is open.
+fn update_list_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
+    state.hovered_list_row =
+        if matches!(state.stage, ManagerStage::List) && state.list_modal.is_none() {
+            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            if near_seam(mouse.column, seam_x) {
+                None
+            } else {
+                list_content_row_index(state, mouse, term_size, seam_x)
+                    .filter(|row| state.index_of_row(*row).is_some())
+            }
+        } else {
+            None
+        };
+}
+
+/// Track the hovered row on the editor Mounts tab and the Settings Trust tab so
+/// their renderers can lift it, mirroring the tab/list hover cue. Cleared off
+/// the relevant content area.
+fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            editor.hovered_mount_row = editor_mount_index_at(editor, mouse, term_size);
+        }
+        ManagerStage::Settings(settings) => {
+            settings.trust.hovered = settings_trust_row_at(settings, mouse, term_size);
+        }
+        _ => {}
+    }
+}
+
+/// Trust-tab pending-entry index under the pointer, or `None`. Matches the
+/// click handler's geometry: skip the column header (content line 0) and add
+/// the rendered vertical scroll, same as `try_select_settings_trust_row`.
+fn settings_trust_row_at(
+    settings: &super::super::state::SettingsState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> Option<usize> {
+    if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
+        return None;
+    }
+    let area = settings_content_area(settings, term_size);
+    if !point_in(mouse, area) {
+        return None;
+    }
+    // Content line 0 is the column header; pending entries start at line 1.
+    // Add the rendered `trust.scroll_y` so a scrolled list maps to the right
+    // entry (render_scrollable_block draws header + entries scrolled together).
+    let line =
+        usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(settings.trust.scroll_y);
+    let row = line.checked_sub(1)?;
+    (row < settings.trust.pending.len()).then_some(row)
+}
+
 fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return false;
@@ -220,21 +372,51 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
 }
 
 fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
+    let labels: Vec<&str> = super::super::render::editor::EDITOR_TAB_LABELS
+        .iter()
+        .map(|(_, label)| *label)
+        .collect();
+    let idx = tab_cell_at(mouse, &labels)?;
+    super::super::render::editor::EDITOR_TAB_LABELS
+        .get(idx)
+        .map(|(tab, _)| *tab)
+}
+
+/// Index of the tab cell under `mouse`, or `None` when the pointer is outside
+/// the strip rows. Geometry comes from the shared `jackin_tui::lay_out_tabs`
+/// (` label ` cell, one-column gap, from col 0) so the host console's hit-test
+/// and the in-container multiplexer's stay in lock-step.
+fn tab_cell_at(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
     if mouse.row < EDITOR_HEADER_HEIGHT
         || mouse.row >= EDITOR_HEADER_HEIGHT.saturating_add(EDITOR_TAB_STRIP_HEIGHT)
     {
         return None;
     }
+    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
+    let laid = jackin_tui::lay_out_tabs(&cells, 0);
+    jackin_tui::tab_at_column(&laid, mouse.column)
+}
 
-    let mut x = 0u16;
-    for &(tab, label) in super::super::render::editor::EDITOR_TAB_LABELS {
-        let width = label.len() as u16 + 2;
-        if mouse.column >= x && mouse.column < x.saturating_add(width) {
-            return Some(tab);
+/// Repaint the hovered tab index on mouse motion so the strip lifts under the
+/// pointer like the in-container multiplexer tabs. A motion off the strip
+/// clears the highlight (`tab_cell_at` returns `None`).
+fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
+    match &mut state.stage {
+        ManagerStage::Editor(editor) if editor.modal.is_none() => {
+            let labels: Vec<&str> = super::super::render::editor::EDITOR_TAB_LABELS
+                .iter()
+                .map(|(_, label)| *label)
+                .collect();
+            editor.hovered_tab = tab_cell_at(mouse, &labels);
         }
-        x = x.saturating_add(width + 1);
+        ManagerStage::Settings(settings)
+            if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
+        {
+            let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
+            settings.hovered_tab = tab_cell_at(mouse, &labels);
+        }
+        _ => {}
     }
-    None
 }
 
 fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
@@ -253,20 +435,9 @@ fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> b
 }
 
 fn settings_tab_at(mouse: MouseEvent) -> Option<SettingsTab> {
-    if mouse.row < EDITOR_HEADER_HEIGHT
-        || mouse.row >= EDITOR_HEADER_HEIGHT.saturating_add(EDITOR_TAB_STRIP_HEIGHT)
-    {
-        return None;
-    }
-    let mut x = 0u16;
-    for tab in SettingsTab::ALL {
-        let width = tab.label().len() as u16 + 2;
-        if mouse.column >= x && mouse.column < x.saturating_add(width) {
-            return Some(tab);
-        }
-        x = x.saturating_add(width + 1);
-    }
-    None
+    let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
+    let idx = tab_cell_at(mouse, &labels)?;
+    SettingsTab::ALL.get(idx).copied()
 }
 
 /// Click inside the Trust block selects the row and activates the block for scrolling.
@@ -281,17 +452,48 @@ fn try_select_settings_trust_row(
     if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
         return false;
     }
-    let area = settings_content_area(term_size);
+    let area = settings_content_area(settings, term_size);
     if !point_in(mouse, area) {
         return false;
     }
-    // Row 0 is the header; rows 1.. are trust entries.
-    let clicked_row = usize::from(mouse.row.saturating_sub(area.y + 1));
-    if clicked_row < settings.trust.pending.len() {
-        settings.trust.selected = clicked_row;
+    // Content line 0 is the column header; pending entries start at line 1.
+    // Add the rendered `trust.scroll_y` (same offset the scrollable block was
+    // drawn with) so clicks land on the entry actually under the pointer.
+    let line =
+        usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(settings.trust.scroll_y);
+    if let Some(row) = line.checked_sub(1)
+        && row < settings.trust.pending.len()
+    {
+        settings.trust.selected = row;
     }
     settings.trust.scroll_focused = true;
     true
+}
+
+/// Mount-row index the pointer is over on the editor Mounts tab, or `None`.
+/// Pure geometry shared by the click handler and the hover hand-pointer cue so
+/// they can't drift.
+fn editor_mount_index_at(
+    editor: &super::super::state::EditorState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> Option<usize> {
+    if editor.active_tab != EditorTab::Mounts || editor.modal.is_some() {
+        return None;
+    }
+    let area = editor_scroll_area(editor, term_size).area;
+    if mouse.column <= area.x
+        || mouse.column >= area.x.saturating_add(area.width).saturating_sub(1)
+        || mouse.row <= area.y
+        || mouse.row >= area.y.saturating_add(area.height).saturating_sub(1)
+    {
+        return None;
+    }
+    // The Mounts list is drawn through `render_scrollable_block` scrolled by
+    // `tab_scroll_y`; convert the viewport row to a full-content visual row so
+    // the lookup matches what the operator sees after scrolling.
+    let row = usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(editor.tab_scroll_y);
+    editor_mount_index_at_visual_row(editor, row)
 }
 
 fn try_select_editor_mount_row(
@@ -302,27 +504,13 @@ fn try_select_editor_mount_row(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return false;
     };
-    if editor.active_tab != EditorTab::Mounts || editor.modal.is_some() {
-        return false;
-    }
-
-    let area_info = editor_scroll_area(editor, term_size);
-    let area = area_info.area;
-    if mouse.column <= area.x
-        || mouse.column >= area.x.saturating_add(area.width).saturating_sub(1)
-        || mouse.row <= area.y
-        || mouse.row >= area.y.saturating_add(area.height).saturating_sub(1)
-    {
-        return false;
-    }
-
-    let row = usize::from(mouse.row.saturating_sub(area.y + 1));
-    let Some(index) = editor_mount_index_at_visual_row(editor, row) else {
+    let Some(index) = editor_mount_index_at(editor, mouse, term_size) else {
         return false;
     };
+    let area = editor_scroll_area(editor, term_size);
     editor.active_field = FieldFocus::Row(index);
     editor.workspace_mounts_scroll_focused =
-        is_scrollable(area_info.content_width, scroll_viewport_width(area));
+        is_scrollable(area.content_width, scroll_viewport_width(area.area));
     true
 }
 
@@ -410,10 +598,11 @@ fn try_drag_horizontal_scrollbar(
                     workspace.content_width,
                 )
             } else {
+                let content_area = editor_content_area(editor, term_size);
                 drag_scrollbar(
                     &mut editor.tab_scroll_x,
                     mouse,
-                    editor_content_area(term_size),
+                    content_area,
                     editor.tab_content_width,
                 )
             };
@@ -507,7 +696,7 @@ fn update_scroll_focus(
                 if editor.modal.is_some() {
                     editor.tab_content_scroll_focused = false;
                 } else {
-                    let content_area = editor_content_area(term_size);
+                    let content_area = editor_content_area(editor, term_size);
                     let in_content = point_in(mouse, content_area);
                     let viewport_h = scroll_viewport_height(content_area);
                     let viewport_w = scroll_viewport_width(content_area);
@@ -518,7 +707,7 @@ fn update_scroll_focus(
             }
         }
         ManagerStage::Settings(settings) => {
-            let content_area = settings_content_area(term_size);
+            let content_area = settings_content_area(settings, term_size);
             let in_content = point_in(mouse, content_area);
             settings.mounts.scroll_focused =
                 settings.active_tab == SettingsTab::Mounts && in_content;
@@ -534,14 +723,17 @@ fn update_scroll_focus(
 }
 
 /// The content area below the header + tab strip in Settings/Editor stages.
-const fn settings_content_area(term_size: Rect) -> Rect {
+const fn settings_content_area(
+    settings: &super::super::state::SettingsState<'_>,
+    term_size: Rect,
+) -> Rect {
     Rect {
         x: 0,
         y: EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT,
         width: term_size.width,
-        height: term_size
-            .height
-            .saturating_sub(EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT),
+        height: term_size.height.saturating_sub(
+            EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + settings.cached_footer_h,
+        ),
     }
 }
 
@@ -616,7 +808,7 @@ fn scroll_active_panel(
         ManagerStage::Editor(editor) => {
             if editor.active_tab != EditorTab::Mounts {
                 editor.workspace_mounts_scroll_focused = false;
-                let area = editor_content_area(term_size);
+                let area = editor_content_area(editor, term_size);
                 if point_in(mouse, area)
                     && is_scrollable(editor.tab_content_width, scroll_viewport_width(area))
                 {
@@ -649,7 +841,7 @@ fn scroll_active_panel(
         }
         ManagerStage::Settings(settings) => {
             // Hover-scroll: fire on whichever block the cursor is over.
-            let content_area = settings_content_area(term_size);
+            let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
                 return;
             }
@@ -687,7 +879,7 @@ fn scroll_active_panel_vertical(
 ) {
     match &mut state.stage {
         ManagerStage::Settings(settings) => {
-            let content_area = settings_content_area(term_size);
+            let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
                 return;
             }
@@ -834,14 +1026,17 @@ fn global_mounts_content_width_from_rows(rows: &[&crate::config::GlobalMountRow]
     global_mounts_content_width(&mounts)
 }
 
-const fn editor_content_area(term_size: Rect) -> Rect {
+const fn editor_content_area(
+    editor: &super::super::state::EditorState<'_>,
+    term_size: Rect,
+) -> Rect {
     Rect {
         x: 0,
         y: EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT,
         width: term_size.width,
-        height: term_size
-            .height
-            .saturating_sub(EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + LIST_FOOTER_HEIGHT),
+        height: term_size.height.saturating_sub(
+            EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + editor.cached_footer_h,
+        ),
     }
 }
 
@@ -850,7 +1045,7 @@ fn editor_scroll_area(
     term_size: Rect,
 ) -> ScrollArea {
     ScrollArea {
-        area: editor_content_area(term_size),
+        area: editor_content_area(editor, term_size),
         content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
     }
 }
@@ -877,16 +1072,8 @@ fn try_open_file_browser_git_url(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let (modal, fb_state): (&Modal<'_>, &FileBrowserState) = match &state.stage {
-        ManagerStage::Editor(editor) => match editor.modal.as_ref() {
-            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
-            _ => return false,
-        },
-        ManagerStage::CreatePrelude(prelude) => match prelude.modal.as_ref() {
-            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
-            _ => return false,
-        },
-        _ => return false,
+    let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
+        return false;
     };
     let modal_area = super::super::render::modal_outer_rect(modal, term_size);
     fb_state.maybe_open_url_on_click(modal_area, mouse.column, mouse.row)
@@ -1014,6 +1201,38 @@ mod mouse_drag_tests {
         let config = crate::config::AppConfig::default();
         let tmp = tempfile::tempdir().unwrap();
         ManagerState::from_config(&config, tmp.path())
+    }
+
+    /// The mouse content-area helpers must subtract the renderer's cached
+    /// dynamic footer height, so a click in the footer never maps to content
+    /// (a footer-height of 2 was hard-coded while the renderer went dynamic).
+    #[test]
+    fn content_areas_exclude_the_cached_footer() {
+        use super::{
+            EDITOR_HEADER_HEIGHT, EDITOR_TAB_STRIP_HEIGHT, editor_content_area,
+            settings_content_area,
+        };
+        use crate::console::manager::state::SettingsState;
+        let term = Rect::new(0, 0, 80, 24);
+
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings.cached_footer_h = 3;
+        let s = settings_content_area(&settings, term);
+        assert_eq!(s.y, EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT);
+        assert_eq!(
+            s.y + s.height,
+            term.height - 3,
+            "settings content must stop where the footer begins"
+        );
+
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.cached_footer_h = 4;
+        let e = editor_content_area(&editor, term);
+        assert_eq!(
+            e.y + e.height,
+            term.height - 4,
+            "editor content must stop where the footer begins"
+        );
     }
 
     /// Build a `MouseEvent` at column `col`, row 0.
@@ -1277,6 +1496,41 @@ mod mouse_drag_tests {
     }
 
     #[test]
+    fn mouse_motion_sets_and_clears_editor_tab_hover() {
+        let mut state = list_state();
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
+
+        // Motion inside " Roles " (cols 19..26 on the strip row) highlights the
+        // third cell without changing the active tab.
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Moved, 22, 3),
+            term(100),
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.hovered_tab, Some(2));
+        assert_eq!(editor.active_tab, EditorTab::General);
+
+        // Motion off the strip (header row) clears the highlight.
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Moved, 22, 0),
+            term(100),
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.hovered_tab, None);
+    }
+
+    #[test]
     fn mouse_down_on_editor_tab_clears_secrets_view_when_leaving() {
         let mut state = list_state();
         let ws = WorkspaceConfig {
@@ -1390,14 +1644,15 @@ mod mouse_drag_tests {
 
     // ── Click-to-select tests ──────────────────────────────────────
     //
-    // Layout (100x30 terminal, header=3 footer=2 body=25):
-    //   y = 0..=2   → header (chunks[0])
-    //   y = 3       → body top border (list block)
-    //   y = 4       → list item 0 ("Current directory")
-    //   y = 5       → list item 1 (first saved workspace)
+    // Layout (100x30 terminal, header=2 footer=2 body=26):
+    //   y = 0       → header brand pill (chunks[0])
+    //   y = 1       → header spacer row
+    //   y = 2       → body top border (list block)
+    //   y = 3       → list item 0 ("Current directory")
+    //   y = 4       → list item 1 (first saved workspace)
     //   ...
-    //   y = 28      → body bottom border
-    //   y = 29      → footer (chunks[2])
+    //   y = 27      → body bottom border
+    //   y = 28..=29 → footer (chunks[2])
     //
     // Left pane (default split = DEFAULT_SPLIT_PCT%): x = 0..=(seam-1)
     // with x=0 = left border and x=seam-1 inclusive = last interior col.
@@ -1503,33 +1758,33 @@ mod mouse_drag_tests {
 
     #[test]
     fn click_on_first_row_sets_selected_to_zero() {
-        // y=4 = first list item (index 0, "Current directory").
+        // y=3 = first list item (index 0, "Current directory").
         let mut state = list_state_with_saved(3);
         state.selected = 2;
-        handle_mouse(&mut state, mouse_at(10, 4), term(100));
+        handle_mouse(&mut state, mouse_at(10, 3), term(100));
         assert_eq!(state.selected, 0);
     }
 
     #[test]
     fn click_on_fifth_row_sets_selected_to_four() {
-        // y=8 = fifth list row (index 4). Needs enough saved workspaces
+        // y=7 = fifth list row (index 4). Needs enough saved workspaces
         // to make index 4 a valid selection target.
         let mut state = list_state_with_saved(5);
         state.selected = 0;
-        handle_mouse(&mut state, mouse_at(10, 8), term(100));
+        handle_mouse(&mut state, mouse_at(10, 7), term(100));
         assert_eq!(state.selected, 4);
     }
 
     #[test]
     fn click_on_sentinel_row_sets_selected_to_sentinel_idx() {
         // 3 saved workspaces ⇒ rows are:
-        //   y=4  → index 0 ("Current directory")
-        //   y=5,6,7 → indices 1, 2, 3 (saved)
-        //   y=8  → visual spacer
-        //   y=9  → visual index 5 (sentinel "+ New workspace")
+        //   y=3  → index 0 ("Current directory")
+        //   y=4,5,6 → indices 1, 2, 3 (saved)
+        //   y=7  → visual spacer
+        //   y=8  → visual index 5 (sentinel "+ New workspace")
         let mut state = list_state_with_saved(3);
         state.selected = 0;
-        handle_mouse(&mut state, mouse_at(10, 9), term(100));
+        handle_mouse(&mut state, mouse_at(10, 8), term(100));
         assert_eq!(state.selected, 4, "sentinel_idx = saved_count + 1 = 4");
     }
 
@@ -1537,14 +1792,14 @@ mod mouse_drag_tests {
     fn click_on_workspace_list_spacer_does_not_change_selected() {
         let mut state = list_state_with_saved(3);
         state.selected = 2;
-        handle_mouse(&mut state, mouse_at(10, 8), term(100));
+        handle_mouse(&mut state, mouse_at(10, 7), term(100));
         assert_eq!(state.selected, 2);
     }
 
     #[test]
     fn click_outside_list_rows_does_not_change_selected() {
         // Several "outside" positions must all leave selected untouched:
-        //   - Click above the list (y < 4, e.g. in the header)
+        //   - Click above the list (y < 3, e.g. in the header)
         //   - Click on the left border (x=0)
         //   - Click at x >= seam (right pane territory)
         //   - Click below the list content (footer)
@@ -1557,15 +1812,15 @@ mod mouse_drag_tests {
         assert_eq!(state.selected, initial, "click in header must not select");
 
         // On the top border of the list block.
-        handle_mouse(&mut state, mouse_at(10, 3), term(100));
+        handle_mouse(&mut state, mouse_at(10, 2), term(100));
         assert_eq!(state.selected, initial, "click on top border");
 
         // On the left border column.
-        handle_mouse(&mut state, mouse_at(0, 4), term(100));
+        handle_mouse(&mut state, mouse_at(0, 3), term(100));
         assert_eq!(state.selected, initial, "click on left border");
 
-        // Past the sentinel row (y=9+ when we have 3 saved workspaces).
-        handle_mouse(&mut state, mouse_at(10, 10), term(100));
+        // Past the sentinel row (y=8+ when we have 3 saved workspaces).
+        handle_mouse(&mut state, mouse_at(10, 9), term(100));
         assert_eq!(state.selected, initial, "click below sentinel");
 
         // In the right pane (x=60, well clear of the default seam).
@@ -1585,9 +1840,9 @@ mod mouse_drag_tests {
         let mut state = list_state_with_saved(3);
         state.selected = 0;
         // Default split on a 100-col terminal ⇒ seam at column
-        // `DEFAULT_SPLIT_PCT`. y=5 maps to list index 1 in our layout —
+        // `DEFAULT_SPLIT_PCT`. y=4 maps to list index 1 in our layout —
         // if seam didn't win, selection would flip to 1.
-        handle_mouse(&mut state, mouse_at(DEFAULT_SPLIT_PCT, 5), term(100));
+        handle_mouse(&mut state, mouse_at(DEFAULT_SPLIT_PCT, 4), term(100));
         assert!(state.drag_state.is_some(), "click on seam must start drag");
         assert_eq!(
             state.selected, 0,
@@ -1601,8 +1856,8 @@ mod mouse_drag_tests {
         let mut state = selected_demo_state(&config);
 
         // Right pane starts at x=30 for a 100-col terminal. Workspace mounts
-        // block starts at y=6 after General's 3 rows.
-        handle_mouse_with_config(&mut state, mouse_at(31, 7), term(100), Some(&config));
+        // block starts at y=5 after General's 3 rows.
+        handle_mouse_with_config(&mut state, mouse_at(31, 6), term(100), Some(&config));
 
         assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
     }
@@ -1618,12 +1873,12 @@ mod mouse_drag_tests {
         let mut state = current_dir_state_at(&cwd);
         assert!(state.is_current_dir_selected());
 
-        handle_mouse_with_config(&mut state, mouse_at(31, 7), term(100), Some(&config));
+        handle_mouse_with_config(&mut state, mouse_at(31, 6), term(100), Some(&config));
         assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollRight, 31, 7),
+            mouse_kind_at(MouseEventKind::ScrollRight, 31, 6),
             term(100),
             Some(&config),
         );
@@ -1637,9 +1892,9 @@ mod mouse_drag_tests {
         let mut state = selected_demo_state(&config);
         state.list_scroll_focus = Some(MountScrollFocus::Workspace);
 
-        // y=4 is inside the General block, which is not a horizontal-scroll
+        // y=3 is inside the General block, which is not a horizontal-scroll
         // target.
-        handle_mouse_with_config(&mut state, mouse_at(31, 4), term(100), Some(&config));
+        handle_mouse_with_config(&mut state, mouse_at(31, 3), term(100), Some(&config));
 
         assert_eq!(state.list_scroll_focus, None);
     }
@@ -1651,10 +1906,10 @@ mod mouse_drag_tests {
         state.list_scroll_focus = Some(MountScrollFocus::Workspace);
 
         // Global mounts block starts immediately after General (3 rows) and
-        // the one-mount Workspace mounts block (5 rows): y=11.
+        // the one-mount Workspace mounts block (5 rows): y=10.
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollRight, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollRight, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1676,7 +1931,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollDown, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollDown, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1688,7 +1943,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollUp, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollUp, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1704,7 +1959,7 @@ mod mouse_drag_tests {
         for _ in 0..100 {
             handle_mouse_with_config(
                 &mut state,
-                mouse_kind_at(MouseEventKind::ScrollRight, 31, 12),
+                mouse_kind_at(MouseEventKind::ScrollRight, 31, 11),
                 term(100),
                 Some(&config),
             );
@@ -1718,7 +1973,7 @@ mod mouse_drag_tests {
             .collect();
         let global_area = Rect {
             x: 30,
-            y: 11,
+            y: 10,
             width: 70,
             height: 5,
         };
@@ -1730,7 +1985,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1758,7 +2013,7 @@ mod mouse_drag_tests {
         for _ in 0..100 {
             handle_mouse_with_config(
                 &mut state,
-                mouse_kind_at(MouseEventKind::ScrollRight, 31, 7),
+                mouse_kind_at(MouseEventKind::ScrollRight, 31, 6),
                 term(100),
                 Some(&config),
             );
@@ -1767,7 +2022,7 @@ mod mouse_drag_tests {
         let workspace = config.workspaces.get("demo").unwrap();
         let workspace_area = Rect {
             x: 30,
-            y: 6,
+            y: 5,
             width: 70,
             height: 4,
         };
@@ -1796,7 +2051,7 @@ mod mouse_drag_tests {
             .collect();
         let global_area = Rect {
             x: 30,
-            y: 11,
+            y: 10,
             width: 70,
             height: 5,
         };
@@ -1807,7 +2062,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 11),
             term(100),
             Some(&config),
         );
@@ -1977,7 +2232,7 @@ mod mouse_drag_tests {
 
         handle_mouse_with_config(
             &mut state,
-            mouse_kind_at(MouseEventKind::ScrollUp, 31, 12),
+            mouse_kind_at(MouseEventKind::ScrollUp, 31, 11),
             term(100),
             Some(&config),
         );

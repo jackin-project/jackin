@@ -1,5 +1,3 @@
-use std::io::Write as _;
-
 use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
@@ -196,6 +194,15 @@ fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
 /// host-supplied pane focus on its first Hello frame; `None` falls
 /// through to "attach at whatever the daemon thinks is focused"
 /// (the default reattach contract).
+/// `docker exec` env flag that tells the in-container capsule client not to
+/// toggle its own alternate screen, set only while the host orchestrator owns
+/// one continuous alternate screen for the whole launch flow. Returns `None`
+/// for standalone capsule invocations (e.g. `jackin hardline`), where the
+/// client manages its own screen.
+fn host_alt_screen_exec_flag() -> Option<&'static str> {
+    crate::tui::host_screen_owned().then_some("-e=JACKIN_HOST_ALT_SCREEN=1")
+}
+
 pub(super) async fn reconnect_or_create_session_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -212,13 +219,28 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         container_name,
         "/jackin/runtime/jackin-capsule",
     ];
+    if let Some(flag) = host_alt_screen_exec_flag() {
+        args.insert(1, flag);
+    }
     if let Some(ref id) = focus_arg {
         args.push("--focus");
         args.push(id);
     }
-    runner
-        .run("docker", &args, None, &RunOptions::default())
-        .await
+    let outcome = runner
+        .run(
+            "docker",
+            &args,
+            None,
+            &RunOptions {
+                interactive: true,
+                ..RunOptions::default()
+            },
+        )
+        .await;
+    // The capsule has detached; re-claim the alt screen before any post-attach
+    // work so the exit flow does not flash the operator's shell.
+    crate::tui::reassert_alt_screen();
+    outcome
 }
 
 pub(super) async fn start_or_reconnect_capsule_client(
@@ -311,20 +333,28 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
+    let mut args: Vec<&str> = vec![
+        "exec",
+        "-it",
+        container_name,
+        "/jackin/runtime/jackin-capsule",
+        "new",
+    ];
+    if let Some(flag) = host_alt_screen_exec_flag() {
+        args.insert(1, flag);
+    }
     let result = runner
         .run(
             "docker",
-            &[
-                "exec",
-                "-it",
-                container_name,
-                "/jackin/runtime/jackin-capsule",
-                "new",
-            ],
+            &args,
             None,
-            &RunOptions::default(),
+            &RunOptions {
+                interactive: true,
+                ..RunOptions::default()
+            },
         )
         .await;
+    crate::tui::reassert_alt_screen();
     eprintln!();
     result?;
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
@@ -393,9 +423,21 @@ pub async fn spawn_agent_session(
     if let Some(ref flag) = provider_flag {
         exec_args.push(flag.as_str());
     }
+    if let Some(flag) = host_alt_screen_exec_flag() {
+        exec_args.insert(1, flag);
+    }
     let result = runner
-        .run("docker", &exec_args, None, &RunOptions::default())
+        .run(
+            "docker",
+            &exec_args,
+            None,
+            &RunOptions {
+                interactive: true,
+                ..RunOptions::default()
+            },
+        )
         .await;
+    crate::tui::reassert_alt_screen();
     eprintln!();
     result?;
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
@@ -723,39 +765,23 @@ pub(super) async fn wait_for_dind(
 ) -> anyhow::Result<()> {
     const MAX_ATTEMPTS: u32 = 30;
     const INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
-    const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    const SPIN_MS: u64 = 80;
-    let mut frame_idx: usize = 0;
-    let message = "Waiting for Docker-in-Docker to be ready";
-    let mut last_err = None;
 
-    for _ in 0..MAX_ATTEMPTS {
-        match docker.exec_capture(dind_name, &["docker", "info"]).await {
-            Ok(_) => {
-                eprint!("\r\x1b[2K");
-                let _ = std::io::stderr().flush();
-                last_err = None;
-                break;
-            }
-            Err(e) => last_err = Some(e),
-        }
-        let spins = INTERVAL.as_millis() as u64 / SPIN_MS;
-        for _ in 0..spins {
-            let frame = FRAMES[frame_idx % FRAMES.len()];
-            eprint!("\r   {frame}   {message}");
-            let _ = std::io::stderr().flush();
-            tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
-            frame_idx += 1;
-        }
-    }
-    eprint!("\r\x1b[2K");
-    let _ = std::io::stderr().flush();
-
-    if let Some(e) = last_err {
-        return Err(anyhow::anyhow!(
-            "timed out waiting for Docker-in-Docker sidecar {dind_name}: {e}"
-        ));
-    }
+    // Shared spinner helper: it suppresses its own stderr output while the
+    // rich launch cockpit owns the screen, so the sidecar stage shows only
+    // in the rail rather than streaming "Waiting for ..." over the frame.
+    crate::tui::prompt::spin_wait(
+        "Waiting for Docker-in-Docker to be ready",
+        MAX_ATTEMPTS,
+        INTERVAL,
+        || async {
+            docker
+                .exec_capture(dind_name, &["docker", "info"])
+                .await
+                .map(|_| ())
+        },
+    )
+    .await
+    .with_context(|| format!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))?;
 
     match docker
         .exec_capture(dind_name, &["test", "-f", "/certs/client/ca.pem"])

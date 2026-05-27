@@ -36,6 +36,22 @@ fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
         .map_err(|_| anyhow::anyhow!("unknown agent {raw:?}; expected one of: claude, codex, amp"))
 }
 
+async fn play_construct_intro_if_needed(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+) -> runtime::EntryClaim {
+    let claim = runtime::claim_construct_entry(paths, docker).await;
+    if (claim.start_kind() == runtime::StartKind::FreshConstruct
+        || runtime::force_boundary_intro_enabled())
+        && runtime::progress::rich_terminal_supported()
+    {
+        // The intro is two screens: the opening phrase/brand screen, then the
+        // accelerating warp into the Construct.
+        crate::tui::warp_intro();
+    }
+    claim
+}
+
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::large_stack_frames)]
 pub async fn run(cli: Cli) -> Result<()> {
@@ -50,12 +66,18 @@ pub async fn run(cli: Cli) -> Result<()> {
         None => Command::Console(cli.console_args),
     };
 
+    let paths = JackinPaths::detect()?;
+    let command_name = command_name(&command);
+    let diagnostics = crate::diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
+    let _diagnostics_guard = diagnostics.activate();
+    crate::diagnostics::prune_old_runs(&paths);
+    if debug {
+        announce_debug_run(&diagnostics);
+    }
     let command = match command {
         Command::Role(command) => return crate::role_authoring::run(command),
         command => command,
     };
-
-    let paths = JackinPaths::detect()?;
     let mut config = AppConfig::load_or_init(&paths)?;
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
@@ -66,7 +88,6 @@ pub async fn run(cli: Cli) -> Result<()> {
             target,
             mounts,
             rebuild,
-            no_intro,
             force,
             agent,
             role_branch,
@@ -114,7 +135,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
+            let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
             opts.force = force;
             opts.agent = match agent {
                 Some(explicit) => Some(explicit),
@@ -127,6 +148,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host
             // sleep). Post-launch reconcile below catches the new role.
+            let entry_claim = play_construct_intro_if_needed(&paths, &docker).await;
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(
                 &paths,
@@ -145,6 +167,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 &class,
                 &result,
             );
+            if result.is_err() {
+                runtime::release_entry_if_idle(&paths, &docker, &entry_claim).await;
+            }
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
@@ -154,9 +179,26 @@ pub async fn run(cli: Cli) -> Result<()> {
                 paths: paths.clone(),
                 debug,
             };
+
+            // One alternate screen owns the entire console → loading → capsule
+            // → exit flow so transitions never flash back to the cooked
+            // terminal. Sub-surfaces detect this and skip their own
+            // enter/leave; the guard tears the terminal down once, on drop.
+            let screen = console::HostScreen::enter()?;
+
+            let mut console_entry = if let Ok(docker) = connect_docker() {
+                let claim = play_construct_intro_if_needed(&paths, &docker).await;
+                Some((docker, claim))
+            } else {
+                None
+            };
+
             let Some(outcome) =
                 console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?
             else {
+                if let Some((docker, claim)) = &console_entry {
+                    runtime::release_entry_if_idle(&paths, docker, claim).await;
+                }
                 return Ok(());
             };
 
@@ -169,6 +211,12 @@ pub async fn run(cli: Cli) -> Result<()> {
                     (class, workspace, selected_agent)
                 }
                 outcome @ console::ConsoleOutcome::InstanceAction { .. } => {
+                    // The action owns the terminal with its own foreground
+                    // process; hand it back the cooked screen.
+                    if let Some((docker, claim)) = &console_entry {
+                        runtime::release_entry_if_idle(&paths, docker, claim).await;
+                    }
+                    drop(screen);
                     return handle_console_instance_action(
                         &paths,
                         &mut config,
@@ -248,15 +296,34 @@ pub async fn run(cli: Cli) -> Result<()> {
                 }
             };
 
+            // The sensitive-mount confirm and agent-choice prompts are
+            // line-buffered (dialoguer) and rare; run them on the cooked screen
+            // and restore the full-screen session afterward. The common path
+            // (agent pre-picked, no sensitive mounts) never suspends.
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
-            if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
-                anyhow::bail!("aborted — sensitive mount paths were not confirmed");
-            }
+            let default_agent = workspace.default_agent;
+            let agent = if sensitive.is_empty() && selected_agent.is_some() {
+                selected_agent
+            } else {
+                screen.suspend(|| -> anyhow::Result<Option<crate::agent::Agent>> {
+                    if !sensitive.is_empty()
+                        && !crate::workspace::confirm_sensitive_mounts(&sensitive)?
+                    {
+                        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+                    }
+                    selected_agent.map_or_else(
+                        || prompt_agent_choice_if_needed(&paths, &class, default_agent),
+                        |agent| Ok(Some(agent)),
+                    )
+                })??
+            };
 
             let mut opts = runtime::LoadOptions::for_launch(debug);
-            opts.agent = match selected_agent {
-                Some(agent) => Some(agent),
-                None => prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?,
+            opts.agent = agent;
+            let entry_claim = if let Some((_entry_docker, claim)) = console_entry.take() {
+                claim
+            } else {
+                play_construct_intro_if_needed(&paths, &docker).await
             };
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             let result = runtime::load_role(
@@ -270,7 +337,12 @@ pub async fn run(cli: Cli) -> Result<()> {
             )
             .await;
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
+            if result.is_err() {
+                runtime::release_entry_if_idle(&paths, &docker, &entry_claim).await;
+            }
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+            // `screen` drops here, after any exit outro, restoring the
+            // terminal exactly once.
             result
         }
         Command::Hardline(HardlineArgs {
@@ -1382,6 +1454,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     prune_instances_result,
                     runtime::prune_images(&docker).await.context("prune images"),
                     runtime::prune_roles(&paths).context("prune roles"),
+                    runtime::prune_diagnostics(&paths).context("prune diagnostics"),
                     runtime::prune_cache(&paths).context("prune cache"),
                 ];
                 let errors: Vec<anyhow::Error> =
@@ -1404,6 +1477,49 @@ pub async fn run(cli: Cli) -> Result<()> {
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
         }
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
+    }
+}
+
+const fn command_name(command: &Command) -> &'static str {
+    match command {
+        Command::Load(_) => "load",
+        Command::Hardline(_) => "hardline",
+        Command::Eject(_) => "eject",
+        Command::Exile => "exile",
+        Command::Purge(_) => "purge",
+        Command::Prune(_) => "prune",
+        Command::Console(_) => "console",
+        Command::Role(_) => "role",
+        Command::Workspace(_) => "workspace",
+        Command::Config(_) => "config",
+        Command::Logs(_) => "logs",
+        Command::Help { .. } => "help",
+    }
+}
+
+/// In `--debug`, surface the diagnostics run id on the plain CLI before
+/// anything else runs — never through a rich TUI. This is identical for
+/// every command (CLI or TUI): print the run id the operator must keep to
+/// retrieve the run's diagnostics file later, then, on an interactive
+/// terminal, gate on Enter so the id is read before the normal flow (rich
+/// or CLI, per terminal capability) takes over. Debug evidence itself is
+/// written only to the run file, never echoed here.
+fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
+    use owo_colors::OwoColorize as _;
+    use std::io::{IsTerminal, Write};
+    let mut err = std::io::stderr();
+    let _ = writeln!(err);
+    let _ = writeln!(
+        err,
+        "{} debug mode — save this run id to retrieve the run later:",
+        "[jackin]".bold()
+    );
+    let _ = writeln!(err, "    {}", diagnostics.run_id());
+    if std::io::stdin().is_terminal() {
+        let _ = write!(err, "[jackin] press Enter to continue... ");
+        let _ = err.flush();
+        let mut line = String::new();
+        let _ = std::io::stdin().read_line(&mut line);
     }
 }
 

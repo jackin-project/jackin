@@ -81,33 +81,8 @@ pub fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
     );
     Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(title_span)
-}
-
-/// Renders the standard `Filter: ░░░█` input row.
-///
-/// Uses `░` blocks as a dotted placeholder when empty and a blinking
-/// `█` cursor when the operator has typed something.
-pub fn render_filter_row(frame: &mut Frame, area: Rect, filter_buf: &str) {
-    let line = if filter_buf.is_empty() {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled(filter_buf.to_string(), Style::default().fg(WHITE)),
-            Span::styled(
-                "\u{2588}",
-                Style::default()
-                    .fg(WHITE)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ])
-    };
-    frame.render_widget(Paragraph::new(line), area);
 }
 
 #[allow(clippy::too_many_lines)]
@@ -140,7 +115,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         _ => 0,
     };
 
-    let constraints = vec![
+    let constraints = [
         Constraint::Length(banner_height), // optional banner
         Constraint::Length(1),             // filter row
         Constraint::Length(1),             // spacer
@@ -165,7 +140,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         frame.render_widget(Paragraph::new(line), rows[0]);
     }
 
-    render_filter_row(frame, rows[1], &state.filter_buf);
+    super::super::render_filter_row(frame, rows[1], &state.filter_buf);
 
     // List rows. Naming sub-stages are handled above and never reach here.
     let list_lines: Vec<Line<'static>> = match state.stage {

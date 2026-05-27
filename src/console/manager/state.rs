@@ -135,6 +135,9 @@ pub struct ManagerState<'a> {
     pub list_names_focused: bool,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
+    /// Logical list row the pointer is hovering (lifts its background like a
+    /// hovered tab). Transient; set on mouse motion, cleared off the list.
+    pub hovered_list_row: Option<ManagerListRow>,
     /// Process-lifetime cache of `op` structural metadata, threaded
     /// into the picker on open. Carries no credentials — see
     /// `op_cache.rs`.
@@ -304,6 +307,9 @@ pub struct SettingsState<'a> {
     /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
     /// Tab/↓ enters content); when false, focus is in the tab panel.
     pub tab_bar_focused: bool,
+    /// Index of the tab cell under the pointer, repainted on mouse motion so
+    /// the strip reacts to hover like the in-container multiplexer tabs.
+    pub hovered_tab: Option<usize>,
     pub general: SettingsGeneralState,
     pub mounts: GlobalMountsState<'a>,
     pub env: SettingsEnvState<'a>,
@@ -315,6 +321,10 @@ pub struct SettingsState<'a> {
     /// Set by the Auth-tab `g`/`G` generate action; drained by the
     /// `run_console` loop to run the global Claude OAuth-token mint.
     pub pending_token_generate: Option<PendingTokenGenerate>,
+    /// Footer height (rows) the renderer last laid out, cached so mouse
+    /// hit-testing subtracts the same dynamic footer the frame drew rather than
+    /// a stale constant — otherwise clicks near the bottom mis-map.
+    pub cached_footer_h: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -481,6 +491,8 @@ pub struct SettingsTrustState {
     pub scroll_x: u16,
     pub scroll_y: u16,
     pub scroll_focused: bool,
+    /// Row the pointer is hovering (lifts its background like a hovered tab).
+    pub hovered: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -578,6 +590,9 @@ pub struct EditorState<'a> {
     /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
     /// Tab/↓ enters content); when false, focus is in the tab panel.
     pub tab_bar_focused: bool,
+    /// Index of the tab cell under the pointer, repainted on mouse motion so
+    /// the strip reacts to hover like the in-container multiplexer tabs.
+    pub hovered_tab: Option<usize>,
     pub active_field: FieldFocus,
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
@@ -645,6 +660,9 @@ pub struct EditorState<'a> {
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
     pub workspace_mounts_scroll_x: u16,
     pub workspace_mounts_scroll_focused: bool,
+    /// Mounts-tab row the pointer is hovering (lifts its background like a
+    /// hovered tab). Transient; set on mouse motion.
+    pub hovered_mount_row: Option<usize>,
     /// Horizontal scroll offset shared across non-Mounts editor content tabs.
     /// Reset to 0 on every tab change so each tab starts at the left edge.
     pub tab_scroll_x: u16,
@@ -667,6 +685,10 @@ pub struct EditorState<'a> {
     /// Set by the `op_picker` commit when `generating_token_target` was
     /// present; drained by the `run_console` loop to run the mint.
     pub pending_token_generate: Option<PendingTokenGenerate>,
+    /// Footer height (rows) the renderer last laid out, cached so mouse
+    /// hit-testing subtracts the same dynamic footer the frame drew rather than
+    /// a stale constant — otherwise clicks near the bottom mis-map.
+    pub cached_footer_h: u16,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -797,6 +819,7 @@ impl SettingsState<'_> {
         Self {
             active_tab: SettingsTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             general: SettingsGeneralState::from_config(config),
             mounts: GlobalMountsState::from_config(config),
             env: SettingsEnvState::from_config(config),
@@ -804,6 +827,7 @@ impl SettingsState<'_> {
             trust: SettingsTrustState::from_config(config),
             error_popup: None,
             pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 
@@ -1149,6 +1173,7 @@ impl SettingsTrustState {
             scroll_x: 0,
             scroll_y: 0,
             scroll_focused: false,
+            hovered: None,
         }
     }
 
@@ -1604,6 +1629,7 @@ impl ManagerState<'_> {
             list_names_focused: false,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
+            hovered_list_row: None,
             op_cache,
             op_available,
             cached_term_size: Rect {
@@ -2215,6 +2241,7 @@ impl EditorState<'_> {
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             active_field: FieldFocus::Row(0),
             original: ws.clone(),
             pending: ws,
@@ -2233,6 +2260,7 @@ impl EditorState<'_> {
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
+            hovered_mount_row: None,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_scroll_focused: false,
@@ -2240,6 +2268,7 @@ impl EditorState<'_> {
             tab_content_height: 0,
             generating_token_target: None,
             pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 
@@ -2249,6 +2278,7 @@ impl EditorState<'_> {
             mode: EditorMode::Create,
             active_tab: EditorTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             active_field: FieldFocus::Row(0),
             original: empty.clone(),
             pending: empty,
@@ -2267,6 +2297,7 @@ impl EditorState<'_> {
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
+            hovered_mount_row: None,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_scroll_focused: false,
@@ -2274,6 +2305,7 @@ impl EditorState<'_> {
             tab_content_height: 0,
             generating_token_target: None,
             pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 

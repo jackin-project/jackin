@@ -17,8 +17,28 @@ use crate::session::{SESSION_ENV_PASSTHROUGH, Session};
 use crate::socket::SOCKET_PATH;
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 
-fn outer_terminal_reset_sequence() -> &'static [u8] {
-    b"\x1b]22;default\x1b\\\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1007l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h\x1b[?1049l"
+/// Terminal-reset escape bytes written when the attach client detaches, minus
+/// the alternate-screen leave (`?1049l`). The leave is appended only when this
+/// client entered its own alternate screen — see [`outer_terminal_reset_sequence`].
+const OUTER_TERMINAL_RESET_BASE: &[u8] =
+    b"\x1b]22;default\x1b\\\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1007l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h";
+const ALTERNATE_SCREEN_LEAVE: &[u8] = b"\x1b[?1049l";
+
+/// True when the host orchestrator owns one continuous alternate screen for the
+/// whole launch flow and asked this attach client (via `JACKIN_HOST_ALT_SCREEN`
+/// on the `docker exec`) not to toggle its own. Skipping the toggle keeps the
+/// flow on a single screen so detaching the capsule does not pop the operator
+/// back to the cooked terminal mid-flow.
+fn host_owns_alt_screen() -> bool {
+    std::env::var_os("JACKIN_HOST_ALT_SCREEN").is_some()
+}
+
+fn outer_terminal_reset_sequence() -> Vec<u8> {
+    let mut seq = OUTER_TERMINAL_RESET_BASE.to_vec();
+    if !host_owns_alt_screen() {
+        seq.extend_from_slice(ALTERNATE_SCREEN_LEAVE);
+    }
+    seq
 }
 
 /// Connect to the running daemon and run the interactive attach client.
@@ -51,7 +71,14 @@ pub async fn run_client(
     //  - resize re-draws stack on top of old ones because the host
     //    keeps the old content above the cursor.
     // Mouse: any-event tracking + SGR encoding. Focus events on.
-    stdout.write_all(b"\x1b[?1049h\x1b[2J\x1b[H")?;
+    if host_owns_alt_screen() {
+        // Host already holds the alternate screen; clear + home to wipe the
+        // loading frame and draw fresh, but don't enter (and later leave) our
+        // own buffer.
+        stdout.write_all(b"\x1b[2J\x1b[H")?;
+    } else {
+        stdout.write_all(b"\x1b[?1049h\x1b[2J\x1b[H")?;
+    }
     stdout.write_all(Session::client_owned_mode_state())?;
     stdout.flush()?;
 
@@ -296,7 +323,7 @@ impl Drop for RawModeGuard {
         // already shipped, the visible state matches the escape codes.
         let mut stdout = std::io::stdout().lock();
         let write_result = stdout
-            .write_all(outer_terminal_reset_sequence())
+            .write_all(&outer_terminal_reset_sequence())
             .and_then(|_| stdout.flush());
         drop(stdout);
         let log = |label: &str, e: &dyn std::fmt::Display| {
@@ -323,5 +350,21 @@ mod tests {
             reset.windows(needle.len()).any(|w| w == needle),
             "outer terminal reset missing alternate-scroll disable: {reset:?}"
         );
+    }
+
+    #[test]
+    fn reset_base_excludes_alt_screen_leave() {
+        // The base never carries the alternate-screen leave; it is appended
+        // only when this client owns its own screen. A host-owned flow keeps
+        // the leave out so detaching does not pop to the cooked terminal.
+        assert!(
+            !OUTER_TERMINAL_RESET_BASE
+                .windows(ALTERNATE_SCREEN_LEAVE.len())
+                .any(|w| w == ALTERNATE_SCREEN_LEAVE),
+            "reset base must not contain the alternate-screen leave"
+        );
+        let mut full = OUTER_TERMINAL_RESET_BASE.to_vec();
+        full.extend_from_slice(ALTERNATE_SCREEN_LEAVE);
+        assert!(full.ends_with(ALTERNATE_SCREEN_LEAVE));
     }
 }

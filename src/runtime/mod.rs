@@ -1,14 +1,18 @@
 pub(crate) mod attach;
+pub mod build_log;
 mod caffeinate;
 mod cleanup;
 mod discovery;
+mod exit_summary;
 mod identity;
 mod image;
 mod launch;
 pub mod logs;
 mod naming;
+pub mod progress;
 mod repo_cache;
 pub mod snapshot;
+mod universe;
 
 #[cfg(test)]
 pub mod test_support;
@@ -24,8 +28,8 @@ pub use self::attach::{
 };
 pub use self::caffeinate::reconcile as reconcile_keep_awake;
 pub use self::cleanup::{
-    eject_role, exile_all, prune_all_instances, prune_cache, prune_images, prune_instances,
-    prune_jackin_home, prune_roles, purge_class_data, purge_container_state,
+    eject_role, exile_all, prune_all_instances, prune_cache, prune_diagnostics, prune_images,
+    prune_instances, prune_jackin_home, prune_roles, purge_class_data, purge_container_state,
 };
 pub(crate) use self::discovery::list_role_names;
 pub use self::discovery::{
@@ -34,6 +38,10 @@ pub use self::discovery::{
 pub use self::launch::{LoadOptions, load_role};
 pub use self::naming::matching_family;
 pub(crate) use self::repo_cache::{RepoError, normalize_github_url};
+pub(crate) use self::universe::{
+    EntryClaim, StartKind, claim_entry as claim_construct_entry, force_boundary_intro_enabled,
+    release_entry_if_idle,
+};
 
 pub use self::launch::resolve_supported_agents_for_console;
 

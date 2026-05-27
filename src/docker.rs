@@ -3,12 +3,40 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 /// Options that control how a command is executed.
-#[derive(Clone, Debug, Default)]
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone, Debug)]
 pub struct RunOptions {
     pub capture_stderr: bool,
+    pub capture_stdout: bool,
     pub quiet: bool,
     pub extra_env: Vec<(String, String)>,
     pub null_stdin: bool,
+    pub stream_captured_output: bool,
+    /// The command needs the real terminal (an interactive `docker exec -it`
+    /// multiplexer/shell client). Such commands must inherit stdio and are
+    /// never captured — capturing denies the TTY and blocks forever on the
+    /// long-lived session, even under `--debug` or while a rich surface was
+    /// active.
+    pub interactive: bool,
+    /// Tee captured output, line by line as it arrives, into the global
+    /// [`crate::runtime::build_log`] sink so the loading cockpit can show a
+    /// live view. Only the derived-image `docker build` sets this.
+    pub tee_to_build_log: bool,
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self {
+            capture_stderr: false,
+            capture_stdout: false,
+            quiet: false,
+            extra_env: Vec::new(),
+            null_stdin: false,
+            stream_captured_output: true,
+            interactive: false,
+            tee_to_build_log: false,
+        }
+    }
 }
 
 pub trait CommandRunner {
@@ -57,9 +85,13 @@ impl ShellRunner {
         // or stays the responsibility of an arm-specific branch.
         let RunOptions {
             capture_stderr: _,
+            capture_stdout: _,
             quiet: _,
             extra_env,
             null_stdin,
+            stream_captured_output: _,
+            interactive: _,
+            tee_to_build_log: _,
         } = opts;
         if *null_stdin {
             cmd.stdin(std::process::Stdio::null());
@@ -103,6 +135,69 @@ pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
     out
 }
 
+async fn read_process_pipe<R, W>(
+    pipe: &mut R,
+    stream: bool,
+    tee_build_log: bool,
+    mut output: W,
+) -> std::io::Result<Vec<u8>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: std::io::Write,
+{
+    let mut captured = Vec::new();
+    let mut buf = [0u8; 8192];
+    // Partial line carried across reads so the build-log tee only ever pushes
+    // complete lines (BuildKit emits CRLF; the trailing `\r` is trimmed).
+    let mut line_remainder: Vec<u8> = Vec::new();
+    loop {
+        let n = pipe.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        if stream {
+            output.write_all(&buf[..n])?;
+        }
+        if tee_build_log {
+            for &byte in &buf[..n] {
+                if byte == b'\n' {
+                    let line = String::from_utf8_lossy(&line_remainder);
+                    crate::runtime::build_log::push_line(line.trim_end_matches('\r'));
+                    line_remainder.clear();
+                } else {
+                    line_remainder.push(byte);
+                }
+            }
+        }
+        captured.extend_from_slice(&buf[..n]);
+    }
+    if tee_build_log && !line_remainder.is_empty() {
+        let line = String::from_utf8_lossy(&line_remainder);
+        crate::runtime::build_log::push_line(line.trim_end_matches('\r'));
+    }
+    Ok(captured)
+}
+
+fn summarize_stderr(stderr: &[u8]) -> Option<String> {
+    const MAX_CHARS: usize = 500;
+    let stderr = String::from_utf8_lossy(stderr);
+    let mut summary = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("; ");
+    if summary.is_empty() {
+        return None;
+    }
+    if summary.chars().count() > MAX_CHARS {
+        summary = summary.chars().take(MAX_CHARS).collect();
+        summary.push_str("...");
+    }
+    Some(summary)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CaptureMode {
     Normal,
@@ -119,7 +214,30 @@ impl CommandRunner for ShellRunner {
     ) -> anyhow::Result<()> {
         self.log_command(program, args, cwd);
 
-        if opts.quiet {
+        // `interactive` must own the real terminal, so the arms below resolve it
+        // before any capture arm — meaning interactive + capture silently drops
+        // the capture. Catch that illegal combination in tests/debug builds.
+        debug_assert!(
+            !(opts.interactive && (opts.capture_stdout || opts.capture_stderr)),
+            "RunOptions::interactive is mutually exclusive with capture_stdout/stderr"
+        );
+
+        if opts.interactive {
+            // Interactive commands (the `docker exec -it` multiplexer / shell
+            // client) must inherit the real terminal. The --debug and
+            // rich-surface arms below would otherwise capture this output,
+            // denying the client its TTY and blocking forever on the
+            // long-lived session — so inherit stdio directly and never capture.
+            let mut cmd = Self::build_command(program, args, cwd);
+            Self::apply_run_opts(&mut cmd, opts);
+            let status = cmd.status().await?;
+            anyhow::ensure!(
+                status.success(),
+                "command failed: {} {}",
+                program,
+                args.join(" ")
+            );
+        } else if opts.quiet {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
             let status = cmd
@@ -133,44 +251,20 @@ impl CommandRunner for ShellRunner {
                 program,
                 args.join(" ")
             );
-        } else if opts.capture_stderr {
-            let mut cmd = Self::build_command(program, args, cwd);
-            Self::apply_run_opts(&mut cmd, opts);
-            let mut child = cmd.stderr(std::process::Stdio::piped()).spawn()?;
-            let mut stderr_pipe = child.stderr.take().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "failed to capture stderr for {} {}",
-                    program,
-                    args.join(" ")
-                )
-            })?;
-            let mut stderr_buf = Vec::new();
-            let read_fut = async {
-                let mut buf = [0u8; 8192];
-                loop {
-                    use std::io::Write;
-                    let n = stderr_pipe.read(&mut buf).await?;
-                    if n == 0 {
-                        break;
-                    }
-                    std::io::stderr().write_all(&buf[..n])?;
-                    stderr_buf.extend_from_slice(&buf[..n]);
-                }
-                Ok::<(), std::io::Error>(())
+        } else if opts.capture_stderr || opts.capture_stdout {
+            Box::pin(self.run_captured(program, args, cwd, opts)).await?;
+        } else if self.debug || crate::tui::rich_surface_active() {
+            // This arm would otherwise inherit the terminal and stream raw
+            // command output straight to the screen — which floods a rich TUI
+            // and a --debug run. Capture both streams instead so the output
+            // lands in the diagnostics file (under --debug) and never on the
+            // screen.
+            let captured = RunOptions {
+                capture_stdout: true,
+                capture_stderr: true,
+                ..opts.clone()
             };
-            let (status, read_result) = tokio::join!(child.wait(), read_fut);
-            read_result?;
-            let status = status?;
-            if !status.success() {
-                if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
-                    anyhow::bail!("command failed: {} {}", program, args.join(" "));
-                }
-                anyhow::bail!(
-                    "command failed: {} {} (see stderr above)",
-                    program,
-                    args.join(" ")
-                );
-            }
+            Box::pin(self.run_captured(program, args, cwd, &captured)).await?;
         } else {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
@@ -207,6 +301,127 @@ impl CommandRunner for ShellRunner {
 }
 
 impl ShellRunner {
+    async fn run_captured(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<()> {
+        let mut cmd = Self::build_command(program, args, cwd);
+        Self::apply_run_opts(&mut cmd, opts);
+        if opts.capture_stdout {
+            cmd.stdout(std::process::Stdio::piped());
+        }
+        if opts.capture_stderr {
+            cmd.stderr(std::process::Stdio::piped());
+        }
+        let mut child = cmd.spawn()?;
+        let stdout_pipe = child.stdout.take();
+        let stderr_pipe = child.stderr.take();
+        // Never stream child output to the terminal while a debug run is
+        // capturing (it belongs in the diagnostics file, not the screen) or
+        // while a rich full-screen TUI owns the terminal (it would corrupt
+        // the frame). In both cases the output is captured and, under
+        // --debug, written to the run's JSONL by `log_captured_output`.
+        let stream =
+            opts.stream_captured_output && !self.debug && !crate::tui::rich_surface_active();
+        let tee = opts.tee_to_build_log;
+        let read_stdout = async move {
+            let Some(mut stdout_pipe) = stdout_pipe else {
+                return Ok::<Vec<u8>, std::io::Error>(Vec::new());
+            };
+            read_process_pipe(&mut stdout_pipe, stream, tee, std::io::stdout()).await
+        };
+        let read_stderr = async move {
+            let Some(mut stderr_pipe) = stderr_pipe else {
+                return Ok::<Vec<u8>, std::io::Error>(Vec::new());
+            };
+            read_process_pipe(&mut stderr_pipe, stream, tee, std::io::stderr()).await
+        };
+        let (status, stdout_result, stderr_result) =
+            tokio::join!(child.wait(), read_stdout, read_stderr);
+        let stdout_buf = stdout_result?;
+        let stderr_buf = stderr_result?;
+        let status = status?;
+        self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
+        let command = format!("{} {}", program, redact_env_args(args).join(" "));
+        let command_output_path = if opts.tee_to_build_log {
+            crate::diagnostics::active_run().and_then(|run| {
+                run.write_command_output(
+                    "docker-build",
+                    &command,
+                    cwd,
+                    status,
+                    &stdout_buf,
+                    &stderr_buf,
+                )
+            })
+        } else {
+            None
+        };
+        if !status.success() {
+            if opts.tee_to_build_log {
+                if let Some(path) = command_output_path {
+                    anyhow::bail!("Docker build command failed (output: {})", path.display());
+                }
+                anyhow::bail!("Docker build command failed");
+            }
+            if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
+                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+            }
+            if !stream {
+                if let Some(run) = crate::diagnostics::active_run().filter(|_| self.debug) {
+                    anyhow::bail!(
+                        "command failed: {} {} (captured output in diagnostics run {})",
+                        program,
+                        args.join(" "),
+                        run.run_id()
+                    );
+                }
+                if let Some(run) = crate::diagnostics::active_run() {
+                    anyhow::bail!(
+                        "command failed: {} {} (output suppressed; rerun with --debug to capture it in diagnostics run {})",
+                        program,
+                        args.join(" "),
+                        run.run_id()
+                    );
+                }
+                if let Some(stderr) = summarize_stderr(&stderr_buf) {
+                    anyhow::bail!(
+                        "command failed: {} {} (stderr: {stderr}; captured output suppressed)",
+                        program,
+                        args.join(" ")
+                    );
+                }
+                anyhow::bail!(
+                    "command failed: {} {} (captured output suppressed)",
+                    program,
+                    args.join(" ")
+                );
+            }
+            anyhow::bail!(
+                "command failed: {} {} (see stderr above)",
+                program,
+                args.join(" ")
+            );
+        }
+        Ok(())
+    }
+
+    fn log_captured_output(&self, program: &str, args: &[&str], stdout: &[u8], stderr: &[u8]) {
+        if !self.debug {
+            return;
+        }
+        let command = format!("{} {}", program, redact_env_args(args).join(" "));
+        for line in String::from_utf8_lossy(stdout).lines() {
+            crate::diagnostics::active_debug("cmd.stdout", &format!("{command}: {line}"));
+        }
+        for line in String::from_utf8_lossy(stderr).lines() {
+            crate::diagnostics::active_debug("cmd.stderr", &format!("{command}: {line}"));
+        }
+    }
+
     async fn do_capture(
         &self,
         program: &str,
@@ -272,6 +487,37 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("see stderr above"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_capture_reports_stderr_when_streaming_is_suppressed() {
+        let mut runner = ShellRunner::default();
+        let opts = RunOptions {
+            capture_stderr: true,
+            stream_captured_output: false,
+            ..RunOptions::default()
+        };
+
+        let error = runner
+            .run(
+                "sh",
+                &["-c", "printf 'region blocked\\n' >&2; exit 2"],
+                None,
+                &opts,
+            )
+            .await
+            .unwrap_err();
+        let message = error.to_string();
+
+        assert!(
+            message.contains("region blocked"),
+            "suppressed stderr should be summarized: {message}"
+        );
+        assert!(
+            !message.contains("see stderr above"),
+            "must not point at terminal output that was not streamed: {message}"
+        );
     }
 
     #[cfg(unix)]
@@ -410,6 +656,34 @@ mod tests {
             "stderr must not appear in error message: {msg}"
         );
         assert!(msg.contains("sh"), "program name must appear: {msg}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn debug_run_captures_noncapturing_command_into_diagnostics() {
+        // A non-quiet, non-capturing `run` would inherit the terminal and
+        // stream straight to the screen. Under --debug it must capture both
+        // streams and route them to the diagnostics run file instead — never
+        // to the terminal (which would flood a rich TUI).
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(dir.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, true, "test").unwrap();
+        let _active = run.activate();
+        let mut runner = ShellRunner { debug: true };
+        runner
+            .run(
+                "sh",
+                &["-c", "echo hello-from-cmd"],
+                None,
+                &RunOptions::default(),
+            )
+            .await
+            .unwrap();
+        let contents = std::fs::read_to_string(run.path()).unwrap();
+        assert!(
+            contents.contains("hello-from-cmd"),
+            "non-capturing command stdout must be captured into the run file under --debug: {contents}"
+        );
     }
 
     #[cfg(unix)]

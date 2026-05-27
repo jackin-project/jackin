@@ -131,8 +131,7 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
-const DANGER_RED: Color = Color::Rgb(255, 94, 122);
+use super::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 /// Almost-invisible dim background so the input region is visible
 /// even when empty.
 const INPUT_BG_DIM: Color = Color::Rgb(20, 24, 22);

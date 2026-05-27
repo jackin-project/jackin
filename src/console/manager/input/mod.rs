@@ -17,7 +17,7 @@ use super::state::{EditorSaveFlow, EditorState, ExitIntent, ManagerStage, Manage
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
-pub use mouse::{handle_mouse, handle_mouse_with_config};
+pub use mouse::{clickable_at, handle_mouse, handle_mouse_with_config};
 
 // Re-exported for the `run_console` token-generate loop, which re-mounts
 // the settings auth form after a mint (the `global_mounts` module is

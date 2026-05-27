@@ -940,7 +940,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
 /// Clear the `auth_forward` at the form's target layer. Does NOT touch
 /// the credential env var — operators delete those via the Secrets tab
 /// (Claude / Codex) or the Github env block on the workspace × github
-/// layer. Mirrors the existing Claude / Codex behaviour.
+/// layer.
 fn clear_layer(editor: &mut EditorState<'_>, target: &AuthFormTarget) {
     match target {
         AuthFormTarget::Workspace { kind } => {
@@ -1290,7 +1290,6 @@ mod tests {
     }
 
     /// Tab from the last focusable control wraps back to the first.
-    /// Mirrors the convention used by every other modal in the TUI.
     #[test]
     fn auth_form_tab_wraps_around_at_reset() {
         let (cfg, mut state) = build_state();

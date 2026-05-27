@@ -152,13 +152,6 @@ export default defineConfig({
             { label: "jackin' Capsule", slug: 'reference/jackin-capsule' },
             { label: 'Multiplexer Design Rules', slug: 'reference/multiplexer-design-rules' },
             {
-              label: 'Goal prompts',
-              collapsed: true,
-              items: [
-                { label: "jackin' Desktop Agent Hub", slug: 'reference/goals/jackin-desktop-agent-hub' },
-              ],
-            },
-            {
               // Roadmap groups are flat — every group below is open
               // work. Some groups happen to be phased programs that
               // should be read together (Agent Orchestrator

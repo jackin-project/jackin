@@ -183,7 +183,7 @@ jackin' temporarily pins a forked `vt100` commit while upstreaming `Screen::clea
 
 #### Render model: dirty pane bodies and full-frame fallback
 
-The shipped renderer is a Zellij-style dirty-output layer on top of `vt100`, not a raw PTY-byte passthrough. Directly forwarding active-pane bytes was rejected because pane content must be offset into an inner rectangle, clipped against borders, dimmed under dialogs, and kept consistent with scrollback and selection state. `vt100::Screen::contents_diff` was also rejected for the hot path because it assumes a whole-screen origin and cannot express jackin' pane chrome rules without wrapping every operation.
+The shipped renderer is a Zellij-style dirty-output layer on top of `vt100`, not a raw PTY-byte passthrough. Directly forwarding active-pane bytes was rejected because pane content must be offset into an inner rectangle, clipped against borders, dimmed when inactive, hidden behind opaque modal backdrops, and kept consistent with scrollback and selection state. `vt100::Screen::contents_diff` was also rejected for the hot path because it assumes a whole-screen origin and cannot express jackin' pane chrome rules without wrapping every operation.
 
 **Hot path — dirty pane body**. When any pane PTY emits bytes, the server:
 

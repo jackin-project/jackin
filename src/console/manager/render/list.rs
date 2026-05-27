@@ -11,7 +11,9 @@ use ratatui::{
 };
 
 use super::super::state::{ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary};
-use super::{CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{
+    CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
+};
 use crate::config::AppConfig;
 
 #[allow(clippy::too_many_lines)]
@@ -230,6 +232,27 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
                 Style::default().bg(bg).fg(Color::Black),
+            ));
+        }
+    }
+
+    // Hover lift: the row under the pointer (when not the selected row) gets a
+    // subtle graphite background — the same "this is clickable" cue the tab
+    // strip uses. Selected wins, so a hovered-and-selected row keeps its strong
+    // highlight.
+    if let Some(hovered) = state.hovered_list_row
+        && let Some(h) = visual_rows.iter().position(|r| *r == Some(hovered))
+        && h != visual_selected
+        && let Some(line) = lines.get_mut(h)
+    {
+        for span in &mut line.spans {
+            span.style = span.style.bg(TAB_BG_INACTIVE_HOVER);
+        }
+        let current_w = super::line_width(line);
+        if current_w < content_w {
+            line.spans.push(Span::styled(
+                " ".repeat(content_w - current_w),
+                Style::default().bg(TAB_BG_INACTIVE_HOVER),
             ));
         }
     }

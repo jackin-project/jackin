@@ -113,6 +113,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let is_dirty = settings.is_dirty();
+    let footer_h = settings.cached_footer_h;
     let global = &mut settings.mounts;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
@@ -134,6 +135,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 global.selected,
                 global.scroll_y,
                 state.cached_term_size,
+                footer_h,
             );
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
@@ -143,6 +145,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 global.selected,
                 global.scroll_y,
                 state.cached_term_size,
+                footer_h,
             );
         }
         KeyCode::Enter if global.selected == global.pending.len() => {
@@ -210,6 +213,7 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 settings.env.selected,
                 settings.env.scroll_y,
                 state.cached_term_size,
+                settings.cached_footer_h,
             );
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
@@ -221,6 +225,7 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 settings.env.selected,
                 settings.env.scroll_y,
                 state.cached_term_size,
+                settings.cached_footer_h,
             );
         }
         KeyCode::Char('a' | 'A') => {
@@ -932,6 +937,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
+    let footer_h = settings.cached_footer_h;
     let trust = &mut settings.trust;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
@@ -947,6 +953,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 trust.selected,
                 trust.scroll_y,
                 state.cached_term_size,
+                footer_h,
             );
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
@@ -955,6 +962,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 trust.selected,
                 trust.scroll_y,
                 state.cached_term_size,
+                footer_h,
             );
         }
         KeyCode::Char('h' | 'H') => {

@@ -273,7 +273,17 @@ impl OpReferenceParts {
 #[must_use]
 pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     let path = value.strip_prefix("op://")?;
+    // An op:// reference can carry a `?attribute=…` / `?ssh-format=…` query
+    // suffix (emitted by `resolve_op_uri_to_ref`). It tunes retrieval, not the
+    // vault/item/section/field structure, so strip it before splitting —
+    // otherwise it leaks into the parsed `field`.
+    let path = path.split('?').next().unwrap_or(path);
     let parts: Vec<&str> = path.split('/').collect();
+    // Every segment must be non-empty: `op:////` or `op://v//f` is malformed,
+    // not a reference with blank vault/section/field names.
+    if parts.iter().any(|s| s.is_empty()) {
+        return None;
+    }
     match parts.as_slice() {
         [vault, item, field] => Some(OpReferenceParts {
             vault: (*vault).to_string(),
@@ -868,6 +878,15 @@ fn run_op_json(
     })
 }
 
+/// Append `--account <id>` to an `op` argument vector when an account is
+/// pinned, so every subcommand builder emits the flag identically.
+fn push_account_arg<'a>(args: &mut Vec<&'a str>, account: Option<&'a str>) {
+    if let Some(id) = account {
+        args.push("--account");
+        args.push(id);
+    }
+}
+
 impl OpStructRunner for OpCli {
     fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
         let bytes = run_op_json(
@@ -882,10 +901,7 @@ impl OpStructRunner for OpCli {
 
     fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
         let mut args: Vec<&str> = vec!["vault", "list"];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let raw: Vec<RawOpVault> = serde_json::from_slice(&bytes)
@@ -895,10 +911,7 @@ impl OpStructRunner for OpCli {
 
     fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
         let mut args: Vec<&str> = vec!["item", "list", "--vault", vault_id];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let raw: Vec<RawOpItem> = serde_json::from_slice(&bytes)
@@ -913,10 +926,7 @@ impl OpStructRunner for OpCli {
         account: Option<&str>,
     ) -> anyhow::Result<Vec<OpField>> {
         let mut args: Vec<&str> = vec!["item", "get", item_id, "--vault", vault_id];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let detail: RawOpItemDetail = serde_json::from_slice(&bytes)
@@ -1323,10 +1333,7 @@ impl OpWriteRunner for OpCli {
         // sets the account on the call itself.
         let effective_account = account.or(self.account.as_deref());
         let mut args: Vec<&str> = Vec::new();
-        if let Some(acc) = effective_account {
-            args.push("--account");
-            args.push(acc);
-        }
+        push_account_arg(&mut args, effective_account);
         args.extend_from_slice(&["item", "delete", item_id, "--vault", vault_id]);
         let _ = run_op_with_timeout(&self.binary, &args, self.timeout)?;
         Ok(())
@@ -1340,10 +1347,7 @@ impl OpWriteRunner for OpCli {
     ) -> anyhow::Result<Vec<String>> {
         let effective_account = account.or(self.account.as_deref());
         let mut args: Vec<&str> = Vec::new();
-        if let Some(acc) = effective_account {
-            args.push("--account");
-            args.push(acc);
-        }
+        push_account_arg(&mut args, effective_account);
         args.extend_from_slice(&[
             "item", "get", item_id, "--vault", vault_id, "--format", "json",
         ]);
@@ -1376,10 +1380,7 @@ impl OpWriteRunner for OpCli {
         // Step 1: fetch the full item JSON so we can modify one field
         // while preserving all other fields and metadata.
         let mut get_args: Vec<&str> = Vec::new();
-        if let Some(acc) = self.account.as_deref() {
-            get_args.push("--account");
-            get_args.push(acc);
-        }
+        push_account_arg(&mut get_args, self.account.as_deref());
         get_args.extend_from_slice(&[
             "item", "get", item_id, "--vault", vault_id, "--format", "json",
         ]);
@@ -1942,7 +1943,6 @@ pub fn print_launch_diagnostic(
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) {
-    use std::io::Write;
     let mut out = Vec::new();
     write_launch_diagnostic(
         &mut out,
@@ -1953,7 +1953,21 @@ pub fn print_launch_diagnostic(
         debug,
     )
     .expect("writing to Vec<u8> is infallible");
-    let _ = std::io::stderr().write_all(&out);
+    emit_launch_diagnostic(
+        std::str::from_utf8(&out).expect("diagnostic formatter emits UTF-8"),
+        debug,
+        &mut std::io::stderr(),
+    );
+}
+
+fn emit_launch_diagnostic<W: std::io::Write>(rendered: &str, debug: bool, stderr: &mut W) {
+    if let Some(run) = crate::diagnostics::active_run() {
+        run.compact("operator_env", rendered.trim_end());
+    }
+    if debug || crate::tui::rich_surface_active() {
+        return;
+    }
+    let _ = stderr.write_all(rendered.as_bytes());
 }
 
 #[cfg(test)]
@@ -2070,6 +2084,8 @@ fn classify_env_value(value: &EnvValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static LAUNCH_DIAGNOSTIC_OUTPUT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn op_section_id_slugifies_labels() {
@@ -2289,11 +2305,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_op_reference_strips_query_suffix() {
+        // `resolve_op_uri_to_ref` can append a `?attribute=…` / `?ssh-format=…`
+        // suffix to the final segment; it must not leak into the parsed field.
+        let parts = parse_op_reference("op://Vault/Item/token?attribute=otp").unwrap();
+        assert_eq!(parts.field, "token");
+        assert_eq!(parts.section, None);
+
+        let parts = parse_op_reference("op://Vault/Item/Auth/key?ssh-format=openssh").unwrap();
+        assert_eq!(parts.section, Some("Auth".to_string()));
+        assert_eq!(parts.field, "key");
+    }
+
+    #[test]
     fn parse_op_reference_invalid_segment_count() {
         assert!(parse_op_reference("plain").is_none());
         assert!(parse_op_reference("op://only/two").is_none());
         assert!(parse_op_reference("op://a/b/c/d/e").is_none());
         assert!(parse_op_reference("op://").is_none());
+        // Empty segments are malformed, not blank-named references.
+        assert!(parse_op_reference("op:////").is_none());
+        assert!(parse_op_reference("op://vault//field").is_none());
     }
 
     /// `OpReferenceParts::manual_delete_hint` is the canonical CLI
@@ -3242,6 +3274,62 @@ mod tests {
         assert!(rendered.contains("literal"), "{rendered}");
         assert!(!rendered.contains("super-secret"), "{rendered}");
         assert!(!rendered.contains("op-value-secret"), "{rendered}");
+    }
+
+    #[test]
+    fn launch_diagnostic_routes_to_run_file_while_rich_surface_is_active() {
+        let _lock = LAUNCH_DIAGNOSTIC_OUTPUT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::tui::set_rich_surface_active(false);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+
+        crate::tui::set_rich_surface_active(true);
+        let mut stderr = Vec::new();
+        emit_launch_diagnostic(
+            "[jackin] operator env: 1 resolved (1 op://, 0 host ref, 0 literal)\n",
+            false,
+            &mut stderr,
+        );
+        crate::tui::set_rich_surface_active(false);
+
+        assert!(
+            stderr.is_empty(),
+            "rich launch surface must not receive stderr diagnostics"
+        );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+        assert!(jsonl.contains("1 resolved"), "{jsonl}");
+    }
+
+    #[test]
+    fn launch_diagnostic_debug_mode_routes_to_run_file_not_stderr() {
+        let _lock = LAUNCH_DIAGNOSTIC_OUTPUT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::tui::set_rich_surface_active(false);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+        let _active = run.activate();
+
+        let mut stderr = Vec::new();
+        emit_launch_diagnostic(
+            "[jackin] operator env:\n  TOKEN  op://...  (global)\n",
+            true,
+            &mut stderr,
+        );
+
+        assert!(
+            stderr.is_empty(),
+            "debug launch diagnostics belong in the run file"
+        );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+        assert!(jsonl.contains("TOKEN"), "{jsonl}");
     }
 
     // ---- OpStructRunner tests --------------------------------------------

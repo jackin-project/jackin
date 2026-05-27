@@ -136,6 +136,10 @@ When the current logs are insufficient to explain a complex or inconsistent beha
 
 The reason: operators can rarely reproduce on demand. When they hit something weird, they need to be able to paste a log that already has the answer — without rebuilding, without enabling extra instrumentation we forgot to ship, and without an extra round of "now please run it again with this added line". The host's `--debug` flag is the single switch that turns the firehose on; everything downstream honours it.
 
+**Debug output never reaches a rich full-screen TUI (hard rule).** When a rich alternate-screen surface owns the terminal — the launch/loading cockpit, the workspace console, the in-container multiplexer — `--debug` must not print a single line over it. The firehose is written **only** to the diagnostics run file under `~/.jackin/data/diagnostics/runs/<run-id>.jsonl`, and external-command output is captured (never streamed to the screen) for the duration. The screen stays the clean rich experience; the evidence lands in the file. The mechanism is the `rich_surface_active` flag plus the active diagnostics run: `emit_debug_line` / `active_debug` route to the run file, and the command runner suppresses live streaming whenever `--debug` is on or a rich surface is active. Streaming child output straight to `stdout`/`stderr` while a rich surface is up is a bug; route it through the diagnostics run instead.
+
+So the operator can retrieve that file, a `--debug` invocation surfaces the **run id on the plain CLI before anything else runs** (`[jackin] debug mode — save this run id…`), identically for every command — CLI or TUI — and on an interactive terminal gates entry behind an `Enter` press so the operator saves the id before the normal flow (rich or CLI, per terminal capability) takes over. The gate is always plain CLI, never a rich surface. Only the run id is shown; it is the handle the operator hands back so an agent can locate and read the run file. Never trade the clean rich surface for inline debug spew: when you need more evidence, add `cdebug!` / diagnostics sites that write to the run file, not prints to the screen.
+
 ## Reuse before writing — DRY (hard rule)
 
 **Before writing new code, check whether something close enough already exists. If yes, extend, parameterise, or wrap it instead of writing a parallel copy. If no, write the new thing in a shape future callers can reuse.**
@@ -298,7 +302,7 @@ This rule applies to inline `//` comments, multi-line `/// `/// `//!` doc commen
 
 When walking the operator through manual validation of a jackin' feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
 
-The `--debug` flag prints every external command the CLI issues (`docker`, `git`, `id`, etc.) along with their captured output, plus the `[jackin debug ...]` instrumentation. This makes the operator's terminal output triage-able by the agent: when something doesn't behave as expected, the operator can paste the full debug log and the agent can localize the issue without guessing.
+The `--debug` flag captures every external command the CLI issues (`docker`, `git`, `id`, etc.) along with their output, plus the `[jackin debug ...]` instrumentation, into the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) — never onto a rich TUI (see the telemetry hard rule above). At the start of a `--debug` run the CLI prints the run id (plain CLI, identical for every command) and gates on Enter on an interactive terminal, before anything else runs. This makes the run triage-able by the agent: when something doesn't behave as expected, the operator shares the run id and the agent reads the structured JSONL at `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` to localize the issue without guessing. Ask the operator for the run id printed at start, not for a pasted terminal scrollback.
 
 Do not list `git diff --check` as PR verification. It is not a meaningful
 acceptance check for jackin' PRs; prefer targeted commands that exercise the
@@ -322,7 +326,7 @@ cargo run --bin jackin -- load the-architect . --debug
 Do not add `--no-intro` to debug smoke commands. Debug mode already suppresses
 the intro by design, so `--debug --no-intro` is redundant noise.
 
-If the operator reports unexpected behavior from a clean (non-debug) run, the FIRST follow-up should be to ask them to rerun with `--debug` and paste the full output before proposing fixes.
+If the operator reports unexpected behavior from a clean (non-debug) run, the FIRST follow-up should be to ask them to rerun with `--debug` and share the run id printed at start (the agent then reads the run's JSONL file) before proposing fixes.
 
 This does not apply to:
 
