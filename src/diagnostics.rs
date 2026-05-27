@@ -131,12 +131,14 @@ impl RunDiagnostics {
         let _ = writeln!(file, "status: {status}");
         let _ = writeln!(file);
         let _ = writeln!(file, "----- stdout -----");
-        let _ = file.write_all(stdout);
+        let stdout = crate::ansi_text::strip_bytes(stdout);
+        let _ = file.write_all(&stdout);
         if !stdout.ends_with(b"\n") {
             let _ = writeln!(file);
         }
         let _ = writeln!(file, "----- stderr -----");
-        let _ = file.write_all(stderr);
+        let stderr = crate::ansi_text::strip_bytes(stderr);
+        let _ = file.write_all(&stderr);
         if !stderr.ends_with(b"\n") {
             let _ = writeln!(file);
         }
@@ -399,6 +401,34 @@ mod tests {
         assert!(
             !contents.contains("docker ps"),
             "debug line must not be written when debug capture is disabled: {contents}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_output_sidecar_strips_ansi_sequences() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+        let path = run
+            .write_command_output(
+                "docker-build",
+                "docker build .",
+                None,
+                ExitStatus::from_raw(1),
+                b"\x1b[32mstep ok\x1b[0m\n",
+                b"\x1b[31mboom\x1b[0m\n",
+            )
+            .unwrap();
+
+        let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("step ok"));
+        assert!(contents.contains("boom"));
+        assert!(
+            !contents.contains('\x1b'),
+            "plain sidecar log should not contain terminal escapes: {contents:?}"
         );
     }
 

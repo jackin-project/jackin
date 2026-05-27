@@ -1248,59 +1248,85 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
         return vec![Line::from(String::new())];
     }
 
+    let default_style = Style::default().fg(Color::Gray).bg(Color::Black);
+    let spans = crate::ansi_text::styled_spans(line.trim_end(), default_style);
+    wrap_build_log_spans(spans, width)
+}
+
+fn wrap_build_log_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
+    let cells = spans
+        .into_iter()
+        .flat_map(|span| {
+            let style = span.style;
+            span.content
+                .chars()
+                .map(move |ch| (ch, style))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    if cells.is_empty() {
+        return vec![Line::from(String::new())];
+    }
+
     let mut lines = Vec::new();
-    let mut rest = line.trim_end();
     let continuation_width = width
         .saturating_sub(BUILD_LOG_WRAP_PREFIX.chars().count())
         .max(1);
-    let mut first = true;
-    while !rest.is_empty() {
-        let limit = if first { width } else { continuation_width };
-        let (segment, next) = split_wrapped_segment(rest, limit);
-        if first {
-            lines.push(Line::from(segment));
-            first = false;
+    let mut pos = 0;
+    let mut first_line = true;
+    while pos < cells.len() {
+        let limit = if first_line {
+            width
         } else {
-            lines.push(Line::from(vec![
-                Span::styled(BUILD_LOG_WRAP_PREFIX, Style::default().fg(PHOSPHOR_DIM)),
-                Span::raw(segment),
-            ]));
+            continuation_width
+        };
+        let hard_end = pos.saturating_add(limit).min(cells.len());
+        let (line_end, mut next) = if hard_end < cells.len()
+            && let Some(space) = (pos + 1..hard_end)
+                .rev()
+                .find(|idx| cells[*idx].0.is_whitespace())
+        {
+            (space, space + 1)
+        } else {
+            (hard_end, hard_end)
+        };
+        while next < cells.len() && cells[next].0.is_whitespace() {
+            next += 1;
         }
-        rest = next;
+        let line_cells = if line_end == pos {
+            &cells[pos..hard_end]
+        } else {
+            &cells[pos..line_end]
+        };
+        push_wrapped_build_line(&mut lines, spans_from_cells(line_cells), first_line);
+        first_line = false;
+        pos = if line_end == pos { hard_end } else { next };
     }
     lines
 }
 
-fn split_wrapped_segment(input: &str, limit: usize) -> (String, &str) {
-    if input.chars().count() <= limit {
-        return (input.to_string(), "");
-    }
+fn spans_from_cells(cells: &[(char, Style)]) -> Vec<Span<'static>> {
+    cells
+        .iter()
+        .map(|(ch, style)| Span::styled(ch.to_string(), *style))
+        .collect()
+}
 
-    let mut hard_end = input.len();
-    let mut last_space = None;
-    let mut after_last_space = 0;
-    for (count, (idx, ch)) in input.char_indices().enumerate() {
-        if count == limit {
-            hard_end = idx;
-            break;
-        }
-        if ch.is_whitespace() && count > 0 {
-            last_space = Some(idx);
-            after_last_space = idx + ch.len_utf8();
-        }
+fn push_wrapped_build_line(
+    lines: &mut Vec<Line<'static>>,
+    mut spans: Vec<Span<'static>>,
+    first_line: bool,
+) {
+    if !first_line {
+        spans.insert(
+            0,
+            Span::styled(
+                BUILD_LOG_WRAP_PREFIX,
+                Style::default().fg(PHOSPHOR_DIM).bg(Color::Black),
+            ),
+        );
     }
-
-    if let Some(space) = last_space {
-        let segment = input[..space].trim_end().to_string();
-        let rest = input[after_last_space..].trim_start();
-        if !segment.is_empty() && !rest.is_empty() {
-            return (segment, rest);
-        }
-    }
-
-    let segment = input[..hard_end].to_string();
-    let rest = input[hard_end..].trim_start();
-    (segment, rest)
+    lines.push(Line::from(spans));
 }
 
 fn draw_select(
@@ -1508,7 +1534,7 @@ mod tests {
     fn build_log_lines_wrap_with_visible_continuation() {
         let lines = wrap_build_log_lines(
             vec![
-                "#5 RUN current_gid=\"$(id -g agent)\" && current_uid=\"$(id -u agent)\""
+                "#5 RUN current_gid=\"$(id -g agent)\" && \x1b[31mcurrent_uid=\"$(id -u agent)\"\x1b[0m"
                     .to_string(),
             ],
             32,
@@ -1529,6 +1555,20 @@ mod tests {
         assert!(
             rendered[1].starts_with(BUILD_LOG_WRAP_PREFIX),
             "continuation row must be visually marked: {rendered:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .flat_map(|line| &line.spans)
+                .any(|span| span.style.fg == Some(Color::Red)),
+            "ANSI foreground color should survive in the on-screen build log"
+        );
+        assert!(
+            lines
+                .iter()
+                .flat_map(|line| &line.spans)
+                .all(|span| !span.content.contains('\x1b')),
+            "ANSI escape bytes should be interpreted, not rendered literally"
         );
     }
 

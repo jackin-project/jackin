@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod ansi_text;
 pub mod app;
 pub mod capsule_binary;
 pub mod cli;

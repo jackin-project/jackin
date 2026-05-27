@@ -459,14 +459,7 @@ pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
     let _ = hold_resizable(std::time::Duration::from_millis(2400), || {
         let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
         let mid = rows / 2;
-        let pill_col = center_col(cols, BRAND_PILL.chars().count());
-        eprint!(
-            "\x1b[{mid};{pill_col}H{}",
-            BRAND_PILL
-                .bold()
-                .color(rgb((0, 0, 0)))
-                .on_color(rgb(PHOSPHOR_GREEN))
-        );
+        draw_brand_pill_bottom();
         if let Some(d) = elapsed {
             let line = format!("in the Construct for {}", format_universe_duration(d));
             let col = center_col(cols, line.chars().count());
