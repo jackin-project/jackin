@@ -635,13 +635,19 @@ pub enum SessionEvent {
     },
     GitBranchContextLoaded {
         request_id: u64,
-        branch: Option<String>,
+        context: GitContext,
     },
     PullRequestContextLoaded {
         request_id: u64,
         branch: Option<String>,
         outcome: PullRequestLookupOutcome,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GitContext {
+    pub branch: Option<String>,
+    pub head: Option<String>,
 }
 
 /// Outcome of a background `gh pr` lookup. The `Resolved` variant carries
