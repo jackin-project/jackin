@@ -378,11 +378,12 @@ fn flush_terminal_input_queue() {
 fn flush_terminal_input_queue() {}
 
 fn enable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    // Crossterm's EnableMouseCapture includes ?1003h "any-event"
-    // tracking. That reports plain pointer motion and can flood the pty
-    // under touchpad inertia. Jackin needs press/release, drag, scroll,
-    // and SGR coordinates, so enable only those modes.
-    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1015h\x1b[?1006h")?;
+    // ?1000h press/release, ?1002h drag, ?1003h any-event motion (drives tab
+    // hover, matching the in-container multiplexer), ?1015h+?1006h SGR
+    // coordinates. ?1003h motion floods only matter across a pty under inertia;
+    // host events are local and the manager batches renders at 20Hz, so the
+    // cost is paid once per coalesced frame.
+    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1015h\x1b[?1006h")?;
     out.flush()
 }
 
@@ -391,6 +392,98 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
     // an older build or another library enabled any-event tracking.
     out.write_all(b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")?;
     out.flush()
+}
+
+/// Owns the terminal for an entire launch flow so it never flashes the shell.
+///
+/// Holds the alternate screen, raw mode, and mouse capture across console →
+/// loading cockpit → capsule → exit outro so the terminal never drops back
+/// to the cooked primary screen between surfaces. Each sub-surface checks
+/// [`crate::tui::host_screen_owned`] and skips its own enter/leave while this
+/// guard is alive; `Drop` restores the terminal exactly once, on every exit
+/// path.
+pub struct HostScreen {
+    _private: (),
+}
+
+impl HostScreen {
+    /// Enter raw mode + the alternate screen + mouse capture and mark the
+    /// screen owned. The caller holds the returned guard for the whole flow.
+    pub fn enter() -> std::io::Result<Self> {
+        use crossterm::ExecutableCommand;
+        let mut stdout = std::io::stdout();
+        crossterm::terminal::enable_raw_mode()?;
+        crate::tui::begin_debug_buffering();
+        let screen = Self { _private: () };
+        stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
+        enable_console_mouse_capture(&mut stdout)?;
+        crate::tui::set_host_screen_owned(true);
+        Ok(screen)
+    }
+
+    /// Drop to the cooked primary screen for the duration of `f`, then restore
+    /// the full-screen session. Used for the rare interim prompts that sit
+    /// between the console and the loading cockpit (sensitive-mount confirm,
+    /// agent choice) and expect a normal line-buffered terminal.
+    pub fn suspend<T>(&self, f: impl FnOnce() -> T) -> std::io::Result<T> {
+        use crossterm::ExecutableCommand;
+        let mut stdout = std::io::stdout();
+        let _ = disable_console_mouse_capture(&mut stdout);
+        crossterm::terminal::disable_raw_mode()?;
+        stdout.execute(crossterm::terminal::LeaveAlternateScreen)?;
+        stdout.execute(crossterm::cursor::Show)?;
+        crate::tui::set_host_screen_owned(false);
+        let out = f();
+        crossterm::terminal::enable_raw_mode()?;
+        stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
+        enable_console_mouse_capture(&mut stdout)?;
+        crate::tui::set_host_screen_owned(true);
+        Ok(out)
+    }
+}
+
+impl Drop for HostScreen {
+    fn drop(&mut self) {
+        use crossterm::ExecutableCommand;
+        let mut stdout = std::io::stdout();
+        drain_pending_terminal_events_until_quiet(
+            MAX_TEARDOWN_DRAIN_EVENTS,
+            std::time::Duration::from_millis(TEARDOWN_DRAIN_QUIET_MS),
+        );
+        let _ = disable_console_mouse_capture(&mut stdout);
+        drain_pending_terminal_events(MAX_TEARDOWN_DRAIN_EVENTS);
+        flush_terminal_input_queue();
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+        let _ = stdout.execute(crossterm::cursor::Show);
+        crate::tui::set_host_screen_owned(false);
+        crate::tui::end_debug_buffering();
+    }
+}
+
+/// Hand the real terminal back to a child process: leave raw-mode +
+/// alt-screen and stop debug buffering, mirroring `TerminalGuard::drop`
+/// minus the input drain (the child reads stdin directly). Paired with
+/// [`resume_console_terminal`] around a contained suspend → run → resume.
+fn suspend_console_terminal(stdout: &mut std::io::Stdout) {
+    use crossterm::ExecutableCommand;
+    let _ = disable_console_mouse_capture(stdout);
+    let _ = crossterm::terminal::disable_raw_mode();
+    let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+    let _ = stdout.execute(crossterm::cursor::Show);
+    crate::tui::end_debug_buffering();
+}
+
+/// Re-enter raw-mode + alt-screen after a [`suspend_console_terminal`]
+/// detour, mirroring `run_console`'s initial setup so the TUI resumes
+/// where it left off.
+fn resume_console_terminal(stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
+    use crossterm::ExecutableCommand;
+    crate::tui::begin_debug_buffering();
+    crossterm::terminal::enable_raw_mode()?;
+    stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
+    enable_console_mouse_capture(stdout)?;
+    Ok(())
 }
 
 async fn open_inline_agent_picker(
@@ -443,6 +536,23 @@ where
     })?;
     ms.status_overlay = None;
     Ok(())
+}
+
+/// Drop the cached item list (and that item's field list) for the
+/// account/vault/item a freshly-minted op ref points at, so a picker
+/// reopened in the same session re-fetches and shows the new entry. The
+/// ref's `op` field is UUID-form `op://<vault>/<item>/[<section>/]<field>`.
+fn invalidate_op_cache_for_ref(
+    op_cache: &std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    op_ref: &crate::operator_env::OpRef,
+) {
+    let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
+        return;
+    };
+    let account = op_ref.account.as_deref();
+    let mut cache = op_cache.borrow_mut();
+    cache.invalidate_items(account, &parts.vault);
+    cache.invalidate_fields(account, &parts.vault, &parts.item);
 }
 
 fn show_role_resolution_error(
@@ -653,42 +763,150 @@ pub async fn run_console(
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
-    use crossterm::ExecutableCommand;
     use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-    use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 
-    // EnableMouseCapture disables native text selection; operators
-    // hold Shift (Terminal.app, iTerm2) or Option (iTerm2) to bypass.
-    struct TerminalGuard;
-    impl Drop for TerminalGuard {
-        fn drop(&mut self) {
-            let mut stdout = std::io::stdout();
-            drain_pending_terminal_events_until_quiet(
-                MAX_TEARDOWN_DRAIN_EVENTS,
-                std::time::Duration::from_millis(TEARDOWN_DRAIN_QUIET_MS),
-            );
-            let _ = disable_console_mouse_capture(&mut stdout);
-            drain_pending_terminal_events(MAX_TEARDOWN_DRAIN_EVENTS);
-            flush_terminal_input_queue();
-            let _ = crossterm::terminal::disable_raw_mode();
-            let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
-            let _ = stdout.execute(crossterm::cursor::Show);
-            crate::tui::end_debug_buffering();
-        }
-    }
+    use crate::console::manager::state::{ManagerStage, Modal};
 
     let mut state = ConsoleState::new(&config, cwd)?;
-    let mut stdout = std::io::stdout();
-    enable_raw_mode()?;
-    let guard = TerminalGuard;
-    crate::tui::begin_debug_buffering();
-    stdout.execute(EnterAlternateScreen)?;
-    enable_console_mouse_capture(&mut stdout)?;
-    let backend = ratatui::backend::CrosstermBackend::new(stdout);
+    // When the launch flow in `app` already owns the host screen, draw into it
+    // and leave teardown to that guard; otherwise own the screen here for the
+    // lifetime of the console (standalone `jackin console` with no launch).
+    let owned_screen = if crate::tui::host_screen_owned() {
+        None
+    } else {
+        Some(HostScreen::enter()?)
+    };
+    let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut last_mouse_event_at: Option<std::time::Instant> = None;
+    // Tracks whether the terminal pointer is currently the hand/`pointer`
+    // shape, so OSC 22 is emitted only when the hover crosses a clickable
+    // boundary rather than on every motion event.
+    let mut pointer_is_hand = false;
 
     let result = 'main: loop {
+        // Drain a pending token-generate request before render: suspend
+        // the TUI, run the interactive `claude setup-token` mint + the
+        // 1Password write, then resume. Done at the top of the loop (no
+        // live `&mut state.stage` borrow, `config`/`paths`/`terminal` all
+        // in scope) so a request set by the previous iteration's input is
+        // handled before the next frame.
+        let pending = if let ConsoleStage::Manager(ms) = &mut state.stage {
+            match &mut ms.stage {
+                ManagerStage::Editor(ed) => ed.pending_token_generate.take(),
+                ManagerStage::Settings(s) => s.pending_token_generate.take(),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(req) = pending {
+            use crate::workspace::token_setup::TokenSetupScope;
+            let mut out = std::io::stdout();
+            suspend_console_terminal(&mut out);
+            let label = match &req.scope {
+                TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
+                TokenSetupScope::WorkspaceRole { workspace, role } => {
+                    format!("workspace {workspace:?} role {role:?}")
+                }
+                TokenSetupScope::Global => "global config".to_string(),
+            };
+            println!(
+                "\nGenerating Claude OAuth token for {label} — complete the browser \
+                 sign-in, then paste the code below.\n",
+            );
+            // Mint without persisting: the op item is created / the
+            // literal is captured and validated, but jackin config is NOT
+            // written here. The minted value is staged into the stashed
+            // auth form (re-mounted below) and persisted only when the
+            // operator Saves — mirroring the provide path's "pick a value
+            // → form re-mounts with the credential, focus Save → Save".
+            let mint = crate::workspace::token_setup::mint_token_value(
+                paths, &config, &req.scope, &req.args,
+            );
+            let _ = resume_console_terminal(&mut out);
+            // Force a full redraw next frame so leftover child output is
+            // cleared before the TUI repaints.
+            let _ = terminal.clear();
+            match mint {
+                Ok(env_value) => {
+                    // A successful op mint created or edited an item/field;
+                    // drop the stale cached item/field lists so a reopened
+                    // picker shows the new entry without a manual refresh.
+                    if let (
+                        crate::operator_env::EnvValue::OpRef(op_ref),
+                        ConsoleStage::Manager(ms),
+                    ) = (&env_value, &state.stage)
+                    {
+                        invalidate_op_cache_for_ref(&ms.op_cache, op_ref);
+                    }
+                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        match &mut ms.stage {
+                            // Re-mount the stashed auth form with the minted
+                            // credential applied (op vs. plain), focus Save —
+                            // the same helpers the provide path uses. The
+                            // operator's Save then runs the normal
+                            // persist_form → editor save that writes config.
+                            ManagerStage::Editor(ed) => match env_value {
+                                crate::operator_env::EnvValue::OpRef(op_ref) => {
+                                    crate::console::manager::input::auth::apply_op_picker_to_auth_form(
+                                        ed, op_ref,
+                                    );
+                                }
+                                crate::operator_env::EnvValue::Plain(value) => {
+                                    crate::console::manager::input::auth::apply_plain_text_to_auth_form(
+                                        ed, &value,
+                                    );
+                                }
+                            },
+                            // Settings (global Claude) re-mounts via its own
+                            // equivalents on the stashed settings auth form.
+                            ManagerStage::Settings(s) => match env_value {
+                                crate::operator_env::EnvValue::OpRef(op_ref) => {
+                                    crate::console::manager::input::apply_op_picker_to_settings_auth_form(
+                                        &mut s.auth, op_ref,
+                                    );
+                                }
+                                crate::operator_env::EnvValue::Plain(value) => {
+                                    crate::console::manager::input::apply_plain_text_to_settings_auth_form(
+                                        &mut s.auth, &value,
+                                    );
+                                }
+                            },
+                            _ => {}
+                        }
+                    }
+                }
+                Err(e) => {
+                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        match &mut ms.stage {
+                            ManagerStage::Editor(ed) => {
+                                ed.modal = Some(Modal::ErrorPopup {
+                                    state:
+                                        crate::console::widgets::error_popup::ErrorPopupState::new(
+                                            "Token generation failed",
+                                            e.to_string(),
+                                        ),
+                                });
+                            }
+                            // Settings surfaces errors through its top-level
+                            // error popup slot (same widget as the editor).
+                            ManagerStage::Settings(s) => {
+                                s.error_popup = Some(
+                                    crate::console::widgets::error_popup::ErrorPopupState::new(
+                                        "Token generation failed",
+                                        e.to_string(),
+                                    ),
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
@@ -883,6 +1101,22 @@ pub async fn run_console(
                             term_size,
                             Some(&config),
                         );
+                        // Switch the terminal pointer to the hand shape over any
+                        // clickable element (and back off it), per the clickable
+                        // affordance rule — only when the state changes.
+                        let hand =
+                            manager::input::clickable_at(ms, mouse, term_size, Some(&config));
+                        if hand != pointer_is_hand {
+                            pointer_is_hand = hand;
+                            let seq = if hand {
+                                jackin_tui::ansi::POINTER_HAND
+                            } else {
+                                jackin_tui::ansi::POINTER_DEFAULT
+                            };
+                            let mut out = std::io::stdout();
+                            let _ = std::io::Write::write_all(&mut out, seq.as_bytes());
+                            let _ = std::io::Write::flush(&mut out);
+                        }
                     }
                 }
                 _ => {}
@@ -890,7 +1124,10 @@ pub async fn run_console(
         }
     };
 
-    drop(guard);
+    // Tears down only when the console owns the screen standalone. When the
+    // launch flow owns it, this is `None` and teardown waits for that guard so
+    // the console → loading transition stays on one alternate screen.
+    drop(owned_screen);
     result
 }
 
@@ -1184,6 +1421,68 @@ mod quit_confirm_tests {
         assert!(
             matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
             "Failed outcome must surface the error popup regardless of restore policy"
+        );
+    }
+}
+
+#[cfg(test)]
+mod op_cache_invalidation_tests {
+    use super::invalidate_op_cache_for_ref;
+    use crate::console::op_cache::OpCache;
+    use crate::operator_env::{OpField, OpItem, OpRef};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn invalidate_op_cache_for_ref_drops_items_and_fields() {
+        let cache = Rc::new(RefCell::new(OpCache::default()));
+        let account = Some("ACCT");
+        cache.borrow_mut().put_items(
+            account,
+            "v1",
+            vec![OpItem {
+                id: "i1".into(),
+                name: "Claude".into(),
+                subtitle: String::new(),
+            }],
+        );
+        cache.borrow_mut().put_fields(
+            account,
+            "v1",
+            "i1",
+            vec![OpField {
+                id: "f1".into(),
+                label: "token".into(),
+                field_type: "CONCEALED".into(),
+                concealed: true,
+                reference: String::new(),
+            }],
+        );
+
+        invalidate_op_cache_for_ref(
+            &cache,
+            &OpRef {
+                op: "op://v1/i1/f1".into(),
+                path: "Work/Claude/token".into(),
+                account: Some("ACCT".into()),
+            },
+        );
+
+        assert!(cache.borrow().get_items(account, "v1").is_none());
+        assert!(cache.borrow().get_fields(account, "v1", "i1").is_none());
+    }
+
+    #[test]
+    fn invalidate_op_cache_for_ref_ignores_unparseable_ref() {
+        let cache = Rc::new(RefCell::new(OpCache::default()));
+        // A non-op:// literal must be a no-op, not a panic.
+        invalidate_op_cache_for_ref(
+            &cache,
+            &OpRef {
+                op: "not-a-ref".into(),
+                path: String::new(),
+                account: None,
+            },
         );
     }
 }

@@ -5,6 +5,15 @@
 pub trait OpRunner {
     fn read(&self, reference: &str) -> anyhow::Result<String>;
 
+    /// Read pinned to a specific 1Password account. The production
+    /// `OpCli` rebinds itself to `account` before invoking `op` so a
+    /// ref whose vault lives in a non-default account resolves. Default
+    /// ignores `account` and delegates to `read`, keeping mock runners
+    /// trivial.
+    fn read_with_account(&self, reference: &str, _account: Option<&str>) -> anyhow::Result<String> {
+        self.read(reference)
+    }
+
     /// Probed once per launch so a missing `op` surfaces as a single
     /// install-link error rather than one-per-key noise. Default no-op
     /// keeps mock runners trivial.
@@ -41,12 +50,14 @@ where
 {
     match value {
         EnvValue::Plain(s) => dispatch_plain(layer_label, var_name, s, host_env),
-        EnvValue::OpRef(r) => op_runner.read(&r.op).map_err(|e| {
-            anyhow::anyhow!(
-                "{layer_label} env var {var_name:?}: 1Password reference {:?} failed: {e}",
-                r.path
-            )
-        }),
+        EnvValue::OpRef(r) => op_runner
+            .read_with_account(&r.op, r.account.as_deref())
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "{layer_label} env var {var_name:?}: 1Password reference {:?} failed: {e}",
+                    r.path
+                )
+            }),
     }
 }
 
@@ -134,6 +145,52 @@ pub struct OpRef {
     /// `[subtitle]` is embedded only when the item shares its name with
     /// another item in the same vault at write time.
     pub path: String,
+
+    /// 1Password account (id/email) the ref resolves against. `None` =
+    /// op's default/only account. Reads pin to this so multi-account
+    /// vaults resolve. Serialized only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+}
+
+/// Which field an `item_field_set` write targets in an existing item.
+///
+/// Fusing the field id and label into one type makes the two states the
+/// write distinguishes explicit and mutually exclusive: an overwrite
+/// always carries the exact op id (so a same-labeled field in another
+/// section is never clobbered, and a stale id cannot silently fall through
+/// to an append), while an append carries only the label. This is the
+/// invariant the picker and the CLI interactive flow both encode at
+/// construction time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldTarget {
+    /// Overwrite the field with this exact op id. `label` rides along for
+    /// the read-back error message and the ref's display `path`; the id is
+    /// authoritative for locating and matching the field.
+    Existing { id: String, label: String },
+    /// Append a new field with this label — or, if a field with the same
+    /// label already exists, overwrite it in place.
+    New { label: String },
+}
+
+impl FieldTarget {
+    /// The exact op field id to match on, or `None` for the append path.
+    #[must_use]
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            Self::Existing { id, .. } => Some(id),
+            Self::New { .. } => None,
+        }
+    }
+
+    /// The field label — for an append it names the new field; for an
+    /// overwrite it is display/read-back context only.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Existing { label, .. } | Self::New { label } => label,
+        }
+    }
 }
 
 impl EnvValue {
@@ -216,7 +273,17 @@ impl OpReferenceParts {
 #[must_use]
 pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     let path = value.strip_prefix("op://")?;
+    // An op:// reference can carry a `?attribute=…` / `?ssh-format=…` query
+    // suffix (emitted by `resolve_op_uri_to_ref`). It tunes retrieval, not the
+    // vault/item/section/field structure, so strip it before splitting —
+    // otherwise it leaks into the parsed `field`.
+    let path = path.split('?').next().unwrap_or(path);
     let parts: Vec<&str> = path.split('/').collect();
+    // Every segment must be non-empty: `op:////` or `op://v//f` is malformed,
+    // not a reference with blank vault/section/field names.
+    if parts.iter().any(|s| s.is_empty()) {
+        return None;
+    }
     match parts.as_slice() {
         [vault, item, field] => Some(OpReferenceParts {
             vault: (*vault).to_string(),
@@ -259,9 +326,10 @@ pub struct OpCli {
     timeout: std::time::Duration,
     /// Pinned 1P account forwarded as `op --account <id>` on every
     /// invocation. `None` lets `op` fall back to its default-account
-    /// context. Set per-workspace at launch via
-    /// `WorkspaceConfig::op_account` so multi-account operators get
-    /// deterministic resolution regardless of which account they last
+    /// context. Write paths set this so the minted ref records the
+    /// account it was created under (`OpRef::account`); reads rebind to
+    /// the ref's own account via `read_with_account` so multi-account
+    /// vaults resolve regardless of which account was last
     /// `op signin`-ed.
     account: Option<String>,
 }
@@ -284,6 +352,21 @@ impl OpCli {
         Self {
             binary: OP_DEFAULT_BIN.to_string(),
             timeout: std::time::Duration::from_secs(3),
+            account: None,
+        }
+    }
+
+    /// Long-timeout variant for interactive TUI flows where the operator may
+    /// need to complete SSO (Okta, SAML, etc.) in a browser before `op`
+    /// returns. Five minutes covers typical SSO redirect + approval round-trips.
+    #[expect(
+        clippy::duration_suboptimal_units,
+        reason = "std has no from_mins; from_secs is the canonical constructor for a 5-minute timeout"
+    )]
+    pub fn new_interactive() -> Self {
+        Self {
+            binary: OP_DEFAULT_BIN.to_string(),
+            timeout: std::time::Duration::from_secs(300),
             account: None,
         }
     }
@@ -428,6 +511,20 @@ fn op_spawn_error(binary: &str, error: &std::io::Error) -> anyhow::Error {
 }
 
 impl OpRunner for OpCli {
+    fn read_with_account(&self, reference: &str, account: Option<&str>) -> anyhow::Result<String> {
+        // A per-ref account overrides the instance default so a workspace
+        // holding refs from several accounts resolves each against its own.
+        match account {
+            Some(_) => Self {
+                binary: self.binary.clone(),
+                timeout: self.timeout,
+                account: account.map(str::to_string),
+            }
+            .read(reference),
+            None => self.read(reference),
+        }
+    }
+
     fn read(&self, reference: &str) -> anyhow::Result<String> {
         use std::io::Read;
         use std::process::{Command, Stdio};
@@ -781,6 +878,15 @@ fn run_op_json(
     })
 }
 
+/// Append `--account <id>` to an `op` argument vector when an account is
+/// pinned, so every subcommand builder emits the flag identically.
+fn push_account_arg<'a>(args: &mut Vec<&'a str>, account: Option<&'a str>) {
+    if let Some(id) = account {
+        args.push("--account");
+        args.push(id);
+    }
+}
+
 impl OpStructRunner for OpCli {
     fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
         let bytes = run_op_json(
@@ -795,10 +901,7 @@ impl OpStructRunner for OpCli {
 
     fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
         let mut args: Vec<&str> = vec!["vault", "list"];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let raw: Vec<RawOpVault> = serde_json::from_slice(&bytes)
@@ -808,10 +911,7 @@ impl OpStructRunner for OpCli {
 
     fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
         let mut args: Vec<&str> = vec!["item", "list", "--vault", vault_id];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let raw: Vec<RawOpItem> = serde_json::from_slice(&bytes)
@@ -826,10 +926,7 @@ impl OpStructRunner for OpCli {
         account: Option<&str>,
     ) -> anyhow::Result<Vec<OpField>> {
         let mut args: Vec<&str> = vec!["item", "get", item_id, "--vault", vault_id];
-        if let Some(id) = account {
-            args.push("--account");
-            args.push(id);
-        }
+        push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let detail: RawOpItemDetail = serde_json::from_slice(&bytes)
@@ -867,23 +964,54 @@ pub trait OpWriteRunner {
     /// stamp `{workspace, host, created, expires, token_sha256_prefix}`).
     fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef>;
 
+    /// Overwrite (or add) a single field in an existing 1Password item.
+    ///
+    /// For [`FieldTarget::Existing`] the field is located by its exact op
+    /// id, its `value` is overwritten, its type is set to `CONCEALED`, and
+    /// its existing section placement is left untouched — overwriting a
+    /// value must never re-parent the field. For [`FieldTarget::New`] the
+    /// field is located by label (overwrite if present); if no such field
+    /// exists a new `CONCEALED` field is appended, placed in `section` when
+    /// one is given. All other fields and item metadata are preserved.
+    ///
+    /// The secret value reaches `op` via stdin (GET → modify in-process
+    /// → EDIT via stdin), following the same never-on-argv contract as
+    /// `item_create`. The implementation issues two `op` invocations:
+    /// 1. `op item get <id> --vault <vault> --format json` — fetch the
+    ///    full item template.
+    /// 2. `op item edit <id> --vault <vault> --format json` — pipe the
+    ///    modified template back on stdin.
+    fn item_field_set(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        target: &FieldTarget,
+        value: &str,
+        section: Option<&str>,
+    ) -> anyhow::Result<OpRef>;
+
     /// Delete an item entirely. Used by
     /// `jackin workspace claude-token revoke --delete-op-item` and
     /// by the rotate flow to remove the prior 1P item once the new
     /// one is wired and validated.
-    ///
-    /// There is intentionally no `item_edit_field` on this trait:
-    /// the upstream `op` CLI has no documented stdin form for
-    /// `op item edit`, and any argv form would violate the
-    /// stdin-only contract this trait declares. Rotation is
-    /// implemented as `item_create` (new item) + `item_delete`
-    /// (old item once the new one is wired and validated).
     fn item_delete(
         &self,
         item_id: &str,
         vault_id: &str,
         account: Option<&str>,
     ) -> anyhow::Result<()>;
+
+    /// Read an item's `tags` array. Used by the rotate flow to decide
+    /// whether the prior item is jackin-owned (and therefore safe to
+    /// delete) versus an item the operator adopted via `--reuse` /
+    /// interactive edit-in-place (which jackin must not delete, since it
+    /// may hold the operator's other fields).
+    fn item_tags(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        account: Option<&str>,
+    ) -> anyhow::Result<Vec<String>>;
 }
 
 /// Parameters for [`OpWriteRunner::item_create`]. Borrowed-form to
@@ -910,6 +1038,9 @@ pub struct OpItemCreateParams<'a> {
     /// `op` item tags applied at create time so list/search filters
     /// can find every jackin-managed item.
     pub tags: &'a [&'a str],
+    /// Optional 1Password section label. When set, the field is placed
+    /// in a section with this label; when `None`, the field is unsectioned.
+    pub section: Option<&'a str>,
 }
 
 /// JSON shape returned by `op item create --format json`. Only the
@@ -935,13 +1066,109 @@ struct RawCreatedItemField {
     id: String,
     #[serde(default)]
     label: String,
-    /// 1Password emits `reference` for non-default fields. When present
-    /// jackin prefers it verbatim over a synthesised `op://...` URI
-    /// because `reference` is upstream's canonical form (handles
-    /// sections, slashes, whitespace correctly — same reasoning as
-    /// `OpField::reference`).
-    #[serde(default)]
-    reference: String,
+}
+
+/// Slug a 1Password section label into a deterministic section id:
+/// lowercase, collapse each run of non-alphanumeric characters into a
+/// single `_`, and trim leading/trailing `_`. Empty results fall back
+/// to `"section"` so the id is always a valid non-empty identifier.
+fn op_section_id(label: &str) -> String {
+    let mut id = String::with_capacity(label.len());
+    let mut pending_underscore = false;
+    for ch in label.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_underscore && !id.is_empty() {
+                id.push('_');
+            }
+            pending_underscore = false;
+            id.push(ch.to_ascii_lowercase());
+        } else {
+            pending_underscore = true;
+        }
+    }
+    if id.is_empty() {
+        "section".to_string()
+    } else {
+        id
+    }
+}
+
+/// Apply a single concealed-field edit to a parsed `op item get` JSON
+/// value in place, ready to pipe back to `op item edit`.
+///
+/// [`FieldTarget::Existing`] is located by its exact op id, so a same-
+/// labeled field in another section is never clobbered, and the field's
+/// existing `section` is left untouched — overwriting a value must not
+/// re-parent the field (GUI-created section ids are opaque, not the
+/// `label` slug). A stale id (gone since it was picked) bails loudly
+/// rather than appending a stray field. [`FieldTarget::New`] places a new
+/// `CONCEALED` field (overwriting a same-label field if one exists),
+/// in `section` when one is supplied, registering that section if missing.
+fn apply_field_edit(
+    item: &mut serde_json::Value,
+    target: &FieldTarget,
+    value: &str,
+    section: Option<&str>,
+) -> anyhow::Result<()> {
+    let fields = item["fields"]
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
+
+    let label = target.label();
+    let found = match target {
+        FieldTarget::Existing { id, .. } => {
+            fields.iter_mut().find(|f| f["id"].as_str() == Some(id))
+        }
+        FieldTarget::New { label } => fields.iter_mut().find(|f| {
+            f["label"].as_str() == Some(label.as_str()) || f["id"].as_str() == Some(label.as_str())
+        }),
+    };
+
+    let section_id = section.map(op_section_id);
+    let mut appended_in_section = false;
+    match (found, target) {
+        (Some(field), _) => {
+            field["value"] = serde_json::Value::String(value.to_string());
+            field["type"] = serde_json::Value::String("CONCEALED".to_string());
+        }
+        // A specific field id was requested but is gone (renamed/deleted in
+        // 1Password since it was picked, or read from a stale cache). Fail
+        // loudly instead of appending a stray label-named field — the
+        // read-back would then miss the id and error anyway, but only after
+        // mutating the operator's item.
+        (None, FieldTarget::Existing { id, .. }) => anyhow::bail!(
+            "field id {id:?} not found in the item — it may have been renamed or deleted in \
+             1Password since it was picked; re-open the picker to refresh and retry"
+        ),
+        (None, FieldTarget::New { .. }) => {
+            let mut field = serde_json::json!({
+                "id": label,
+                "label": label,
+                "type": "CONCEALED",
+                "value": value,
+            });
+            if let Some(id) = section_id.as_deref() {
+                field["section"] = serde_json::json!({ "id": id });
+                appended_in_section = true;
+            }
+            fields.push(field);
+        }
+    }
+
+    // Register the section only when a new field was actually placed in
+    // it; an overwrite never creates or moves sections.
+    if appended_in_section && let (Some(id), Some(label)) = (section_id.as_deref(), section) {
+        if !item["sections"].is_array() {
+            item["sections"] = serde_json::Value::Array(Vec::new());
+        }
+        let sections = item["sections"]
+            .as_array_mut()
+            .expect("sections coerced to array above");
+        if !sections.iter().any(|s| s["id"].as_str() == Some(id)) {
+            sections.push(serde_json::json!({ "id": id, "label": label }));
+        }
+    }
+    Ok(())
 }
 
 impl OpWriteRunner for OpCli {
@@ -956,18 +1183,24 @@ impl OpWriteRunner for OpCli {
         // is sensitive but consolidating into one stdin payload
         // keeps the argv invocation deterministic and free of
         // operator-supplied content.
-        let template = serde_json::json!({
+        let mut field = serde_json::json!({
+            "id": params.field_label,
+            "label": params.field_label,
+            "type": "CONCEALED",
+            "value": params.value,
+        });
+        let mut template = serde_json::json!({
             "title": params.title,
             "category": params.category,
             "tags": params.tags,
-            "fields": [{
-                "id": params.field_label,
-                "label": params.field_label,
-                "type": "CONCEALED",
-                "value": params.value,
-            }],
             "notesPlain": params.notes_plain.unwrap_or(""),
         });
+        if let Some(label) = params.section {
+            let section_id = op_section_id(label);
+            template["sections"] = serde_json::json!([{ "id": section_id, "label": label }]);
+            field["section"] = serde_json::json!({ "id": section_id });
+        }
+        template["fields"] = serde_json::json!([field]);
         let body = serde_json::to_vec(&template)
             .map_err(|e| anyhow::anyhow!("failed to encode op item template: {e}"))?;
 
@@ -1066,25 +1299,24 @@ impl OpWriteRunner for OpCli {
                 )
             })?;
 
-        // Prefer `field.reference` (1P's canonical emission) when
-        // present; otherwise synthesise the canonical UUID URI.
-        let op_uri = if field.reference.is_empty() {
-            format!("op://{}/{}/{}", raw.vault.id, raw.id, field.id)
-        } else {
-            field.reference.clone()
-        };
+        // Always use UUID-based op:// so the reference is stable even if
+        // the vault, item, or field is renamed. `path` carries the
+        // human-readable names for display only — it must have the same
+        // three-segment structure as the `op` URI.
+        let op_uri = format!("op://{}/{}/{}", raw.vault.id, raw.id, field.id);
 
-        // Snapshot path for editor / display: use the human-visible
-        // names that came back from `op` (vault name, item title,
-        // field label).
         let vault_name = if raw.vault.name.is_empty() {
-            raw.vault.id.clone()
+            raw.vault.id.as_str()
         } else {
-            raw.vault.name
+            raw.vault.name.as_str()
         };
         let path = format!("{}/{}/{}", vault_name, raw.title, params.field_label);
 
-        Ok(OpRef { op: op_uri, path })
+        Ok(OpRef {
+            op: op_uri,
+            path,
+            account: self.account.clone(),
+        })
     }
 
     fn item_delete(
@@ -1101,14 +1333,195 @@ impl OpWriteRunner for OpCli {
         // sets the account on the call itself.
         let effective_account = account.or(self.account.as_deref());
         let mut args: Vec<&str> = Vec::new();
-        if let Some(acc) = effective_account {
-            args.push("--account");
-            args.push(acc);
-        }
+        push_account_arg(&mut args, effective_account);
         args.extend_from_slice(&["item", "delete", item_id, "--vault", vault_id]);
         let _ = run_op_with_timeout(&self.binary, &args, self.timeout)?;
         Ok(())
     }
+
+    fn item_tags(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        account: Option<&str>,
+    ) -> anyhow::Result<Vec<String>> {
+        let effective_account = account.or(self.account.as_deref());
+        let mut args: Vec<&str> = Vec::new();
+        push_account_arg(&mut args, effective_account);
+        args.extend_from_slice(&[
+            "item", "get", item_id, "--vault", vault_id, "--format", "json",
+        ]);
+        let raw = run_op_with_timeout(&self.binary, &args, self.timeout)
+            .map_err(|e| anyhow::anyhow!("`op item get` (tags) failed: {e}"))?;
+        let item: serde_json::Value = serde_json::from_slice(&raw)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
+        let tags = item["tags"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|t| t.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(tags)
+    }
+
+    fn item_field_set(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        target: &FieldTarget,
+        value: &str,
+        section: Option<&str>,
+    ) -> anyhow::Result<OpRef> {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        // Step 1: fetch the full item JSON so we can modify one field
+        // while preserving all other fields and metadata.
+        let mut get_args: Vec<&str> = Vec::new();
+        push_account_arg(&mut get_args, self.account.as_deref());
+        get_args.extend_from_slice(&[
+            "item", "get", item_id, "--vault", vault_id, "--format", "json",
+        ]);
+        let raw_bytes = run_op_with_timeout(&self.binary, &get_args, self.timeout)
+            .map_err(|e| anyhow::anyhow!("`op item get` failed: {e}"))?;
+
+        // Step 2: parse as a generic JSON value so we can manipulate the
+        // `fields` array without discarding unrecognised properties.
+        let mut item: serde_json::Value = serde_json::from_slice(&raw_bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
+
+        apply_field_edit(&mut item, target, value, section)?;
+
+        let body = serde_json::to_vec(&item)
+            .map_err(|e| anyhow::anyhow!("failed to re-encode item JSON: {e}"))?;
+
+        // Step 3: pipe the modified item JSON to `op item edit <id>`.
+        // `op item edit` takes the item as a positional and reads a JSON
+        // template from stdin (the documented `cat updated.json | op item
+        // edit <id>` form), so the secret value rides in stdin, never on
+        // argv. The item id must be the positional — `-` would be parsed
+        // as the item name, not a stdin sentinel (that is the create-only
+        // convention). `--template` is mutually exclusive with piped
+        // input, so it is intentionally not passed.
+        let mut child = spawn_op_with_retry(|| {
+            use std::process::Command;
+            let mut command = Command::new(&self.binary);
+            if let Some(acc) = self.account.as_deref() {
+                command.args(["--account", acc]);
+            }
+            command.args([
+                "item", "edit", item_id, "--vault", vault_id, "--format", "json",
+            ]);
+            command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            command
+        })
+        .map_err(|e| op_spawn_error(&self.binary, &e))?;
+
+        if let Some(mut stdin) = child.stdin.take()
+            && let Err(e) = stdin.write_all(&body)
+        {
+            drop(stdin);
+            let captured = child.wait_with_output().ok();
+            let stderr_msg = captured
+                .as_ref()
+                .map(|o| String::from_utf8_lossy(&o.stderr).into_owned())
+                .unwrap_or_default();
+            anyhow::bail!(
+                "failed to write op item template to stdin: {e} (op stderr: {})",
+                truncate_stderr(&stderr_msg).trim()
+            );
+        }
+
+        let out = child
+            .wait_with_output()
+            .map_err(|e| anyhow::anyhow!("1Password CLI wait failed: {e}"))?;
+
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            anyhow::bail!(
+                "`op item edit` exited with status {}: {}",
+                format_exit_status(out.status),
+                truncate_stderr(&stderr).trim()
+            );
+        }
+
+        // Step 4: parse the returned item JSON and build the ref.
+        let updated: serde_json::Value = serde_json::from_slice(&out.stdout)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item edit` JSON: {e}"))?;
+
+        resolve_edited_field_ref(&updated, target, vault_id, item_id, self.account.clone())
+    }
+}
+
+/// Locate the edited field in the JSON `op item edit` returns and build the
+/// UUID-form `OpRef`. [`FieldTarget::Existing`] matches by the exact id
+/// (stable across the edit); [`FieldTarget::New`] matches by label (case-
+/// insensitive), since `op` assigns the new field's id. The `op://` ref is
+/// built from UUIDs (vault/item/field ids) so it survives renames; `path`
+/// carries the human-readable names for display, same three-segment shape.
+fn resolve_edited_field_ref(
+    updated: &serde_json::Value,
+    target: &FieldTarget,
+    vault_id: &str,
+    item_id: &str,
+    account: Option<String>,
+) -> anyhow::Result<OpRef> {
+    let label = target.label();
+    let updated_fields = updated["fields"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("updated item has no `fields` array"))?;
+
+    let field = updated_fields
+        .iter()
+        .find(|f| match target {
+            FieldTarget::Existing { id, .. } => f["id"].as_str() == Some(id),
+            FieldTarget::New { label } => {
+                f["label"]
+                    .as_str()
+                    .is_some_and(|l| l.eq_ignore_ascii_case(label))
+                    || f["id"].as_str() == Some(label)
+            }
+        })
+        .ok_or_else(|| {
+            let labels: Vec<&str> = updated_fields
+                .iter()
+                .filter_map(|f| f["label"].as_str())
+                .collect();
+            anyhow::anyhow!(
+                "`op item edit` returned no field matching {target:?}; \
+                 observed labels: {labels:?}"
+            )
+        })?;
+
+    let vid = updated["vault"]["id"].as_str().unwrap_or(vault_id);
+    let iid = updated["id"].as_str().unwrap_or(item_id);
+    let fid = field["id"].as_str().unwrap_or(label);
+    let op_uri = format!("op://{vid}/{iid}/{fid}");
+
+    let vault_name = updated["vault"]["name"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(vault_id);
+    let item_title = updated["title"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(item_id);
+    let field_label_display = field["label"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(label);
+    let path = format!("{vault_name}/{item_title}/{field_label_display}");
+
+    Ok(OpRef {
+        op: op_uri,
+        path,
+        account,
+    })
 }
 
 /// Source layer of an env value, attached to error messages and
@@ -1388,6 +1801,7 @@ pub fn resolve_op_uri_to_ref(
     Ok(OpRef {
         op: op_uri,
         path: display_path,
+        account: account.map(str::to_string),
     })
 }
 
@@ -1463,14 +1877,9 @@ pub fn resolve_operator_env(
     role_selector: Option<&str>,
     workspace_name: Option<&str>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
-    // Pin `op` to the workspace's chosen 1Password account when one is
-    // configured (`[workspaces.X].op_account`). Multi-account operators
-    // rely on this so resolution doesn't silently use whichever account
-    // they last `op signin`-ed.
-    let op_account = workspace_name
-        .and_then(|ws| config.workspaces.get(ws))
-        .and_then(|ws| ws.op_account.clone());
-    let runner = OpCli::new().with_account(op_account);
+    // Each `op://` ref pins its own account at read time
+    // (`OpRef::account`), so the runner carries no instance-level account.
+    let runner = OpCli::new();
     resolve_operator_env_with(config, role_selector, workspace_name, &runner, |name| {
         std::env::var(name)
     })
@@ -1534,7 +1943,6 @@ pub fn print_launch_diagnostic(
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) {
-    use std::io::Write;
     let mut out = Vec::new();
     write_launch_diagnostic(
         &mut out,
@@ -1545,7 +1953,21 @@ pub fn print_launch_diagnostic(
         debug,
     )
     .expect("writing to Vec<u8> is infallible");
-    let _ = std::io::stderr().write_all(&out);
+    emit_launch_diagnostic(
+        std::str::from_utf8(&out).expect("diagnostic formatter emits UTF-8"),
+        debug,
+        &mut std::io::stderr(),
+    );
+}
+
+fn emit_launch_diagnostic<W: std::io::Write>(rendered: &str, debug: bool, stderr: &mut W) {
+    if let Some(run) = crate::diagnostics::active_run() {
+        run.compact("operator_env", rendered.trim_end());
+    }
+    if debug || crate::tui::rich_surface_active() {
+        return;
+    }
+    let _ = stderr.write_all(rendered.as_bytes());
 }
 
 #[cfg(test)]
@@ -1663,6 +2085,207 @@ fn classify_env_value(value: &EnvValue) -> String {
 mod tests {
     use super::*;
 
+    static LAUNCH_DIAGNOSTIC_OUTPUT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn op_section_id_slugifies_labels() {
+        assert_eq!(op_section_id("My Creds!"), "my_creds");
+        assert_eq!(op_section_id("Auth"), "auth");
+        assert_eq!(op_section_id("a---b__c"), "a_b_c");
+        assert_eq!(op_section_id("  leading"), "leading");
+        assert_eq!(op_section_id("trailing  "), "trailing");
+        assert_eq!(op_section_id("  "), "section");
+        assert_eq!(op_section_id("!!"), "section");
+        assert_eq!(op_section_id(""), "section");
+    }
+
+    #[test]
+    fn apply_field_edit_overwrite_by_id_preserves_section() {
+        // Two fields share the label "token": one in a GUI-created section
+        // with an opaque id, one in root. Editing by the sectioned field's
+        // real id must overwrite THAT field and leave its section intact.
+        let mut item = serde_json::json!({
+            "fields": [
+                { "id": "f_sectioned", "label": "token", "type": "CONCEALED",
+                  "value": "old", "section": { "id": "Section_opaque99" } },
+                { "id": "f_root", "label": "token", "type": "CONCEALED", "value": "root" },
+            ],
+            "sections": [ { "id": "Section_opaque99", "label": "Auth" } ],
+        });
+
+        apply_field_edit(
+            &mut item,
+            &FieldTarget::Existing {
+                id: "f_sectioned".into(),
+                label: "token".into(),
+            },
+            "new",
+            Some("Auth"),
+        )
+        .unwrap();
+
+        let fields = item["fields"].as_array().unwrap();
+        // Sectioned field overwritten, section id untouched (not re-slugged).
+        assert_eq!(fields[0]["value"], "new");
+        assert_eq!(fields[0]["section"]["id"], "Section_opaque99");
+        // The same-labeled root field is left alone.
+        assert_eq!(fields[1]["value"], "root");
+        // No duplicate section created.
+        assert_eq!(item["sections"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn apply_field_edit_stale_field_id_bails_without_mutating() {
+        // The picker resolved a field id that no longer exists (renamed or
+        // deleted out-of-band). Overwriting by id must error rather than
+        // append a stray label-named field that the read-back would then miss.
+        let mut item = serde_json::json!({
+            "id": "i1",
+            "fields": [
+                { "id": "f_live", "label": "token", "type": "CONCEALED", "value": "old" },
+            ],
+        });
+        let err = apply_field_edit(
+            &mut item,
+            &FieldTarget::Existing {
+                id: "f_gone".into(),
+                label: "token".into(),
+            },
+            "new",
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "stale field id must bail: {err}"
+        );
+        // No stray field appended; the live field is untouched.
+        let fields = item["fields"].as_array().unwrap();
+        assert_eq!(fields.len(), 1, "no stray field appended");
+        assert_eq!(fields[0]["value"], "old", "live field left unmodified");
+    }
+
+    #[test]
+    fn resolve_edited_field_ref_overwrite_matches_exact_id_not_label() {
+        // Two fields share label "token"; the overwrite resolves the one
+        // with the requested id, building the ref from its UUID.
+        let updated = serde_json::json!({
+            "id": "i1",
+            "title": "Claude",
+            "vault": { "id": "v1", "name": "Personal" },
+            "fields": [
+                { "id": "f_other", "label": "token" },
+                { "id": "f_target", "label": "token" },
+            ],
+        });
+        let r = resolve_edited_field_ref(
+            &updated,
+            &FieldTarget::Existing {
+                id: "f_target".into(),
+                label: "token".into(),
+            },
+            "v1",
+            "i1",
+            None,
+        )
+        .unwrap();
+        assert_eq!(r.op, "op://v1/i1/f_target");
+        assert_eq!(r.path, "Personal/Claude/token");
+    }
+
+    #[test]
+    fn resolve_edited_field_ref_append_falls_back_to_label() {
+        let updated = serde_json::json!({
+            "id": "i1",
+            "title": "Claude",
+            "vault": { "id": "v1", "name": "Personal" },
+            "fields": [ { "id": "op_assigned_id", "label": "OAuth-Token" } ],
+        });
+        // Append path (field_id None) matches label case-insensitively.
+        let r = resolve_edited_field_ref(
+            &updated,
+            &FieldTarget::New {
+                label: "oauth-token".into(),
+            },
+            "v1",
+            "i1",
+            None,
+        )
+        .unwrap();
+        assert_eq!(r.op, "op://v1/i1/op_assigned_id");
+    }
+
+    #[test]
+    fn resolve_edited_field_ref_missing_id_errors() {
+        let updated = serde_json::json!({
+            "id": "i1",
+            "fields": [ { "id": "f_live", "label": "token" } ],
+        });
+        let err = resolve_edited_field_ref(
+            &updated,
+            &FieldTarget::Existing {
+                id: "f_gone".into(),
+                label: "token".into(),
+            },
+            "v1",
+            "i1",
+            None,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("no field matching"), "{err}");
+    }
+
+    #[test]
+    fn apply_field_edit_append_places_new_field_in_section() {
+        let mut item = serde_json::json!({ "fields": [] });
+        apply_field_edit(
+            &mut item,
+            &FieldTarget::New {
+                label: "oauth-token".into(),
+            },
+            "secret",
+            Some("Creds"),
+        )
+        .unwrap();
+
+        let field = &item["fields"].as_array().unwrap()[0];
+        assert_eq!(field["label"], "oauth-token");
+        assert_eq!(field["value"], "secret");
+        assert_eq!(field["type"], "CONCEALED");
+        assert_eq!(field["section"]["id"], "creds");
+        // The section is registered on the item.
+        let sections = item["sections"].as_array().unwrap();
+        assert_eq!(sections[0]["id"], "creds");
+        assert_eq!(sections[0]["label"], "Creds");
+    }
+
+    #[test]
+    fn apply_field_edit_overwrite_by_label_does_not_re_section() {
+        // Append-by-label that collides with an existing sectioned field
+        // overwrites it without re-parenting (section param is ignored on
+        // overwrite).
+        let mut item = serde_json::json!({
+            "fields": [
+                { "id": "f1", "label": "token", "type": "CONCEALED",
+                  "value": "old", "section": { "id": "Section_real" } },
+            ],
+        });
+        apply_field_edit(
+            &mut item,
+            &FieldTarget::New {
+                label: "token".into(),
+            },
+            "new",
+            Some("Different"),
+        )
+        .unwrap();
+        let field = &item["fields"].as_array().unwrap()[0];
+        assert_eq!(field["value"], "new");
+        assert_eq!(field["section"]["id"], "Section_real");
+        // No "different" section was registered (overwrite path).
+        assert!(item["sections"].as_array().is_none_or(Vec::is_empty));
+    }
+
     #[test]
     fn parse_op_reference_three_segments() {
         let parts = parse_op_reference("op://Vault/Item/field").unwrap();
@@ -1682,11 +2305,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_op_reference_strips_query_suffix() {
+        // `resolve_op_uri_to_ref` can append a `?attribute=…` / `?ssh-format=…`
+        // suffix to the final segment; it must not leak into the parsed field.
+        let parts = parse_op_reference("op://Vault/Item/token?attribute=otp").unwrap();
+        assert_eq!(parts.field, "token");
+        assert_eq!(parts.section, None);
+
+        let parts = parse_op_reference("op://Vault/Item/Auth/key?ssh-format=openssh").unwrap();
+        assert_eq!(parts.section, Some("Auth".to_string()));
+        assert_eq!(parts.field, "key");
+    }
+
+    #[test]
     fn parse_op_reference_invalid_segment_count() {
         assert!(parse_op_reference("plain").is_none());
         assert!(parse_op_reference("op://only/two").is_none());
         assert!(parse_op_reference("op://a/b/c/d/e").is_none());
         assert!(parse_op_reference("op://").is_none());
+        // Empty segments are malformed, not blank-named references.
+        assert!(parse_op_reference("op:////").is_none());
+        assert!(parse_op_reference("op://vault//field").is_none());
     }
 
     /// `OpReferenceParts::manual_delete_hint` is the canonical CLI
@@ -1745,6 +2384,7 @@ mod tests {
         let v = EnvValue::OpRef(OpRef {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude/auth".into(),
+            account: None,
         });
         assert_eq!(v.as_display_str(), "Private/Claude/auth");
     }
@@ -1819,6 +2459,7 @@ mod tests {
         let v = EnvValue::OpRef(OpRef {
             op: "op://abc/def/fld".into(),
             path: "Vault/Item/Field".into(),
+            account: None,
         });
         let r = resolve_env_value("test", "X", &v, &runner, |_| {
             Err(std::env::VarError::NotPresent)
@@ -1838,6 +2479,7 @@ mod tests {
         let v = EnvValue::OpRef(OpRef {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude/security/auth token".into(),
+            account: None,
         });
         let err = resolve_env_value("workspace foo", "TOKEN", &v, &runner, |_| {
             Err(std::env::VarError::NotPresent)
@@ -2414,6 +3056,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field-a".to_string(),
                 path: "Personal/ItemA/field-a".to_string(),
+                account: None,
             }),
         );
         cfg.env.insert(
@@ -2421,6 +3064,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field-b".to_string(),
                 path: "Personal/ItemA/field-b".to_string(),
+                account: None,
             }),
         );
         let runner = ProbeCountingRunner {
@@ -2488,6 +3132,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field-a".to_string(),
                 path: "Personal/ItemA/field-a".to_string(),
+                account: None,
             }),
         );
         cfg.env.insert(
@@ -2495,6 +3140,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field-b".to_string(),
                 path: "Personal/ItemA/field-b".to_string(),
+                account: None,
             }),
         );
         let err = resolve_operator_env_with(&cfg, None, None, &FailingProbeRunner, |_| {
@@ -2516,6 +3162,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/token".to_string(),
                 path: "Personal/BrokenItem/token".to_string(),
+                account: None,
             }),
         );
 
@@ -2568,6 +3215,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field".to_string(),
                 path: "Personal/item/field".to_string(),
+                account: None,
             }),
         );
         let resolved: std::collections::BTreeMap<String, String> = [
@@ -2605,6 +3253,7 @@ mod tests {
             EnvValue::OpRef(OpRef {
                 op: "op://abc-vault/abc-item/field".to_string(),
                 path: "Personal/item/field".to_string(),
+                account: None,
             }),
         );
         let resolved: std::collections::BTreeMap<String, String> = [
@@ -2625,6 +3274,62 @@ mod tests {
         assert!(rendered.contains("literal"), "{rendered}");
         assert!(!rendered.contains("super-secret"), "{rendered}");
         assert!(!rendered.contains("op-value-secret"), "{rendered}");
+    }
+
+    #[test]
+    fn launch_diagnostic_routes_to_run_file_while_rich_surface_is_active() {
+        let _lock = LAUNCH_DIAGNOSTIC_OUTPUT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::tui::set_rich_surface_active(false);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+
+        crate::tui::set_rich_surface_active(true);
+        let mut stderr = Vec::new();
+        emit_launch_diagnostic(
+            "[jackin] operator env: 1 resolved (1 op://, 0 host ref, 0 literal)\n",
+            false,
+            &mut stderr,
+        );
+        crate::tui::set_rich_surface_active(false);
+
+        assert!(
+            stderr.is_empty(),
+            "rich launch surface must not receive stderr diagnostics"
+        );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+        assert!(jsonl.contains("1 resolved"), "{jsonl}");
+    }
+
+    #[test]
+    fn launch_diagnostic_debug_mode_routes_to_run_file_not_stderr() {
+        let _lock = LAUNCH_DIAGNOSTIC_OUTPUT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::tui::set_rich_surface_active(false);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+        let _active = run.activate();
+
+        let mut stderr = Vec::new();
+        emit_launch_diagnostic(
+            "[jackin] operator env:\n  TOKEN  op://...  (global)\n",
+            true,
+            &mut stderr,
+        );
+
+        assert!(
+            stderr.is_empty(),
+            "debug launch diagnostics belong in the run file"
+        );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+        assert!(jsonl.contains("TOKEN"), "{jsonl}");
     }
 
     // ---- OpStructRunner tests --------------------------------------------
@@ -2921,6 +3626,7 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
             Some(&EnvValue::OpRef(OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "Vault/Item/Field".into(),
+                account: None,
             }))
         );
 

@@ -522,9 +522,12 @@ async fn check_dirty_tree(
         return Ok(());
     }
     if ctx.force {
-        eprintln!(
-            "[jackin] proceeding with dirty host tree at `{}` (--force)",
-            mount.src
+        crate::tui::emit_compact_line(
+            "isolation",
+            &format!(
+                "[jackin] proceeding with dirty host tree at `{}` (--force)",
+                mount.src
+            ),
         );
         return Ok(());
     }

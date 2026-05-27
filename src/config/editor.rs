@@ -137,6 +137,12 @@ impl ConfigEditor {
                 let mut tbl = InlineTable::new();
                 tbl.insert("op", Value::from(r.op));
                 tbl.insert("path", Value::from(r.path));
+                // Pin the resolving account so multi-account vaults read
+                // back correctly; serialized only when set (matches the
+                // `OpRef` serde skip-when-None contract).
+                if let Some(account) = r.account {
+                    tbl.insert("account", Value::from(account));
+                }
                 Item::Value(Value::InlineTable(tbl))
             }
         };
@@ -338,25 +344,6 @@ impl ConfigEditor {
             table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
         } else {
             clear_auth_forward_field(doc, &agent_path);
-        }
-    }
-
-    /// Write or clear `op_account` inside the workspace file.
-    ///
-    /// Pins every `op` invocation made on behalf of the workspace to
-    /// the named 1P account. Operator can pass UUID, label, or email
-    /// — `op` accepts all three.
-    pub fn set_workspace_op_account(&mut self, workspace: &str, account: Option<&str>) {
-        use toml_edit::value as toml_value;
-        let doc = self.workspace_doc_mut(workspace);
-        let table = table_path_mut(doc, &[]);
-        match account {
-            Some(acc) => {
-                table.insert("op_account", toml_value(acc));
-            }
-            None => {
-                table.remove("op_account");
-            }
         }
     }
 
@@ -1976,6 +1963,7 @@ workdir = "/b"
                 EnvValue::OpRef(OpRef {
                     op: "op://abc/def/fld".into(),
                     path: "Private/Claude/security/auth token".into(),
+                    account: None,
                 }),
             )
             .unwrap();
@@ -1986,6 +1974,40 @@ workdir = "/b"
         assert!(
             serialized.contains(r#"CLAUDE_CODE_OAUTH_TOKEN = { op = "op://abc/def/fld", path = "Private/Claude/security/auth token" }"#),
             "expected inline-table emit, got:\n{serialized}"
+        );
+    }
+
+    #[test]
+    fn set_env_var_persists_op_ref_account() {
+        use crate::operator_env::{EnvValue, OpRef};
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[env]\n").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor
+            .set_env_var(
+                &EnvScope::Global,
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                EnvValue::OpRef(OpRef {
+                    op: "op://abc/def/fld".into(),
+                    path: "Work/Claude/auth token".into(),
+                    account: Some("WORKACCT".into()),
+                }),
+            )
+            .unwrap();
+        editor.save().unwrap();
+
+        // The account must land on the inline table; without it a
+        // non-default-account ref resolves against op's default account.
+        let saved = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            saved.contains(
+                r#"CLAUDE_CODE_OAUTH_TOKEN = { op = "op://abc/def/fld", path = "Work/Claude/auth token", account = "WORKACCT" }"#
+            ),
+            "expected account key in inline table, got:\n{saved}"
         );
     }
 

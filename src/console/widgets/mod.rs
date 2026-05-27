@@ -8,7 +8,11 @@
 //! the manager (PR 2) and the Secrets tab (PR 3).
 
 use jackin_tui as tui_palette;
-use ratatui::style::Color;
+use ratatui::Frame;
+use ratatui::layout::{Alignment, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 
 /// Canonical phosphor-green palette used across every TUI surface.
 /// Sourced from the shared `jackin-tui` crate so the console TUI and
@@ -34,6 +38,111 @@ pub(crate) const WHITE: Color = Color::Rgb(
     tui_palette::WHITE.b,
 );
 
+/// Tab-cell backgrounds, shared with the in-container multiplexer status
+/// bar via `jackin-tui` so the console tab strips (workspace editor,
+/// settings) and the multiplexer render identical tab chrome.
+pub(crate) const TAB_BG_INACTIVE: Color = Color::Rgb(
+    tui_palette::TAB_BG_INACTIVE.r,
+    tui_palette::TAB_BG_INACTIVE.g,
+    tui_palette::TAB_BG_INACTIVE.b,
+);
+pub(crate) const TAB_BG_ACTIVE: Color = Color::Rgb(
+    tui_palette::TAB_BG_ACTIVE.r,
+    tui_palette::TAB_BG_ACTIVE.g,
+    tui_palette::TAB_BG_ACTIVE.b,
+);
+pub(crate) const TAB_BG_INACTIVE_HOVER: Color = Color::Rgb(
+    tui_palette::TAB_BG_INACTIVE_HOVER.r,
+    tui_palette::TAB_BG_INACTIVE_HOVER.g,
+    tui_palette::TAB_BG_INACTIVE_HOVER.b,
+);
+pub(crate) const TAB_BG_ACTIVE_HOVER: Color = Color::Rgb(
+    tui_palette::TAB_BG_ACTIVE_HOVER.r,
+    tui_palette::TAB_BG_ACTIVE_HOVER.g,
+    tui_palette::TAB_BG_ACTIVE_HOVER.b,
+);
+
+/// Clickable-id foreground on the white bottom status bar, shared with the
+/// in-container multiplexer via `jackin-tui`.
+pub(crate) const LINK_BLUE: Color = Color::Rgb(
+    tui_palette::LINK_BLUE.r,
+    tui_palette::LINK_BLUE.g,
+    tui_palette::LINK_BLUE.b,
+);
+
+/// Burnt orange marking debug-mode chrome (the run-id chip), shared via
+/// `jackin-tui`.
+pub(crate) const DEBUG_AMBER: Color = Color::Rgb(
+    tui_palette::DEBUG_AMBER.r,
+    tui_palette::DEBUG_AMBER.g,
+    tui_palette::DEBUG_AMBER.b,
+);
+
+/// Error/danger accent (failed stages, error-popup borders, invalid input),
+/// shared via `jackin-tui`.
+pub(crate) const DANGER_RED: Color = Color::Rgb(
+    tui_palette::DANGER_RED.r,
+    tui_palette::DANGER_RED.g,
+    tui_palette::DANGER_RED.b,
+);
+
+/// The ` jackin' ` brand pill followed by ` · <label>`. Shared by every
+/// top-level TUI screen (workspace list, settings, editor, launch
+/// progress) so the logo is byte-identical and never shifts position or
+/// colour as the operator transitions between screens. The pill matches
+/// the in-container multiplexer status-bar brand pill (`statusbar.rs`).
+pub(crate) fn brand_header_line(label: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            " jackin' ",
+            Style::default()
+                .bg(PHOSPHOR_GREEN)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
+        Span::styled(label.to_string(), Style::default().fg(PHOSPHOR_DIM)),
+    ])
+}
+
+/// Render [`brand_header_line`] left-aligned at the top of `area`. `area`
+/// is normally two rows tall (brand row + one spacer) so the body below
+/// sits one clear line under the logo.
+pub(crate) fn render_brand_header(frame: &mut Frame, area: Rect, label: &str) {
+    frame.render_widget(
+        Paragraph::new(brand_header_line(label)).alignment(Alignment::Left),
+        area,
+    );
+}
+
+/// The canonical `Filter: ░░░█` input row drawn directly under a list modal's
+/// top border: dotted `░` placeholders when empty, the typed text plus a
+/// blinking `█` cursor otherwise. Shared by every filterable list modal (the
+/// op-picker drill-down, the generic `select_list`) so the row is identical.
+pub(crate) fn render_filter_row(frame: &mut Frame, area: Rect, filter: &str) {
+    let line = if filter.is_empty() {
+        Line::from(vec![
+            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled(filter.to_string(), Style::default().fg(WHITE)),
+            Span::styled(
+                "\u{2588}",
+                Style::default()
+                    .fg(WHITE)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
+        ])
+    };
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+/// Braille spinner animation shared across all modal loading panels.
+pub(crate) const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 pub mod agent_choice;
 pub mod auth_panel;
 pub mod confirm;
@@ -41,6 +150,7 @@ pub mod confirm_save;
 pub mod error_popup;
 pub mod file_browser;
 pub mod github_picker;
+pub mod hints;
 pub mod mount_dst_choice;
 pub mod op_picker;
 pub mod panel_rain;
@@ -48,7 +158,9 @@ pub mod role_picker;
 pub mod save_discard;
 pub mod scope_picker;
 pub mod scrollable;
+pub mod select_list;
 pub mod source_picker;
+pub mod status_bar;
 pub mod status_popup;
 pub mod text_input;
 pub mod workdir_pick;
@@ -234,6 +346,15 @@ mod consistency_tests {
         (buf, area)
     }
 
+    fn render_op_picker() -> (Buffer, Rect) {
+        use super::op_picker::OpPickerState;
+        use super::op_picker::render::render;
+        let area = Rect::new(0, 0, 70, 20);
+        let state = OpPickerState::new();
+        let buf = draw(area.width, area.height, |f| render(f, area, &state));
+        (buf, area)
+    }
+
     fn render_role_picker() -> (Buffer, Rect) {
         use super::role_picker::{RolePickerState, render};
         use crate::selector::RoleSelector;
@@ -275,6 +396,7 @@ mod consistency_tests {
             ("SaveDiscardCancel", render_save_discard()),
             ("Confirm", render_confirm()),
             ("MountDstChoice", render_mount_dst()),
+            ("OpPicker", render_op_picker()),
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),
@@ -301,6 +423,7 @@ mod consistency_tests {
             ("SaveDiscardCancel", render_save_discard()),
             ("Confirm", render_confirm()),
             ("MountDstChoice", render_mount_dst()),
+            ("OpPicker", render_op_picker()),
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),

@@ -50,6 +50,16 @@ pub fn load_split_config(
     paths: &JackinPaths,
     contents_opt: Option<String>,
 ) -> anyhow::Result<AppConfig> {
+    // Capture legacy per-workspace `op_account` from the raw TOML before
+    // the typed parse below drops it: `WorkspaceConfig` no longer has that
+    // field (it moved onto each op ref in v1alpha5), so a typed round-trip
+    // would silently lose it for operators still on an embedded
+    // `[workspaces.*]` config. See `migrate_legacy_workspaces`.
+    let legacy_op_accounts = match contents_opt.as_deref() {
+        Some(c) => legacy_workspace_op_accounts(c)?,
+        None => BTreeMap::new(),
+    };
+
     let mut config: AppConfig = match contents_opt {
         Some(c) => toml::from_str(&c)?,
         None => AppConfig::default(),
@@ -57,7 +67,7 @@ pub fn load_split_config(
 
     let legacy_workspaces = std::mem::take(&mut config.workspaces);
     if !legacy_workspaces.is_empty() {
-        migrate_legacy_workspaces(paths, &config, &legacy_workspaces)?;
+        migrate_legacy_workspaces(paths, &config, &legacy_workspaces, &legacy_op_accounts)?;
         eprintln!(
             "jackin migrated saved workspaces into {}",
             paths.workspaces_dir.display()
@@ -106,10 +116,43 @@ pub fn load_workspace_files(
     Ok(workspaces)
 }
 
+/// Extract `[workspaces.<name>].op_account` string values from a raw
+/// legacy `config.toml`. Absent `op_account` is skipped (the caller treats
+/// a missing entry as "no account to preserve"), but a present-but-
+/// non-string value bails loudly — it is operator data the v1alpha5
+/// migration (`migrate_workspace_op_account_to_refs`) refuses to silently
+/// drop, and this legacy-split path must honour the same contract. A TOML
+/// parse error is not handled here: the same `contents` is parsed with `?`
+/// upstream in the `load_or_init` flow before this runs.
+fn legacy_workspace_op_accounts(contents: &str) -> anyhow::Result<BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    let Ok(doc) = contents.parse::<DocumentMut>() else {
+        return Ok(out);
+    };
+    let Some(workspaces) = doc.get("workspaces").and_then(|w| w.as_table()) else {
+        return Ok(out);
+    };
+    for (name, ws) in workspaces {
+        let Some(item) = ws.get("op_account") else {
+            continue;
+        };
+        match item.as_str() {
+            Some(acct) => {
+                out.insert(name.to_string(), acct.to_string());
+            }
+            None => {
+                anyhow::bail!("workspace {name:?}: `op_account` must be a string, found {item:?}")
+            }
+        }
+    }
+    Ok(out)
+}
+
 fn migrate_legacy_workspaces(
     paths: &JackinPaths,
     global_config: &AppConfig,
     workspaces: &BTreeMap<String, crate::workspace::WorkspaceConfig>,
+    legacy_op_accounts: &BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
     // Crash-recovery ordering: the global rewrite is the commit point. If
     // we crash before it, the legacy `[workspaces.*]` tables remain
@@ -124,13 +167,38 @@ fn migrate_legacy_workspaces(
     for (name, workspace) in workspaces {
         validate_workspace_file_stem(name)?;
         let path = workspace_file_path(paths, name);
+        let contents = toml::to_string_pretty(workspace)
+            .with_context(|| format!("serializing workspace {name:?}"))?;
+        let contents = match legacy_op_accounts.get(name) {
+            // Re-inject the legacy account and run the same v1alpha5
+            // transform the version chain would have applied, so the
+            // account lands on each op ref instead of being lost.
+            Some(acct) => {
+                let mut doc: DocumentMut = contents
+                    .parse()
+                    .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
+                doc["op_account"] = toml_edit::value(acct.as_str());
+                crate::config::migrations::migrate_workspace_op_account_to_refs(&mut doc)
+                    .with_context(|| {
+                        format!("stamping legacy op_account onto refs for workspace {name:?}")
+                    })?;
+                doc.to_string()
+            }
+            None => contents,
+        };
         if path.exists() {
-            let existing: crate::workspace::WorkspaceConfig = toml::from_str(
-                &std::fs::read_to_string(&path)
-                    .with_context(|| format!("reading existing workspace {}", path.display()))?,
-            )
-            .with_context(|| format!("parsing existing workspace {}", path.display()))?;
-            if &existing == workspace {
+            // Idempotent re-entry: compare against the bytes we would write
+            // (account already stamped), not the legacy struct — otherwise a
+            // crash-recovery re-run would see the stamped on-disk file differ
+            // from the unstamped legacy struct and bail. Both sides are
+            // parsed to ignore formatting drift.
+            let existing_raw = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading existing workspace {}", path.display()))?;
+            let existing: crate::workspace::WorkspaceConfig = toml::from_str(&existing_raw)
+                .with_context(|| format!("parsing existing workspace {}", path.display()))?;
+            let desired: crate::workspace::WorkspaceConfig = toml::from_str(&contents)
+                .with_context(|| format!("parsing migrated workspace {name:?}"))?;
+            if existing == desired {
                 continue;
             }
             anyhow::bail!(
@@ -141,8 +209,6 @@ fn migrate_legacy_workspaces(
                 path.display()
             );
         }
-        let contents = toml::to_string_pretty(workspace)
-            .with_context(|| format!("serializing workspace {name:?}"))?;
         atomic_write(&path, &contents)?;
     }
 
@@ -453,13 +519,118 @@ LOCAL = "only-prod"
         assert!(!global.contains("[workspaces."), "{global}");
 
         let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
-        assert!(workspace.contains(r#"version = "v1alpha4""#), "{workspace}");
+        assert!(workspace.contains(r#"version = "v1alpha5""#), "{workspace}");
         assert!(
             workspace.contains(r#"workdir = "/workspace/prod""#),
             "{workspace}"
         );
         assert!(workspace.contains("[env]"), "{workspace}");
         assert!(workspace.contains(r#"LOCAL = "only-prod""#), "{workspace}");
+    }
+
+    #[test]
+    fn load_preserves_legacy_workspace_op_account_onto_refs() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        // A pre-split config.toml with an embedded workspace carrying the
+        // old root-level `op_account` and an op ref that relied on it.
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+op_account = "WORKACCT"
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+
+[workspaces.prod.env]
+TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
+"#,
+        )
+        .unwrap();
+
+        AppConfig::load_or_init(&paths).unwrap();
+
+        let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
+        // The account must land on the op ref, and the root key must be gone
+        // (v1alpha5 shape) — not silently dropped during the typed split.
+        assert!(
+            workspace.contains(r#"account = "WORKACCT""#),
+            "legacy op_account must be stamped onto the ref:\n{workspace}"
+        );
+        assert!(
+            !workspace.contains("op_account"),
+            "root op_account must be removed after the move:\n{workspace}"
+        );
+    }
+
+    #[test]
+    fn legacy_non_string_op_account_bails_loudly() {
+        // A present-but-non-string op_account is operator data; it must
+        // surface, not be silently dropped (mirrors the v1alpha5 migration).
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+op_account = 123
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+"#,
+        )
+        .unwrap();
+
+        let err = AppConfig::load_or_init(&paths).unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("op_account") && chain.contains("must be a string"),
+            "non-string op_account must bail loudly: {chain}"
+        );
+    }
+
+    #[test]
+    fn legacy_op_account_split_is_idempotent_on_reentry() {
+        // Simulates crash recovery: the per-workspace split file was written
+        // (account stamped onto the ref) but the global rewrite that removes
+        // [workspaces.*] did not commit, so the legacy tables reappear on the
+        // next startup and migrate_legacy_workspaces re-runs. It must treat
+        // the already-stamped file as identical and continue, not bail.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let legacy = r#"[workspaces.prod]
+workdir = "/workspace/prod"
+op_account = "WORKACCT"
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+
+[workspaces.prod.env]
+TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
+"#;
+        std::fs::write(&paths.config_file, legacy).unwrap();
+
+        // First migration writes prod.toml (stamped) and rewrites the global.
+        AppConfig::load_or_init(&paths).unwrap();
+        let stamped = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
+        assert!(stamped.contains(r#"account = "WORKACCT""#), "{stamped}");
+
+        // Re-introduce the legacy tables (the rewrite "didn't commit") and
+        // re-run: must succeed idempotently against the stamped split file.
+        std::fs::write(&paths.config_file, legacy).unwrap();
+        AppConfig::load_or_init(&paths)
+            .expect("re-entry with an already-stamped split file must be idempotent");
+
+        // The split file is unchanged by the second pass.
+        let after = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
+        assert_eq!(stamped, after);
     }
 
     #[test]
@@ -622,7 +793,7 @@ dst = "/workspace/prod"
 
         let prod_on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
         let prod_parsed: toml::Value = toml::from_str(&prod_on_disk).unwrap();
-        assert_eq!(prod_parsed["version"].as_str().unwrap(), "v1alpha4");
+        assert_eq!(prod_parsed["version"].as_str().unwrap(), "v1alpha5");
 
         // Re-running is a no-op: file content stays byte-identical.
         let global_before = std::fs::read(&paths.config_file).unwrap();
@@ -655,7 +826,7 @@ dst = "/workspace/prod"
 
         let on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
         let parsed: toml::Value = toml::from_str(&on_disk).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha4");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
         assert!(on_disk.contains("# keep me"), "{on_disk}");
     }
 

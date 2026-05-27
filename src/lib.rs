@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod ansi_text;
 pub mod app;
 pub mod capsule_binary;
 pub mod cli;
@@ -6,6 +7,7 @@ pub mod config;
 pub mod console;
 pub mod daemon;
 pub mod derived_image;
+pub mod diagnostics;
 pub mod docker;
 pub mod docker_client;
 pub mod env_model;

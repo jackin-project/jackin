@@ -200,29 +200,23 @@ pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 /// hint doesn't advertise a disabled action:
 /// `M mount · P pick · C/Esc cancel`.
 pub(super) fn git_prompt_hint(has_url: bool) -> Line<'static> {
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let mut spans: Vec<Span<'static>> = vec![
-        Span::styled("M", key_style),
-        Span::styled(" mount", text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("P", key_style),
-        Span::styled(" pick", text_style),
+    use jackin_tui::HintSpan;
+    let mut spans = vec![
+        HintSpan::Key("M"),
+        HintSpan::Text("mount"),
+        HintSpan::Sep,
+        HintSpan::Key("P"),
+        HintSpan::Text("pick"),
     ];
     if has_url {
-        spans.extend([
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("O", key_style),
-            Span::styled(" open", text_style),
-        ]);
+        spans.extend([HintSpan::Sep, HintSpan::Key("O"), HintSpan::Text("open")]);
     }
     spans.extend([
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("C/Esc", key_style),
-        Span::styled(" cancel", text_style),
+        HintSpan::Sep,
+        HintSpan::Key("C/Esc"),
+        HintSpan::Text("cancel"),
     ]);
-    Line::from(spans)
+    crate::console::widgets::hints::line(&spans)
 }
 
 /// Overlay renderer for the in-browser "Git repository detected" prompt.

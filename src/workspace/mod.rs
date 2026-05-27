@@ -74,21 +74,6 @@ pub struct WorkspaceConfig {
     pub roles: std::collections::BTreeMap<String, WorkspaceRoleOverride>,
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
-    /// Pin this workspace to a specific 1Password account when
-    /// resolving `op://` references. Forwarded as `op --account <id>`
-    /// to every `op` invocation made on behalf of this workspace
-    /// (env resolver at launch, write helpers in
-    /// `jackin workspace claude-token setup`).
-    ///
-    /// When unset, `op` falls back to its default-account context.
-    /// Multi-account 1Password operators set this so a workspace's
-    /// secrets always resolve against the right account regardless
-    /// of which account the operator most recently `op signin`-ed.
-    ///
-    /// Accepts the account UUID, the shorthand label (e.g.
-    /// `Personal`), or the email — `op` accepts all three.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub op_account: Option<String>,
     /// Workspace-level Claude auth configuration. Forms the middle
     /// layer of the 3-layer auth resolver
     /// (global → workspace → workspace × role × agent).
@@ -134,7 +119,6 @@ impl Default for WorkspaceConfig {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,
@@ -820,7 +804,6 @@ isolation = "clone"
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,
@@ -1040,37 +1023,60 @@ allowed_roles = ["smith"]
         );
     }
 
-    /// `op_account` round-trips literal strings.
+    /// An `op://` env value round-trips its per-ref `account`.
     #[test]
-    fn workspace_config_round_trips_op_account() {
+    fn workspace_op_ref_round_trips_account() {
+        use crate::operator_env::{EnvValue, OpRef};
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "TOKEN".to_string(),
+            EnvValue::OpRef(OpRef {
+                op: "op://v/i/f".into(),
+                path: "Vault/Item/Field".into(),
+                account: Some("ACCT123".into()),
+            }),
+        );
         let original = WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/x".into(),
-            op_account: Some("Personal".into()),
+            env,
             ..Default::default()
         };
         let serialized = toml::to_string(&original).expect("serialize");
         assert!(
-            serialized.contains(r#"op_account = "Personal""#),
-            "serialized form must include op_account line, got:\n{serialized}"
+            serialized.contains(r#"account = "ACCT123""#),
+            "serialized op ref must carry account, got:\n{serialized}"
         );
         let parsed: WorkspaceConfig = toml::from_str(&serialized).expect("re-deserialize");
-        assert_eq!(parsed.op_account, Some("Personal".into()));
+        let EnvValue::OpRef(r) = parsed.env.get("TOKEN").expect("TOKEN present") else {
+            panic!("TOKEN must round-trip as an OpRef");
+        };
+        assert_eq!(r.account, Some("ACCT123".into()));
     }
 
-    /// Default workspace omits `op_account` from serialized form so
-    /// existing config files stay byte-for-byte stable.
+    /// An `op://` env value with no account omits the `account` key.
     #[test]
-    fn workspace_config_omits_op_account_when_none() {
+    fn workspace_op_ref_omits_account_when_none() {
+        use crate::operator_env::{EnvValue, OpRef};
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "TOKEN".to_string(),
+            EnvValue::OpRef(OpRef {
+                op: "op://v/i/f".into(),
+                path: "Vault/Item/Field".into(),
+                account: None,
+            }),
+        );
         let cfg = WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/x".into(),
+            env,
             ..Default::default()
         };
         let s = toml::to_string(&cfg).unwrap();
         assert!(
-            !s.contains("op_account"),
-            "default workspace must not serialize op_account, got:\n{s}"
+            !s.contains("account"),
+            "op ref with no account must not serialize an account key, got:\n{s}"
         );
     }
 }

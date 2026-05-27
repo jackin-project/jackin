@@ -163,6 +163,39 @@ pub(super) fn load_entries(cwd: &Path, root: &Path) -> Vec<FolderEntry> {
 }
 
 impl FileBrowserState {
+    /// Footer-bar hints for the current state. The screen footer renders these
+    /// (hints are footer-only — the browser draws no internal hint row); the
+    /// git-repo confirm overlay swaps in its own confirm/cancel keys.
+    pub fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>> {
+        use jackin_tui::HintSpan;
+        if self.pending_git_prompt.is_some() {
+            vec![
+                HintSpan::Key("Enter"),
+                HintSpan::Text("confirm"),
+                HintSpan::GroupSep,
+                HintSpan::Key("Esc"),
+                HintSpan::Text("cancel"),
+            ]
+        } else {
+            vec![
+                HintSpan::Key("\u{2191}\u{2193}"),
+                HintSpan::Text("navigate"),
+                HintSpan::GroupSep,
+                HintSpan::Key("Enter"),
+                HintSpan::Text("open"),
+                HintSpan::GroupSep,
+                HintSpan::Key("H/\u{2190}"),
+                HintSpan::Text("up"),
+                HintSpan::GroupSep,
+                HintSpan::Key("S"),
+                HintSpan::Text("select"),
+                HintSpan::GroupSep,
+                HintSpan::Key("Esc"),
+                HintSpan::Text("up/cancel"),
+            ]
+        }
+    }
+
     /// Build a new browser starting at $HOME, filtered to directories only,
     /// excluding well-known noisy top-level folders.
     pub fn new_from_home() -> anyhow::Result<Self> {

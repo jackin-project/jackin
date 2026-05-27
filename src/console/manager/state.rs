@@ -111,6 +111,9 @@ pub struct ManagerState<'a> {
     pub list_names_focused: bool,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
+    /// Logical list row the pointer is hovering (lifts its background like a
+    /// hovered tab). Transient; set on mouse motion, cleared off the list.
+    pub hovered_list_row: Option<ManagerListRow>,
     /// Process-lifetime cache of `op` structural metadata, threaded
     /// into the picker on open. Carries no credentials — see
     /// `op_cache.rs`.
@@ -280,6 +283,9 @@ pub struct SettingsState<'a> {
     /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
     /// Tab/↓ enters content); when false, focus is in the tab panel.
     pub tab_bar_focused: bool,
+    /// Index of the tab cell under the pointer, repainted on mouse motion so
+    /// the strip reacts to hover like the in-container multiplexer tabs.
+    pub hovered_tab: Option<usize>,
     pub general: SettingsGeneralState,
     pub mounts: GlobalMountsState<'a>,
     pub env: SettingsEnvState<'a>,
@@ -288,6 +294,13 @@ pub struct SettingsState<'a> {
     /// Error popup shown on top of all settings content. Dismissed with
     /// Enter / O / Esc; clears automatically when opened again.
     pub error_popup: Option<ErrorPopupState>,
+    /// Set by the Auth-tab `g`/`G` generate action; drained by the
+    /// `run_console` loop to run the global Claude OAuth-token mint.
+    pub pending_token_generate: Option<PendingTokenGenerate>,
+    /// Footer height (rows) the renderer last laid out, cached so mouse
+    /// hit-testing subtracts the same dynamic footer the frame drew rather than
+    /// a stale constant — otherwise clicks near the bottom mis-map.
+    pub cached_footer_h: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -411,6 +424,10 @@ pub struct SettingsAuthState {
     pub original_github_env: BTreeMap<String, crate::operator_env::EnvValue>,
     pub modal: Option<SettingsAuthModal<'static>>,
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
+    /// Set while the `g`/`G` generate action's Create-mode `OpPicker` is
+    /// open, so its commit knows the pick is a token-generate (always
+    /// global Claude) rather than a browse/provide pick.
+    pub generating_token: bool,
     pub error: Option<String>,
     pub scroll_y: u16,
     pub scroll_focused: bool,
@@ -450,6 +467,8 @@ pub struct SettingsTrustState {
     pub scroll_x: u16,
     pub scroll_y: u16,
     pub scroll_focused: bool,
+    /// Row the pointer is hovering (lifts its background like a hovered tab).
+    pub hovered: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -528,6 +547,18 @@ pub struct WorkspaceSummary {
     pub last_role: Option<String>,
 }
 
+/// A request to mint a Claude OAuth token and write it to the chosen
+/// 1Password location.
+///
+/// Bubbled from the auth-form generate action up to the `run_console`
+/// loop, which owns `paths`, `config`, and the terminal needed to run
+/// `claude setup-token`.
+#[derive(Debug, Clone)]
+pub struct PendingTokenGenerate {
+    pub scope: crate::workspace::token_setup::TokenSetupScope,
+    pub args: crate::workspace::token_setup::TokenSetupArgs,
+}
+
 #[derive(Debug)]
 pub struct EditorState<'a> {
     pub mode: EditorMode,
@@ -535,6 +566,9 @@ pub struct EditorState<'a> {
     /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
     /// Tab/↓ enters content); when false, focus is in the tab panel.
     pub tab_bar_focused: bool,
+    /// Index of the tab cell under the pointer, repainted on mouse motion so
+    /// the strip reacts to hover like the in-container multiplexer tabs.
+    pub hovered_tab: Option<usize>,
     pub active_field: FieldFocus,
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
@@ -602,6 +636,9 @@ pub struct EditorState<'a> {
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
     pub workspace_mounts_scroll_x: u16,
     pub workspace_mounts_scroll_focused: bool,
+    /// Mounts-tab row the pointer is hovering (lifts its background like a
+    /// hovered tab). Transient; set on mouse motion.
+    pub hovered_mount_row: Option<usize>,
     /// Horizontal scroll offset shared across non-Mounts editor content tabs.
     /// Reset to 0 on every tab change so each tab starts at the left edge.
     pub tab_scroll_x: u16,
@@ -616,6 +653,18 @@ pub struct EditorState<'a> {
     /// determine whether the block is actually scrollable.
     pub tab_content_width: usize,
     pub tab_content_height: usize,
+    /// Set when the auth-form "generate token" action launches the
+    /// `op_picker` in Create mode, so the `op_picker` commit knows the
+    /// pick is a token-generate (not a browse/provide pick) and which
+    /// layer it targets. Consumed (taken) by the `op_picker` commit.
+    pub generating_token_target: Option<AuthFormTarget>,
+    /// Set by the `op_picker` commit when `generating_token_target` was
+    /// present; drained by the `run_console` loop to run the mint.
+    pub pending_token_generate: Option<PendingTokenGenerate>,
+    /// Footer height (rows) the renderer last laid out, cached so mouse
+    /// hit-testing subtracts the same dynamic footer the frame drew rather than
+    /// a stale constant — otherwise clicks near the bottom mis-map.
+    pub cached_footer_h: u16,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -746,12 +795,15 @@ impl SettingsState<'_> {
         Self {
             active_tab: SettingsTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             general: SettingsGeneralState::from_config(config),
             mounts: GlobalMountsState::from_config(config),
             env: SettingsEnvState::from_config(config),
             auth: SettingsAuthState::from_config(config),
             trust: SettingsTrustState::from_config(config),
             error_popup: None,
+            pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 
@@ -784,6 +836,11 @@ impl SettingsState<'_> {
         self.env.discard();
         self.auth.discard();
         self.trust.discard();
+        // A generate request queued just before the discard would
+        // otherwise still be drained by the `run_console` loop and launch
+        // an unwanted mint. `auth.discard()` already cleared
+        // `generating_token`; the queued request lives here.
+        self.pending_token_generate = None;
     }
 
     pub fn save_to_config(
@@ -1036,6 +1093,7 @@ impl SettingsAuthState {
                 .unwrap_or_default(),
             modal: None,
             pending_auth_form_return: None,
+            generating_token: false,
             error: None,
             scroll_y: 0,
             scroll_focused: false,
@@ -1054,6 +1112,7 @@ impl SettingsAuthState {
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.modal = None;
         self.pending_auth_form_return = None;
+        self.generating_token = false;
         self.error = None;
     }
 }
@@ -1077,6 +1136,7 @@ impl SettingsTrustState {
             scroll_x: 0,
             scroll_y: 0,
             scroll_focused: false,
+            hovered: None,
         }
     }
 
@@ -1530,6 +1590,7 @@ impl ManagerState<'_> {
             list_names_focused: false,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
+            hovered_list_row: None,
             op_cache,
             op_available,
             cached_term_size: Rect {
@@ -2141,6 +2202,7 @@ impl EditorState<'_> {
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             active_field: FieldFocus::Row(0),
             original: ws.clone(),
             pending: ws,
@@ -2159,11 +2221,15 @@ impl EditorState<'_> {
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
+            hovered_mount_row: None,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_scroll_focused: false,
             tab_content_width: 0,
             tab_content_height: 0,
+            generating_token_target: None,
+            pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 
@@ -2173,6 +2239,7 @@ impl EditorState<'_> {
             mode: EditorMode::Create,
             active_tab: EditorTab::General,
             tab_bar_focused: true,
+            hovered_tab: None,
             active_field: FieldFocus::Row(0),
             original: empty.clone(),
             pending: empty,
@@ -2191,11 +2258,15 @@ impl EditorState<'_> {
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
+            hovered_mount_row: None,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_scroll_focused: false,
             tab_content_width: 0,
             tab_content_height: 0,
+            generating_token_target: None,
+            pending_token_generate: None,
+            cached_footer_h: 1,
         }
     }
 
@@ -3059,7 +3130,6 @@ mod tests {
             env: BTreeMap::default(),
             roles: BTreeMap::default(),
             keep_awake: KeepAwakeConfig::default(),
-            op_account: None,
             claude: None,
             codex: None,
             amp: None,

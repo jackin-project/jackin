@@ -259,15 +259,18 @@ Every subcommand needs `claude` and `op` on `PATH`. `setup` and `rotate` drive `
 ### `workspace claude-token setup`
 
 ```bash
-jackin workspace claude-token setup <WORKSPACE> --vault <VAULT> [OPTIONS]
+jackin workspace claude-token setup <WORKSPACE> [--role <ROLE>] (--vault <VAULT> | --interactive) [OPTIONS]
 ```
 
 | Option | Description |
 |---|---|
-| `--vault <VAULT>`        | 1Password vault name or UUID where the new item lands. Required unless `--reuse` is passed. |
-| `--item-name <NAME>`     | Override the auto-generated item title. `{ws}` substitutes the workspace name. Default: `jackin · {ws} · claude-token`. |
+| `--vault <VAULT>`        | 1Password vault name or UUID where the new item lands. Required unless `--reuse` or `--interactive` is passed. Mutually exclusive with `--reuse`. |
+| `--item-name <NAME>`     | Override the item title. Default: `Claude`. A custom title may contain `{ws}`, which substitutes the workspace name. |
+| `--role <ROLE>`          | Wire the token for a specific role override instead of all roles in the workspace. Omit to wire the workspace-level slot. Must be a role the workspace allows, otherwise the command fails before minting. The interactive flow prompts for the scope when `--role` is absent. |
+| `--plain`                | Mint the token and store it as a plaintext literal in config instead of 1Password. Mutually exclusive with `--vault` and `--reuse`. The interactive flow offers this as a source choice. |
 | `--op-account <ACCOUNT>` | Pin every `op` invocation to a specific 1P account. Persists onto the workspace so subsequent `rotate` / `revoke` use the same account. |
 | `--reuse <OP_REF>`       | Skip token generation and adopt the supplied `op://Vault/Item/field` reference verbatim. Use when an item already exists in 1Password. |
+| `--interactive` / `-i`   | Walk plain CLI prompts (account → vault → item → field) to choose where the token lands. Mutually exclusive with `--vault` and `--reuse`. At the item step pick an existing item or `[ + New item ]` to create a fresh 1Password item; at the field step pick an existing field to write the token in-place or `[ + New field ]` to append a new field. |
 
 On success the workspace's Claude auth flips to OAuth-token mode and the new (or reused) `op://` reference is written as the managed `CLAUDE_CODE_OAUTH_TOKEN` env value for that workspace. An "expires in N days" countdown is stamped into the local cache so the launch banner can surface it. On failure no on-disk config is changed and any orphan 1P item is best-effort deleted; if the cleanup itself fails the error message includes the exact `op item delete` command to run by hand.
 
@@ -279,19 +282,29 @@ jackin workspace claude-token setup my-app --vault Personal
 jackin workspace claude-token setup my-app --vault Work --op-account work@example.com
 
 # Adopt an existing op:// reference instead of minting a new token
-jackin workspace claude-token setup my-app --reuse "op://Personal/jackin · my-app · claude-token/token"
+jackin workspace claude-token setup my-app --reuse "op://Personal/Claude/oauth-token"
+
+# Plain CLI prompts — choose vault, item, and field interactively
+jackin workspace claude-token setup my-app --interactive
+
+# Wire the token for a specific role override instead of all roles
+jackin workspace claude-token setup my-app --role chainargos/agent-brown --vault Personal
+
+# Store the minted token as a plaintext literal in config instead of 1Password
+jackin workspace claude-token setup my-app --plain
 ```
 
 ### `workspace claude-token rotate`
 
 ```bash
-jackin workspace claude-token rotate <WORKSPACE> [OPTIONS]
+jackin workspace claude-token rotate <WORKSPACE> [--role <ROLE>] [OPTIONS]
 ```
 
 Capture a fresh token, store it under a new 1P item, repoint the workspace, then delete the prior item. Without `--vault` the prior item's vault is reused, so `rotate <ws>` is the day-to-day form.
 
 | Option | Description |
 |---|---|
+| `--role <ROLE>`          | Rotate the per-role slot wired by `setup --role` instead of the workspace-level slot. The prior token, its vault, and the item to delete are read from that same scope. Must be a role the workspace allows. |
 | `--vault <VAULT>`        | Move the rotated item to a different vault. Defaults to the prior item's vault. |
 | `--item-name <NAME>`     | Override the auto-generated item title for the new item. |
 | `--op-account <ACCOUNT>` | Pin every `op` invocation for this rotation. |
@@ -301,6 +314,7 @@ If the prior 1P item cannot be deleted (auth, permission, network), the rotate e
 ```bash
 jackin workspace claude-token rotate my-app
 jackin workspace claude-token rotate my-app --vault Archive  # move to a different vault
+jackin workspace claude-token rotate my-app --role chainargos/agent-brown  # rotate the role-scoped token
 ```
 
 ### `workspace claude-token revoke`
@@ -344,8 +358,8 @@ A working slot prints:
 ```text
 workspace        my-app
 auth_forward     oauth_token
-op_account       work@example.com
-op_ref           Personal/jackin · my-app · claude-token/token
+op account       work@example.com
+op_ref           Personal/Claude/oauth-token
 token sha256     a3f9c2b81e74… (12 hex prefix; matches stored value)
 ```
 
