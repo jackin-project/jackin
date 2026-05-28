@@ -179,16 +179,19 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
 
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", SENTINEL_ROLE_KEY, &target, "--agent", "codex"];
-    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
+    let extra_env = [
+        ("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie"),
+        ("JACKIN_DEBUG", "1"),
+    ];
     let output = run_in_pty_with_input(
         &jackin,
         &args,
         &home,
         &workspace_dir,
         &extra_env,
-        CAPSULE_DETACH_KEYS,
+        &format!("\n{CAPSULE_DETACH_KEYS}"),
         PtyInputMode::Repeat {
-            first_after: Duration::from_secs(5),
+            first_after: Duration::from_secs(2),
             interval: Duration::from_secs(5),
             attempts: 24,
         },
@@ -196,9 +199,10 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let diagnostics = read_diagnostics(&home);
     assert!(
         stdout.contains("JACKIN_SENTINEL_REPORT_BEGIN"),
-        "sentinel report missing begin marker\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sentinel report missing begin marker\nstdout:\n{stdout}\nstderr:\n{stderr}\ndiagnostics:\n{diagnostics}"
     );
     assert!(
         stdout.contains("JACKIN_SENTINEL_REPORT_END"),
@@ -393,6 +397,36 @@ fn run_in_pty_with_input(
             child.wait_with_output().expect("script must finish")
         }
     }
+}
+
+fn read_diagnostics(home: &Path) -> String {
+    let runs = home.join(".jackin/data/diagnostics/runs");
+    let Ok(entries) = std::fs::read_dir(&runs) else {
+        return format!("diagnostics directory missing: {}", runs.display());
+    };
+    let mut paths = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    if paths.is_empty() {
+        return format!("no diagnostics runs under {}", runs.display());
+    }
+
+    paths
+        .into_iter()
+        .filter_map(|path| {
+            let contents = std::fs::read_to_string(&path).ok()?;
+            let mut lines = contents.lines().rev().take(160).collect::<Vec<_>>();
+            lines.reverse();
+            Some(format!("== {} ==\n{}", path.display(), lines.join("\n")))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
