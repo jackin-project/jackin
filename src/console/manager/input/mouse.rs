@@ -872,11 +872,7 @@ fn try_drag_vertical_scrollbar(
         }
         ManagerStage::Editor(editor) => {
             let area = editor_content_area(editor, term_size);
-            let content_height = if editor.active_tab == EditorTab::General {
-                0
-            } else {
-                editor.tab_content_height
-            };
+            let content_height = editor_content_height(editor);
             drag_vertical_scrollbar(&mut editor.tab_scroll_y, mouse, area, content_height)
         }
         ManagerStage::Settings(settings) => {
@@ -1102,19 +1098,8 @@ fn scroll_active_panel_vertical(
             if !point_in(mouse, area) {
                 return;
             }
-            match editor.active_tab {
-                // General has 4 fixed rows — no vertical scroll needed.
-                EditorTab::General => {}
-                // Mounts, Roles, Secrets, Auth all use tab_scroll_y.
-                EditorTab::Mounts | EditorTab::Roles | EditorTab::Secrets | EditorTab::Auth => {
-                    apply_vertical_scroll(
-                        &mut editor.tab_scroll_y,
-                        delta,
-                        area,
-                        editor.tab_content_height,
-                    );
-                }
-            }
+            let content_height = editor_content_height(editor);
+            apply_vertical_scroll(&mut editor.tab_scroll_y, delta, area, content_height);
         }
         ManagerStage::List => {
             update_scroll_focus(state, mouse, term_size, config);
@@ -1251,6 +1236,10 @@ fn editor_scroll_area(
         area: editor_content_area(editor, term_size),
         content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
     }
+}
+
+const fn editor_content_height(editor: &super::super::state::EditorState<'_>) -> usize {
+    editor.tab_content_height
 }
 
 fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
@@ -2439,6 +2428,54 @@ mod mouse_drag_tests {
             panic!("editor stage expected");
         };
         assert_eq!(editor.tab_scroll_y, 1);
+    }
+
+    #[test]
+    fn editor_general_tab_vertical_wheel_uses_shared_scroll_path() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::General;
+        editor.tab_content_height = 4;
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 10, 6),
+            Rect::new(0, 0, 100, 9),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            editor.tab_scroll_y, 1,
+            "General must use the same vertical wheel path as every editor tab"
+        );
+    }
+
+    #[test]
+    fn editor_general_tab_vertical_scrollbar_drag_uses_shared_scroll_path() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::General;
+        editor.tab_content_height = 4;
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Down(MouseButton::Left), 99, 7),
+            Rect::new(0, 0, 100, 10),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            editor.tab_scroll_y > 0,
+            "General scrollbar dragging must use the same vertical path as every editor tab"
+        );
     }
 
     #[test]
