@@ -471,6 +471,8 @@ pub fn vertical_thumb(track_rows: u16, filled: usize, offset: usize) -> Option<V
 /// apart when one side picks up a tweak the other forgets.
 pub mod ansi {
     use super::{INPUT_BG_DIM, PHOSPHOR_DARK, PHOSPHOR_GREEN, Rgb, WHITE};
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
     use std::io::Write as _;
 
     /// Pure-black background for modal overlays. Matches the
@@ -487,6 +489,19 @@ pub mod ansi {
     pub const POINTER_HAND: &str = "\x1b]22;pointer\x1b\\";
     pub const POINTER_DEFAULT: &str = "\x1b]22;default\x1b\\";
     pub const INVERSE: &str = "\x1b[7m";
+
+    /// OSC 52 clipboard-write sequence. Targets the system clipboard (`c`)
+    /// and uses BEL termination, which is accepted by Ghostty, Kitty, iTerm2,
+    /// Alacritty, WezTerm, and recent GNOME Terminal builds.
+    #[must_use]
+    pub fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
+        let encoded = BASE64.encode(payload.as_bytes());
+        let mut out = Vec::with_capacity(8 + encoded.len());
+        out.extend_from_slice(b"\x1b]52;c;");
+        out.extend_from_slice(encoded.as_bytes());
+        out.extend_from_slice(b"\x07");
+        out
+    }
 
     /// Emit a `1;1`-origin cursor positioning sequence.
     pub fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {

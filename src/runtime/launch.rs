@@ -2547,6 +2547,7 @@ async fn load_role_with(
             let failed_stage = steps
                 .current_stage
                 .unwrap_or(super::progress::LaunchStage::Capsule);
+            let final_error = launch_failure_cli_error(failed_stage, &error);
             if let Some(progress) = steps.progress_mut() {
                 progress
                     .stage_failed(super::progress::LaunchFailure {
@@ -2565,7 +2566,7 @@ async fn load_role_with(
             // this the background task keeps drawing frames over the warp.
             steps.finish_progress();
             render_exit(paths, docker).await;
-            Err(error)
+            Err(final_error)
         }
     }
 }
@@ -2592,6 +2593,34 @@ fn short_launch_diagnosis(stage: super::progress::LaunchStage, error: &anyhow::E
         || "launch did not complete".to_string(),
         ToString::to_string,
     )
+}
+
+fn launch_failure_cli_error(
+    stage: super::progress::LaunchStage,
+    error: &anyhow::Error,
+) -> anyhow::Error {
+    if stage != super::progress::LaunchStage::DerivedImage {
+        return anyhow::anyhow!("{error:#}");
+    }
+    let Some(run) = crate::diagnostics::active_run() else {
+        return anyhow::anyhow!("{error:#}");
+    };
+    let docker_output = run.command_output_path("docker-build");
+    let mut report = String::from("Docker build command failed");
+    let mut table = tabled::Table::builder([
+        ["run id", run.run_id()],
+        ["run diagnostics", &run.path().display().to_string()],
+        ["docker output", &docker_output.display().to_string()],
+    ])
+    .build();
+    table
+        .with(tabled::settings::Style::modern_rounded())
+        .with(tabled::settings::Remove::row(
+            tabled::settings::object::Rows::first(),
+        ));
+    report.push_str("\n\n");
+    report.push_str(&table.to_string());
+    anyhow::anyhow!("{report}")
 }
 
 fn resolve_launch_role_source(
@@ -3896,6 +3925,33 @@ mod tests {
             .write(&paths.data_dir.join(&manifest.container_base))
             .unwrap();
         InstanceIndex::update_manifest(&paths.data_dir, manifest).unwrap();
+    }
+
+    #[test]
+    fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _guard = run.activate();
+
+        let error = anyhow::anyhow!("Docker build command failed");
+        let rendered =
+            launch_failure_cli_error(crate::runtime::progress::LaunchStage::DerivedImage, &error)
+                .to_string();
+
+        assert!(rendered.starts_with("Docker build command failed\n\n"));
+        assert!(rendered.contains("run id"));
+        assert!(rendered.contains(run.run_id()));
+        assert!(rendered.contains("run diagnostics"));
+        assert!(rendered.contains(&run.path().display().to_string()));
+        assert!(rendered.contains("docker output"));
+        assert!(
+            rendered.contains(
+                &run.command_output_path("docker-build")
+                    .display()
+                    .to_string()
+            )
+        );
     }
 
     async fn resolve_workspace_restore(

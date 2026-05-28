@@ -1380,7 +1380,6 @@ name = "jackin-capsule"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
- "base64",
  "chrono",
  "crossterm",
  "jackin-build-meta",
@@ -1411,6 +1410,7 @@ dependencies = [
 name = "jackin-tui"
 version = "0.6.0-dev"
 dependencies = [
+ "base64",
  "unicode-width",
 ]
 

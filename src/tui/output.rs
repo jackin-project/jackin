@@ -98,11 +98,18 @@ pub fn print_logo(logo_path: &std::path::Path) {
 
 pub fn fatal(msg: &str) {
     eprintln!();
+    let mut lines = msg.lines();
+    let Some(first) = lines.next() else {
+        return;
+    };
     eprintln!(
         "  {} {}",
-        "error:".color(rgb(ROSE)).bold(),
-        msg.color(rgb(ROSE)),
+        "error:".color(rgb(ROSE)),
+        first.color(rgb(ROSE)).bold(),
     );
+    for line in lines {
+        eprintln!("{line}");
+    }
 }
 
 pub fn set_terminal_title(title: &str) {

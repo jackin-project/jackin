@@ -102,10 +102,10 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
-    export PATH=\"${HOME}/.local/bin:${PATH}\" && \\
+    export PATH=\"${HOME}/.kimi-code/bin:${HOME}/.local/bin:${PATH}\" && \\
     curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash && \\
     kimi --version
-ENV PATH=\"/home/agent/.local/bin:${PATH}\"
+ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
 ";
 
 const OPENCODE_INSTALL_BLOCK: &str = "\
@@ -262,10 +262,15 @@ mod tests {
     fn kimi_install_block_uses_official_curl_installer() {
         let block = Agent::Kimi.install_block();
         assert!(block.starts_with("USER agent\n"));
-        assert!(block.contains("export PATH=\"${HOME}/.local/bin:${PATH}\""));
+        assert!(
+            block.contains("export PATH=\"${HOME}/.kimi-code/bin:${HOME}/.local/bin:${PATH}\"")
+        );
         assert!(block.contains("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"));
         assert!(block.contains("kimi --version"));
-        assert!(block.contains("ENV PATH=\"/home/agent/.local/bin:${PATH}\""));
+        assert!(
+            block
+                .contains("ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"")
+        );
     }
 
     #[test]

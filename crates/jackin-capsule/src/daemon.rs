@@ -28,8 +28,6 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
 use portable_pty::CommandBuilder;
 
 use crate::dialog::{
@@ -5058,12 +5056,7 @@ fn spawn_failure_banner(reason: &str) -> Vec<u8> {
 /// outer terminal via `send_output` from the `CopyToClipboard` dialog
 /// action.
 fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
-    let encoded = BASE64.encode(payload.as_bytes());
-    let mut out = Vec::with_capacity(8 + encoded.len());
-    out.extend_from_slice(b"\x1b]52;c;");
-    out.extend_from_slice(encoded.as_bytes());
-    out.extend_from_slice(b"\x07");
-    out
+    jackin_tui::ansi::encode_osc52_clipboard_write(payload)
 }
 
 fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {

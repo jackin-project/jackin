@@ -10,12 +10,11 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::{
-    DANGER_RED, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+    DANGER_RED, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
 };
 use crate::diagnostics::RunDiagnostics;
 use jackin_tui::HintSpan;
@@ -155,6 +154,17 @@ struct LaunchView {
     /// Pointer is hovering the clickable footer activity (which opens the
     /// build-log overlay). Lifts the activity to the link colour.
     build_log_hover: bool,
+    /// Pointer is hovering a copyable value in the failure popup.
+    failure_copy_hover: Option<FailureCopyTarget>,
+    /// Last failure-popup value copied via OSC 52. Drives visible feedback.
+    failure_copied: Option<FailureCopyTarget>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailureCopyTarget {
+    RunId,
+    DiagnosticsPath,
+    CommandOutputPath,
 }
 
 #[derive(Debug, Clone)]
@@ -223,7 +233,7 @@ impl RichDriver {
                     // Drain input only while this task owns the renderer — when
                     // a forced-choice picker holds it, the picker reads events
                     // itself and this poll would steal its keystrokes.
-                    handle_cockpit_input(&view);
+                    handle_cockpit_input(&view, &run_id);
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             if !rr.no_motion {
@@ -263,6 +273,8 @@ fn initial_view() -> LaunchView {
         build_log_open: false,
         build_log_scroll: 0,
         build_log_hover: false,
+        failure_copy_hover: None,
+        failure_copied: None,
     }
 }
 
@@ -377,6 +389,8 @@ impl LaunchProgress {
             update_stage(v, stage, StageStatus::Failed, &summary);
             v.status.clone_from(&summary);
             v.failure_ack = false;
+            v.failure_copy_hover = None;
+            v.failure_copied = None;
             v.failure = Some(failure);
         });
         self.diagnostics.stage(
@@ -537,8 +551,12 @@ fn set_cockpit_pointer(pointer: bool) {
 /// Called only while the render task owns the renderer (no forced-choice picker
 /// is reading events), so this poll cannot steal a picker's keystrokes. Polling
 /// with a zero timeout keeps the 33 ms render cadence intact.
-fn handle_cockpit_input(view: &SharedView) {
+fn handle_cockpit_input(view: &SharedView, run_id: &str) {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+    let area = crossterm::terminal::size()
+        .ok()
+        .map(|(width, height)| Rect::new(0, 0, width, height))
+        .unwrap_or_default();
     while event::poll(Duration::ZERO).unwrap_or(false) {
         let Ok(ev) = event::read() else {
             return;
@@ -549,7 +567,19 @@ fn handle_cockpit_input(view: &SharedView) {
         match ev {
             Event::Mouse(m) => match m.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
-                    if v.build_log_open {
+                    if let Some(failure) = v.failure.as_ref() {
+                        if let Some(target) =
+                            failure_copy_target_at(area, failure, run_id, m.column, m.row)
+                            && let Some(payload) = failure_copy_payload(failure, run_id, target)
+                        {
+                            let mut out = std::io::stdout();
+                            let _ = out.write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(
+                                &payload,
+                            ));
+                            let _ = out.flush();
+                            v.failure_copied = Some(target);
+                        }
+                    } else if v.build_log_open {
                         // The overlay covers the whole screen, so any click
                         // dismisses it back to the cockpit.
                         v.build_log_open = false;
@@ -565,6 +595,14 @@ fn handle_cockpit_input(view: &SharedView) {
                     }
                 }
                 MouseEventKind::Moved => {
+                    if let Some(failure) = v.failure.as_ref() {
+                        let hover = failure_copy_target_at(area, failure, run_id, m.column, m.row);
+                        if hover != v.failure_copy_hover {
+                            v.failure_copy_hover = hover;
+                            set_cockpit_pointer(hover.is_some());
+                        }
+                        continue;
+                    }
                     // Hover the activity only while it is actually clickable
                     // (overlay closed and there is a build log to show). Lift
                     // its colour and switch to the hand pointer on enter; revert
@@ -593,6 +631,8 @@ fn handle_cockpit_input(view: &SharedView) {
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
                 // it so the awaiting `stage_failed` returns.
                 v.failure_ack = true;
+                v.failure_copy_hover = None;
+                set_cockpit_pointer(false);
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
                 KeyCode::Esc | KeyCode::Char('q') => v.build_log_open = false,
@@ -811,7 +851,7 @@ fn render_launch_frame(
     render_footer(frame, rows[2], view, run_id);
 
     if let Some(failure) = &view.failure {
-        render_failure_popup(frame, area, failure, run_id);
+        render_failure_popup(frame, area, view, failure, run_id);
     }
 }
 
@@ -1134,35 +1174,240 @@ fn footer_instance(view: &LaunchView) -> String {
         .unwrap_or_default()
 }
 
-fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailure, run_id: &str) {
-    let next = failure
-        .next_step
-        .as_deref()
-        .map(|next| format!("\n\n{next}"))
-        .unwrap_or_default();
-    let diagnostics = failure
-        .diagnostics_path
-        .as_ref()
-        .map(|path| format!("\nrun diagnostics · {}", path.display()))
-        .unwrap_or_default();
-    let command_output = failure
-        .command_output_path
-        .as_ref()
-        .map(|path| format!("\ndocker output · {}", path.display()))
-        .unwrap_or_default();
-    let message = format!(
-        "{}\n\nstage · {}\nrun · {run_id}{diagnostics}{command_output}{next}",
-        failure.summary,
-        failure.stage.label(),
-    );
+#[derive(Debug)]
+struct FailurePopupRow {
+    label: &'static str,
+    value: String,
+    copy_target: Option<FailureCopyTarget>,
+}
 
-    let state = ErrorPopupState::new(failure.title.clone(), message);
+fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailurePopupRow> {
+    let mut rows = vec![
+        FailurePopupRow {
+            label: "message",
+            value: failure.summary.clone(),
+            copy_target: None,
+        },
+        FailurePopupRow {
+            label: "stage",
+            value: failure.stage.label().to_string(),
+            copy_target: None,
+        },
+        FailurePopupRow {
+            label: "run id",
+            value: run_id.to_string(),
+            copy_target: Some(FailureCopyTarget::RunId),
+        },
+    ];
+    if let Some(path) = &failure.diagnostics_path {
+        rows.push(FailurePopupRow {
+            label: "run diagnostics",
+            value: path.display().to_string(),
+            copy_target: Some(FailureCopyTarget::DiagnosticsPath),
+        });
+    }
+    if let Some(path) = &failure.command_output_path {
+        rows.push(FailurePopupRow {
+            label: "docker output",
+            value: path.display().to_string(),
+            copy_target: Some(FailureCopyTarget::CommandOutputPath),
+        });
+    }
+    if let Some(next) = &failure.next_step {
+        rows.push(FailurePopupRow {
+            label: "next",
+            value: next.clone(),
+            copy_target: None,
+        });
+    }
+    rows
+}
+
+fn failure_popup_rect(area: Rect, row_count: usize) -> Rect {
     let popup_w = (area.width.saturating_mul(3) / 5)
         .clamp(40.min(area.width), area.width.saturating_sub(2).max(1));
-    let inner_w = popup_w.saturating_sub(4).max(1);
-    let height = error_popup::required_height(&state, inner_w, area.height.saturating_sub(2));
-    let rect = centered_rect(popup_w, height, area);
-    error_popup::render(frame, rect, &state);
+    let height = u16::try_from(row_count)
+        .unwrap_or(u16::MAX)
+        .saturating_add(6)
+        .min(area.height.saturating_sub(2).max(7));
+    centered_rect(popup_w, height, area)
+}
+
+fn failure_popup_value_rect(
+    rect: Rect,
+    rows: &[FailurePopupRow],
+    target: FailureCopyTarget,
+) -> Option<Rect> {
+    let inner = rect.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
+    let body = Rect {
+        x: inner.x.saturating_add(1),
+        y: inner.y.saturating_add(1),
+        width: inner.width.saturating_sub(2),
+        height: inner.height.saturating_sub(3),
+    };
+    let label_width = FAILURE_POPUP_LABEL_WIDTH;
+    rows.iter()
+        .position(|row| row.copy_target == Some(target))
+        .and_then(|idx| {
+            if idx >= usize::from(body.height) {
+                return None;
+            }
+            let x = body
+                .x
+                .saturating_add(u16::try_from(label_width + 3).unwrap_or(u16::MAX));
+            Some(Rect {
+                x,
+                y: body.y + u16::try_from(idx).unwrap_or(u16::MAX),
+                width: body.x.saturating_add(body.width).saturating_sub(x),
+                height: 1,
+            })
+        })
+}
+
+fn failure_copy_target_at(
+    area: Rect,
+    failure: &LaunchFailure,
+    run_id: &str,
+    col: u16,
+    row: u16,
+) -> Option<FailureCopyTarget> {
+    let rows = failure_popup_rows(failure, run_id);
+    let rect = failure_popup_rect(area, rows.len());
+    for entry in rows.iter().filter(|row| row.copy_target.is_some()) {
+        let target = entry.copy_target?;
+        let value_rect = failure_popup_value_rect(rect, &rows, target)?;
+        let value_cols = u16::try_from(entry.value.chars().count()).unwrap_or(u16::MAX);
+        let hit_width = value_rect.width.min(value_cols.max(1));
+        if row == value_rect.y
+            && col >= value_rect.x
+            && col < value_rect.x.saturating_add(hit_width)
+        {
+            return Some(target);
+        }
+    }
+    None
+}
+
+fn failure_copy_payload(
+    failure: &LaunchFailure,
+    run_id: &str,
+    target: FailureCopyTarget,
+) -> Option<String> {
+    match target {
+        FailureCopyTarget::RunId => Some(run_id.to_string()),
+        FailureCopyTarget::DiagnosticsPath => failure
+            .diagnostics_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        FailureCopyTarget::CommandOutputPath => failure
+            .command_output_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+    }
+}
+
+fn render_failure_popup_line(
+    row: &FailurePopupRow,
+    width: u16,
+    hovered: Option<FailureCopyTarget>,
+    copied: Option<FailureCopyTarget>,
+) -> Line<'static> {
+    let label = Style::default().fg(PHOSPHOR_DIM);
+    let value_style = match row.copy_target {
+        Some(target) if hovered == Some(target) => Style::default()
+            .fg(LINK_BLUE)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        Some(_) => Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        None => Style::default().fg(WHITE),
+    };
+    let label_width = FAILURE_POPUP_LABEL_WIDTH;
+    let badge = row
+        .copy_target
+        .filter(|target| copied == Some(*target))
+        .map(|_| "  Copied!")
+        .unwrap_or("");
+    let fixed_cols = label_width + 3 + badge.chars().count();
+    let value_cols = usize::from(width).saturating_sub(fixed_cols);
+    let value = jackin_tui::take_display_cols(&row.value, value_cols);
+    let mut spans = vec![
+        Span::styled(format!("{:<label_width$}", row.label), label),
+        Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
+        Span::styled(value, value_style),
+    ];
+    if !badge.is_empty() {
+        spans.push(Span::styled(
+            badge,
+            Style::default()
+                .fg(PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    Line::from(spans)
+}
+
+const FAILURE_POPUP_LABEL_WIDTH: usize = 16;
+
+fn render_failure_popup(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &LaunchView,
+    failure: &LaunchFailure,
+    run_id: &str,
+) {
+    let rows = failure_popup_rows(failure, run_id);
+    let rect = failure_popup_rect(area, rows.len());
+    let title = format!(" {} ", failure.title);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(DANGER_RED))
+        .title(Span::styled(
+            title,
+            Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(rect);
+    frame.render_widget(Clear, rect);
+    frame.render_widget(block, rect);
+
+    let body = Rect {
+        x: inner.x.saturating_add(1),
+        y: inner.y.saturating_add(1),
+        width: inner.width.saturating_sub(2),
+        height: inner.height.saturating_sub(3),
+    };
+    for (idx, row) in rows.iter().take(usize::from(body.height)).enumerate() {
+        let line = render_failure_popup_line(
+            row,
+            body.width,
+            view.failure_copy_hover,
+            view.failure_copied,
+        );
+        let row_area = Rect {
+            x: body.x,
+            y: body.y + u16::try_from(idx).unwrap_or(u16::MAX),
+            width: body.width,
+            height: 1,
+        };
+        frame.render_widget(Paragraph::new(line), row_area);
+    }
+
+    let focused_style = Style::default()
+        .bg(WHITE)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let button_area = Rect {
+        x: inner.x,
+        y: inner.y + inner.height.saturating_sub(1),
+        width: inner.width,
+        height: 1,
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled("  OK  ", focused_style)))
+            .alignment(Alignment::Center),
+        button_area,
+    );
     // The popup draws no hint of its own (footer-only-hints rule); show the
     // dismiss keys on the bottom row, over the now-frozen status bar.
     let hint_row = Rect {
@@ -1175,7 +1420,13 @@ fn render_failure_popup(frame: &mut Frame<'_>, area: Rect, failure: &LaunchFailu
 }
 
 /// Footer-hint keys for the launch failure popup (dismiss only).
-const FAILURE_HINT: &[HintSpan<'static>] = &[HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")];
+const FAILURE_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("click"),
+    HintSpan::Text("copy value"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Enter/Esc"),
+    HintSpan::Text("dismiss"),
+];
 
 /// Footer-hint keys for the forced-choice launch picker.
 const PICKER_HINT: &[HintSpan<'static>] = &[
@@ -1626,6 +1877,8 @@ mod tests {
             build_log_open: true,
             build_log_scroll: 0,
             build_log_hover: false,
+            failure_copy_hover: None,
+            failure_copied: None,
         };
         terminal
             .draw(|frame| render_build_log_dialog(frame, frame.area(), &view))
@@ -1681,6 +1934,8 @@ mod tests {
             build_log_open: false,
             build_log_scroll: 0,
             build_log_hover: false,
+            failure_copy_hover: None,
+            failure_copied: None,
         };
         terminal
             .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true, None))

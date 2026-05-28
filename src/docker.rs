@@ -346,7 +346,7 @@ impl ShellRunner {
         let status = status?;
         self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
         let command = format!("{} {}", program, redact_env_args(args).join(" "));
-        let command_output_path = if opts.tee_to_build_log {
+        let _command_output_path = if opts.tee_to_build_log {
             crate::diagnostics::active_run().and_then(|run| {
                 run.write_command_output(
                     "docker-build",
@@ -362,9 +362,6 @@ impl ShellRunner {
         };
         if !status.success() {
             if opts.tee_to_build_log {
-                if let Some(path) = command_output_path {
-                    anyhow::bail!("Docker build command failed (output: {})", path.display());
-                }
                 anyhow::bail!("Docker build command failed");
             }
             if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
