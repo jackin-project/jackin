@@ -81,12 +81,11 @@ pub struct LoadOptions {
 
 impl LoadOptions {
     pub fn initial_provider(&self) -> Option<jackin_protocol::InitialProvider> {
+        // Label only: the daemon re-derives the env redirection from it and
+        // backfills the token from the container's `ZAI_API_KEY`.
         self.provider
             .map(|provider| jackin_protocol::InitialProvider {
                 label: provider.label().to_string(),
-                // Token is backfilled in-container by the daemon from
-                // `ZAI_API_KEY`; the host launch path has no resolved key here.
-                env_overrides: provider.env_overrides(None),
             })
     }
 

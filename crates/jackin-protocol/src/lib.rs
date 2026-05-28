@@ -35,11 +35,13 @@ pub struct CapsuleConfig {
     pub initial_provider: Option<InitialProvider>,
 }
 
-/// Provider selection for the capsule's initial session spawn.
+/// Provider selection for the capsule's initial session spawn. Carries
+/// only the label; the daemon re-derives the env redirection from it (and
+/// the container's `ZAI_API_KEY`) at spawn time, so there is a single
+/// source of truth for the provider's overrides.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InitialProvider {
     pub label: String,
-    pub env_overrides: Vec<(String, String)>,
 }
 
 /// Z.AI's Anthropic-compatible API base URL.
@@ -59,6 +61,9 @@ pub enum Provider {
 }
 
 impl Provider {
+    /// Every provider variant, in picker/display order.
+    pub const ALL: [Provider; 2] = [Provider::Anthropic, Provider::Zai];
+
     /// Display label, also used as the tab suffix and the string carried
     /// on the wire in `InitialProvider` / `AgentWithProvider`.
     #[must_use]
@@ -69,14 +74,12 @@ impl Provider {
         }
     }
 
-    /// Inverse of [`Provider::label`]. `None` for an unrecognized label.
+    /// Inverse of [`Provider::label`], derived from the same labels so the
+    /// two cannot drift. `None` for an unrecognized label (a stale or
+    /// hostile peer naming a provider this build does not know).
     #[must_use]
     pub fn from_label(label: &str) -> Option<Self> {
-        match label {
-            "Anthropic" => Some(Provider::Anthropic),
-            "Z.AI" => Some(Provider::Zai),
-            _ => None,
-        }
+        Self::ALL.into_iter().find(|provider| provider.label() == label)
     }
 
     /// Env overrides that redirect the agent to this provider. Anthropic

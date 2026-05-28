@@ -1329,19 +1329,17 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
+                let token = self.zai_key.as_deref().filter(|value| !value.is_empty());
                 let resolved_env = match jackin_protocol::Provider::from_label(&provider_label) {
                     Some(provider) => {
                         // Token is resolved here (not on the wire) from the
                         // container's ZAI_API_KEY; the host only sends the label.
-                        let env = provider.env_overrides(self.zai_key.as_deref());
-                        if provider == jackin_protocol::Provider::Zai
-                            && !env.iter().any(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN")
-                        {
+                        if provider == jackin_protocol::Provider::Zai && token.is_none() {
                             crate::clog!(
                                 "spawn: provider Z.AI selected but ZAI_API_KEY unresolved in container; session falls back to the agent's default auth"
                             );
                         }
-                        env
+                        provider.env_overrides(token)
                     }
                     None => {
                         crate::clog!(
@@ -3275,11 +3273,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         launch_config.workdir.as_str()
     );
 
-    let initial_provider_env = launch_config
-        .initial_provider
-        .as_ref()
-        .map(|p| p.env_overrides.clone())
-        .unwrap_or_default();
     let initial_spawn =
         initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
     let mut mux = Multiplexer::new(rows, cols, launch_config);
@@ -3400,7 +3393,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.pointer_shape = PointerShape::Default;
                 if mux.sessions.is_empty()
                     && let Some(request) = pending_initial_spawn.take()
-                    && let Err(err) = mux.spawn_request(request.clone(), &initial_provider_env)
+                    && let Err(err) = mux.spawn_request(request.clone(), &[])
                 {
                     crate::clog!(
                         "initial spawn failed (request={}): {err:#}",
@@ -5538,7 +5531,6 @@ mod tests {
     fn initial_spawn_request_carries_provider_when_selected() {
         let provider = jackin_protocol::InitialProvider {
             label: jackin_protocol::Provider::Zai.label().to_string(),
-            env_overrides: jackin_protocol::Provider::Zai.env_overrides(None),
         };
         assert_eq!(
             initial_spawn_request("claude", Some(&provider)),
