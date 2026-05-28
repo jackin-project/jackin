@@ -776,6 +776,7 @@ impl PullRequestChecks {
 }
 
 impl Session {
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
@@ -1537,6 +1538,7 @@ impl Session {
 
 #[cfg(test)]
 impl Session {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_for_test(
         label: String,
         agent: Option<String>,
