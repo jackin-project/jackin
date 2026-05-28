@@ -17,7 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::scrollable::render_lines_with_offset_in_area;
+use super::scrollable::{apply_vertical_scroll_delta, render_lines_with_offset_in_area};
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,11 +106,11 @@ impl ConfirmSaveState {
     }
 
     fn scroll_preview_by(&mut self, delta: isize) {
-        jackin_tui::scroll::apply_delta_u16(
-            self.lines.len(),
-            usize::from(self.preview_rows),
+        apply_vertical_scroll_delta(
             &mut self.scroll_offset,
-            delta,
+            delta as i16,
+            usize::from(self.preview_rows),
+            self.lines.len(),
         );
     }
 }

@@ -14,6 +14,7 @@ use crate::console::widgets::auth_panel::{AuthForm, CredentialInput};
 use crate::console::widgets::confirm::ConfirmState;
 use crate::console::widgets::file_browser::FileBrowserState;
 use crate::console::widgets::role_picker::RolePickerState;
+use crate::console::widgets::scrollable::apply_term_width_scroll_delta;
 use crate::console::widgets::text_input::TextInputState;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
@@ -990,8 +991,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 }
 
 fn apply_settings_x_delta(value: &mut u16, delta: i16, term_width: u16, content_width: usize) {
-    let viewport = term_width.saturating_sub(2) as usize;
-    jackin_tui::scroll::apply_delta_u16(content_width, viewport, value, isize::from(delta));
+    apply_term_width_scroll_delta(value, delta, term_width, content_width);
 }
 
 #[allow(clippy::too_many_lines)]

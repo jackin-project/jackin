@@ -16,9 +16,9 @@ use super::super::render::list::{
 #[cfg(test)]
 use super::super::render::max_scroll_offset;
 use super::super::render::{
-    apply_horizontal_scroll_delta, horizontal_scrollbar_area, is_scrollable,
-    scroll_viewport_height, scroll_viewport_width, scrollbar_offset_for_track_position,
-    vertical_scrollbar_area,
+    apply_horizontal_scroll_delta, apply_vertical_scroll_delta, horizontal_scrollbar_area,
+    is_scrollable, scroll_viewport_height, scroll_viewport_width,
+    scrollbar_offset_for_track_position, vertical_scrollbar_area,
 };
 use super::super::state::{
     DragState, EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, Modal,
@@ -935,11 +935,11 @@ fn scroll_active_panel(
                 };
                 let viewport = scroll_viewport_width(area);
                 let content_width = list_names_content_width(state, viewport);
-                jackin_tui::scroll::apply_delta_u16(
-                    content_width,
-                    viewport,
+                apply_horizontal_scroll_delta(
                     &mut state.list_names_scroll_x,
-                    isize::from(delta),
+                    delta,
+                    viewport,
+                    content_width,
                 );
                 return;
             }
@@ -1164,12 +1164,7 @@ fn apply_horizontal_scroll(value: &mut u16, delta: i16, area: Rect, content_widt
 }
 
 fn apply_vertical_scroll(value: &mut u16, delta: i16, area: Rect, content_height: usize) {
-    jackin_tui::scroll::apply_delta_u16(
-        content_height,
-        scroll_viewport_height(area),
-        value,
-        isize::from(delta),
-    );
+    apply_vertical_scroll_delta(value, delta, scroll_viewport_height(area), content_height);
 }
 
 struct ListScrollAreas {

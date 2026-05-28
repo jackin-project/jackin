@@ -16,6 +16,7 @@ use super::super::state::{
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
+use crate::console::widgets::scrollable::apply_term_width_scroll_delta;
 use crate::paths::JackinPaths;
 
 // Central keymap dispatch — table-like layout makes the keymap
@@ -485,8 +486,7 @@ pub(super) fn handle_editor_key(
 }
 
 fn apply_editor_x_delta(value: &mut u16, delta: i16, term_width: u16, content_width: usize) {
-    let viewport = term_width.saturating_sub(2) as usize;
-    jackin_tui::scroll::apply_delta_u16(content_width, viewport, value, isize::from(delta));
+    apply_term_width_scroll_delta(value, delta, term_width, content_width);
 }
 
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {

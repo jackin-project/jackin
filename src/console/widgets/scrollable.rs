@@ -120,6 +120,29 @@ pub(crate) fn apply_horizontal_scroll_delta(
     scroll::apply_delta_u16(content_width, viewport, value, isize::from(delta));
 }
 
+pub(crate) fn apply_vertical_scroll_delta(
+    value: &mut u16,
+    delta: i16,
+    viewport: usize,
+    content_height: usize,
+) {
+    scroll::apply_delta_u16(content_height, viewport, value, isize::from(delta));
+}
+
+pub(crate) fn apply_term_width_scroll_delta(
+    value: &mut u16,
+    delta: i16,
+    term_width: u16,
+    content_width: usize,
+) {
+    apply_horizontal_scroll_delta(
+        value,
+        delta,
+        usize::from(term_width.saturating_sub(2)),
+        content_width,
+    );
+}
+
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
     line.spans
         .iter()
