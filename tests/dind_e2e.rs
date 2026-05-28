@@ -345,6 +345,7 @@ fn run_in_pty_with_input(
         .spawn()
         .expect("script must spawn");
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
+    std::thread::sleep(std::time::Duration::from_secs(2));
     stdin
         .write_all(input.as_bytes())
         .expect("script stdin write must succeed");
