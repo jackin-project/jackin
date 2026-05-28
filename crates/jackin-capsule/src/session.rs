@@ -649,6 +649,7 @@ pub enum SessionEvent {
     Exited {
         session_id: u64,
     },
+    GitBranchContextRefreshRequested,
     GitBranchContextLoaded {
         request_id: u64,
         context: GitContext,
