@@ -1233,21 +1233,28 @@ fn failure_popup_rect(area: Rect, row_count: usize) -> Rect {
     centered_rect(popup_w, height, area)
 }
 
+/// Inner body rect (inside the border, plus one column of padding) where the
+/// failure rows render. Render and hit-testing derive geometry from this same
+/// helper so the clickable value columns can never drift from what is drawn.
+fn failure_popup_body_rect(rect: Rect) -> Rect {
+    let inner = rect.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
+    Rect {
+        x: inner.x.saturating_add(1),
+        y: inner.y.saturating_add(1),
+        width: inner.width.saturating_sub(2),
+        height: inner.height.saturating_sub(3),
+    }
+}
+
 fn failure_popup_value_rect(
     rect: Rect,
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
 ) -> Option<Rect> {
-    let inner = rect.inner(ratatui::layout::Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
-    let body = Rect {
-        x: inner.x.saturating_add(1),
-        y: inner.y.saturating_add(1),
-        width: inner.width.saturating_sub(2),
-        height: inner.height.saturating_sub(3),
-    };
+    let body = failure_popup_body_rect(rect);
     let label_width = FAILURE_POPUP_LABEL_WIDTH;
     rows.iter()
         .position(|row| row.copy_target == Some(target))
@@ -1370,12 +1377,7 @@ fn render_failure_popup(
     frame.render_widget(Clear, rect);
     frame.render_widget(block, rect);
 
-    let body = Rect {
-        x: inner.x.saturating_add(1),
-        y: inner.y.saturating_add(1),
-        width: inner.width.saturating_sub(2),
-        height: inner.height.saturating_sub(3),
-    };
+    let body = failure_popup_body_rect(rect);
     for (idx, row) in rows.iter().take(usize::from(body.height)).enumerate() {
         let line = render_failure_popup_line(
             row,
