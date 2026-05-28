@@ -146,7 +146,7 @@ The DinD sidecar auto-generates TLS certificates at startup into a shared Docker
 
 ## Terminal capability model
 
-Pane PTYs run with a stable `TERM=xterm-256color` baseline. jackin' does not copy the host terminal's `$TERM` into the long-lived container environment, because a preserved instance can be reattached later from a different terminal app. A pane that started while the operator used Ghostty must still be safe to reattach from Kitty, iTerm, Warp, SSH, or a plain xterm-compatible terminal.
+Pane PTYs run with a stable `TERM=xterm-256color` baseline and `COLORTERM=truecolor`. jackin' does not copy the host terminal's `$TERM` into the long-lived container environment, because a preserved instance can be reattached later from a different terminal app. A pane that started while the operator used Ghostty must still be safe to reattach from Kitty, iTerm, Warp, SSH, or a plain xterm-compatible terminal. `COLORTERM=truecolor` is a deterministic capability hint for agent CLIs and TUIs, not a host-specific terminal identity.
 
 Terminal-specific enhancements are attached-client state instead. Every foreground attach (`jackin load`, `jackin hardline`, and console attach) runs a short-lived Capsule client through `docker exec`; that client reports its current `TERM`, `TERM_PROGRAM`, and `COLORTERM` in the attach handshake. The PID 1 daemon stores that identity only for the active client and refreshes it on every takeover, so jackin-owned output enhancements follow the terminal the operator is using now.
 
@@ -159,7 +159,7 @@ The container no longer runs tmux for agent sessions. The Capsule owns the PTYs 
 | Former tmux concern | Capsule behavior |
 |---|---|
 | Modified keys | Client-side input parsing preserves xterm/Kitty/CSI-u key sequences and forwards pane input unmodified unless it is a jackin'-owned palette or prefix command. |
-| Terminal feature advertisement | Pane PTYs run with `TERM=xterm-256color`; outer-terminal identity is reported per attach and used only for client-side enhancements. |
+| Terminal feature advertisement | Pane PTYs run with `TERM=xterm-256color` and `COLORTERM=truecolor`; outer-terminal identity is reported per attach and used only for client-side enhancements. |
 | Focus events | The attach client enables focus reporting on the outer terminal and forwards focus-in/focus-out only to panes that requested it. |
 | OSC passthrough | Focused-pane OSC 0/1/2 titles, OSC 8 hyperlinks, OSC 9 notifications, and OSC 52 clipboard writes are forwarded with per-family opt-outs. OSC 7 is captured for pane titles and not forwarded to the host. |
 | Escape timing | The input parser treats Escape as data for the pane except when a jackin' dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |

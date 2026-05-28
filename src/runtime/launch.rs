@@ -73,9 +73,22 @@ pub struct LoadOptions {
 
     /// Role source URL captured in the instance manifest for restore paths.
     pub restore_role_source_git: Option<String>,
+    /// Provider selected for the initial session (e.g. Z.AI's Anthropic
+    /// redirect). When set, the first attach carries the provider's env
+    /// overrides and label into the capsule's initial spawn.
+    pub provider: Option<jackin_protocol::Provider>,
 }
 
 impl LoadOptions {
+    pub fn initial_provider(&self) -> Option<jackin_protocol::InitialProvider> {
+        // Label only: the daemon re-derives the env redirection from it and
+        // backfills the token from the container's `ZAI_API_KEY`.
+        self.provider
+            .map(|provider| jackin_protocol::InitialProvider {
+                label: provider.label().to_string(),
+            })
+    }
+
     /// Build options for `jackin load`.
     pub fn for_load(debug: bool, rebuild: bool) -> Self {
         Self {
@@ -93,7 +106,6 @@ impl LoadOptions {
         }
     }
 }
-
 fn validate_agent_supported(
     selector: &RoleSelector,
     manifest: &crate::manifest::RoleManifest,
@@ -652,6 +664,7 @@ fn capsule_config(
     selector: &RoleSelector,
     workdir: &str,
     manifest: &crate::manifest::RoleManifest,
+    initial_provider: Option<jackin_protocol::InitialProvider>,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
@@ -683,6 +696,7 @@ fn capsule_config(
         workdir: workdir.to_string(),
         agents,
         models,
+        initial_provider,
     }
 }
 
@@ -2167,7 +2181,7 @@ async fn load_role_with(
         // declaration string is recorded.
         let resolved_source: Option<String> =
             agent.required_env_var(auth_mode).and_then(|env_var| {
-                let raw = lookup_operator_env_raw(
+                let raw = crate::operator_env::lookup_operator_env_raw(
                     config,
                     Some(&role_key),
                     workspace_name.as_deref(),
@@ -2291,7 +2305,12 @@ async fn load_role_with(
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker").await;
 
-        let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest);
+        let launch_config = capsule_config(
+            selector,
+            &workspace.workdir,
+            &validated_repo.manifest,
+            opts.initial_provider(),
+        );
         let ctx = LaunchContext {
             container_name: &container_name,
             image: &image,
@@ -3787,36 +3806,6 @@ fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     }
 }
 
-/// Look up the raw (unresolved) declaration value for `key` in the
-/// operator env config layers, using the same precedence as
-/// `resolve_operator_env` (global < role < workspace < workspace ×
-/// role — later wins).
-fn lookup_operator_env_raw(
-    config: &crate::config::AppConfig,
-    role_selector: Option<&str>,
-    workspace_name: Option<&str>,
-    key: &str,
-) -> Option<String> {
-    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
-
-    // Walk layers low → high priority; later assignments win over
-    // earlier ones. Assign each layer's `.get(key).cloned()` in turn,
-    // `or_else`-chaining lets `None` from a later layer fall back to
-    // an earlier layer's value.
-    let workspace_role = ws_opt.zip(role_selector).and_then(|(ws, role_name)| {
-        ws.roles
-            .get(role_name)
-            .and_then(|overlay| overlay.env.get(key).map(|v| v.as_display_str().to_string()))
-    });
-    let workspace = ws_opt.and_then(|ws| ws.env.get(key).map(|v| v.as_display_str().to_string()));
-    let role = role_selector
-        .and_then(|role_name| config.roles.get(role_name))
-        .and_then(|a| a.env.get(key).map(|v| v.as_display_str().to_string()));
-    let global = config.env.get(key).map(|v| v.as_display_str().to_string());
-
-    workspace_role.or(workspace).or(role).or(global)
-}
-
 struct LoadCleanup {
     container_name: String,
     dind: String,
@@ -4047,7 +4036,7 @@ model = "zai/glm"
 
         let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-        let config = capsule_config(&selector, "/workspace", &manifest);
+        let config = capsule_config(&selector, "/workspace", &manifest, None);
 
         assert_eq!(config.role, "chainargos/the-architect");
         assert_eq!(config.workdir, "/workspace");
@@ -7876,6 +7865,97 @@ plugins = []
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=smoke-literal"),
             "docker run must inject operator env; got: {run_cmd}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_agent_keeps_zai_secret_out_of_capsule_config() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+ZAI_API_KEY = "super-secret-zai-key"
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jk-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        let opts = LoadOptions {
+            provider: Some(jackin_protocol::Provider::Zai),
+            ..LoadOptions::default()
+        };
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &opts,
+        )
+        .await
+        .unwrap();
+
+        let container_name = launched_role_container_name(&runner);
+        let capsule_config_path = paths
+            .jackin_home
+            .join("sockets")
+            .join(container_name)
+            .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+        let capsule_config = std::fs::read_to_string(capsule_config_path).unwrap();
+        assert!(
+            !capsule_config.contains("super-secret-zai-key"),
+            "CapsuleConfig must not persist resolved provider secrets: {capsule_config}"
+        );
+        assert!(
+            !capsule_config.contains("zai_key"),
+            "CapsuleConfig must not contain a provider secret field: {capsule_config}"
+        );
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("-e ZAI_API_KEY=super-secret-zai-key"),
+            "ZAI_API_KEY should still reach the container process env; got: {run_cmd}"
         );
     }
 

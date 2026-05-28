@@ -187,6 +187,8 @@ pub fn handle_mouse_with_config(
                     state.selected = selected;
                     state.inline_agent_picker = None;
                     state.inline_new_session_picker = None;
+                    state.inline_provider_picker = None;
+                    state.launch_provider_picker = None;
                 }
             }
         }

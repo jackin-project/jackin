@@ -46,6 +46,11 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "JACKIN_DEBUG",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
+    // Per-tab provider injection — Z.AI and future Anthropic-compatible backends.
+    // Listed here so env_for_spawn's allowlist accepts them as overrides when the
+    // operator picks an alternative provider in the AgentPicker flow.
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
 ];
 
 /// Per-pane cap on the kitty-keyboard push depth. A buggy or hostile
@@ -582,9 +587,20 @@ impl Callbacks for OscCapture {
     }
 }
 
+/// Resolved provider a session was spawned with. Label and env overrides
+/// travel together (both derived from one `jackin_protocol::Provider` at
+/// spawn time) so a split can faithfully inherit the source pane's provider
+/// without the label drifting from its redirect env.
+#[derive(Debug, Clone)]
+pub struct SessionProvider {
+    pub label: String,
+    pub env_overrides: Vec<(String, String)>,
+}
+
 pub struct Session {
     pub label: String,
     pub agent: Option<String>,
+    pub provider: Option<SessionProvider>,
     pub state: AgentState,
     pub parser: vt100::Parser<OscCapture>,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -772,6 +788,7 @@ impl Session {
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
+        provider: Option<SessionProvider>,
         cmd: CommandBuilder,
         rows: u16,
         cols: u16,
@@ -965,6 +982,7 @@ impl Session {
             Session {
                 label: label.into(),
                 agent,
+                provider,
                 state: AgentState::Working,
                 parser: vt100::Parser::new_with_callbacks(
                     rows,
@@ -1526,9 +1544,11 @@ impl Session {
 
 #[cfg(test)]
 impl Session {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_for_test(
         label: String,
         agent: Option<String>,
+        provider: Option<SessionProvider>,
         size: (u16, u16),
         scrollback_len: usize,
         input_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -1538,6 +1558,7 @@ impl Session {
         Self {
             label,
             agent,
+            provider,
             state: AgentState::Working,
             parser: vt100::Parser::new_with_callbacks(
                 size.0,
@@ -1655,9 +1676,12 @@ pub fn build_shell_command(env_passthrough: &[(String, String)], cwd: &Path) -> 
 /// reported per attach through the Capsule protocol; pane PTYs keep a
 /// conservative baseline so a running session can be reattached from Ghostty,
 /// Kitty, iTerm, Warp, or any other xterm-compatible client without retaining
-/// assumptions from the terminal that launched the container.
+/// assumptions from the terminal that launched the container. `COLORTERM`
+/// intentionally advertises jackin's 24-bit color path without tying the pane
+/// to a host-specific terminfo entry.
 fn apply_terminal_env(cmd: &mut CommandBuilder) {
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
     for key in ["LANG", "LC_ALL"] {
         if let Ok(value) = std::env::var(key) {
             cmd.env(key, value);
@@ -1753,6 +1777,28 @@ mod tests {
         assert_eq!(
             cmd.get_env("TERM").and_then(|value| value.to_str()),
             Some("xterm-256color")
+        );
+    }
+
+    #[test]
+    fn build_agent_command_advertises_truecolor() {
+        let env = vec![("COLORTERM".to_string(), "24bit".to_string())];
+        let cmd = build_agent_command("claude", None, &env, Path::new("/workspace"));
+
+        assert_eq!(
+            cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
+            Some("truecolor")
+        );
+    }
+
+    #[test]
+    fn build_shell_command_advertises_truecolor() {
+        let env = vec![("COLORTERM".to_string(), "false".to_string())];
+        let cmd = build_shell_command(&env, Path::new("/workspace"));
+
+        assert_eq!(
+            cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
+            Some("truecolor")
         );
     }
 

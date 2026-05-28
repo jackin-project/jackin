@@ -15,10 +15,14 @@ const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
 const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
 const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v3.done";
+/// Cached DCO identity written at daemon startup so the hook never calls
+/// `git config` at commit time (avoids transient-empty-config silent skips).
+const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
 
 pub fn run() -> Result<()> {
     run_container_init_once()?;
     install_git_trailer_hook_if_requested()?;
+    cache_dco_identity_if_needed();
     run_agent_setup()
 }
 
@@ -124,8 +128,13 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
         .context("prepare-commit-msg hook requires a commit message path")?;
 
     if env_is_one("JACKIN_GIT_DCO") {
-        let dco_name = git_config_value("user.name").unwrap_or_default();
-        let dco_email = git_config_value("user.email").unwrap_or_default();
+        let (dco_name, dco_email) = read_cached_dco_identity().unwrap_or_else(|| {
+            // Cache absent (e.g. daemon was started without JACKIN_GIT_DCO=1 then
+            // env changed): fall back to live git config so the hook still works.
+            let name = git_config_value("user.name").unwrap_or_default();
+            let email = git_config_value("user.email").unwrap_or_default();
+            (name, email)
+        });
         if dco_name.is_empty() || dco_email.is_empty() {
             eprintln!(
                 "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_DCO=1 but git identity is not configured (user.name='{dco_name}' user.email='{dco_email}'); no Signed-off-by trailer written"
@@ -400,6 +409,40 @@ fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
         ),
         _ => None,
     }
+}
+
+/// Write `user.name` and `user.email` to `GIT_DCO_IDENTITY_CACHE` at startup
+/// so the prepare-commit-msg hook never shells out to `git config` at commit
+/// time (eliminates the class of transient-empty-config silent-skip failures).
+fn cache_dco_identity_if_needed() {
+    if !env_is_one("JACKIN_GIT_DCO") {
+        return;
+    }
+    let (Some(name), Some(email)) = (
+        git_config_value("user.name"),
+        git_config_value("user.email"),
+    ) else {
+        // DCO is on but git identity is unreadable at startup; the commit-time
+        // hook will fall back to live `git config` (and warn) per commit.
+        crate::clog!("dco identity cache skipped: user.name/user.email not configured at startup");
+        return;
+    };
+    if let Err(err) = fs::write(GIT_DCO_IDENTITY_CACHE, format!("{name}\n{email}\n")) {
+        // A failed cache write means every commit shells out to live git
+        // config — the exact failure this cache exists to prevent.
+        crate::clog!(
+            "dco identity cache write to {GIT_DCO_IDENTITY_CACHE} failed: {err} (errno={:?})",
+            err.raw_os_error()
+        );
+    }
+}
+
+fn read_cached_dco_identity() -> Option<(String, String)> {
+    let content = fs::read_to_string(GIT_DCO_IDENTITY_CACHE).ok()?;
+    let mut lines = content.lines();
+    let name = lines.next().filter(|s| !s.is_empty())?.to_string();
+    let email = lines.next().filter(|s| !s.is_empty())?.to_string();
+    Some((name, email))
 }
 
 fn git_config_value(key: &str) -> Option<String> {

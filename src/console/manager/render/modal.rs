@@ -266,8 +266,6 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Key("Esc"),
             HintSpan::Text("cancel"),
         ],
-        // The Section stage is a short list with no filter — drop the
-        // `type filter` hint that the other picker list stages carry.
         Modal::OpPicker { state }
             if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
         {
@@ -282,8 +280,23 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
                 HintSpan::Text("cancel"),
             ]
         }
-        Modal::OpPicker { .. }
-        | Modal::RolePicker { .. }
+        Modal::OpPicker { .. } => vec![
+            HintSpan::Key("\u{2191}\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("type"),
+            HintSpan::Text("filter"),
+            HintSpan::GroupSep,
+            HintSpan::Key("R"),
+            HintSpan::Text("refresh"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Enter"),
+            HintSpan::Text("select"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Esc"),
+            HintSpan::Text("cancel"),
+        ],
+        Modal::RolePicker { .. }
         | Modal::RoleOverridePicker { .. }
         | Modal::AuthRolePicker { .. } => vec![
             HintSpan::Key("\u{2191}\u{2193}"),
