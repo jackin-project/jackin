@@ -5,13 +5,18 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::super::super::widgets::file_browser::FileBrowserState;
-use super::super::render::global_mounts::trust_content_width;
-use super::super::render::list::{global_mounts_content_width, workspace_mounts_content_width};
+use super::super::render::global_mounts::{
+    auth_content_height, env_content_height, mounts_content_height, trust_content_height,
+    trust_content_width,
+};
+#[cfg(test)]
+use super::super::render::list::global_mounts_content_width;
+use super::super::render::list::{list_names_content_width, workspace_mounts_content_width};
 #[cfg(test)]
 use super::super::render::max_scroll_offset;
 use super::super::render::{
-    apply_horizontal_scroll_delta, apply_scroll_delta, horizontal_scrollbar_area, is_scrollable,
-    scroll_viewport_height, scroll_viewport_width, scrollbar_offset_for_track_position,
+    apply_scroll_delta, horizontal_scrollbar_area, is_scrollable, scroll_viewport_height,
+    scroll_viewport_width, scrollbar_offset_for_track_position, vertical_scrollbar_area,
 };
 use super::super::state::{
     DragState, EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, Modal,
@@ -102,6 +107,11 @@ pub fn handle_mouse_with_config(
         {
             return;
         }
+        MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left)
+            if try_drag_vertical_scrollbar(state, mouse, term_size, config) =>
+        {
+            return;
+        }
         MouseEventKind::ScrollLeft => {
             scroll_active_panel(
                 state,
@@ -123,11 +133,23 @@ pub fn handle_mouse_with_config(
             return;
         }
         MouseEventKind::ScrollUp => {
-            scroll_active_panel_vertical(state, mouse, term_size, -MOUSE_VERTICAL_SCROLL_STEP);
+            scroll_active_panel_vertical(
+                state,
+                mouse,
+                term_size,
+                config,
+                -MOUSE_VERTICAL_SCROLL_STEP,
+            );
             return;
         }
         MouseEventKind::ScrollDown => {
-            scroll_active_panel_vertical(state, mouse, term_size, MOUSE_VERTICAL_SCROLL_STEP);
+            scroll_active_panel_vertical(
+                state,
+                mouse,
+                term_size,
+                config,
+                MOUSE_VERTICAL_SCROLL_STEP,
+            );
             return;
         }
         _ => {}
@@ -509,10 +531,8 @@ fn try_select_editor_mount_row(
     let Some(index) = editor_mount_index_at(editor, mouse, term_size) else {
         return false;
     };
-    let area = editor_scroll_area(editor, term_size);
     editor.active_field = FieldFocus::Row(index);
-    editor.workspace_mounts_scroll_focused =
-        is_scrollable(area.content_width, scroll_viewport_width(area.area));
+    editor.workspace_mounts_scroll_focused = true;
     true
 }
 
@@ -556,6 +576,9 @@ fn try_drag_horizontal_scrollbar(
 ) -> bool {
     match &mut state.stage {
         ManagerStage::List => {
+            if state.list_modal.is_some() {
+                return false;
+            }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
                 return false;
             };
@@ -591,6 +614,9 @@ fn try_drag_horizontal_scrollbar(
             false
         }
         ManagerStage::Editor(editor) => {
+            if editor.modal.is_some() {
+                return false;
+            }
             let dragged = if editor.active_tab == EditorTab::Mounts {
                 let workspace = editor_scroll_area(editor, term_size);
                 drag_scrollbar(
@@ -618,6 +644,9 @@ fn try_drag_horizontal_scrollbar(
             dragged
         }
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                return false;
+            }
             if settings.active_tab != SettingsTab::Mounts {
                 return false;
             }
@@ -689,8 +718,7 @@ fn update_scroll_focus(
                     editor.workspace_mounts_scroll_focused = false;
                 } else {
                     let area = editor_scroll_area(editor, term_size);
-                    editor.workspace_mounts_scroll_focused = point_in(mouse, area.area)
-                        && is_scrollable(area.content_width, scroll_viewport_width(area.area));
+                    editor.workspace_mounts_scroll_focused = point_in(mouse, area.area);
                 }
                 editor.tab_content_scroll_focused = false;
             } else {
@@ -700,15 +728,18 @@ fn update_scroll_focus(
                 } else {
                     let content_area = editor_content_area(editor, term_size);
                     let in_content = point_in(mouse, content_area);
-                    let viewport_h = scroll_viewport_height(content_area);
-                    let viewport_w = scroll_viewport_width(content_area);
-                    editor.tab_content_scroll_focused = in_content
-                        && (is_scrollable(editor.tab_content_width, viewport_w)
-                            || is_scrollable(editor.tab_content_height, viewport_h));
+                    editor.tab_content_scroll_focused = in_content;
                 }
             }
         }
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                settings.mounts.scroll_focused = false;
+                settings.env.scroll_focused = false;
+                settings.auth.scroll_focused = false;
+                settings.trust.scroll_focused = false;
+                return;
+            }
             let content_area = settings_content_area(settings, term_size);
             let in_content = point_in(mouse, content_area);
             settings.mounts.scroll_focused =
@@ -752,24 +783,171 @@ struct ScrollArea {
     content_width: usize,
 }
 
-fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {
-    let viewport = scroll_viewport_width(area);
-    if !is_scrollable(content_width, viewport) {
-        return false;
-    }
-    let scrollbar = horizontal_scrollbar_area(area);
-    if !point_in(mouse, scrollbar) {
+#[derive(Clone, Copy)]
+enum ScrollbarAxis {
+    Horizontal,
+    Vertical,
+}
+
+fn drag_scrollbar_axis(
+    axis: ScrollbarAxis,
+    value: &mut u16,
+    mouse: MouseEvent,
+    area: Rect,
+    content_len: usize,
+) -> bool {
+    let (viewport, scrollbar, track_len, track_position) = match axis {
+        ScrollbarAxis::Horizontal => {
+            let scrollbar = horizontal_scrollbar_area(area);
+            (
+                scroll_viewport_width(area),
+                scrollbar,
+                scrollbar.width,
+                mouse.column.saturating_sub(scrollbar.x),
+            )
+        }
+        ScrollbarAxis::Vertical => {
+            let scrollbar = vertical_scrollbar_area(area);
+            (
+                scroll_viewport_height(area),
+                scrollbar,
+                scrollbar.height,
+                mouse.row.saturating_sub(scrollbar.y),
+            )
+        }
+    };
+    if !is_scrollable(content_len, viewport) || !point_in(mouse, scrollbar) {
         return false;
     }
     *value = scrollbar_offset_for_track_position(
-        content_width,
+        content_len,
         viewport,
-        usize::from(scrollbar.width),
-        usize::from(mouse.column.saturating_sub(scrollbar.x)),
+        usize::from(track_len),
+        usize::from(track_position),
     );
     true
 }
 
+fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {
+    drag_scrollbar_axis(ScrollbarAxis::Horizontal, value, mouse, area, content_width)
+}
+
+fn drag_vertical_scrollbar(
+    value: &mut u16,
+    mouse: MouseEvent,
+    area: Rect,
+    content_height: usize,
+) -> bool {
+    drag_scrollbar_axis(ScrollbarAxis::Vertical, value, mouse, area, content_height)
+}
+
+const fn settings_modal_open(settings: &super::super::state::SettingsState<'_>) -> bool {
+    settings.error_popup.is_some()
+        || settings.mounts.modal.is_some()
+        || settings.env.modal.is_some()
+        || settings.auth.modal.is_some()
+}
+
+fn try_drag_vertical_scrollbar(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+) -> bool {
+    match &mut state.stage {
+        ManagerStage::List => {
+            if state.list_modal.is_some() {
+                return false;
+            }
+            let Some(areas) = list_scroll_areas(state, term_size, config) else {
+                return false;
+            };
+            let Some(focus) = state.list_scroll_focus else {
+                return false;
+            };
+            match focus {
+                MountScrollFocus::Workspace => drag_vertical_scrollbar(
+                    &mut state.list_mounts_scroll_y,
+                    mouse,
+                    areas.workspace.area,
+                    areas.workspace.content_height,
+                ),
+                MountScrollFocus::Global => drag_vertical_scrollbar(
+                    &mut state.list_global_mounts_scroll_y,
+                    mouse,
+                    areas.global.area,
+                    areas.global.content_height,
+                ),
+                MountScrollFocus::RoleGlobal => areas.role_global.is_some_and(|area| {
+                    drag_vertical_scrollbar(
+                        &mut state.list_role_global_mounts_scroll_y,
+                        mouse,
+                        area.area,
+                        area.content_height,
+                    )
+                }),
+                MountScrollFocus::Roles => areas.roles.is_some_and(|area| {
+                    drag_vertical_scrollbar(
+                        &mut state.list_roles_scroll_y,
+                        mouse,
+                        area.area,
+                        area.content_height,
+                    )
+                }),
+            }
+        }
+        ManagerStage::Editor(editor) => {
+            if editor.modal.is_some() {
+                return false;
+            }
+            let area = editor_content_area(editor, term_size);
+            let content_height = editor_content_height(editor);
+            drag_vertical_scrollbar(&mut editor.tab_scroll_y, mouse, area, content_height)
+        }
+        ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                return false;
+            }
+            let area = settings_content_area(settings, term_size);
+            let content_height = match settings.active_tab {
+                SettingsTab::General => 0,
+                SettingsTab::Mounts => mounts_content_height(settings),
+                SettingsTab::Environments => env_content_height(settings, area.width),
+                SettingsTab::Auth => auth_content_height(settings),
+                SettingsTab::Trust => trust_content_height(settings),
+            };
+            match settings.active_tab {
+                SettingsTab::General => false,
+                SettingsTab::Mounts => drag_vertical_scrollbar(
+                    &mut settings.mounts.scroll_y,
+                    mouse,
+                    area,
+                    content_height,
+                ),
+                SettingsTab::Environments => {
+                    drag_vertical_scrollbar(&mut settings.env.scroll_y, mouse, area, content_height)
+                }
+                SettingsTab::Auth => drag_vertical_scrollbar(
+                    &mut settings.auth.scroll_y,
+                    mouse,
+                    area,
+                    content_height,
+                ),
+                SettingsTab::Trust => drag_vertical_scrollbar(
+                    &mut settings.trust.scroll_y,
+                    mouse,
+                    area,
+                    content_height,
+                ),
+            }
+        }
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => false,
+    }
+}
+
+#[allow(clippy::too_many_lines)]
 fn scroll_active_panel(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -779,9 +957,28 @@ fn scroll_active_panel(
 ) {
     match &mut state.stage {
         ManagerStage::List => {
+            if state.list_modal.is_some() {
+                return;
+            }
             update_scroll_focus(state, mouse, term_size, config);
             if state.list_names_focused {
-                apply_scroll_delta(&mut state.list_names_scroll_x, delta);
+                let (left_x, left_w) = left_pane_dims(state.list_split_pct, term_size.width);
+                let area = Rect {
+                    x: left_x,
+                    y: LIST_HEADER_HEIGHT,
+                    width: left_w,
+                    height: term_size
+                        .height
+                        .saturating_sub(LIST_HEADER_HEIGHT + LIST_FOOTER_HEIGHT),
+                };
+                let viewport = scroll_viewport_width(area);
+                let content_width = list_names_content_width(state, viewport);
+                apply_scroll_delta(
+                    &mut state.list_names_scroll_x,
+                    delta,
+                    viewport,
+                    content_width,
+                );
                 return;
             }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
@@ -808,6 +1005,9 @@ fn scroll_active_panel(
             );
         }
         ManagerStage::Editor(editor) => {
+            if editor.modal.is_some() {
+                return;
+            }
             if editor.active_tab != EditorTab::Mounts {
                 editor.workspace_mounts_scroll_focused = false;
                 let area = editor_content_area(editor, term_size);
@@ -842,6 +1042,9 @@ fn scroll_active_panel(
             }
         }
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                return;
+            }
             // Hover-scroll: fire on whichever block the cursor is over.
             let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
@@ -873,14 +1076,19 @@ fn scroll_active_panel(
 /// Horizontal-only blocks (List view mounts) are silently ignored here —
 /// their scroll is only driven by left/right events via `scroll_active_panel`.
 #[allow(clippy::missing_const_for_fn)]
+#[allow(clippy::too_many_lines)]
 fn scroll_active_panel_vertical(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
     delta: i16,
 ) {
     match &mut state.stage {
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                return;
+            }
             let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
                 return;
@@ -889,43 +1097,104 @@ fn scroll_active_panel_vertical(
                 // General has no scrollable content; empty arm is intentional.
                 SettingsTab::General => {}
                 SettingsTab::Mounts => {
-                    apply_scroll_delta(&mut settings.mounts.scroll_y, delta);
+                    let content_height = mounts_content_height(settings);
+                    apply_vertical_scroll(
+                        &mut settings.mounts.scroll_y,
+                        delta,
+                        content_area,
+                        content_height,
+                    );
                 }
                 SettingsTab::Environments => {
-                    apply_scroll_delta(&mut settings.env.scroll_y, delta);
+                    let content_height = env_content_height(settings, content_area.width);
+                    apply_vertical_scroll(
+                        &mut settings.env.scroll_y,
+                        delta,
+                        content_area,
+                        content_height,
+                    );
                 }
                 SettingsTab::Trust => {
-                    apply_scroll_delta(&mut settings.trust.scroll_y, delta);
+                    let content_height = trust_content_height(settings);
+                    apply_vertical_scroll(
+                        &mut settings.trust.scroll_y,
+                        delta,
+                        content_area,
+                        content_height,
+                    );
                 }
                 SettingsTab::Auth => {
-                    apply_scroll_delta(&mut settings.auth.scroll_y, delta);
+                    let content_height = auth_content_height(settings);
+                    apply_vertical_scroll(
+                        &mut settings.auth.scroll_y,
+                        delta,
+                        content_area,
+                        content_height,
+                    );
                 }
             }
         }
         ManagerStage::Editor(editor) => {
-            match editor.active_tab {
-                // General has 4 fixed rows — no vertical scroll needed.
-                EditorTab::General => {}
-                // Mounts, Roles, Secrets, Auth all use tab_scroll_y.
-                EditorTab::Mounts | EditorTab::Roles | EditorTab::Secrets | EditorTab::Auth => {
-                    apply_scroll_delta(&mut editor.tab_scroll_y, delta);
-                }
+            if editor.modal.is_some() {
+                return;
             }
+            let area = editor_content_area(editor, term_size);
+            if !point_in(mouse, area) {
+                return;
+            }
+            let content_height = editor_content_height(editor);
+            apply_vertical_scroll(&mut editor.tab_scroll_y, delta, area, content_height);
         }
         ManagerStage::List => {
+            if state.list_modal.is_some() {
+                return;
+            }
+            update_scroll_focus(state, mouse, term_size, config);
             // Scroll the focused block vertically.
             match state.list_scroll_focus {
                 Some(MountScrollFocus::Workspace) => {
-                    apply_scroll_delta(&mut state.list_mounts_scroll_y, delta);
+                    if let Some(areas) = list_scroll_areas(state, term_size, config) {
+                        apply_vertical_scroll(
+                            &mut state.list_mounts_scroll_y,
+                            delta,
+                            areas.workspace.area,
+                            areas.workspace.content_height,
+                        );
+                    }
                 }
                 Some(MountScrollFocus::Global) => {
-                    apply_scroll_delta(&mut state.list_global_mounts_scroll_y, delta);
+                    if let Some(areas) = list_scroll_areas(state, term_size, config) {
+                        apply_vertical_scroll(
+                            &mut state.list_global_mounts_scroll_y,
+                            delta,
+                            areas.global.area,
+                            areas.global.content_height,
+                        );
+                    }
                 }
                 Some(MountScrollFocus::RoleGlobal) => {
-                    apply_scroll_delta(&mut state.list_role_global_mounts_scroll_y, delta);
+                    if let Some(areas) = list_scroll_areas(state, term_size, config)
+                        && let Some(area) = areas.role_global
+                    {
+                        apply_vertical_scroll(
+                            &mut state.list_role_global_mounts_scroll_y,
+                            delta,
+                            area.area,
+                            area.content_height,
+                        );
+                    }
                 }
                 Some(MountScrollFocus::Roles) => {
-                    apply_scroll_delta(&mut state.list_roles_scroll_y, delta);
+                    if let Some(areas) = list_scroll_areas(state, term_size, config)
+                        && let Some(area) = areas.roles
+                    {
+                        apply_vertical_scroll(
+                            &mut state.list_roles_scroll_y,
+                            delta,
+                            area.area,
+                            area.content_height,
+                        );
+                    }
                 }
                 None => {}
             }
@@ -937,21 +1206,18 @@ fn scroll_active_panel_vertical(
 }
 
 fn apply_horizontal_scroll(value: &mut u16, delta: i16, area: Rect, content_width: usize) {
-    apply_horizontal_scroll_delta(value, delta, scroll_viewport_width(area), content_width);
+    apply_scroll_delta(value, delta, scroll_viewport_width(area), content_width);
 }
 
-struct ListScrollAreas {
-    workspace: ScrollArea,
-    global: ScrollArea,
-    role_global: Option<ScrollArea>,
-    roles: Option<ScrollArea>,
+fn apply_vertical_scroll(value: &mut u16, delta: i16, area: Rect, content_height: usize) {
+    apply_scroll_delta(value, delta, scroll_viewport_height(area), content_height);
 }
 
 fn list_scroll_areas(
     state: &ManagerState<'_>,
     term_size: Rect,
     config: Option<&crate::config::AppConfig>,
-) -> Option<ListScrollAreas> {
+) -> Option<super::super::render::list::SidebarScrollAreas> {
     let config = config?;
     let (right_x, right_w) = right_pane_dims(state.list_split_pct, term_size.width);
     let body_y = LIST_HEADER_HEIGHT;
@@ -981,36 +1247,9 @@ fn list_scroll_areas(
         super::super::render::list::sidebar_inputs_for_workspace(summary, config, state)
     };
 
-    let layout = super::super::render::list::compute_sidebar_layout(pane_area, &inputs);
-    let (global_rows, role_global_rows) =
-        super::super::render::list::split_global_mount_rows_pub(&inputs.global_rows);
-
-    Some(ListScrollAreas {
-        workspace: ScrollArea {
-            area: layout.mounts,
-            content_width: workspace_mounts_content_width(inputs.mounts),
-        },
-        global: ScrollArea {
-            area: layout.global.unwrap_or(Rect {
-                x: pane_area.x,
-                y: pane_area.y,
-                width: pane_area.width,
-                height: 0,
-            }),
-            content_width: global_mounts_content_width_from_rows(&global_rows),
-        },
-        role_global: layout.role_global.map(|area| ScrollArea {
-            area,
-            content_width: global_mounts_content_width_from_rows(&role_global_rows),
-        }),
-        roles: layout.roles.map(|area| ScrollArea {
-            area,
-            content_width: super::super::render::list::agents_block_content_width(
-                inputs.ws_config,
-                config,
-            ),
-        }),
-    })
+    Some(super::super::render::list::compute_sidebar_scroll_areas(
+        pane_area, &inputs, config,
+    ))
 }
 
 fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig {
@@ -1020,12 +1259,6 @@ fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig 
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }
-}
-
-fn global_mounts_content_width_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_width(&mounts)
 }
 
 const fn editor_content_area(
@@ -1050,6 +1283,10 @@ fn editor_scroll_area(
         area: editor_content_area(editor, term_size),
         content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
     }
+}
+
+const fn editor_content_height(editor: &super::super::state::EditorState<'_>) -> usize {
+    editor.tab_content_height
 }
 
 fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
@@ -1157,6 +1394,23 @@ fn right_pane_dims(pct: u16, total_width: u16) -> (u16, u16) {
     (cols[1].x, cols[1].width)
 }
 
+fn left_pane_dims(pct: u16, total_width: u16) -> (u16, u16) {
+    let right_pct = 100u16.saturating_sub(pct);
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(pct),
+            Constraint::Percentage(right_pct),
+        ])
+        .split(Rect {
+            x: 0,
+            y: 0,
+            width: total_width,
+            height: 1,
+        });
+    (cols[0].x, cols[0].width)
+}
+
 /// `true` when `column` is within ±`SEAM_HIT_SLACK` of `seam_x`.
 const fn near_seam(column: u16, seam_x: u16) -> bool {
     let lo = seam_x.saturating_sub(SEAM_HIT_SLACK);
@@ -1188,11 +1442,16 @@ mod mouse_drag_tests {
     //! These build `MouseEvent` values directly and bypass the ratatui
     //! event loop — enough to pin the seam hit-test + drag math without a
     //! real terminal.
-    use super::{MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config};
-    use crate::console::manager::state::{
-        DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, MAX_SPLIT_PCT, MIN_SPLIT_PCT,
-        ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag,
+    use super::{
+        MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config, list_scroll_areas,
     };
+    use crate::console::manager::state::{
+        DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
+        GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal,
+        MountScrollFocus, SecretsScopeTag, SettingsState, SettingsTab,
+    };
+    use crate::console::widgets::confirm::ConfirmState;
+    use crate::console::widgets::save_discard::SaveDiscardState;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use ratatui::layout::Rect;
@@ -1954,6 +2213,38 @@ mod mouse_drag_tests {
     }
 
     #[test]
+    fn vertical_mouse_wheel_routes_to_block_under_pointer_not_stale_focus() {
+        let mut config = config_with_scrollable_workspace_and_global_mounts();
+        for idx in 0..6 {
+            config.add_mount(
+                &format!("global-extra-{idx}"),
+                MountConfig {
+                    src: format!("/host/source/extra/{idx}"),
+                    dst: format!("/container/destination/extra/{idx}"),
+                    readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+                None,
+            );
+        }
+        let mut state = selected_demo_state(&config);
+        state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+
+        let areas = list_scroll_areas(&state, term(100), Some(&config)).expect("list areas");
+        let mouse = mouse_kind_at(
+            MouseEventKind::ScrollDown,
+            areas.global.area.x + 1,
+            areas.global.area.y + 1,
+        );
+
+        handle_mouse_with_config(&mut state, mouse, term(100), Some(&config));
+
+        assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Global));
+        assert_eq!(state.list_mounts_scroll_y, 0);
+        assert_eq!(state.list_global_mounts_scroll_y, 1);
+    }
+
+    #[test]
     fn horizontal_mouse_wheel_clamps_stored_offset_at_block_end() {
         let config = config_with_scrollable_workspace_and_global_mounts();
         let mut state = selected_demo_state(&config);
@@ -2158,8 +2449,170 @@ mod mouse_drag_tests {
     }
 
     #[test]
-    fn editor_mounts_tab_click_full_row_width_selects_mount_without_scroll_focus_when_unscrollable()
-    {
+    fn editor_vertical_wheel_scrolls_only_inside_content_area() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+        editor.tab_content_height = 50;
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 10, 1),
+            term(100),
+            None,
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_y, 0);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 10, 6),
+            term(100),
+            None,
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_y, 1);
+    }
+
+    #[test]
+    fn editor_general_tab_vertical_wheel_uses_shared_scroll_path() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::General;
+        editor.tab_content_height = 4;
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 10, 6),
+            Rect::new(0, 0, 100, 9),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            editor.tab_scroll_y, 1,
+            "General must use the same vertical wheel path as every editor tab"
+        );
+    }
+
+    #[test]
+    fn editor_general_tab_vertical_scrollbar_drag_uses_shared_scroll_path() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::General;
+        editor.tab_content_height = 4;
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Down(MouseButton::Left), 99, 7),
+            Rect::new(0, 0, 100, 10),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            editor.tab_scroll_y > 0,
+            "General scrollbar dragging must use the same vertical path as every editor tab"
+        );
+    }
+
+    #[test]
+    fn editor_vertical_wheel_ignores_background_when_modal_open() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+        editor.tab_content_height = 50;
+        editor.modal = Some(Modal::SaveDiscardCancel {
+            state: SaveDiscardState::new("Save changes?"),
+        });
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 10, 6),
+            term(100),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_y, 0);
+    }
+
+    #[test]
+    fn editor_vertical_scrollbar_drag_ignores_background_when_modal_open() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+        editor.tab_content_height = 50;
+        editor.modal = Some(Modal::SaveDiscardCancel {
+            state: SaveDiscardState::new("Save changes?"),
+        });
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Down(MouseButton::Left), 99, 7),
+            term(100),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_y, 0);
+    }
+
+    #[test]
+    fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
+        let mut state = list_state();
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings.active_tab = SettingsTab::Mounts;
+        settings.mounts.pending = (0..20)
+            .map(|idx| crate::config::GlobalMountRow {
+                scope: None,
+                name: format!("mount-{idx}"),
+                mount: MountConfig {
+                    src: format!("/host/{idx}"),
+                    dst: format!("/home/agent/{idx}"),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            })
+            .collect();
+        settings.mounts.modal = Some(GlobalMountModal::Confirm {
+            action: GlobalMountConfirm::Save,
+            state: ConfirmState::new("Save global mounts?"),
+        });
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Down(MouseButton::Left), 99, 7),
+            term(100),
+            None,
+        );
+
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("settings stage expected");
+        };
+        assert_eq!(settings.mounts.scroll_y, 0);
+    }
+
+    #[test]
+    fn editor_mounts_tab_click_full_row_width_selects_mount_and_focuses_block() {
         let mut state = list_state();
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
@@ -2193,12 +2646,11 @@ mod mouse_drag_tests {
             panic!("editor stage expected");
         };
         assert!(matches!(editor.active_field, FieldFocus::Row(1)));
-        assert!(!editor.workspace_mounts_scroll_focused);
+        assert!(editor.workspace_mounts_scroll_focused);
     }
 
     #[test]
-    fn editor_mounts_tab_click_host_source_continuation_selects_parent_without_scroll_focus_when_unscrollable()
-     {
+    fn editor_mounts_tab_click_host_source_continuation_selects_parent_and_focuses_block() {
         let mut state = list_state();
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
@@ -2222,7 +2674,7 @@ mod mouse_drag_tests {
             panic!("editor stage expected");
         };
         assert!(matches!(editor.active_field, FieldFocus::Row(0)));
-        assert!(!editor.workspace_mounts_scroll_focused);
+        assert!(editor.workspace_mounts_scroll_focused);
     }
 
     #[test]
@@ -2239,6 +2691,6 @@ mod mouse_drag_tests {
             Some(&config),
         );
 
-        assert_eq!(state.list_global_mounts_scroll_y, 2);
+        assert_eq!(state.list_global_mounts_scroll_y, 0);
     }
 }
