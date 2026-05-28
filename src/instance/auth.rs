@@ -685,17 +685,14 @@ impl RoleState {
 /// writing every file at `0o600`.
 fn copy_kimi_credentials_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
     use anyhow::Context;
-    std::fs::create_dir_all(dst)
-        .with_context(|| format!("creating {}", dst.display()))?;
+    std::fs::create_dir_all(dst).with_context(|| format!("creating {}", dst.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(dst, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("chmod 0700 {}", dst.display()))?;
     }
-    for entry in std::fs::read_dir(src)
-        .with_context(|| format!("reading {}", src.display()))?
-    {
+    for entry in std::fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
         let entry = entry?;
         let ft = entry.file_type()?;
         let src_path = entry.path();
@@ -3146,7 +3143,9 @@ mod kimi_auth_tests {
             "real_token must be copied"
         );
         assert!(
-            kimi_dir.join("credentials/nested_subdir/inner_file").exists(),
+            kimi_dir
+                .join("credentials/nested_subdir/inner_file")
+                .exists(),
             "nested subdir must be copied recursively"
         );
         assert_eq!(
@@ -3200,5 +3199,4 @@ mod kimi_auth_tests {
             "error must name the unreadable file: {msg}"
         );
     }
-
 }

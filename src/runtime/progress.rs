@@ -1327,8 +1327,7 @@ fn render_failure_popup_line(
     let badge = row
         .copy_target
         .filter(|target| copied == Some(*target))
-        .map(|_| "  Copied!")
-        .unwrap_or("");
+        .map_or("", |_| "  Copied!");
     let fixed_cols = label_width + 3 + badge.chars().count();
     let value_cols = usize::from(width).saturating_sub(fixed_cols);
     let value = jackin_tui::take_display_cols(&row.value, value_cols);
