@@ -10,30 +10,39 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use fs2::FileExt as _;
 use jackin::derived_image::shell_quote;
 use jackin::instance::naming::is_dns_label;
 use tempfile::tempdir;
 
 const ROLE_KEY: &str = "jackin-e2e/agent-smith";
+const ROLE_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__agent-smith";
 const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
+const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
 
 /// RAII cleanup so the test's Docker resources are removed even if an
 /// assertion or `script(1)` invocation panics. Without this, a flaky run
 /// leaks a container/network/volume and the next run fails on name
 /// collision — turning a transient failure into a sticky red CI.
-struct DockerCleanup;
+struct E2eRoleCleanup {
+    role_key: &'static str,
+    container_prefix: &'static str,
+}
 
-impl Drop for DockerCleanup {
+impl Drop for E2eRoleCleanup {
     fn drop(&mut self) {
-        cleanup_role(ROLE_KEY, "jackin-jackin-e2e__agent-smith");
-        cleanup_role(SENTINEL_ROLE_KEY, "jackin-jackin-e2e__sentinel");
+        cleanup_role(self.role_key, self.container_prefix);
     }
 }
 
 #[test]
 fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     require_e2e_prereqs();
-    let _cleanup = DockerCleanup;
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: ROLE_KEY,
+        container_prefix: ROLE_CONTAINER_PREFIX,
+    };
 
     let temp = tempdir().unwrap();
     let home = temp.path().join("home");
@@ -129,7 +138,11 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 #[test]
 fn jackin_load_sentinel_role_resolves_rich_prompts_and_keeps_build_output_off_screen() {
     require_e2e_prereqs();
-    let _cleanup = DockerCleanup;
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: SENTINEL_ROLE_KEY,
+        container_prefix: SENTINEL_CONTAINER_PREFIX,
+    };
 
     let temp = tempdir().unwrap();
     let home = temp.path().join("home");
@@ -264,6 +277,14 @@ fn script_available() -> bool {
         .arg("script")
         .output()
         .is_ok_and(|out| out.status.success())
+}
+
+fn e2e_serial_lock() -> std::fs::File {
+    let path = std::env::temp_dir().join("jackin-dind-e2e.lock");
+    let lock = std::fs::File::create(path).expect("e2e lock file must be creatable");
+    lock.lock_exclusive()
+        .expect("e2e lock file must be lockable");
+    lock
 }
 
 fn run_in_pty(
