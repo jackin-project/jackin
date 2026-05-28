@@ -221,8 +221,7 @@ mod tests {
             cell.symbol()
         );
         assert_eq!(
-            cell.fg,
-            Color::Rgb(255, 255, 255),
+            cell.fg, WHITE,
             "non-git entry name should render in WHITE, got {:?}",
             cell.fg
         );
@@ -261,8 +260,7 @@ mod tests {
             name_cell.symbol()
         );
         assert_eq!(
-            name_cell.fg,
-            Color::Rgb(255, 255, 255),
+            name_cell.fg, WHITE,
             "git entry name should render in WHITE, got {:?}",
             name_cell.fg
         );
@@ -277,8 +275,7 @@ mod tests {
             paren_cell.symbol()
         );
         assert_eq!(
-            paren_cell.fg,
-            Color::Rgb(0, 255, 65),
+            paren_cell.fg, PHOSPHOR_GREEN,
             "git suffix should render in PHOSPHOR_GREEN, got {:?}",
             paren_cell.fg
         );

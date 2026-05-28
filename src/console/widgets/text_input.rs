@@ -131,10 +131,7 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use super::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
-/// Almost-invisible dim background so the input region is visible
-/// even when empty.
-const INPUT_BG_DIM: Color = Color::Rgb(20, 24, 22);
+use super::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     use ratatui::{

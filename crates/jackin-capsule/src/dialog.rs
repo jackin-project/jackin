@@ -1796,8 +1796,8 @@ fn render_centered_line(
 /// with `move_to` before calling.
 fn write_confirm_button(buf: &mut Vec<u8>, label: &str, focused: bool) {
     if focused {
-        buf.extend_from_slice(b"\x1b[48;2;255;255;255m"); // WHITE bg
-        buf.extend_from_slice(b"\x1b[38;2;0;0;0m"); // BLACK fg
+        buf.extend_from_slice(rgb_bg(WHITE).as_bytes());
+        buf.extend_from_slice(SELECT_FG.as_bytes());
     } else {
         buf.extend_from_slice(BG_DARK.as_bytes());
         buf.extend_from_slice(FG_GREEN.as_bytes());

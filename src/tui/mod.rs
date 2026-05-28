@@ -168,11 +168,14 @@ macro_rules! debug_log {
 
 // ── Shared color palette ─────────────────────────────────────────────────
 
-const WHITE: (u8, u8, u8) = (255, 255, 255);
+const fn palette_tuple(color: jackin_tui::Rgb) -> (u8, u8, u8) {
+    (color.r, color.g, color.b)
+}
 
-const PHOSPHOR_GREEN: (u8, u8, u8) = (0, 255, 65);
-const PHOSPHOR_DIM: (u8, u8, u8) = (0, 140, 30);
-const PHOSPHOR_DARK: (u8, u8, u8) = (0, 80, 18);
+const WHITE: (u8, u8, u8) = palette_tuple(jackin_tui::WHITE);
+const PHOSPHOR_GREEN: (u8, u8, u8) = palette_tuple(jackin_tui::PHOSPHOR_GREEN);
+const PHOSPHOR_DIM: (u8, u8, u8) = palette_tuple(jackin_tui::PHOSPHOR_DIM);
+const PHOSPHOR_DARK: (u8, u8, u8) = palette_tuple(jackin_tui::PHOSPHOR_DARK);
 
 const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
     owo_colors::Rgb(color.0, color.1, color.2)

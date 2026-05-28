@@ -32,6 +32,11 @@ pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(
     tui_palette::PHOSPHOR_DARK.g,
     tui_palette::PHOSPHOR_DARK.b,
 );
+pub(crate) const INPUT_BG_DIM: Color = Color::Rgb(
+    tui_palette::INPUT_BG_DIM.r,
+    tui_palette::INPUT_BG_DIM.g,
+    tui_palette::INPUT_BG_DIM.b,
+);
 pub(crate) const DIALOG_BACKDROP: Color = Color::Rgb(
     tui_palette::DIALOG_BACKDROP.r,
     tui_palette::DIALOG_BACKDROP.g,

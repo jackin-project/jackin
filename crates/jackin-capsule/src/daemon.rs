@@ -4365,12 +4365,12 @@ fn append_osc_window_title(buf: &mut Vec<u8>, title: &str) {
     buf.extend_from_slice(b"\x1b\\");
 }
 
-const BRANCH_CONTEXT_BAR_BG: &str = "\x1b[48;2;255;255;255m";
+const BRANCH_CONTEXT_BAR_BG: &str = jackin_tui::ansi::rgb_bg(jackin_tui::WHITE);
 const BRANCH_CONTEXT_BAR_HOVER_BG: &str = "\x1b[48;2;225;245;255m";
-const BRANCH_CONTEXT_BAR_FG: &str = "\x1b[38;2;0;0;0m";
-const BRANCH_CONTEXT_BAR_LINK_FG: &str = "\x1b[38;2;0;80;180m";
+const BRANCH_CONTEXT_BAR_FG: &str = jackin_tui::ansi::rgb_fg(jackin_tui::BLACK);
+const BRANCH_CONTEXT_BAR_LINK_FG: &str = jackin_tui::ansi::rgb_fg(jackin_tui::LINK_BLUE);
 const BRANCH_CONTEXT_BAR_HOVER_FG: &str = "\x1b[38;2;0;55;140m";
-const BRANCH_CONTEXT_BAR_BOLD: &str = "\x1b[1m";
+const BRANCH_CONTEXT_BAR_BOLD: &str = jackin_tui::ansi::BOLD;
 use jackin_tui::ansi::RESET;
 
 #[allow(clippy::too_many_arguments)]
@@ -5935,8 +5935,12 @@ mod tests {
 
     fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
         let rendered = String::from_utf8_lossy(frame);
+        let focused_scroll_fg = format!(
+            "\x1b[0;{}",
+            jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_GREEN)
+        );
         assert!(
-            rendered.contains("\x1b[0;38;2;0;255;65m"),
+            rendered.contains(&focused_scroll_fg),
             "focused {context} should use green chrome"
         );
         assert!(
@@ -6136,7 +6140,7 @@ mod tests {
                     .to_string();
 
             assert!(
-                frame.contains("\x1b[0;48;2;0;0;0m"),
+                frame.contains(jackin_tui::ansi::reset_rgb_bg(jackin_tui::DIALOG_BACKDROP)),
                 "{context} should paint an opaque black backdrop: {frame:?}"
             );
             assert!(
@@ -6144,11 +6148,17 @@ mod tests {
                 "{context} should hide the top status brand pill behind the dialog: {frame:?}"
             );
             assert!(
-                !frame.contains("\x1b[38;2;80;80;80m┌"),
+                !frame.contains(&format!(
+                    "{}┌",
+                    jackin_tui::ansi::rgb_fg(jackin_tui::BORDER_GRAY)
+                )),
                 "{context} should hide inactive pane borders behind the dialog: {frame:?}"
             );
             assert!(
-                !frame.contains("\x1b[38;2;0;255;65m┌"),
+                !frame.contains(&format!(
+                    "{}┌",
+                    jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_GREEN)
+                )),
                 "{context} should hide the active pane border behind the dialog: {frame:?}"
             );
         }

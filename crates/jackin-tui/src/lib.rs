@@ -504,12 +504,21 @@ pub mod ansi {
     pub const POINTER_DEFAULT: &str = "\x1b]22;default\x1b\\";
     pub const INVERSE: &str = "\x1b[7m";
 
+    /// Canonical brand pill used by plain ANSI surfaces.
+    pub const BRAND_PILL: &str = "\x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin' \x1b[0m";
+
+    /// Help/banner form of the brand pill.
+    pub const BRAND_BANNER: &str =
+        "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin' \x1b[0m\n";
+
     /// Build a foreground SGR for a shared RGB token.
     pub const fn rgb_fg(rgb: Rgb) -> &'static str {
         match (rgb.r, rgb.g, rgb.b) {
             (0, 255, 65) => "\x1b[38;2;0;255;65m",
             (0, 140, 30) => "\x1b[38;2;0;140;30m",
             (0, 80, 18) => "\x1b[38;2;0;80;18m",
+            (0, 80, 180) => "\x1b[38;2;0;80;180m",
+            (80, 80, 80) => "\x1b[38;2;80;80;80m",
             (255, 255, 255) => "\x1b[38;2;255;255;255m",
             (0, 0, 0) => "\x1b[38;2;0;0;0m",
             _ => panic!("unsupported RGB foreground token"),
@@ -520,9 +529,19 @@ pub mod ansi {
     pub const fn rgb_bg(rgb: Rgb) -> &'static str {
         match (rgb.r, rgb.g, rgb.b) {
             (0, 255, 65) => "\x1b[48;2;0;255;65m",
+            (42, 42, 42) => "\x1b[48;2;42;42;42m",
             (20, 24, 22) => "\x1b[48;2;20;24;22m",
+            (255, 255, 255) => "\x1b[48;2;255;255;255m",
             (0, 0, 0) => "\x1b[48;2;0;0;0m",
             _ => panic!("unsupported RGB background token"),
+        }
+    }
+
+    /// Build a reset+background SGR for a shared RGB token.
+    pub const fn reset_rgb_bg(rgb: Rgb) -> &'static str {
+        match (rgb.r, rgb.g, rgb.b) {
+            (0, 0, 0) => "\x1b[0;48;2;0;0;0m",
+            _ => panic!("unsupported reset RGB background token"),
         }
     }
 
