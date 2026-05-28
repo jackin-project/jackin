@@ -22,6 +22,7 @@ const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
 const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
 const CAPSULE_DETACH_KEYS: &str = "\u{2}d";
 
+#[derive(Clone, Copy)]
 enum PtyInputMode {
     OnceAfter(Duration),
     Repeat {
