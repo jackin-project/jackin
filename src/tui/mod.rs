@@ -52,6 +52,18 @@ pub fn host_screen_owned() -> bool {
     HOST_SCREEN_OWNED.load(Ordering::Relaxed)
 }
 
+/// True when any host-side full-screen surface owns terminal modes that make
+/// direct stdout/stderr streaming unsafe.
+///
+/// `rich_surface_active` tracks a currently drawing cockpit/dialog. The host
+/// guard can outlive an individual renderer while still holding raw mode,
+/// mouse capture, and the alternate screen across console → launch → capsule.
+/// Plain command output is equally corrupting in that gap.
+#[must_use]
+pub fn rich_terminal_owned() -> bool {
+    rich_surface_active() || host_screen_owned()
+}
+
 /// Re-enter the host alternate screen after an interactive child returns.
 ///
 /// A baked capsule still drops `?1049l` on detach and returns the terminal to
@@ -142,7 +154,7 @@ pub fn emit_compact_line(kind: &str, line: &str) {
     if let Some(run) = crate::diagnostics::active_run() {
         run.compact(kind, line);
     }
-    if !rich_surface_active() {
+    if !rich_terminal_owned() {
         eprintln!("{line}");
     }
 }
@@ -188,8 +200,7 @@ pub mod prompt;
 pub use animation::{warp_end_caption, warp_intro, warp_out};
 pub use output::{
     CodexSyncState, agent_outcome_notice, auth_mode_notice, clear_screen, codex_auth_notice, fatal,
-    github_auth_notice, hint, print_config_table, print_deploying, print_logo, set_terminal_title,
-    shorten_home, step_fail, step_quiet,
+    github_auth_notice, hint, print_deploying, set_terminal_title, shorten_home, step_fail,
 };
 pub use prompt::{prompt_choice, require_interactive_stdin, spin_wait};
 
@@ -272,6 +283,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         set_rich_surface_active(false);
+        set_host_screen_owned(false);
         let tmp = tempfile::tempdir().unwrap();
         let paths = crate::paths::JackinPaths::for_tests(tmp.path());
         let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
@@ -284,5 +296,31 @@ mod tests {
         let jsonl = std::fs::read_to_string(run.path()).unwrap();
         assert!(jsonl.contains("\"kind\":\"warning\""), "{jsonl}");
         assert!(jsonl.contains("hidden by cockpit"), "{jsonl}");
+        set_rich_surface_active(false);
+        set_host_screen_owned(false);
+    }
+
+    #[test]
+    fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
+        let _lock = DEBUG_BUFFER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        set_rich_surface_active(false);
+        set_host_screen_owned(false);
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+
+        set_host_screen_owned(true);
+        emit_compact_line("operator_env", "jackin: hidden while host owns raw screen");
+        set_host_screen_owned(false);
+
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
+        assert!(
+            jsonl.contains("hidden while host owns raw screen"),
+            "{jsonl}"
+        );
     }
 }

@@ -1,0 +1,57 @@
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
+
+[identity]
+name = "Feature Matrix"
+
+[claude]
+model = "sonnet"
+plugins = []
+
+[codex]
+model = "gpt-5"
+
+[amp]
+
+[kimi]
+model = "kimi-k2"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+[hooks]
+setup_once = "hooks/setup-once.sh"
+source = "hooks/source.sh"
+preflight = "hooks/preflight.sh"
+
+[env.STATIC_DEFAULT]
+default = "static-value"
+
+[env.FREE_TEXT]
+interactive = true
+prompt = "Free text value:"
+default = "typed-default"
+
+[env.SELECT_PROJECT]
+interactive = true
+options = ["frontend", "backend", "infra"]
+prompt = "Select a project:"
+
+[env.OPTIONAL_API_KEY]
+interactive = true
+skippable = true
+prompt = "Optional API key:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.SELECT_PROJECT"]
+prompt = "Branch for ${env.SELECT_PROJECT}:"
+default = "feature/${env.SELECT_PROJECT}"
+
+[env.OPTIONAL_DERIVED]
+interactive = true
+skippable = true
+depends_on = ["env.OPTIONAL_API_KEY"]
+prompt = "Value derived from optional key:"
+default = "using-${env.OPTIONAL_API_KEY}"

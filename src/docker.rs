@@ -88,12 +88,12 @@ impl ShellRunner {
             capture_stdout: _,
             quiet: _,
             extra_env,
-            null_stdin,
+            null_stdin: _,
             stream_captured_output: _,
             interactive: _,
             tee_to_build_log: _,
         } = opts;
-        if *null_stdin {
+        if should_null_stdin(opts) {
             cmd.stdin(std::process::Stdio::null());
         }
         if !extra_env.is_empty() {
@@ -112,6 +112,10 @@ impl ShellRunner {
             }
         }
     }
+}
+
+fn should_null_stdin(opts: &RunOptions) -> bool {
+    opts.null_stdin || (!opts.interactive && crate::tui::rich_terminal_owned())
 }
 
 /// Mask the value portion of `-e KEY=VALUE` / `--env KEY=VALUE` args.
@@ -253,7 +257,7 @@ impl CommandRunner for ShellRunner {
             );
         } else if opts.capture_stderr || opts.capture_stdout {
             Box::pin(self.run_captured(program, args, cwd, opts)).await?;
-        } else if self.debug || crate::tui::rich_surface_active() {
+        } else if self.debug || crate::tui::rich_terminal_owned() {
             // This arm would otherwise inherit the terminal and stream raw
             // command output straight to the screen — which floods a rich TUI
             // and a --debug run. Capture both streams instead so the output
@@ -325,7 +329,7 @@ impl ShellRunner {
         // the frame). In both cases the output is captured and, under
         // --debug, written to the run's JSONL by `log_captured_output`.
         let stream =
-            opts.stream_captured_output && !self.debug && !crate::tui::rich_surface_active();
+            opts.stream_captured_output && !self.debug && !crate::tui::rich_terminal_owned();
         let tee = opts.tee_to_build_log;
         let read_stdout = async move {
             let Some(mut stdout_pipe) = stdout_pipe else {
@@ -437,11 +441,14 @@ impl ShellRunner {
         mode: CaptureMode,
     ) -> anyhow::Result<String> {
         self.log_command(program, args, cwd);
-        let output = Self::build_command(program, args, cwd)
+        let mut command = Self::build_command(program, args, cwd);
+        command
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .await?;
+            .stderr(std::process::Stdio::piped());
+        if crate::tui::rich_terminal_owned() {
+            command.stdin(std::process::Stdio::null());
+        }
+        let output = command.output().await?;
         if !output.status.success() {
             match mode {
                 CaptureMode::Secret => {
@@ -691,6 +698,29 @@ mod tests {
             contents.contains("hello-from-cmd"),
             "non-capturing command stdout must be captured into the run file under --debug: {contents}"
         );
+    }
+
+    #[test]
+    fn rich_surface_closes_stdin_for_noninteractive_commands() {
+        crate::tui::set_rich_surface_active(false);
+        crate::tui::set_host_screen_owned(false);
+        assert!(!should_null_stdin(&RunOptions::default()));
+
+        crate::tui::set_rich_surface_active(true);
+        assert!(should_null_stdin(&RunOptions::default()));
+        assert!(!should_null_stdin(&RunOptions {
+            interactive: true,
+            ..RunOptions::default()
+        }));
+        crate::tui::set_rich_surface_active(false);
+
+        crate::tui::set_host_screen_owned(true);
+        assert!(should_null_stdin(&RunOptions::default()));
+        assert!(!should_null_stdin(&RunOptions {
+            interactive: true,
+            ..RunOptions::default()
+        }));
+        crate::tui::set_host_screen_owned(false);
     }
 
     #[cfg(unix)]

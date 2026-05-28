@@ -1,63 +1,11 @@
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb};
 
 // ── Color palette ────────────────────────────────────────────────────────
 
 const ROSE: (u8, u8, u8) = (210, 100, 100);
-
-// ── Config table ─────────────────────────────────────────────────────────
-
-pub fn print_config_table(rows: &[(String, String)]) {
-    let label_w = rows.iter().map(|(l, _)| l.len()).max().unwrap_or(0);
-    let value_w = rows.iter().map(|(_, v)| v.len()).max().unwrap_or(0);
-    let inner_w = label_w + 3 + value_w;
-
-    let dim = rgb(PHOSPHOR_DARK);
-    let gold = rgb(PHOSPHOR_GREEN);
-    let powder = rgb(PHOSPHOR_DIM);
-
-    eprintln!(
-        "  {}{}{}",
-        "\u{250c}".color(dim),
-        "\u{2500}".repeat(inner_w + 2).color(dim),
-        "\u{2510}".color(dim),
-    );
-
-    for (label, value) in rows {
-        let pad_l = label_w - label.len();
-        let pad_r = value_w - value.len();
-        eprintln!(
-            "  {} {}{} {} {}{}{}",
-            "\u{2502}".color(dim),
-            " ".repeat(pad_l),
-            label.color(gold),
-            "\u{2502}".color(dim),
-            value.color(powder),
-            " ".repeat(pad_r),
-            " \u{2502}".to_string().color(dim),
-        );
-    }
-
-    eprintln!(
-        "  {}{}{}",
-        "\u{2514}".color(dim),
-        "\u{2500}".repeat(inner_w + 2).color(dim),
-        "\u{2518}".color(dim),
-    );
-}
-
-/// Minimal step message without animation (used by compact launch progress).
-pub fn step_quiet(n: u32, text: &str) {
-    let prefix = format!("  {n:>2}.  ");
-    let mg = rgb(PHOSPHOR_GREEN);
-    eprintln!(
-        "{}{}",
-        prefix.color(mg).bold(),
-        text.color(rgb(PHOSPHOR_DIM)).bold()
-    );
-}
 
 pub fn step_fail(msg: &str) {
     eprintln!("       {}", msg.color(rgb(ROSE)));
@@ -77,21 +25,6 @@ pub fn print_deploying(role_name: &str) {
 
     std::thread::sleep(std::time::Duration::from_millis(1500));
     clear_screen();
-}
-
-// ── Logo ─────────────────────────────────────────────────────────────
-
-pub fn print_logo(logo_path: &std::path::Path) {
-    let contents = match std::fs::read_to_string(logo_path) {
-        Ok(c) if !c.trim().is_empty() => c,
-        _ => return,
-    };
-
-    eprintln!();
-    for line in contents.lines() {
-        eprintln!("  {}", line.color(rgb(PHOSPHOR_GREEN)));
-    }
-    eprintln!();
 }
 
 // ── Utility ──────────────────────────────────────────────────────────────

@@ -12,7 +12,9 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use crate::console::widgets::confirm::{self, ConfirmState};
 use crate::console::widgets::select_list::{self, SelectListState};
+use crate::console::widgets::text_input::{self, TextInputState};
 use crate::console::widgets::{
     DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK,
     PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
@@ -75,30 +77,6 @@ pub enum StageStatus {
     Skipped,
     Failed,
     Blocked,
-}
-
-impl StageStatus {
-    const fn marker(self) -> &'static str {
-        match self {
-            Self::Queued => "○",
-            Self::Running => "◐",
-            Self::Done => "●",
-            Self::Skipped => "◇",
-            Self::Failed => "×",
-            Self::Blocked => "!",
-        }
-    }
-
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Running => "running",
-            Self::Done => "done",
-            Self::Skipped => "skipped",
-            Self::Failed => "failed",
-            Self::Blocked => "blocked",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -201,9 +179,6 @@ pub struct LaunchProgress {
 
 enum Renderer {
     Rich(RichDriver),
-    Compact {
-        interactive: bool,
-    },
     /// Rich surface torn down at the handoff; inert (no draws, no diagnostics
     /// trailer) so the interactive capsule attach owns the terminal alone.
     Done,
@@ -302,19 +277,18 @@ fn initial_view() -> LaunchView {
 
 impl LaunchProgress {
     pub fn new(diagnostics: Arc<RunDiagnostics>, no_motion: bool) -> anyhow::Result<Self> {
+        if !rich_terminal_supported() {
+            anyhow::bail!(
+                "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
+            );
+        }
         let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
-        let renderer = if rich_terminal_supported() {
-            let rich = RichRenderer::enter(no_motion)?;
-            Renderer::Rich(RichDriver::spawn(
-                rich,
-                view.clone(),
-                diagnostics.run_id().to_string(),
-            ))
-        } else {
-            Renderer::Compact {
-                interactive: std::io::stderr().is_terminal(),
-            }
-        };
+        let rich = RichRenderer::enter(no_motion)?;
+        let renderer = Renderer::Rich(RichDriver::spawn(
+            rich,
+            view.clone(),
+            diagnostics.run_id().to_string(),
+        ));
         Ok(Self {
             diagnostics,
             renderer,
@@ -367,7 +341,6 @@ impl LaunchProgress {
         });
         self.diagnostics
             .stage("stage_started", stage.label(), &detail, None);
-        self.compact_line(stage, StageStatus::Running, &detail);
     }
 
     pub fn stage_progress(&mut self, stage: LaunchStage, detail: impl Into<String>) {
@@ -385,7 +358,6 @@ impl LaunchProgress {
         self.with_view(|v| update_stage(v, stage, StageStatus::Done, &detail));
         self.diagnostics
             .stage("stage_done", stage.label(), &detail, None);
-        self.compact_line(stage, StageStatus::Done, &detail);
     }
 
     pub fn stage_skipped(&mut self, stage: LaunchStage, reason: impl Into<String>) {
@@ -393,7 +365,6 @@ impl LaunchProgress {
         self.with_view(|v| update_stage(v, stage, StageStatus::Skipped, &reason));
         self.diagnostics
             .stage("stage_skipped", stage.label(), &reason, None);
-        self.compact_line(stage, StageStatus::Skipped, &reason);
     }
 
     pub async fn stage_failed(&mut self, mut failure: LaunchFailure) {
@@ -446,7 +417,7 @@ impl LaunchProgress {
     ///
     /// Fast Docker/cache paths can otherwise advance from one stage to the next
     /// before the 33ms render tick observes the intermediate state, making the
-    /// progress rail appear to skip labels. Compact/test renderers do not draw
+    /// progress rail appear to skip labels. Test renderers do not draw
     /// asynchronously, so they should not pay this delay.
     pub async fn settle_stage_visual(&self) {
         if matches!(self.renderer, Renderer::Rich(_)) {
@@ -456,7 +427,7 @@ impl LaunchProgress {
 
     /// Stop the render task and release the rich surface before the interactive
     /// handoff, so the capsule attach owns the terminal alone. Idempotent;
-    /// no-op for the compact and test renderers.
+    /// no-op for the test renderer.
     pub fn finish(&mut self) {
         use std::sync::atomic::Ordering;
         if let Renderer::Rich(driver) = &mut self.renderer {
@@ -473,29 +444,10 @@ impl LaunchProgress {
         }
     }
 
-    fn compact_line(&self, stage: LaunchStage, status: StageStatus, detail: &str) {
-        if let Renderer::Compact { interactive } = &self.renderer {
-            let marker = status.marker();
-            let label = stage.label();
-            if *interactive {
-                eprintln!("  {marker} {label:<13} {detail}");
-            } else if detail.is_empty() {
-                eprintln!("{label}: {}", status.label());
-            } else {
-                eprintln!("{label}: {} \u{2014} {detail}", status.label());
-            }
-        }
-    }
-
     /// Present a forced-choice picker over `items` and return the chosen
-    /// index. Returns `Ok(None)` when no rich surface is active, so the
-    /// caller can fall back to the plain stdin prompt. The picker cannot
-    /// be cancelled — the operator must commit one of the options.
-    pub fn select_choice(
-        &mut self,
-        title: &str,
-        items: Vec<String>,
-    ) -> anyhow::Result<Option<usize>> {
+    /// index. The picker cannot be cancelled — the operator must commit one
+    /// of the options.
+    pub fn select_choice(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
         let run_id = self.diagnostics.run_id().to_string();
         if let Renderer::Rich(driver) = &mut self.renderer {
             // Reclaim the renderer from the render task for the modal picker.
@@ -509,9 +461,102 @@ impl LaunchProgress {
                 .lock()
                 .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
                 .clone();
-            renderer.select(&view, &run_id, title, items).map(Some)
+            renderer.select(&view, &run_id, title, items)
         } else {
-            Ok(None)
+            anyhow::bail!("launch choice requires the rich launch dialog")
+        }
+    }
+
+    pub fn prompt_text(
+        &mut self,
+        title: &str,
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        let run_id = self.diagnostics.run_id().to_string();
+        if let Renderer::Rich(driver) = &mut self.renderer {
+            let mut renderer = driver
+                .renderer
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+            let view = self
+                .view
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
+                .clone();
+            renderer.prompt_text(
+                &view,
+                &run_id,
+                title,
+                default.unwrap_or_default(),
+                skippable,
+            )
+        } else {
+            anyhow::bail!("manifest env text prompt requires the rich launch dialog")
+        }
+    }
+
+    pub fn prompt_select(
+        &mut self,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        let run_id = self.diagnostics.run_id().to_string();
+        if let Renderer::Rich(driver) = &mut self.renderer {
+            let mut renderer = driver
+                .renderer
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+            let view = self
+                .view
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
+                .clone();
+            renderer.prompt_select(&view, &run_id, title, options, default, skippable)
+        } else {
+            anyhow::bail!("manifest env select prompt requires the rich launch dialog")
+        }
+    }
+
+    pub fn confirm_prompt(&mut self, prompt: impl Into<String>) -> anyhow::Result<bool> {
+        let run_id = self.diagnostics.run_id().to_string();
+        if let Renderer::Rich(driver) = &mut self.renderer {
+            let mut renderer = driver
+                .renderer
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+            let view = self
+                .view
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
+                .clone();
+            renderer.confirm(&view, &run_id, ConfirmState::new(prompt))
+        } else {
+            anyhow::bail!("launch confirmation requires the rich launch dialog")
+        }
+    }
+
+    pub fn confirm_role_trust(
+        &mut self,
+        role: impl Into<String>,
+        repository: impl Into<String>,
+    ) -> anyhow::Result<bool> {
+        let run_id = self.diagnostics.run_id().to_string();
+        if let Renderer::Rich(driver) = &mut self.renderer {
+            let mut renderer = driver
+                .renderer
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+            let view = self
+                .view
+                .lock()
+                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
+                .clone();
+            renderer.confirm(&view, &run_id, ConfirmState::role_trust(role, repository))
+        } else {
+            anyhow::bail!("role trust prompt requires the rich launch dialog")
         }
     }
 
@@ -727,10 +772,6 @@ impl Drop for LaunchProgress {
             driver.stop.store(true, Ordering::Relaxed);
             crate::tui::set_rich_surface_active(false);
         }
-        // Non-rich launches print the run-id trailer on completion.
-        if matches!(self.renderer, Renderer::Compact { .. }) {
-            eprintln!("diagnostics: run {}", self.run_id());
-        }
     }
 }
 
@@ -850,6 +891,184 @@ impl RichRenderer {
             }
         }
     }
+
+    fn prompt_text(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        title: &str,
+        initial: &str,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        let owns_raw = !crate::tui::host_screen_owned();
+        if owns_raw {
+            crossterm::terminal::enable_raw_mode()
+                .context("entering raw mode for launch env prompt")?;
+        }
+        let outcome = self.prompt_text_loop(view, run_id, title, initial, skippable);
+        if owns_raw {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
+        outcome
+    }
+
+    fn prompt_text_loop(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        title: &str,
+        initial: &str,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let mut input = if skippable {
+            TextInputState::new_allow_empty(title, initial)
+        } else {
+            TextInputState::new(title, initial)
+        };
+        loop {
+            self.terminal
+                .draw(|frame| draw_text_prompt(frame, view, run_id, &input, skippable))
+                .context("rendering launch env text prompt")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch env prompt input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match input.handle_key(key) {
+                    ModalOutcome::Commit(value) if value.is_empty() && skippable => {
+                        return Ok(crate::env_resolver::PromptResult::Skipped);
+                    }
+                    ModalOutcome::Commit(value) => {
+                        return Ok(crate::env_resolver::PromptResult::Value(value));
+                    }
+                    ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
+                    ModalOutcome::Continue => {}
+                }
+            }
+        }
+    }
+
+    fn prompt_select(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        let owns_raw = !crate::tui::host_screen_owned();
+        if owns_raw {
+            crossterm::terminal::enable_raw_mode()
+                .context("entering raw mode for launch env select")?;
+        }
+        let outcome = self.prompt_select_loop(view, run_id, title, options, default, skippable);
+        if owns_raw {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
+        outcome
+    }
+
+    fn prompt_select_loop(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let mut items = options.to_vec();
+        if skippable {
+            items.push("(skip)".to_string());
+        }
+        let mut picker = SelectListState::new(items);
+        if let Some(default) = default
+            && let Some(index) = options.iter().position(|option| option == default)
+        {
+            picker.select_index(index);
+        }
+        loop {
+            self.terminal
+                .draw(|frame| draw_select(frame, view, run_id, title, &picker))
+                .context("rendering launch env select prompt")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch env select input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match picker.handle_key(key) {
+                    ModalOutcome::Commit(index) if skippable && index == options.len() => {
+                        return Ok(crate::env_resolver::PromptResult::Skipped);
+                    }
+                    ModalOutcome::Commit(index) => {
+                        return Ok(crate::env_resolver::PromptResult::Value(
+                            options[index].clone(),
+                        ));
+                    }
+                    ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
+                    ModalOutcome::Continue => {}
+                }
+            }
+        }
+    }
+
+    fn confirm(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        mut state: ConfirmState,
+    ) -> anyhow::Result<bool> {
+        let owns_raw = !crate::tui::host_screen_owned();
+        if owns_raw {
+            crossterm::terminal::enable_raw_mode()
+                .context("entering raw mode for launch confirmation")?;
+        }
+        let outcome = self.confirm_loop(view, run_id, &mut state);
+        if owns_raw {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
+        outcome
+    }
+
+    fn confirm_loop(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        state: &mut ConfirmState,
+    ) -> anyhow::Result<bool> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        loop {
+            self.terminal
+                .draw(|frame| draw_confirm(frame, view, run_id, state))
+                .context("rendering launch confirmation")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch confirmation input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match state.handle_key(key) {
+                    ModalOutcome::Commit(confirmed) => return Ok(confirmed),
+                    ModalOutcome::Cancel => return Ok(false),
+                    ModalOutcome::Continue => {}
+                }
+            }
+        }
+    }
 }
 
 impl Drop for RichRenderer {
@@ -866,7 +1085,10 @@ impl Drop for RichRenderer {
 }
 
 pub(crate) fn rich_terminal_supported() -> bool {
-    if !std::io::stdout().is_terminal() || !std::io::stderr().is_terminal() {
+    if !std::io::stdin().is_terminal()
+        || !std::io::stdout().is_terminal()
+        || !std::io::stderr().is_terminal()
+    {
         return false;
     }
     if std::env::var_os("CI").is_some() {
@@ -1802,6 +2024,28 @@ fn draw_select(
     render_picker_hints(frame, area);
 }
 
+fn draw_text_prompt(
+    frame: &mut Frame<'_>,
+    view: &LaunchView,
+    run_id: &str,
+    input: &TextInputState<'_>,
+    skippable: bool,
+) {
+    let area = frame.area();
+    render_launch_frame(frame, view, run_id, true, None);
+    dim_buffer(frame, area);
+    text_input::render(frame, text_prompt_rect(area), input);
+    render_text_prompt_hints(frame, area, skippable);
+}
+
+fn draw_confirm(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, state: &ConfirmState) {
+    let area = frame.area();
+    render_launch_frame(frame, view, run_id, true, None);
+    dim_buffer(frame, area);
+    confirm::render(frame, confirm_rect(area, state), state);
+    render_confirm_hints(frame, area);
+}
+
 /// Knock every cell behind the dialog back to a dim phosphor so the
 /// modal reads as the foreground surface (matches the console modal-dim
 /// rule). Runs after the frame is drawn and before the picker overlay.
@@ -1843,6 +2087,72 @@ fn render_picker_hints(frame: &mut Frame<'_>, area: Rect) {
     crate::console::widgets::hints::render(frame, row, PICKER_HINT);
 }
 
+fn text_prompt_rect(area: Rect) -> Rect {
+    let min_w = 50.min(area.width);
+    let width = (area.width.saturating_mul(3) / 5).clamp(min_w, area.width.max(min_w));
+    centered_rect(width, 5, area)
+}
+
+fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
+    let width = area.width.saturating_mul(confirm::width_pct(state)) / 100;
+    let height = confirm::required_height(state);
+    centered_rect(width, height, area)
+}
+
+fn render_text_prompt_hints(frame: &mut Frame<'_>, area: Rect, skippable: bool) {
+    if area.height == 0 {
+        return;
+    }
+    let row = Rect {
+        x: area.x,
+        y: area.bottom().saturating_sub(1),
+        width: area.width,
+        height: 1,
+    };
+    let hint = if skippable {
+        &[
+            HintSpan::Key("Enter"),
+            HintSpan::Text("save"),
+            HintSpan::Key("empty"),
+            HintSpan::Text("skip"),
+            HintSpan::Key("Ctrl-C"),
+            HintSpan::Text("cancel"),
+        ][..]
+    } else {
+        &[
+            HintSpan::Key("Enter"),
+            HintSpan::Text("save"),
+            HintSpan::Key("Ctrl-C"),
+            HintSpan::Text("cancel"),
+        ][..]
+    };
+    crate::console::widgets::hints::render(frame, row, hint);
+}
+
+fn render_confirm_hints(frame: &mut Frame<'_>, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+    let row = Rect {
+        x: area.x,
+        y: area.bottom().saturating_sub(1),
+        width: area.width,
+        height: 1,
+    };
+    crate::console::widgets::hints::render(
+        frame,
+        row,
+        &[
+            HintSpan::Key("Y"),
+            HintSpan::Text("yes"),
+            HintSpan::Key("N/Esc"),
+            HintSpan::Text("no"),
+            HintSpan::Key("Tab"),
+            HintSpan::Text("focus"),
+        ],
+    );
+}
+
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let w = width.min(area.width.saturating_sub(2));
     let h = height.min(area.height.saturating_sub(2));
@@ -1878,17 +2188,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stage_failed_does_not_block_on_non_rich_renderer() {
-        // The Rich path waits for an operator Enter/Esc dismiss; the Test/Compact
-        // path must return immediately, or a non-TTY / CI launch would hang
-        // forever on the first failure.
+    async fn stage_failed_does_not_block_on_test_renderer() {
+        // The Rich path waits for an operator Enter/Esc dismiss. The test
+        // renderer returns immediately so failure-state tests do not hang.
         let mut progress = LaunchProgress::for_test(test_diagnostics());
         tokio::time::timeout(
             std::time::Duration::from_millis(500),
             progress.stage_failed(dummy_failure()),
         )
         .await
-        .expect("stage_failed must not block on a non-rich renderer");
+        .expect("stage_failed must not block on the test renderer");
         assert!(progress.view.lock().unwrap().failure.is_some());
         assert!(!progress.view.lock().unwrap().failure_ack);
     }
@@ -1952,14 +2261,74 @@ mod tests {
     }
 
     #[test]
-    fn select_choice_returns_none_on_non_rich_renderer() {
-        // No picker without a rich surface; the caller falls back to the plain
-        // stdin prompt, so this must be Ok(None) — not Err, not a default index.
+    fn select_choice_errors_without_rich_renderer() {
         let mut progress = LaunchProgress::for_test(test_diagnostics());
-        let choice = progress
+        let error = progress
             .select_choice("pick", vec!["a".into(), "b".into()])
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("requires the rich launch dialog")
+        );
+    }
+
+    #[test]
+    fn env_prompts_error_without_rich_renderer() {
+        let mut progress = LaunchProgress::for_test(test_diagnostics());
+
+        assert!(
+            progress
+                .prompt_text("API key", None, true)
+                .unwrap_err()
+                .to_string()
+                .contains("requires the rich launch dialog")
+        );
+        assert!(
+            progress
+                .prompt_select("Project", &["web".to_string()], None, false)
+                .unwrap_err()
+                .to_string()
+                .contains("requires the rich launch dialog")
+        );
+    }
+
+    #[test]
+    fn text_prompt_dialog_renders_prompt_and_default() {
+        let backend = TestBackend::new(90, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let view = initial_view();
+        let input = TextInputState::new("Branch name", "main");
+
+        terminal
+            .draw(|frame| draw_text_prompt(frame, &view, "run-123", &input, false))
             .unwrap();
-        assert!(choice.is_none());
+
+        let rendered = format!("{:?}", terminal.backend().buffer());
+        assert!(rendered.contains("Branch name"), "{rendered}");
+        assert!(rendered.contains("main"), "{rendered}");
+        assert!(rendered.contains("Enter"), "{rendered}");
+    }
+
+    #[test]
+    fn confirm_dialog_renders_role_trust_details() {
+        let backend = TestBackend::new(100, 26);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let view = initial_view();
+        let state = ConfirmState::role_trust(
+            "acme/agent-jones",
+            "https://github.com/acme/jackin-agent-jones.git",
+        );
+
+        terminal
+            .draw(|frame| draw_confirm(frame, &view, "run-123", &state))
+            .unwrap();
+
+        let rendered = format!("{:?}", terminal.backend().buffer());
+        assert!(rendered.contains("Trust role source"), "{rendered}");
+        assert!(rendered.contains("acme/agent-jones"), "{rendered}");
+        assert!(rendered.contains("jackin-agent-jones"), "{rendered}");
+        assert!(rendered.contains("Y"), "{rendered}");
     }
 
     #[test]

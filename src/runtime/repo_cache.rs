@@ -5,6 +5,7 @@ use crate::repo::{CachedRepo, validate_role_repo};
 use crate::selector::RoleSelector;
 use anyhow::Context;
 use fs2::FileExt;
+#[cfg(test)]
 use std::io::IsTerminal;
 
 use super::identity::try_capture;
@@ -133,21 +134,6 @@ fn role_root_has_unexpected_entries(root: &std::path::Path) -> anyhow::Result<bo
     Ok(false)
 }
 
-/// Derive a short repository name from a git remote URL (e.g. `jackin-project/jackin`).
-pub(super) async fn git_repo_name(
-    dir: &std::path::Path,
-    runner: &mut impl CommandRunner,
-) -> Option<String> {
-    let dir_str = dir.display().to_string();
-    let url = try_capture(
-        runner,
-        "git",
-        &["-C", &dir_str, "remote", "get-url", "origin"],
-    )
-    .await?;
-    parse_repo_name(&url)
-}
-
 /// Get the current branch name for a git directory.
 pub(super) async fn git_branch(
     dir: &std::path::Path,
@@ -162,23 +148,12 @@ pub(super) async fn git_branch(
     .await
 }
 
-/// Check whether a path is inside a git work tree.
-pub(super) async fn is_git_dir(dir: &std::path::Path, runner: &mut impl CommandRunner) -> bool {
-    let dir_str = dir.display().to_string();
-    try_capture(
-        runner,
-        "git",
-        &["-C", &dir_str, "rev-parse", "--is-inside-work-tree"],
-    )
-    .await
-    .is_some()
-}
-
 /// Resolve the role repository: clone if missing, pull if already present.
 /// Returns the validated repo metadata and cached repo paths.
 /// Prompt the user to confirm cached-repo removal when running in an
 /// interactive terminal.  Returns `true` when the user accepts.
-pub(super) fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
+#[cfg(test)]
+fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
     if !std::io::stdin().is_terminal() {
         return Ok(false);
     }
@@ -457,7 +432,8 @@ pub(super) async fn resolve_agent_repo_with(
         .lock_exclusive()
         .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
 
-    let non_interactive = matches!(opts.git_interactivity, GitInteractivity::NonInteractive);
+    let non_interactive = matches!(opts.git_interactivity, GitInteractivity::NonInteractive)
+        || crate::tui::rich_surface_active();
     let git_run_opts = RunOptions {
         quiet: !opts.debug,
         extra_env: if non_interactive {

@@ -83,6 +83,12 @@ impl SelectListState {
             .and_then(|row| self.filtered.get(row).copied())
     }
 
+    pub fn select_index(&mut self, index: usize) {
+        if let Some(row) = self.filtered.iter().position(|i| *i == index) {
+            self.list_state.select(Some(row));
+        }
+    }
+
     /// Commit on `Enter`, narrow on typing, navigate on arrows. `Esc`
     /// yields `Cancel`; force-decision callers ignore it.
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<usize> {

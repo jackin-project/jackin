@@ -1978,7 +1978,7 @@ fn emit_launch_diagnostic<W: std::io::Write>(rendered: &str, debug: bool, stderr
     if let Some(run) = crate::diagnostics::active_run() {
         run.compact("operator_env", rendered.trim_end());
     }
-    if debug || crate::tui::rich_surface_active() {
+    if debug || crate::tui::rich_terminal_owned() {
         return;
     }
     let _ = stderr.write_all(rendered.as_bytes());
