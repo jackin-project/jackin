@@ -1593,6 +1593,8 @@ impl Multiplexer {
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
+            provider_label.map(str::to_string),
+            env_overrides.to_vec(),
             launch.cmd,
             self.content_rows.saturating_sub(2),
             self.term_cols.saturating_sub(2),
@@ -1684,6 +1686,8 @@ impl Multiplexer {
         let (session, new_id) = Session::spawn(
             &launch.label,
             agent_slug,
+            provider_label.map(str::to_string),
+            env_overrides.to_vec(),
             launch.cmd,
             spawn_rows,
             spawn_cols,
@@ -1726,12 +1730,29 @@ impl Multiplexer {
     /// the source pane's runtime.
     fn split_focused(&mut self, direction: SplitDirection) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
+        let (agent_slug, provider_env_overrides, provider_label) = self.focused_spawn_metadata();
+        self.split_focused_into(
+            direction,
+            agent_slug,
+            &provider_env_overrides,
+            provider_label.as_deref(),
+        )
+    }
+
+    fn focused_spawn_metadata(&self) -> (Option<String>, Vec<(String, String)>, Option<String>) {
         let Some(tab) = self.tabs.get(self.active_tab) else {
-            return Ok(());
+            return (None, Vec::new(), None);
         };
         let from_id = tab.focused_id;
-        let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
-        self.split_focused_into(direction, agent_slug, &[], None)
+        self.sessions
+            .get(&from_id)
+            .map_or((None, Vec::new(), None), |session| {
+                (
+                    session.agent.clone(),
+                    session.provider_env_overrides.clone(),
+                    session.provider_label.clone(),
+                )
+            })
     }
 
     fn close_focused_pane(&mut self) {
@@ -1888,23 +1909,24 @@ impl Multiplexer {
     fn tab_display_label(&self, tab: &Tab) -> String {
         let ids = tab.tree.all_ids();
         let pane_count = ids.len();
-        let mut agent_slugs: Vec<String> = Vec::new();
+        let mut agent_labels: Vec<String> = Vec::new();
         let mut has_shell = false;
         for id in ids {
             if let Some(s) = self.sessions.get(&id) {
                 match &s.agent {
-                    Some(slug) => {
-                        if !agent_slugs.iter().any(|s| s == slug) {
-                            agent_slugs.push(slug.clone());
+                    Some(_) => {
+                        let label = session_agent_label(s);
+                        if !agent_labels.iter().any(|existing| existing == &label) {
+                            agent_labels.push(label);
                         }
                     }
                     None => has_shell = true,
                 }
             }
         }
-        let base = match (agent_slugs.len(), has_shell) {
+        let base = match (agent_labels.len(), has_shell) {
             (0, _) => "Shell".to_string(),
-            (1, false) => capitalize(&agent_slugs[0]),
+            (1, false) => agent_labels[0].clone(),
             (_, false) => "Agents".to_string(),
             (_, true) => "Mix".to_string(),
         };
@@ -4133,6 +4155,16 @@ fn paint_selection_highlight(buf: &mut Vec<u8>, screen: &vt100::Screen, sel: &Se
     }
 }
 
+fn session_agent_label(session: &Session) -> String {
+    let Some(slug) = session.agent.as_deref() else {
+        return "Shell".to_string();
+    };
+    match session.provider_label.as_deref() {
+        Some(provider) => format!("{} ({provider})", capitalize(slug)),
+        None => capitalize(slug),
+    }
+}
+
 fn capitalize(s: &str) -> String {
     let mut c = s.chars();
     match c.next() {
@@ -5483,6 +5515,8 @@ mod tests {
             Session::new_for_test(
                 "Test".to_string(),
                 agent,
+                None,
+                Vec::new(),
                 (rows, cols),
                 100,
                 input_tx,
@@ -5491,6 +5525,42 @@ mod tests {
             ),
             input_rx,
         )
+    }
+
+    fn test_provider_session(
+        provider: jackin_protocol::Provider,
+    ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        let (mut session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_string()));
+        session.provider_label = Some(provider.label().to_string());
+        session.provider_env_overrides = provider.env_overrides(Some("zai-test-token"));
+        (session, input_rx)
+    }
+
+    #[test]
+    fn refresh_tab_labels_preserves_provider_suffix() {
+        let mut mux = test_mux(24, 80);
+        let (session, _rx) = test_provider_session(jackin_protocol::Provider::Zai);
+        mux.sessions.insert(1, session);
+        mux.tabs.push(Tab::new_single("Claude", 1));
+
+        mux.refresh_tab_labels();
+
+        assert_eq!(mux.tabs[0].label(), "Claude (Z.AI)");
+    }
+
+    #[test]
+    fn split_metadata_inherits_focused_provider() {
+        let mut mux = test_mux(24, 80);
+        let (session, _rx) = test_provider_session(jackin_protocol::Provider::Zai);
+        let expected_env = session.provider_env_overrides.clone();
+        mux.sessions.insert(1, session);
+        mux.tabs.push(Tab::new_single("Claude (Z.AI)", 1));
+
+        let (agent, env, provider) = mux.focused_spawn_metadata();
+
+        assert_eq!(agent.as_deref(), Some("claude"));
+        assert_eq!(provider.as_deref(), Some("Z.AI"));
+        assert_eq!(env, expected_env);
     }
 
     fn split_tab_mux() -> Multiplexer {

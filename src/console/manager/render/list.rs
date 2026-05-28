@@ -113,11 +113,17 @@ pub(super) fn render_list_body(
             frame,
             list_area,
             Some(short_id),
-            &picker.providers,
-            picker.selected,
+            picker.providers(),
+            picker.selected(),
         );
     } else if let Some(picker) = state.launch_provider_picker.as_ref() {
-        render_provider_picker_sidebar(frame, list_area, None, &picker.providers, picker.selected);
+        render_provider_picker_sidebar(
+            frame,
+            list_area,
+            None,
+            picker.providers(),
+            picker.selected(),
+        );
     } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container.as_str());

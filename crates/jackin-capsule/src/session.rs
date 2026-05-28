@@ -590,6 +590,8 @@ impl Callbacks for OscCapture {
 pub struct Session {
     pub label: String,
     pub agent: Option<String>,
+    pub provider_label: Option<String>,
+    pub provider_env_overrides: Vec<(String, String)>,
     pub state: AgentState,
     pub parser: vt100::Parser<OscCapture>,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -777,6 +779,8 @@ impl Session {
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
+        provider_label: Option<String>,
+        provider_env_overrides: Vec<(String, String)>,
         cmd: CommandBuilder,
         rows: u16,
         cols: u16,
@@ -970,6 +974,8 @@ impl Session {
             Session {
                 label: label.into(),
                 agent,
+                provider_label,
+                provider_env_overrides,
                 state: AgentState::Working,
                 parser: vt100::Parser::new_with_callbacks(
                     rows,
@@ -1534,6 +1540,8 @@ impl Session {
     pub(crate) fn new_for_test(
         label: String,
         agent: Option<String>,
+        provider_label: Option<String>,
+        provider_env_overrides: Vec<(String, String)>,
         size: (u16, u16),
         scrollback_len: usize,
         input_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -1543,6 +1551,8 @@ impl Session {
         Self {
             label,
             agent,
+            provider_label,
+            provider_env_overrides,
             state: AgentState::Working,
             parser: vt100::Parser::new_with_callbacks(
                 size.0,

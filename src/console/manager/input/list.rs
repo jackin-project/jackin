@@ -151,14 +151,10 @@ pub(super) fn handle_list_key(
                         crate::console::widgets::agent_choice::AgentChoiceState::with_choices(
                             crate::agent::Agent::ALL.to_vec(),
                         );
-                    let providers = entry.workspace_name.as_ref().map_or_else(Vec::new, |name| {
-                        crate::console::providers_for_launch(
-                            config,
-                            name,
-                            &entry.role_key,
-                            crate::agent::Agent::Claude,
-                        )
-                    });
+                    // The host config does not prove what env the already-running
+                    // Capsule daemon captured. Offer provider choices only from
+                    // daemon-owned flows that know `ZAI_API_KEY` exists there.
+                    let providers = Vec::new();
                     state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
                     state.list_modal = Some(Modal::ErrorPopup {
@@ -915,8 +911,51 @@ mod tests {
         };
         assert_eq!(picker.context, "jackin-demo-architect");
         assert_eq!(picker.agent, crate::agent::Agent::Claude);
-        assert_eq!(picker.providers.len(), 2);
-        assert_eq!(picker.selected, 0);
+        assert_eq!(picker.providers().len(), 2);
+        assert_eq!(picker.selected(), 0);
+    }
+
+    #[test]
+    fn new_session_picker_does_not_offer_host_config_providers_for_running_container() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        config.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("host-key-added-after-launch".into()),
+        );
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-running",
+            InstanceStatus::Running,
+            workdir,
+        )];
+        state.expand_workspace(0);
+        state.selected = state
+            .index_of_row(crate::console::manager::state::ManagerListRow::WorkspaceInstance(0, 0))
+            .expect("expanded workspace instance row exists");
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('n')),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, InputOutcome::Continue));
+        let Some((_container, _picker, providers)) = state.inline_new_session_picker.as_ref()
+        else {
+            panic!("N on a running instance must open the agent picker");
+        };
+        assert!(
+            providers.is_empty(),
+            "host config must not offer providers for an already-running container"
+        );
     }
 
     fn live_snapshot() -> crate::runtime::snapshot::InstanceSnapshot {

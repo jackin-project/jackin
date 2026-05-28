@@ -83,8 +83,11 @@ impl ManagerListRow {
 pub struct ProviderPickerState<C> {
     pub context: C,
     pub agent: crate::agent::Agent,
-    pub providers: Vec<jackin_protocol::Provider>,
-    pub selected: usize,
+    // Private so the `selected < providers.len()` invariant holds: `selected`
+    // is only ever moved by the clamping `move_up`/`move_down`, and `providers`
+    // is set once at construction. External code reads them via the accessors.
+    providers: Vec<jackin_protocol::Provider>,
+    selected: usize,
 }
 
 impl<C> ProviderPickerState<C> {
@@ -109,6 +112,16 @@ impl<C> ProviderPickerState<C> {
         if self.selected + 1 < self.providers.len() {
             self.selected += 1;
         }
+    }
+
+    #[must_use]
+    pub fn providers(&self) -> &[jackin_protocol::Provider] {
+        &self.providers
+    }
+
+    #[must_use]
+    pub const fn selected(&self) -> usize {
+        self.selected
     }
 
     #[must_use]
