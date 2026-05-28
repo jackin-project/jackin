@@ -44,7 +44,7 @@ use crate::protocol::attach::{
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, draw_scrollbar, fill_screen};
 use crate::session::{
-    GitContext, PullRequestChecks, PullRequestInfo, PullRequestLookupOutcome,
+    BranchName, GitContext, Oid, PullRequestChecks, PullRequestInfo, PullRequestLookupOutcome,
     SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
@@ -143,20 +143,27 @@ pub struct Multiplexer {
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
     dialog_copy_feedback_deadline: Option<Instant>,
-    /// Current branch / PR context rendered in the bottom status line.
-    pull_request_context_branch: Option<String>,
-    pull_request_context_head: Option<String>,
+    /// Branch rendered in the status bar; paired with
+    /// `pull_request_context_head` as the cache key in
+    /// `PullRequestContextCacheEntry::is_fresh`.
+    pull_request_context_branch: Option<BranchName>,
+    /// Resolved HEAD OID for `pull_request_context_branch` (or the
+    /// detached-HEAD SHA when no symref). Same-branch HEAD movement
+    /// (commit, rebase, force-push follow-up) flips this and busts any
+    /// cached PR answer keyed on the prior head.
+    pull_request_context_head: Option<Oid>,
     pull_request_context: Option<Arc<PullRequestInfo>>,
-    /// State of the fast local git branch lookup (`git_current_branch`):
+    /// State of the fast local git context lookup (`git_current_context`):
     /// monotonic request id, in-flight gate, last-run instant for the
-    /// cooldown check. The result lands on `pull_request_context_branch`.
+    /// cooldown check. The result lands on `pull_request_context_branch`
+    /// and `pull_request_context_head`.
     git_branch_lookup: LookupState,
     /// State of the 60 s `gh` PR-info lookup. Uses `request_id` +
     /// `in_flight`; `last_run` is unused (per-branch freshness lives
     /// in `pull_request_context_cache` instead because the operator
     /// can flip between branches with cached results in flight).
     pull_request_lookup: LookupState,
-    pull_request_context_cache: HashMap<String, PullRequestContextCacheEntry>,
+    pull_request_context_cache: HashMap<BranchName, PullRequestContextCacheEntry>,
     /// Workspace workdir read from `/jackin/run/agent.toml` at daemon startup.
     /// Every spawned PTY (agent or shell) receives this as its `cwd`
     /// so the operator's panes open in the workspace they configured
@@ -335,13 +342,13 @@ impl LookupState {
 #[derive(Clone)]
 struct PullRequestContextCacheEntry {
     checked_at: Instant,
-    head: Option<String>,
+    head: Option<Oid>,
     pull_request: Option<Arc<PullRequestInfo>>,
 }
 
 impl PullRequestContextCacheEntry {
-    fn is_fresh(&self, head: Option<&str>, now: Instant) -> bool {
-        self.head.as_deref() == head
+    fn is_fresh(&self, head: Option<&Oid>, now: Instant) -> bool {
+        self.head.as_ref() == head
             && now.duration_since(self.checked_at) < PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL
     }
 
@@ -793,7 +800,10 @@ impl Multiplexer {
 
     fn open_github_context_dialog(&mut self, now: Instant) {
         self.dialog_push(Dialog::GitHubContext { copied: false });
-        self.force_spawn_pull_request_context_lookup(now);
+        // Dialog overlay frame is composed by the caller; spawn-or-not
+        // does not gate the visible state. The return value names
+        // whether a worker was kicked off (consumed only by tests).
+        let _spawned = self.force_spawn_pull_request_context_lookup(now);
     }
 
     fn github_context_view(&self) -> GithubContextView<'_> {
@@ -884,15 +894,32 @@ impl Multiplexer {
         mode: PullRequestLookupMode,
     ) -> bool {
         if !self.workdir_context.gh_available {
+            if mode == PullRequestLookupMode::ForceRefresh {
+                crate::cdebug!("pull-request-context: force-refresh skipped: gh unavailable");
+            }
             return false;
         }
         if self.pull_request_lookup.in_flight {
+            if mode == PullRequestLookupMode::ForceRefresh {
+                crate::cdebug!(
+                    "pull-request-context: force-refresh skipped: in-flight lookup request_id={} will satisfy",
+                    self.pull_request_lookup.request_id
+                );
+            }
             return false;
         }
         let Some(branch) = self.pull_request_context_branch.clone() else {
+            if mode == PullRequestLookupMode::ForceRefresh {
+                crate::cdebug!("pull-request-context: force-refresh skipped: no branch");
+            }
             return false;
         };
         if self.workdir_context.is_default_branch(&branch) {
+            if mode == PullRequestLookupMode::ForceRefresh {
+                crate::cdebug!(
+                    "pull-request-context: force-refresh skipped: branch {branch} is default"
+                );
+            }
             return false;
         }
         if self.pull_request_cache_blocks_lookup(&branch, now, mode) {
@@ -901,14 +928,18 @@ impl Multiplexer {
         let request_id = self.pull_request_lookup.begin_spawn(now);
         let workdir = self.workdir.clone();
         let branch_for_event = branch.clone();
+        // Snapshot HEAD at spawn time so the cache entry the result
+        // populates is keyed on the head the worker actually queried,
+        // not whatever `self.pull_request_context_head` happens to be
+        // at apply time.
+        let head_for_event = self.pull_request_context_head.clone();
         self.spawn_context_lookup(
             "pull-request-context",
-            move || match gh_pull_request_info(&workdir, &branch) {
+            move || match gh_pull_request_info(&workdir, branch.as_str()) {
                 Ok(pr) => PullRequestLookupOutcome::Resolved(pr),
                 Err(err) => {
                     crate::clog!(
-                        "pull-request-context: gh lookup failed for branch {:?}: {err}",
-                        branch
+                        "pull-request-context: gh lookup failed for branch {branch}: {err}"
                     );
                     PullRequestLookupOutcome::TransientFailure
                 }
@@ -916,6 +947,7 @@ impl Multiplexer {
             move |outcome| SessionEvent::PullRequestContextLoaded {
                 request_id,
                 branch: Some(branch_for_event),
+                head: head_for_event,
                 outcome,
             },
         );
@@ -951,11 +983,10 @@ impl Multiplexer {
         now: Instant,
     ) -> bool {
         crate::cdebug!(
-            "git-branch-context: lookup loaded request_id={} current_request_id={} branch={:?} head={:?}",
+            "git-branch-context: lookup loaded request_id={} current_request_id={} context={:?}",
             request_id,
             self.git_branch_lookup.request_id,
-            context.branch,
-            context.head
+            context,
         );
         if request_id != self.git_branch_lookup.request_id {
             return false;
@@ -965,10 +996,15 @@ impl Multiplexer {
     }
 
     fn apply_git_context(&mut self, context: GitContext, now: Instant) -> bool {
-        let GitContext { branch, head } = context;
-        if self.pull_request_context_branch.as_deref() == branch.as_deref()
-            && self.pull_request_context_head.as_deref() == head.as_deref()
-        {
+        let (branch, head) = match context {
+            GitContext::Absent => (None, None),
+            GitContext::Detached { head } => (None, Some(head)),
+            GitContext::Branch { name, head } => (Some(name), head),
+        };
+        // Steady-state polling path: (branch, head) unchanged, no chrome
+        // update needed, but the spawn-gate may still admit a refresh if
+        // the cache aged out.
+        if self.pull_request_context_branch == branch && self.pull_request_context_head == head {
             return self.maybe_spawn_pull_request_context_lookup(now);
         }
         let old_branch = self.pull_request_context_branch.take();
@@ -976,32 +1012,31 @@ impl Multiplexer {
         let old_pull_request = self.pull_request_context.clone();
         self.pull_request_context_branch = branch.clone();
         self.pull_request_context_head = head.clone();
-        if branch.is_some() && !self.workdir_context.is_git_repo {
+        // Detached HEAD (head Some, branch None) is still a git repo; a
+        // bare `branch.is_some()` would miss the `git checkout <sha>` case.
+        if (branch.is_some() || head.is_some()) && !self.workdir_context.is_git_repo {
             self.workdir_context.is_git_repo = true;
             self.workdir_context.default_branch = resolve_default_branch(&self.workdir);
         }
         self.pull_request_context = branch
-            .as_deref()
+            .as_ref()
             .and_then(|branch| self.cached_pull_request_for_branch(branch, now));
 
         // Branch/HEAD flips invalidate the in-flight `gh pr list --head <old>`
-        // worker; bumping the id makes its response fail the equality
-        // guard in `apply_pull_request_context_loaded`.
-        if self.pull_request_lookup.in_flight {
-            crate::cdebug!(
-                "pull-request-context: invalidating in-flight request_id={} on branch flip {:?} \u{2192} {:?}",
-                self.pull_request_lookup.request_id,
-                old_branch,
-                self.pull_request_context_branch
-            );
-        }
+        // worker; bumping the id makes its response fail the request_id
+        // guard at the top of `apply_pull_request_context_loaded`. The
+        // apply path also runs a second (branch, head) equality check as
+        // defense-in-depth for any future call site that bypasses this
+        // path.
+        let in_flight_before = self.pull_request_lookup.in_flight;
         self.pull_request_lookup.invalidate_in_flight();
         crate::cdebug!(
-            "git-branch-context: context changed old_branch={:?} old_head={:?} new_branch={:?} new_head={:?}",
+            "git-branch-context: context flip old_branch={:?} old_head={:?} new_branch={:?} new_head={:?} invalidated_in_flight={}",
             old_branch,
             old_head,
             self.pull_request_context_branch,
-            self.pull_request_context_head
+            self.pull_request_context_head,
+            in_flight_before
         );
         let changed = old_branch != self.pull_request_context_branch
             || old_head != self.pull_request_context_head
@@ -1011,15 +1046,25 @@ impl Multiplexer {
         resized || changed
     }
 
+    /// Test-only ergonomic shim: wrap a short-name branch into a
+    /// `GitContext::Branch { head: None }` so existing tests that
+    /// don't care about head behaviour stay readable. Production code
+    /// calls `apply_git_context` directly with a fully-built
+    /// `GitContext`.
     #[cfg(test)]
-    fn apply_git_branch_context(&mut self, branch: Option<String>, now: Instant) -> bool {
-        self.apply_git_context(GitContext { branch, head: None }, now)
+    fn apply_git_branch_context(&mut self, branch_name: Option<&str>, now: Instant) -> bool {
+        let context = match branch_name.and_then(BranchName::parse) {
+            Some(name) => GitContext::Branch { name, head: None },
+            None => GitContext::Absent,
+        };
+        self.apply_git_context(context, now)
     }
 
     fn apply_pull_request_context_loaded(
         &mut self,
         request_id: u64,
-        branch: Option<String>,
+        branch: Option<BranchName>,
+        head: Option<Oid>,
         outcome: PullRequestLookupOutcome,
         now: Instant,
     ) -> bool {
@@ -1056,18 +1101,39 @@ impl Multiplexer {
                 return loading_changed;
             }
         };
+        // Defense in depth on top of the request_id discriminator: if
+        // mux's (branch, head) drifted between spawn and apply (e.g. a
+        // future call site that mutates these fields without routing
+        // through `apply_git_context`, which bumps `request_id` via
+        // `pull_request_lookup.invalidate_in_flight`), refuse to assign
+        // or cache so we cannot stamp data against the wrong key.
+        if self.pull_request_context_branch.as_ref() != Some(&branch)
+            || self.pull_request_context_head != head
+        {
+            crate::cdebug!(
+                "pull-request-context: (branch, head) drift between spawn and apply — \
+                 spawn=({:?}, {:?}) apply=({:?}, {:?}); refusing to assign or cache",
+                branch,
+                head,
+                self.pull_request_context_branch,
+                self.pull_request_context_head,
+            );
+            // We just cleared in_flight a few lines above; schedule a
+            // fresh lookup for the current (branch, head) so the bar
+            // doesn't sit stale until the next git-branch poll happens
+            // to differ from the active mux state.
+            self.maybe_spawn_pull_request_context_lookup(now);
+            return loading_changed;
+        }
         self.purge_expired_pull_request_cache_entries(now);
         self.pull_request_context_cache.insert(
             branch.clone(),
             PullRequestContextCacheEntry {
                 checked_at: now,
-                head: self.pull_request_context_head.clone(),
+                head,
                 pull_request: pull_request.clone(),
             },
         );
-        if self.pull_request_context_branch.as_deref() != Some(branch.as_str()) {
-            return loading_changed;
-        }
         let changed = self.pull_request_context != pull_request;
         self.pull_request_context = pull_request;
         if self.reconcile_content_rows() {
@@ -1101,14 +1167,14 @@ impl Multiplexer {
     ) -> Option<Arc<PullRequestInfo>> {
         self.pull_request_context_cache
             .get(branch)
-            .filter(|entry| entry.is_fresh(self.pull_request_context_head.as_deref(), now))
+            .filter(|entry| entry.is_fresh(self.pull_request_context_head.as_ref(), now))
             .and_then(|entry| entry.pull_request.clone())
     }
 
     fn pull_request_cache_is_fresh(&self, branch: &str, now: Instant) -> bool {
         self.pull_request_context_cache
             .get(branch)
-            .is_some_and(|entry| entry.is_fresh(self.pull_request_context_head.as_deref(), now))
+            .is_some_and(|entry| entry.is_fresh(self.pull_request_context_head.as_ref(), now))
     }
 
     fn pull_request_cache_blocks_lookup(
@@ -3562,11 +3628,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     SessionEvent::PullRequestContextLoaded {
                         request_id,
                         branch,
+                        head,
                         outcome,
                     } => {
                         if mux.apply_pull_request_context_loaded(
                             request_id,
                             branch,
+                            head,
                             outcome,
                             Instant::now(),
                         ) {
@@ -4409,53 +4477,94 @@ fn git_current_context(workdir: &Path) -> GitContext {
     // Falls back to the subprocess path for worktrees (where `.git`
     // is a file, not a directory) and for any other unusual layout
     // the file-read approach cannot handle.
-    if let Some(mut context) = read_context_from_git_metadata(workdir) {
-        if context.head.is_none() {
-            context.head = git_capture_at_workdir(workdir, &["rev-parse", "--verify", "HEAD"]);
-        }
-        return context;
+    if let Some(context) = read_context_from_git_metadata(workdir) {
+        return match context {
+            // `Branch` with no head means the loose+packed lookup
+            // missed (unborn, race with `pack-refs`, etc.). Try the
+            // subprocess as a last-resort recovery for that single
+            // case rather than ship a head-less context.
+            GitContext::Branch { name, head: None } => {
+                let head = git_capture_at_workdir(workdir, &["rev-parse", "--verify", "HEAD"])
+                    .as_deref()
+                    .and_then(Oid::parse);
+                GitContext::Branch { name, head }
+            }
+            other => other,
+        };
     }
-    GitContext {
-        branch: git_capture_at_workdir(workdir, &["branch", "--show-current"]),
-        head: git_capture_at_workdir(workdir, &["rev-parse", "--verify", "HEAD"]),
-    }
+    git_context_from_subprocess(workdir)
 }
 
 #[cfg(test)]
-fn read_branch_from_git_head(workdir: &Path) -> Option<String> {
-    read_context_from_git_metadata(workdir)?.branch
+fn read_branch_from_git_head(workdir: &Path) -> Option<BranchName> {
+    match read_context_from_git_metadata(workdir)? {
+        GitContext::Branch { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
+fn git_context_from_subprocess(workdir: &Path) -> GitContext {
+    let branch = git_capture_at_workdir(workdir, &["branch", "--show-current"])
+        .as_deref()
+        .and_then(BranchName::parse);
+    let head = git_capture_at_workdir(workdir, &["rev-parse", "--verify", "HEAD"])
+        .as_deref()
+        .and_then(Oid::parse);
+    match (branch, head) {
+        (Some(name), head) => GitContext::Branch { name, head },
+        (None, Some(head)) => GitContext::Detached { head },
+        (None, None) => GitContext::Absent,
+    }
 }
 
 fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContext> {
-    const GIT_METADATA_FILE_MAX_BYTES: u64 = 64 * 1024;
     let git_path = workdir.join(".git");
-    let git_dir = if git_path.is_dir() {
-        git_path
+    // common_git_dir is only meaningful for worktrees (`.git` is a file
+    // pointing at `.git/worktrees/<name>/`). For a normal checkout
+    // (`.git` is the real dir), there is no `commondir` file and the
+    // `is_worktree` flag stays false — saves a per-poll ENOENT stat.
+    let (git_dir, is_worktree) = if git_path.is_dir() {
+        (git_path, false)
     } else {
         let git_file =
             crate::util::read_text_bounded(".git", &git_path, GIT_METADATA_FILE_MAX_BYTES)?;
-        let git_dir = git_file.trim().strip_prefix("gitdir:")?.trim();
-        let git_dir = PathBuf::from(git_dir);
-        if git_dir.is_absolute() {
+        let Some(suffix) = git_file.trim().strip_prefix("gitdir:") else {
+            cdebug_malformed_git_file(".git", &git_path, &git_file);
+            return None;
+        };
+        let git_dir = PathBuf::from(suffix.trim());
+        let resolved = if git_dir.is_absolute() {
             git_dir
         } else {
             workdir.join(git_dir)
-        }
+        };
+        (resolved, true)
     };
-    let common_git_dir = common_git_dir(&git_dir, GIT_METADATA_FILE_MAX_BYTES);
+    let common_git_dir = if is_worktree {
+        common_git_dir(&git_dir, GIT_METADATA_FILE_MAX_BYTES)
+    } else {
+        None
+    };
     let head_path = git_dir.join("HEAD");
     let head =
         crate::util::read_text_bounded(".git/HEAD", &head_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let trimmed = head.trim();
     if let Some(ref_name) = trimmed.strip_prefix("ref: ") {
-        let branch = ref_name.strip_prefix("refs/heads/").map(ToOwned::to_owned);
-        let head = read_git_ref_oid(&git_dir, common_git_dir.as_deref(), ref_name);
-        return Some(GitContext { branch, head });
+        let oid = read_git_ref_oid(&git_dir, common_git_dir.as_deref(), ref_name);
+        return Some(match BranchName::parse(ref_name) {
+            // `ref:` pointing outside `refs/heads/` (e.g. refs/remotes/origin/HEAD)
+            // is treated as detached for our chrome purposes — we have no branch
+            // to show and the resolved tip (if any) is the head OID.
+            Some(name) => GitContext::Branch { name, head: oid },
+            None => oid.map_or(GitContext::Absent, |head| GitContext::Detached { head }),
+        });
     }
-    let detached_head = is_full_hex_oid(trimmed).then(|| trimmed.to_string());
-    Some(GitContext {
-        branch: None,
-        head: detached_head,
+    Some(match Oid::parse(trimmed) {
+        Some(head) => GitContext::Detached { head },
+        None => {
+            cdebug_malformed_git_file(".git/HEAD", &head_path, trimmed);
+            GitContext::Absent
+        }
     })
 }
 
@@ -4470,86 +4579,244 @@ fn common_git_dir(git_dir: &Path, max_bytes: u64) -> Option<PathBuf> {
     })
 }
 
-fn read_git_ref_oid(
-    git_dir: &Path,
-    common_git_dir: Option<&Path>,
-    ref_name: &str,
-) -> Option<String> {
-    for base in [Some(git_dir), common_git_dir].into_iter().flatten() {
+fn read_git_ref_oid(git_dir: &Path, common_git_dir: Option<&Path>, ref_name: &str) -> Option<Oid> {
+    // common_git_dir first when distinct: in a worktree (`git_dir` is
+    // `.git/worktrees/<name>/`) branch refs (`refs/heads/*`) live in
+    // common_git_dir; the per-worktree dir only holds per-worktree
+    // refs (`HEAD`, `bisect/`, `rewritten/`). Probing common_git_dir
+    // first saves one stat per poll on the worktree path and matches
+    // git's own lookup order.
+    let bases: [Option<&Path>; 2] = match common_git_dir {
+        Some(common) if common != git_dir => [Some(common), Some(git_dir)],
+        _ => [Some(git_dir), None],
+    };
+    for base in bases.into_iter().flatten() {
         if let Some(oid) = read_loose_git_ref_oid(&base.join(ref_name)) {
             return Some(oid);
         }
     }
-    common_git_dir
-        .or(Some(git_dir))
-        .and_then(|base| read_packed_git_ref_oid(&base.join("packed-refs"), ref_name))
+    let packed_base = common_git_dir.unwrap_or(git_dir);
+    read_packed_git_ref_oid(&packed_base.join("packed-refs"), ref_name)
 }
 
-fn read_loose_git_ref_oid(path: &Path) -> Option<String> {
-    let raw = crate::util::read_text_bounded("git ref", path, 64 * 1024)?;
+fn read_loose_git_ref_oid(path: &Path) -> Option<Oid> {
+    let raw = crate::util::read_text_bounded("git ref", path, GIT_LOOSE_REF_MAX_BYTES)?;
     let trimmed = raw.trim();
-    is_full_hex_oid(trimmed).then(|| trimmed.to_string())
+    if trimmed.starts_with("ref: ") {
+        // Legitimate symref content (`git symbolic-ref refs/heads/foo
+        // refs/heads/bar`). Not corruption; chaining is rare for branch
+        // refs and we don't need to resolve it here — the upstream
+        // caller can fall through to packed-refs. Stay silent to avoid
+        // per-poll cdebug spam on a symref branch.
+        return None;
+    }
+    let Some(oid) = Oid::parse(trimmed) else {
+        // File present, content unexpected: corruption, mid-write, or
+        // a hash format jackin' doesn't recognise. Distinguish from
+        // the file-missing case (logged by `read_text_bounded` itself)
+        // so triage can localise.
+        cdebug_malformed_git_file("git ref", path, trimmed);
+        return None;
+    };
+    Some(oid)
 }
 
-fn read_packed_git_ref_oid(path: &Path, ref_name: &str) -> Option<String> {
-    let metadata = std::fs::metadata(path).ok()?;
-    let signature = PackedRefsCacheSignature {
-        len: metadata.len(),
-        modified: metadata.modified().ok(),
+fn read_packed_git_ref_oid(path: &Path, ref_name: &str) -> Option<Oid> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            crate::cdebug!(
+                "packed-refs: stat {} failed: {e} (errno={:?})",
+                path.display(),
+                e.raw_os_error(),
+            );
+            return None;
+        }
     };
-    if let Ok(cache) = PACKED_REFS_CACHE.lock()
-        && let Some(entry) = cache.get(path)
-        && entry.signature == signature
-    {
-        return entry.refs.get(ref_name).cloned();
+    let Some(signature) = PackedRefsCacheSignature::for_metadata(&metadata) else {
+        // Fail-closed: without mtime the (len-only) signature would
+        // silently miss same-length rewrites. Parse fresh every call
+        // on this workdir; log once per path so an operator on an
+        // exotic filesystem sees why the cache is not engaging without
+        // a per-poll firehose.
+        log_mtime_unavailable_once(path);
+        return parse_packed_refs_for_ref(path, &metadata, ref_name);
+    };
+    // Hot-path cache hit: lookup the requested ref inside the locked
+    // section so only the Oid (~40-64 bytes) escapes, not the whole
+    // PackedRefsCacheEntry clone of every ref in the repo.
+    if let Some(oid) = with_packed_refs_cache(|cache| {
+        cache
+            .get(path)
+            .filter(|entry| entry.signature == signature)
+            .and_then(|entry| entry.refs.get(ref_name).cloned())
+    }) {
+        return Some(oid);
     }
-
-    let raw = crate::util::read_text_bounded("packed-refs", path, 4 * 1024 * 1024)?;
-    let refs = parse_packed_git_refs(&raw);
+    let (refs, truncated) = load_packed_refs(path, &metadata)?;
     let oid = refs.get(ref_name).cloned();
-    if let Ok(mut cache) = PACKED_REFS_CACHE.lock() {
-        cache.insert(path.to_path_buf(), PackedRefsCacheEntry { signature, refs });
+    if truncated {
+        // A truncated read can only produce a partial ref map; caching
+        // it would poison every future lookup with a wrong "absent"
+        // answer until the file's (len, mtime) signature changes.
+        crate::clog!(
+            "packed-refs: refusing to cache truncated read for {} (file_len={}, cap={} bytes)",
+            path.display(),
+            metadata.len(),
+            PACKED_REFS_MAX_BYTES
+        );
+        return oid;
     }
+    insert_packed_refs_cache_entry(path, PackedRefsCacheEntry { signature, refs });
     oid
 }
 
-fn parse_packed_git_refs(raw: &str) -> HashMap<String, String> {
+/// Shared read+parse path for the cached and uncached call sites.
+/// Truncation is detected via `metadata.len() > cap` rather than
+/// `read.len() == cap`, which distinguishes a real cap-hit from a
+/// legitimately exact-cap-sized file. When truncated, the partial
+/// final line (no trailing `\n`) is dropped from the parse to avoid
+/// inserting an entry under a half-cut ref name.
+fn load_packed_refs(
+    path: &Path,
+    metadata: &std::fs::Metadata,
+) -> Option<(HashMap<String, Oid>, bool)> {
+    let truncated = metadata.len() > PACKED_REFS_MAX_BYTES;
+    let raw = crate::util::read_text_bounded("packed-refs", path, PACKED_REFS_MAX_BYTES)?;
+    Some((parse_packed_git_refs(&raw, truncated), truncated))
+}
+
+fn parse_packed_refs_for_ref(
+    path: &Path,
+    metadata: &std::fs::Metadata,
+    ref_name: &str,
+) -> Option<Oid> {
+    let (refs, _truncated) = load_packed_refs(path, metadata)?;
+    refs.get(ref_name).cloned()
+}
+
+fn insert_packed_refs_cache_entry(path: &Path, entry: PackedRefsCacheEntry) {
+    with_packed_refs_cache(|cache| {
+        if cache.len() >= PACKED_REFS_CACHE_MAX_ENTRIES && !cache.contains_key(path) {
+            // Bounded eviction: visiting >CAP distinct workdirs over a
+            // long-running daemon lifetime would otherwise grow the
+            // map without bound. Drop one entry (HashMap iteration
+            // order is implementation-defined but cheap); the hot
+            // workdir is re-inserted on its next poll.
+            if let Some(victim) = cache.keys().next().cloned() {
+                cache.remove(&victim);
+            }
+        }
+        cache.insert(path.to_path_buf(), entry);
+    });
+}
+
+fn log_mtime_unavailable_once(path: &Path) {
+    let new_entry = {
+        let mut guard = PACKED_REFS_MTIME_UNAVAILABLE_LOGGED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard.insert(path.to_path_buf())
+    };
+    if new_entry {
+        crate::clog!(
+            "packed-refs: modified() unavailable for {}; bypassing cache for this path",
+            path.display()
+        );
+    }
+}
+
+/// Recover from a poisoned PACKED_REFS_CACHE mutex instead of silently
+/// disabling the cache for the daemon lifetime. The cached values are
+/// plain `HashMap<String, Oid>` entries with no torn invariants, so
+/// `PoisonError::into_inner()` is safe to use after a panic.
+fn with_packed_refs_cache<R>(
+    f: impl FnOnce(&mut HashMap<PathBuf, PackedRefsCacheEntry>) -> R,
+) -> R {
+    let mut guard = PACKED_REFS_CACHE.lock().unwrap_or_else(|poisoned| {
+        crate::clog!("packed-refs: cache mutex was poisoned, recovering inner map");
+        poisoned.into_inner()
+    });
+    f(&mut guard)
+}
+
+fn parse_packed_git_refs(raw: &str, truncated: bool) -> HashMap<String, Oid> {
     let mut refs = HashMap::new();
-    for line in raw.lines() {
+    let mut lines: Vec<&str> = raw.lines().collect();
+    if truncated && !raw.ends_with('\n') {
+        // Last line missing its terminator means the cap fell mid-line;
+        // its second token (ref name) is a half-cut string that would
+        // poison the map. Drop it.
+        lines.pop();
+    }
+    for line in lines {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') || line.starts_with('^') {
             continue;
         }
         let mut parts = line.split_whitespace();
-        let Some(oid) = parts.next() else {
+        let Some(oid_str) = parts.next() else {
             continue;
         };
         if let Some(ref_name) = parts.next()
-            && is_full_hex_oid(oid)
+            && ref_name.starts_with("refs/")
+            && let Some(oid) = Oid::parse(oid_str)
         {
-            refs.insert(ref_name.to_string(), oid.to_string());
+            refs.insert(ref_name.to_string(), oid);
         }
     }
     refs
 }
 
-fn is_full_hex_oid(value: &str) -> bool {
-    value.len() == 40 && value.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
+/// Fail-closed signature: `modified` is mandatory because a
+/// length-only signature silently misses same-length rewrites on
+/// filesystems with coarse mtime resolution. Construction returns
+/// `None` when `metadata.modified()` is unavailable so the caller
+/// bypasses the cache rather than caching against a weak key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PackedRefsCacheSignature {
     len: u64,
-    modified: Option<SystemTime>,
+    modified: SystemTime,
 }
 
+impl PackedRefsCacheSignature {
+    fn for_metadata(metadata: &std::fs::Metadata) -> Option<Self> {
+        Some(Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok()?,
+        })
+    }
+}
+
+#[derive(Clone)]
 struct PackedRefsCacheEntry {
     signature: PackedRefsCacheSignature,
-    refs: HashMap<String, String>,
+    refs: HashMap<String, Oid>,
 }
+
+const PACKED_REFS_MAX_BYTES: u64 = 4 * 1024 * 1024;
+const PACKED_REFS_CACHE_MAX_ENTRIES: usize = 32;
+const GIT_METADATA_FILE_MAX_BYTES: u64 = 64 * 1024;
+const GIT_LOOSE_REF_MAX_BYTES: u64 = 64 * 1024;
 
 static PACKED_REFS_CACHE: LazyLock<Mutex<HashMap<PathBuf, PackedRefsCacheEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Paths whose mtime is unavailable have had a cache-bypass `clog!`
+/// emitted at least once. Prevents a poll-rate firehose on exotic
+/// filesystems while still surfacing the bypass once for triage.
+static PACKED_REFS_MTIME_UNAVAILABLE_LOGGED: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn cdebug_malformed_git_file(label: &str, path: &Path, raw: &str) {
+    crate::cdebug!(
+        "{label}: {} content unexpected (len={}, first 64: {:?})",
+        path.display(),
+        raw.len(),
+        raw.chars().take(64).collect::<String>(),
+    );
+}
 
 /// Distinguishes "lookup succeeded but command was unavailable / failed
 /// in a way that means we should not cache" from "lookup succeeded with
@@ -5351,6 +5618,39 @@ mod tests {
         }
     }
 
+    /// Build a 40-char SHA-1-shaped OID from a single hex nibble
+    /// repeated 40 times. Tests want distinguishable OIDs ("H1", "H2",
+    /// "H3") without the eye-strain of typing 40 hex digits inline.
+    fn oid(nibble: char) -> Oid {
+        assert!(nibble.is_ascii_hexdigit(), "nibble must be 0-9/a-f");
+        Oid::parse(&nibble.to_string().repeat(40)).expect("40 hex chars is a valid Oid")
+    }
+
+    fn branch(name: &str) -> BranchName {
+        BranchName::parse(name).expect("test branch names must parse")
+    }
+
+    /// Lay out a fake worktree under `temp` and return the
+    /// (`workdir`, `common_git_dir`) paths the test can then write
+    /// into. The `workdir/.git` pointer file is written so
+    /// `read_context_from_git_metadata` discovers the per-worktree
+    /// gitdir; the caller is responsible for writing HEAD + any
+    /// `commondir` / `refs/heads/*` ref files specific to the
+    /// scenario under test.
+    fn make_worktree_layout(temp: &Path, worktree_name: &str) -> (PathBuf, PathBuf) {
+        let workdir = temp.join("workdir");
+        let common_git = temp.join("repo/.git");
+        let wt_git = common_git.join(format!("worktrees/{worktree_name}"));
+        std::fs::create_dir_all(&workdir).unwrap();
+        std::fs::create_dir_all(&wt_git).unwrap();
+        std::fs::write(
+            workdir.join(".git"),
+            format!("gitdir: {}\n", wt_git.display()),
+        )
+        .unwrap();
+        (workdir, common_git)
+    }
+
     /// Construct the state production would land in after
     /// `maybe_spawn_pull_request_context_lookup` actually spawned a
     /// worker for `branch` (without shelling out to `gh`):
@@ -5359,10 +5659,10 @@ mod tests {
     /// branch the worker was started for, and a `GitHubContext`
     /// dialog is open so apply-path redraw decisions exercise the
     /// dialog-open code path.
-    fn arm_pending_pr_lookup(mux: &mut Multiplexer, branch: &str, request_id: u64) {
+    fn arm_pending_pr_lookup(mux: &mut Multiplexer, branch_name: &str, request_id: u64) {
         mux.pull_request_lookup.request_id = request_id;
         mux.pull_request_lookup.in_flight = true;
-        mux.pull_request_context_branch = Some(branch.to_string());
+        mux.pull_request_context_branch = Some(branch(branch_name));
         mux.open_github_context_dialog(Instant::now());
     }
 
@@ -5431,7 +5731,7 @@ mod tests {
     fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
         let mut mux = single_pane_tab_mux();
         mux.workdir = PathBuf::from("/workspace/jackin");
-        mux.pull_request_context_branch = Some("feat/capsule-pr-context-bar".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/capsule-pr-context-bar"));
 
         let first =
             String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
@@ -5646,7 +5946,7 @@ mod tests {
         assert_backdrop_opaque(container_mux, "container info dialog");
 
         let mut github_mux = mux_with_two_sessions();
-        github_mux.pull_request_context_branch = Some("feat/capsule-pr-context-bar".to_string());
+        github_mux.pull_request_context_branch = Some(branch("feat/capsule-pr-context-bar"));
         github_mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
         github_mux.workdir_context.gh_available = false;
         github_mux.open_github_context_dialog(Instant::now());
@@ -5928,14 +6228,14 @@ mod tests {
         assert_eq!(mux.content_rows, 21);
 
         mux.pull_request_context_cache.insert(
-            "asa/pr-context".to_string(),
+            branch("asa/pr-context"),
             PullRequestContextCacheEntry {
                 checked_at: now,
                 head: None,
                 pull_request: Some(Arc::new(pull_request_fixture(434))),
             },
         );
-        assert!(mux.apply_git_branch_context(Some("asa/pr-context".to_string()), now));
+        assert!(mux.apply_git_branch_context(Some("asa/pr-context"), now));
         assert_eq!(mux.content_rows, 21);
         assert_eq!(
             mux.pull_request_context.as_deref().map(|pr| pr.number),
@@ -5943,18 +6243,18 @@ mod tests {
         );
 
         mux.pull_request_context_cache.insert(
-            "feature/no-pr".to_string(),
+            branch("feature/no-pr"),
             PullRequestContextCacheEntry {
                 checked_at: now,
                 head: None,
                 pull_request: None,
             },
         );
-        assert!(mux.apply_git_branch_context(Some("feature/no-pr".to_string()), now));
+        assert!(mux.apply_git_branch_context(Some("feature/no-pr"), now));
         assert_eq!(mux.content_rows, 21);
         assert!(mux.pull_request_context.is_none());
 
-        assert!(mux.apply_git_branch_context(Some("main".to_string()), now));
+        assert!(mux.apply_git_branch_context(Some("main"), now));
         assert_eq!(mux.content_rows, 21);
         assert!(mux.pull_request_context.is_none());
     }
@@ -5963,20 +6263,20 @@ mod tests {
     fn git_branch_context_updates_status_before_github_lookup() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        mux.pull_request_context_branch = Some("old/pr".to_string());
+        mux.pull_request_context_branch = Some(branch("old/pr"));
         mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
         mux.reconcile_content_rows();
         assert_eq!(mux.content_rows, 21);
 
         mux.pull_request_context_cache.insert(
-            "new/local-branch".to_string(),
+            branch("new/local-branch"),
             PullRequestContextCacheEntry {
                 checked_at: now,
                 head: None,
                 pull_request: None,
             },
         );
-        assert!(mux.apply_git_branch_context(Some("new/local-branch".to_string()), now));
+        assert!(mux.apply_git_branch_context(Some("new/local-branch"), now));
 
         assert_eq!(
             mux.pull_request_context_branch.as_deref(),
@@ -5993,7 +6293,7 @@ mod tests {
         mux.workdir_context.is_git_repo = false;
         mux.workdir_context.gh_available = false;
 
-        assert!(mux.apply_git_branch_context(Some("feat/capsule-pr-context-bar".to_string()), now));
+        assert!(mux.apply_git_branch_context(Some("feat/capsule-pr-context-bar"), now));
 
         assert!(mux.workdir_context.is_git_repo);
         assert_eq!(
@@ -6008,11 +6308,12 @@ mod tests {
         let mut mux = test_mux(24, 100);
         mux.pull_request_lookup.request_id = 5;
         mux.pull_request_lookup.in_flight = true;
-        mux.pull_request_context_branch = Some("feat/x".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
         let pr = pull_request_fixture(99);
         let changed = mux.apply_pull_request_context_loaded(
             3,
-            Some("feat/x".to_string()),
+            Some(branch("feat/x")),
+            None,
             PullRequestLookupOutcome::Resolved(Some(Arc::new(pr))),
             Instant::now(),
         );
@@ -6033,10 +6334,10 @@ mod tests {
         let now = Instant::now();
         mux.pull_request_lookup.request_id = 7;
         mux.pull_request_lookup.in_flight = true;
-        mux.pull_request_context_branch = Some("feat/x".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
         mux.pull_request_context = Some(Arc::new(pull_request_fixture(123)));
         mux.pull_request_context_cache.insert(
-            "feat/x".to_string(),
+            branch("feat/x"),
             PullRequestContextCacheEntry {
                 checked_at: now - Duration::from_secs(5),
                 head: None,
@@ -6045,7 +6346,8 @@ mod tests {
         );
         let changed = mux.apply_pull_request_context_loaded(
             7,
-            Some("feat/x".to_string()),
+            Some(branch("feat/x")),
+            None,
             PullRequestLookupOutcome::TransientFailure,
             now,
         );
@@ -6071,7 +6373,8 @@ mod tests {
 
         let changed = mux.apply_pull_request_context_loaded(
             7,
-            Some("feat/x".to_string()),
+            Some(branch("feat/x")),
+            None,
             PullRequestLookupOutcome::Resolved(Some(Arc::new(pull_request_fixture(436)))),
             now,
         );
@@ -6097,7 +6400,8 @@ mod tests {
 
         let changed = mux.apply_pull_request_context_loaded(
             7,
-            Some("feat/x".to_string()),
+            Some(branch("feat/x")),
+            None,
             PullRequestLookupOutcome::TransientFailure,
             now,
         );
@@ -6123,8 +6427,8 @@ mod tests {
         mux.git_branch_lookup.in_flight = true;
         let changed = mux.apply_git_branch_context_loaded(
             2,
-            GitContext {
-                branch: Some("feat/x".to_string()),
+            GitContext::Branch {
+                name: branch("feat/x"),
                 head: None,
             },
             Instant::now(),
@@ -6138,10 +6442,10 @@ mod tests {
     fn apply_git_branch_context_bumps_pr_request_id_on_branch_change() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        mux.pull_request_context_branch = Some("feat/a".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/a"));
         mux.workdir_context.gh_available = false;
         let id_before = mux.pull_request_lookup.request_id;
-        let _ = mux.apply_git_branch_context(Some("feat/b".to_string()), now);
+        let _ = mux.apply_git_branch_context(Some("feat/b"), now);
         assert_eq!(
             mux.pull_request_lookup.request_id,
             id_before.wrapping_add(1),
@@ -6153,15 +6457,14 @@ mod tests {
     fn apply_git_context_bumps_pr_request_id_on_same_branch_head_change() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        mux.pull_request_context_branch = Some("feat/a".to_string());
-        mux.pull_request_context_head =
-            Some("1111111111111111111111111111111111111111".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/a"));
+        mux.pull_request_context_head = Some(oid('1'));
         mux.pull_request_context = Some(Arc::new(pull_request_fixture(455)));
         mux.pull_request_context_cache.insert(
-            "feat/a".to_string(),
+            branch("feat/a"),
             PullRequestContextCacheEntry {
                 checked_at: now,
-                head: Some("1111111111111111111111111111111111111111".to_string()),
+                head: Some(oid('1')),
                 pull_request: Some(Arc::new(pull_request_fixture(455))),
             },
         );
@@ -6169,9 +6472,9 @@ mod tests {
         let id_before = mux.pull_request_lookup.request_id;
 
         let changed = mux.apply_git_context(
-            GitContext {
-                branch: Some("feat/a".to_string()),
-                head: Some("2222222222222222222222222222222222222222".to_string()),
+            GitContext::Branch {
+                name: branch("feat/a"),
+                head: Some(oid('2')),
             },
             now,
         );
@@ -6197,7 +6500,7 @@ mod tests {
         let now = Instant::now();
         let ttl = PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL * 2;
         mux.pull_request_context_cache.insert(
-            "feat/fresh".to_string(),
+            branch("feat/fresh"),
             PullRequestContextCacheEntry {
                 checked_at: now - Duration::from_secs(10),
                 head: None,
@@ -6205,7 +6508,7 @@ mod tests {
             },
         );
         mux.pull_request_context_cache.insert(
-            "feat/old".to_string(),
+            branch("feat/old"),
             PullRequestContextCacheEntry {
                 checked_at: now - ttl - Duration::from_secs(1),
                 head: None,
@@ -6223,7 +6526,7 @@ mod tests {
         let now = Instant::now();
         // Just-fresh: at the boundary minus 1 ms.
         mux.pull_request_context_cache.insert(
-            "branch-a".to_string(),
+            branch("branch-a"),
             PullRequestContextCacheEntry {
                 checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL + Duration::from_millis(1),
                 head: None,
@@ -6232,7 +6535,7 @@ mod tests {
         );
         // Just-stale: at the boundary plus 1 ms.
         mux.pull_request_context_cache.insert(
-            "branch-b".to_string(),
+            branch("branch-b"),
             PullRequestContextCacheEntry {
                 checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL - Duration::from_millis(1),
                 head: None,
@@ -6247,13 +6550,12 @@ mod tests {
     fn pull_request_cache_fresh_requires_matching_head() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        mux.pull_request_context_head =
-            Some("2222222222222222222222222222222222222222".to_string());
+        mux.pull_request_context_head = Some(oid('2'));
         mux.pull_request_context_cache.insert(
-            "branch-a".to_string(),
+            branch("branch-a"),
             PullRequestContextCacheEntry {
                 checked_at: now,
-                head: Some("1111111111111111111111111111111111111111".to_string()),
+                head: Some(oid('1')),
                 pull_request: None,
             },
         );
@@ -6269,7 +6571,7 @@ mod tests {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
         mux.pull_request_context_cache.insert(
-            "branch-a".to_string(),
+            branch("branch-a"),
             PullRequestContextCacheEntry {
                 checked_at: now,
                 head: None,
@@ -6293,11 +6595,11 @@ mod tests {
     fn git_branch_context_keeps_current_pr_while_refreshing_same_branch() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        mux.pull_request_context_branch = Some("feature/current".to_string());
+        mux.pull_request_context_branch = Some(branch("feature/current"));
         mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
         mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_cache.insert(
-            "feature/current".to_string(),
+            branch("feature/current"),
             PullRequestContextCacheEntry {
                 checked_at: now - PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL,
                 head: None,
@@ -6305,7 +6607,7 @@ mod tests {
             },
         );
 
-        assert!(!mux.apply_git_branch_context(Some("feature/current".to_string()), now));
+        assert!(!mux.apply_git_branch_context(Some("feature/current"), now));
         assert_eq!(
             mux.pull_request_context.as_deref().map(|pr| pr.number),
             Some(436)
@@ -6315,10 +6617,14 @@ mod tests {
     #[test]
     fn cached_pull_request_stays_visible_during_forced_dialog_refresh() {
         let mut mux = test_mux(24, 100);
-        mux.pull_request_context_branch = Some("feature/current".to_string());
+        mux.pull_request_context_branch = Some(branch("feature/current"));
         mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
         mux.pull_request_lookup.in_flight = true;
-        mux.dialog_push(Dialog::GitHubContext { copied: false });
+        // Exercise the real dialog-open path so a future refactor that
+        // skips force_spawn (or routes through a different dispatcher)
+        // is caught here instead of by silent UX regression.
+        mux.workdir_context.gh_available = false;
+        mux.open_github_context_dialog(Instant::now());
 
         let view = mux.github_context_view();
 
@@ -6329,6 +6635,185 @@ mod tests {
         assert!(
             !mux.pull_request_context_loading(),
             "known PR details should remain visible while a forced refresh runs in the background"
+        );
+    }
+
+    #[test]
+    fn open_github_context_dialog_force_spawns_when_gh_available() {
+        let mut mux = test_mux(24, 100);
+        mux.workdir_context.gh_available = true;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        let id_before = mux.pull_request_lookup.request_id;
+
+        mux.open_github_context_dialog(Instant::now());
+
+        assert!(
+            mux.pull_request_lookup.in_flight,
+            "dialog-open must fire a real worker spawn when gh_available is true"
+        );
+        assert_eq!(
+            mux.pull_request_lookup.request_id,
+            id_before.wrapping_add(1),
+            "force-spawn must bump request_id"
+        );
+    }
+
+    #[test]
+    fn apply_git_context_head_change_schedules_fresh_pr_lookup() {
+        // gh_available=true so the spawn path runs end-to-end; we assert
+        // in_flight=true after the head flip to prove the maybe_spawn at
+        // the tail of `apply_git_context` fires (not just request_id bump).
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.workdir_context.gh_available = true;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/a"));
+        mux.pull_request_context_head = Some(oid('1'));
+
+        mux.apply_git_context(
+            GitContext::Branch {
+                name: branch("feat/a"),
+                head: Some(oid('2')),
+            },
+            now,
+        );
+
+        assert!(
+            mux.pull_request_lookup.in_flight,
+            "head flip must schedule a fresh gh worker via maybe_spawn"
+        );
+    }
+
+    #[test]
+    fn apply_pull_request_context_loaded_refuses_head_mismatch() {
+        // Defense-in-depth: request_id matched but mux.head drifted
+        // between spawn and apply. The result MUST NOT overwrite
+        // pull_request_context or land in the cache against the new head.
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_lookup.request_id = 9;
+        mux.pull_request_lookup.in_flight = true;
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_context_head = Some(oid('a'));
+
+        let changed = mux.apply_pull_request_context_loaded(
+            9,
+            Some(branch("feat/x")),
+            Some(oid('b')),
+            PullRequestLookupOutcome::Resolved(Some(Arc::new(pull_request_fixture(777)))),
+            now,
+        );
+
+        assert!(
+            mux.pull_request_context.is_none(),
+            "head-drift result must not be assigned to visible context"
+        );
+        assert!(
+            !mux.pull_request_context_cache.contains_key("feat/x"),
+            "head-drift result must not poison the cache"
+        );
+        assert!(
+            !changed || mux.dialog_top().is_none(),
+            "head-drift apply only flips loading state; no PR data assigned"
+        );
+    }
+
+    #[test]
+    fn apply_pull_request_context_loaded_refuses_head_drift_none_to_some() {
+        // Spawn-time head was None (e.g. mid-write HEAD), apply-time
+        // mux.head resolved to Some. Drift guard must refuse the spawn
+        // payload — its data is keyed against the absent-head state.
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_lookup.request_id = 11;
+        mux.pull_request_lookup.in_flight = true;
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_context_head = Some(oid('c'));
+
+        let _ = mux.apply_pull_request_context_loaded(
+            11,
+            Some(branch("feat/x")),
+            None,
+            PullRequestLookupOutcome::Resolved(Some(Arc::new(pull_request_fixture(778)))),
+            now,
+        );
+
+        assert!(
+            mux.pull_request_context.is_none(),
+            "None→Some head drift refused"
+        );
+        assert!(!mux.pull_request_context_cache.contains_key("feat/x"));
+    }
+
+    #[test]
+    fn apply_pull_request_context_loaded_refuses_head_drift_some_to_none() {
+        // Inverse: spawn captured a head, apply-time mux.head was
+        // cleared (e.g. HEAD became unreadable between spawn and apply).
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_lookup.request_id = 13;
+        mux.pull_request_lookup.in_flight = true;
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_context_head = None;
+
+        let _ = mux.apply_pull_request_context_loaded(
+            13,
+            Some(branch("feat/x")),
+            Some(oid('d')),
+            PullRequestLookupOutcome::Resolved(Some(Arc::new(pull_request_fixture(779)))),
+            now,
+        );
+
+        assert!(
+            mux.pull_request_context.is_none(),
+            "Some→None head drift refused"
+        );
+        assert!(!mux.pull_request_context_cache.contains_key("feat/x"));
+    }
+
+    #[test]
+    fn apply_git_context_simultaneous_branch_and_head_change_invalidates_cache() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_context_branch = Some(branch("feat/a"));
+        mux.pull_request_context_head = Some(oid('1'));
+        mux.pull_request_context = Some(Arc::new(pull_request_fixture(455)));
+        mux.pull_request_context_cache.insert(
+            branch("feat/a"),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                head: Some(oid('1')),
+                pull_request: Some(Arc::new(pull_request_fixture(455))),
+            },
+        );
+        mux.workdir_context.gh_available = false;
+        let id_before = mux.pull_request_lookup.request_id;
+
+        let changed = mux.apply_git_context(
+            GitContext::Branch {
+                name: branch("feat/b"),
+                head: Some(oid('2')),
+            },
+            now,
+        );
+
+        assert!(changed, "branch+head flip must dirty the visible context");
+        assert_eq!(
+            mux.pull_request_lookup.request_id,
+            id_before.wrapping_add(1),
+            "simultaneous branch+head flip must bump request_id once"
+        );
+        assert_eq!(mux.pull_request_context_branch.as_deref(), Some("feat/b"));
+        assert_eq!(
+            mux.pull_request_context_head.as_deref(),
+            Some("2222222222222222222222222222222222222222")
+        );
+        assert!(
+            mux.pull_request_context.is_none(),
+            "old PR cache entry under feat/a must not survive the branch flip"
         );
     }
 
@@ -6359,9 +6844,12 @@ mod tests {
 
         let context = read_context_from_git_metadata(temp.path()).unwrap();
 
-        assert_eq!(context.branch.as_deref(), Some("feat/context"));
         assert_eq!(
-            context.head.as_deref(),
+            context.branch_name().map(BranchName::as_str),
+            Some("feat/context")
+        );
+        assert_eq!(
+            context.head().map(Oid::as_str),
             Some("1111111111111111111111111111111111111111")
         );
     }
@@ -6385,9 +6873,12 @@ mod tests {
 
         let context = read_context_from_git_metadata(temp.path()).unwrap();
 
-        assert_eq!(context.branch.as_deref(), Some("feat/context"));
         assert_eq!(
-            context.head.as_deref(),
+            context.branch_name().map(BranchName::as_str),
+            Some("feat/context")
+        );
+        assert_eq!(
+            context.head().map(Oid::as_str),
             Some("1111111111111111111111111111111111111111")
         );
     }
@@ -6437,20 +6928,242 @@ mod tests {
     #[test]
     fn read_branch_from_git_head_reads_worktree_gitdir_file() {
         let temp = tempfile::tempdir().unwrap();
-        let workdir = temp.path().join("workdir");
-        let git_dir = temp.path().join("repo/.git/worktrees/workdir");
-        std::fs::create_dir_all(&workdir).unwrap();
-        std::fs::create_dir_all(&git_dir).unwrap();
-        std::fs::write(
-            workdir.join(".git"),
-            "gitdir: ../repo/.git/worktrees/workdir\n",
-        )
-        .unwrap();
-        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/feat/worktree\n").unwrap();
+        let (workdir, common_git) = make_worktree_layout(temp.path(), "workdir");
+        let wt_git = common_git.join("worktrees/workdir");
+        std::fs::write(wt_git.join("HEAD"), "ref: refs/heads/feat/worktree\n").unwrap();
 
         assert_eq!(
             read_branch_from_git_head(&workdir).as_deref(),
             Some("feat/worktree")
+        );
+    }
+
+    #[test]
+    fn oid_parse_accepts_sha1_and_sha256_lengths_only() {
+        assert!(Oid::parse(&"a".repeat(40)).is_some());
+        assert!(Oid::parse(&"F".repeat(40)).is_some());
+        assert!(Oid::parse(&"0".repeat(64)).is_some());
+        assert!(Oid::parse(&"f".repeat(64)).is_some());
+        assert!(Oid::parse(&"a".repeat(39)).is_none());
+        assert!(Oid::parse(&"a".repeat(41)).is_none());
+        assert!(Oid::parse(&"a".repeat(63)).is_none());
+        assert!(Oid::parse(&"a".repeat(65)).is_none());
+        // Non-hex character at SHA-1 length.
+        let mut s = "a".repeat(39);
+        s.push('g');
+        assert!(Oid::parse(&s).is_none());
+    }
+
+    #[test]
+    fn read_context_from_git_metadata_reads_detached_head_oid() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(
+            git_dir.join("HEAD"),
+            "1111111111111111111111111111111111111111\n",
+        )
+        .unwrap();
+
+        let context = read_context_from_git_metadata(temp.path()).unwrap();
+
+        assert_eq!(context.branch_name(), None);
+        assert_eq!(
+            context.head().map(Oid::as_str),
+            Some("1111111111111111111111111111111111111111")
+        );
+    }
+
+    #[test]
+    fn read_context_from_git_metadata_handles_malformed_head_content() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        // Neither `ref: ` prefix nor full hex OID — corruption / mid-write.
+        std::fs::write(git_dir.join("HEAD"), "abc123\n").unwrap();
+
+        let context = read_context_from_git_metadata(temp.path()).unwrap();
+
+        assert_eq!(context.branch_name(), None);
+        assert_eq!(
+            context.head(),
+            None,
+            "malformed HEAD content must not be treated as an OID"
+        );
+    }
+
+    #[test]
+    fn read_context_from_git_metadata_handles_malformed_gitfile_content() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir = temp.path();
+        // `.git` is a file but does not start with `gitdir:` — corruption.
+        std::fs::write(workdir.join(".git"), "not a gitdir pointer\n").unwrap();
+
+        assert!(read_context_from_git_metadata(workdir).is_none());
+    }
+
+    #[test]
+    fn apply_git_context_flips_is_git_repo_on_detached_head() {
+        let mut mux = test_mux(24, 100);
+        mux.workdir_context.is_git_repo = false;
+        let now = Instant::now();
+
+        mux.apply_git_context(GitContext::Detached { head: oid('1') }, now);
+
+        assert!(
+            mux.workdir_context.is_git_repo,
+            "detached HEAD must promote is_git_repo (branch is None but head is Some)"
+        );
+    }
+
+    #[test]
+    fn read_context_from_git_metadata_resolves_worktree_head_via_commondir() {
+        let temp = tempfile::tempdir().unwrap();
+        let (workdir, common_git) = make_worktree_layout(temp.path(), "wt");
+        let wt_git = common_git.join("worktrees/wt");
+        std::fs::create_dir_all(common_git.join("refs/heads/feat")).unwrap();
+        // Loose ref lives in the COMMON dir, not the per-worktree gitdir.
+        std::fs::write(
+            common_git.join("refs/heads/feat/wt"),
+            "1111111111111111111111111111111111111111\n",
+        )
+        .unwrap();
+        std::fs::write(wt_git.join("HEAD"), "ref: refs/heads/feat/wt\n").unwrap();
+        std::fs::write(wt_git.join("commondir"), "../..\n").unwrap();
+
+        let context = read_context_from_git_metadata(&workdir).unwrap();
+
+        assert_eq!(context.branch_name(), Some(&branch("feat/wt")));
+        assert_eq!(context.head(), Some(&oid('1')));
+    }
+
+    #[test]
+    fn read_packed_git_ref_oid_does_not_cache_truncated_read() {
+        // packed-refs cap forces a synthetic-truncation scenario: write
+        // exactly PACKED_REFS_MAX_BYTES of content so read_text_bounded's
+        // length equals the cap, then mutate underlying bytes and confirm
+        // the second read sees the new value (would not, if the truncated
+        // first read had cached).
+        let temp = tempfile::tempdir().unwrap();
+        let packed_refs = temp.path().join("packed-refs-truncated");
+        // Pad with comment lines + a real ref entry until total length
+        // matches the cap exactly.
+        let real_line = "1111111111111111111111111111111111111111 refs/heads/feat/x\n";
+        let padding_per_line = "# padding to fill packed-refs to the cap byte limit aaaaaaaaaa\n";
+        // Target one byte OVER the cap so metadata.len() > cap triggers
+        // the real truncation path (not the exactly-cap edge case).
+        let target_size = PACKED_REFS_MAX_BYTES as usize + 1;
+        let mut buf = String::with_capacity(target_size);
+        while buf.len() + real_line.len() + padding_per_line.len() <= target_size {
+            buf.push_str(padding_per_line);
+        }
+        buf.push_str(real_line);
+        let remaining = target_size.saturating_sub(buf.len());
+        buf.extend(std::iter::repeat_n('#', remaining));
+        buf.truncate(target_size);
+        std::fs::write(&packed_refs, &buf).unwrap();
+
+        let _ = read_packed_git_ref_oid(&packed_refs, "refs/heads/feat/x");
+
+        // Mutate same-length bytes (overwrite oid in place); mtime advances.
+        let buf2 = buf.replacen(
+            "1111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222",
+            1,
+        );
+        std::fs::write(&packed_refs, &buf2).unwrap();
+
+        assert_eq!(
+            read_packed_git_ref_oid(&packed_refs, "refs/heads/feat/x").as_deref(),
+            Some("2222222222222222222222222222222222222222"),
+            "truncated first read must not have cached; second read sees fresh content"
+        );
+    }
+
+    #[test]
+    fn packed_refs_cache_eviction_bounds_entries_at_cap() {
+        // Create CAP+1 distinct packed-refs paths and read each once.
+        // After the (CAP+1)th insert, exactly CAP of the inserted
+        // paths must remain — proves both the upper bound AND that
+        // eviction removed only one entry (catches over-evict bugs
+        // where the cache would degrade to a single entry).
+        let temp = tempfile::tempdir().unwrap();
+        let mut paths = Vec::new();
+        for i in 0..=PACKED_REFS_CACHE_MAX_ENTRIES {
+            let path = temp.path().join(format!("packed-refs-evict-{i}"));
+            std::fs::write(
+                &path,
+                format!("1111111111111111111111111111111111111111 refs/heads/branch-{i}\n"),
+            )
+            .unwrap();
+            let _ = read_packed_git_ref_oid(&path, &format!("refs/heads/branch-{i}"));
+            paths.push(path);
+        }
+
+        let count = with_packed_refs_cache(|cache| {
+            paths
+                .iter()
+                .filter(|p| cache.contains_key(p.as_path()))
+                .count()
+        });
+        // The just-inserted (CAP+1)th entry MUST be present; eviction
+        // targets pre-existing entries, never the new insert.
+        assert!(
+            with_packed_refs_cache(|cache| cache.contains_key(paths.last().unwrap().as_path())),
+            "newly-inserted entry must survive eviction"
+        );
+        // Exactly one of the previously-inserted CAP entries must have
+        // been evicted: count of our tracked paths in the cache should
+        // equal CAP, not less (over-evict) or more (no-op evict).
+        assert_eq!(
+            count, PACKED_REFS_CACHE_MAX_ENTRIES,
+            "eviction must drop exactly one entry; saw {count} surviving of CAP={}",
+            PACKED_REFS_CACHE_MAX_ENTRIES
+        );
+    }
+
+    #[test]
+    fn read_git_ref_oid_loose_wins_over_packed() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().to_path_buf();
+        std::fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        std::fs::write(
+            git_dir.join("refs/heads/feat-x"),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        )
+        .unwrap();
+        std::fs::write(
+            git_dir.join("packed-refs"),
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb refs/heads/feat-x\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_git_ref_oid(&git_dir, None, "refs/heads/feat-x").as_deref(),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "loose ref must win over packed-refs entry"
+        );
+    }
+
+    #[test]
+    fn force_spawn_pull_request_context_lookup_skipped_when_in_flight() {
+        let mut mux = test_mux(24, 100);
+        mux.workdir_context.gh_available = true;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_lookup.in_flight = true;
+        let id_before = mux.pull_request_lookup.request_id;
+
+        let spawned = mux.force_spawn_pull_request_context_lookup(Instant::now());
+
+        assert!(
+            !spawned,
+            "force-spawn must no-op when a worker is in flight"
+        );
+        assert_eq!(
+            mux.pull_request_lookup.request_id, id_before,
+            "force-spawn skip must not bump request_id"
         );
     }
 
@@ -6936,7 +7649,7 @@ mod tests {
         mux.pointer_shapes_supported = true;
         mux.status_bar.identity_label = "jk-test-container".to_string();
         mux.status_bar.instance_id_label = "test".to_string();
-        mux.pull_request_context_branch = Some("feature/context".to_string());
+        mux.pull_request_context_branch = Some(branch("feature/context"));
         let (tx, mut rx) = mpsc::unbounded_channel();
         mux.attached_out = Some(tx);
         let hit = branch_context_bar_layout(
@@ -7019,7 +7732,7 @@ mod tests {
         mux.status_bar.identity_label = "jk-test-container".to_string();
         mux.status_bar.instance_id_label = "test".to_string();
         mux.status_bar.role = "the-architect".to_string();
-        mux.pull_request_context_branch = Some("feature/context".to_string());
+        mux.pull_request_context_branch = Some(branch("feature/context"));
         let (tx, mut rx) = mpsc::unbounded_channel();
         mux.attached_out = Some(tx);
         let hit = branch_context_bar_layout(
@@ -7066,7 +7779,7 @@ mod tests {
         let mut mux = test_mux(24, 100);
         mux.status_bar.identity_label = "jk-test-container".to_string();
         mux.status_bar.instance_id_label = "test".to_string();
-        mux.pull_request_context_branch = Some("feature/context".to_string());
+        mux.pull_request_context_branch = Some(branch("feature/context"));
         mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
         mux.workdir_context.gh_available = false;
         let hit = branch_context_bar_layout(
