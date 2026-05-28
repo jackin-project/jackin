@@ -461,146 +461,49 @@ pub(in crate::console::manager) fn clamp_list_scroll_for_area(
             Constraint::Percentage(right_pct),
         ])
         .split(area);
-    let viewport = scroll_viewport_width(columns[1]);
+    let sidebar_areas = selected_sidebar_scroll_areas(columns[1], state, config, cwd);
 
-    // Workspace mounts clamp — variant-specific because the source rows
-    // differ (synthetic single-mount for CurrentDirectory, persisted
-    // list for SavedWorkspace, no block at all for NewWorkspace /
-    // WorkspaceInstance).
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
-            let cwd = cwd.display().to_string();
-            let mounts = [crate::workspace::MountConfig {
-                src: cwd.clone(),
-                dst: cwd,
-                readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
-            }];
-            clamp_scroll_x(
-                list::workspace_mounts_content_width(&mounts),
-                viewport,
-                &mut state.list_mounts_scroll_x,
-            );
-            clamp_scroll_x(
-                list::workspace_mounts_content_height(&mounts),
-                scroll_viewport_height(Rect {
-                    x: 0,
-                    y: 0,
-                    width: 0,
-                    height: list::mount_block_height(&mounts),
-                }),
-                &mut state.list_mounts_scroll_y,
-            );
-        }
-        ManagerListRow::SavedWorkspace(i) => {
-            let Some(summary) = state.workspaces.get(i) else {
-                return;
-            };
-            let Some(workspace) = config.workspaces.get(&summary.name) else {
-                return;
-            };
-            clamp_scroll_x(
-                list::workspace_mounts_content_width(&workspace.mounts),
-                viewport,
-                &mut state.list_mounts_scroll_x,
-            );
-            clamp_scroll_x(
-                list::workspace_mounts_content_height(&workspace.mounts),
-                scroll_viewport_height(Rect {
-                    x: 0,
-                    y: 0,
-                    width: 0,
-                    height: list::mount_block_height(&workspace.mounts),
-                }),
-                &mut state.list_mounts_scroll_y,
-            );
-        }
-        ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => {
-            state.list_mounts_scroll_x = 0;
-            state.list_mounts_scroll_y = 0;
-        }
-    }
+    if let Some(areas) = sidebar_areas.as_ref() {
+        clamp_scroll_area(areas.workspace, &mut state.list_mounts_scroll_x);
+        clamp_scroll_area_y(areas.workspace, &mut state.list_mounts_scroll_y);
+        clamp_scroll_area(areas.global, &mut state.list_global_mounts_scroll_x);
+        clamp_scroll_area_y(areas.global, &mut state.list_global_mounts_scroll_y);
 
-    // CurrentDirectory and SavedWorkspace must agree via
-    // `global_rows_for_selected_row` on whether the global-mounts block
-    // is present and what it contains, so horizontal scroll state
-    // survives row switches between them.
-    let global_rows = global_rows_for_selected_row(state, config);
-    if global_rows.is_empty() {
-        state.list_global_mounts_scroll_x = 0;
-        state.list_role_global_mounts_scroll_x = 0;
-        state.list_global_mounts_scroll_y = 0;
-        state.list_role_global_mounts_scroll_y = 0;
+        if let Some(role_global) = areas.role_global {
+            clamp_scroll_area(role_global, &mut state.list_role_global_mounts_scroll_x);
+            clamp_scroll_area_y(role_global, &mut state.list_role_global_mounts_scroll_y);
+        } else {
+            state.list_role_global_mounts_scroll_x = 0;
+            state.list_role_global_mounts_scroll_y = 0;
+        }
+
+        if let Some(roles) = areas.roles {
+            clamp_scroll_area(roles, &mut state.list_roles_scroll_x);
+            clamp_scroll_area_y(roles, &mut state.list_roles_scroll_y);
+        } else {
+            state.list_roles_scroll_x = 0;
+            state.list_roles_scroll_y = 0;
+        }
     } else {
-        let (global, scoped) = partition_mounts_by_scope(&global_rows);
-        clamp_scroll_x(
-            list::global_mounts_content_width(&global),
-            viewport,
-            &mut state.list_global_mounts_scroll_x,
-        );
-        clamp_scroll_x(
-            list::global_mounts_content_height(&global),
-            scroll_viewport_height(Rect {
-                x: 0,
-                y: 0,
-                width: 0,
-                height: list::global_mounts_block_height(&global),
-            }),
-            &mut state.list_global_mounts_scroll_y,
-        );
-        clamp_scroll_x(
-            list::global_mounts_content_width(&scoped),
-            viewport,
-            &mut state.list_role_global_mounts_scroll_x,
-        );
-        clamp_scroll_x(
-            list::global_mounts_content_height(&scoped),
-            scroll_viewport_height(Rect {
-                x: 0,
-                y: 0,
-                width: 0,
-                height: list::global_mounts_block_height(&scoped),
-            }),
-            &mut state.list_role_global_mounts_scroll_y,
-        );
+        state.list_mounts_scroll_x = 0;
+        state.list_mounts_scroll_y = 0;
+        state.list_global_mounts_scroll_x = 0;
+        state.list_global_mounts_scroll_y = 0;
+        state.list_role_global_mounts_scroll_x = 0;
+        state.list_role_global_mounts_scroll_y = 0;
+        state.list_roles_scroll_x = 0;
+        state.list_roles_scroll_y = 0;
+        state.list_scroll_focus = None;
     }
 
     // Fix 1: Clear stale scroll focus when the focused block no longer
     // overflows after a terminal resize. Checked every render frame so the
     // green border disappears as soon as the content fits in the viewport.
-    if state
-        .list_scroll_focus
-        .is_some_and(|f| !focused_block_still_scrollable(f, columns[1], state, config, cwd))
+    if let Some(focus) = state.list_scroll_focus
+        && !focused_block_still_scrollable(focus, sidebar_areas.as_ref())
     {
         state.list_scroll_focus = None;
     }
-
-    let ws_config = match state.selected_row() {
-        ManagerListRow::SavedWorkspace(i) => state
-            .workspaces
-            .get(i)
-            .and_then(|s| config.workspaces.get(&s.name)),
-        ManagerListRow::CurrentDirectory
-        | ManagerListRow::CurrentDirectoryInstance(_)
-        | ManagerListRow::NewWorkspace
-        | ManagerListRow::WorkspaceInstance(_, _) => None,
-    };
-    let agent_count = list::agents_block_agent_count(ws_config, config);
-    clamp_scroll_x(
-        2 + agent_count,
-        scroll_viewport_height(Rect {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: list::agents_block_height(agent_count),
-        }),
-        &mut state.list_roles_scroll_y,
-    );
-    clamp_scroll_x(
-        list::agents_block_content_width(ws_config, config),
-        viewport,
-        &mut state.list_roles_scroll_x,
-    );
 
     // Clamp left-pane name scroll to valid range.
     let left_viewport_w = scroll_viewport_width(columns[0]);
@@ -620,19 +523,55 @@ pub(in crate::console::manager) fn clamp_list_scroll_for_area(
     }
 }
 
-fn workspace_mounts_scrollable(
-    mounts: &[crate::workspace::MountConfig],
-    viewport_w: usize,
-) -> bool {
-    let w = list::workspace_mounts_content_width(mounts);
-    let content_h = list::workspace_mounts_content_height(mounts);
-    let viewport_h = scroll_viewport_height(Rect {
-        x: 0,
-        y: 0,
-        width: 0,
-        height: list::mount_block_height(mounts),
-    });
-    is_scrollable(w, viewport_w) || is_scrollable(content_h, viewport_h)
+fn selected_sidebar_scroll_areas(
+    right_pane: Rect,
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) -> Option<list::SidebarScrollAreas> {
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory => {
+            let cwd_str = cwd.display().to_string();
+            let mounts = [crate::workspace::MountConfig {
+                src: cwd_str.clone(),
+                dst: cwd_str.clone(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }];
+            let inputs = list::sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
+            Some(list::compute_sidebar_scroll_areas(
+                right_pane, &inputs, config,
+            ))
+        }
+        ManagerListRow::SavedWorkspace(i) => {
+            let summary = state.workspaces.get(i).cloned()?;
+            config.workspaces.get(&summary.name)?;
+            let inputs = list::sidebar_inputs_for_workspace(&summary, config, state);
+            Some(list::compute_sidebar_scroll_areas(
+                right_pane, &inputs, config,
+            ))
+        }
+        ManagerListRow::NewWorkspace
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::CurrentDirectoryInstance(_) => None,
+    }
+}
+
+const fn clamp_scroll_area(area: list::SidebarScrollArea, value: &mut u16) {
+    clamp_scroll_x(area.content_width, scroll_viewport_width(area.area), value);
+}
+
+const fn clamp_scroll_area_y(area: list::SidebarScrollArea, value: &mut u16) {
+    clamp_scroll_x(
+        area.content_height,
+        scroll_viewport_height(area.area),
+        value,
+    );
+}
+
+const fn scroll_area_scrollable(area: list::SidebarScrollArea) -> bool {
+    is_scrollable(area.content_width, scroll_viewport_width(area.area))
+        || is_scrollable(area.content_height, scroll_viewport_height(area.area))
 }
 
 /// Returns `true` when the focused block still overflows the right pane
@@ -641,91 +580,20 @@ fn workspace_mounts_scrollable(
 /// content fits without scrolling.
 fn focused_block_still_scrollable(
     focus: super::state::MountScrollFocus,
-    right_pane: Rect,
-    state: &ManagerState<'_>,
-    config: &AppConfig,
-    cwd: &std::path::Path,
+    areas: Option<&list::SidebarScrollAreas>,
 ) -> bool {
-    use super::state::{ManagerListRow, MountScrollFocus};
-    let viewport_w = scroll_viewport_width(right_pane);
-
+    let Some(areas) = areas else {
+        return false;
+    };
     match focus {
-        MountScrollFocus::Workspace => match state.selected_row() {
-            ManagerListRow::CurrentDirectory => {
-                let cwd_str = cwd.display().to_string();
-                let m = crate::workspace::MountConfig {
-                    src: cwd_str.clone(),
-                    dst: cwd_str,
-                    readonly: false,
-                    isolation: crate::isolation::MountIsolation::Shared,
-                };
-                workspace_mounts_scrollable(std::slice::from_ref(&m), viewport_w)
-            }
-            ManagerListRow::SavedWorkspace(i) => {
-                let Some(s) = state.workspaces.get(i) else {
-                    return false;
-                };
-                let Some(ws) = config.workspaces.get(&s.name) else {
-                    return false;
-                };
-                workspace_mounts_scrollable(ws.mounts.as_slice(), viewport_w)
-            }
-            ManagerListRow::NewWorkspace
-            | ManagerListRow::WorkspaceInstance(_, _)
-            | ManagerListRow::CurrentDirectoryInstance(_) => false,
-        },
-        MountScrollFocus::Global | MountScrollFocus::RoleGlobal => {
-            // Any row the render path populates must be scrollability-
-            // evaluated here, otherwise `list_scroll_focus` clears on
-            // every resize tick. Shared source of truth with
-            // `clamp_list_scroll_for_area` and `sidebar_inputs_for_*`.
-            let global_rows = global_rows_for_selected_row(state, config);
-            if global_rows.is_empty() {
-                return false;
-            }
-            let (global, scoped) = partition_mounts_by_scope(&global_rows);
-            let mounts = match focus {
-                MountScrollFocus::Global => global,
-                MountScrollFocus::RoleGlobal => scoped,
-                MountScrollFocus::Workspace | MountScrollFocus::Roles => unreachable!(),
-            };
-            if mounts.is_empty() {
-                return false;
-            }
-            let global_w = list::global_mounts_content_width(mounts.as_slice());
-            let global_h = list::global_mounts_content_height(mounts.as_slice());
-            let block_h = list::global_mounts_block_height(mounts.as_slice()) as usize;
-            let viewport_h = scroll_viewport_height(Rect {
-                x: 0,
-                y: 0,
-                width: 0,
-                height: block_h as u16,
-            });
-            is_scrollable(global_w, viewport_w) || is_scrollable(global_h, viewport_h)
+        super::state::MountScrollFocus::Workspace => scroll_area_scrollable(areas.workspace),
+        super::state::MountScrollFocus::Global => {
+            areas.global.area.height > 0 && scroll_area_scrollable(areas.global)
         }
-        MountScrollFocus::Roles => {
-            let ws_config = match state.selected_row() {
-                ManagerListRow::SavedWorkspace(i) => state
-                    .workspaces
-                    .get(i)
-                    .and_then(|s| config.workspaces.get(&s.name)),
-                ManagerListRow::CurrentDirectory
-                | ManagerListRow::CurrentDirectoryInstance(_)
-                | ManagerListRow::NewWorkspace
-                | ManagerListRow::WorkspaceInstance(_, _) => None,
-            };
-            let agent_count = list::agents_block_agent_count(ws_config, config);
-            let roles_w = list::agents_block_content_width(ws_config, config);
-            let roles_h = 2 + agent_count;
-            let block_h = list::agents_block_height(agent_count) as usize;
-            let viewport_h = scroll_viewport_height(Rect {
-                x: 0,
-                y: 0,
-                width: 0,
-                height: block_h as u16,
-            });
-            is_scrollable(roles_w, viewport_w) || is_scrollable(roles_h, viewport_h)
+        super::state::MountScrollFocus::RoleGlobal => {
+            areas.role_global.is_some_and(scroll_area_scrollable)
         }
+        super::state::MountScrollFocus::Roles => areas.roles.is_some_and(scroll_area_scrollable),
     }
 }
 
@@ -806,24 +674,6 @@ pub(super) fn global_rows_for(
     )
 }
 
-pub(super) fn partition_mounts_by_scope(
-    rows: &[crate::config::GlobalMountRow],
-) -> (
-    Vec<crate::workspace::MountConfig>,
-    Vec<crate::workspace::MountConfig>,
-) {
-    let mut global = Vec::new();
-    let mut scoped = Vec::new();
-    for row in rows {
-        if row.scope.is_none() {
-            global.push(row.mount.clone());
-        } else {
-            scoped.push(row.mount.clone());
-        }
-    }
-    (global, scoped)
-}
-
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
     crate::console::widgets::render_brand_header(frame, area, title);
 }
@@ -838,6 +688,65 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
         y: outer.y + outer.height.saturating_sub(h) / 2,
         width: w,
         height: h,
+    }
+}
+
+#[cfg(test)]
+mod list_scroll_clamp_tests {
+    use super::{
+        clamp_list_scroll_for_area, max_scroll_offset, scroll_viewport_height,
+        selected_sidebar_scroll_areas,
+    };
+    use crate::config::AppConfig;
+    use crate::console::manager::state::ManagerState;
+    use crate::isolation::MountIsolation;
+    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use ratatui::layout::{Constraint, Direction, Layout, Rect};
+
+    fn split_mount(idx: usize) -> MountConfig {
+        MountConfig {
+            src: format!("/host/long/source/path/{idx}"),
+            dst: format!("/container/long/destination/path/{idx}"),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        }
+    }
+
+    #[test]
+    fn list_vertical_clamp_uses_rendered_sidebar_height() {
+        let mut config = AppConfig::default();
+        config.workspaces.insert(
+            "demo".into(),
+            WorkspaceConfig {
+                workdir: "/workspace/demo".into(),
+                mounts: (0..10).map(split_mount).collect(),
+                ..Default::default()
+            },
+        );
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 1;
+
+        let body = Rect::new(0, 0, 100, 10);
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(state.list_split_pct),
+                Constraint::Percentage(100u16.saturating_sub(state.list_split_pct)),
+            ])
+            .split(body);
+        let areas = selected_sidebar_scroll_areas(columns[1], &state, &config, tmp.path()).unwrap();
+        let rendered_viewport = scroll_viewport_height(areas.workspace.area);
+        let desired_viewport = scroll_viewport_height(Rect::new(0, 0, 0, 12));
+        assert!(rendered_viewport < desired_viewport);
+
+        let expected = max_scroll_offset(areas.workspace.content_height, rendered_viewport);
+        assert!(expected > max_scroll_offset(areas.workspace.content_height, desired_viewport));
+
+        state.list_mounts_scroll_y = u16::MAX;
+        clamp_list_scroll_for_area(body, &mut state, &config, tmp.path());
+
+        assert_eq!(state.list_mounts_scroll_y, expected);
     }
 }
 

@@ -707,6 +707,20 @@ pub(in crate::console::manager) struct SidebarLayout {
     pub roles: Option<Rect>,
 }
 
+#[derive(Clone, Copy)]
+pub(in crate::console::manager) struct SidebarScrollArea {
+    pub area: Rect,
+    pub content_width: usize,
+    pub content_height: usize,
+}
+
+pub(in crate::console::manager) struct SidebarScrollAreas {
+    pub workspace: SidebarScrollArea,
+    pub global: SidebarScrollArea,
+    pub role_global: Option<SidebarScrollArea>,
+    pub roles: Option<SidebarScrollArea>,
+}
+
 pub(in crate::console::manager) fn compute_sidebar_layout(
     area: Rect,
     inputs: &SidebarInputs<'_>,
@@ -760,6 +774,43 @@ pub(in crate::console::manager) fn compute_sidebar_layout(
         role_global: show_role_global.then(|| iter.next().expect("role-global slot")),
         env: inputs.show_envs.then(|| iter.next().expect("env slot")),
         roles: show_roles.then(|| iter.next().expect("roles slot")),
+    }
+}
+
+pub(in crate::console::manager) fn compute_sidebar_scroll_areas(
+    area: Rect,
+    inputs: &SidebarInputs<'_>,
+    config: &AppConfig,
+) -> SidebarScrollAreas {
+    let layout = compute_sidebar_layout(area, inputs);
+    let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
+
+    SidebarScrollAreas {
+        workspace: SidebarScrollArea {
+            area: layout.mounts,
+            content_width: workspace_mounts_content_width(inputs.mounts),
+            content_height: workspace_mounts_content_height(inputs.mounts),
+        },
+        global: SidebarScrollArea {
+            area: layout.global.unwrap_or(Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 0,
+            }),
+            content_width: global_mounts_content_width_from_rows(&global_rows),
+            content_height: global_mounts_content_height_from_rows(&global_rows),
+        },
+        role_global: layout.role_global.map(|area| SidebarScrollArea {
+            area,
+            content_width: global_mounts_content_width_from_rows(&role_global_rows),
+            content_height: global_mounts_content_height_from_rows(&role_global_rows),
+        }),
+        roles: layout.roles.map(|area| SidebarScrollArea {
+            area,
+            content_width: agents_block_content_width(inputs.ws_config, config),
+            content_height: 2 + agents_block_agent_count(inputs.ws_config, config),
+        }),
     }
 }
 
@@ -960,13 +1011,7 @@ pub(in crate::console::manager) fn global_mounts_content_height(
     }
 }
 
-pub(in crate::console::manager) fn global_mounts_block_height(
-    mounts: &[crate::workspace::MountConfig],
-) -> u16 {
-    (global_mounts_content_height(mounts) + 2).min(12) as u16
-}
-
-pub(in crate::console::manager) fn split_global_mount_rows_pub(
+fn split_global_mount_rows(
     rows: &[crate::config::GlobalMountRow],
 ) -> (
     Vec<&crate::config::GlobalMountRow>,
@@ -975,13 +1020,16 @@ pub(in crate::console::manager) fn split_global_mount_rows_pub(
     rows.iter().partition(|row| row.scope.is_none())
 }
 
-fn split_global_mount_rows(
-    rows: &[crate::config::GlobalMountRow],
-) -> (
-    Vec<&crate::config::GlobalMountRow>,
-    Vec<&crate::config::GlobalMountRow>,
-) {
-    split_global_mount_rows_pub(rows)
+fn global_mounts_content_width_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
+    let mounts: Vec<crate::workspace::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    global_mounts_content_width(&mounts)
+}
+
+fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
+    let mounts: Vec<crate::workspace::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    global_mounts_content_height(&mounts)
 }
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
@@ -1971,7 +2019,7 @@ mod mount_block_height_tests {
     //! against the "phantom empty row" regression where a fixed
     //! `Constraint::Length(5)` over-allocated by 1 for a single-mount
     //! current-directory workspace.
-    use super::{global_mounts_block_height, global_mounts_content_height, mount_block_height};
+    use super::{global_mounts_content_height, mount_block_height};
     use crate::workspace::MountConfig;
 
     fn mount(path: &str) -> MountConfig {
@@ -2024,7 +2072,7 @@ mod mount_block_height_tests {
 
         assert_eq!(global_mounts_content_height(&[same_path]), 2);
         assert_eq!(global_mounts_content_height(&[split_path]), 3);
-        assert_eq!(global_mounts_block_height(&[]), 3);
+        assert_eq!((global_mounts_content_height(&[]) + 2).min(12), 3);
     }
 }
 

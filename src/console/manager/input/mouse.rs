@@ -9,10 +9,9 @@ use super::super::render::global_mounts::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
     trust_content_width,
 };
-use super::super::render::list::{
-    agents_block_agent_count, global_mounts_content_height, global_mounts_content_width,
-    list_names_content_width, workspace_mounts_content_height, workspace_mounts_content_width,
-};
+#[cfg(test)]
+use super::super::render::list::global_mounts_content_width;
+use super::super::render::list::{list_names_content_width, workspace_mounts_content_width};
 #[cfg(test)]
 use super::super::render::max_scroll_offset;
 use super::super::render::{
@@ -773,7 +772,6 @@ const fn point_in(mouse: MouseEvent, area: Rect) -> bool {
 struct ScrollArea {
     area: Rect,
     content_width: usize,
-    content_height: usize,
 }
 
 fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {
@@ -1167,18 +1165,11 @@ fn apply_vertical_scroll(value: &mut u16, delta: i16, area: Rect, content_height
     apply_scroll_delta(value, delta, scroll_viewport_height(area), content_height);
 }
 
-struct ListScrollAreas {
-    workspace: ScrollArea,
-    global: ScrollArea,
-    role_global: Option<ScrollArea>,
-    roles: Option<ScrollArea>,
-}
-
 fn list_scroll_areas(
     state: &ManagerState<'_>,
     term_size: Rect,
     config: Option<&crate::config::AppConfig>,
-) -> Option<ListScrollAreas> {
+) -> Option<super::super::render::list::SidebarScrollAreas> {
     let config = config?;
     let (right_x, right_w) = right_pane_dims(state.list_split_pct, term_size.width);
     let body_y = LIST_HEADER_HEIGHT;
@@ -1208,40 +1199,9 @@ fn list_scroll_areas(
         super::super::render::list::sidebar_inputs_for_workspace(summary, config, state)
     };
 
-    let layout = super::super::render::list::compute_sidebar_layout(pane_area, &inputs);
-    let (global_rows, role_global_rows) =
-        super::super::render::list::split_global_mount_rows_pub(&inputs.global_rows);
-
-    Some(ListScrollAreas {
-        workspace: ScrollArea {
-            area: layout.mounts,
-            content_width: workspace_mounts_content_width(inputs.mounts),
-            content_height: workspace_mounts_content_height(inputs.mounts),
-        },
-        global: ScrollArea {
-            area: layout.global.unwrap_or(Rect {
-                x: pane_area.x,
-                y: pane_area.y,
-                width: pane_area.width,
-                height: 0,
-            }),
-            content_width: global_mounts_content_width_from_rows(&global_rows),
-            content_height: global_mounts_content_height_from_rows(&global_rows),
-        },
-        role_global: layout.role_global.map(|area| ScrollArea {
-            area,
-            content_width: global_mounts_content_width_from_rows(&role_global_rows),
-            content_height: global_mounts_content_height_from_rows(&role_global_rows),
-        }),
-        roles: layout.roles.map(|area| ScrollArea {
-            area,
-            content_width: super::super::render::list::agents_block_content_width(
-                inputs.ws_config,
-                config,
-            ),
-            content_height: 2 + agents_block_agent_count(inputs.ws_config, config),
-        }),
-    })
+    Some(super::super::render::list::compute_sidebar_scroll_areas(
+        pane_area, &inputs, config,
+    ))
 }
 
 fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig {
@@ -1251,18 +1211,6 @@ fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig 
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }
-}
-
-fn global_mounts_content_width_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_width(&mounts)
-}
-
-fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_height(&mounts)
 }
 
 const fn editor_content_area(
@@ -1286,7 +1234,6 @@ fn editor_scroll_area(
     ScrollArea {
         area: editor_content_area(editor, term_size),
         content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
-        content_height: workspace_mounts_content_height(editor.pending.mounts.as_slice()),
     }
 }
 
