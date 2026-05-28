@@ -229,8 +229,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 console::ConsoleOutcome::NewSessionWithProvider {
                     container,
                     agent,
-                    provider_label,
-                    env_overrides,
+                    provider,
                 } => {
                     let manifest =
                         instance::InstanceManifest::read(&paths.data_dir.join(&container))
@@ -240,13 +239,15 @@ pub async fn run(cli: Cli) -> Result<()> {
                                 )
                             })?;
                     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    // The token is backfilled inside the container by the
+                    // daemon from `ZAI_API_KEY`, so pass overrides without it.
                     let result = runtime::spawn_agent_session(
                         &paths,
                         &container,
                         Some(&manifest),
                         agent,
-                        Some(provider_label.as_str()),
-                        &env_overrides,
+                        Some(provider.label()),
+                        &provider.env_overrides(None),
                         config.git.coauthor_trailer,
                         config.git.dco,
                         &docker,
@@ -260,8 +261,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     selector,
                     workspace,
                     agent,
-                    provider_label,
-                    env_overrides,
+                    provider,
                 } => {
                     let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
                     if !sensitive.is_empty()
@@ -271,8 +271,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     }
                     let mut opts = runtime::LoadOptions::for_launch(debug);
                     opts.agent = Some(agent);
-                    opts.provider_label = Some(provider_label);
-                    opts.provider_env_overrides = env_overrides;
+                    opts.provider = Some(provider);
                     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
                     let result = runtime::load_role(
                         &paths,

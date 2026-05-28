@@ -71,6 +71,52 @@ impl ManagerListRow {
     }
 }
 
+/// Provider picker bound to its follow-up context.
+///
+/// The context is whatever the next step needs: the target `container`
+/// (existing-instance "new session" flow) or the `RoleSelector` (initial
+/// workspace launch). Carries the resolved `Provider` list so a selection
+/// cannot reference a provider/env pair that drifted from its label; the
+/// index is clamped by `move_up` / `move_down` and read back through
+/// `selected_provider`.
+#[derive(Debug, Clone)]
+pub struct ProviderPickerState<C> {
+    pub context: C,
+    pub agent: crate::agent::Agent,
+    pub providers: Vec<jackin_protocol::Provider>,
+    pub selected: usize,
+}
+
+impl<C> ProviderPickerState<C> {
+    pub const fn new(
+        context: C,
+        agent: crate::agent::Agent,
+        providers: Vec<jackin_protocol::Provider>,
+    ) -> Self {
+        Self {
+            context,
+            agent,
+            providers,
+            selected: 0,
+        }
+    }
+
+    pub const fn move_up(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
+    }
+
+    pub const fn move_down(&mut self) {
+        if self.selected + 1 < self.providers.len() {
+            self.selected += 1;
+        }
+    }
+
+    #[must_use]
+    pub fn selected_provider(&self) -> Option<jackin_protocol::Provider> {
+        self.providers.get(self.selected).copied()
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
 pub struct ManagerState<'a> {
@@ -100,29 +146,16 @@ pub struct ManagerState<'a> {
     pub inline_new_session_picker: Option<(
         String,
         crate::console::widgets::agent_choice::AgentChoiceState,
-        Vec<(String, Vec<(String, String)>)>,
+        Vec<jackin_protocol::Provider>,
     )>,
     /// Provider picker shown after the agent is committed in
     /// `inline_new_session_picker`, when multiple providers are available.
-    /// Tuple fields: (`container`, `agent`, `providers`, `selected_index`).
-    #[allow(clippy::type_complexity)]
-    pub inline_provider_picker: Option<(
-        String,
-        crate::agent::Agent,
-        Vec<(String, Vec<(String, String)>)>,
-        usize,
-    )>,
+    /// Context is the target `container`.
+    pub inline_provider_picker: Option<ProviderPickerState<String>>,
     /// Provider picker for the initial workspace launch (before the container
     /// exists). Shown after the operator commits an agent choice and
-    /// `ZAI_API_KEY` is configured. Tuple: (`role_selector`, `agent`,
-    /// `providers`, `selected_index`).
-    #[allow(clippy::type_complexity)]
-    pub launch_provider_picker: Option<(
-        crate::selector::RoleSelector,
-        crate::agent::Agent,
-        Vec<(String, Vec<(String, String)>)>,
-        usize,
-    )>,
+    /// `ZAI_API_KEY` is configured. Context is the `RoleSelector`.
+    pub launch_provider_picker: Option<ProviderPickerState<crate::selector::RoleSelector>>,
     pub list_mounts_scroll_x: u16,
     pub list_mounts_scroll_y: u16,
     pub list_global_mounts_scroll_x: u16,

@@ -42,6 +42,77 @@ pub struct InitialProvider {
     pub env_overrides: Vec<(String, String)>,
 }
 
+/// Z.AI's Anthropic-compatible API base URL.
+pub const ZAI_BASE_URL: &str = "https://api.z.ai/api/anthropic";
+
+/// API provider a Claude-compatible agent can be routed through. The
+/// single source of truth for provider labels, endpoints, and env
+/// redirection — the host console, the wire (`InitialProvider` /
+/// `SpawnRequest::AgentWithProvider`), and the in-container daemon all
+/// match on this enum so the provider catalog cannot drift across sites.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Provider {
+    /// The agent's own Anthropic auth — no env redirection.
+    Anthropic,
+    /// Z.AI (GLM Coding Plan) via its Anthropic-compatible endpoint.
+    Zai,
+}
+
+impl Provider {
+    /// Display label, also used as the tab suffix and the string carried
+    /// on the wire in `InitialProvider` / `AgentWithProvider`.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Provider::Anthropic => "Anthropic",
+            Provider::Zai => "Z.AI",
+        }
+    }
+
+    /// Inverse of [`Provider::label`]. `None` for an unrecognized label.
+    #[must_use]
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "Anthropic" => Some(Provider::Anthropic),
+            "Z.AI" => Some(Provider::Zai),
+            _ => None,
+        }
+    }
+
+    /// Env overrides that redirect the agent to this provider. Anthropic
+    /// needs none. Z.AI always sets the base URL and, when `token` is a
+    /// non-empty value, the auth token; callers without the resolved key
+    /// (the host launch path) pass `None` and the daemon backfills the
+    /// token from the container's `ZAI_API_KEY`.
+    #[must_use]
+    pub fn env_overrides(self, token: Option<&str>) -> Vec<(String, String)> {
+        match self {
+            Provider::Anthropic => Vec::new(),
+            Provider::Zai => {
+                let mut env = Vec::with_capacity(2);
+                if let Some(token) = token.filter(|value| !value.is_empty()) {
+                    env.push(("ANTHROPIC_AUTH_TOKEN".to_string(), token.to_string()));
+                }
+                env.push(("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()));
+                env
+            }
+        }
+    }
+
+    /// Providers selectable for `agent_slug`. Z.AI is offered only for
+    /// Claude (its endpoint is Anthropic-compatible) and only when a key
+    /// is available; every other case has one implicit provider and
+    /// returns an empty list, which callers read as "no picker step".
+    #[must_use]
+    pub fn available_for(agent_slug: &str, zai_key_available: bool) -> Vec<Provider> {
+        if agent_slug == "claude" && zai_key_available {
+            vec![Provider::Anthropic, Provider::Zai]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
 impl CapsuleConfig {
     pub fn supported_agents(&self) -> Vec<String> {
         self.agents.clone()
@@ -75,4 +146,51 @@ pub fn instance_id_from_container_base(container_base: &str) -> Option<&str> {
         .strip_prefix(CONTAINER_PREFIX_DASH)?
         .split_once('-')
         .map(|(id, _)| id)
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+
+    #[test]
+    fn label_round_trips_through_from_label() {
+        for provider in [Provider::Anthropic, Provider::Zai] {
+            assert_eq!(Provider::from_label(provider.label()), Some(provider));
+        }
+        assert_eq!(Provider::from_label("Gemini"), None);
+    }
+
+    #[test]
+    fn anthropic_needs_no_env_overrides() {
+        assert!(Provider::Anthropic.env_overrides(Some("tok")).is_empty());
+    }
+
+    #[test]
+    fn zai_injects_token_only_when_present() {
+        assert_eq!(
+            Provider::Zai.env_overrides(Some("tok")),
+            vec![
+                ("ANTHROPIC_AUTH_TOKEN".to_string(), "tok".to_string()),
+                ("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()),
+            ]
+        );
+        // None and empty both mean "daemon backfills the token from env":
+        // emit the base-url redirect but no token entry.
+        for absent in [None, Some("")] {
+            assert_eq!(
+                Provider::Zai.env_overrides(absent),
+                vec![("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string())]
+            );
+        }
+    }
+
+    #[test]
+    fn available_for_offers_zai_only_to_claude_with_key() {
+        assert_eq!(
+            Provider::available_for("claude", true),
+            vec![Provider::Anthropic, Provider::Zai]
+        );
+        assert!(Provider::available_for("claude", false).is_empty());
+        assert!(Provider::available_for("codex", true).is_empty());
+    }
 }

@@ -53,19 +53,17 @@ pub enum InputOutcome {
         action: crate::console::ConsoleInstanceAction,
     },
     /// Operator selected an agent AND provider in the inline provider picker.
-    /// Bypasses `ConsoleInstanceAction` (which is `Copy` and cannot carry Vec).
+    /// Bypasses `ConsoleInstanceAction` (which is `Copy`).
     NewSessionWithProvider {
         container: String,
         agent: crate::agent::Agent,
-        provider_label: String,
-        env_overrides: Vec<(String, String)>,
+        provider: jackin_protocol::Provider,
     },
     /// Operator selected a provider for the initial workspace launch.
     LaunchWithProvider {
         selector: crate::selector::RoleSelector,
         agent: crate::agent::Agent,
-        provider_label: String,
-        env_overrides: Vec<(String, String)>,
+        provider: jackin_protocol::Provider,
     },
 }
 

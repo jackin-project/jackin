@@ -73,21 +73,20 @@ pub struct LoadOptions {
 
     /// Role source URL captured in the instance manifest for restore paths.
     pub restore_role_source_git: Option<String>,
-    /// Provider overrides for the initial session (e.g. Z.AI Anthropic
-    /// redirect). When set, the first attach carries these env overrides
-    /// and provider label into the capsule's initial spawn.
-    pub provider_label: Option<String>,
-    pub provider_env_overrides: Vec<(String, String)>,
+    /// Provider selected for the initial session (e.g. Z.AI's Anthropic
+    /// redirect). When set, the first attach carries the provider's env
+    /// overrides and label into the capsule's initial spawn.
+    pub provider: Option<jackin_protocol::Provider>,
 }
 
 impl LoadOptions {
     pub fn initial_provider(&self) -> Option<jackin_protocol::InitialProvider> {
-        self.provider_label
-            .as_ref()
-            .map(|label| jackin_protocol::InitialProvider {
-                label: label.clone(),
-                env_overrides: self.provider_env_overrides.clone(),
-            })
+        self.provider.map(|provider| jackin_protocol::InitialProvider {
+            label: provider.label().to_string(),
+            // Token is backfilled in-container by the daemon from
+            // `ZAI_API_KEY`; the host launch path has no resolved key here.
+            env_overrides: provider.env_overrides(None),
+        })
     }
 
     /// Build options for `jackin load`.
@@ -7819,14 +7818,7 @@ plugins = []
         let workspace = repo_workspace(&repo_dir);
         let docker = crate::docker_client::FakeDockerClient::default();
         let opts = LoadOptions {
-            provider_label: Some("Z.AI".into()),
-            provider_env_overrides: vec![
-                ("ANTHROPIC_AUTH_TOKEN".into(), String::new()),
-                (
-                    "ANTHROPIC_BASE_URL".into(),
-                    "https://api.z.ai/api/anthropic".into(),
-                ),
-            ],
+            provider: Some(jackin_protocol::Provider::Zai),
             ..LoadOptions::default()
         };
         load_role(

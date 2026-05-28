@@ -68,7 +68,7 @@ When you select Z.AI in the provider picker, jackin' injects two environment var
 
 Claude Code's API client reads these from its process environment and routes all calls to Z.AI's endpoint. **No other tabs or sessions in the container are affected.** Anthropic tabs continue to use the container's Claude credentials; Z.AI tabs use the injected redirect. Both can run simultaneously in the same container.
 
-The key is never logged in compact output. It does not appear in `cdebug!` trace output.
+Your `ZAI_API_KEY` is never written to jackin's logs, including `--debug` output.
 
 ## See also
 

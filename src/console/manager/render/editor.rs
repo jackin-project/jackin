@@ -3134,7 +3134,7 @@ mod auth_flat_rows_tests {
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 
     #[test]
-    fn root_view_lists_three_kinds_in_design_order() {
+    fn root_view_lists_auth_kinds_in_design_order() {
         let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         let rows = auth_flat_rows(&editor, &AppConfig::default());
         assert_eq!(
@@ -3159,7 +3159,7 @@ mod auth_flat_rows_tests {
                     kind: AuthKind::Zai,
                 },
             ],
-            "root view must list Claude / Codex / Amp / Github in this order"
+            "root view must list Claude / Codex / Amp / Opencode / Github / Z.AI in this order"
         );
     }
 

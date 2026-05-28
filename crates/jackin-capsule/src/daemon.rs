@@ -1329,31 +1329,26 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
-                let resolved_env = if provider_label == "Z.AI" {
-                    let mut env: Vec<(String, String)> = env_overrides.to_vec();
-                    let has_token = env
-                        .iter()
-                        .any(|(k, v)| k == "ANTHROPIC_AUTH_TOKEN" && !v.is_empty());
-                    if !has_token {
-                        if let Some(ref key) = self.zai_key {
-                            if let Some(entry) =
-                                env.iter_mut().find(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN")
-                            {
-                                entry.1 = key.clone();
-                            } else {
-                                env.push(("ANTHROPIC_AUTH_TOKEN".to_string(), key.clone()));
-                            }
+                let resolved_env = match jackin_protocol::Provider::from_label(&provider_label) {
+                    Some(provider) => {
+                        // Token is resolved here (not on the wire) from the
+                        // container's ZAI_API_KEY; the host only sends the label.
+                        let env = provider.env_overrides(self.zai_key.as_deref());
+                        if provider == jackin_protocol::Provider::Zai
+                            && !env.iter().any(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN")
+                        {
+                            crate::clog!(
+                                "spawn: provider Z.AI selected but ZAI_API_KEY unresolved in container; session falls back to the agent's default auth"
+                            );
                         }
+                        env
                     }
-                    if !env.iter().any(|(k, _)| k == "ANTHROPIC_BASE_URL") {
-                        env.push((
-                            "ANTHROPIC_BASE_URL".to_string(),
-                            "https://api.z.ai/api/anthropic".to_string(),
-                        ));
+                    None => {
+                        crate::clog!(
+                            "spawn: unknown provider label {provider_label:?}; no env redirect applied"
+                        );
+                        env_overrides.to_vec()
                     }
-                    env
-                } else {
-                    env_overrides.to_vec()
                 };
                 self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))
             }
@@ -1361,35 +1356,11 @@ impl Multiplexer {
         }
     }
 
-    /// Returns the available provider choices for `agent`. Each entry is a
-    /// (display_label, env_overrides) pair. An empty vec means only the
-    /// default provider is available and no picker step is needed.
-    /// A non-empty vec always has 2+ entries — one per available provider.
-    fn providers_for_agent(
-        &self,
-        agent: Option<&str>,
-    ) -> Vec<(&'static str, Vec<(String, String)>)> {
-        let Some(slug) = agent else { return vec![] };
-        // Z.AI supports Claude Code via the Anthropic-compatible endpoint.
-        // Other agents are deferred until their endpoints are confirmed.
-        if slug == "claude" {
-            if let Some(ref key) = self.zai_key {
-                return vec![
-                    ("Anthropic", vec![]),
-                    (
-                        "Z.AI",
-                        vec![
-                            ("ANTHROPIC_AUTH_TOKEN".to_string(), key.clone()),
-                            (
-                                "ANTHROPIC_BASE_URL".to_string(),
-                                "https://api.z.ai/api/anthropic".to_string(),
-                            ),
-                        ],
-                    ),
-                ];
-            }
-        }
-        vec![]
+    /// Providers selectable for `agent`. An empty vec means only the
+    /// default provider is available and no picker step is needed; a
+    /// non-empty vec always has 2+ entries (enforced by the catalog).
+    fn providers_for_agent(&self, agent: Option<&str>) -> Vec<jackin_protocol::Provider> {
+        jackin_protocol::Provider::available_for(agent.unwrap_or_default(), self.zai_key.is_some())
     }
 
     fn session_launch(
@@ -1463,13 +1434,7 @@ impl Multiplexer {
                 if providers.len() > 1 {
                     // Multiple providers available — push ProviderPicker
                     // on top so the operator chooses before spawning.
-                    let labels: Vec<String> =
-                        providers.iter().map(|(l, _)| l.to_string()).collect();
-                    let overrides: Vec<Vec<(String, String)>> =
-                        providers.into_iter().map(|(_, env)| env).collect();
-                    self.dialog_push(Dialog::new_provider_picker(
-                        agent, labels, overrides, intent,
-                    ));
+                    self.dialog_push(Dialog::new_provider_picker(agent, providers, intent));
                 } else {
                     // Zero or one provider — spawn immediately without
                     // a picker step (operator experience unchanged when
@@ -1480,16 +1445,17 @@ impl Multiplexer {
             }
             DialogAction::SpawnAgentWithProvider {
                 agent,
-                provider_label,
-                env_overrides,
+                provider,
                 intent,
             } => {
                 self.dialog_clear();
+                // Token resolved here from the container's ZAI_API_KEY.
+                let env_overrides = provider.env_overrides(self.zai_key.as_deref());
                 self.dispatch_spawn_intent_with_provider(
                     agent,
                     intent,
                     &env_overrides,
-                    Some(&provider_label),
+                    Some(provider.label()),
                 );
             }
             DialogAction::RenameTab { tab_idx, label } => {
@@ -5566,6 +5532,26 @@ mod tests {
             SpawnRequest::Agent("codex".to_string())
         );
         assert_eq!(initial_spawn_request("", None), SpawnRequest::Shell);
+    }
+
+    #[test]
+    fn initial_spawn_request_carries_provider_when_selected() {
+        let provider = jackin_protocol::InitialProvider {
+            label: jackin_protocol::Provider::Zai.label().to_string(),
+            env_overrides: jackin_protocol::Provider::Zai.env_overrides(None),
+        };
+        assert_eq!(
+            initial_spawn_request("claude", Some(&provider)),
+            SpawnRequest::AgentWithProvider {
+                slug: "claude".to_string(),
+                provider_label: "Z.AI".to_string(),
+            }
+        );
+        // An empty agent still degrades to a shell even with a provider.
+        assert_eq!(
+            initial_spawn_request("", Some(&provider)),
+            SpawnRequest::Shell
+        );
     }
 
     #[test]

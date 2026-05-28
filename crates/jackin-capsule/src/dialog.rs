@@ -177,13 +177,12 @@ pub enum Dialog {
         selected_yes: bool,
     },
     /// Two-step provider picker shown after agent selection when multiple
-    /// providers (e.g. Anthropic and Z.AI) are available. `providers` is a
-    /// parallel vec of display labels; `env_overrides` carries the matching
-    /// per-provider env injection list (empty for the default provider).
+    /// providers (e.g. Anthropic and Z.AI) are available. The env
+    /// redirection is derived from each `Provider` at spawn time, so the
+    /// dialog cannot carry a label that has drifted from its overrides.
     ProviderPicker {
         agent: Option<String>,
-        providers: Vec<String>,
-        env_overrides: Vec<Vec<(String, String)>>,
+        providers: Vec<jackin_protocol::Provider>,
         selected: usize,
         intent: PickerIntent,
     },
@@ -256,12 +255,11 @@ pub enum DialogAction {
         agent: Option<String>,
         intent: PickerIntent,
     },
-    /// User confirmed a provider in the ProviderPicker — spawn the
-    /// agent with the chosen provider's env overrides and label.
+    /// User confirmed a provider in the ProviderPicker — the daemon
+    /// derives the env overrides and label from the chosen `Provider`.
     SpawnAgentWithProvider {
         agent: Option<String>,
-        provider_label: String,
-        env_overrides: Vec<(String, String)>,
+        provider: jackin_protocol::Provider,
         intent: PickerIntent,
     },
     /// Operator typed a new tab label and pressed Enter. Empty
@@ -344,14 +342,12 @@ impl Dialog {
 
     pub fn new_provider_picker(
         agent: Option<String>,
-        providers: Vec<String>,
-        env_overrides: Vec<Vec<(String, String)>>,
+        providers: Vec<jackin_protocol::Provider>,
         intent: PickerIntent,
     ) -> Self {
         Self::ProviderPicker {
             agent,
             providers,
-            env_overrides,
             selected: 0,
             intent,
         }
@@ -613,14 +609,12 @@ impl Dialog {
                 Self::ProviderPicker {
                     agent,
                     providers,
-                    env_overrides,
                     selected,
                     intent,
                 } => match providers.get(*selected) {
-                    Some(label) => DialogAction::SpawnAgentWithProvider {
+                    Some(provider) => DialogAction::SpawnAgentWithProvider {
                         agent: agent.clone(),
-                        provider_label: label.clone(),
-                        env_overrides: env_overrides.get(*selected).cloned().unwrap_or_default(),
+                        provider: *provider,
                         intent: *intent,
                     },
                     None => DialogAction::Redraw,
@@ -743,7 +737,6 @@ impl Dialog {
         if let Self::ProviderPicker {
             agent,
             providers,
-            env_overrides,
             selected,
             intent,
         } = self
@@ -754,14 +747,13 @@ impl Dialog {
                 return DialogAction::Consume;
             }
             let idx = (row - first_item_row) as usize;
-            let Some(label) = providers.get(idx) else {
+            let Some(provider) = providers.get(idx) else {
                 return DialogAction::Consume;
             };
             *selected = idx;
             return DialogAction::SpawnAgentWithProvider {
                 agent: agent.clone(),
-                provider_label: label.clone(),
-                env_overrides: env_overrides.get(idx).cloned().unwrap_or_default(),
+                provider: *provider,
                 intent: *intent,
             };
         }
@@ -1873,19 +1865,19 @@ fn render_provider_picker(
     start_col: u16,
     height: u16,
     width: u16,
-    providers: &[String],
+    providers: &[jackin_protocol::Provider],
     selected: usize,
 ) {
     render_box(buf, start_row, start_col, height, width, "Choose provider");
     let interior_items = height.saturating_sub(2) as usize;
     let drawn = providers.len().min(interior_items);
-    for (i, label) in providers.iter().enumerate().take(drawn) {
+    for (i, provider) in providers.iter().enumerate().take(drawn) {
         render_row(
             buf,
             start_row + 1 + i as u16,
             start_col + 1,
             width,
-            label,
+            provider.label(),
             i == selected,
         );
     }

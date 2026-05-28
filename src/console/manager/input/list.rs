@@ -9,7 +9,7 @@ use super::super::super::widgets::{
 use super::super::render::apply_scroll_delta;
 use super::super::state::{
     EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
-    SettingsState,
+    ProviderPickerState, SettingsState,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -666,7 +666,9 @@ pub(super) fn handle_new_session_picker(
             } else {
                 let providers = providers.clone();
                 state.inline_new_session_picker = None;
-                state.inline_provider_picker = Some((container, agent, providers, 0));
+                state.inline_provider_picker = Some(ProviderPickerState::new(
+                    container, agent, providers,
+                ));
                 InputOutcome::Continue
             }
         }
@@ -685,33 +687,29 @@ pub(super) fn handle_inline_provider_picker(
     state: &mut ManagerState<'_>,
     key: KeyEvent,
 ) -> InputOutcome {
-    let Some((container, agent, providers, selected)) = state.inline_provider_picker.as_mut()
-    else {
+    let Some(picker) = state.inline_provider_picker.as_mut() else {
         return InputOutcome::Continue;
     };
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
-            if *selected > 0 {
-                *selected -= 1;
-            }
+            picker.move_up();
             InputOutcome::Continue
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if *selected + 1 < providers.len() {
-                *selected += 1;
-            }
+            picker.move_down();
             InputOutcome::Continue
         }
         KeyCode::Enter => {
-            let (provider_label, env_overrides) = providers[*selected].clone();
-            let container = container.clone();
-            let agent = *agent;
+            let Some(provider) = picker.selected_provider() else {
+                return InputOutcome::Continue;
+            };
+            let container = picker.context.clone();
+            let agent = picker.agent;
             state.inline_provider_picker = None;
             InputOutcome::NewSessionWithProvider {
                 container,
                 agent,
-                provider_label,
-                env_overrides,
+                provider,
             }
         }
         KeyCode::Esc => {
@@ -726,31 +724,27 @@ pub(super) fn handle_launch_provider_picker(
     state: &mut ManagerState<'_>,
     key: KeyEvent,
 ) -> InputOutcome {
-    let Some((_role, _agent, providers, selected)) = state.launch_provider_picker.as_mut() else {
+    let Some(picker) = state.launch_provider_picker.as_mut() else {
         return InputOutcome::Continue;
     };
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
-            if *selected > 0 {
-                *selected -= 1;
-            }
+            picker.move_up();
             InputOutcome::Continue
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if *selected + 1 < providers.len() {
-                *selected += 1;
-            }
+            picker.move_down();
             InputOutcome::Continue
         }
         KeyCode::Enter => {
-            let (role, agent, providers, selected) =
-                state.launch_provider_picker.take().expect("checked above");
-            let (provider_label, env_overrides) = providers[selected].clone();
+            let Some(provider) = picker.selected_provider() else {
+                return InputOutcome::Continue;
+            };
+            let picker = state.launch_provider_picker.take().expect("checked above");
             InputOutcome::LaunchWithProvider {
-                selector: role,
-                agent,
-                provider_label,
-                env_overrides,
+                selector: picker.context,
+                agent: picker.agent,
+                provider,
             }
         }
         KeyCode::Esc => {
@@ -867,16 +861,10 @@ mod tests {
         }
     }
 
-    fn provider_choices() -> Vec<(String, Vec<(String, String)>)> {
+    fn provider_choices() -> Vec<jackin_protocol::Provider> {
         vec![
-            ("Anthropic".to_string(), vec![]),
-            (
-                "Z.AI".to_string(),
-                vec![(
-                    "ANTHROPIC_BASE_URL".to_string(),
-                    "https://api.z.ai/api/anthropic".to_string(),
-                )],
-            ),
+            jackin_protocol::Provider::Anthropic,
+            jackin_protocol::Provider::Zai,
         ]
     }
 
@@ -923,13 +911,13 @@ mod tests {
         let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
 
         assert!(matches!(outcome, InputOutcome::Continue));
-        let Some((container, agent, providers, selected)) = state.inline_provider_picker else {
+        let Some(picker) = state.inline_provider_picker else {
             panic!("Claude with providers must open provider picker");
         };
-        assert_eq!(container, "jackin-demo-architect");
-        assert_eq!(agent, crate::agent::Agent::Claude);
-        assert_eq!(providers.len(), 2);
-        assert_eq!(selected, 0);
+        assert_eq!(picker.context, "jackin-demo-architect");
+        assert_eq!(picker.agent, crate::agent::Agent::Claude);
+        assert_eq!(picker.providers.len(), 2);
+        assert_eq!(picker.selected, 0);
     }
 
     fn live_snapshot() -> crate::runtime::snapshot::InstanceSnapshot {

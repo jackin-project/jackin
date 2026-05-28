@@ -717,6 +717,65 @@ mod tests {
     }
 
     #[test]
+    fn hello_with_agent_and_provider_roundtrips() {
+        // spawn_kind=3 carries both the slug and the provider label.
+        // A regression dropping the label bytes from the encoder while
+        // the decoder still reads them would only surface at a real
+        // console-initiated provider launch — pin the round-trip here.
+        let spawn = Some(SpawnRequest::AgentWithProvider {
+            slug: "claude".to_string(),
+            provider_label: "Z.AI".to_string(),
+        });
+        let bytes = encode_client(ClientFrame::Hello {
+            rows: 50,
+            cols: 200,
+            spawn: spawn.clone(),
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            focus_session: None,
+        })
+        .unwrap();
+        let payload = bytes[5..].to_vec();
+        match decode_client(TAG_HELLO, payload).unwrap() {
+            ClientFrame::Hello { spawn: out, .. } => assert_eq!(out, spawn),
+            other => panic!("expected Hello, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hello_rejects_oversized_provider_label_at_encode() {
+        let err = encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn: Some(SpawnRequest::AgentWithProvider {
+                slug: "claude".to_string(),
+                provider_label: "p".repeat(MAX_HELLO_PROVIDER_LABEL + 1),
+            }),
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            focus_session: None,
+        })
+        .expect_err("over-cap provider label must be rejected at encode");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("provider label"), "got: {msg}");
+        assert!(
+            msg.contains(&MAX_HELLO_PROVIDER_LABEL.to_string()),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn hello_rejects_empty_provider_label_at_decode() {
+        // spawn_kind=3, slug="claude", provider_label_len=0. The decoder
+        // must reject an AgentWithProvider frame with no label rather than
+        // construct one the daemon would route as an unknown provider.
+        let mut payload = vec![0, 24, 0, 80, 3, 0, 6];
+        payload.extend(b"claude");
+        payload.extend_from_slice(&0u16.to_be_bytes()); // provider_label_len = 0
+        assert!(decode_client(TAG_HELLO, payload).is_err());
+    }
+
+    #[test]
     fn hello_rejects_oversized_agent_len() {
         // spawn_kind=agent, agent_len=99 but payload only carries
         // 12 bytes of "only-7-bytes".

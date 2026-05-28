@@ -31,24 +31,21 @@ pub enum ConsoleOutcome {
         action: ConsoleInstanceAction,
     },
     /// Operator selected an agent AND a provider in the console picker.
-    /// Carries the env overrides needed to redirect the agent to the chosen
-    /// provider (e.g. Z.AI's Anthropic-compatible endpoint) plus the label
-    /// used to suffix the tab name in the multiplexer.
+    /// The chosen `Provider` drives the env redirection (e.g. Z.AI's
+    /// Anthropic-compatible endpoint) and the tab-name suffix.
     NewSessionWithProvider {
         container: String,
         agent: crate::agent::Agent,
-        provider_label: String,
-        env_overrides: Vec<(String, String)>,
+        provider: jackin_protocol::Provider,
     },
     /// Initial launch with a provider selected in the console before the
-    /// container is created. The provider env overrides flow into the
-    /// capsule's initial attach so the first session uses the chosen provider.
+    /// container is created. The provider flows into the capsule's initial
+    /// attach so the first session uses the chosen provider.
     LaunchWithProvider {
         selector: RoleSelector,
         workspace: ResolvedWorkspace,
         agent: crate::agent::Agent,
-        provider_label: String,
-        env_overrides: Vec<(String, String)>,
+        provider: jackin_protocol::Provider,
     },
 }
 
@@ -769,26 +766,11 @@ pub(in crate::console) fn providers_for_launch(
     workspace_name: &str,
     role_selector: &str,
     agent: crate::agent::Agent,
-) -> Vec<(String, Vec<(String, String)>)> {
-    if agent != crate::agent::Agent::Claude
-        || !zai_key_present(config, workspace_name, role_selector)
-    {
-        return vec![];
-    }
-    vec![
-        ("Anthropic".to_string(), vec![]),
-        (
-            "Z.AI".to_string(),
-            // Placeholder — actual key resolved from op:// at launch time.
-            vec![
-                ("ANTHROPIC_AUTH_TOKEN".to_string(), String::new()),
-                (
-                    "ANTHROPIC_BASE_URL".to_string(),
-                    "https://api.z.ai/api/anthropic".to_string(),
-                ),
-            ],
-        ),
-    ]
+) -> Vec<jackin_protocol::Provider> {
+    jackin_protocol::Provider::available_for(
+        agent.slug(),
+        zai_key_present(config, workspace_name, role_selector),
+    )
 }
 
 fn launch_with_committed_agent(
@@ -814,7 +796,9 @@ fn launch_with_committed_agent(
     }
 
     if let ConsoleStage::Manager(ms) = &mut state.stage {
-        ms.launch_provider_picker = Some((role.clone(), agent, providers, 0));
+        ms.launch_provider_picker = Some(
+            crate::console::manager::state::ProviderPickerState::new(role.clone(), agent, providers),
+        );
     }
     state.pending_launch = Some(input);
     state.pending_launch_role = Some(role);
@@ -1111,39 +1095,43 @@ pub async fn run_console(
                         manager::InputOutcome::NewSessionWithProvider {
                             container,
                             agent,
-                            provider_label,
-                            env_overrides,
+                            provider,
                         } => {
                             break 'main Ok(Some(ConsoleOutcome::NewSessionWithProvider {
                                 container,
                                 agent,
-                                provider_label,
-                                env_overrides,
+                                provider,
                             }));
                         }
                         manager::InputOutcome::LaunchWithProvider {
                             selector,
                             agent,
-                            provider_label,
-                            env_overrides,
+                            provider,
                         } => {
-                            let input = state.pending_launch.take();
-                            let ws = input.and_then(|inp| {
-                                let choice = build_workspace_choice(&config, cwd, &inp).ok()??;
-                                preview::resolve_selected_workspace(
-                                    &config, cwd, &choice, &selector,
-                                )
-                                .ok()
-                            });
-                            let Some(workspace) = ws else {
+                            // Propagate resolution errors rather than mapping
+                            // them to a silent no-op: an operator who confirmed
+                            // a provider must see why the launch could not
+                            // resolve. A genuinely absent pending input / choice
+                            // is the only Ok(None) path.
+                            let workspace = match state.pending_launch.take() {
+                                Some(input) => {
+                                    match build_workspace_choice(&config, cwd, &input)? {
+                                        Some(choice) => Some(preview::resolve_selected_workspace(
+                                            &config, cwd, &choice, &selector,
+                                        )?),
+                                        None => None,
+                                    }
+                                }
+                                None => None,
+                            };
+                            let Some(workspace) = workspace else {
                                 break 'main Ok(None);
                             };
                             break 'main Ok(Some(ConsoleOutcome::LaunchWithProvider {
                                 selector,
                                 workspace,
                                 agent,
-                                provider_label,
-                                env_overrides,
+                                provider,
                             }));
                         }
                         manager::InputOutcome::InstanceAction { container, action } => {
@@ -1485,7 +1473,7 @@ mod quit_confirm_tests {
             crate::agent::Agent::Claude,
         );
         assert_eq!(providers.len(), 2);
-        assert_eq!(providers[1].0, "Z.AI");
+        assert_eq!(providers[1], jackin_protocol::Provider::Zai);
     }
 
     #[test]
