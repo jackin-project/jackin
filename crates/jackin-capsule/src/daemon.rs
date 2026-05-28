@@ -351,6 +351,12 @@ impl PullRequestContextCacheEntry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PullRequestLookupMode {
+    RespectCache,
+    ForceRefresh,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FullRedrawReason {
     FirstAttach,
     Resize,
@@ -785,8 +791,9 @@ impl Multiplexer {
         });
     }
 
-    fn open_github_context_dialog(&mut self) {
+    fn open_github_context_dialog(&mut self, now: Instant) {
         self.dialog_push(Dialog::GitHubContext { copied: false });
+        self.force_spawn_pull_request_context_lookup(now);
     }
 
     fn github_context_view(&self) -> GithubContextView<'_> {
@@ -864,6 +871,18 @@ impl Multiplexer {
     }
 
     fn maybe_spawn_pull_request_context_lookup(&mut self, now: Instant) -> bool {
+        self.spawn_pull_request_context_lookup(now, PullRequestLookupMode::RespectCache)
+    }
+
+    fn force_spawn_pull_request_context_lookup(&mut self, now: Instant) -> bool {
+        self.spawn_pull_request_context_lookup(now, PullRequestLookupMode::ForceRefresh)
+    }
+
+    fn spawn_pull_request_context_lookup(
+        &mut self,
+        now: Instant,
+        mode: PullRequestLookupMode,
+    ) -> bool {
         if !self.workdir_context.gh_available {
             return false;
         }
@@ -873,9 +892,10 @@ impl Multiplexer {
         let Some(branch) = self.pull_request_context_branch.clone() else {
             return false;
         };
-        if self.workdir_context.is_default_branch(&branch)
-            || self.pull_request_cache_is_fresh(&branch, now)
-        {
+        if self.workdir_context.is_default_branch(&branch) {
+            return false;
+        }
+        if self.pull_request_cache_blocks_lookup(&branch, now, mode) {
             return false;
         }
         let request_id = self.pull_request_lookup.begin_spawn(now);
@@ -1089,6 +1109,15 @@ impl Multiplexer {
         self.pull_request_context_cache
             .get(branch)
             .is_some_and(|entry| entry.is_fresh(self.pull_request_context_head.as_deref(), now))
+    }
+
+    fn pull_request_cache_blocks_lookup(
+        &self,
+        branch: &str,
+        now: Instant,
+        mode: PullRequestLookupMode,
+    ) -> bool {
+        mode == PullRequestLookupMode::RespectCache && self.pull_request_cache_is_fresh(branch, now)
     }
 
     /// Current branch for the chrome bar, filtered to `None` when the
@@ -2224,7 +2253,7 @@ impl Multiplexer {
             ) =>
             {
                 match hit {
-                    BranchContextBarHit::Context => self.open_github_context_dialog(),
+                    BranchContextBarHit::Context => self.open_github_context_dialog(Instant::now()),
                     BranchContextBarHit::Container => self.open_container_info_dialog(),
                 }
                 Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange))
@@ -5296,7 +5325,7 @@ mod tests {
         mux.pull_request_lookup.request_id = request_id;
         mux.pull_request_lookup.in_flight = true;
         mux.pull_request_context_branch = Some(branch.to_string());
-        mux.open_github_context_dialog();
+        mux.open_github_context_dialog(Instant::now());
     }
 
     #[test]
@@ -5581,7 +5610,8 @@ mod tests {
         let mut github_mux = mux_with_two_sessions();
         github_mux.pull_request_context_branch = Some("feat/capsule-pr-context-bar".to_string());
         github_mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
-        github_mux.open_github_context_dialog();
+        github_mux.workdir_context.gh_available = false;
+        github_mux.open_github_context_dialog(Instant::now());
         assert_backdrop_opaque(github_mux, "GitHub context dialog");
     }
 
@@ -6197,6 +6227,31 @@ mod tests {
     }
 
     #[test]
+    fn pull_request_force_refresh_bypasses_fresh_no_pr_cache() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.pull_request_context_cache.insert(
+            "branch-a".to_string(),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                head: None,
+                pull_request: None,
+            },
+        );
+
+        assert!(mux.pull_request_cache_blocks_lookup(
+            "branch-a",
+            now,
+            PullRequestLookupMode::RespectCache
+        ));
+        assert!(!mux.pull_request_cache_blocks_lookup(
+            "branch-a",
+            now,
+            PullRequestLookupMode::ForceRefresh
+        ));
+    }
+
+    #[test]
     fn git_branch_context_keeps_current_pr_while_refreshing_same_branch() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
@@ -6216,6 +6271,26 @@ mod tests {
         assert_eq!(
             mux.pull_request_context.as_deref().map(|pr| pr.number),
             Some(436)
+        );
+    }
+
+    #[test]
+    fn cached_pull_request_stays_visible_during_forced_dialog_refresh() {
+        let mut mux = test_mux(24, 100);
+        mux.pull_request_context_branch = Some("feature/current".to_string());
+        mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
+        mux.pull_request_lookup.in_flight = true;
+        mux.dialog_push(Dialog::GitHubContext { copied: false });
+
+        let view = mux.github_context_view();
+
+        assert!(matches!(
+            view.status,
+            PullRequestStatus::Loaded(pr) if pr.number == 436
+        ));
+        assert!(
+            !mux.pull_request_context_loading(),
+            "known PR details should remain visible while a forced refresh runs in the background"
         );
     }
 
@@ -6899,6 +6974,7 @@ mod tests {
         mux.status_bar.instance_id_label = "test".to_string();
         mux.pull_request_context_branch = Some("feature/context".to_string());
         mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
+        mux.workdir_context.gh_available = false;
         let hit = branch_context_bar_layout(
             mux.term_rows,
             mux.term_cols,
