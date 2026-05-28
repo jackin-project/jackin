@@ -236,8 +236,8 @@ fn assert_sentinel_report(report: &str, stdout: &str, stderr: &str) {
         report.contains("COMBINED_LABEL=frontend-typed-default"),
         "{report}"
     );
-    assert!(!report.contains("OPTIONAL_API_KEY="), "{report}");
-    assert!(!report.contains("OPTIONAL_DERIVED="), "{report}");
+    assert!(report.contains("OPTIONAL_API_KEY=unset"), "{report}");
+    assert!(report.contains("OPTIONAL_DERIVED=unset"), "{report}");
     assert!(report.contains("JACKIN_SENTINEL_SOURCE_HOOK=1"), "{report}");
     assert!(
         report.contains("JACKIN_SENTINEL_PREFLIGHT_COUNT=1"),
