@@ -59,11 +59,11 @@ The implementation PR must update each item below.
 1. Add `tui-scrollbar` to `jackin-tui`.
 2. Add `jackin_tui::scroll` with `TailScroll`, constructors for `tui_scrollbar::ScrollMetrics`, full-cell thumb conversion, clamped delta/page helpers, and cursor-follow helpers.
 3. Move pure geometry/clamp tests from console/capsule into `jackin-tui` and add coverage for zero viewport, content fits, one-row overflow, exact max offset, overscroll clamp, midpoint drag, thumb end reach, tail-relative conversion, and cursor-follow selection.
-4. Convert `src/console/widgets/scrollable.rs` to use `jackin_tui::scroll` while preserving existing visuals.
+4. Convert <RepoFile path="src/console/widgets/scrollable.rs" /> to use `jackin_tui::scroll` while preserving existing visuals.
 5. Convert manager render/input/state paths listed in the affected inventory.
 6. Convert the launch build-log overlay to `TailScroll` and add the sticky-top regression test.
 7. Convert capsule scrollback and border-column rendering to shared metrics.
-8. Update `docs/src/content/docs/reference/tui-design-decisions.mdx` to name the new source of truth.
+8. Update <RepoFile path="docs/src/content/docs/reference/tui-design-decisions.mdx" /> to name the new source of truth.
 
 ## Acceptance Criteria
 
