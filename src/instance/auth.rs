@@ -593,15 +593,13 @@ impl RoleState {
     /// OAuth tokens under `credentials/` (including the `credentials/mcp/`
     /// subtree), `config.toml` carries the OAuth-backed provider/model
     /// references created by login, and `device_id` is the host-bound identity
-    /// Kimi sends in OAuth/device headers. Operator-preference files like
-    /// `mcp.json` are deliberately NOT forwarded — they reference host paths
-    /// and binaries that do not exist in the container, and the role-author
-    /// model is the right place to declare in-container MCP servers.
+    /// Kimi sends in OAuth/device headers.
     /// `ApiKey` / `Ignore` wipe any prior role-state directory.
     ///
     ///   * **Sync** + `~/.kimi-code` present → copy `config.toml`, the full
     ///     `credentials/` tree (binary-safe, recursive, symlink-safe), and
-    ///     `device_id` at `0600` perms; return `(Synced, true)`.
+    ///     `device_id`. Files land at `0600`, directories at `0700`. Return
+    ///     `(Synced, true)`.
     ///   * **Sync** + `~/.kimi-code` absent → return `(HostMissing, true)`.
     ///     Unlike Codex and Amp, no prior role-state files are preserved;
     ///     the role-state dir is still created so the bind-mount exists for
@@ -662,7 +660,7 @@ impl RoleState {
                     if host_creds.exists() {
                         let dest_creds = kimi_dir.join("credentials");
                         copy_kimi_credentials_tree(&host_creds, &dest_creds)
-                            .with_context(|| "copying ~/.kimi-code/credentials")?;
+                            .with_context(|| format!("copying {}", host_creds.display()))?;
                     }
 
                     AuthProvisionOutcome::Synced
@@ -685,8 +683,8 @@ impl RoleState {
 /// made here, not threaded through three near-identical copy blocks.
 const KIMI_SYNC_FILES: &[&str] = &["config.toml", "device_id"];
 
-/// Recursively copy a Kimi Code credentials tree, rejecting symlinks and
-/// writing every file at `0o600`.
+/// Recursively copy a Kimi Code credentials tree. Symlinks are skipped with
+/// a warning (never followed). Files land at `0o600`, directories at `0o700`.
 fn copy_kimi_credentials_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
     use anyhow::Context;
     std::fs::create_dir_all(dst).with_context(|| format!("creating {}", dst.display()))?;
@@ -702,10 +700,17 @@ fn copy_kimi_credentials_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         if ft.is_symlink() {
-            eprintln!(
-                "[jackin] warning: skipping symlink {} under \
-                 ~/.kimi-code/credentials/ — symlinks are not synced",
-                entry.file_name().to_string_lossy()
+            // Route via the TUI-safe channel: the rich loading cockpit owns
+            // the terminal while this runs (credentials stage). A bare
+            // `eprintln!` would corrupt the cockpit. `emit_compact_line`
+            // lands in the diagnostics run jsonl and only prints to stderr
+            // when no rich surface is active.
+            crate::tui::emit_compact_line(
+                "kimi-auth",
+                &format!(
+                    "skipping symlink {} under ~/.kimi-code/credentials/ — symlinks are not synced",
+                    entry.file_name().to_string_lossy()
+                ),
             );
         } else if ft.is_dir() {
             copy_kimi_credentials_tree(&src_path, &dst_path)?;

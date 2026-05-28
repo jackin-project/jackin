@@ -573,11 +573,24 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
                             && let Some(payload) = failure_copy_payload(failure, run_id, target)
                         {
                             let mut out = std::io::stdout();
-                            let _ = out.write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(
-                                &payload,
-                            ));
-                            let _ = out.flush();
-                            v.failure_copied = Some(target);
+                            let copy_ok = out
+                                .write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(
+                                    &payload,
+                                ))
+                                .and_then(|()| out.flush())
+                                .is_ok();
+                            if copy_ok {
+                                v.failure_copied = Some(target);
+                            } else {
+                                // Stdout detached or the terminal does not parse OSC 52
+                                // (e.g. VTE on the BEL form). Don't flash a "Copied!"
+                                // badge when nothing actually reached the clipboard;
+                                // land a breadcrumb in the diagnostics run for triage.
+                                crate::tui::emit_compact_line(
+                                    "failure-popup-copy",
+                                    "OSC 52 clipboard write failed — badge suppressed",
+                                );
+                            }
                         }
                     } else if v.build_log_open {
                         // The overlay covers the whole screen, so any click
@@ -1268,7 +1281,9 @@ fn failure_popup_value_rect(
             );
             Some(Rect {
                 x,
-                y: body.y + u16::try_from(idx).unwrap_or(u16::MAX),
+                y: body
+                    .y
+                    .saturating_add(u16::try_from(idx).unwrap_or(u16::MAX)),
                 width: body.x.saturating_add(body.width).saturating_sub(x),
                 height: 1,
             })

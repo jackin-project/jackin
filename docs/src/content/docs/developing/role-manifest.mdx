@@ -177,7 +177,7 @@ The `[kimi]` table is required when `"kimi"` appears in `agents`.
 |---|---|---|
 | `model` | No | Optional Kimi model passed to `kimi --model` at launch |
 
-Kimi authenticates via host `~/.kimi-code` state in `sync` mode. jackin forwards `~/.kimi-code/config.toml`, files under `~/.kimi-code/credentials/`, and `~/.kimi-code/device_id` into the container before Kimi starts. `mcp.json` is intentionally not forwarded — it carries operator-preference MCP server definitions that reference host paths and bypass the role-author model for declaring in-container MCP servers. jackin launches Kimi with `--yolo` by default; `model` is appended as `kimi --model <model>` when set. `api_key` mode uses `KIMI_API_KEY`; `oauth_token` is not supported.
+Kimi authenticates via host `~/.kimi-code` state in `sync` mode. jackin forwards `~/.kimi-code/config.toml`, files under `~/.kimi-code/credentials/`, and `~/.kimi-code/device_id` into the container before Kimi starts. jackin launches Kimi with `--yolo` by default; `model` is appended as `kimi --model <model>` when set. `api_key` mode uses `KIMI_API_KEY`; `oauth_token` is not supported.
 
 ```toml title="jackin.role.toml"
 version = "v1alpha4"

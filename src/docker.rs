@@ -358,10 +358,12 @@ impl ShellRunner {
                 &stderr_buf,
             );
             if wrote.is_none() {
-                // Sidecar open failed (disk/perm/dir-gone). Surface via the
-                // run jsonl so `launch_failure_cli_error` can still point the
-                // operator at *something* instead of returning bare
-                // "Docker build command failed" with no diagnostics handle.
+                // Sidecar open failed (disk/perm/dir-gone). Land a compact
+                // entry in the run jsonl so the failure is at least visible
+                // to anyone reading the run afterwards.
+                // `launch_failure_cli_error` itself only consults the
+                // on-disk sidecar path, so without an artifact file the CLI
+                // surface will still fall back to the bare error.
                 run.compact(
                     "docker-build",
                     "failed to write docker-build diagnostics sidecar",
