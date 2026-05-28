@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Instant, SystemTime};
 
@@ -170,17 +170,18 @@ pub struct Multiplexer {
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
-    /// Cached at construction for the hot polling path; manual actions
-    /// such as opening GitHub context may re-probe `gh` so a startup
-    /// PATH/tool-availability race does not freeze PR discovery for the
+    /// Cached at construction for the hot polling path. The only
+    /// mutation after that is `gh_available` flipping false → true when
+    /// a background PR lookup succeeds, so a startup PATH /
+    /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
 }
 
-/// One-shot resolution of workdir + tool facts. The daemon never
-/// re-probes; if `git` or `gh` is installed mid-session the operator
-/// must restart the container to pick it up (a non-event for an
-/// orchestrator that already discards containers per launch).
+/// One-shot resolution of workdir + tool facts. `gh_available` may
+/// flip from false to true when a background PR lookup succeeds (so a
+/// startup PATH race doesn't freeze the feature for the daemon
+/// lifetime); the other fields are never re-probed.
 struct WorkdirContext {
     is_git_repo: bool,
     git_available: bool,
@@ -270,44 +271,30 @@ fn command_in_path(name: &str) -> bool {
             return false;
         }
     };
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => return true,
-            Ok(Some(status)) => {
-                crate::cdebug!(
-                    "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
-                    status.code()
-                );
-                return false;
-            }
-            Ok(None) => {}
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                crate::clog!(
-                    "command_in_path[{name}]: child was reaped before status collection; treating as available"
-                );
-                return true;
-            }
-            Err(e) => {
-                crate::clog!(
-                    "command_in_path[{name}]: try_wait failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
-                    e.raw_os_error()
-                );
-                return false;
-            }
+    let label = format!("command_in_path[{name}]");
+    match wait_child_with_timeout(&mut child, &label, GIT_CONTEXT_COMMAND_TIMEOUT) {
+        WaitOutcome::Exited(status) if status.success() => true,
+        WaitOutcome::Exited(status) => {
+            crate::cdebug!(
+                "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
+                status.code()
+            );
+            false
         }
-        if started.elapsed() >= GIT_CONTEXT_COMMAND_TIMEOUT {
-            if let Err(e) = child.kill() {
-                crate::clog!(
-                    "command_in_path[{name}]: timeout ({:?}) and child.kill() failed: {e} (errno={:?})",
-                    GIT_CONTEXT_COMMAND_TIMEOUT,
-                    e.raw_os_error()
-                );
-            }
-            let _ = child.wait();
-            return false;
+        WaitOutcome::Reaped => {
+            crate::clog!(
+                "command_in_path[{name}]: child was reaped before status collection; treating as available"
+            );
+            true
         }
-        std::thread::sleep(Duration::from_millis(25));
+        WaitOutcome::Failed(e) => {
+            crate::clog!(
+                "command_in_path[{name}]: try_wait failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
+                e.raw_os_error()
+            );
+            false
+        }
+        WaitOutcome::TimedOut => false,
     }
 }
 
@@ -4681,6 +4668,53 @@ use jackin_tui::{display_cols, take_display_cols};
 
 const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
+const COMMAND_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+/// Outcome of polling a spawned `Child` to completion with a deadline.
+/// Callers translate this into their own result/Option/bool shape.
+enum WaitOutcome {
+    Exited(std::process::ExitStatus),
+    /// The kernel reaped the child out from under us (PID 1's zombie
+    /// reaper inside Capsule, or a sibling thread's `waitpid`). The
+    /// exit status is lost; callers that captured stdout/stderr should
+    /// trust those pipes, and presence-probes can treat the spawn
+    /// itself as proof the executable exists.
+    Reaped,
+    /// Timed out before the child finished. The helper has already
+    /// attempted `kill()` + `wait()` (best-effort) before returning.
+    TimedOut,
+    /// `try_wait` itself returned a non-`ECHILD` error.
+    Failed(std::io::Error),
+}
+
+/// Poll `child.try_wait()` at `COMMAND_PROBE_POLL_INTERVAL` until it
+/// finishes, the kernel reaps it, the deadline fires, or `try_wait`
+/// itself errors. `label` is only used in the "kill after timeout
+/// failed" log so the line names the program that lingered.
+fn wait_child_with_timeout(child: &mut Child, label: &str, timeout: Duration) -> WaitOutcome {
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return WaitOutcome::Exited(status),
+            Ok(None) => {}
+            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+                return WaitOutcome::Reaped;
+            }
+            Err(e) => return WaitOutcome::Failed(e),
+        }
+        if started.elapsed() >= timeout {
+            if let Err(e) = child.kill() {
+                crate::clog!(
+                    "{label}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
+                    e.raw_os_error()
+                );
+            }
+            let _ = child.wait();
+            return WaitOutcome::TimedOut;
+        }
+        std::thread::sleep(COMMAND_PROBE_POLL_INTERVAL);
+    }
+}
 
 fn git_current_context(workdir: &Path) -> GitContext {
     // Try the cheap path first: read `.git/HEAD` and parse the symref.
@@ -5243,51 +5277,30 @@ fn run_command_capturing_output(
     let stderr_label: &'static str = "stderr";
     let stdout_reader = read_pipe_bounded(program.clone(), stdout_label, stdout, 64 * 1024);
     let stderr_reader = read_pipe_bounded(program.clone(), stderr_label, stderr, 4 * 1024);
-    let started = Instant::now();
-    let status_success: Option<bool>;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                status_success = Some(
-                    status
-                        .code()
-                        .is_some_and(|code| accepted_statuses.contains(&code)),
-                );
-                break;
-            }
-            Ok(None) => {}
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                // PID 1 / sibling waitpid reaped the child; trust the
-                // stdout pipe. Stderr is still read for the caller's
-                // diagnostic context.
-                status_success = None;
-                break;
-            }
-            Err(e) => {
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return Err(LookupError::Failed(format!(
-                    "{program}: try_wait failed: {e} (errno={:?})",
-                    e.raw_os_error()
-                )));
-            }
-        }
-        if started.elapsed() >= timeout {
-            if let Err(e) = child.kill() {
-                crate::clog!(
-                    "{program}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
-                    e.raw_os_error()
-                );
-            }
-            let _ = child.wait();
+    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &program, timeout)
+    {
+        WaitOutcome::Exited(status) => Some(
+            status
+                .code()
+                .is_some_and(|code| accepted_statuses.contains(&code)),
+        ),
+        WaitOutcome::Reaped => None,
+        WaitOutcome::TimedOut => {
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
             return Err(LookupError::Failed(format!(
                 "{program}: timed out after {timeout:?}"
             )));
         }
-        std::thread::sleep(Duration::from_millis(25));
-    }
+        WaitOutcome::Failed(e) => {
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(LookupError::Failed(format!(
+                "{program}: try_wait failed: {e} (errno={:?})",
+                e.raw_os_error()
+            )));
+        }
+    };
     let stdout_bytes = stdout_reader
         .join()
         .map_err(|_| LookupError::Failed(format!("{program}: stdout reader panicked")))?
@@ -5379,54 +5392,35 @@ fn command_stdout_trimmed_with_timeout_and_statuses(
         stdout.read_to_end(&mut bytes)?;
         Ok(bytes)
     });
-    let started = Instant::now();
-    let status_success: Option<bool>;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let accepted = status
-                    .code()
-                    .is_some_and(|code| accepted_statuses.contains(&code));
-                status_success = Some(accepted);
-                break;
-            }
-            Ok(None) => {}
-            // The kernel reaped the child out from under us — either
-            // PID 1's zombie reaper inside the daemon or a sibling
-            // thread's waitpid. The exit status is lost; trust the
-            // stdout pipe (callers like the Container info dialog
-            // would otherwise show empty fields for healthy git/gh
-            // commands). Non-ECHILD errnos are surfaced.
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                status_success = None;
-                break;
-            }
-            Err(e) => {
-                crate::clog!(
-                    "command try_wait failed ({:?}): {e} (errno={:?})",
-                    command.get_program(),
-                    e.raw_os_error()
-                );
-                let _ = stdout_reader.join();
-                return None;
-            }
-        }
-        if started.elapsed() >= timeout {
-            if let Err(e) = child.kill() {
-                crate::clog!(
-                    "command timeout ({timeout:?}): child.kill() failed: {e} (errno={:?}); child may linger",
-                    e.raw_os_error()
-                );
-            }
-            let _ = child.wait();
-            // Joining the reader is bounded: kill() closed the pipe,
-            // so read_to_end returns quickly. Without the join the
-            // OS-thread is leaked across every timeout firing.
+    let label = format!("{:?}", command.get_program());
+    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
+        WaitOutcome::Exited(status) => Some(
+            status
+                .code()
+                .is_some_and(|code| accepted_statuses.contains(&code)),
+        ),
+        // Status is lost; trust the stdout pipe (callers like the
+        // Container info dialog would otherwise show empty fields for
+        // healthy git/gh commands).
+        WaitOutcome::Reaped => None,
+        WaitOutcome::TimedOut => {
+            // Joining the reader is bounded: kill() (inside the helper)
+            // closed the pipe, so read_to_end returns quickly. Without
+            // the join the OS-thread is leaked across every timeout
+            // firing.
             let _ = stdout_reader.join();
             return None;
         }
-        std::thread::sleep(Duration::from_millis(25));
-    }
+        WaitOutcome::Failed(e) => {
+            crate::clog!(
+                "command try_wait failed ({:?}): {e} (errno={:?})",
+                command.get_program(),
+                e.raw_os_error()
+            );
+            let _ = stdout_reader.join();
+            return None;
+        }
+    };
     if status_success == Some(false) {
         crate::cdebug!(
             "command exited non-accepted status ({:?}); stderr was nulled so reason is unavailable",
