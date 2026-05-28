@@ -907,6 +907,13 @@ impl SettingsState<'_> {
     ) -> anyhow::Result<AppConfig> {
         AppConfig::validate_global_mount_rows(&self.mounts.pending)?;
         validate_settings_env(&self.env.pending, &self.trust.pending)?;
+        for row in &self.auth.pending {
+            if row.kind == crate::console::manager::auth_kind::AuthKind::Zai
+                && row.mode == crate::console::manager::auth_kind::AuthMode::Ignore
+            {
+                self.env.pending.env.remove("ZAI_API_KEY");
+            }
+        }
         let mut editor = crate::config::ConfigEditor::open(paths)?;
 
         for row in &self.mounts.original {
@@ -3178,6 +3185,35 @@ mod tests {
         let raw = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(raw.contains("[docker.mounts.\"chainargos/*\"]"), "{raw}");
         assert!(!raw.contains("remove-me"), "{raw}");
+    }
+
+    #[test]
+    fn settings_save_zai_ignore_removes_global_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+ZAI_API_KEY = "secret"
+"#,
+        )
+        .unwrap();
+        let config = AppConfig::load_or_init(&paths).unwrap();
+        let mut state = SettingsState::from_config(&config);
+        let row = state
+            .auth
+            .pending
+            .iter_mut()
+            .find(|row| row.kind == crate::console::manager::auth_kind::AuthKind::Zai)
+            .expect("settings auth rows include Z.AI");
+        row.mode = crate::console::manager::auth_kind::AuthMode::Ignore;
+
+        let saved = state.save_to_config(&paths).unwrap();
+
+        assert!(!saved.env.contains_key("ZAI_API_KEY"));
+        let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!raw.contains("ZAI_API_KEY"), "{raw}");
     }
 
     // ── cycle_isolation_for_selected_mount ─────────────────────────────

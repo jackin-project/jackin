@@ -897,6 +897,9 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
     match target {
         AuthFormTarget::Workspace { kind } => {
             set_workspace_mode(&mut editor.pending, *kind, Some(outcome.mode));
+            if *kind == AuthKind::Zai && outcome.mode == AuthMode::Ignore {
+                editor.pending.env.remove("ZAI_API_KEY");
+            }
             if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
                 match kind {
                     AuthKind::Claude
@@ -917,6 +920,9 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let entry = editor.pending.roles.entry(role.clone()).or_default();
             set_role_mode(entry, *kind, Some(outcome.mode));
+            if *kind == AuthKind::Zai && outcome.mode == AuthMode::Ignore {
+                entry.env.remove("ZAI_API_KEY");
+            }
             if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
                 match kind {
                     AuthKind::Claude
@@ -1060,7 +1066,7 @@ mod tests {
         AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
     };
     use crate::operator_env::{OpRef, OpRunner};
-    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -1161,6 +1167,55 @@ mod tests {
         let ws_github_idx = workspace_github_row_idx(editor, &cfg);
         editor.active_field = FieldFocus::Row(ws_github_idx);
         (cfg, state)
+    }
+
+    #[test]
+    fn auth_form_saving_workspace_zai_ignore_removes_key() {
+        let mut editor = EditorState::new_edit("proj".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .env
+            .insert("ZAI_API_KEY".into(), EnvValue::Plain("secret".into()));
+        let mut form = AuthForm::new(AuthKind::Zai);
+        form.set_mode(AuthMode::Ignore);
+
+        persist_form(
+            &mut editor,
+            &AuthFormTarget::Workspace {
+                kind: AuthKind::Zai,
+            },
+            &form,
+        );
+
+        assert!(!editor.pending.env.contains_key("ZAI_API_KEY"));
+    }
+
+    #[test]
+    fn auth_form_saving_role_zai_ignore_removes_key() {
+        let mut editor = EditorState::new_edit("proj".into(), WorkspaceConfig::default());
+        let mut role = WorkspaceRoleOverride::default();
+        role.env
+            .insert("ZAI_API_KEY".into(), EnvValue::Plain("secret".into()));
+        editor.pending.roles.insert("smith".into(), role);
+        let mut form = AuthForm::new(AuthKind::Zai);
+        form.set_mode(AuthMode::Ignore);
+
+        persist_form(
+            &mut editor,
+            &AuthFormTarget::WorkspaceRole {
+                role: "smith".into(),
+                kind: AuthKind::Zai,
+            },
+            &form,
+        );
+
+        assert!(
+            !editor
+                .pending
+                .roles
+                .get("smith")
+                .is_some_and(|role| role.env.contains_key("ZAI_API_KEY"))
+        );
     }
 
     /// Walking from the workspace × Claude row through the form:

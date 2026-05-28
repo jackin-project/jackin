@@ -796,9 +796,11 @@ fn launch_with_committed_agent(
     }
 
     if let ConsoleStage::Manager(ms) = &mut state.stage {
-        ms.launch_provider_picker = Some(
-            crate::console::manager::state::ProviderPickerState::new(role.clone(), agent, providers),
-        );
+        ms.launch_provider_picker = Some(crate::console::manager::state::ProviderPickerState::new(
+            role.clone(),
+            agent,
+            providers,
+        ));
     }
     state.pending_launch = Some(input);
     state.pending_launch_role = Some(role);

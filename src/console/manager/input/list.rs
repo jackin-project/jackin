@@ -666,9 +666,8 @@ pub(super) fn handle_new_session_picker(
             } else {
                 let providers = providers.clone();
                 state.inline_new_session_picker = None;
-                state.inline_provider_picker = Some(ProviderPickerState::new(
-                    container, agent, providers,
-                ));
+                state.inline_provider_picker =
+                    Some(ProviderPickerState::new(container, agent, providers));
                 InputOutcome::Continue
             }
         }
