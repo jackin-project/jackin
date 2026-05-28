@@ -350,12 +350,18 @@ fn run_in_pty_with_input(
         .spawn()
         .expect("script must spawn");
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
-    std::thread::sleep(std::time::Duration::from_secs(2));
-    stdin
-        .write_all(input.as_bytes())
-        .expect("script stdin write must succeed");
-    drop(stdin);
-    child.wait_with_output().expect("script must finish")
+    let input = input.as_bytes().to_vec();
+    let writer = std::thread::spawn(move || {
+        for _ in 0..90 {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            if stdin.write_all(&input).is_err() {
+                return;
+            }
+        }
+    });
+    let output = child.wait_with_output().expect("script must finish");
+    writer.join().expect("script stdin writer must not panic");
+    output
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
