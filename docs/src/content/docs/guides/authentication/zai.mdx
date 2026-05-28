@@ -5,7 +5,7 @@ description: Use Z.AI's Anthropic-compatible endpoint as an alternative provider
 import { Aside } from '@astrojs/starlight/components'
 
 
-[Z.AI's GLM Coding Plan](https://z.ai) provides an Anthropic-compatible API endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models at substantially lower cost than Anthropic's own billing. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
+[Z.AI's GLM Coding Plan](https://z.ai/subscribe) provides an Anthropic-compatible API endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
 
 When `ZAI_API_KEY` is configured, opening a new Claude tab presents a two-item provider picker — **Anthropic** or **Z.AI** — immediately after you select the Claude agent. Single-provider operators (no `ZAI_API_KEY`) see no change: the picker is skipped and the session opens directly.
 
@@ -13,7 +13,15 @@ When `ZAI_API_KEY` is configured, opening a new Claude tab presents a two-item p
 Z.AI is configured in the **Auth** tab of `jackin console`, not by hand-editing any config file.
 </Aside>
 
-## Configure your Z.AI API key
+## Subscribe and get an API key
+
+1. Open [Z.AI's GLM Coding Plan](https://z.ai/subscribe), sign in, and choose the subscription plan you want to use for coding.
+2. After the plan is active, open the [Z.AI API Keys](https://z.ai/manage-apikey/apikey-list) page and create an API key.
+3. Keep that key private. In jackin', store it as `ZAI_API_KEY` through the Auth settings below; do not paste it into Claude Code's host settings.
+
+Z.AI's own Claude Code setup writes `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` into Claude Code configuration. jackin' deliberately does not mutate your host Claude settings. Instead, the Z.AI key you save in jackin' Auth settings makes Z.AI appear as an Anthropic-compatible provider choice for Claude Code launches, and jackin' injects those two variables only into the Claude Code process that selected Z.AI.
+
+## Configure your Z.AI API key in jackin'
 
 1. Open `jackin console`, select your workspace, and switch to the **Auth** tab.
 2. Scroll to the **Z.AI** row and press `Enter` or `Space` to open the auth form.
