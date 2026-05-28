@@ -263,6 +263,13 @@ export default defineConfig({
                       ],
                     },
                     {
+                      label: 'Phase 1.5 — DRY & deduplication',
+                      collapsed: true,
+                      items: [
+                        { label: 'Unified TUI scrollbars', slug: 'reference/roadmap/unified-tui-scrollbars' },
+                      ],
+                    },
+                    {
                       label: 'Phase 2 — File splits',
                       collapsed: true,
                       items: [
