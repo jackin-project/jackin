@@ -163,6 +163,7 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     seed_sentinel_role_repo(&role_source);
     write_sentinel_config(&config_dir.join("config.toml"), &role_source);
     seed_all_agent_stubs(&home);
+    seed_existing_construct_entry(&home);
 
     let jackin = std::env::var("CARGO_BIN_EXE_jackin").unwrap_or_else(|_| {
         std::env::current_dir()
@@ -505,6 +506,12 @@ fn append_tail_lines(out: &mut String, contents: &str) {
         out.push_str(line);
         out.push('\n');
     }
+}
+
+fn seed_existing_construct_entry(home: &Path) {
+    let pending = home.join(".jackin/data/universe-pending");
+    std::fs::create_dir_all(&pending).unwrap();
+    std::fs::write(pending.join("e2e-existing-entry"), b"already entering").unwrap();
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
