@@ -13,6 +13,7 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
+#[cfg(target_os = "linux")]
 use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -29,6 +30,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
+#[cfg(target_os = "linux")]
 use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 use portable_pty::CommandBuilder;
 
@@ -4685,6 +4687,7 @@ use jackin_tui::{display_cols, take_display_cols};
 
 const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
+#[cfg(target_os = "linux")]
 const GIT_CONTEXT_WATCH_MASK: AddWatchFlags = AddWatchFlags::IN_CLOSE_WRITE
     .union(AddWatchFlags::IN_MOVED_TO)
     .union(AddWatchFlags::IN_CREATE)
@@ -4692,6 +4695,7 @@ const GIT_CONTEXT_WATCH_MASK: AddWatchFlags = AddWatchFlags::IN_CLOSE_WRITE
     .union(AddWatchFlags::IN_DELETE_SELF)
     .union(AddWatchFlags::IN_MOVE_SELF);
 
+#[cfg(target_os = "linux")]
 fn start_git_context_watcher(workdir: PathBuf, event_tx: mpsc::UnboundedSender<SessionEvent>) {
     let Some(git_dir) = git_dir_for_watch(&workdir) else {
         crate::cdebug!(
@@ -4708,6 +4712,14 @@ fn start_git_context_watcher(workdir: PathBuf, event_tx: mpsc::UnboundedSender<S
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn start_git_context_watcher(
+    _workdir: PathBuf,
+    _event_tx: mpsc::UnboundedSender<SessionEvent>,
+) {
+}
+
+#[cfg(target_os = "linux")]
 fn git_dir_for_watch(workdir: &Path) -> Option<PathBuf> {
     git_metadata_dirs(workdir)
         .map(|metadata| metadata.git_dir)
@@ -4722,6 +4734,7 @@ fn git_dir_for_watch(workdir: &Path) -> Option<PathBuf> {
         })
 }
 
+#[cfg(target_os = "linux")]
 fn watch_git_head_changes(git_dir: PathBuf, event_tx: mpsc::UnboundedSender<SessionEvent>) {
     let instance = match Inotify::init(InitFlags::IN_CLOEXEC) {
         Ok(instance) => instance,
