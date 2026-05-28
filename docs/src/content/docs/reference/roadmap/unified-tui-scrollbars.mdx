@@ -60,9 +60,13 @@ The implementation PR must audit and update each item below. This is the working
 5. **Snappy behavior beats deferred correction.** When content shrinks while the operator is at or beyond the previous end, the stored offset should immediately clamp to the new end. A downward wheel from the top clamp must move visible content on the first event whenever there is content below.
 6. **Shared crate owns reusable primitives.** Cross-surface scroll math belongs in <RepoFile path="crates/jackin-tui/src/lib.rs" /> or a `scroll` module inside that crate. `src/console/widgets/scrollable.rs` should become a ratatui adapter, not the source of truth.
 
-## Proposed Shared API
+## Dependency Decision
 
-Prefer reusing [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) for scrollbar geometry and interaction, then wrap it from `jackin_tui::scroll` so the rest of jackin' depends on one local API. This is logic reuse, not a visual redesign: jackin' keeps its current symbols, colours, borders, focus behavior, footer hints, and capsule border-column rendering unless a later PR explicitly changes the design. If the integration proves too restrictive, keep the same local API and replace only the adapter internals.
+Use [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) for the scrollbar model and interaction layer. Do not reimplement its core metrics unless an implementation spike proves a hard mismatch. The crate already provides the exact reusable layer jackin' needs: app-owned `content_len`/`viewport_len`/`offset`, pure `ScrollMetrics`, maximum-offset clamping, thumb travel, track/thumb hit testing, drag grab-offset state, wheel commands, and backend-agnostic input events.
+
+Do **not** adopt `tui-scrollbar`'s renderer as the default visual output. That renderer is intentionally fractional and glyph-set driven; jackin' needs to keep its existing symbols, colours, borders, focus behavior, footer hints, full-cell default thumbs, and capsule border-column rendering. The implementation should use `tui-scrollbar` directly for metrics and interaction, then keep jackin-owned render adapters for ratatui and raw ANSI.
+
+The local code should not mirror the dependency with a parallel abstraction named the same way. `jackin_tui::scroll` should be a thin integration module: tail-scroll conversion for jackin' live-log/live-tail semantics, existing-look render helpers, and convenience functions that compose `tui_scrollbar::ScrollMetrics` / `ScrollBarInteraction` rather than replacing them.
 
 ## Crate Evaluation
 
@@ -72,22 +76,33 @@ Researched 2026-05-28 against the current Ratatui ecosystem:
 |---|---|---|
 | [`ratatui::widgets::ScrollbarState`](https://docs.rs/ratatui/latest/ratatui/widgets/struct.ScrollbarState.html) | Built-in stateful scrollbar with `content_length`, `viewport_content_length`, and position helpers. Already available because jackin' depends on Ratatui. | Useful for simple ratatui-only drawing, but not enough for this refactor. It is tied to Ratatui widgets, does not expose the backend-agnostic drag/wheel interaction model jackin' needs, and cannot directly serve the raw-ANSI capsule renderer. |
 | [`tui-scrollview`](https://crates.io/crates/tui-scrollview) | A scrollable Ratatui view backed by a larger off-screen `Buffer`; includes horizontal and vertical scrollbars. | Not a good primary fit. jackin' already renders virtualized line slices and capsule panes; rendering every scrollable surface into a larger buffer would be a heavier architectural change and still would not solve capsule raw-ANSI geometry sharing. Its state also follows the same "render clamps later" pattern that caused the build-log overscroll bug. |
-| [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) | A focused Ratatui scrollbar crate with `ScrollLengths`, pure `ScrollMetrics`, fractional thumb geometry, hit testing, backend-agnostic pointer/wheel events, `ScrollCommand::SetOffset`, and external app-owned state. | Best fit. It gives jackin' the unstyled logic layer requested here: content/viewport/offset metrics, clamped offset conversion, track click behavior, drag persistence, and wheel handling can be reused without forcing jackin' to adopt the crate's glyphs everywhere. The Ratatui renderer should preserve jackin' symbols and palette by default; capsule should consume the metrics only. |
+| [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) | A focused Ratatui scrollbar crate with `ScrollLengths`, pure `ScrollMetrics`, fractional thumb geometry, hit testing, backend-agnostic pointer/wheel events, `ScrollCommand::SetOffset`, and external app-owned state. | Best fit. It gives jackin' the unstyled logic layer requested here: content/viewport/offset metrics, clamped offset conversion, track click behavior, drag persistence, and wheel handling can be reused without forcing jackin' to adopt the crate's glyphs everywhere. Use its model directly; keep jackin-owned rendering by default. |
 
-`tui-scrollbar` is also low-friction for the current toolchain: version 0.2.4 declares Rust 1.88 while jackin' currently requires Rust 1.94, and it is MIT/Apache-2.0 licensed. It lives in the `ratatui/tui-widgets` repository and depends on `ratatui-core`, matching Ratatui 0.30's modular direction for third-party widget libraries.
+`tui-scrollbar` is also low-friction for the current toolchain: version 0.2.4 declares Rust 1.88 while jackin' currently requires Rust 1.94, and it is MIT/Apache-2.0 licensed. It lives in the `ratatui/tui-widgets` repository, which was active in April 2026 and is part of the Ratatui-adjacent widget ecosystem. Crates.io reports roughly 915k total downloads and 639k recent downloads for `tui-scrollbar`; that is enough adoption for this scope, especially because the dependency is small and the integration can be isolated to `jackin-tui`.
+
+## How To Count "Better"
+
+The implementation decision should be judged on the following criteria, in order:
+
+1. **Behavioral fit.** The dependency must model scrollbars in the same terms jackin' needs: content length, viewport length, offset, max offset, thumb geometry, track/thumb hit testing, wheel deltas, drag state, and externally owned state. `tui-scrollbar` passes this; `tui-scrollview` does not because it wants to own an off-screen ratatui buffer.
+2. **Visual independence.** The dependency must let jackin' keep its design. `tui-scrollbar` passes only if jackin' uses its model/interaction layer and keeps local render adapters. Adopting its fractional renderer by default would fail this criterion.
+3. **Reduction of local bug surface.** The dependency should delete or simplify local code that currently encodes scroll math. `tui-scrollbar` can replace the local `scrollbar_thumb_geometry`, max-offset clamping, track-position conversion, and future vertical drag logic; this is real risk reduction.
+4. **Adapter cost.** The glue should be small and principled: tail-scroll conversion, full-cell rendering, and existing focus/palette integration. If implementation requires copying large chunks of `tui-scrollbar`, forking its math, or fighting its event model with many special cases, stop and keep the local implementation instead.
+5. **Maintenance quality.** Prefer the dependency when it is maintained, documented, licensed compatibly, and aligned with the project's existing stack. `tui-scrollbar` passes: it is documented, MIT/Apache-2.0, Ratatui 0.30-era, and maintained in the `ratatui/tui-widgets` repository.
+
+Under this scoring, `tui-scrollbar` is better than reimplementing for metrics and interaction. Reimplementing is better only for the final visual rendering layer, where jackin' has specific design requirements that the dependency intentionally does not share.
 
 ## Local Wrapper Shape
 
-Expose jackin-owned names from `jackin_tui::scroll` even if the implementation delegates to `tui-scrollbar`:
+Expose jackin integration helpers from `jackin_tui::scroll` without cloning the dependency's API wholesale:
 
 | Type/function | Purpose |
 |---|---|
 | `Axis` | `Vertical` or `Horizontal`, so the same model covers rows and columns. |
-| `ScrollMetrics { content_len, viewport_len, offset }` | Canonical bounded state for one axis. Delegates to `tui_scrollbar::ScrollMetrics` where possible and exposes jackin' naming for the rest of the codebase. |
-| `Thumb { start, len }` | Axis-agnostic thumb geometry in track cells or subcells. Replaces both console-local `scrollbar_thumb_geometry` and the current `VerticalThumb` shape. |
-| `thumb(metrics, track_len)` | Proportional thumb length and rounded position with invariants: offset `0` reaches the first track cell, max offset reaches the last track cell, thumb length is offset-invariant. This should be a thin adapter over `tui-scrollbar` metrics while preserving jackin' full-cell visual output unless a separate design change opts into fractional glyphs. |
-| `offset_for_track_position(metrics, track_len, track_pos)` | Drag/click mapping. Uses `tui-scrollbar`'s offset conversion or interaction API, clamps to max, and supports both axes. |
-| `apply_delta(metrics, delta)` and `apply_page(metrics, direction)` | Mutation helpers that return the new clamped offset. Prefer `tui-scrollbar` wheel/track-click behavior where the semantics match; keep local helpers for keyboard-only page movement. |
+| `ScrollModel` or helper constructors | Build `tui_scrollbar::ScrollLengths` / `tui_scrollbar::ScrollMetrics` from jackin' viewport/content values and return clamped offsets. This should compose the dependency, not duplicate it. |
+| `FullCellThumb` | Convert `tui_scrollbar::ScrollMetrics` subcell geometry into jackin' current full-cell thumb output for ratatui and raw ANSI rendering. This is visual adaptation, not alternate scroll math. |
+| `offset_for_track_position` | Track/click mapping where jackin' needs exact legacy behavior. Prefer `tui-scrollbar` interaction commands; keep a local helper only if needed to preserve existing click semantics without adopting fractional visuals. |
+| `apply_delta` and `apply_page` | Mutation helpers that return the new clamped offset. Prefer `tui-scrollbar` wheel/track-click behavior where the semantics match; keep local helpers for keyboard-only page movement. |
 | `follow_cursor(metrics, cursor)` | Cursor/selection-follow helper used by picker lists and editor rows. |
 | `TailScroll` adapter | Optional adapter for surfaces like build logs or capsule scrollback where the UI wants `0 = newest`. The adapter must clamp the tail-relative stored value before conversion so overshoot cannot persist. |
 
@@ -101,7 +116,7 @@ Keep rendering adapters thin:
 
 ## Refactor Plan
 
-1. **Add `tui-scrollbar` behind `jackin_tui::scroll`.** Wrap its `ScrollLengths`, `ScrollMetrics`, and interaction commands behind jackin-owned types/functions so the application code does not couple directly to a third-party widget API. Preserve the existing console test cases and add the capsule `vertical_thumb` invariants at the shared-crate level.
+1. **Adopt `tui-scrollbar` for metrics and interaction.** Add it at the `jackin-tui` boundary, use `tui_scrollbar::ScrollLengths`, `ScrollMetrics`, `ScrollBarInteraction`, and `ScrollCommand` where they fit, and avoid creating a parallel local metrics type. Preserve the existing console test cases and add the capsule `vertical_thumb` invariants at the shared-crate level.
 2. **Replace `vertical_thumb` with the shared geometry.** Keep a compatibility wrapper only if it keeps the first PR smaller, but make it delegate to `jackin_tui::scroll::thumb` so capsule and console math cannot drift.
 3. **Convert console renderers to shared metrics.** Make `render_scrollable_block`, `render_lines_with_offset_in_area`, and `render_selected_lines_in_area` build `ScrollMetrics` for each axis, write the clamped offset back immediately, and draw from shared `Thumb` geometry.
 4. **Return rendered scroll areas from the renderer.** Introduce a compact `RenderedScrollbars` or `ScrollHitAreas` value that includes block area, viewport, content length, track rects, and current offsets. Mouse handlers should consume this instead of reconstructing track geometry and content width in parallel.
