@@ -933,21 +933,6 @@ impl Multiplexer {
         now: Instant,
         mode: PullRequestLookupMode,
     ) -> bool {
-        if !self.workdir_context.gh_available
-            && mode == PullRequestLookupMode::ForceRefresh
-            && command_in_path("gh")
-        {
-            crate::clog!(
-                "pull-request-context: force-refresh detected gh after startup; enabling PR lookup"
-            );
-            self.workdir_context.gh_available = true;
-        }
-        if !self.workdir_context.gh_available {
-            if mode == PullRequestLookupMode::ForceRefresh {
-                crate::clog!("pull-request-context: force-refresh skipped: gh unavailable");
-            }
-            return false;
-        }
         if self.pull_request_lookup.in_flight {
             if mode == PullRequestLookupMode::ForceRefresh {
                 crate::cdebug!(
@@ -956,6 +941,14 @@ impl Multiplexer {
                 );
             }
             return false;
+        }
+        if !self.workdir_context.gh_available {
+            if mode == PullRequestLookupMode::RespectCache {
+                return false;
+            }
+            crate::clog!(
+                "pull-request-context: force-refresh scheduling lookup despite startup gh unavailable"
+            );
         }
         let Some(branch) = self.pull_request_context_branch.clone() else {
             if mode == PullRequestLookupMode::ForceRefresh {
@@ -1017,12 +1010,27 @@ impl Multiplexer {
         E: FnOnce(T) -> SessionEvent + Send + 'static,
     {
         let event_tx = self.event_tx.clone();
-        std::thread::spawn(move || {
+        let work = move || {
             let value = work();
             if event_tx.send(to_event(value)).is_err() {
                 crate::clog!("{label}: event channel closed before result reached main loop");
             }
-        });
+        };
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn_blocking(work);
+            }
+            Err(_) => {
+                static BLOCKING_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+                    tokio::runtime::Builder::new_current_thread()
+                        .thread_name("capsule-blocking")
+                        .enable_all()
+                        .build()
+                        .expect("build fallback Tokio blocking runtime")
+                });
+                BLOCKING_RUNTIME.spawn_blocking(work);
+            }
+        }
     }
 
     fn apply_git_branch_context_loaded(
@@ -1145,7 +1153,13 @@ impl Multiplexer {
         // for a full minute after every blip. Preserve the previous
         // cached value; the next state-ticker tick retries.
         let pull_request = match outcome {
-            PullRequestLookupOutcome::Resolved(pr) => pr,
+            PullRequestLookupOutcome::Resolved(pr) => {
+                if !self.workdir_context.gh_available {
+                    crate::clog!("pull-request-context: gh lookup succeeded after startup miss");
+                    self.workdir_context.gh_available = true;
+                }
+                pr
+            }
             PullRequestLookupOutcome::TransientFailure => {
                 return loading_changed;
             }
@@ -6928,6 +6942,57 @@ mod tests {
             mux.pull_request_lookup.request_id,
             id_before.wrapping_add(1),
             "force-spawn must bump request_id"
+        );
+    }
+
+    #[test]
+    fn open_github_context_dialog_force_spawns_when_startup_missed_gh() {
+        let mut mux = test_mux(24, 100);
+        mux.workdir_context.gh_available = false;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        let id_before = mux.pull_request_lookup.request_id;
+
+        mux.open_github_context_dialog(Instant::now());
+
+        assert!(
+            mux.pull_request_lookup.in_flight,
+            "manual refresh must schedule a background lookup even when startup marked gh unavailable"
+        );
+        assert_eq!(
+            mux.pull_request_lookup.request_id,
+            id_before.wrapping_add(1),
+            "manual refresh should not need a synchronous gh availability probe"
+        );
+        assert!(
+            !mux.workdir_context.gh_available,
+            "gh availability flips only after the background lookup succeeds"
+        );
+    }
+
+    #[test]
+    fn background_pull_request_success_marks_gh_available_after_startup_miss() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.workdir_context.gh_available = false;
+        mux.workdir_context.is_git_repo = true;
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_lookup.request_id = 7;
+        mux.pull_request_lookup.in_flight = true;
+
+        let changed = mux.apply_pull_request_context_loaded(
+            7,
+            Some(branch("feat/x")),
+            None,
+            PullRequestLookupOutcome::Resolved(Some(Arc::new(pull_request_fixture(436)))),
+            now,
+        );
+
+        assert!(changed);
+        assert!(
+            mux.workdir_context.gh_available,
+            "successful background gh lookup should unblock later conservative refreshes"
         );
     }
 
