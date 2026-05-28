@@ -795,6 +795,9 @@ const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
 const LABEL_GAP: usize = 4;
 const LABEL_SLIDE_FRAMES: usize = 12;
+const PROGRESS_RAIL_WIDTH: usize =
+    LaunchStage::ALL.len() * BLOCK_WIDTH + (LaunchStage::ALL.len() - 1) * BLOCK_GAP;
+const LABEL_VIEW_WIDTH: usize = PROGRESS_RAIL_WIDTH + LABEL_GAP;
 
 fn render_launch_frame(
     frame: &mut Frame<'_>,
@@ -1020,9 +1023,10 @@ fn coalesce_cells(cells: impl IntoIterator<Item = (char, Style)>) -> Vec<Span<'s
 }
 
 fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
+    let label_width = usize::from(area.width).min(LABEL_VIEW_WIDTH);
     let lines = vec![
         blocks_line(view, frozen),
-        labels_line(view, frozen, usize::from(area.width)),
+        labels_line(view, frozen, label_width),
     ];
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
 }
@@ -1805,6 +1809,40 @@ mod tests {
         assert!(
             center < centers[1],
             "label viewport should not snap to the target"
+        );
+    }
+
+    #[test]
+    fn stage_label_line_stays_near_the_progress_rail() {
+        let mut view = initial_view();
+        update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
+        update_stage(&mut view, LaunchStage::Role, StageStatus::Done, "trusted");
+        update_stage(
+            &mut view,
+            LaunchStage::Credentials,
+            StageStatus::Done,
+            "resolved",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::Construct,
+            StageStatus::Running,
+            "online",
+        );
+
+        let labels = labels_line(&view, true, LABEL_VIEW_WIDTH);
+        let rendered = labels
+            .spans
+            .iter()
+            .map(|span| &*span.content)
+            .collect::<String>();
+        assert_eq!(rendered.chars().count(), LABEL_VIEW_WIDTH);
+        assert!(rendered.contains("construct"), "{rendered:?}");
+        assert!(rendered.contains("credentials"), "{rendered:?}");
+        assert!(rendered.contains("derived image"), "{rendered:?}");
+        assert!(
+            !rendered.contains("identity"),
+            "far labels should stay outside the clipped label viewport: {rendered:?}"
         );
     }
 
