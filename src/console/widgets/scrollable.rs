@@ -53,9 +53,7 @@ pub(crate) fn scrollbar_position_for_offset(
     viewport: usize,
     offset: usize,
 ) -> u16 {
-    scroll::max_offset(content_length, viewport)
-        .min(offset)
-        .min(usize::from(u16::MAX)) as u16
+    scroll::position_for_offset(content_length, viewport, offset).min(usize::from(u16::MAX)) as u16
 }
 
 pub(crate) fn cursor_follow_offset(
@@ -95,20 +93,13 @@ pub(crate) fn scrollbar_offset_for_track_position(
         return 0;
     }
 
-    let metrics = scroll::metrics(
+    scroll::offset_for_track_position(
         content_length,
         viewport,
-        0,
         track_len.min(usize::from(u16::MAX)) as u16,
-    );
-    let position = track_position
-        .min(track_len.saturating_sub(1))
-        .saturating_mul(scroll::SUBCELL)
-        .saturating_add(scroll::SUBCELL / 2);
-    let thumb_start = position.saturating_sub(metrics.thumb_len() / 2);
-    metrics
-        .offset_for_thumb_start(thumb_start)
-        .min(usize::from(u16::MAX)) as u16
+        track_position,
+    )
+    .min(usize::from(u16::MAX)) as u16
 }
 
 // No upper clamp: every caller's render path calls effective_offset, which clamps.
@@ -669,10 +660,7 @@ mod tests {
         assert_eq!(len_0, len_1, "thumb length must be offset-invariant");
         assert_eq!(start_0, 0);
         assert!(start_1 > 0);
-        assert!(
-            start_1 + len_1 <= 10,
-            "thumb must stay in track at max offset"
-        );
+        assert_eq!(start_1 + len_1, 10, "thumb must reach track end");
     }
 
     #[test]

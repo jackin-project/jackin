@@ -165,6 +165,31 @@ pub fn apply_delta_u16(
 }
 
 #[must_use]
+pub fn position_for_offset(content_len: usize, viewport_len: usize, offset: usize) -> usize {
+    max_offset(content_len, viewport_len).min(offset)
+}
+
+#[must_use]
+pub fn offset_for_track_position(
+    content_len: usize,
+    viewport_len: usize,
+    track_cells: u16,
+    track_position: usize,
+) -> usize {
+    if !is_scrollable(content_len, viewport_len) || track_cells == 0 {
+        return 0;
+    }
+
+    let metrics = metrics(content_len, viewport_len, 0, track_cells);
+    let position = track_position
+        .min(usize::from(track_cells).saturating_sub(1))
+        .saturating_mul(SUBCELL)
+        .saturating_add(SUBCELL / 2);
+    let thumb_start = position.saturating_sub(metrics.thumb_len() / 2);
+    metrics.offset_for_thumb_start(thumb_start)
+}
+
+#[must_use]
 pub fn cursor_follow_offset(
     cursor: usize,
     content_len: usize,
@@ -199,6 +224,7 @@ pub fn full_cell_thumb(
     if !is_scrollable(content_len, viewport_len) || track_cells == 0 {
         return None;
     }
+    let max = max_offset(content_len, viewport_len);
     let metrics = metrics(content_len, viewport_len, offset, track_cells);
     let len = metrics
         .thumb_len()
@@ -212,10 +238,10 @@ pub fn full_cell_thumb(
         .saturating_add(SUBCELL / 2)
         .saturating_div(SUBCELL)
         .min(max_start);
-    let clamped_offset = offset.min(max_offset(content_len, viewport_len));
+    let clamped_offset = offset.min(max);
     let start = if clamped_offset == 0 {
         0
-    } else if clamped_offset == max_offset(content_len, viewport_len) {
+    } else if clamped_offset == max {
         max_start
     } else {
         rounded_start
@@ -284,9 +310,14 @@ mod tests {
     }
 
     #[test]
+    fn tail_thumb_reaches_track_end_at_live_tail() {
+        let thumb = tail_vertical_thumb(6, 1, 0).expect("overflowing content");
+        assert_eq!(thumb.start + thumb.len, 6);
+    }
+
+    #[test]
     fn full_cell_thumb_moves_on_midpoint_drag_mapping() {
-        let m = metrics(20, 5, 15, 10);
-        let mid = m.offset_for_thumb_start(m.thumb_travel() / 2);
+        let mid = offset_for_track_position(20, 5, 10, 5);
         assert!(mid > 0 && mid < 15);
     }
 
