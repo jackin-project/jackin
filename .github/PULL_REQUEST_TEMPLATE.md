@@ -85,6 +85,7 @@ cd jackin
 mise trust
 git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
+mise trust
 mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"

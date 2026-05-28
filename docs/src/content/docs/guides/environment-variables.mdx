@@ -92,6 +92,17 @@ Trying to set one of these is rejected before the agent launches.
 
 Role identity, workspace workdir, supported agent slugs, and manifest model overrides are handed to Capsule through a generated launch config instead of being duplicated as container-wide environment variables. The [Capsule reference](/reference/jackin-capsule/#how-state-moves-across-the-boundary) documents the internal handoff.
 
+## Pane terminal defaults
+
+Every shell and agent pane receives a stable terminal capability baseline:
+
+```text
+TERM=xterm-256color
+COLORTERM=truecolor
+```
+
+`TERM=xterm-256color` keeps the pane tied to a conservative terminfo entry that remains safe when a long-lived container is reattached from a different terminal app. `COLORTERM=truecolor` tells agent CLIs and TUIs that 24-bit color output is available by default. jackin' sets this value directly instead of copying the host's `COLORTERM`, so a pane launched from Ghostty, Kitty, iTerm, Warp, SSH, or another xterm-compatible client sees the same deterministic environment.
+
 ## 1Password CLI setup
 
 1. Install the [1Password CLI](https://developer.1password.com/docs/cli/get-started/).
