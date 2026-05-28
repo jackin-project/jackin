@@ -6,9 +6,13 @@
 
 #![cfg(feature = "e2e")]
 
-use std::io::{Read as _, Write as _};
+use std::io::{Read, Write as _};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
 use fs2::FileExt as _;
@@ -177,14 +181,14 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     let args = ["load", SENTINEL_ROLE_KEY, &target];
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
     let report_path = workspace_dir.join("jackin-sentinel-report.txt");
-    let input = scripted_sentinel_launch_input();
+    let script = scripted_sentinel_launch_input();
     let output = run_in_pty_until_file(
         &jackin,
         &args,
         &home,
         &workspace_dir,
         &extra_env,
-        input,
+        &script,
         PtyFileSentinel {
             path: &report_path,
             text: "JACKIN_SENTINEL_REPORT_END",
@@ -430,7 +434,7 @@ fn run_in_pty_until_file(
     home: &Path,
     cwd: &Path,
     extra_env: &[(&str, &str)],
-    input: &str,
+    script: &[PtyScriptStep],
     sentinel: PtyFileSentinel<'_>,
 ) -> std::process::Output {
     let mut child = pty_command(jackin, args, home, cwd, extra_env, false)
@@ -442,29 +446,27 @@ fn run_in_pty_until_file(
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
     let stdout = child.stdout.take().expect("script stdout must be piped");
     let stderr = child.stderr.take().expect("script stderr must be piped");
-    let input = input.as_bytes().to_vec();
+    let done = Arc::new(AtomicBool::new(false));
+    let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
+    let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
+    let stdout_for_writer = stdout_buf.clone();
+    let done_for_writer = done.clone();
+    let script = script.to_vec();
     let stdin_writer = std::thread::spawn(move || {
-        if input.is_empty() {
-            return;
+        for step in script {
+            if !wait_for_transcript_text(
+                &stdout_for_writer,
+                step.wait_for,
+                &done_for_writer,
+                Duration::from_mins(2),
+            ) {
+                return;
+            }
+            let _ = stdin.write_all(step.input.as_bytes());
         }
-        std::thread::sleep(Duration::from_secs(2));
-        let _ = stdin.write_all(&input);
-    });
-    let stdout_reader = std::thread::spawn(move || {
-        let mut stdout = stdout;
-        let mut bytes = Vec::new();
-        stdout
-            .read_to_end(&mut bytes)
-            .expect("script stdout must be readable");
-        bytes
-    });
-    let stderr_reader = std::thread::spawn(move || {
-        let mut stderr = stderr;
-        let mut bytes = Vec::new();
-        stderr
-            .read_to_end(&mut bytes)
-            .expect("script stderr must be readable");
-        bytes
+        while !done_for_writer.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
     });
 
     let deadline = Instant::now() + sentinel.timeout;
@@ -474,18 +476,25 @@ fn run_in_pty_until_file(
         {
             let _ = child.kill();
             let status = child.wait().expect("script must finish");
+            done.store(true, Ordering::Relaxed);
             stdin_writer.join().expect("stdin writer must finish");
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
             return std::process::Output {
                 status,
-                stdout: stdout_reader.join().expect("stdout reader must finish"),
-                stderr: stderr_reader.join().expect("stderr reader must finish"),
+                stdout: buffer_bytes(&stdout_buf),
+                stderr: buffer_bytes(&stderr_buf),
             };
         }
         if let Some(status) = child.try_wait().expect("script status must be readable") {
+            done.store(true, Ordering::Relaxed);
+            stdin_writer.join().expect("stdin writer must finish");
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
             let output = std::process::Output {
                 status,
-                stdout: stdout_reader.join().expect("stdout reader must finish"),
-                stderr: stderr_reader.join().expect("stderr reader must finish"),
+                stdout: buffer_bytes(&stdout_buf),
+                stderr: buffer_bytes(&stderr_buf),
             };
             assert!(
                 status.success(),
@@ -493,7 +502,6 @@ fn run_in_pty_until_file(
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr),
             );
-            stdin_writer.join().expect("stdin writer must finish");
             return output;
         }
         std::thread::sleep(Duration::from_millis(500));
@@ -501,12 +509,15 @@ fn run_in_pty_until_file(
 
     let _ = child.kill();
     let status = child.wait().expect("script must finish");
+    done.store(true, Ordering::Relaxed);
+    stdin_writer.join().expect("stdin writer must finish");
+    stdout_reader.join().expect("stdout reader must finish");
+    stderr_reader.join().expect("stderr reader must finish");
     let output = std::process::Output {
         status,
-        stdout: stdout_reader.join().expect("stdout reader must finish"),
-        stderr: stderr_reader.join().expect("stderr reader must finish"),
+        stdout: buffer_bytes(&stdout_buf),
+        stderr: buffer_bytes(&stderr_buf),
     };
-    stdin_writer.join().expect("stdin writer must finish");
     let diagnostics = diagnostics_snapshot(home);
     panic!(
         "timed out waiting for sentinel file {}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
@@ -518,25 +529,106 @@ fn run_in_pty_until_file(
 }
 
 #[derive(Clone, Copy)]
+struct PtyScriptStep {
+    wait_for: &'static str,
+    input: &'static str,
+}
+
+#[derive(Clone, Copy)]
 struct PtyFileSentinel<'a> {
     path: &'a Path,
     text: &'a str,
     timeout: Duration,
 }
 
-const fn scripted_sentinel_launch_input() -> &'static str {
-    // Choose codex from the multi-agent picker, then answer the manifest env
-    // prompts in deterministic topological order:
-    // FREE_TEXT, FREE_TEXT_REQUIRED, OPTIONAL_API_KEY, SELECT_MODE,
-    // SELECT_PROJECT, BRANCH, COMBINED_LABEL.
-    "\x1b[B\r\
-     \r\
-     required-value\r\
-     \r\
-     \r\
-     \r\
-     \r\
-     \r"
+const fn scripted_sentinel_launch_input() -> [PtyScriptStep; 8] {
+    [
+        PtyScriptStep {
+            wait_for: "Choose launch agent",
+            input: "\x1b[B\r",
+        },
+        PtyScriptStep {
+            wait_for: "Sentinel free text:",
+            input: "\r",
+        },
+        PtyScriptStep {
+            wait_for: "Required sentinel value:",
+            input: "required-value\r",
+        },
+        PtyScriptStep {
+            wait_for: "Optional sentinel API key:",
+            input: "\r",
+        },
+        PtyScriptStep {
+            wait_for: "Select sentinel mode:",
+            input: "\r",
+        },
+        PtyScriptStep {
+            wait_for: "Select sentinel project:",
+            input: "\r",
+        },
+        PtyScriptStep {
+            wait_for: "Branch for frontend:",
+            input: "\r",
+        },
+        PtyScriptStep {
+            wait_for: "Combined label for frontend:",
+            input: "\r",
+        },
+    ]
+}
+
+fn spawn_pipe_collector<R>(mut reader: R) -> (Arc<Mutex<Vec<u8>>>, std::thread::JoinHandle<()>)
+where
+    R: Read + Send + 'static,
+{
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let thread_buffer = buffer.clone();
+    let handle = std::thread::spawn(move || {
+        let mut chunk = [0_u8; 8192];
+        loop {
+            match reader.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => thread_buffer
+                    .lock()
+                    .expect("pty output buffer mutex must not be poisoned")
+                    .extend_from_slice(&chunk[..n]),
+            }
+        }
+    });
+    (buffer, handle)
+}
+
+fn wait_for_transcript_text(
+    buffer: &Arc<Mutex<Vec<u8>>>,
+    needle: &str,
+    done: &AtomicBool,
+    timeout: Duration,
+) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline && !done.load(Ordering::Relaxed) {
+        if transcript_contains(buffer, needle) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+fn transcript_contains(buffer: &Arc<Mutex<Vec<u8>>>, needle: &str) -> bool {
+    String::from_utf8_lossy(
+        &buffer
+            .lock()
+            .expect("pty output buffer mutex must not be poisoned"),
+    )
+    .contains(needle)
+}
+
+fn buffer_bytes(buffer: &Arc<Mutex<Vec<u8>>>) -> Vec<u8> {
+    buffer
+        .lock()
+        .expect("pty output buffer mutex must not be poisoned")
+        .clone()
 }
 
 fn diagnostics_snapshot(home: &Path) -> String {
