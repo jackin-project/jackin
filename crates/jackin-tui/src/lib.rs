@@ -212,6 +212,36 @@ pub fn take_display_cols(s: &str, max_cols: usize) -> String {
     out
 }
 
+/// Leading ASCII-space count for text rows that need symmetric trailing
+/// scroll padding. Controls are ignored so injected bytes cannot affect
+/// width math.
+#[must_use]
+pub fn leading_space_cols<'a>(parts: impl IntoIterator<Item = &'a str>) -> usize {
+    let mut count = 0;
+    for part in parts {
+        for ch in part.chars() {
+            if is_terminal_control_char(ch) {
+                continue;
+            }
+            if ch != ' ' {
+                return count;
+            }
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Display-column width for a row plus the matching trailing padding used by
+/// horizontally scrollable, indented content.
+#[must_use]
+pub fn padded_line_display_cols<'a, I>(parts: I) -> usize
+where
+    I: IntoIterator<Item = &'a str> + Clone,
+{
+    parts.clone().into_iter().map(display_cols).sum::<usize>() + leading_space_cols(parts)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FixedPrefixSegment {
     pub start_byte: usize,
@@ -880,6 +910,19 @@ mod tests {
     #[test]
     fn take_display_cols_returns_empty_when_budget_is_zero() {
         assert_eq!(super::take_display_cols("abc", 0), "");
+    }
+
+    #[test]
+    fn padded_line_display_cols_mirrors_leading_padding() {
+        assert_eq!(
+            super::padded_line_display_cols(["  abc", "日本"]),
+            2 + 3 + 4 + 2
+        );
+    }
+
+    #[test]
+    fn leading_space_cols_skips_controls_and_stops_at_text() {
+        assert_eq!(super::leading_space_cols([" \x07 ", "abc", "  "]), 2);
     }
 
     #[test]

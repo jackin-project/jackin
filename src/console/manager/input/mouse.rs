@@ -531,10 +531,8 @@ fn try_select_editor_mount_row(
     let Some(index) = editor_mount_index_at(editor, mouse, term_size) else {
         return false;
     };
-    let area = editor_scroll_area(editor, term_size);
     editor.active_field = FieldFocus::Row(index);
-    editor.workspace_mounts_scroll_focused =
-        is_scrollable(area.content_width, scroll_viewport_width(area.area));
+    editor.workspace_mounts_scroll_focused = true;
     true
 }
 
@@ -711,8 +709,7 @@ fn update_scroll_focus(
                     editor.workspace_mounts_scroll_focused = false;
                 } else {
                     let area = editor_scroll_area(editor, term_size);
-                    editor.workspace_mounts_scroll_focused = point_in(mouse, area.area)
-                        && is_scrollable(area.content_width, scroll_viewport_width(area.area));
+                    editor.workspace_mounts_scroll_focused = point_in(mouse, area.area);
                 }
                 editor.tab_content_scroll_focused = false;
             } else {
@@ -722,11 +719,7 @@ fn update_scroll_focus(
                 } else {
                     let content_area = editor_content_area(editor, term_size);
                     let in_content = point_in(mouse, content_area);
-                    let viewport_h = scroll_viewport_height(content_area);
-                    let viewport_w = scroll_viewport_width(content_area);
-                    editor.tab_content_scroll_focused = in_content
-                        && (is_scrollable(editor.tab_content_width, viewport_w)
-                            || is_scrollable(editor.tab_content_height, viewport_h));
+                    editor.tab_content_scroll_focused = in_content;
                 }
             }
         }
@@ -774,22 +767,53 @@ struct ScrollArea {
     content_width: usize,
 }
 
-fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {
-    let viewport = scroll_viewport_width(area);
-    if !is_scrollable(content_width, viewport) {
-        return false;
-    }
-    let scrollbar = horizontal_scrollbar_area(area);
-    if !point_in(mouse, scrollbar) {
+#[derive(Clone, Copy)]
+enum ScrollbarAxis {
+    Horizontal,
+    Vertical,
+}
+
+fn drag_scrollbar_axis(
+    axis: ScrollbarAxis,
+    value: &mut u16,
+    mouse: MouseEvent,
+    area: Rect,
+    content_len: usize,
+) -> bool {
+    let (viewport, scrollbar, track_len, track_position) = match axis {
+        ScrollbarAxis::Horizontal => {
+            let scrollbar = horizontal_scrollbar_area(area);
+            (
+                scroll_viewport_width(area),
+                scrollbar,
+                scrollbar.width,
+                mouse.column.saturating_sub(scrollbar.x),
+            )
+        }
+        ScrollbarAxis::Vertical => {
+            let scrollbar = vertical_scrollbar_area(area);
+            (
+                scroll_viewport_height(area),
+                scrollbar,
+                scrollbar.height,
+                mouse.row.saturating_sub(scrollbar.y),
+            )
+        }
+    };
+    if !is_scrollable(content_len, viewport) || !point_in(mouse, scrollbar) {
         return false;
     }
     *value = scrollbar_offset_for_track_position(
-        content_width,
+        content_len,
         viewport,
-        usize::from(scrollbar.width),
-        usize::from(mouse.column.saturating_sub(scrollbar.x)),
+        usize::from(track_len),
+        usize::from(track_position),
     );
     true
+}
+
+fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {
+    drag_scrollbar_axis(ScrollbarAxis::Horizontal, value, mouse, area, content_width)
 }
 
 fn drag_vertical_scrollbar(
@@ -798,21 +822,7 @@ fn drag_vertical_scrollbar(
     area: Rect,
     content_height: usize,
 ) -> bool {
-    let viewport = scroll_viewport_height(area);
-    if !is_scrollable(content_height, viewport) {
-        return false;
-    }
-    let scrollbar = vertical_scrollbar_area(area);
-    if !point_in(mouse, scrollbar) {
-        return false;
-    }
-    *value = scrollbar_offset_for_track_position(
-        content_height,
-        viewport,
-        usize::from(scrollbar.height),
-        usize::from(mouse.row.saturating_sub(scrollbar.y)),
-    );
-    true
+    drag_scrollbar_axis(ScrollbarAxis::Vertical, value, mouse, area, content_height)
 }
 
 fn try_drag_vertical_scrollbar(
@@ -2394,8 +2404,7 @@ mod mouse_drag_tests {
     }
 
     #[test]
-    fn editor_mounts_tab_click_full_row_width_selects_mount_without_scroll_focus_when_unscrollable()
-    {
+    fn editor_mounts_tab_click_full_row_width_selects_mount_and_focuses_block() {
         let mut state = list_state();
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
@@ -2429,12 +2438,11 @@ mod mouse_drag_tests {
             panic!("editor stage expected");
         };
         assert!(matches!(editor.active_field, FieldFocus::Row(1)));
-        assert!(!editor.workspace_mounts_scroll_focused);
+        assert!(editor.workspace_mounts_scroll_focused);
     }
 
     #[test]
-    fn editor_mounts_tab_click_host_source_continuation_selects_parent_without_scroll_focus_when_unscrollable()
-     {
+    fn editor_mounts_tab_click_host_source_continuation_selects_parent_and_focuses_block() {
         let mut state = list_state();
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
@@ -2458,7 +2466,7 @@ mod mouse_drag_tests {
             panic!("editor stage expected");
         };
         assert!(matches!(editor.active_field, FieldFocus::Row(0)));
-        assert!(!editor.workspace_mounts_scroll_focused);
+        assert!(editor.workspace_mounts_scroll_focused);
     }
 
     #[test]

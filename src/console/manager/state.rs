@@ -723,8 +723,8 @@ pub struct EditorState<'a> {
     /// (green border). Updated each click via `update_scroll_focus`.
     pub tab_content_scroll_focused: bool,
     /// Last rendered line count for the active non-Mounts tab content block.
-    /// Written by the render function; read by `update_scroll_focus` to
-    /// determine whether the block is actually scrollable.
+    /// Written by the render function; read by scroll input and render-frame
+    /// clamps so all offset math uses the same content size.
     pub tab_content_width: usize,
     pub tab_content_height: usize,
     /// Set when the auth-form "generate token" action launches the

@@ -158,16 +158,7 @@ pub(crate) fn render_line_with_fixed_prefix_scroll(
 // Trailing padding mirrors leading spaces so indented content scrolls
 // symmetrically — without it the rightmost indent column is unreachable.
 fn leading_space_count(line: &Line<'_>) -> usize {
-    let mut count = 0;
-    for span in &line.spans {
-        for ch in span.content.chars() {
-            if ch != ' ' {
-                return count;
-            }
-            count += 1;
-        }
-    }
-    count
+    jackin_tui::leading_space_cols(line.spans.iter().map(|span| span.content.as_ref()))
 }
 
 pub(crate) fn max_line_width(lines: &[Line<'_>]) -> usize {
@@ -176,7 +167,11 @@ pub(crate) fn max_line_width(lines: &[Line<'_>]) -> usize {
     // wide, so content_width must reflect it to keep the scrollbar range correct.
     lines
         .iter()
-        .map(|l| line_width(l).saturating_add(leading_space_count(l)))
+        .map(|line| {
+            jackin_tui::padded_line_display_cols(
+                line.spans.iter().map(|span| span.content.as_ref()),
+            )
+        })
         .max()
         .unwrap_or(0)
 }
