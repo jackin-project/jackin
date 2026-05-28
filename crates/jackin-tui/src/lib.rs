@@ -212,6 +212,70 @@ pub fn take_display_cols(s: &str, max_cols: usize) -> String {
     out
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixedPrefixSegment {
+    pub start_byte: usize,
+    pub end_byte: usize,
+    pub target_col: usize,
+    pub display_cols: usize,
+}
+
+/// Visible byte ranges for a horizontally scrolled line whose prefix remains
+/// fixed while the suffix scrolls by display columns.
+#[must_use]
+pub fn fixed_prefix_scroll_segments(
+    text: &str,
+    base_col: usize,
+    fixed_prefix_cols: usize,
+    scroll_cols: usize,
+    viewport_cols: usize,
+) -> Vec<FixedPrefixSegment> {
+    use unicode_width::UnicodeWidthChar;
+
+    let prefix_cols = fixed_prefix_cols.min(viewport_cols);
+    let suffix_cols = viewport_cols.saturating_sub(prefix_cols);
+    let suffix_start = fixed_prefix_cols.saturating_add(scroll_cols);
+    let suffix_end = suffix_start.saturating_add(suffix_cols);
+    let mut segments: Vec<FixedPrefixSegment> = Vec::new();
+    let mut col = base_col;
+
+    for (start_byte, ch) in text.char_indices() {
+        if is_terminal_control_char(ch) {
+            continue;
+        }
+        let end_byte = start_byte + ch.len_utf8();
+        let width = ch.width().unwrap_or(0);
+        if width == 0 {
+            if let Some(last) = segments.last_mut()
+                && last.end_byte == start_byte
+            {
+                last.end_byte = end_byte;
+            }
+            continue;
+        }
+
+        let target_col = if col < prefix_cols && col + width <= prefix_cols {
+            col
+        } else if col >= suffix_start && col + width <= suffix_end {
+            prefix_cols + (col - suffix_start)
+        } else {
+            col += width;
+            continue;
+        };
+        if target_col + width <= viewport_cols {
+            segments.push(FixedPrefixSegment {
+                start_byte,
+                end_byte,
+                target_col,
+                display_cols: width,
+            });
+        }
+        col += width;
+    }
+
+    segments
+}
+
 /// Collapse a terminal-window title to a single line of printable
 /// characters: control bytes become spaces, runs of whitespace
 /// collapse to one space, and leading / trailing whitespace is
@@ -816,5 +880,44 @@ mod tests {
     #[test]
     fn take_display_cols_returns_empty_when_budget_is_zero() {
         assert_eq!(super::take_display_cols("abc", 0), "");
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_segments_keep_prefix_and_scroll_suffix_by_columns() {
+        let segments = super::fixed_prefix_scroll_segments("▸  a日本z", 0, 3, 1, 8);
+        let rendered: Vec<(&str, usize, usize)> = segments
+            .iter()
+            .map(|seg| {
+                (
+                    &"▸  a日本z"[seg.start_byte..seg.end_byte],
+                    seg.target_col,
+                    seg.display_cols,
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            rendered,
+            vec![
+                ("▸", 0, 1),
+                (" ", 1, 1),
+                (" ", 2, 1),
+                ("日", 3, 2),
+                ("本", 5, 2),
+                ("z", 7, 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_segments_keep_combining_mark_with_base() {
+        let text = "▸  e\u{301}ab";
+        let segments = super::fixed_prefix_scroll_segments(text, 0, 3, 0, 8);
+        let rendered: Vec<&str> = segments
+            .iter()
+            .map(|seg| &text[seg.start_byte..seg.end_byte])
+            .collect();
+
+        assert!(rendered.contains(&"e\u{301}"));
     }
 }

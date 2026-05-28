@@ -329,7 +329,7 @@ fn push_tree_workspace_line(
     // correctly for the ▶/▼ glyphs (same approach as the editor render).
     let line = if has_instances {
         let arrow = if expanded { "▼" } else { "▶" };
-        let text_w = 1 + 1 + 1 + name.chars().count(); // cursor + arrow + space + name
+        let text_w = 1 + 1 + 1 + jackin_tui::display_cols(name);
         *max_w = (*max_w).max(text_w);
         if selected {
             Line::from(vec![
@@ -349,7 +349,7 @@ fn push_tree_workspace_line(
         }
     } else {
         // Two-space placeholder aligns name column with arrow-rows (cursor+arrow+space = 3).
-        let text_w = 3 + name.chars().count(); // cursor + 2 spaces + name
+        let text_w = 3 + jackin_tui::display_cols(name);
         *max_w = (*max_w).max(text_w);
         if selected {
             Line::from(Span::styled(
@@ -376,7 +376,7 @@ fn push_tree_instance_line(
 ) {
     let cursor = if selected { "▸" } else { " " };
     let label = format!("{}  {}", entry.instance_id, entry.role_key);
-    let text_w = 1 + 4 + label.chars().count(); // cursor + "    " indent + label
+    let text_w = 1 + 4 + jackin_tui::display_cols(&label);
     *max_w = (*max_w).max(text_w);
 
     let line = if selected {
@@ -1699,6 +1699,18 @@ mod list_name_scroll_tests {
         config
     }
 
+    fn config_with_short_selected_and_long_sibling() -> AppConfig {
+        let mut config = AppConfig::default();
+        config
+            .workspaces
+            .insert("jackin".into(), WorkspaceConfig::default());
+        config.workspaces.insert(
+            "chainargos-blockchain-nodes".into(),
+            WorkspaceConfig::default(),
+        );
+        config
+    }
+
     #[test]
     fn list_names_content_width_includes_trailing_scroll_padding() {
         let config = config_with_long_workspace_name();
@@ -1801,6 +1813,37 @@ mod list_name_scroll_tests {
         let buffer = terminal.backend().buffer();
         for x in 1..20 {
             assert_eq!(buffer[(x, 2)].bg, TAB_BG_INACTIVE_HOVER, "x={x}");
+        }
+    }
+
+    #[test]
+    fn list_name_horizontal_scroll_keeps_short_selected_background_full_width() {
+        let config = config_with_short_selected_and_long_sibling();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 2;
+        state.list_names_scroll_x = 12;
+        state.list_names_focused = true;
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 70, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(1, 3)].symbol(), "▸");
+        for x in 1..20 {
+            assert_eq!(buffer[(x, 3)].bg, PHOSPHOR_GREEN, "x={x}");
         }
     }
 }

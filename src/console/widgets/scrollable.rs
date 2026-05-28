@@ -124,7 +124,7 @@ pub(crate) fn apply_term_width_scroll_delta(
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
     line.spans
         .iter()
-        .map(|span| span.content.chars().count())
+        .map(|span| jackin_tui::display_cols(&span.content))
         .sum()
 }
 
@@ -136,27 +136,44 @@ pub(crate) fn render_line_with_fixed_prefix_scroll(
     fixed_prefix_cols: usize,
     scroll_x: usize,
 ) {
-    let mut cells: Vec<(char, Style)> = Vec::new();
+    let mut fill_style = line.style;
+    let mut styled_spans = Vec::new();
+    let mut base_col = 0usize;
     for span in line.spans {
         let style = line.style.patch(span.style);
-        for ch in span.content.chars() {
-            cells.push((ch, style));
+        if fill_style.bg.is_none() && style.bg.is_some() {
+            fill_style = style;
         }
+        let span_width = jackin_tui::display_cols(&span.content);
+        styled_spans.push((span.content.into_owned(), style, base_col));
+        base_col += span_width;
     }
 
     let width = usize::from(area.width);
-    let prefix_cols = fixed_prefix_cols.min(width);
-    let suffix_cols = width.saturating_sub(prefix_cols);
-    let iter = cells.iter().take(prefix_cols).chain(
-        cells
-            .iter()
-            .skip(fixed_prefix_cols + scroll_x)
-            .take(suffix_cols),
-    );
-    for (col, (ch, style)) in iter.enumerate() {
+    for col in 0..width {
         frame
             .buffer_mut()
-            .set_string(area.x + col as u16, area.y + row, ch.to_string(), *style);
+            .set_string(area.x + col as u16, area.y + row, " ", fill_style);
+    }
+
+    for (text, style, base_col) in styled_spans {
+        for segment in jackin_tui::fixed_prefix_scroll_segments(
+            &text,
+            base_col,
+            fixed_prefix_cols,
+            scroll_x,
+            width,
+        ) {
+            frame.buffer_mut().set_string(
+                area.x + segment.target_col as u16,
+                area.y + row,
+                &text[segment.start_byte..segment.end_byte],
+                style,
+            );
+            for col in segment.target_col..segment.target_col + segment.display_cols {
+                frame.buffer_mut()[(area.x + col as u16, area.y + row)].set_style(style);
+            }
+        }
     }
 }
 
@@ -527,6 +544,49 @@ mod tests {
         assert_eq!(buffer[(0, 0)].symbol(), "▸");
         assert_eq!(buffer[(3, 0)].symbol(), "c");
         for x in 0..8 {
+            assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_fills_background_past_short_suffix() {
+        let backend = TestBackend::new(8, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let style = Style::default().bg(PHOSPHOR_GREEN);
+        let line = Line::styled("▸  abc", style);
+
+        terminal
+            .draw(|frame| {
+                render_line_with_fixed_prefix_scroll(frame, Rect::new(0, 0, 8, 1), 0, line, 3, 5);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "▸");
+        for x in 0..8 {
+            assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_uses_display_columns_for_wide_chars() {
+        let backend = TestBackend::new(8, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let style = Style::default().bg(PHOSPHOR_GREEN);
+        let line = Line::styled("▸  a日本z", style);
+
+        terminal
+            .draw(|frame| {
+                render_line_with_fixed_prefix_scroll(frame, Rect::new(0, 0, 8, 1), 0, line, 3, 1);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "▸");
+        assert_eq!(buffer[(3, 0)].symbol(), "日");
+        assert_eq!(buffer[(5, 0)].symbol(), "本");
+        assert_eq!(buffer[(7, 0)].symbol(), "z");
+        for x in [0, 1, 2, 3, 5, 7] {
             assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
         }
     }
