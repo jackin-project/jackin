@@ -2184,7 +2184,7 @@ async fn load_role_with(
         // declaration string is recorded.
         let resolved_source: Option<String> =
             agent.required_env_var(auth_mode).and_then(|env_var| {
-                let raw = lookup_operator_env_raw(
+                let raw = crate::operator_env::lookup_operator_env_raw(
                     config,
                     Some(&role_key),
                     workspace_name.as_deref(),
@@ -3775,36 +3775,6 @@ fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
         None | Some("") => env_var.to_string(),
         Some(value) => format!("{env_var} \u{2190} {value}"),
     }
-}
-
-/// Look up the raw (unresolved) declaration value for `key` in the
-/// operator env config layers, using the same precedence as
-/// `resolve_operator_env` (global < role < workspace < workspace ×
-/// role — later wins).
-fn lookup_operator_env_raw(
-    config: &crate::config::AppConfig,
-    role_selector: Option<&str>,
-    workspace_name: Option<&str>,
-    key: &str,
-) -> Option<String> {
-    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
-
-    // Walk layers low → high priority; later assignments win over
-    // earlier ones. Assign each layer's `.get(key).cloned()` in turn,
-    // `or_else`-chaining lets `None` from a later layer fall back to
-    // an earlier layer's value.
-    let workspace_role = ws_opt.zip(role_selector).and_then(|(ws, role_name)| {
-        ws.roles
-            .get(role_name)
-            .and_then(|overlay| overlay.env.get(key).map(|v| v.as_display_str().to_string()))
-    });
-    let workspace = ws_opt.and_then(|ws| ws.env.get(key).map(|v| v.as_display_str().to_string()));
-    let role = role_selector
-        .and_then(|role_name| config.roles.get(role_name))
-        .and_then(|a| a.env.get(key).map(|v| v.as_display_str().to_string()));
-    let global = config.env.get(key).map(|v| v.as_display_str().to_string());
-
-    workspace_role.or(workspace).or(role).or(global)
 }
 
 struct LoadCleanup {

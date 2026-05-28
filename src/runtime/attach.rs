@@ -396,7 +396,7 @@ pub async fn spawn_agent_session(
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
 
-    let mut exec_args = vec!["exec", "--workdir", workdir, "-it", container_name];
+    let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
     let coauthor_env_flag;
     let dco_env_flag;
     if let Some(ref env) = coauthor_env {
@@ -416,6 +416,7 @@ pub async fn spawn_agent_session(
     for flag in &override_flags {
         exec_args.push(flag.as_str());
     }
+    exec_args.push(container_name);
     exec_args.extend_from_slice(&["/jackin/runtime/jackin-capsule", "new", agent.slug()]);
     // When a provider was selected in the console, pass it as a flag so the
     // daemon receives SpawnRequest::AgentWithProvider and labels the tab correctly.
@@ -1108,6 +1109,21 @@ mod tests {
                 .any(|call| call.contains("-e=JACKIN_GIT_COAUTHOR_TRAILER=1")),
             "coauthor trailer env must be present when enabled; recorded: {:?}",
             runner.recorded
+        );
+        let call = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker exec"))
+            .expect("expected docker exec call");
+        let env_pos = call
+            .find("-e=JACKIN_GIT_COAUTHOR_TRAILER=1")
+            .expect("coauthor env flag must be present");
+        let container_pos = call
+            .find(container_name)
+            .expect("container name must be present");
+        assert!(
+            env_pos < container_pos,
+            "docker exec options must precede container name; got: {call}"
         );
     }
 

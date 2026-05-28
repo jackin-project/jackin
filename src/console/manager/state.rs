@@ -93,8 +93,9 @@ pub struct ManagerState<'a> {
     )>,
     /// Agent picker opened when the operator presses `N` on an instance row
     /// to start a new session in the running container. Carries the target
-    /// `container_base`, the agent picker, and the available provider list
-    /// (empty when `ZAI_API_KEY` is not configured for the workspace).
+    /// `container_base`, the agent picker, and the available Claude provider
+    /// list (empty when `ZAI_API_KEY` is not configured for the instance's
+    /// workspace/role).
     #[allow(clippy::type_complexity)]
     pub inline_new_session_picker: Option<(
         String,

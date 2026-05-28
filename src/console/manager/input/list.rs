@@ -151,26 +151,14 @@ pub(super) fn handle_list_key(
                         crate::console::widgets::agent_choice::AgentChoiceState::with_choices(
                             crate::agent::Agent::ALL.to_vec(),
                         );
-                    let ws_name = state.workspaces.get(ws_idx).map(|w| w.name.as_str());
-                    let has_zai_key = ws_name
-                        .and_then(|name| config.workspaces.get(name))
-                        .and_then(|ws| ws.env.get("ZAI_API_KEY"))
-                        .or_else(|| config.env.get("ZAI_API_KEY"))
-                        .is_some();
-                    let providers: Vec<(String, Vec<(String, String)>)> = if has_zai_key {
-                        vec![
-                            ("Anthropic".to_string(), vec![]),
-                            (
-                                "Z.AI".to_string(),
-                                vec![(
-                                    "ANTHROPIC_BASE_URL".to_string(),
-                                    "https://api.z.ai/api/anthropic".to_string(),
-                                )],
-                            ),
-                        ]
-                    } else {
-                        vec![]
-                    };
+                    let providers = entry.workspace_name.as_ref().map_or_else(Vec::new, |name| {
+                        crate::console::providers_for_launch(
+                            config,
+                            name,
+                            &entry.role_key,
+                            crate::agent::Agent::Claude,
+                        )
+                    });
                     state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
                     state.list_modal = Some(Modal::ErrorPopup {
@@ -669,7 +657,7 @@ pub(super) fn handle_new_session_picker(
     match picker.handle_key(key) {
         ModalOutcome::Commit(agent) => {
             let container = container.clone();
-            if providers.is_empty() {
+            if providers.is_empty() || agent != crate::agent::Agent::Claude {
                 state.inline_new_session_picker = None;
                 InputOutcome::InstanceAction {
                     container,
@@ -803,9 +791,10 @@ mod tests {
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
     use super::super::super::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use super::super::test_support::{key, mount};
-    use super::{InputOutcome, instance_action_accepts_status};
+    use super::{InputOutcome, handle_new_session_picker, instance_action_accepts_status};
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
+    use crate::console::widgets::agent_choice::AgentChoiceState;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
     use crate::paths::JackinPaths;
     use crate::workspace::WorkspaceConfig;
@@ -876,6 +865,71 @@ mod tests {
             status,
             updated_at: "2026-05-11T00:00:00Z".into(),
         }
+    }
+
+    fn provider_choices() -> Vec<(String, Vec<(String, String)>)> {
+        vec![
+            ("Anthropic".to_string(), vec![]),
+            (
+                "Z.AI".to_string(),
+                vec![(
+                    "ANTHROPIC_BASE_URL".to_string(),
+                    "https://api.z.ai/api/anthropic".to_string(),
+                )],
+            ),
+        ]
+    }
+
+    #[test]
+    fn new_session_provider_picker_only_opens_for_claude() {
+        let config = AppConfig::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Codex]);
+        picker.focused = crate::agent::Agent::Codex;
+        state.inline_new_session_picker =
+            Some(("jackin-demo-architect".into(), picker, provider_choices()));
+
+        let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect");
+                assert_eq!(
+                    action,
+                    crate::console::ConsoleInstanceAction::NewSessionWithAgent(
+                        crate::agent::Agent::Codex,
+                    )
+                );
+            }
+            other => panic!("expected direct new-session dispatch; got {other:?}"),
+        }
+        assert!(
+            state.inline_provider_picker.is_none(),
+            "non-Claude agents must not open the provider picker"
+        );
+    }
+
+    #[test]
+    fn new_session_provider_picker_opens_for_claude() {
+        let config = AppConfig::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Claude]);
+        picker.focused = crate::agent::Agent::Claude;
+        state.inline_new_session_picker =
+            Some(("jackin-demo-architect".into(), picker, provider_choices()));
+
+        let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+
+        assert!(matches!(outcome, InputOutcome::Continue));
+        let Some((container, agent, providers, selected)) = state.inline_provider_picker else {
+            panic!("Claude with providers must open provider picker");
+        };
+        assert_eq!(container, "jackin-demo-architect");
+        assert_eq!(agent, crate::agent::Agent::Claude);
+        assert_eq!(providers.len(), 2);
+        assert_eq!(selected, 0);
     }
 
     fn live_snapshot() -> crate::runtime::snapshot::InstanceSnapshot {

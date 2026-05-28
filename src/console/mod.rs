@@ -754,21 +754,25 @@ where
     }
 }
 
-fn zai_key_present(config: &AppConfig, workspace_name: &str) -> bool {
-    config
-        .workspaces
-        .get(workspace_name)
-        .and_then(|ws| ws.env.get("ZAI_API_KEY"))
-        .or_else(|| config.env.get("ZAI_API_KEY"))
-        .is_some()
+fn zai_key_present(config: &AppConfig, workspace_name: &str, role_selector: &str) -> bool {
+    crate::operator_env::lookup_operator_env_raw(
+        config,
+        Some(role_selector),
+        Some(workspace_name),
+        "ZAI_API_KEY",
+    )
+    .is_some()
 }
 
-fn providers_for_launch(
+pub(in crate::console) fn providers_for_launch(
     config: &AppConfig,
     workspace_name: &str,
+    role_selector: &str,
     agent: crate::agent::Agent,
 ) -> Vec<(String, Vec<(String, String)>)> {
-    if agent != crate::agent::Agent::Claude || !zai_key_present(config, workspace_name) {
+    if agent != crate::agent::Agent::Claude
+        || !zai_key_present(config, workspace_name, role_selector)
+    {
         return vec![];
     }
     vec![
@@ -804,7 +808,7 @@ fn launch_with_committed_agent(
     };
     let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
 
-    let providers = providers_for_launch(config, &choice.name, agent);
+    let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
     if providers.is_empty() {
         return Ok(Some(ConsoleOutcome::Launch(role, workspace, Some(agent))));
     }
@@ -1397,6 +1401,51 @@ mod quit_confirm_tests {
             body.contains("network is unreachable"),
             "popup must surface the underlying error: {body}"
         );
+    }
+
+    #[test]
+    fn providers_for_launch_include_role_scoped_zai_key() {
+        let mut config = AppConfig::default();
+        let mut role = crate::config::RoleSource::default();
+        role.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("role-key".into()),
+        );
+        config.roles.insert("the-architect".into(), role);
+        config
+            .workspaces
+            .insert("demo".into(), crate::workspace::WorkspaceConfig::default());
+
+        let providers = super::providers_for_launch(
+            &config,
+            "demo",
+            "the-architect",
+            crate::agent::Agent::Claude,
+        );
+
+        assert_eq!(providers.len(), 2);
+        assert_eq!(providers[1].0, "Z.AI");
+    }
+
+    #[test]
+    fn providers_for_launch_rejects_non_claude_agents() {
+        let mut config = AppConfig::default();
+        config.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("global-key".into()),
+        );
+        config
+            .workspaces
+            .insert("demo".into(), crate::workspace::WorkspaceConfig::default());
+
+        let providers = super::providers_for_launch(
+            &config,
+            "demo",
+            "the-architect",
+            crate::agent::Agent::Codex,
+        );
+
+        assert!(providers.is_empty());
     }
 
     fn unresolved_workspace() -> ResolvedWorkspace {
