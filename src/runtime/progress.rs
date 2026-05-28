@@ -14,8 +14,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::{
-    DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK,
-    PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+    DANGER_RED, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
 };
 use crate::diagnostics::RunDiagnostics;
 use jackin_tui::HintSpan;
@@ -1611,10 +1610,10 @@ const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
 fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
     use crate::console::widgets::scrollable::{render_scrollable_block, viewport_height};
 
-    // Shared dialog backdrop fully hides the cockpit behind the overlay
-    // (same solid look as the capsule modals).
+    // Opaque black backdrop fully hides the cockpit behind the overlay (same
+    // solid look as the capsule modals).
     frame.render_widget(
-        Block::default().style(Style::default().bg(DIALOG_BACKDROP)),
+        Block::default().style(Style::default().bg(Color::Black)),
         area,
     );
 
@@ -1683,7 +1682,7 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
         return vec![Line::from(String::new())];
     }
 
-    let default_style = Style::default().fg(Color::Gray).bg(DIALOG_SURFACE);
+    let default_style = Style::default().fg(Color::Gray).bg(Color::Black);
     let spans = crate::ansi_text::styled_spans(line.trim_end(), default_style);
     wrap_build_log_spans(spans, width)
 }
@@ -1749,7 +1748,7 @@ fn push_wrapped_build_line(
             0,
             Span::styled(
                 BUILD_LOG_WRAP_PREFIX,
-                Style::default().fg(PHOSPHOR_DIM).bg(DIALOG_SURFACE),
+                Style::default().fg(PHOSPHOR_DIM).bg(Color::Black),
             ),
         );
     }

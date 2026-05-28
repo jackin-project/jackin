@@ -41,18 +41,18 @@ pub const PHOSPHOR_DARK: Rgb = Rgb::new(0, 80, 18);
 /// Pure black base colour.
 pub const BLACK: Rgb = Rgb::new(0, 0, 0);
 
-/// Opaque full-screen backdrop behind modal dialogs. Capsule and the
-/// host launch cockpit both use this colour so overlays do not drift
-/// between terminal surfaces.
+/// Opaque full-screen backdrop behind modal dialogs in the capsule
+/// multiplexer. Emitted as raw RGB so the overlay fully masks the
+/// pane content beneath.
 pub const DIALOG_BACKDROP: Rgb = BLACK;
 
-/// Dialog box surface colour. Kept distinct from `DIALOG_BACKDROP` as
-/// a named token even though the current visual contract uses the same
-/// pure black for both.
+/// Dialog box surface colour for the capsule modals. Currently the same
+/// pure black as `DIALOG_BACKDROP`.
 pub const DIALOG_SURFACE: Rgb = BLACK;
 
-/// Focused scroll/thumb accent for modal scroll regions.
-pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_GREEN;
+/// Modal scrollbar thumb colour. Dim phosphor so the chrome reads as
+/// ambient rather than competing with focused content.
+pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_DIM;
 
 /// Scroll track and unfocused dialog border colour.
 pub const DIALOG_SCROLL_TRACK: Rgb = PHOSPHOR_DARK;
@@ -504,10 +504,8 @@ pub mod ansi {
     pub const POINTER_DEFAULT: &str = "\x1b]22;default\x1b\\";
     pub const INVERSE: &str = "\x1b[7m";
 
-    /// Canonical brand pill used by plain ANSI surfaces.
-    pub const BRAND_PILL: &str = "\x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin' \x1b[0m";
-
-    /// Help/banner form of the brand pill.
+    /// Help/banner form of the brand pill, shared with the host and
+    /// capsule status bars so every surface shows the same logo.
     pub const BRAND_BANNER: &str =
         "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin' \x1b[0m\n";
 
@@ -530,7 +528,6 @@ pub mod ansi {
         match (rgb.r, rgb.g, rgb.b) {
             (0, 255, 65) => "\x1b[48;2;0;255;65m",
             (42, 42, 42) => "\x1b[48;2;42;42;42m",
-            (20, 24, 22) => "\x1b[48;2;20;24;22m",
             (255, 255, 255) => "\x1b[48;2;255;255;255m",
             (0, 0, 0) => "\x1b[48;2;0;0;0m",
             _ => panic!("unsupported RGB background token"),

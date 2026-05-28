@@ -5936,7 +5936,8 @@ mod tests {
     fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
         let rendered = String::from_utf8_lossy(frame);
         let focused_scroll_fg = format!(
-            "\x1b[0;{}",
+            "{}{}",
+            jackin_tui::ansi::RESET,
             jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_GREEN)
         );
         assert!(
