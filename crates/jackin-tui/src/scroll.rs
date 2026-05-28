@@ -156,7 +156,7 @@ pub fn offset_for_track_position(
     track_cells: u16,
     track_position: usize,
 ) -> usize {
-    if !is_scrollable(content_len, viewport_len) || track_cells == 0 {
+    if !is_scrollable(content_len, viewport_len) || track_cells <= 1 {
         return 0;
     }
 
@@ -176,7 +176,7 @@ pub fn offset_for_track_position_u16(
     track_cells: usize,
     track_position: usize,
 ) -> u16 {
-    if !is_scrollable(content_len, viewport_len) || track_cells == 0 {
+    if !is_scrollable(content_len, viewport_len) || track_cells <= 1 {
         return 0;
     }
 
@@ -231,7 +231,7 @@ pub fn full_cell_thumb(
         .saturating_add(SUBCELL - 1)
         .saturating_div(SUBCELL)
         .max(1)
-        .min(usize::from(track_cells));
+        .min(usize::from(track_cells).saturating_sub(1).max(1));
     let max_start = usize::from(track_cells).saturating_sub(len);
     let rounded_start = metrics
         .thumb_start()
@@ -319,7 +319,17 @@ mod tests {
     #[test]
     fn one_row_overflow_thumb_reaches_track_end_at_max_offset() {
         let thumb = full_cell_thumb(7, 6, 6, 1).expect("overflowing content");
+        assert!(
+            thumb.len < 6,
+            "scrollable thumb must leave visible travel room"
+        );
         assert_eq!(thumb.start + thumb.len, 6);
+    }
+
+    #[test]
+    fn one_cell_track_drag_maps_to_zero_without_panicking() {
+        assert_eq!(offset_for_track_position(7, 6, 1, 0), 0);
+        assert_eq!(offset_for_track_position_u16(7, 6, 1, 0), 0);
     }
 
     #[test]

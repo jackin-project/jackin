@@ -635,7 +635,7 @@ mod tests {
         let vertical_thumb_len = (1..=4).filter(|y| buffer[(11, *y)].symbol() == "█").count();
 
         assert_eq!(horizontal_thumb_len, 9);
-        assert_eq!(vertical_thumb_len, 4);
+        assert_eq!(vertical_thumb_len, 3);
     }
 
     #[test]
