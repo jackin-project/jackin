@@ -2572,7 +2572,9 @@ async fn load_role_with(
 }
 
 fn launch_failure_title(stage: super::progress::LaunchStage, error: &anyhow::Error) -> String {
-    if stage == super::progress::LaunchStage::DerivedImage {
+    if stage == super::progress::LaunchStage::DerivedImage
+        && docker_build_output_artifact().is_some()
+    {
         return "Docker build failed".to_string();
     }
     let text = error.to_string().to_ascii_lowercase();
@@ -2586,13 +2588,21 @@ fn launch_failure_title(stage: super::progress::LaunchStage, error: &anyhow::Err
 }
 
 fn short_launch_diagnosis(stage: super::progress::LaunchStage, error: &anyhow::Error) -> String {
-    if stage == super::progress::LaunchStage::DerivedImage {
+    if stage == super::progress::LaunchStage::DerivedImage
+        && docker_build_output_artifact().is_some()
+    {
         return "Building the Docker container failed.".to_string();
     }
     error.chain().next().map_or_else(
         || "launch did not complete".to_string(),
         ToString::to_string,
     )
+}
+
+fn docker_build_output_artifact() -> Option<PathBuf> {
+    let run = crate::diagnostics::active_run()?;
+    let docker_output = run.command_output_path("docker-build");
+    docker_output.exists().then_some(docker_output)
 }
 
 fn launch_failure_cli_error(
@@ -2605,7 +2615,9 @@ fn launch_failure_cli_error(
     let Some(run) = crate::diagnostics::active_run() else {
         return anyhow::anyhow!("{error:#}");
     };
-    let docker_output = run.command_output_path("docker-build");
+    let Some(docker_output) = docker_build_output_artifact() else {
+        return anyhow::anyhow!("{error:#}");
+    };
     let mut report = String::from("Docker build command failed");
     let mut table = tabled::Table::builder([
         ["run id", run.run_id()],
@@ -3933,6 +3945,7 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
         let _guard = run.activate();
+        std::fs::write(run.command_output_path("docker-build"), "docker failed").unwrap();
 
         let error = anyhow::anyhow!("Docker build command failed");
         let rendered =
@@ -3952,6 +3965,23 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    #[test]
+    fn derived_image_cli_error_preserves_original_without_docker_output() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _guard = run.activate();
+
+        let error = anyhow::anyhow!("preparing capsule binary failed");
+        let rendered =
+            launch_failure_cli_error(crate::runtime::progress::LaunchStage::DerivedImage, &error)
+                .to_string();
+
+        assert_eq!(rendered, "preparing capsule binary failed");
+        assert!(!rendered.contains("Docker build command failed"));
+        assert!(!rendered.contains("docker output"));
     }
 
     async fn resolve_workspace_restore(

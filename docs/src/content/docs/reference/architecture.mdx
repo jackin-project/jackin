@@ -239,10 +239,11 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │       │   └── auth.json          # ChatGPT OAuth tokens (synced from host ~/.codex/auth.json under auth_forward=sync)
 │       ├── amp/                   # Amp auth handoff (provisioned when Amp is a supported agent)
 │       │   └── secrets.json       # Amp API key or OAuth token (synced from host ~/.local/share/amp/secrets.json under auth_forward=sync)
-│       ├── kimi/                  # Kimi auth handoff (provisioned when Kimi is a supported agent)
+│       ├── kimi-code/             # Kimi auth handoff (provisioned when Kimi is a supported agent)
 │       │   ├── config.toml        # Kimi config (synced from host ~/.kimi-code/config.toml under auth_forward=sync)
 │       │   ├── credentials/       # Kimi credentials (synced from host ~/.kimi-code/credentials under auth_forward=sync)
-│       │   └── device_id          # Kimi device id (synced from host ~/.kimi-code/device_id under auth_forward=sync)
+│       │   ├── device_id          # Kimi device id (synced from host ~/.kimi-code/device_id under auth_forward=sync)
+│       │   └── mcp.json           # Kimi MCP config (synced from host ~/.kimi-code/mcp.json under auth_forward=sync)
 │       ├── opencode/              # OpenCode auth handoff (provisioned when OpenCode is a supported agent)
 │       │   └── auth.json          # OpenCode provider credentials (synced from host ~/.local/share/opencode/auth.json under auth_forward=sync)
 │       ├── home/                  # Durable agent home state mounted into the container

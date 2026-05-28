@@ -592,12 +592,13 @@ impl RoleState {
     /// directory so it can be bind-mounted into the container. Kimi Code stores
     /// OAuth tokens under `credentials/` (including the `credentials/mcp/`
     /// subtree), but `config.toml` carries the OAuth-backed provider/model
-    /// references created by login. `mcp.json` is also forwarded when present.
+    /// references created by login. `device_id` and `mcp.json` are also
+    /// forwarded when present.
     /// `ApiKey` / `Ignore` wipe any prior role-state directory.
     ///
     ///   * **Sync** + `~/.kimi-code` present → copy `config.toml`, the full
-    ///     `credentials/` tree (binary-safe, recursive, symlink-safe), and
-    ///     `mcp.json` at `0600` perms; return `(Synced, true)`.
+    ///     `credentials/` tree (binary-safe, recursive, symlink-safe),
+    ///     `device_id`, and `mcp.json` at `0600` perms; return `(Synced, true)`.
     ///   * **Sync** + `~/.kimi-code` absent → return `(HostMissing, true)`.
     ///     Unlike Codex and Amp, no prior role-state files are preserved;
     ///     the role-state dir is still created so the bind-mount exists for
@@ -664,6 +665,13 @@ impl RoleState {
                         let content = std::fs::read_to_string(&host_mcp)
                             .with_context(|| format!("reading {}", host_mcp.display()))?;
                         write_private_file(&kimi_dir.join("mcp.json"), &content)?;
+                    }
+
+                    let host_device_id = host_kimi.join("device_id");
+                    if host_device_id.exists() {
+                        let content = std::fs::read_to_string(&host_device_id)
+                            .with_context(|| format!("reading {}", host_device_id.display()))?;
+                        write_private_file(&kimi_dir.join("device_id"), &content)?;
                     }
 
                     AuthProvisionOutcome::Synced
@@ -2840,6 +2848,7 @@ mod kimi_auth_tests {
         config_content: Option<&str>,
         cred_files: &[(&str, &str)],
         mcp_json: Option<&str>,
+        device_id: Option<&str>,
     ) -> std::path::PathBuf {
         let host_home = temp.path().join("host_home");
         let kimi_dir = host_home.join(".kimi-code");
@@ -2857,6 +2866,9 @@ mod kimi_auth_tests {
         if let Some(content) = mcp_json {
             std::fs::write(kimi_dir.join("mcp.json"), content).unwrap();
         }
+        if let Some(content) = device_id {
+            std::fs::write(kimi_dir.join("device_id"), content).unwrap();
+        }
         host_home
     }
 
@@ -2864,7 +2876,8 @@ mod kimi_auth_tests {
     fn sync_copies_config_toml_when_present() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname = \"test\""), &[], None);
+        let host_home =
+            stage_host_kimi_dir(&temp, Some("[profile]\nname = \"test\""), &[], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -2881,7 +2894,8 @@ mod kimi_auth_tests {
     fn sync_copies_credentials_files_when_present() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[("token_main", "tok_abc123")], None);
+        let host_home =
+            stage_host_kimi_dir(&temp, None, &[("token_main", "tok_abc123")], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -2898,7 +2912,7 @@ mod kimi_auth_tests {
     fn sync_copies_mcp_json_when_present() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[], Some(r#"{"servers":{}}"#));
+        let host_home = stage_host_kimi_dir(&temp, None, &[], Some(r#"{"servers":{}}"#), None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -2912,10 +2926,27 @@ mod kimi_auth_tests {
     }
 
     #[test]
+    fn sync_copies_device_id_when_present() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, None, &[], None, Some("device-abc123\n"));
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert_eq!(
+            std::fs::read_to_string(kimi_dir.join("device_id")).unwrap(),
+            "device-abc123\n"
+        );
+    }
+
+    #[test]
     fn sync_with_empty_kimi_dir_creates_role_state_dir() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[], None);
+        let host_home = stage_host_kimi_dir(&temp, None, &[], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -2958,7 +2989,8 @@ mod kimi_auth_tests {
         let kimi_dir = temp.path().join("kimi_state");
         std::fs::create_dir_all(&kimi_dir).unwrap();
         std::fs::write(kimi_dir.join("config.toml"), "stale").unwrap();
-        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname=\"test\""), &[], None);
+        let host_home =
+            stage_host_kimi_dir(&temp, Some("[profile]\nname=\"test\""), &[], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::ApiKey, &host_home).unwrap();
@@ -3016,7 +3048,7 @@ mod kimi_auth_tests {
     fn forward_auth_true_for_synced() {
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, Some("[x]"), &[], None);
+        let host_home = stage_host_kimi_dir(&temp, Some("[x]"), &[], None, None);
 
         let (outcome, forward_auth) =
             RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
@@ -3104,11 +3136,17 @@ mod kimi_auth_tests {
             Some("[profile]"),
             &[("access_token", "tok_secret_xyz")],
             Some(r#"{"servers":{}}"#),
+            Some("device-secret"),
         );
 
         RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
 
-        for rel in &["config.toml", "credentials/access_token", "mcp.json"] {
+        for rel in &[
+            "config.toml",
+            "credentials/access_token",
+            "mcp.json",
+            "device_id",
+        ] {
             let path = kimi_dir.join(rel);
             let mode = std::fs::metadata(&path)
                 .unwrap_or_else(|e| panic!("missing synced file {rel}: {e}"))
@@ -3160,7 +3198,7 @@ mod kimi_auth_tests {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, None, &[("access_token", "secret")], None);
+        let host_home = stage_host_kimi_dir(&temp, None, &[("access_token", "secret")], None, None);
 
         let cred = host_home.join(".kimi-code/credentials/access_token");
         std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o000)).unwrap();
@@ -3183,7 +3221,7 @@ mod kimi_auth_tests {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let kimi_dir = temp.path().join("kimi_state");
-        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname=\"x\""), &[], None);
+        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname=\"x\""), &[], None, None);
 
         let cfg = host_home.join(".kimi-code/config.toml");
         std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o000)).unwrap();
