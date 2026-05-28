@@ -170,9 +170,10 @@ pub struct Multiplexer {
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
-    /// Cached at construction; tool availability and `origin/HEAD`
-    /// cannot change while the daemon is alive, and re-probing on
-    /// the 1Hz state tick would shell out for a stable verdict.
+    /// Cached at construction for the hot polling path; manual actions
+    /// such as opening GitHub context may re-probe `gh` so a startup
+    /// PATH/tool-availability race does not freeze PR discovery for the
+    /// daemon lifetime.
     workdir_context: WorkdirContext,
 }
 
@@ -248,31 +249,65 @@ impl WorkdirContext {
 
 /// Probe `name --version` once at construction. Stdin/stdout/stderr
 /// are nulled so a misbehaving subprocess cannot leak output into the
-/// daemon's logs and cannot block on stdin. A `false` verdict
-/// short-circuits all later lookup spawns for the duration of the
-/// daemon process.
+/// daemon's logs and cannot block on stdin. As PID 1, Capsule has a
+/// SIGCHLD zombie reaper that can win the race against Rust's
+/// `Child::try_wait`; `ECHILD` after a successful spawn still proves
+/// the executable exists, so treat it as available instead of freezing
+/// the feature off for the daemon lifetime.
 fn command_in_path(name: &str) -> bool {
     let mut cmd = Command::new(name);
     cmd.arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    match cmd.status() {
-        Ok(status) if status.success() => true,
-        Ok(status) => {
-            crate::cdebug!(
-                "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
-                status.code()
-            );
-            false
-        }
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
         Err(e) => {
             crate::clog!(
                 "command_in_path[{name}]: spawn failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
                 e.raw_os_error()
             );
-            false
+            return false;
         }
+    };
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return true,
+            Ok(Some(status)) => {
+                crate::cdebug!(
+                    "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
+                    status.code()
+                );
+                return false;
+            }
+            Ok(None) => {}
+            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+                crate::clog!(
+                    "command_in_path[{name}]: child was reaped before status collection; treating as available"
+                );
+                return true;
+            }
+            Err(e) => {
+                crate::clog!(
+                    "command_in_path[{name}]: try_wait failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
+                    e.raw_os_error()
+                );
+                return false;
+            }
+        }
+        if started.elapsed() >= GIT_CONTEXT_COMMAND_TIMEOUT {
+            if let Err(e) = child.kill() {
+                crate::clog!(
+                    "command_in_path[{name}]: timeout ({:?}) and child.kill() failed: {e} (errno={:?})",
+                    GIT_CONTEXT_COMMAND_TIMEOUT,
+                    e.raw_os_error()
+                );
+            }
+            let _ = child.wait();
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(25));
     }
 }
 
@@ -898,9 +933,18 @@ impl Multiplexer {
         now: Instant,
         mode: PullRequestLookupMode,
     ) -> bool {
+        if !self.workdir_context.gh_available
+            && mode == PullRequestLookupMode::ForceRefresh
+            && command_in_path("gh")
+        {
+            crate::clog!(
+                "pull-request-context: force-refresh detected gh after startup; enabling PR lookup"
+            );
+            self.workdir_context.gh_available = true;
+        }
         if !self.workdir_context.gh_available {
             if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!("pull-request-context: force-refresh skipped: gh unavailable");
+                crate::clog!("pull-request-context: force-refresh skipped: gh unavailable");
             }
             return false;
         }
@@ -6884,6 +6928,35 @@ mod tests {
             mux.pull_request_lookup.request_id,
             id_before.wrapping_add(1),
             "force-spawn must bump request_id"
+        );
+    }
+
+    #[test]
+    fn open_github_context_dialog_bypasses_fresh_no_pr_cache() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.workdir_context.gh_available = true;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_context_cache.insert(
+            branch("feat/x"),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                head: None,
+                pull_request: None,
+            },
+        );
+
+        mux.open_github_context_dialog(now);
+
+        assert!(
+            mux.pull_request_lookup.in_flight,
+            "manual dialog open must refresh even when a recent background lookup saw no PR"
+        );
+        assert!(
+            mux.pull_request_context_loading(),
+            "dialog should show resolving while the forced refresh is in flight"
         );
     }
 
