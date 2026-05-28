@@ -713,21 +713,47 @@ fn seed_claude_installer_stub(home: &Path) {
 
 fn seed_all_agent_stubs(home: &Path) {
     for slug in ["claude", "amp", "kimi", "opencode"] {
-        seed_agent_stub(home, slug, &format!("{slug} 0.0.0-e2e\n"));
+        seed_agent_stub(home, slug, &agent_installer(slug, ""));
     }
     seed_agent_stub(
         home,
         "codex",
-        concat!(
-            r#"if [ "$"#,
-            r#"{1:-}" = "--version" ]; then
-  echo "codex 0.0.0-e2e"
-  exit 0
-fi
-jackin-sentinel-report | tee /workspace/jackin-sentinel-report.txt
-"#,
+        &agent_installer(
+            "codex",
+            "jackin-sentinel-report | tee /workspace/jackin-sentinel-report.txt",
         ),
     );
+}
+
+fn agent_installer(slug: &str, run_body: &str) -> String {
+    let fallback = format!("echo \"{slug} 0.0.0-e2e\"");
+    let run_body = if run_body.trim().is_empty() {
+        fallback.as_str()
+    } else {
+        run_body
+    };
+    format!(
+        r#"if [ "${{1:-}}" = "install" ]; then
+  mkdir -p /usr/local/bin
+  cat > /usr/local/bin/{slug} <<'AGENT'
+#!/bin/sh
+set -eu
+if [ "${{1:-}}" = "--version" ]; then
+  echo "{slug} 0.0.0-e2e"
+  exit 0
+fi
+{run_body}
+AGENT
+  chmod 0755 /usr/local/bin/{slug}
+  exit 0
+fi
+if [ "${{1:-}}" = "--version" ]; then
+  echo "{slug} 0.0.0-e2e"
+  exit 0
+fi
+{run_body}
+"#
+    )
 }
 
 fn seed_agent_stub(home: &Path, slug: &str, body: &str) {
