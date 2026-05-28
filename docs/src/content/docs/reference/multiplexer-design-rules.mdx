@@ -67,6 +67,8 @@ Every capability the base image supports must reach the agent inside the pane.
 ### True color and 256-color
 
 - The multiplexer's own UI elements (status bar, borders, dialog) use ANSI 256-color and 24-bit color.
+- Pane PTYs advertise `COLORTERM=truecolor` by default so agent CLIs and TUIs can enable 24-bit color without guessing from `TERM`.
+- Do not copy the host's `COLORTERM` into pane sessions. The pane environment is deterministic because a preserved jackin' instance can be reattached from a different terminal later.
 - Pane content is passed through without color transformation. Never re-encode pane output colors.
 
 ### Bracketed paste
