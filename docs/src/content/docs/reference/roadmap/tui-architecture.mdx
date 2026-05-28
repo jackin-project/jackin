@@ -26,6 +26,8 @@ This item exists to make future TUI work obvious to place, easy to read, and har
 
 The intended operator-visible result is not a redesign. The screens should look the same unless a later UX roadmap item deliberately changes them. The visible improvement from this item is responsiveness and consistency: no frozen progress cockpit, no event loop blocked by refresh work, no host/capsule drift in common components, and no terminal handoff flash introduced by the refactor.
 
+One UX behavior is part of the architecture, not optional polish: every surface must have a single visible focus owner. The active interaction container gets the bright `PHOSPHOR_GREEN` border; background and sibling containers use the dark border. Opening a dialog moves the bright border to that dialog; closing it restores the bright border to the underlying focused block; clicking a scrollable detail block moves the bright border from the workspace list to that block. The component library and state model must make this focus-visible rule the default, matching [TUI Design Decisions](/reference/tui-design-decisions/#focus-visible-border-one-active-container-owns-bright-green/).
+
 ## Scope — one continuous Ratatui experience
 
 This item covers **every terminal surface jackin' renders**, unified under Ratatui and one shared component library:
@@ -88,6 +90,7 @@ Each `jackin-tui` component should expose the same shape:
 | `Effect` hooks | Optional typed requests: clipboard copy, diagnostics note, async load trigger |
 | `render(&Props, &State, area)` | Pure Ratatui render, no I/O, no mutation |
 | `update(&mut State, ComponentEvent) -> ComponentOutcome` | Key/mouse/focus handling local to the component |
+| focus-visible styling | Active component/container uses `PHOSPHOR_GREEN` border; inactive/background containers use `PHOSPHOR_DARK`; passive scroll blocks only claim the bright border when overflow makes scroll focus meaningful |
 | stories/tests | Render all states through `TestBackend`; pin keyboard/mouse behavior |
 
 Current code already hints at this contract: many widgets have `State`, `handle_key`, `render`, and `ModalOutcome`. The refactor should preserve that useful shape and promote it into `jackin-tui` instead of replacing it with a vague abstraction.
@@ -187,6 +190,7 @@ These are implementation rules for future PRs under this item:
 - No new direct `Color::Rgb(...)` in product code. RGB values belong in `jackin-tui` tokens or a documented adapter test.
 - No new raw ANSI color literals for jackin-owned chrome. Capsule may have an adapter, but it consumes shared `Rgb` tokens.
 - No product screen hand-rolls a bordered modal, button row, footer hint line, tab strip, filter row, scrollbar, or selectable list once the matching component exists.
+- No component invents its own focus-border semantics. The shared components own the "one active bright border" rule so host, launch, and capsule cannot drift.
 - No new `src/runtime` dependency on `src/console/widgets`; both surfaces import `jackin-tui`.
 - No component becomes canonical without keyboard/mouse tests, `TestBackend` snapshots, and a lookbook story.
 - No app-specific component is promoted until its domain data is separated from UI state. Example: the 1Password picker can keep vault/item domain loading locally, but list selection, filter text, loading/error chrome, and button behavior must be shared.
