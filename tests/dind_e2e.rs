@@ -9,7 +9,7 @@
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use fs2::FileExt as _;
 use jackin::derived_image::shell_quote;
@@ -25,11 +25,6 @@ const CAPSULE_DETACH_KEYS: &str = "\u{2}d";
 #[derive(Clone, Copy)]
 enum PtyInputMode {
     OnceAfter(Duration),
-    Repeat {
-        first_after: Duration,
-        interval: Duration,
-        attempts: usize,
-    },
 }
 
 /// RAII cleanup so the test's Docker resources are removed even if an
@@ -179,66 +174,68 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
 
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", SENTINEL_ROLE_KEY, &target, "--agent", "codex"];
-    let extra_env = [
-        ("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie"),
-        ("JACKIN_DEBUG", "1"),
-    ];
-    let output = run_in_pty_with_input(
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
+    let report_path = workspace_dir.join("jackin-sentinel-report.txt");
+    let output = run_in_pty_until_file(
         &jackin,
         &args,
         &home,
         &workspace_dir,
         &extra_env,
-        &format!("\n{CAPSULE_DETACH_KEYS}"),
-        PtyInputMode::Repeat {
-            first_after: Duration::from_secs(2),
-            interval: Duration::from_secs(5),
-            attempts: 24,
+        PtyFileSentinel {
+            path: &report_path,
+            text: "JACKIN_SENTINEL_REPORT_END",
+            timeout: Duration::from_mins(5),
         },
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let diagnostics = read_diagnostics(&home);
+    let report = std::fs::read_to_string(&report_path).unwrap_or_else(|error| {
+        panic!(
+            "sentinel report file missing at {}: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+            report_path.display()
+        )
+    });
     assert!(
-        stdout.contains("JACKIN_SENTINEL_REPORT_BEGIN"),
-        "sentinel report missing begin marker\nstdout:\n{stdout}\nstderr:\n{stderr}\ndiagnostics:\n{diagnostics}"
+        report.contains("JACKIN_SENTINEL_REPORT_BEGIN"),
+        "sentinel report missing begin marker\nreport:\n{report}\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("JACKIN_SENTINEL_REPORT_END"),
-        "sentinel report missing end marker\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        report.contains("JACKIN_SENTINEL_REPORT_END"),
+        "sentinel report missing end marker\nreport:\n{report}\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
-    assert!(stdout.contains("JACKIN=1"), "{stdout}");
-    assert!(stdout.contains("JACKIN_AGENT=codex"), "{stdout}");
-    assert!(stdout.contains("STATIC_DEFAULT=static-value"), "{stdout}");
+    assert!(report.contains("JACKIN=1"), "{report}");
+    assert!(report.contains("JACKIN_AGENT=codex"), "{report}");
+    assert!(report.contains("STATIC_DEFAULT=static-value"), "{report}");
     assert!(
-        stdout.contains("LITERAL_TEMPLATE=preserve-${other.VALUE}"),
-        "{stdout}"
+        report.contains("LITERAL_TEMPLATE=preserve-${other.VALUE}"),
+        "{report}"
     );
-    assert!(stdout.contains("FREE_TEXT=typed-default"), "{stdout}");
+    assert!(report.contains("FREE_TEXT=typed-default"), "{report}");
     assert!(
-        stdout.contains("FREE_TEXT_REQUIRED=required-value"),
-        "{stdout}"
+        report.contains("FREE_TEXT_REQUIRED=required-value"),
+        "{report}"
     );
-    assert!(stdout.contains("SELECT_PROJECT=frontend"), "{stdout}");
-    assert!(stdout.contains("SELECT_MODE=diagnostic"), "{stdout}");
-    assert!(stdout.contains("BRANCH=feature/frontend"), "{stdout}");
+    assert!(report.contains("SELECT_PROJECT=frontend"), "{report}");
+    assert!(report.contains("SELECT_MODE=diagnostic"), "{report}");
+    assert!(report.contains("BRANCH=feature/frontend"), "{report}");
     assert!(
-        stdout.contains("COMBINED_LABEL=frontend-typed-default"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains("OPTIONAL_API_KEY=optional-from-config"),
-        "{stdout}"
+        report.contains("COMBINED_LABEL=frontend-typed-default"),
+        "{report}"
     );
     assert!(
-        stdout.contains("OPTIONAL_DERIVED=derived-from-config"),
-        "{stdout}"
+        report.contains("OPTIONAL_API_KEY=optional-from-config"),
+        "{report}"
     );
-    assert!(stdout.contains("JACKIN_SENTINEL_SOURCE_HOOK=1"), "{stdout}");
     assert!(
-        stdout.contains("JACKIN_SENTINEL_PREFLIGHT_COUNT=1"),
-        "{stdout}"
+        report.contains("OPTIONAL_DERIVED=derived-from-config"),
+        "{report}"
+    );
+    assert!(report.contains("JACKIN_SENTINEL_SOURCE_HOOK=1"), "{report}");
+    assert!(
+        report.contains("JACKIN_SENTINEL_PREFLIGHT_COUNT=1"),
+        "{report}"
     );
     assert!(
         !stdout.contains("jackin-sentinel build layer")
@@ -318,7 +315,40 @@ fn run_in_pty_with_input(
     input: &str,
     input_mode: PtyInputMode,
 ) -> std::process::Output {
-    let mut command = if cfg!(target_os = "linux") {
+    let mut command = pty_command(jackin, args, home, cwd, extra_env, true);
+    if input.is_empty() {
+        command.stdin(Stdio::null());
+        return command.output().expect("script must spawn");
+    }
+
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("script must spawn");
+    let mut stdin = child.stdin.take().expect("script stdin must be piped");
+    match input_mode {
+        PtyInputMode::OnceAfter(delay) => {
+            std::thread::sleep(delay);
+            stdin
+                .write_all(input.as_bytes())
+                .expect("script stdin write must succeed");
+            drop(stdin);
+            child.wait_with_output().expect("script must finish")
+        }
+    }
+}
+
+fn pty_command(
+    jackin: &str,
+    args: &[&str],
+    home: &Path,
+    cwd: &Path,
+    extra_env: &[(&str, &str)],
+    linux_timeout: bool,
+) -> Command {
+    let mut command = if cfg!(target_os = "linux") && linux_timeout {
         let mut command = Command::new("timeout");
         command.args(["--kill-after=5s", "360s", "script"]);
         command
@@ -360,73 +390,60 @@ fn run_in_pty_with_input(
         command.env(k, v);
     }
     command.current_dir(cwd);
-    if input.is_empty() {
-        command.stdin(Stdio::null());
-        return command.output().expect("script must spawn");
-    }
+    command
+}
 
-    let mut child = command
-        .stdin(Stdio::piped())
+fn run_in_pty_until_file(
+    jackin: &str,
+    args: &[&str],
+    home: &Path,
+    cwd: &Path,
+    extra_env: &[(&str, &str)],
+    sentinel: PtyFileSentinel<'_>,
+) -> std::process::Output {
+    let mut child = pty_command(jackin, args, home, cwd, extra_env, false)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("script must spawn");
-    let mut stdin = child.stdin.take().expect("script stdin must be piped");
-    match input_mode {
-        PtyInputMode::OnceAfter(delay) => {
-            std::thread::sleep(delay);
-            stdin
-                .write_all(input.as_bytes())
-                .expect("script stdin write must succeed");
-            drop(stdin);
-            child.wait_with_output().expect("script must finish")
+
+    let deadline = Instant::now() + sentinel.timeout;
+    while Instant::now() < deadline {
+        if std::fs::read_to_string(sentinel.path)
+            .is_ok_and(|contents| contents.contains(sentinel.text))
+        {
+            let _ = child.kill();
+            return child.wait_with_output().expect("script must finish");
         }
-        PtyInputMode::Repeat {
-            first_after,
-            interval,
-            attempts,
-        } => {
-            std::thread::sleep(first_after);
-            for _ in 0..attempts {
-                if stdin.write_all(input.as_bytes()).is_err() {
-                    break;
-                }
-                std::thread::sleep(interval);
-            }
-            drop(stdin);
-            child.wait_with_output().expect("script must finish")
+        if let Some(status) = child.try_wait().expect("script status must be readable") {
+            let output = child.wait_with_output().expect("script must finish");
+            assert!(
+                status.success(),
+                "script exited before sentinel file appeared\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            return output;
         }
+        std::thread::sleep(Duration::from_millis(500));
     }
+
+    let _ = child.kill();
+    let output = child.wait_with_output().expect("script must finish");
+    panic!(
+        "timed out waiting for sentinel file {}\nstdout:\n{}\nstderr:\n{}",
+        sentinel.path.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
 }
 
-fn read_diagnostics(home: &Path) -> String {
-    let runs = home.join(".jackin/data/diagnostics/runs");
-    let Ok(entries) = std::fs::read_dir(&runs) else {
-        return format!("diagnostics directory missing: {}", runs.display());
-    };
-    let mut paths = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "jsonl")
-        })
-        .collect::<Vec<_>>();
-    paths.sort();
-    if paths.is_empty() {
-        return format!("no diagnostics runs under {}", runs.display());
-    }
-
-    paths
-        .into_iter()
-        .filter_map(|path| {
-            let contents = std::fs::read_to_string(&path).ok()?;
-            let mut lines = contents.lines().rev().take(160).collect::<Vec<_>>();
-            lines.reverse();
-            Some(format!("== {} ==\n{}", path.display(), lines.join("\n")))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+#[derive(Clone, Copy)]
+struct PtyFileSentinel<'a> {
+    path: &'a Path,
+    text: &'a str,
+    timeout: Duration,
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
@@ -595,7 +612,7 @@ fn seed_all_agent_stubs(home: &Path) {
   echo "codex 0.0.0-e2e"
   exit 0
 fi
-jackin-sentinel-report
+jackin-sentinel-report | tee /workspace/jackin-sentinel-report.txt
 "#,
         ),
     );
