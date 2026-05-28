@@ -346,17 +346,17 @@ impl ShellRunner {
         let status = status?;
         self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
         let command = format!("{} {}", program, redact_env_args(args).join(" "));
-        if opts.tee_to_build_log {
-            if let Some(run) = crate::diagnostics::active_run() {
-                run.write_command_output(
-                    "docker-build",
-                    &command,
-                    cwd,
-                    status,
-                    &stdout_buf,
-                    &stderr_buf,
-                );
-            }
+        if opts.tee_to_build_log
+            && let Some(run) = crate::diagnostics::active_run()
+        {
+            run.write_command_output(
+                "docker-build",
+                &command,
+                cwd,
+                status,
+                &stdout_buf,
+                &stderr_buf,
+            );
         }
         if !status.success() {
             if opts.tee_to_build_log {

@@ -1236,7 +1236,7 @@ fn failure_popup_rect(area: Rect, row_count: usize) -> Rect {
 /// Inner body rect (inside the border, plus one column of padding) where the
 /// failure rows render. Render and hit-testing derive geometry from this same
 /// helper so the clickable value columns can never drift from what is drawn.
-fn failure_popup_body_rect(rect: Rect) -> Rect {
+const fn failure_popup_body_rect(rect: Rect) -> Rect {
     let inner = rect.inner(ratatui::layout::Margin {
         horizontal: 1,
         vertical: 1,
