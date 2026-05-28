@@ -346,25 +346,32 @@ impl ShellRunner {
         let status = status?;
         self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
         let command = format!("{} {}", program, redact_env_args(args).join(" "));
-        let command_output_path = if opts.tee_to_build_log {
-            crate::diagnostics::active_run().and_then(|run| {
-                run.write_command_output(
+        if opts.tee_to_build_log
+            && let Some(run) = crate::diagnostics::active_run()
+        {
+            let wrote = run.write_command_output(
+                "docker-build",
+                &command,
+                cwd,
+                status,
+                &stdout_buf,
+                &stderr_buf,
+            );
+            if wrote.is_none() {
+                // Sidecar open failed (disk/perm/dir-gone). Land a compact
+                // entry in the run jsonl so the failure is at least visible
+                // to anyone reading the run afterwards.
+                // `launch_failure_cli_error` itself only consults the
+                // on-disk sidecar path, so without an artifact file the CLI
+                // surface will still fall back to the bare error.
+                run.compact(
                     "docker-build",
-                    &command,
-                    cwd,
-                    status,
-                    &stdout_buf,
-                    &stderr_buf,
-                )
-            })
-        } else {
-            None
-        };
+                    "failed to write docker-build diagnostics sidecar",
+                );
+            }
+        }
         if !status.success() {
             if opts.tee_to_build_log {
-                if let Some(path) = command_output_path {
-                    anyhow::bail!("Docker build command failed (output: {})", path.display());
-                }
                 anyhow::bail!("Docker build command failed");
             }
             if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {

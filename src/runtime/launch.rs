@@ -73,9 +73,22 @@ pub struct LoadOptions {
 
     /// Role source URL captured in the instance manifest for restore paths.
     pub restore_role_source_git: Option<String>,
+    /// Provider selected for the initial session (e.g. Z.AI's Anthropic
+    /// redirect). When set, the first attach carries the provider's env
+    /// overrides and label into the capsule's initial spawn.
+    pub provider: Option<jackin_protocol::Provider>,
 }
 
 impl LoadOptions {
+    pub fn initial_provider(&self) -> Option<jackin_protocol::InitialProvider> {
+        // Label only: the daemon re-derives the env redirection from it and
+        // backfills the token from the container's `ZAI_API_KEY`.
+        self.provider
+            .map(|provider| jackin_protocol::InitialProvider {
+                label: provider.label().to_string(),
+            })
+    }
+
     /// Build options for `jackin load`.
     pub fn for_load(debug: bool, rebuild: bool) -> Self {
         Self {
@@ -93,7 +106,6 @@ impl LoadOptions {
         }
     }
 }
-
 fn validate_agent_supported(
     selector: &RoleSelector,
     manifest: &crate::manifest::RoleManifest,
@@ -318,13 +330,13 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
 
     if let Some(kimi) = &state.auth.kimi {
         mounts.push(format!(
-            "{}:/home/agent/.kimi",
-            state.root.join("home/.kimi").display()
+            "{}:/home/agent/.kimi-code",
+            state.root.join("home/.kimi-code").display()
         ));
         if kimi.forward_auth {
             mounts.push(format!(
-                "{}:/jackin/kimi",
-                state.root.join("kimi").display()
+                "{}:/jackin/kimi-code",
+                state.root.join("kimi-code").display()
             ));
         }
     }
@@ -652,6 +664,7 @@ fn capsule_config(
     selector: &RoleSelector,
     workdir: &str,
     manifest: &crate::manifest::RoleManifest,
+    initial_provider: Option<jackin_protocol::InitialProvider>,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
@@ -683,6 +696,7 @@ fn capsule_config(
         workdir: workdir.to_string(),
         agents,
         models,
+        initial_provider,
     }
 }
 
@@ -2167,7 +2181,7 @@ async fn load_role_with(
         // declaration string is recorded.
         let resolved_source: Option<String> =
             agent.required_env_var(auth_mode).and_then(|env_var| {
-                let raw = lookup_operator_env_raw(
+                let raw = crate::operator_env::lookup_operator_env_raw(
                     config,
                     Some(&role_key),
                     workspace_name.as_deref(),
@@ -2291,7 +2305,12 @@ async fn load_role_with(
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker").await;
 
-        let launch_config = capsule_config(selector, &workspace.workdir, &validated_repo.manifest);
+        let launch_config = capsule_config(
+            selector,
+            &workspace.workdir,
+            &validated_repo.manifest,
+            opts.initial_provider(),
+        );
         let ctx = LaunchContext {
             container_name: &container_name,
             image: &image,
@@ -2547,11 +2566,13 @@ async fn load_role_with(
             let failed_stage = steps
                 .current_stage
                 .unwrap_or(super::progress::LaunchStage::Capsule);
+            let run = crate::diagnostics::active_run();
+            let final_error = launch_failure_cli_error(failed_stage, &error, run.as_deref());
             if let Some(progress) = steps.progress_mut() {
                 progress
                     .stage_failed(super::progress::LaunchFailure {
-                        title: launch_failure_title(failed_stage, &error),
-                        summary: short_launch_diagnosis(failed_stage, &error),
+                        title: launch_failure_title(failed_stage, &error, run.as_deref()),
+                        summary: short_launch_diagnosis(failed_stage, &error, run.as_deref()),
                         next_step: None,
                         stage: failed_stage,
                         diagnostics_path: None,
@@ -2565,13 +2586,19 @@ async fn load_role_with(
             // this the background task keeps drawing frames over the warp.
             steps.finish_progress();
             render_exit(paths, docker).await;
-            Err(error)
+            Err(final_error)
         }
     }
 }
 
-fn launch_failure_title(stage: super::progress::LaunchStage, error: &anyhow::Error) -> String {
-    if stage == super::progress::LaunchStage::DerivedImage {
+fn launch_failure_title(
+    stage: super::progress::LaunchStage,
+    error: &anyhow::Error,
+    run: Option<&crate::diagnostics::RunDiagnostics>,
+) -> String {
+    if stage == super::progress::LaunchStage::DerivedImage
+        && run.and_then(docker_build_output_artifact).is_some()
+    {
         return "Docker build failed".to_string();
     }
     let text = error.to_string().to_ascii_lowercase();
@@ -2584,14 +2611,56 @@ fn launch_failure_title(stage: super::progress::LaunchStage, error: &anyhow::Err
     }
 }
 
-fn short_launch_diagnosis(stage: super::progress::LaunchStage, error: &anyhow::Error) -> String {
-    if stage == super::progress::LaunchStage::DerivedImage {
+fn short_launch_diagnosis(
+    stage: super::progress::LaunchStage,
+    error: &anyhow::Error,
+    run: Option<&crate::diagnostics::RunDiagnostics>,
+) -> String {
+    if stage == super::progress::LaunchStage::DerivedImage
+        && run.and_then(docker_build_output_artifact).is_some()
+    {
         return "Building the Docker container failed.".to_string();
     }
     error.chain().next().map_or_else(
         || "launch did not complete".to_string(),
         ToString::to_string,
     )
+}
+
+fn docker_build_output_artifact(run: &crate::diagnostics::RunDiagnostics) -> Option<PathBuf> {
+    let docker_output = run.command_output_path("docker-build");
+    docker_output.exists().then_some(docker_output)
+}
+
+fn launch_failure_cli_error(
+    stage: super::progress::LaunchStage,
+    error: &anyhow::Error,
+    run: Option<&crate::diagnostics::RunDiagnostics>,
+) -> anyhow::Error {
+    if stage != super::progress::LaunchStage::DerivedImage {
+        return anyhow::anyhow!("{error:#}");
+    }
+    let Some(run) = run else {
+        return anyhow::anyhow!("{error:#}");
+    };
+    let Some(docker_output) = docker_build_output_artifact(run) else {
+        return anyhow::anyhow!("{error:#}");
+    };
+    let mut report = String::from("Docker build command failed");
+    let mut table = tabled::Table::builder([
+        ["run id", run.run_id()],
+        ["run diagnostics", &run.path().display().to_string()],
+        ["docker output", &docker_output.display().to_string()],
+    ])
+    .build();
+    table
+        .with(tabled::settings::Style::modern_rounded())
+        .with(tabled::settings::Remove::row(
+            tabled::settings::object::Rows::first(),
+        ));
+    report.push_str("\n\n");
+    report.push_str(&table.to_string());
+    anyhow::anyhow!("{report}")
 }
 
 fn resolve_launch_role_source(
@@ -3737,36 +3806,6 @@ fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     }
 }
 
-/// Look up the raw (unresolved) declaration value for `key` in the
-/// operator env config layers, using the same precedence as
-/// `resolve_operator_env` (global < role < workspace < workspace ×
-/// role — later wins).
-fn lookup_operator_env_raw(
-    config: &crate::config::AppConfig,
-    role_selector: Option<&str>,
-    workspace_name: Option<&str>,
-    key: &str,
-) -> Option<String> {
-    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
-
-    // Walk layers low → high priority; later assignments win over
-    // earlier ones. Assign each layer's `.get(key).cloned()` in turn,
-    // `or_else`-chaining lets `None` from a later layer fall back to
-    // an earlier layer's value.
-    let workspace_role = ws_opt.zip(role_selector).and_then(|(ws, role_name)| {
-        ws.roles
-            .get(role_name)
-            .and_then(|overlay| overlay.env.get(key).map(|v| v.as_display_str().to_string()))
-    });
-    let workspace = ws_opt.and_then(|ws| ws.env.get(key).map(|v| v.as_display_str().to_string()));
-    let role = role_selector
-        .and_then(|role_name| config.roles.get(role_name))
-        .and_then(|a| a.env.get(key).map(|v| v.as_display_str().to_string()));
-    let global = config.env.get(key).map(|v| v.as_display_str().to_string());
-
-    workspace_role.or(workspace).or(role).or(global)
-}
-
 struct LoadCleanup {
     container_name: String,
     dind: String,
@@ -3898,6 +3937,55 @@ mod tests {
         InstanceIndex::update_manifest(&paths.data_dir, manifest).unwrap();
     }
 
+    #[test]
+    fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        std::fs::write(run.command_output_path("docker-build"), "docker failed").unwrap();
+
+        let error = anyhow::anyhow!("Docker build command failed");
+        let rendered = launch_failure_cli_error(
+            crate::runtime::progress::LaunchStage::DerivedImage,
+            &error,
+            Some(run.as_ref()),
+        )
+        .to_string();
+
+        assert!(rendered.starts_with("Docker build command failed\n\n"));
+        assert!(rendered.contains("run id"));
+        assert!(rendered.contains(run.run_id()));
+        assert!(rendered.contains("run diagnostics"));
+        assert!(rendered.contains(&run.path().display().to_string()));
+        assert!(rendered.contains("docker output"));
+        assert!(
+            rendered.contains(
+                &run.command_output_path("docker-build")
+                    .display()
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn derived_image_cli_error_preserves_original_without_docker_output() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = crate::diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+
+        let error = anyhow::anyhow!("preparing capsule binary failed");
+        let rendered = launch_failure_cli_error(
+            crate::runtime::progress::LaunchStage::DerivedImage,
+            &error,
+            Some(run.as_ref()),
+        )
+        .to_string();
+
+        assert_eq!(rendered, "preparing capsule binary failed");
+        assert!(!rendered.contains("Docker build command failed"));
+        assert!(!rendered.contains("docker output"));
+    }
+
     async fn resolve_workspace_restore(
         paths: &JackinPaths,
         role_key: &str,
@@ -3948,7 +4036,7 @@ model = "zai/glm"
 
         let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-        let config = capsule_config(&selector, "/workspace", &manifest);
+        let config = capsule_config(&selector, "/workspace", &manifest, None);
 
         assert_eq!(config.role, "chainargos/the-architect");
         assert_eq!(config.workdir, "/workspace");
@@ -7777,6 +7865,97 @@ plugins = []
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=smoke-literal"),
             "docker run must inject operator env; got: {run_cmd}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_agent_keeps_zai_secret_out_of_capsule_config() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+ZAI_API_KEY = "super-secret-zai-key"
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jk-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
+        let opts = LoadOptions {
+            provider: Some(jackin_protocol::Provider::Zai),
+            ..LoadOptions::default()
+        };
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &docker,
+            &mut runner,
+            &opts,
+        )
+        .await
+        .unwrap();
+
+        let container_name = launched_role_container_name(&runner);
+        let capsule_config_path = paths
+            .jackin_home
+            .join("sockets")
+            .join(container_name)
+            .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+        let capsule_config = std::fs::read_to_string(capsule_config_path).unwrap();
+        assert!(
+            !capsule_config.contains("super-secret-zai-key"),
+            "CapsuleConfig must not persist resolved provider secrets: {capsule_config}"
+        );
+        assert!(
+            !capsule_config.contains("zai_key"),
+            "CapsuleConfig must not contain a provider secret field: {capsule_config}"
+        );
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("-e ZAI_API_KEY=super-secret-zai-key"),
+            "ZAI_API_KEY should still reach the container process env; got: {run_cmd}"
         );
     }
 

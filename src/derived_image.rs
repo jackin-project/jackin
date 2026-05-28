@@ -183,11 +183,11 @@ RUN current_gid=\"$(id -g agent)\" \
        fi \
     && chown -R agent:agent /home/agent
 {install_blocks}{hook_section}USER root
-RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.kimi /jackin/default-home/.local/share/opencode \
+RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.kimi-code /jackin/default-home/.local/share/opencode \
     && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.codex/. /jackin/default-home/.codex/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.local/share/amp/. /jackin/default-home/.local/share/amp/ 2>/dev/null || true ) \
-    && ( cp -a /home/agent/.kimi/. /jackin/default-home/.kimi/ 2>/dev/null || true ) \
+    && ( cp -a /home/agent/.kimi-code/. /jackin/default-home/.kimi-code/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh

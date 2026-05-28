@@ -129,7 +129,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
     // Message body — WHITE to keep readable against the red border.
     let paragraph = Paragraph::new(state.message.as_str())
         .style(Style::default().fg(WHITE))
-        .alignment(Alignment::Center)
+        .alignment(Alignment::Left)
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, chunks[1]);
 

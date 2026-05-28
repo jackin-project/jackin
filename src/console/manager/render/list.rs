@@ -106,7 +106,25 @@ pub(super) fn render_list_body(
         }
     }
 
-    if let Some((container, picker)) = state.inline_new_session_picker.as_ref() {
+    if let Some(picker) = state.inline_provider_picker.as_ref() {
+        let short_id = crate::instance::naming::instance_id_from_container_base(&picker.context)
+            .unwrap_or(picker.context.as_str());
+        render_provider_picker_sidebar(
+            frame,
+            list_area,
+            Some(short_id),
+            picker.providers(),
+            picker.selected(),
+        );
+    } else if let Some(picker) = state.launch_provider_picker.as_ref() {
+        render_provider_picker_sidebar(
+            frame,
+            list_area,
+            None,
+            picker.providers(),
+            picker.selected(),
+        );
+    } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container.as_str());
         render_agent_picker_sidebar(frame, list_area, short_id, picker);
@@ -333,6 +351,56 @@ fn push_tree_instance_line(
         ])
     };
     lines.push(line);
+}
+
+fn render_provider_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    container_id: Option<&str>,
+    providers: &[jackin_protocol::Provider],
+    selected: usize,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            provider_picker_title(container_id),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let items: Vec<ListItem> = providers
+        .iter()
+        .map(|provider| ListItem::new(Line::from(provider.label())))
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN))
+        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
+        .highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(Some(selected));
+    frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn provider_picker_title(container_id: Option<&str>) -> String {
+    container_id.map_or_else(
+        || " provider ".to_string(),
+        |container_id| format!(" {container_id} — provider "),
+    )
+}
+
+#[cfg(test)]
+mod provider_picker_tests {
+    use super::provider_picker_title;
+
+    #[test]
+    fn launch_provider_picker_uses_single_word_title() {
+        assert_eq!(provider_picker_title(None), " provider ");
+    }
+
+    #[test]
+    fn inline_provider_picker_keeps_instance_context() {
+        assert_eq!(provider_picker_title(Some("abc123")), " abc123 — provider ");
+    }
 }
 
 fn render_role_picker_sidebar(

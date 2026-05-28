@@ -366,6 +366,8 @@ pub async fn spawn_agent_session(
     container_name: &str,
     manifest: Option<&InstanceManifest>,
     agent: crate::agent::Agent,
+    provider_label: Option<&str>,
+    env_overrides: &[(String, String)],
     git_coauthor_trailer: bool,
     git_dco: bool,
     docker: &impl crate::docker_client::DockerApi,
@@ -394,25 +396,33 @@ pub async fn spawn_agent_session(
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
 
-    let mut exec_args = vec![
-        "exec",
-        "--workdir",
-        workdir,
-        "-it",
-        container_name,
-        "/jackin/runtime/jackin-capsule",
-        "new",
-        agent.slug(),
-    ];
+    let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
     let coauthor_env_flag;
     let dco_env_flag;
     if let Some(ref env) = coauthor_env {
         coauthor_env_flag = format!("-e={env}");
-        exec_args.insert(1, coauthor_env_flag.as_str());
+        exec_args.push(coauthor_env_flag.as_str());
     }
     if let Some(ref env) = dco_env {
         dco_env_flag = format!("-e={env}");
-        exec_args.insert(1, dco_env_flag.as_str());
+        exec_args.push(dco_env_flag.as_str());
+    }
+    // Provider env overrides (e.g. ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL for Z.AI).
+    // Stored as owned strings so they outlive the exec_args vec.
+    let override_flags: Vec<String> = env_overrides
+        .iter()
+        .map(|(k, v)| format!("-e={k}={v}"))
+        .collect();
+    for flag in &override_flags {
+        exec_args.push(flag.as_str());
+    }
+    exec_args.push(container_name);
+    exec_args.extend_from_slice(&["/jackin/runtime/jackin-capsule", "new", agent.slug()]);
+    // When a provider was selected in the console, pass it as a flag so the
+    // daemon receives SpawnRequest::AgentWithProvider and labels the tab correctly.
+    let provider_flag = provider_label.map(|label| format!("--provider={label}"));
+    if let Some(ref flag) = provider_flag {
+        exec_args.push(flag.as_str());
     }
     if let Some(flag) = host_alt_screen_exec_flag() {
         exec_args.insert(1, flag);
@@ -1019,6 +1029,8 @@ mod tests {
             container_name,
             Some(&manifest),
             crate::agent::Agent::Codex,
+            None,
+            &[],
             false,
             false,
             &docker,
@@ -1080,6 +1092,8 @@ mod tests {
             container_name,
             Some(&manifest),
             crate::agent::Agent::Claude,
+            None,
+            &[],
             true,
             false,
             &docker,
@@ -1095,6 +1109,21 @@ mod tests {
                 .any(|call| call.contains("-e=JACKIN_GIT_COAUTHOR_TRAILER=1")),
             "coauthor trailer env must be present when enabled; recorded: {:?}",
             runner.recorded
+        );
+        let call = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker exec"))
+            .expect("expected docker exec call");
+        let env_pos = call
+            .find("-e=JACKIN_GIT_COAUTHOR_TRAILER=1")
+            .expect("coauthor env flag must be present");
+        let container_pos = call
+            .find(container_name)
+            .expect("container name must be present");
+        assert!(
+            env_pos < container_pos,
+            "docker exec options must precede container name; got: {call}"
         );
     }
 
@@ -1136,6 +1165,8 @@ mod tests {
             container_name,
             Some(&manifest),
             crate::agent::Agent::Claude,
+            None,
+            &[],
             false,
             true,
             &docker,
@@ -1181,6 +1212,8 @@ mod tests {
             "jk-agent-smith",
             None,
             crate::agent::Agent::Claude,
+            None,
+            &[],
             false,
             false,
             &docker,

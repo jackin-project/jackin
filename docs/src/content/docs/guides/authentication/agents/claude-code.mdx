@@ -35,6 +35,14 @@ A Max plan subscription gives you a fixed monthly rate with generous usage inclu
 
 The plan you have on the host is the one the container sees — jackin' forwards the same credentials, so model access and rate limits travel with them.
 
+## Alternative providers
+
+Claude Code sessions can also run against Anthropic-compatible providers. [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) is the provider jackin' supports today; once you configure a `ZAI_API_KEY` in jackin' Auth settings, Claude Code launches can choose Z.AI instead of Anthropic.
+
+Z.AI works with Claude Code because Claude Code already honors Anthropic-compatible endpoint settings. jackin' keeps that provider setup inside its own Auth settings and the selected container process, so you do not edit host Claude Code settings to use Z.AI through jackin'.
+
+For subscription, API-key, and provider-picker details, see [Z.AI authentication](/guides/authentication/zai/). Z.AI is a provider choice at session launch time; it does not change the Claude Code auth modes below.
+
 ## Modes available
 
 | Mode | Supported |

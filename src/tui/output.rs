@@ -98,11 +98,16 @@ pub fn print_logo(logo_path: &std::path::Path) {
 
 pub fn fatal(msg: &str) {
     eprintln!();
+    let mut lines = msg.lines();
+    let first = lines.next().unwrap_or("(no error message)");
     eprintln!(
         "  {} {}",
-        "error:".color(rgb(ROSE)).bold(),
-        msg.color(rgb(ROSE)),
+        "error:".color(rgb(ROSE)),
+        first.color(rgb(ROSE)).bold(),
     );
+    for line in lines {
+        eprintln!("{line}");
+    }
 }
 
 pub fn set_terminal_title(title: &str) {
@@ -254,7 +259,7 @@ pub fn agent_outcome_notice(
             if matches!(auth_mode, M::Sync) {
                 let host_file = match agent {
                     A::Claude => "credentials",
-                    A::Kimi => "~/.kimi/ directory",
+                    A::Kimi => "~/.kimi-code/ directory",
                     A::Codex => "auth.json",
                     A::Amp => "secrets.json",
                     A::Opencode => "config.json",
