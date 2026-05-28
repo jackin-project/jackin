@@ -912,6 +912,7 @@ fn try_drag_vertical_scrollbar(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn scroll_active_panel(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -1031,6 +1032,7 @@ fn scroll_active_panel(
 /// Horizontal-only blocks (List view mounts) are silently ignored here —
 /// their scroll is only driven by left/right events via `scroll_active_panel`.
 #[allow(clippy::missing_const_for_fn)]
+#[allow(clippy::too_many_lines)]
 fn scroll_active_panel_vertical(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,

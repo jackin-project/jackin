@@ -444,6 +444,7 @@ fn clamp_global_mounts_scroll_for_frame(
     );
 }
 
+#[allow(clippy::too_many_lines)]
 pub(in crate::console::manager) fn clamp_list_scroll_for_area(
     area: Rect,
     state: &mut ManagerState<'_>,

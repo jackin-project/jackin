@@ -207,11 +207,19 @@ pub fn full_cell_thumb(
         .max(1)
         .min(usize::from(track_cells));
     let max_start = usize::from(track_cells).saturating_sub(len);
-    let start = metrics
+    let rounded_start = metrics
         .thumb_start()
         .saturating_add(SUBCELL / 2)
         .saturating_div(SUBCELL)
         .min(max_start);
+    let clamped_offset = offset.min(max_offset(content_len, viewport_len));
+    let start = if clamped_offset == 0 {
+        0
+    } else if clamped_offset == max_offset(content_len, viewport_len) {
+        max_start
+    } else {
+        rounded_start
+    };
     (len > 0).then_some(FullCellThumb {
         start: start as u16,
         len: len as u16,
@@ -267,6 +275,12 @@ mod tests {
     fn full_cell_thumb_reaches_track_end_at_max_offset() {
         let thumb = full_cell_thumb(20, 5, 10, 15).expect("overflowing content");
         assert_eq!(thumb.start + thumb.len, 10);
+    }
+
+    #[test]
+    fn one_row_overflow_thumb_reaches_track_end_at_max_offset() {
+        let thumb = full_cell_thumb(7, 6, 6, 1).expect("overflowing content");
+        assert_eq!(thumb.start + thumb.len, 6);
     }
 
     #[test]

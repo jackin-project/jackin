@@ -21,7 +21,7 @@ pub(super) fn handle_list_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
     _paths: &JackinPaths,
-    _cwd: &std::path::Path,
+    cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     // Preview-pane navigation mode: the operator dropped focus into
@@ -64,18 +64,18 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Char('h' | 'H') => {
             scroll_list_horizontal(state, -8);
-            clamp_list_scroll_after_key(state, config, _cwd);
+            clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('l' | 'L') => {
             scroll_list_horizontal(state, 8);
-            clamp_list_scroll_after_key(state, config, _cwd);
+            clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             if state.list_scroll_focus.is_some() {
                 scroll_focused_mount_block_vertical(state, -3);
-                clamp_list_scroll_after_key(state, config, _cwd);
+                clamp_list_scroll_after_key(state, config, cwd);
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
@@ -91,7 +91,7 @@ pub(super) fn handle_list_key(
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             if state.list_scroll_focus.is_some() {
                 scroll_focused_mount_block_vertical(state, 3);
-                clamp_list_scroll_after_key(state, config, _cwd);
+                clamp_list_scroll_after_key(state, config, cwd);
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
