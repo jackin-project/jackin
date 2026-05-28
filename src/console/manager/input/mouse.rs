@@ -576,6 +576,9 @@ fn try_drag_horizontal_scrollbar(
 ) -> bool {
     match &mut state.stage {
         ManagerStage::List => {
+            if state.list_modal.is_some() {
+                return false;
+            }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
                 return false;
             };
@@ -611,6 +614,9 @@ fn try_drag_horizontal_scrollbar(
             false
         }
         ManagerStage::Editor(editor) => {
+            if editor.modal.is_some() {
+                return false;
+            }
             let dragged = if editor.active_tab == EditorTab::Mounts {
                 let workspace = editor_scroll_area(editor, term_size);
                 drag_scrollbar(
@@ -638,6 +644,9 @@ fn try_drag_horizontal_scrollbar(
             dragged
         }
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                return false;
+            }
             if settings.active_tab != SettingsTab::Mounts {
                 return false;
             }
@@ -724,6 +733,13 @@ fn update_scroll_focus(
             }
         }
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                settings.mounts.scroll_focused = false;
+                settings.env.scroll_focused = false;
+                settings.auth.scroll_focused = false;
+                settings.trust.scroll_focused = false;
+                return;
+            }
             let content_area = settings_content_area(settings, term_size);
             let in_content = point_in(mouse, content_area);
             settings.mounts.scroll_focused =
@@ -825,6 +841,13 @@ fn drag_vertical_scrollbar(
     drag_scrollbar_axis(ScrollbarAxis::Vertical, value, mouse, area, content_height)
 }
 
+const fn settings_modal_open(settings: &super::super::state::SettingsState<'_>) -> bool {
+    settings.error_popup.is_some()
+        || settings.mounts.modal.is_some()
+        || settings.env.modal.is_some()
+        || settings.auth.modal.is_some()
+}
+
 fn try_drag_vertical_scrollbar(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -833,6 +856,9 @@ fn try_drag_vertical_scrollbar(
 ) -> bool {
     match &mut state.stage {
         ManagerStage::List => {
+            if state.list_modal.is_some() {
+                return false;
+            }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
                 return false;
             };
@@ -871,11 +897,17 @@ fn try_drag_vertical_scrollbar(
             }
         }
         ManagerStage::Editor(editor) => {
+            if editor.modal.is_some() {
+                return false;
+            }
             let area = editor_content_area(editor, term_size);
             let content_height = editor_content_height(editor);
             drag_vertical_scrollbar(&mut editor.tab_scroll_y, mouse, area, content_height)
         }
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                return false;
+            }
             let area = settings_content_area(settings, term_size);
             let content_height = match settings.active_tab {
                 SettingsTab::General => 0,
@@ -925,6 +957,9 @@ fn scroll_active_panel(
 ) {
     match &mut state.stage {
         ManagerStage::List => {
+            if state.list_modal.is_some() {
+                return;
+            }
             update_scroll_focus(state, mouse, term_size, config);
             if state.list_names_focused {
                 let (left_x, left_w) = left_pane_dims(state.list_split_pct, term_size.width);
@@ -970,6 +1005,9 @@ fn scroll_active_panel(
             );
         }
         ManagerStage::Editor(editor) => {
+            if editor.modal.is_some() {
+                return;
+            }
             if editor.active_tab != EditorTab::Mounts {
                 editor.workspace_mounts_scroll_focused = false;
                 let area = editor_content_area(editor, term_size);
@@ -1004,6 +1042,9 @@ fn scroll_active_panel(
             }
         }
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                return;
+            }
             // Hover-scroll: fire on whichever block the cursor is over.
             let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
@@ -1045,6 +1086,9 @@ fn scroll_active_panel_vertical(
 ) {
     match &mut state.stage {
         ManagerStage::Settings(settings) => {
+            if settings_modal_open(settings) {
+                return;
+            }
             let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
                 return;
@@ -1102,6 +1146,9 @@ fn scroll_active_panel_vertical(
             apply_vertical_scroll(&mut editor.tab_scroll_y, delta, area, content_height);
         }
         ManagerStage::List => {
+            if state.list_modal.is_some() {
+                return;
+            }
             update_scroll_focus(state, mouse, term_size, config);
             // Scroll the focused block vertically.
             match state.list_scroll_focus {
@@ -1399,9 +1446,11 @@ mod mouse_drag_tests {
         MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config, list_scroll_areas,
     };
     use crate::console::manager::state::{
-        DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, MAX_SPLIT_PCT, MIN_SPLIT_PCT,
-        ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag,
+        DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
+        GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal,
+        MountScrollFocus, SecretsScopeTag, SettingsState, SettingsTab,
     };
+    use crate::console::widgets::confirm::ConfirmState;
     use crate::console::widgets::save_discard::SaveDiscardState;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -2500,6 +2549,66 @@ mod mouse_drag_tests {
             panic!("editor stage expected");
         };
         assert_eq!(editor.tab_scroll_y, 0);
+    }
+
+    #[test]
+    fn editor_vertical_scrollbar_drag_ignores_background_when_modal_open() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+        editor.tab_content_height = 50;
+        editor.modal = Some(Modal::SaveDiscardCancel {
+            state: SaveDiscardState::new("Save changes?"),
+        });
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Down(MouseButton::Left), 99, 7),
+            term(100),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_y, 0);
+    }
+
+    #[test]
+    fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
+        let mut state = list_state();
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings.active_tab = SettingsTab::Mounts;
+        settings.mounts.pending = (0..20)
+            .map(|idx| crate::config::GlobalMountRow {
+                scope: None,
+                name: format!("mount-{idx}"),
+                mount: MountConfig {
+                    src: format!("/host/{idx}"),
+                    dst: format!("/home/agent/{idx}"),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            })
+            .collect();
+        settings.mounts.modal = Some(GlobalMountModal::Confirm {
+            action: GlobalMountConfirm::Save,
+            state: ConfirmState::new("Save global mounts?"),
+        });
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::Down(MouseButton::Left), 99, 7),
+            term(100),
+            None,
+        );
+
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("settings stage expected");
+        };
+        assert_eq!(settings.mounts.scroll_y, 0);
     }
 
     #[test]
