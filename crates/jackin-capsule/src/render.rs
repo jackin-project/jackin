@@ -240,7 +240,7 @@ pub fn draw_scrollbar(
     // scrollback was at the live tail (or the top), producing the
     // visible "scrollbar sticks out past the pane" symptom.
     let interior_rows = pane_rows.saturating_sub(2);
-    let Some(thumb) = jackin_tui::vertical_thumb(interior_rows, filled, offset) else {
+    let Some(thumb) = jackin_tui::scroll::tail_vertical_thumb(interior_rows, filled, offset) else {
         return;
     };
     let col = pane_col.saturating_add(pane_cols).saturating_sub(1);
@@ -256,11 +256,11 @@ pub fn draw_scrollbar(
     // Thumb rows are 0-based relative to the interior; skip the top
     // border row by adding 1 to `pane_row`.
     let track_start_row = pane_row + 1;
-    for r in 0..thumb.thumb_rows {
+    for r in 0..thumb.len {
         let _ = write!(
             buf,
             "\x1b[{};{}H",
-            track_start_row + thumb.thumb_top + r + 1,
+            track_start_row + thumb.start + r + 1,
             col + 1
         );
         buf.extend_from_slice(RESET.as_bytes());

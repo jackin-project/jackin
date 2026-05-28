@@ -722,10 +722,11 @@ pub struct EditorState<'a> {
     /// Whether the non-Mounts tab content block has keyboard/click focus
     /// (green border). Updated each click via `update_scroll_focus`.
     pub tab_content_scroll_focused: bool,
-    /// Last rendered line count for the active non-Mounts tab content block.
-    /// Written by the render function; read by `update_scroll_focus` to
-    /// determine whether the block is actually scrollable.
+    /// Last rendered content width for the active non-Mounts tab content block.
     pub tab_content_width: usize,
+    /// Last rendered line count for the active editor tab content block.
+    /// Written by the render function; read by scroll input so wheel and
+    /// scrollbar-drag routing use the same content height the renderer used.
     pub tab_content_height: usize,
     /// Set when the auth-form "generate token" action launches the
     /// `op_picker` in Create mode, so the `op_picker` commit knows the

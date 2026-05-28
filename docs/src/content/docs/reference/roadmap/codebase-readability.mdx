@@ -92,6 +92,8 @@ Every extraction below has 3+ real call sites that benefit. No speculative abstr
 
 Before splitting files in Phase 2, reduce the duplication within them. This phase directly addresses the copy-paste patterns that make PR review hard.
 
+The unified TUI scrollbar extraction has shipped: shared metrics, clamping, drag/click mapping, tail-relative launch-progress scrolling, and capsule scrollback now live in `jackin_tui::scroll`; the durable contract is documented in [TUI Design Decisions](/reference/tui-design-decisions/#scrollable-blocks--shared-component).
+
 ### 1. Shared string constants (highest ROI — touches entire codebase)
 
 | Constant | Current duplication | Occurrences | Files |
@@ -110,7 +112,6 @@ Before splitting files in Phase 2, reduce the duplication within them. This phas
 | `fn app_layout(area) -> Rc<[Rect]>` for header/body/footer | 4 identical `Layout::default()` splits with `[Length(3), Min(..), Length(2)]` | `render/mod.rs`, `render/global_mounts.rs` | Removes 4 duplicate layout constructions |
 | Deduplicate breadcrumb logic | `push_op_breadcrumb_spans()` at `render/editor.rs:1427` is fully duplicated inline at lines 1058–1091 | `render/editor.rs` | One call replaces ~30 duplicated lines |
 | Extract `config_with_agents` to shared test utility | 4 copies of the same function (3 are byte-for-byte identical in `render/editor.rs`); 1 variant in `input/editor.rs` | `render/editor.rs`, `input/editor.rs` | 4 functions → 1 shared helper |
-| [Unified TUI scrollbars](/reference/roadmap/unified-tui-scrollbars/) | Scrollbar math, clamping, rendering, and mouse hit testing are split between `jackin-tui`, `console/widgets/scrollable.rs`, launch progress, manager input, and capsule rendering | `crates/jackin-tui`, `src/console/widgets`, <RepoFile path="src/runtime/progress.rs" />, `crates/jackin-capsule` | One shared scroll model; fixes sticky overscroll in the Docker build log panel |
 
 ### 3. Auth provisioning & agent dispatch deduplication
 

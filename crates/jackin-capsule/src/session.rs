@@ -1153,15 +1153,10 @@ impl Session {
     /// count, so subsequent down-scrolls must chew through the
     /// phantom distance before the visible view moves.
     pub fn scroll_by(&mut self, delta: i32) {
-        let new = if delta > 0 {
-            let filled = self.scrollback_filled();
-            self.scrollback_offset
-                .saturating_add(delta as usize)
-                .min(filled)
-        } else {
-            self.scrollback_offset.saturating_sub((-delta) as usize)
-        };
-        self.scrollback_offset = new;
+        let filled = self.scrollback_filled();
+        let mut tail = jackin_tui::scroll::TailScroll::new(self.scrollback_offset);
+        tail.scroll_by(filled, delta as isize);
+        self.scrollback_offset = tail.offset();
         self.apply_scrollback_offset();
     }
 
@@ -1218,6 +1213,13 @@ impl Session {
         self.parser
             .screen_mut()
             .set_scrollback(self.scrollback_offset.min(vt_filled));
+    }
+
+    fn clamp_scrollback_offset(&mut self) {
+        let filled = self.scrollback_filled();
+        let mut tail = jackin_tui::scroll::TailScroll::new(self.scrollback_offset);
+        tail.clamp(filled);
+        self.scrollback_offset = tail.offset();
     }
 
     /// Inline scrollback rows that should be prepended above the
@@ -1341,7 +1343,7 @@ impl Session {
             self.clear_transient_keyboard_modes();
         }
         if was_scrolled {
-            self.scrollback_offset = self.scrollback_offset.min(self.scrollback_filled());
+            self.clamp_scrollback_offset();
             self.apply_scrollback_offset();
         } else {
             self.scroll_to_live();
@@ -1666,7 +1668,7 @@ impl Session {
         }
         self.parser.screen_mut().set_size(rows, cols);
         self.inline_scroll_region_tracker.resize(rows);
-        self.scrollback_offset = self.scrollback_offset.min(self.scrollback_filled());
+        self.clamp_scrollback_offset();
         self.apply_scrollback_offset();
     }
 

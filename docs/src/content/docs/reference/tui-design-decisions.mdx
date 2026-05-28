@@ -210,7 +210,9 @@ The workspace mounts formula uses `.max(1)` because an empty mount list renders 
 - Scrollbar thumb length is invariant for a fixed `content_length` + `viewport` + track length. Scrolling moves the thumb; it must never resize by one cell because of offset-dependent rounding.
 - Horizontal scrolling preserves matching trailing padding for each row's leading padding, so two-space-indented tables do not pin their final visible character against the right border or scrollbar column at maximum horizontal offset.
 
-Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, right-padding content width, and scrollbar rendering must use the shared scroll helpers in <RepoFile path="src/console/widgets/scrollable.rs" /> (`viewport_width`, `viewport_height`, `is_scrollable`, `max_offset`, `effective_offset`, `cursor_follow_offset`, `render_selected_lines_in_area`, `render_lines_with_offset_in_area`, `horizontal_scrollbar_area`, `vertical_scrollbar_area`, `scrollbar_position_for_offset`, `scrollbar_offset_for_track_position`, `apply_scroll_delta`, and `apply_horizontal_scroll_delta`). Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, cursor-follow viewport offsets, selected-list slicing, proportional thumb sizing, trailing scroll padding, scrollbar hit areas, track-position formulas, or wheel/key offset math in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug. Do not delegate scrollbar thumb geometry to Ratatui's `ScrollbarState`: its thumb size is computed via floating-point division from `content_length`, so passing a wrong `content_length` produces an offset-dependent size; and even with the correct argument, independent rounding of thumb start and end can still produce a one-cell resize at the boundaries.
+Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, right-padding content width, and scrollbar rendering must flow through `jackin_tui::scroll` in <RepoFile path="crates/jackin-tui/src/scroll.rs" />. That module is the source of truth for clamping, top-relative offsets, tail-relative offsets, full-cell thumb conversion, and `tui-scrollbar` metrics / interaction types. Console helpers in <RepoFile path="src/console/widgets/scrollable.rs" /> adapt that shared model to ratatui blocks (`viewport_width`, `viewport_height`, `render_selected_lines_in_area`, `render_lines_with_offset_in_area`, `horizontal_scrollbar_area`, `vertical_scrollbar_area`, `apply_horizontal_scroll_delta`, etc.) but must not grow a parallel metrics implementation. Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, cursor-follow viewport offsets, selected-list slicing, proportional thumb sizing, trailing scroll padding, scrollbar hit areas, track-position formulas, or wheel/key offset math in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug.
+
+The shared model does **not** make every scrollbar look the same. jackin' owns renderer output: console horizontal scrollbars keep dotted tracks with `━` thumbs, console vertical scrollbars keep dotted tracks with `█` thumbs, and capsule panes paint only `█` thumb cells into the right border column. Do not adopt `tui-scrollbar`'s fractional glyph renderer, arrows, or default styles for these surfaces unless this decision is explicitly revisited.
 
 Signature:
 ```rust
@@ -246,13 +248,15 @@ It must **not** be cleared by `reset_list_scroll`. Workspace selection changes k
 
 ## Mouse Scroll (Hover-Scroll)
 
-Mouse `ScrollLeft`/`ScrollRight` scroll whichever block the cursor is currently over **without requiring a prior click**. This is hover-scroll semantics, not click-then-scroll.
+Mouse `ScrollLeft`/`ScrollRight` and `ScrollUp`/`ScrollDown` scroll whichever block the cursor is currently over **without requiring a prior click**. This is hover-scroll semantics, not click-then-scroll.
 
 In `scroll_active_panel`, dispatch order for the list stage:
 1. If `list_names_focused` → scroll `list_names_scroll_x` (left pane).
 2. Otherwise → compute `list_scroll_areas`, route to the block under the pointer.
 
-The left pane scroll uses `apply_scroll_delta` (no clamping to content width) because `render_scrollable_block` clamps on every frame anyway.
+Every wheel path must resolve the target from the pointer position immediately before applying the delta. Stale focus state must never decide where a wheel event goes: when independently scrollable blocks share a screen, a wheel over one block must not scroll another block or no-op because a prior click or focus belonged elsewhere.
+
+The left pane scroll uses the shared `jackin_tui::scroll` clamping path after each wheel/key mutation, then the renderer clamps defensively again on every frame.
 
 ---
 
@@ -282,10 +286,11 @@ The canonical RGB values live in the `jackin-tui` crate palette (<RepoFile path=
 ## Left Sidebar (Workspace Name List)
 
 - Horizontal scroll only — no vertical scroll.
-- Uses `render_scrollable_block` with `scroll_y = 0u16` (a throwaway variable; vertical scrollbar never appears because line count always fits the list height).
+- Uses the shared fixed-prefix line renderer (`render_line_with_fixed_prefix_scroll`) so the disclosure/cursor prefix stays visible while only the workspace label scrolls. The renderer must slice by display columns through `jackin_tui::fixed_prefix_scroll_segments`, not by Rust `char` or byte count.
 - H/L keys and `ScrollLeft`/`ScrollRight` both update `state.list_names_scroll_x`.
 - Focus set on click via `update_scroll_focus`; persists until user clicks the right pane.
 - Focus cleared by `clamp_list_scroll_for_area` when content width ≤ viewport (content fits horizontally).
+- Selected and hovered rows must paint their background across the full visible row after horizontal scroll, even when the scrolled label is shorter than the viewport. Do not let generic line scrolling clip the highlighted prefix or leave unpainted cells inside the row.
 
 ---
 

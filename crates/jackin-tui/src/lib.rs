@@ -11,6 +11,8 @@
 //! dependency choice (ratatui vs raw ANSI) that doesn't belong in a
 //! shared crate. Keep the surface narrow.
 
+pub mod scroll;
+
 /// Three-byte RGB triple. Constructors below are the canonical
 /// phosphor palette used everywhere a jackin TUI surface needs to
 /// pick a colour.
@@ -208,6 +210,100 @@ pub fn take_display_cols(s: &str, max_cols: usize) -> String {
         used += width;
     }
     out
+}
+
+/// Leading ASCII-space count for text rows that need symmetric trailing
+/// scroll padding. Controls are ignored so injected bytes cannot affect
+/// width math.
+#[must_use]
+pub fn leading_space_cols<'a>(parts: impl IntoIterator<Item = &'a str>) -> usize {
+    let mut count = 0;
+    for part in parts {
+        for ch in part.chars() {
+            if is_terminal_control_char(ch) {
+                continue;
+            }
+            if ch != ' ' {
+                return count;
+            }
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Display-column width for a row plus the matching trailing padding used by
+/// horizontally scrollable, indented content.
+#[must_use]
+pub fn padded_line_display_cols<'a, I>(parts: I) -> usize
+where
+    I: IntoIterator<Item = &'a str> + Clone,
+{
+    parts.clone().into_iter().map(display_cols).sum::<usize>() + leading_space_cols(parts)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixedPrefixSegment {
+    pub start_byte: usize,
+    pub end_byte: usize,
+    pub target_col: usize,
+    pub display_cols: usize,
+}
+
+/// Visible byte ranges for a horizontally scrolled line whose prefix remains
+/// fixed while the suffix scrolls by display columns.
+#[must_use]
+pub fn fixed_prefix_scroll_segments(
+    text: &str,
+    base_col: usize,
+    fixed_prefix_cols: usize,
+    scroll_cols: usize,
+    viewport_cols: usize,
+) -> Vec<FixedPrefixSegment> {
+    use unicode_width::UnicodeWidthChar;
+
+    let prefix_cols = fixed_prefix_cols.min(viewport_cols);
+    let suffix_cols = viewport_cols.saturating_sub(prefix_cols);
+    let suffix_start = fixed_prefix_cols.saturating_add(scroll_cols);
+    let suffix_end = suffix_start.saturating_add(suffix_cols);
+    let mut segments: Vec<FixedPrefixSegment> = Vec::new();
+    let mut col = base_col;
+
+    for (start_byte, ch) in text.char_indices() {
+        if is_terminal_control_char(ch) {
+            continue;
+        }
+        let end_byte = start_byte + ch.len_utf8();
+        let width = ch.width().unwrap_or(0);
+        if width == 0 {
+            if let Some(last) = segments.last_mut()
+                && last.end_byte == start_byte
+            {
+                last.end_byte = end_byte;
+            }
+            continue;
+        }
+
+        let target_col = if col < prefix_cols && col + width <= prefix_cols {
+            col
+        } else if col >= suffix_start && col + width <= suffix_end {
+            prefix_cols + (col - suffix_start)
+        } else {
+            col += width;
+            continue;
+        };
+        if target_col + width <= viewport_cols {
+            segments.push(FixedPrefixSegment {
+                start_byte,
+                end_byte,
+                target_col,
+                display_cols: width,
+            });
+        }
+        col += width;
+    }
+
+    segments
 }
 
 /// Collapse a terminal-window title to a single line of printable
@@ -431,51 +527,6 @@ pub fn shorten_home(path: &str) -> String {
     } else {
         path.to_string()
     }
-}
-
-/// Computed thumb position + length for a vertical scrollbar. Shared
-/// math between the host TUI's ratatui-based scrollable blocks and
-/// the in-container multiplexer's raw-ANSI overlay, so both surfaces
-/// pick the same thumb size and the same proportional position for
-/// the same (track_rows, content_filled, offset) triple.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VerticalThumb {
-    /// 0-based row inside the track where the thumb starts.
-    pub thumb_top: u16,
-    /// Number of rows the thumb spans. Always ≥ 1 when there is any
-    /// scrollback; clamps to `track_rows` when nearly everything is
-    /// off-screen.
-    pub thumb_rows: u16,
-}
-
-/// Compute thumb geometry for a vertical scrollbar.
-///
-/// - `track_rows`: how many rows the scrollbar track spans
-///   (typically the pane's interior height, excluding the top and
-///   bottom border rows).
-/// - `filled`: lines of scrollback currently held beyond the visible
-///   region.
-/// - `offset`: how many lines the operator has scrolled back from
-///   the live tail. `0` parks the thumb at the bottom of the track;
-///   `filled` parks it at the top.
-///
-/// Returns `None` when there is no thumb to draw (`track_rows == 0`
-/// or `filled == 0`).
-#[must_use]
-pub fn vertical_thumb(track_rows: u16, filled: usize, offset: usize) -> Option<VerticalThumb> {
-    if track_rows == 0 || filled == 0 {
-        return None;
-    }
-    let track = track_rows as usize;
-    let total = filled + track;
-    let thumb_rows = ((track * track) / total).max(1).min(track);
-    let unscrolled_room = track - thumb_rows;
-    let thumb_top_from_bottom = (offset * unscrolled_room).checked_div(filled).unwrap_or(0);
-    let thumb_top = unscrolled_room.saturating_sub(thumb_top_from_bottom);
-    Some(VerticalThumb {
-        thumb_top: thumb_top as u16,
-        thumb_rows: thumb_rows as u16,
-    })
 }
 
 /// Shared ANSI helpers + a centred text-input dialog renderer. The
@@ -859,5 +910,57 @@ mod tests {
     #[test]
     fn take_display_cols_returns_empty_when_budget_is_zero() {
         assert_eq!(super::take_display_cols("abc", 0), "");
+    }
+
+    #[test]
+    fn padded_line_display_cols_mirrors_leading_padding() {
+        assert_eq!(
+            super::padded_line_display_cols(["  abc", "日本"]),
+            2 + 3 + 4 + 2
+        );
+    }
+
+    #[test]
+    fn leading_space_cols_skips_controls_and_stops_at_text() {
+        assert_eq!(super::leading_space_cols([" \x07 ", "abc", "  "]), 2);
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_segments_keep_prefix_and_scroll_suffix_by_columns() {
+        let segments = super::fixed_prefix_scroll_segments("▸  a日本z", 0, 3, 1, 8);
+        let rendered: Vec<(&str, usize, usize)> = segments
+            .iter()
+            .map(|seg| {
+                (
+                    &"▸  a日本z"[seg.start_byte..seg.end_byte],
+                    seg.target_col,
+                    seg.display_cols,
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            rendered,
+            vec![
+                ("▸", 0, 1),
+                (" ", 1, 1),
+                (" ", 2, 1),
+                ("日", 3, 2),
+                ("本", 5, 2),
+                ("z", 7, 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_segments_keep_combining_mark_with_base() {
+        let text = "▸  e\u{301}ab";
+        let segments = super::fixed_prefix_scroll_segments(text, 0, 3, 0, 8);
+        let rendered: Vec<&str> = segments
+            .iter()
+            .map(|seg| &text[seg.start_byte..seg.end_byte])
+            .collect();
+
+        assert!(rendered.contains(&"e\u{301}"));
     }
 }
