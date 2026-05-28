@@ -3,9 +3,9 @@ title: "Launch Progress TUI"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — the core runtime/TUI has shipped; remaining work is hardening and richer diagnostics tooling
+**Status**: Partially implemented — the rich launch runtime/TUI has shipped; remaining work is hardening, richer diagnostics tooling, and broader PTY/E2E coverage
 
-The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, instance-lifecycle boundary rain gating, structured launch stages, compact/rich/test renderers, console-triggered launch reuse, and `JACKIN_NO_MOTION=1`. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and add deeper startup parallelism beyond the initial independent preflight overlap.
+The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, instance-lifecycle boundary rain gating, structured launch stages, rich/test renderers, console-triggered launch reuse, and `JACKIN_NO_MOTION=1`. The old compact/plain launch renderer has been removed from the load path; launch now requires the rich surface, and launch-time decisions render as dialogs. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and add deeper startup parallelism beyond the initial independent preflight overlap.
 
 ## Problem
 
@@ -26,7 +26,7 @@ The missing product model is a launch cockpit: a compact, recognizable, cyberpun
 
 ## Target experience
 
-When the terminal supports a rich TUI, `jackin load` and console launches should enter a full-screen progress surface after any required prompts. The screen should be operationally dense but quiet. Saved workspaces and ad-hoc directory launches should render as different target identities because they mean different things: a workspace is a configured project boundary, while a directory launch is a one-off target.
+When the terminal supports a rich TUI, `jackin load` and console launches should enter a full-screen progress surface and keep required launch prompts inside that surface as dialogs. The screen should be operationally dense but quiet. Saved workspaces and ad-hoc directory launches should render as different target identities because they mean different things: a workspace is a configured project boundary, while a directory launch is a one-off target.
 
 Saved workspace example:
 
@@ -87,7 +87,7 @@ The main panel should use the same phosphor-green vocabulary as the console and 
 
 The renderer should start from jackin' console conventions: modal sizing, red-border error surfaces, footer-only key hints, phosphor palette, tight chrome, and one clear focused action at a time. It should still leave room for product experiments that make launch feel more distinctive, such as a stronger construct/derived-image visual split, a live rain strip that reacts to stage transitions, or a more cinematic hardline-opening moment, as long as those experiments keep the console's interaction rules intact.
 
-When the terminal is not interactive or cannot support the TUI, launch falls back to compact line output with the same event vocabulary. Scripts should still get deterministic stderr/stdout behavior and useful failure text, but the fallback must remain product-level: no raw logs, no streamed Docker output, and no debug firehose.
+When the terminal is not interactive or cannot support the TUI, `jackin load` fails before starting the launch. The former compact line renderer is no longer part of the load product surface because it could interleave raw command output with rich-screen state and hide broken dialog flows.
 
 ## Visual language
 
@@ -152,7 +152,7 @@ The current launch code calls the intro animation before the launch and the outr
 
 The count must use runtime discovery managed by jackin' rather than raw Docker process guesses. It should include containers preserved because active Capsule sessions remain, and it should exclude stale records that are not actually running. If discovery fails, the safe default is to skip the boundary animation and record the reason in diagnostics; a failed count should not block launch or exit.
 
-Earlier sketches included manual controls for disabling boundary rain or the rich launch surface. The shipped model removes those toggles: boundary rain is a lifecycle signal, and compact progress is selected automatically when the terminal cannot host the rich surface.
+Earlier sketches included manual controls for disabling boundary rain or the rich launch surface. The shipped model removes those toggles: boundary rain is a lifecycle signal, and unsupported terminals fail before launch instead of selecting a second plain renderer.
 
 ## Stage vocabulary
 
@@ -251,8 +251,6 @@ The exact Rust shape can differ, but the boundary should exist. Renderers then b
 | Renderer | Used when | Behavior |
 |---|---|---|
 | Rich TUI renderer | Interactive TTY with `TERM` not `dumb`, no CI signal, and at least an 80x24 viewport | Full-screen ratatui launch surface with bounded rain, stage list, identity panel, footer, and error dialog. Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and comparable terminals should land here without an allowlist. |
-| Compact renderer | TTY without rich support | Same events as short line output. Compact progress is the automatic fallback for terminals that cannot host the rich launch surface. |
-| Non-interactive renderer | Script/CI/no TTY | Deterministic compact text, no cursor control, no animation. |
 | Test renderer | Unit/integration tests | Captures events for assertions without terminal I/O. |
 
 This also gives future console integration a clean transition: `jackin console` can tear down the manager, run the shared launch progress renderer, then open the Capsule hardline without duplicating the launch UI.
@@ -284,7 +282,7 @@ Replace launch-local intro/outro decisions with active container counting manage
 
 ### Phase 2 — Launch progress event sink
 
-Add a launch-scoped progress sink and route current `StepCounter`, config-table, auth notices, Docker launch milestones, restore decisions, cleanup notices, and failure paths through structured events. Keep the compact renderer initially so behavior changes are small and testable. This phase should establish the public stage names (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even before the rich TUI exists.
+Add a launch-scoped progress sink and route current `StepCounter`, config-table, auth notices, Docker launch milestones, restore decisions, cleanup notices, and failure paths through structured events. This phase established the public stage names (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) before the old compact renderer was removed.
 
 ### Phase 3 — Durable run diagnostics
 
@@ -314,8 +312,8 @@ The design may add host-side JSONL diagnostics artifacts under `~/.jackin/data/d
 
 - Full digital rain appears only at first-container start and last-container exit.
 - `jackin load` and console-triggered launch share the same progress vocabulary native to jackin' and the same renderer selection.
-- Rich terminals get a full-screen launch progress TUI; non-rich and non-interactive environments get compact deterministic output.
-- There are no manual rich-surface/rain disable flags; compact output is the automatic fallback for unsupported terminals and non-interactive runs.
+- Rich terminals get a full-screen launch progress TUI; non-rich and non-interactive environments fail before launch.
+- There are no manual rich-surface/rain disable flags.
 - Every `jackin ...` command receives a run ID, and launch progress renders that run ID as the diagnostics handle.
 - Diagnostics artifacts are JSONL files under `~/.jackin/data/diagnostics/runs/`, with automatic cleanup and prune coverage.
 - `--debug` increases diagnostics artifact detail without dumping raw debug text into the TUI; without `--debug`, detailed traces are absent rather than hidden behind a missing diagnostics command.

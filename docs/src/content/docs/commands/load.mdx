@@ -5,10 +5,10 @@ description: "Jack an agent into an isolated container"
 import { Aside } from '@astrojs/starlight/components'
 
 <Aside type="note">
-`jackin load` is the **CLI** entry point. For most day-to-day work,
+`jackin load` is the direct launch entry point. For most day-to-day work,
 [`jackin console`](/commands/console/) is simpler and faster. Use
-`jackin load` when you want a scriptable one-liner, want to skip the
-TUI entirely, or want a flag the console does not expose.
+`jackin load` when you want a one-liner launch command or a flag the console
+does not expose.
 </Aside>
 
 ## Synopsis
@@ -21,9 +21,9 @@ Load an agent into an isolated `Docker` container directly from the command line
 
 `SELECTOR` chooses the **role** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
 
-Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. Rich terminals show a full-screen launch progress surface with a sliding stage rail for jackin' stages (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`). Workspace repository polling from `git_pull_on_entry` is part of that surface; per-repo pull details go to diagnostics/debug evidence instead of printing over the launch cockpit. Non-rich terminals and non-interactive runs use compact deterministic progress lines with the same stage vocabulary.
+Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. `jackin load` requires a rich terminal and shows a full-screen launch progress surface with a sliding stage rail for jackin' stages (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`). Workspace repository polling from `git_pull_on_entry` is part of that surface; per-repo pull details go to diagnostics/debug evidence instead of printing over the launch cockpit. Prompts for role choice, target ambiguity, sensitive mounts, role trust, restore decisions, agent choice, and manifest env values render as launch dialogs instead of plain terminal prompts.
 
-The full digital rain animation is a boundary marker. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and appears only when this launch starts with no jackin-managed role containers already running. The outro is two screens too — the decelerating warp, then the closing logo/time-in-construct caption — and appears only when the foreground session exits and no role containers remain. Launching or leaving a second concurrent instance does not play either boundary ritual because the operator is still inside the construct. Non-interactive shells and terminals that cannot host the rich surface naturally skip the boundary animation.
+The full digital rain animation is a boundary marker. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and appears only when this launch starts with no jackin-managed role containers already running. The outro is two screens too — the decelerating warp, then the closing logo/time-in-construct caption — and appears only when the foreground session exits and no role containers remain. Launching or leaving a second concurrent instance does not play either boundary ritual because the operator is still inside the construct. Non-interactive shells and terminals that cannot host the rich surface cannot run `jackin load`; use `jackin console` from a rich terminal or fix the terminal environment.
 
 Contributors can force the boundary rituals for local visual QA with env vars instead of CLI flags. See [Launch Progress Surface](/reference/tui-design-decisions/#launch-progress-surface) for `JACKIN_FORCE_BOUNDARY_INTRO`, `JACKIN_FORCE_BOUNDARY_OUTRO`, and `JACKIN_FORCE_BOUNDARY_RITUALS`.
 
@@ -42,8 +42,8 @@ Contributors can force the boundary rituals for local visual QA with env vars in
 | `--rebuild` | Force rebuild the Docker image and refresh agent CLI install layers |
 | `--role-branch <BRANCH>` | Check out a specific branch of the role repository for local testing. See **Testing a role branch** below. |
 | `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
-| `--debug` | Write detailed command, Docker, resolver, auth, and build traces to the run diagnostics artifact. The launch surface stays compact and does not stream raw logs. |
-| `--agent <NAME>` | Override the launch agent (`claude`, `codex`, `amp`, `kimi`, or `opencode`). When omitted, a workspace `default_agent` wins first, a single-agent role uses its only runtime, and a multi-agent role prompts interactively. A non-interactive launch (no TTY) against a multi-agent role with no resolved choice errors out. |
+| `--debug` | Write detailed command, Docker, resolver, auth, and build traces to the run diagnostics artifact. The launch surface stays clean and does not stream raw logs. |
+| `--agent <NAME>` | Override the launch agent (`claude`, `codex`, `amp`, `kimi`, or `opencode`). When omitted, a workspace `default_agent` wins first, a single-agent role uses its only runtime, and a multi-agent role prompts in the rich launch surface. |
 
 ## Examples
 

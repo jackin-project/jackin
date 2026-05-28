@@ -3,7 +3,7 @@ dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
 [identity]
-name = "Feature Matrix"
+name = "jackin' Sentinel"
 
 [claude]
 model = "sonnet"
@@ -28,26 +28,45 @@ preflight = "hooks/preflight.sh"
 [env.STATIC_DEFAULT]
 default = "static-value"
 
+[env.LITERAL_TEMPLATE]
+default = "preserve-${other.VALUE}"
+
 [env.FREE_TEXT]
 interactive = true
-prompt = "Free text value:"
+prompt = "Sentinel free text:"
 default = "typed-default"
+
+[env.FREE_TEXT_REQUIRED]
+interactive = true
+prompt = "Required sentinel value:"
 
 [env.SELECT_PROJECT]
 interactive = true
 options = ["frontend", "backend", "infra"]
-prompt = "Select a project:"
+prompt = "Select sentinel project:"
+
+[env.SELECT_MODE]
+interactive = true
+options = ["fast", "thorough", "diagnostic"]
+prompt = "Select sentinel mode:"
+default = "diagnostic"
 
 [env.OPTIONAL_API_KEY]
 interactive = true
 skippable = true
-prompt = "Optional API key:"
+prompt = "Optional sentinel API key:"
 
 [env.BRANCH]
 interactive = true
 depends_on = ["env.SELECT_PROJECT"]
 prompt = "Branch for ${env.SELECT_PROJECT}:"
 default = "feature/${env.SELECT_PROJECT}"
+
+[env.COMBINED_LABEL]
+interactive = true
+depends_on = ["env.FREE_TEXT", "env.SELECT_PROJECT"]
+prompt = "Combined label for ${env.SELECT_PROJECT}:"
+default = "${env.SELECT_PROJECT}-${env.FREE_TEXT}"
 
 [env.OPTIONAL_DERIVED]
 interactive = true

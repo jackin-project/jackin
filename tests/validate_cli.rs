@@ -34,9 +34,9 @@ fn validate_passes_for_valid_agent_repo() {
 }
 
 #[test]
-fn validate_passes_for_feature_matrix_fixture_role() {
+fn validate_passes_for_jackin_sentinel_fixture_role() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/roles/feature-matrix");
+        .join("tests/fixtures/roles/jackin-sentinel");
 
     Command::cargo_bin("jackin-role")
         .unwrap()

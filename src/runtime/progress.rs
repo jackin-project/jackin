@@ -571,6 +571,22 @@ impl LaunchProgress {
     }
 }
 
+pub fn prelaunch_select_choice(
+    diagnostics: Arc<RunDiagnostics>,
+    no_motion: bool,
+    title: &str,
+    items: Vec<String>,
+) -> anyhow::Result<usize> {
+    if !rich_terminal_supported() {
+        anyhow::bail!(
+            "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
+        );
+    }
+    let mut renderer = RichRenderer::enter(no_motion)?;
+    let view = initial_view();
+    renderer.select(&view, diagnostics.run_id(), title, items)
+}
+
 fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, detail: &str) {
     let previous_active = active_stage_index(view);
     if let Some(row) = view.stages.iter_mut().find(|row| row.stage == stage) {

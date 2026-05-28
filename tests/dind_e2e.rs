@@ -6,14 +6,16 @@
 
 #![cfg(feature = "e2e")]
 
+use std::io::Write as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use jackin::derived_image::shell_quote;
 use jackin::instance::naming::is_dns_label;
 use tempfile::tempdir;
 
 const ROLE_KEY: &str = "jackin-e2e/agent-smith";
+const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
 
 /// RAII cleanup so the test's Docker resources are removed even if an
 /// assertion or `script(1)` invocation panics. Without this, a flaky run
@@ -23,7 +25,8 @@ struct DockerCleanup;
 
 impl Drop for DockerCleanup {
     fn drop(&mut self) {
-        cleanup_role();
+        cleanup_role(ROLE_KEY, "jackin-jackin-e2e__agent-smith");
+        cleanup_role(SENTINEL_ROLE_KEY, "jackin-jackin-e2e__sentinel");
     }
 }
 
@@ -123,6 +126,92 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     );
 }
 
+#[test]
+fn jackin_load_sentinel_role_resolves_rich_prompts_and_keeps_build_output_off_screen() {
+    require_e2e_prereqs();
+    let _cleanup = DockerCleanup;
+
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("sentinel-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+
+    seed_sentinel_role_repo(&role_source);
+    write_sentinel_config(&config_dir.join("config.toml"), &role_source);
+    seed_all_agent_stubs(&home);
+
+    let jackin = std::env::var("CARGO_BIN_EXE_jackin").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .unwrap()
+            .join("target/debug/jackin")
+            .display()
+            .to_string()
+    });
+
+    let target = format!("{}:/workspace", workspace_dir.display());
+    let args = ["load", SENTINEL_ROLE_KEY, &target, "--agent", "codex"];
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
+    let prompt_input = "\nrequired-value\n\n\n\n\n\n";
+    let output = run_in_pty_with_input(
+        &jackin,
+        &args,
+        &home,
+        &workspace_dir,
+        &extra_env,
+        prompt_input,
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "jackin sentinel load failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    assert!(
+        stdout.contains("JACKIN_SENTINEL_REPORT_BEGIN"),
+        "sentinel report missing begin marker\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("JACKIN_SENTINEL_REPORT_END"),
+        "sentinel report missing end marker\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stdout.contains("JACKIN=1"), "{stdout}");
+    assert!(stdout.contains("JACKIN_AGENT=codex"), "{stdout}");
+    assert!(stdout.contains("STATIC_DEFAULT=static-value"), "{stdout}");
+    assert!(
+        stdout.contains("LITERAL_TEMPLATE=preserve-${other.VALUE}"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("FREE_TEXT=typed-default"), "{stdout}");
+    assert!(
+        stdout.contains("FREE_TEXT_REQUIRED=required-value"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("SELECT_PROJECT=frontend"), "{stdout}");
+    assert!(stdout.contains("SELECT_MODE=diagnostic"), "{stdout}");
+    assert!(stdout.contains("BRANCH=feature/frontend"), "{stdout}");
+    assert!(
+        stdout.contains("COMBINED_LABEL=frontend-typed-default"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("OPTIONAL_API_KEY=unset"), "{stdout}");
+    assert!(stdout.contains("OPTIONAL_DERIVED=unset"), "{stdout}");
+    assert!(stdout.contains("JACKIN_SENTINEL_SOURCE_HOOK=1"), "{stdout}");
+    assert!(
+        stdout.contains("JACKIN_SENTINEL_PREFLIGHT_COUNT=1"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("jackin-sentinel build layer")
+            && !stderr.contains("jackin-sentinel build layer"),
+        "Docker build output leaked onto the rich screen\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
 const REPORT_BEGIN: &str = "===JACKIN_E2E_REPORT_BEGIN===";
 const REPORT_END: &str = "===JACKIN_E2E_REPORT_END===";
 
@@ -155,10 +244,14 @@ fn require_e2e_prereqs() {
 }
 
 fn docker_available() -> bool {
-    Command::new("docker")
+    let mut command = Command::new("docker");
+    command
         .arg("info")
-        .output()
-        .is_ok_and(|output| output.status.success())
+        .env_remove("DOCKER_HOST")
+        .env_remove("DOCKER_TLS_VERIFY")
+        .env_remove("DOCKER_CERT_PATH")
+        .env_remove("TESTCONTAINERS_HOST_OVERRIDE");
+    command.output().is_ok_and(|output| output.status.success())
 }
 
 /// Probe `script(1)` via the canonical PATH lookup. The previous
@@ -180,33 +273,68 @@ fn run_in_pty(
     cwd: &Path,
     extra_env: &[(&str, &str)],
 ) -> std::process::Output {
+    run_in_pty_with_input(jackin, args, home, cwd, extra_env, "")
+}
+
+fn run_in_pty_with_input(
+    jackin: &str,
+    args: &[&str],
+    home: &Path,
+    cwd: &Path,
+    extra_env: &[(&str, &str)],
+    input: &str,
+) -> std::process::Output {
     let mut command = Command::new("script");
     // BSD `script` (macOS) takes the command as positional args after the
     // typescript file. util-linux `script` (most Linux distros) takes it
     // via `-c <shell-string>`. BusyBox `script` is closer to BSD; if
     // encountered on Linux it will fall through to the util-linux branch
     // and fail loudly rather than silently misbehave.
+    let invocation = std::iter::once(jackin)
+        .chain(args.iter().copied())
+        .map(shell_quote)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let full = format!("stty cols 120 rows 40 >/dev/null 2>&1; exec {invocation}");
     if cfg!(target_os = "macos") {
-        command.arg("-q").arg("/dev/null").arg(jackin).args(args);
+        command
+            .arg("-q")
+            .arg("/dev/null")
+            .arg("sh")
+            .arg("-lc")
+            .arg(&full);
     } else {
-        let full = std::iter::once(jackin)
-            .chain(args.iter().copied())
-            .map(shell_quote)
-            .collect::<Vec<_>>()
-            .join(" ");
         command.args(["-q", "-e", "-c", &full, "/dev/null"]);
     }
     command
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
-        .env_remove("JACKIN_DEBUG");
+        .env("TERM", "xterm-256color")
+        .env_remove("JACKIN_DEBUG")
+        .env_remove("DOCKER_HOST")
+        .env_remove("DOCKER_TLS_VERIFY")
+        .env_remove("DOCKER_CERT_PATH")
+        .env_remove("TESTCONTAINERS_HOST_OVERRIDE");
     for (k, v) in extra_env {
         command.env(k, v);
     }
-    command
-        .current_dir(cwd)
-        .output()
-        .expect("script must spawn")
+    command.current_dir(cwd);
+    if input.is_empty() {
+        return command.output().expect("script must spawn");
+    }
+
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("script must spawn");
+    let mut stdin = child.stdin.take().expect("script stdin must be piped");
+    stdin
+        .write_all(input.as_bytes())
+        .expect("script stdin write must succeed");
+    drop(stdin);
+    child.wait_with_output().expect("script must finish")
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
@@ -269,6 +397,65 @@ NO_PROXY = "localhost,127.0.0.1"
     .unwrap();
 }
 
+fn seed_sentinel_role_repo(path: &Path) {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/roles/jackin-sentinel");
+    copy_dir(&fixture, path);
+    run("git", &["init"], Some(path));
+    run("git", &["add", "."], Some(path));
+    run(
+        "git",
+        &[
+            "-c",
+            "user.name=Jackin E2E",
+            "-c",
+            "user.email=e2e@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-m",
+            "Seed sentinel e2e role",
+        ],
+        Some(path),
+    );
+}
+
+fn copy_dir(src: &Path, dst: &Path) {
+    std::fs::create_dir_all(dst).unwrap();
+    for entry in std::fs::read_dir(src).unwrap() {
+        let entry = entry.unwrap();
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&src_path, &dst_path);
+        } else {
+            std::fs::copy(&src_path, &dst_path).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                let mode = std::fs::metadata(&src_path).unwrap().permissions().mode();
+                let mut perms = std::fs::metadata(&dst_path).unwrap().permissions();
+                perms.set_mode(mode);
+                std::fs::set_permissions(&dst_path, perms).unwrap();
+            }
+        }
+    }
+}
+
+fn write_sentinel_config(path: &Path, role_source: &Path) {
+    std::fs::write(
+        path,
+        format!(
+            r#"[roles."{SENTINEL_ROLE_KEY}"]
+git = "{}"
+trusted = true
+"#,
+            role_source.display()
+        ),
+    )
+    .unwrap();
+}
+
 const fn role_dockerfile() -> &'static str {
     r"FROM projectjackin/construct:0.1-trixie
 USER root
@@ -290,6 +477,33 @@ fn seed_claude_installer_stub(home: &Path) {
         .join("claude");
     std::fs::create_dir_all(stub.parent().unwrap()).unwrap();
     std::fs::write(&stub, fake_claude_installer()).unwrap();
+    chmod_executable(&stub);
+}
+
+fn seed_all_agent_stubs(home: &Path) {
+    for slug in ["claude", "amp", "kimi", "opencode"] {
+        seed_agent_stub(home, slug, &format!("{slug} 0.0.0-e2e\n"));
+    }
+    seed_agent_stub(
+        home,
+        "codex",
+        r#"if [ "${1:-}" = "--version" ]; then
+  echo "codex 0.0.0-e2e"
+  exit 0
+fi
+jackin-sentinel-report
+"#,
+    );
+}
+
+fn seed_agent_stub(home: &Path, slug: &str, body: &str) {
+    let stub = home
+        .join(".jackin")
+        .join("cache")
+        .join("agent-binaries-test-stub")
+        .join(slug);
+    std::fs::create_dir_all(stub.parent().unwrap()).unwrap();
+    std::fs::write(&stub, format!("#!/bin/sh\nset -eu\n{body}")).unwrap();
     chmod_executable(&stub);
 }
 
@@ -401,13 +615,13 @@ chmod +x "$HOME/.local/bin/claude"
     )
 }
 
-fn cleanup_role() {
+fn cleanup_role(role_key: &str, image: &str) {
     let output = Command::new("docker")
         .args([
             "ps",
             "-a",
             "--filter",
-            &format!("label=jackin.class={ROLE_KEY}"),
+            &format!("label=jackin.class={role_key}"),
             "--format",
             "{{.Names}}",
         ])
@@ -429,9 +643,7 @@ fn cleanup_role() {
                 .output();
         }
     }
-    let _ = Command::new("docker")
-        .args(["rmi", "jackin-jackin-e2e__agent-smith"])
-        .output();
+    let _ = Command::new("docker").args(["rmi", image]).output();
 }
 
 fn run(program: &str, args: &[&str], cwd: Option<&Path>) {

@@ -60,21 +60,34 @@ fn find_dst_separator(target: &str) -> Option<usize> {
     None
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn resolve_target_name(
     name: &str,
     config: &AppConfig,
     cwd: &Path,
+) -> Result<LoadWorkspaceInput> {
+    resolve_target_name_with_choice(name, config, cwd, |message, options| {
+        let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
+        tui::prompt_choice(message, &option_refs)
+    })
+}
+
+pub(crate) fn resolve_target_name_with_choice(
+    name: &str,
+    config: &AppConfig,
+    cwd: &Path,
+    mut choose: impl FnMut(&str, Vec<String>) -> Result<usize>,
 ) -> Result<LoadWorkspaceInput> {
     let workspace_exists = config.workspaces.contains_key(name);
     let dir_exists = cwd.join(name).is_dir();
 
     match (workspace_exists, dir_exists) {
         (true, true) => {
-            let choice = tui::prompt_choice(
+            let choice = choose(
                 &format!("\"{name}\" matches both a saved workspace and a directory."),
-                &[
-                    &format!("Use workspace \"{name}\""),
-                    &format!("Use directory ./{name}"),
+                vec![
+                    format!("Use workspace \"{name}\""),
+                    format!("Use directory ./{name}"),
                 ],
             )?;
             if choice == 0 {
@@ -189,9 +202,21 @@ pub(crate) fn preferred_agent_index(
 /// 3. If multiple roles available — prompt
 /// 4. If exactly one role — use it
 /// 5. No match — error with guidance
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn resolve_agent_from_context(
     config: &AppConfig,
     cwd: &Path,
+) -> Result<(RoleSelector, LoadWorkspaceInput)> {
+    resolve_agent_from_context_with_choice(config, cwd, |message, options| {
+        let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
+        tui::prompt_choice(message, &option_refs)
+    })
+}
+
+pub(crate) fn resolve_agent_from_context_with_choice(
+    config: &AppConfig,
+    cwd: &Path,
+    mut choose: impl FnMut(&str, Vec<String>) -> Result<usize>,
 ) -> Result<(RoleSelector, LoadWorkspaceInput)> {
     if let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) {
         let eligible = eligible_roles_for_workspace(config, ws);
@@ -213,10 +238,9 @@ pub(crate) fn resolve_agent_from_context(
             [only] => only.clone(),
             _ => {
                 let options: Vec<String> = eligible.iter().map(RoleSelector::key).collect();
-                let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-                let choice = tui::prompt_choice(
+                let choice = choose(
                     &format!("Workspace {name:?} has multiple roles. Select one:"),
-                    &option_refs,
+                    options,
                 )?;
                 eligible[choice].clone()
             }

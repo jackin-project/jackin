@@ -221,6 +221,20 @@ impl crate::env_resolver::EnvPrompter for LaunchEnvPrompter<'_> {
     }
 }
 
+fn sensitive_mount_prompt(sensitive: &[crate::workspace::SensitiveMount]) -> String {
+    let mut lines = vec![
+        "Sensitive host paths are mounted into this role container.".to_string(),
+        "Continue only if this role should see these credentials.".to_string(),
+        String::new(),
+    ];
+    for hit in sensitive {
+        lines.push(format!("{} — {}", hit.src, hit.reason));
+    }
+    lines.push(String::new());
+    lines.push("Continue with these mounts?".to_string());
+    lines.join("\n")
+}
+
 fn stage_for_step_text(text: &str) -> super::progress::LaunchStage {
     match text {
         "Resolving role identity" => super::progress::LaunchStage::Role,
@@ -1519,6 +1533,19 @@ async fn load_role_with(
         });
         progress.stage_done(super::progress::LaunchStage::Identity, "resolved operator");
         steps.start_progress(progress);
+    }
+
+    let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
+    if !sensitive.is_empty() {
+        let prompt = sensitive_mount_prompt(&sensitive);
+        let confirmed = if let Some(progress) = steps.progress_mut() {
+            progress.confirm_prompt(prompt)?
+        } else {
+            anyhow::bail!("sensitive mount confirmation requires the rich launch dialog")
+        };
+        if !confirmed {
+            anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+        }
     }
 
     if workspace.git_pull_on_entry {
@@ -5747,6 +5774,34 @@ trusted = true
         assert!(
             rendered.contains("pass --agent") || rendered.contains("default_agent"),
             "error must name the operator-actionable fix: {rendered}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_agent_bails_when_sensitive_mount_has_no_rich_dialog() {
+        let mut f = load_agent_fixture(CODEX_ONLY_MANIFEST);
+        f.workspace.mounts.push(crate::workspace::MountConfig {
+            src: "/home/operator/.ssh".to_string(),
+            dst: "/host/ssh".to_string(),
+            readonly: true,
+            isolation: crate::isolation::MountIsolation::Shared,
+        });
+
+        let error = load_role(
+            &f.paths,
+            &mut f.config,
+            &f.selector,
+            &f.workspace,
+            &f.docker,
+            &mut f.runner,
+            &LoadOptions::default(),
+        )
+        .await
+        .expect_err("sensitive mount confirmation must require the rich launch dialog");
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains("sensitive mount confirmation requires the rich launch dialog"),
+            "error should explain the rich dialog requirement: {rendered}"
         );
     }
 
