@@ -342,6 +342,7 @@ fn run_in_pty_with_input(
     }
     command.current_dir(cwd);
     if input.is_empty() {
+        command.stdin(Stdio::null());
         return command.output().expect("script must spawn");
     }
 
