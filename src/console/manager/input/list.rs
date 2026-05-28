@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::super::super::widgets::{
     ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
 };
-use super::super::render::apply_scroll_delta;
+use super::super::render::apply_scroll_delta_unclamped;
 use super::super::state::{
     EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
     ProviderPickerState, SettingsState,
@@ -771,7 +771,7 @@ pub(super) fn handle_launch_provider_picker(
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
     if state.list_names_focused {
-        apply_scroll_delta(&mut state.list_names_scroll_x, delta);
+        apply_scroll_delta_unclamped(&mut state.list_names_scroll_x, delta);
     } else {
         scroll_focused_mount_block(state, delta);
     }
@@ -782,7 +782,7 @@ const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
         return;
     };
     let value = state.list_scroll_x_mut(focus);
-    apply_scroll_delta(value, delta);
+    apply_scroll_delta_unclamped(value, delta);
 }
 
 const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
@@ -790,7 +790,7 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
         return;
     };
     let value = state.list_scroll_y_mut(focus);
-    apply_scroll_delta(value, delta);
+    apply_scroll_delta_unclamped(value, delta);
 }
 
 #[cfg(test)]

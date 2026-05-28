@@ -90,7 +90,7 @@ fn metrics(
 }
 
 #[must_use]
-pub fn offset_after_delta(
+fn offset_after_delta(
     content_len: usize,
     viewport_len: usize,
     offset: usize,

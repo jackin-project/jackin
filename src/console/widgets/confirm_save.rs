@@ -18,7 +18,7 @@ use ratatui::{
 use super::ModalOutcome;
 
 use super::scrollable::{
-    apply_vertical_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
+    apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
 };
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
@@ -108,7 +108,7 @@ impl ConfirmSaveState {
     }
 
     fn scroll_preview_by(&mut self, delta: isize) {
-        apply_vertical_scroll_delta(
+        apply_scroll_delta(
             &mut self.scroll_offset,
             delta as i16,
             usize::from(self.preview_rows),

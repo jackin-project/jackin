@@ -95,7 +95,7 @@ pub(crate) fn scrollbar_offset_for_track_position(
 }
 
 // No upper clamp: every caller's render path calls effective_offset, which clamps.
-pub(crate) const fn apply_scroll_delta(value: &mut u16, delta: i16) {
+pub(crate) const fn apply_scroll_delta_unclamped(value: &mut u16, delta: i16) {
     *value = if delta.is_negative() {
         value.saturating_sub(delta.unsigned_abs())
     } else {
@@ -103,22 +103,8 @@ pub(crate) const fn apply_scroll_delta(value: &mut u16, delta: i16) {
     };
 }
 
-pub(crate) fn apply_horizontal_scroll_delta(
-    value: &mut u16,
-    delta: i16,
-    viewport: usize,
-    content_width: usize,
-) {
-    scroll::apply_delta_u16(content_width, viewport, value, isize::from(delta));
-}
-
-pub(crate) fn apply_vertical_scroll_delta(
-    value: &mut u16,
-    delta: i16,
-    viewport: usize,
-    content_height: usize,
-) {
-    scroll::apply_delta_u16(content_height, viewport, value, isize::from(delta));
+pub(crate) fn apply_scroll_delta(value: &mut u16, delta: i16, viewport: usize, content_len: usize) {
+    scroll::apply_delta_u16(content_len, viewport, value, isize::from(delta));
 }
 
 pub(crate) fn apply_term_width_scroll_delta(
@@ -127,7 +113,7 @@ pub(crate) fn apply_term_width_scroll_delta(
     term_width: u16,
     content_width: usize,
 ) {
-    apply_horizontal_scroll_delta(
+    apply_scroll_delta(
         value,
         delta,
         usize::from(term_width.saturating_sub(2)),
@@ -400,9 +386,10 @@ pub(crate) fn render_scrollable_block(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_horizontal_scroll_delta, clamp_scroll_offset, cursor_follow_offset,
-        render_scrollable_block, render_selected_lines_in_area, render_vertical_scrollbar_in_area,
-        scrollbar_offset_for_track_position, scrollbar_thumb_geometry,
+        apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset,
+        cursor_follow_offset, render_scrollable_block, render_selected_lines_in_area,
+        render_vertical_scrollbar_in_area, scrollbar_offset_for_track_position,
+        scrollbar_thumb_geometry,
     };
     use crate::console::widgets::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, text::Line};
@@ -483,10 +470,10 @@ mod tests {
     }
 
     #[test]
-    fn apply_scroll_delta_moves_from_clamped_offset() {
+    fn apply_scroll_delta_unclamped_moves_from_current_offset() {
         let mut scroll_x = 40;
 
-        super::apply_scroll_delta(&mut scroll_x, -8);
+        apply_scroll_delta_unclamped(&mut scroll_x, -8);
 
         assert_eq!(scroll_x, 32);
     }
@@ -620,25 +607,25 @@ mod tests {
     }
 
     #[test]
-    fn apply_horizontal_scroll_delta_clamps_at_max() {
+    fn apply_scroll_delta_clamps_at_max() {
         // content=12, viewport=5 → max=7. Start at 3, delta +10 → clamped to 7.
         let mut value: u16 = 3;
-        apply_horizontal_scroll_delta(&mut value, 10, 5, 12);
+        apply_scroll_delta(&mut value, 10, 5, 12);
         assert_eq!(value, 7);
     }
 
     #[test]
-    fn apply_horizontal_scroll_delta_corrects_overclamped_initial_value() {
+    fn apply_scroll_delta_corrects_overclamped_initial_value() {
         // value already above max; delta +1 should produce max, not max+1+stale_excess.
         let mut value: u16 = 20;
-        apply_horizontal_scroll_delta(&mut value, 1, 5, 12); // max=7, current=20.min(7)=7, 7+1=8>7 → 7
+        apply_scroll_delta(&mut value, 1, 5, 12); // max=7, current=20.min(7)=7, 7+1=8>7 → 7
         assert_eq!(value, 7);
     }
 
     #[test]
-    fn apply_horizontal_scroll_delta_saturates_at_zero() {
+    fn apply_scroll_delta_saturates_at_zero() {
         let mut value: u16 = 0;
-        apply_horizontal_scroll_delta(&mut value, -5, 5, 12);
+        apply_scroll_delta(&mut value, -5, 5, 12);
         assert_eq!(value, 0);
     }
 
