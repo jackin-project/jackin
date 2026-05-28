@@ -150,12 +150,12 @@ The published tags are:
 When you load an agent, jackin' doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
 
 1. **User remapping** — adjusts the `agent` user's UID/GID to match your host user
-2. **Agent installation** — installs every agent declared in the role manifest
+2. **Agent installation** — copies jackin's cached agent binaries for every agent declared in the role manifest
 3. **Plugin installation** — any Claude plugins declared in the role manifest
 4. **Runtime entrypoint + setup bridge** — the script delegates deterministic setup to `jackin-capsule runtime-setup`, then keeps the shell-native work: sourcing role hooks and `exec`-ing the selected agent. The Rust setup path handles one-time container git/GitHub initialization, the shared git trailer hook, durable agent-home seeding, auth handoff refreshes, and Claude MCP registration. It wires up GitHub if `gh` is already authenticated; it does not perform `gh auth login`, so an unauthenticated `gh` is left alone with a notice.
 
 <Aside type="note">
-Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Passing `--rebuild` additionally invalidates agent installation layers so the build picks up newer agent CLI downloads.
+Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Before the build, jackin' resolves the latest agent binary metadata and stores downloaded binaries under its host cache. Passing `--rebuild` invalidates agent installation layers; unchanged versions are copied from the local cache instead of downloaded again.
 </Aside>
 ## Extending the construct
 

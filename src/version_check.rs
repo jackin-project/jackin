@@ -1,20 +1,5 @@
-use crate::docker::CommandRunner;
 use crate::paths::JackinPaths;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
-
-/// How long we trust the cached npm lookup before re-checking.
-const NPM_CACHE_TTL: Duration = Duration::from_hours(1);
-
-/// File that caches the latest published Claude Code version from npm.
-fn npm_cache_path(paths: &JackinPaths) -> PathBuf {
-    paths.cache_dir.join("claude-latest-version")
-}
-
-/// File that caches the latest published `OpenCode` version from `npm`.
-fn opencode_npm_cache_path(paths: &JackinPaths) -> PathBuf {
-    paths.cache_dir.join("opencode-latest-version")
-}
 
 /// File that records the Claude Code version baked into a given Docker image.
 fn image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
@@ -35,36 +20,12 @@ fn kimi_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
     paths.cache_dir.join(format!("image-kimi-version/{image}"))
 }
 
-/// Query npm for the latest published `@anthropic-ai/claude-code` version,
-/// returning a cached value when the cache is still fresh.
-pub async fn latest_claude_version(
-    paths: &JackinPaths,
-    runner: &mut impl CommandRunner,
-) -> Option<String> {
-    let cache_file = npm_cache_path(paths);
+fn amp_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
+    paths.cache_dir.join(format!("image-amp-version/{image}"))
+}
 
-    // Return cached value if fresh enough
-    if let Some(cached) = read_if_fresh(&cache_file, NPM_CACHE_TTL) {
-        return Some(cached);
-    }
-
-    // Query npm
-    let version = runner
-        .capture(
-            "npm",
-            &["view", "@anthropic-ai/claude-code", "version"],
-            None,
-        )
-        .await
-        .ok()?;
-    let version = version.trim().to_string();
-    if version.is_empty() {
-        return None;
-    }
-
-    // Persist to cache (best-effort)
-    let _ = write_cached(&cache_file, &version);
-    Some(version)
+fn codex_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
+    paths.cache_dir.join(format!("image-codex-version/{image}"))
 }
 
 /// Read the Claude Code version we stored for a previously-built image.
@@ -81,47 +42,6 @@ pub fn store_image_version(paths: &JackinPaths, image: &str, version: &str) {
     let _ = write_cached(&path, version);
 }
 
-/// Returns `true` when the image contains an older Claude Code version than
-/// the latest published release, meaning the image should be rebuilt.
-pub async fn needs_claude_update(
-    paths: &JackinPaths,
-    image: &str,
-    runner: &mut impl CommandRunner,
-) -> bool {
-    let Some(installed) = stored_image_version(paths, image) else {
-        return false; // first build — let it proceed normally
-    };
-    let Some(latest) = latest_claude_version(paths, runner).await else {
-        return false; // npm unavailable — don't force a rebuild
-    };
-    installed != latest
-}
-
-/// Query npm for the latest published `opencode-ai` version,
-/// returning a cached value when the cache is still fresh.
-pub async fn latest_opencode_version(
-    paths: &JackinPaths,
-    runner: &mut impl CommandRunner,
-) -> Option<String> {
-    let cache_file = opencode_npm_cache_path(paths);
-
-    if let Some(cached) = read_if_fresh(&cache_file, NPM_CACHE_TTL) {
-        return Some(cached);
-    }
-
-    let version = runner
-        .capture("npm", &["view", "opencode-ai", "version"], None)
-        .await
-        .ok()?;
-    let version = version.trim().to_string();
-    if version.is_empty() {
-        return None;
-    }
-
-    let _ = write_cached(&cache_file, &version);
-    Some(version)
-}
-
 /// Read the `OpenCode` version we stored for a previously-built image.
 pub fn stored_opencode_version(paths: &JackinPaths, image: &str) -> Option<String> {
     let path = opencode_image_version_path(paths, image);
@@ -136,22 +56,6 @@ pub fn store_opencode_version(paths: &JackinPaths, image: &str, version: &str) {
     let _ = write_cached(&path, version);
 }
 
-/// Returns `true` when the image contains an older `OpenCode` version than
-/// the latest published release, meaning the image should be rebuilt.
-pub async fn needs_opencode_update(
-    paths: &JackinPaths,
-    image: &str,
-    runner: &mut impl CommandRunner,
-) -> bool {
-    let Some(installed) = stored_opencode_version(paths, image) else {
-        return false;
-    };
-    let Some(latest) = latest_opencode_version(paths, runner).await else {
-        return false;
-    };
-    installed != latest
-}
-
 /// Read the Kimi version we stored for a previously-built image.
 pub fn stored_kimi_version(paths: &JackinPaths, image: &str) -> Option<String> {
     let path = kimi_image_version_path(paths, image);
@@ -164,6 +68,51 @@ pub fn stored_kimi_version(paths: &JackinPaths, image: &str) -> Option<String> {
 pub fn store_kimi_version(paths: &JackinPaths, image: &str, version: &str) {
     let path = kimi_image_version_path(paths, image);
     let _ = write_cached(&path, version);
+}
+
+pub fn stored_amp_version(paths: &JackinPaths, image: &str) -> Option<String> {
+    let path = amp_image_version_path(paths, image);
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+pub fn store_amp_version(paths: &JackinPaths, image: &str, version: &str) {
+    let path = amp_image_version_path(paths, image);
+    let _ = write_cached(&path, version);
+}
+
+pub fn stored_codex_version(paths: &JackinPaths, image: &str) -> Option<String> {
+    let path = codex_image_version_path(paths, image);
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+pub fn store_codex_version(paths: &JackinPaths, image: &str, version: &str) {
+    let path = codex_image_version_path(paths, image);
+    let _ = write_cached(&path, version);
+}
+
+pub async fn needs_agent_update(
+    paths: &JackinPaths,
+    image: &str,
+    agent: crate::agent::Agent,
+) -> bool {
+    let installed = match agent {
+        crate::agent::Agent::Claude => stored_image_version(paths, image),
+        crate::agent::Agent::Codex => stored_codex_version(paths, image),
+        crate::agent::Agent::Amp => stored_amp_version(paths, image),
+        crate::agent::Agent::Kimi => stored_kimi_version(paths, image),
+        crate::agent::Agent::Opencode => stored_opencode_version(paths, image),
+    };
+    let Some(installed) = installed else {
+        return false;
+    };
+    let Some(latest) = crate::agent_binary::latest_release(paths, agent).await else {
+        return false;
+    };
+    installed != latest.version
 }
 
 /// File that records the last `JACKIN_CACHE_BUST` value used to build an image.
@@ -235,19 +184,16 @@ pub fn parse_opencode_version(raw: &str) -> Option<&str> {
     Some(token)
 }
 
-// ── helpers ────────────────────────────────────────────────────────────
+pub fn parse_amp_version(raw: &str) -> Option<&str> {
+    raw.split_whitespace().find(|token| {
+        token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
+    })
+}
 
-/// Read a cache file only if it was modified within `ttl`.
-fn read_if_fresh(path: &PathBuf, ttl: Duration) -> Option<String> {
-    let metadata = std::fs::metadata(path).ok()?;
-    let modified = metadata.modified().ok()?;
-    if SystemTime::now().duration_since(modified).unwrap_or(ttl) >= ttl {
-        return None;
-    }
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+pub fn parse_codex_version(raw: &str) -> Option<&str> {
+    raw.split_whitespace().find(|token| {
+        token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
+    })
 }
 
 /// Write content to a cache file, creating parent directories as needed.
@@ -261,8 +207,26 @@ fn write_cached(path: &PathBuf, content: &str) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::Agent;
     use crate::paths::JackinPaths;
     use tempfile::tempdir;
+
+    fn seed_latest(paths: &JackinPaths, agent: Agent, version: &str) {
+        let release = crate::agent_binary::AgentRelease {
+            agent,
+            version: version.to_string(),
+            url: "https://example.invalid/agent".to_string(),
+            checksum: None,
+            archive_member: None,
+        };
+        let path = paths
+            .cache_dir
+            .join("agent-binaries")
+            .join(agent.slug())
+            .join("latest.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, serde_json::to_string(&release).unwrap()).unwrap();
+    }
 
     #[test]
     fn stores_and_reads_image_version() {
@@ -285,12 +249,9 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
 
         store_image_version(&paths, "jk_agent-smith", "2.1.91");
-        // Seed the npm cache with a newer version
-        let cache = npm_cache_path(&paths);
-        let _ = write_cached(&cache, "2.1.92");
+        seed_latest(&paths, Agent::Claude, "2.1.92");
 
-        let mut runner = StubRunner("2.1.92".to_string());
-        assert!(needs_claude_update(&paths, "jk_agent-smith", &mut runner).await);
+        assert!(needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await);
     }
 
     #[tokio::test]
@@ -300,11 +261,9 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
 
         store_image_version(&paths, "jk_agent-smith", "2.1.92");
-        let cache = npm_cache_path(&paths);
-        let _ = write_cached(&cache, "2.1.92");
+        seed_latest(&paths, Agent::Claude, "2.1.92");
 
-        let mut runner = StubRunner("2.1.92".to_string());
-        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner).await);
+        assert!(!needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await);
     }
 
     #[tokio::test]
@@ -313,31 +272,8 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        let mut runner = StubRunner("2.1.92".to_string());
-        // No stored version yet → should not force rebuild
-        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner).await);
-    }
-
-    #[test]
-    fn expired_cache_is_ignored() {
-        let temp = tempdir().unwrap();
-        let cache_file = temp.path().join("expired");
-        std::fs::write(&cache_file, "2.1.91").unwrap();
-
-        // A zero TTL means any file is always expired
-        assert!(read_if_fresh(&cache_file, Duration::ZERO).is_none());
-    }
-
-    #[test]
-    fn fresh_cache_is_returned() {
-        let temp = tempdir().unwrap();
-        let cache_file = temp.path().join("fresh");
-        std::fs::write(&cache_file, "2.1.92").unwrap();
-
-        assert_eq!(
-            read_if_fresh(&cache_file, NPM_CACHE_TTL),
-            Some("2.1.92".to_string())
-        );
+        seed_latest(&paths, Agent::Claude, "2.1.92");
+        assert!(!needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await);
     }
 
     #[test]
@@ -386,11 +322,9 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
 
         store_opencode_version(&paths, "jk_the-architect", "1.14.47");
-        let cache = opencode_npm_cache_path(&paths);
-        let _ = write_cached(&cache, "1.14.48");
+        seed_latest(&paths, Agent::Opencode, "1.14.48");
 
-        let mut runner = StubRunner("1.14.48".to_string());
-        assert!(needs_opencode_update(&paths, "jk_the-architect", &mut runner).await);
+        assert!(needs_agent_update(&paths, "jk_the-architect", Agent::Opencode).await);
     }
 
     #[tokio::test]
@@ -400,11 +334,9 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
 
         store_opencode_version(&paths, "jk_the-architect", "1.14.48");
-        let cache = opencode_npm_cache_path(&paths);
-        let _ = write_cached(&cache, "1.14.48");
+        seed_latest(&paths, Agent::Opencode, "1.14.48");
 
-        let mut runner = StubRunner("1.14.48".to_string());
-        assert!(!needs_opencode_update(&paths, "jk_the-architect", &mut runner).await);
+        assert!(!needs_agent_update(&paths, "jk_the-architect", Agent::Opencode).await);
     }
 
     #[test]
@@ -490,42 +422,16 @@ mod tests {
         assert_eq!(parse_opencode_version(""), None);
     }
 
-    /// Minimal [`CommandRunner`] that returns a fixed string for any `capture`.
-    struct StubRunner(String);
+    #[test]
+    fn parse_amp_version_finds_semver_token() {
+        assert_eq!(
+            parse_amp_version("amp 0.0.1779945647-g362e01"),
+            Some("0.0.1779945647-g362e01")
+        );
+    }
 
-    impl CommandRunner for StubRunner {
-        async fn run(
-            &mut self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: Option<&std::path::Path>,
-            _opts: &crate::docker::RunOptions,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        async fn capture(
-            &mut self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: Option<&std::path::Path>,
-        ) -> anyhow::Result<String> {
-            Ok(self.0.clone())
-        }
-
-        async fn capture_secret(
-            &mut self,
-            _program: &str,
-            _args: &[&str],
-            _cwd: Option<&std::path::Path>,
-        ) -> anyhow::Result<String> {
-            // StubRunner is used only by version_check tests which never
-            // exercise code paths that call build_agent_image. Panic here
-            // to surface unexpected calls immediately rather than silently
-            // returning the fixed stub value for a different purpose.
-            panic!(
-                "StubRunner::capture_secret called unexpectedly; version_check tests do not exercise secret-capture paths"
-            )
-        }
+    #[test]
+    fn parse_codex_version_finds_semver_token() {
+        assert_eq!(parse_codex_version("codex 0.134.0"), Some("0.134.0"));
     }
 }

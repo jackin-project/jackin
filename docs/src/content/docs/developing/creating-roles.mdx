@@ -221,7 +221,7 @@ The fastest way to test is to load it:
 jackin load your-agent-name --rebuild
 ```
 
-The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and newer agent CLI downloads.
+The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and refreshing agent install layers. Agent binaries are resolved and cached by jackin' on the host, so unchanged versions are copied into the build context instead of downloaded again.
 
 Use `--debug` to see raw Docker output if something goes wrong:
 

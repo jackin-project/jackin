@@ -121,6 +121,19 @@ pub(super) async fn build_agent_image(
         rebuild
     };
 
+    let mut agent_binaries = Vec::new();
+    for supported_agent in validated_repo.manifest.supported_agents() {
+        let binary = crate::agent_binary::ensure_available(paths, supported_agent)
+            .await
+            .with_context(|| {
+                format!(
+                    "preparing {} binary for derived image build",
+                    supported_agent.slug()
+                )
+            })?;
+        agent_binaries.push((binary.agent, binary.path));
+    }
+
     // Ensure the jackin-capsule binary is available in the local cache.
     // Downloads from the GitHub preview release if not cached for this
     // version. Propagate the error: the derived image's ENTRYPOINT is
@@ -146,6 +159,7 @@ pub(super) async fn build_agent_image(
         validated_repo,
         base_image_override,
         Some(jackin_capsule_src),
+        &agent_binaries,
     )?;
     drop(repo_lock);
 
@@ -403,12 +417,21 @@ async fn extract_agent_version(
             version_check::parse_opencode_version,
             version_check::store_opencode_version,
         ),
+        crate::agent::Agent::Codex => (
+            "Codex",
+            version_check::parse_codex_version,
+            version_check::store_codex_version,
+        ),
+        crate::agent::Agent::Amp => (
+            "Amp",
+            version_check::parse_amp_version,
+            version_check::store_amp_version,
+        ),
         crate::agent::Agent::Kimi => (
             "Kimi",
             version_check::parse_kimi_version,
             version_check::store_kimi_version,
         ),
-        _ => return,
     };
     let slug = agent.slug();
     let Ok(raw) = runner

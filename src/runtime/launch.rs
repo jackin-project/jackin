@@ -1975,21 +1975,9 @@ async fn load_role_with(
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
             let img = image_name(selector);
-            let needs_update = match agent {
-                crate::agent::Agent::Claude => {
-                    version_check::needs_claude_update(paths, &img, runner).await
-                }
-                crate::agent::Agent::Opencode => {
-                    version_check::needs_opencode_update(paths, &img, runner).await
-                }
-                _ => false,
-            };
+            let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
             if needs_update {
-                let name = match agent {
-                    crate::agent::Agent::Claude => "Claude",
-                    crate::agent::Agent::Opencode => "OpenCode",
-                    _ => unreachable!(),
-                };
+                let name = agent.slug();
                 if let Some(progress) = steps.progress_mut() {
                     progress.stage_progress(
                         super::progress::LaunchStage::DerivedImage,
