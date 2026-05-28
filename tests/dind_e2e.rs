@@ -6,7 +6,7 @@
 
 #![cfg(feature = "e2e")]
 
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -409,6 +409,24 @@ fn run_in_pty_until_file(
         .spawn()
         .expect("script must spawn");
     let _stdin = child.stdin.take().expect("script stdin must be piped");
+    let stdout = child.stdout.take().expect("script stdout must be piped");
+    let stderr = child.stderr.take().expect("script stderr must be piped");
+    let stdout_reader = std::thread::spawn(move || {
+        let mut stdout = stdout;
+        let mut bytes = Vec::new();
+        stdout
+            .read_to_end(&mut bytes)
+            .expect("script stdout must be readable");
+        bytes
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut stderr = stderr;
+        let mut bytes = Vec::new();
+        stderr
+            .read_to_end(&mut bytes)
+            .expect("script stderr must be readable");
+        bytes
+    });
 
     let deadline = Instant::now() + sentinel.timeout;
     while Instant::now() < deadline {
@@ -416,10 +434,19 @@ fn run_in_pty_until_file(
             .is_ok_and(|contents| contents.contains(sentinel.text))
         {
             let _ = child.kill();
-            return child.wait_with_output().expect("script must finish");
+            let status = child.wait().expect("script must finish");
+            return std::process::Output {
+                status,
+                stdout: stdout_reader.join().expect("stdout reader must finish"),
+                stderr: stderr_reader.join().expect("stderr reader must finish"),
+            };
         }
         if let Some(status) = child.try_wait().expect("script status must be readable") {
-            let output = child.wait_with_output().expect("script must finish");
+            let output = std::process::Output {
+                status,
+                stdout: stdout_reader.join().expect("stdout reader must finish"),
+                stderr: stderr_reader.join().expect("stderr reader must finish"),
+            };
             assert!(
                 status.success(),
                 "script exited before sentinel file appeared\nstdout:\n{}\nstderr:\n{}",
@@ -432,7 +459,12 @@ fn run_in_pty_until_file(
     }
 
     let _ = child.kill();
-    let output = child.wait_with_output().expect("script must finish");
+    let status = child.wait().expect("script must finish");
+    let output = std::process::Output {
+        status,
+        stdout: stdout_reader.join().expect("stdout reader must finish"),
+        stderr: stderr_reader.join().expect("stderr reader must finish"),
+    };
     let diagnostics = diagnostics_snapshot(home);
     panic!(
         "timed out waiting for sentinel file {}\nstdout:\n{}\nstderr:\n{}\ndiagnostics:\n{}",
