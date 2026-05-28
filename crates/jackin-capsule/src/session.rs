@@ -651,13 +651,152 @@ pub enum SessionEvent {
     },
     GitBranchContextLoaded {
         request_id: u64,
-        branch: Option<String>,
+        context: GitContext,
     },
     PullRequestContextLoaded {
         request_id: u64,
-        branch: Option<String>,
+        branch: Option<BranchName>,
+        /// HEAD captured at spawn so the cache entry is keyed on what
+        /// the worker actually queried, not on mux state at apply time.
+        head: Option<Oid>,
         outcome: PullRequestLookupOutcome,
     },
+}
+
+/// Resolved git state for the workspace workdir. Three meaningful
+/// variants — `Absent` (no readable git metadata), `Branch` (on a
+/// named branch, head resolves when the tip exists), `Detached`
+/// (HEAD points directly at an OID with no branch ref). The old
+/// `{branch: Option<String>, head: Option<String>}` shape allowed a
+/// fourth nonsense state (`branch=None, head=Some` with no detached
+/// context); the sum type removes it at the type level.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum GitContext {
+    #[default]
+    Absent,
+    Detached {
+        head: Oid,
+    },
+    Branch {
+        name: BranchName,
+        /// `None` while the branch ref hasn't resolved (unborn HEAD on
+        /// a fresh `git init`, or a packed-refs miss before the next
+        /// poll). The PR-context cache treats `None` and `Some` as
+        /// distinct cache keys so cache busts on first-tip arrival.
+        head: Option<Oid>,
+    },
+}
+
+impl GitContext {
+    pub fn branch_name(&self) -> Option<&BranchName> {
+        match self {
+            Self::Branch { name, .. } => Some(name),
+            _ => None,
+        }
+    }
+
+    pub fn head(&self) -> Option<&Oid> {
+        match self {
+            Self::Detached { head } => Some(head),
+            Self::Branch {
+                head: Some(head), ..
+            } => Some(head),
+            _ => None,
+        }
+    }
+
+    pub fn is_present(&self) -> bool {
+        !matches!(self, Self::Absent)
+    }
+}
+
+/// Validated git object id. Constructed via `Oid::parse`, which
+/// accepts the two on-disk hex lengths git uses today (40 = SHA-1,
+/// 64 = SHA-256 via `git init --object-format=sha256`, opt-in since
+/// git 2.29). All hex digits must be ASCII case-insensitive.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Oid(String);
+
+impl Oid {
+    pub fn parse(value: &str) -> Option<Self> {
+        if matches!(value.len(), 40 | 64) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
+            Some(Self(value.to_string()))
+        } else {
+            None
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for Oid {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for Oid {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Oid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Validated short branch name (no `refs/heads/` prefix, no
+/// whitespace, non-empty). Constructed via `BranchName::parse`,
+/// which strips a leading `refs/heads/` if present so callers can
+/// pass either the symref target or the short name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BranchName(String);
+
+impl BranchName {
+    pub fn parse(value: &str) -> Option<Self> {
+        let stripped = value.strip_prefix("refs/heads/").unwrap_or(value);
+        if stripped.is_empty() || stripped.chars().any(char::is_whitespace) {
+            None
+        } else {
+            Some(Self(stripped.to_string()))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for BranchName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for BranchName {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<str> for BranchName {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for BranchName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// Outcome of a background `gh pr` lookup. The `Resolved` variant carries
