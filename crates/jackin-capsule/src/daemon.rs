@@ -28,8 +28,6 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
 use portable_pty::CommandBuilder;
 
 use crate::dialog::{
@@ -5207,18 +5205,13 @@ fn spawn_failure_banner(reason: &str) -> Vec<u8> {
     format!("\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8").into_bytes()
 }
 
-/// OSC 52 clipboard-write sequence: `\x1b]52;c;<base64>\x07`. Targets
-/// the system clipboard (`c`); the BEL terminator is the form Ghostty,
-/// Kitty, iTerm2, and Alacritty all parse. Forwarded to the operator's
-/// outer terminal via `send_output` from the `CopyToClipboard` dialog
-/// action.
+/// Forwarded to the operator's outer terminal via `send_output` from the
+/// `CopyToClipboard` dialog action. The OSC 52 byte encoding and terminal
+/// compatibility notes live with the canonical implementation in
+/// `jackin_tui::ansi::encode_osc52_clipboard_write`; keeping that detail in
+/// one place stops the two copies from drifting.
 fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
-    let encoded = BASE64.encode(payload.as_bytes());
-    let mut out = Vec::with_capacity(8 + encoded.len());
-    out.extend_from_slice(b"\x1b]52;c;");
-    out.extend_from_slice(encoded.as_bytes());
-    out.extend_from_slice(b"\x07");
-    out
+    jackin_tui::ansi::encode_osc52_clipboard_write(payload)
 }
 
 fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {

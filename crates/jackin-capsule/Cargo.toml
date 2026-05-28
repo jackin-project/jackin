@@ -39,7 +39,6 @@ nix = { version = "0.31", features = ["term", "signal", "process"] }
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 vte = "0.15"
 url = "2"
-base64 = "0.22"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 jackin-tui = { path = "../jackin-tui" }
