@@ -997,25 +997,28 @@ impl Multiplexer {
         E: FnOnce(T) -> SessionEvent + Send + 'static,
     {
         let event_tx = self.event_tx.clone();
-        let work = move || {
+        let emit = move || {
             let value = work();
             if event_tx.send(to_event(value)).is_err() {
                 crate::clog!("{label}: event channel closed before result reached main loop");
             }
         };
+        // Fire-and-forget worker — no `await`, no tokio context needed.
+        // Inside the daemon's `#[tokio::main]` we still route through
+        // `spawn_blocking` so the runtime accounts for blocking work;
+        // outside one (unit tests, ad-hoc tools) a plain OS thread
+        // avoids spinning up a second runtime.
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
-                handle.spawn_blocking(work);
+                handle.spawn_blocking(emit);
             }
             Err(_) => {
-                static BLOCKING_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-                    tokio::runtime::Builder::new_current_thread()
-                        .thread_name("capsule-blocking")
-                        .enable_all()
-                        .build()
-                        .expect("build fallback Tokio blocking runtime")
-                });
-                BLOCKING_RUNTIME.spawn_blocking(work);
+                if let Err(e) = std::thread::Builder::new()
+                    .name(format!("capsule-blocking[{label}]"))
+                    .spawn(emit)
+                {
+                    crate::clog!("{label}: failed to spawn blocking worker thread: {e}");
+                }
             }
         }
     }
