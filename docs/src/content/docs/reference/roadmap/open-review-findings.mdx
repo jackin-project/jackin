@@ -109,20 +109,6 @@ record of what was reviewed and when.
     than pinned commits, and the current operator experience does not
     expose strong provenance or update controls.
 
-## Accepted exceptions
-
-### Unpinned remote install script in derived Dockerfile
-
-Location: <RepoFile path="src/derived_image.rs" />
-
-```dockerfile
-RUN curl -fsSL https://claude.ai/install.sh | bash
-```
-
-Accepted because this is currently the official and only supported
-Claude Code installation path. There is no pinned package artifact or
-published checksum to verify instead, and the installer is fetched from
-Anthropic's first-party domain.
 
 Reviewed: 2026-04-04.
 

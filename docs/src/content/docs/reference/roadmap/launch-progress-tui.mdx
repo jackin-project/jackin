@@ -43,6 +43,7 @@ image         jackin/agent-smith:latest
 ● identity       resolved role + operator
 ● role           trusted source
 ◐ construct      pulling base world
+○ agent binaries queued
 ○ derived image  queued
 ○ workspace      queued
 ○ network        queued
@@ -68,6 +69,7 @@ image         jackin/agent-smith:latest
 ● identity       resolved role + operator
 ● role           trusted source
 ◐ construct      pulling base world
+○ agent binaries queued
 ○ derived image  queued
 ○ workspace      queued
 ○ network        queued
@@ -95,6 +97,7 @@ The launch surface should be colorful enough to feel recognizable, but disciplin
 |---|---|---|
 | `identity`, `role`, `credentials` | phosphor green / dim green | Resolution and trust are jackin' control-plane work. |
 | `construct` | cyan-green | The shared base world is coming online. |
+| `agent binaries` | amber-green | Host-side runtime binary preparation is slow-path dependency work, but not Docker output. |
 | `derived image` | amber | Image builds are the slow transformation stage; amber signals active work without implying failure. |
 | `network`, `sidecar` | blue-cyan | Infrastructure wiring and private daemon startup should read as system-level connectivity. |
 | `capsule` | white + green | The control plane is awake and ready. |
@@ -124,7 +127,8 @@ Use stronger verbs where they clarify the product story, but avoid theatrical wo
 | `identity` | `resolving operator`, `claiming instance identity` |
 | `role` | `trusting role`, `validating role contract` |
 | `construct` | `pulling construct`, `construct already online` |
-| `derived image` | `building derived image`, `refreshing agent runtime layer` |
+| `agent binaries` | `preparing claude binary`, `preparing jackin-capsule binary` |
+| `derived image` | `preparing derived image`, `building Docker image` |
 | `workspace` | `materializing workspace`, `mounting directory` |
 | `network` | `wiring private network` |
 | `sidecar` | `waking sidecar` |
@@ -159,8 +163,9 @@ The TUI should show a small stable list of public stages. Substatus text can be 
 | `identity` | Resolve the operator, workspace, selected runtime agent, and instance identity. |
 | `role` | Fetch/update the role repository, validate its contract, and complete source trust or branch confirmation. |
 | `credentials` | Resolve manifest env, operator env, agent auth mode, GitHub auth mode, and credential preflight checks. |
-| `construct` | Pull or verify the shared `construct` image and prepare the matching Capsule binary for the derived build. This is the base world every role extends. |
-| `derived image` | Build, refresh, or reuse the role-specific image layered on top of the `construct`, including the role tools and selected agent runtime layers. |
+| `construct` | Pull or verify the shared `construct` image. This is the base world every role extends. |
+| `agent binaries` | Resolve, download when needed, and cache the role's required agent binaries plus the matching `jackin-capsule` binary before any Docker build output exists. |
+| `derived image` | Snapshot the role build context, then build, refresh, or reuse the role-specific image layered on top of the `construct`. |
 | `workspace` | Materialize workspace mounts, isolated worktrees/clones, and launch-time filesystem state. |
 | `network` | Create the private per-instance network and launch-scoped Docker resources. |
 | `sidecar` | Start Docker-in-Docker and wait until the private daemon is reachable. |
@@ -173,8 +178,9 @@ The `construct` and `derived image` stages should expose precise substatus becau
 
 | Stage | Example substatus |
 |---|---|
-| `construct` | `pulling projectjackin/construct:trixie`, `construct already current`, `using JACKIN_CONSTRUCT_IMAGE override`, `preparing Capsule binary` |
-| `derived image` | `checking role image cache`, `building role tools`, `refreshing Claude layer`, `reusing image built from current role SHA` |
+| `construct` | `pulling projectjackin/construct:trixie`, `construct already current`, `using JACKIN_CONSTRUCT_IMAGE override` |
+| `agent binaries` | `preparing claude binary`, `preparing kimi binary`, `preparing jackin-capsule binary`, `cached codex binary` |
+| `derived image` | `checking role image cache`, `preparing derived image`, `Building Docker image`, `reusing image built from current role SHA` |
 | `capsule` | `creating role container`, `seeding agent home`, `running setup hooks`, `starting Capsule` |
 | `hardline` | `opening primary session`, `focusing Claude tab`, `ready for operator` |
 
@@ -278,7 +284,7 @@ Replace launch-local intro/outro decisions with active container counting manage
 
 ### Phase 2 — Launch progress event sink
 
-Add a launch-scoped progress sink and route current `StepCounter`, config-table, auth notices, Docker launch milestones, restore decisions, cleanup notices, and failure paths through structured events. Keep the compact renderer initially so behavior changes are small and testable. This phase should establish the public stage names (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even before the rich TUI exists.
+Add a launch-scoped progress sink and route current `StepCounter`, config-table, auth notices, Docker launch milestones, restore decisions, cleanup notices, and failure paths through structured events. Keep the compact renderer initially so behavior changes are small and testable. This phase should establish the public stage names (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even before the rich TUI exists.
 
 ### Phase 3 — Durable run diagnostics
 

@@ -22,7 +22,7 @@ use super::attach::{
 use super::cleanup::gc_orphaned_resources;
 use super::discovery::list_running_agent_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
-use super::image::build_agent_image;
+use super::image::{build_agent_image, prepare_runtime_binaries};
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
     image_name, image_name_for_branch,
@@ -199,7 +199,8 @@ fn release_rich_progress_for_plain_io(steps: &mut StepCounter, reason: &str) {
 fn stage_for_step_text(text: &str) -> super::progress::LaunchStage {
     match text {
         "Resolving role identity" => super::progress::LaunchStage::Role,
-        "Building Docker image" => super::progress::LaunchStage::DerivedImage,
+        "Preparing runtime binaries" => super::progress::LaunchStage::AgentBinaries,
+        "Preparing derived image" => super::progress::LaunchStage::DerivedImage,
         "Starting Docker-in-Docker" => super::progress::LaunchStage::Sidecar,
         "Launching role" => super::progress::LaunchStage::Capsule,
         _ => super::progress::LaunchStage::Identity,
@@ -213,6 +214,7 @@ const fn completion_label(stage: super::progress::LaunchStage) -> &'static str {
         }
         super::progress::LaunchStage::Role => "trusted source",
         super::progress::LaunchStage::Construct => "online",
+        super::progress::LaunchStage::AgentBinaries => "cached",
         super::progress::LaunchStage::DerivedImage | super::progress::LaunchStage::Capsule => {
             "ready"
         }
@@ -1971,25 +1973,13 @@ async fn load_role_with(
     }
 
     let load_result: anyhow::Result<String> = async {
-        // Step 2: Build Docker image
+        // Step 2: Prepare runtime assets and build the derived image.
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
             let img = image_name(selector);
-            let needs_update = match agent {
-                crate::agent::Agent::Claude => {
-                    version_check::needs_claude_update(paths, &img, runner).await
-                }
-                crate::agent::Agent::Opencode => {
-                    version_check::needs_opencode_update(paths, &img, runner).await
-                }
-                _ => false,
-            };
+            let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
             if needs_update {
-                let name = match agent {
-                    crate::agent::Agent::Claude => "Claude",
-                    crate::agent::Agent::Opencode => "OpenCode",
-                    _ => unreachable!(),
-                };
+                let name = agent.slug();
                 if let Some(progress) = steps.progress_mut() {
                     progress.stage_progress(
                         super::progress::LaunchStage::DerivedImage,
@@ -2008,26 +1998,51 @@ async fn load_role_with(
             );
             progress.stage_done(super::progress::LaunchStage::Construct, "online");
         }
-        steps.next("Building Docker image").await;
-        let image_build = build_agent_image(
-            paths,
-            selector,
-            &cached_repo,
-            &validated_repo,
-            &host,
-            agent,
-            rebuild,
-            agent_update,
-            opts.debug,
-            opts.role_branch.as_deref(),
-            docker,
-            runner,
-            repo_lock,
-        );
-        let image = if let Some(progress) = steps.progress_mut() {
-            progress.while_waiting(image_build).await?
+        steps.next("Preparing runtime binaries").await;
+        let runtime_binaries = if let Some(progress) = steps.progress_mut() {
+            prepare_runtime_binaries(paths, &validated_repo, Some(progress)).await?
         } else {
-            image_build.await?
+            prepare_runtime_binaries(paths, &validated_repo, None).await?
+        };
+        steps.next("Preparing derived image").await;
+        let image = if let Some(progress) = steps.progress_mut() {
+            build_agent_image(
+                paths,
+                selector,
+                &cached_repo,
+                &validated_repo,
+                &host,
+                agent,
+                runtime_binaries,
+                rebuild,
+                agent_update,
+                opts.debug,
+                opts.role_branch.as_deref(),
+                docker,
+                runner,
+                repo_lock,
+                Some(progress),
+            )
+            .await?
+        } else {
+            build_agent_image(
+                paths,
+                selector,
+                &cached_repo,
+                &validated_repo,
+                &host,
+                agent,
+                runtime_binaries,
+                rebuild,
+                agent_update,
+                opts.debug,
+                opts.role_branch.as_deref(),
+                docker,
+                runner,
+                repo_lock,
+                None,
+            )
+            .await?
         };
 
         let container_state = paths.data_dir.join(&container_name);
@@ -2573,6 +2588,7 @@ async fn load_role_with(
                     .stage_failed(super::progress::LaunchFailure {
                         title: launch_failure_title(failed_stage, &error, run.as_deref()),
                         summary: short_launch_diagnosis(failed_stage, &error, run.as_deref()),
+                        detail: Some(format!("{error:#}")),
                         next_step: None,
                         stage: failed_stage,
                         diagnostics_path: None,

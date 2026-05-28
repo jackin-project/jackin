@@ -33,13 +33,75 @@ impl Agent {
         }
     }
 
-    pub const fn install_block(self) -> &'static str {
+    pub fn install_block(self, source: &str) -> String {
         match self {
-            Self::Claude => CLAUDE_INSTALL_BLOCK,
-            Self::Codex => CODEX_INSTALL_BLOCK,
-            Self::Amp => AMP_INSTALL_BLOCK,
-            Self::Kimi => KIMI_INSTALL_BLOCK,
-            Self::Opencode => OPENCODE_INSTALL_BLOCK,
+            Self::Claude => format!(
+                "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /tmp/jackin-agent-binaries
+COPY --chown=agent:agent {source} /tmp/jackin-agent-binaries/claude
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    chmod 0755 /tmp/jackin-agent-binaries/claude && \\
+    /tmp/jackin-agent-binaries/claude install && \\
+    claude --version
+"
+            ),
+            Self::Codex => format!(
+                "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.local/bin
+COPY --chown=agent:agent {source} /home/agent/.local/bin/codex
+ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    chmod 0755 \"${{HOME}}/.local/bin/codex\" && \\
+    codex --version
+"
+            ),
+            Self::Amp => format!(
+                "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.amp/bin
+COPY --chown=agent:agent {source} /home/agent/.amp/bin/amp
+ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    chmod 0755 \"${{HOME}}/.amp/bin/amp\" && \\
+    mkdir -p \"${{HOME}}/.local/bin\" && \\
+    ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\" && \\
+    amp --version
+"
+            ),
+            Self::Kimi => format!(
+                "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.kimi-code/bin
+COPY --chown=agent:agent {source} /home/agent/.kimi-code/bin/kimi
+ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    chmod 0755 \"${{HOME}}/.kimi-code/bin/kimi\" && \\
+    kimi --version
+"
+            ),
+            Self::Opencode => format!(
+                "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.opencode/bin
+COPY --chown=agent:agent {source} /home/agent/.opencode/bin/opencode
+ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    chmod 0755 \"${{HOME}}/.opencode/bin/opencode\" && \\
+    opencode --version
+"
+            ),
         }
     }
 
@@ -82,79 +144,6 @@ impl Agent {
         }
     }
 }
-
-const CLAUDE_INSTALL_BLOCK: &str = "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN curl -fsSL https://claude.ai/install.sh | bash
-RUN claude --version
-";
-
-const AMP_INSTALL_BLOCK: &str = "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN curl -fsSL https://ampcode.com/install.sh | bash
-RUN amp --version
-";
-
-const KIMI_INSTALL_BLOCK: &str = "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN set -euxo pipefail && \\
-    : \"${JACKIN_CACHE_BUST}\" && \\
-    export PATH=\"${HOME}/.kimi-code/bin:${HOME}/.local/bin:${PATH}\" && \\
-    curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash && \\
-    kimi --version
-ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
-";
-
-const OPENCODE_INSTALL_BLOCK: &str = "\
-USER agent\n\
-ARG JACKIN_CACHE_BUST=0\n\
-RUN set -euo pipefail && \\\n\
-    : \"${JACKIN_CACHE_BUST}\" && \\\n\
-    case \"$(uname -m)\" in \\\n\
-      x86_64)  ARCH=x64 ;; \\\n\
-      aarch64) ARCH=arm64 ;; \\\n\
-      *) echo \"unsupported arch $(uname -m)\"; exit 1 ;; \\\n\
-    esac && \\\n\
-    mkdir -p \"${HOME}/.opencode/bin\" && \\\n\
-    curl -fsSL \"https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${ARCH}.tar.gz\" \\\n\
-      | tar xz -C \"${HOME}/.opencode/bin\" && \\\n\
-    \"${HOME}/.opencode/bin/opencode\" --version\n\
-ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"\n\
-";
-
-const CODEX_INSTALL_BLOCK: &str = "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-ARG TARGETARCH
-RUN set -euxo pipefail && \\
-    : \"${JACKIN_CACHE_BUST}\" && \\
-    case \"${TARGETARCH:-amd64}\" in \\
-      amd64) ARCH=x86_64-unknown-linux-musl ;; \\
-      arm64) ARCH=aarch64-unknown-linux-musl ;; \\
-      *) echo \"unsupported arch ${TARGETARCH}\"; exit 1 ;; \\
-    esac && \\
-    TAG=$(curl -sfIL -o /dev/null -w '%{url_effective}' \\
-            https://github.com/openai/codex/releases/latest \\
-          | sed 's|.*/tag/||') && \\
-    if [ -z \"${TAG}\" ]; then \\
-      echo \"failed to resolve codex release tag — GitHub redirect format may have changed\" && \\
-      exit 1; \\
-    fi && \\
-    case \"${TAG}\" in \\
-      v[0-9]*|rust-v[0-9]*) ;; \\
-      *) echo \"unexpected codex release tag format: ${TAG}\"; exit 1 ;; \\
-    esac && \\
-    ASSET=\"codex-${ARCH}\" && \\
-    mkdir -p \"${HOME}/.local/bin\" && \\
-    curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/${ASSET}.tar.gz\" \\
-      | tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\" && \\
-    chmod 0755 \"${HOME}/.local/bin/codex\" && \\
-    \"${HOME}/.local/bin/codex\" --version
-ENV PATH=\"/home/agent/.local/bin:${PATH}\"
-";
 
 impl fmt::Display for Agent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -227,59 +216,94 @@ mod tests {
 
     #[test]
     fn codex_install_block_installs_cli_as_agent_with_current_archive_layout() {
-        let block = Agent::Codex.install_block();
-        assert!(block.starts_with("USER agent\n"));
-        assert!(block.contains("set -euxo pipefail"));
-        assert!(block.contains("${TARGETARCH:-amd64}"));
-        assert!(block.contains("x86_64-unknown-linux-musl"));
-        assert!(block.contains("aarch64-unknown-linux-musl"));
-        assert!(block.contains("ASSET=\"codex-${ARCH}\""));
-        assert!(block.contains("mkdir -p \"${HOME}/.local/bin\""));
-        assert!(block.contains("tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\""));
-        assert!(block.contains("chmod 0755 \"${HOME}/.local/bin/codex\""));
-        assert!(block.contains("\"${HOME}/.local/bin/codex\" --version"));
-        assert!(block.contains("ENV PATH=\"/home/agent/.local/bin:${PATH}\""));
-        assert!(block.contains("openai/codex/releases"));
-    }
-
-    #[test]
-    fn claude_install_block_installs_cli_via_official_script() {
-        let block = Agent::Claude.install_block();
-        assert!(block.starts_with("USER agent\n"));
-        assert!(block.contains("claude.ai/install.sh"));
-        assert!(block.contains("claude --version"));
-    }
-
-    #[test]
-    fn amp_install_block_installs_cli_via_official_script() {
-        let block = Agent::Amp.install_block();
-        assert!(block.starts_with("USER agent\n"));
-        assert!(block.contains("ampcode.com/install.sh"));
-        assert!(block.contains("amp --version"));
-    }
-
-    #[test]
-    fn kimi_install_block_uses_official_curl_installer() {
-        let block = Agent::Kimi.install_block();
-        assert!(block.starts_with("USER agent\n"));
-        assert!(
-            block.contains("export PATH=\"${HOME}/.kimi-code/bin:${HOME}/.local/bin:${PATH}\"")
-        );
-        assert!(block.contains("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"));
-        assert!(block.contains("kimi --version"));
-        assert!(
-            block
-                .contains("ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"")
+        assert_eq!(
+            Agent::Codex.install_block(".jackin-runtime/agent-binaries/codex"),
+            "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.local/bin
+COPY --chown=agent:agent .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
+ENV PATH=\"/home/agent/.local/bin:${PATH}\"
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    chmod 0755 \"${HOME}/.local/bin/codex\" && \\
+    codex --version
+"
         );
     }
 
     #[test]
-    fn opencode_install_block_downloads_binary_from_github() {
-        let block = Agent::Opencode.install_block();
-        assert!(block.starts_with("USER agent\n"));
-        assert!(block.contains("anomalyco/opencode/releases/latest/download"));
-        assert!(block.contains("/opencode\" --version"));
-        assert!(block.contains("ENV PATH"));
+    fn claude_install_block_installs_cached_cli() {
+        assert_eq!(
+            Agent::Claude.install_block(".jackin-runtime/agent-binaries/claude"),
+            "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /tmp/jackin-agent-binaries
+COPY --chown=agent:agent .jackin-runtime/agent-binaries/claude /tmp/jackin-agent-binaries/claude
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    chmod 0755 /tmp/jackin-agent-binaries/claude && \\
+    /tmp/jackin-agent-binaries/claude install && \\
+    claude --version
+"
+        );
+    }
+
+    #[test]
+    fn amp_install_block_installs_cached_cli() {
+        assert_eq!(
+            Agent::Amp.install_block(".jackin-runtime/agent-binaries/amp"),
+            "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.amp/bin
+COPY --chown=agent:agent .jackin-runtime/agent-binaries/amp /home/agent/.amp/bin/amp
+ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${PATH}\"
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    chmod 0755 \"${HOME}/.amp/bin/amp\" && \\
+    mkdir -p \"${HOME}/.local/bin\" && \\
+    ln -sf \"${HOME}/.amp/bin/amp\" \"${HOME}/.local/bin/amp\" && \\
+    amp --version
+"
+        );
+    }
+
+    #[test]
+    fn kimi_install_block_installs_cached_cli() {
+        assert_eq!(
+            Agent::Kimi.install_block(".jackin-runtime/agent-binaries/kimi"),
+            "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.kimi-code/bin
+COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
+ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    chmod 0755 \"${HOME}/.kimi-code/bin/kimi\" && \\
+    kimi --version
+"
+        );
+    }
+
+    #[test]
+    fn opencode_install_block_installs_cached_cli() {
+        assert_eq!(
+            Agent::Opencode.install_block(".jackin-runtime/agent-binaries/opencode"),
+            "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.opencode/bin
+COPY --chown=agent:agent .jackin-runtime/agent-binaries/opencode /home/agent/.opencode/bin/opencode
+ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    chmod 0755 \"${HOME}/.opencode/bin/opencode\" && \\
+    opencode --version
+"
+        );
     }
 }
 
