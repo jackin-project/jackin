@@ -1806,17 +1806,10 @@ async fn load_role_with(
         );
     }
 
-    // Resolve env vars (interactive prompts happen here, before build)
-    let manifest_resolved = if validated_repo.manifest.env.is_empty() {
-        crate::env_resolver::ResolvedEnv { vars: vec![] }
-    } else {
-        let prompter = LaunchEnvPrompter::new(steps.progress_mut());
-        crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
-    };
-
     // Resolve operator env layers (global / role / workspace /
-    // workspace × role). op:// refs shell out to `op`; $NAME refs
-    // read the host env. Failures are aggregated into a single error.
+    // workspace × role) before manifest env. Operator-provided values
+    // preseed matching manifest variables, so a configured value does
+    // not ask the operator the same question again.
     //
     // The operator env resolver takes two injection seams:
     //   * `op_runner`  — resolves `op://...` references (production:
@@ -1853,6 +1846,18 @@ async fn load_role_with(
             workspace_name.as_deref(),
             runner,
             host_env_fn,
+        )?
+    };
+
+    // Resolve env vars (interactive prompts happen here, before build)
+    let manifest_resolved = if validated_repo.manifest.env.is_empty() {
+        crate::env_resolver::ResolvedEnv { vars: vec![] }
+    } else {
+        let prompter = LaunchEnvPrompter::new(steps.progress_mut());
+        crate::env_resolver::resolve_env_with_overrides(
+            &validated_repo.manifest.env,
+            &prompter,
+            &operator_env,
         )?
     };
 

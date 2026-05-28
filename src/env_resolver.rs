@@ -74,12 +74,25 @@ pub fn resolve_env(
     declarations: &BTreeMap<String, EnvVarDecl>,
     prompter: &impl EnvPrompter,
 ) -> anyhow::Result<ResolvedEnv> {
+    resolve_env_with_overrides(declarations, prompter, &BTreeMap::new())
+}
+
+pub fn resolve_env_with_overrides(
+    declarations: &BTreeMap<String, EnvVarDecl>,
+    prompter: &impl EnvPrompter,
+    overrides: &BTreeMap<String, String>,
+) -> anyhow::Result<ResolvedEnv> {
     let order = crate::env_model::topological_env_order(declarations)?;
     let mut vars = Vec::new();
     let mut skipped: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for name in &order {
         let decl = &declarations[name];
+
+        if let Some(value) = overrides.get(name) {
+            vars.push((name.clone(), value.clone()));
+            continue;
+        }
 
         // Check if any dependency was skipped — cascade skip
         let dep_skipped = decl.depends_on.iter().any(|dep| {
@@ -449,6 +462,37 @@ mod tests {
 
         let defaults = prompter.captured_defaults.borrow();
         assert_eq!(defaults[1], Some("feature/proj1".to_string()));
+    }
+
+    #[test]
+    fn operator_overrides_preseed_interactive_manifest_env() {
+        let mut decls = BTreeMap::new();
+        decls.insert(
+            "PROJECT".to_string(),
+            interactive_select("Select:", vec!["api", "web"]),
+        );
+
+        let branch = EnvVarDecl {
+            default_value: Some("feature/${env.PROJECT}".to_string()),
+            interactive: true,
+            skippable: false,
+            prompt: Some("Branch for ${env.PROJECT}:".to_string()),
+            options: vec![],
+            depends_on: vec!["env.PROJECT".to_string()],
+        };
+        decls.insert("BRANCH".to_string(), branch);
+
+        let prompter = MockPrompter::new(vec![PromptResult::Value("feature/web".to_string())]);
+        let overrides = BTreeMap::from([("PROJECT".to_string(), "web".to_string())]);
+        let resolved = resolve_env_with_overrides(&decls, &prompter, &overrides).unwrap();
+
+        assert_eq!(resolved.vars[0], ("PROJECT".to_string(), "web".to_string()));
+        assert_eq!(
+            resolved.vars[1],
+            ("BRANCH".to_string(), "feature/web".to_string())
+        );
+        let titles = prompter.captured_titles.borrow();
+        assert_eq!(titles.as_slice(), ["Branch for web:"]);
     }
 
     #[test]

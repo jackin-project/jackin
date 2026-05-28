@@ -84,7 +84,7 @@ jackin load the-architect --role-branch feat/my-pr
 4. **If `--role-branch` is set**, always prompts to confirm the branch is safe to build, regardless of the role's trust status (see [Branch trust gate](/guides/security-model#branch-trust-gate))
 5. Resolves the runtime agent from `--agent`, workspace `default_agent`, a single supported role agent, or an interactive prompt for multi-agent roles
 6. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
-7. Prompts for interactive environment variables declared in the manifest
+7. Resolves operator env, then prompts for any remaining interactive environment variables declared in the manifest
 8. Resolves and caches the required agent binaries and the matching `jackin-capsule` binary under jackin-owned host cache state
 9. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
 10. Checks the local instance index for missing recoverable work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances whose containers are gone can be recovered or rebuilt in place from the saved manifest source/ref. Running or stopped instances do not block a fresh launch.
@@ -99,7 +99,7 @@ Failures in the launch surface show a short diagnosis, the failed stage, the dia
 Host-side Docker work follows the operator's selected Docker daemon. If `DOCKER_HOST` is set to a non-empty value, jackin' uses it. Otherwise jackin' follows the active Docker CLI context (honouring a per-shell `DOCKER_CONTEXT` override) for local-socket and plain HTTP/TCP contexts, so the image build, per-agent network, DinD sidecar, and role container are created on the same Docker backend. SSH and TLS Docker contexts currently fail with an explicit error instead of silently dropping connection settings.
 </Aside>
 <Aside type="note">
-If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.
+If the agent manifest declares interactive environment variables, `jackin load` prompts for values that are not already supplied by operator env before building the Docker image. This ensures no build time is wasted if you cancel.
 </Aside>
 <Aside type="caution">
 Third-party agents (namespaced selectors like `org/agent-name`) require trust confirmation on first use. jackin' will show the agent name and git URL and ask you to confirm before building. You can pre-trust with `jackin config trust grant org/agent-name` or revoke with `jackin config trust revoke org/agent-name`. See [Agent source trust](/guides/security-model#4-agent-source-trust) for details.

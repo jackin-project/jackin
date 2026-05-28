@@ -127,6 +127,6 @@ In `--debug` mode, the diagnostic expands to per-key reference strings and scope
 
 ## Interaction with manifest env
 
-A role's manifest can declare env vars the role expects — including interactive prompts. Manifest-declared env is resolved first (running any prompts the role asks for); operator env is resolved second and overlaid on top: **operator wins on key conflict.** This lets you pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
+A role's manifest can declare env vars the role expects — including interactive prompts. Operator env is resolved first and pre-seeds matching manifest variables, so a configured value skips the manifest prompt. Manifest env fills in the remaining values, then operator env is overlaid on top: **operator wins on key conflict.** This lets you pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
 
 See [Authentication Forwarding](/guides/authentication/) for the companion mechanism that forwards Claude Code credentials from host to container. Env scopes and auth forwarding are orthogonal — use both.

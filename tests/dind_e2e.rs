@@ -9,7 +9,6 @@
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 
 use fs2::FileExt as _;
 use jackin::derived_image::shell_quote;
@@ -138,7 +137,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 }
 
 #[test]
-fn jackin_load_sentinel_role_resolves_rich_prompts_and_keeps_build_output_off_screen() {
+fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     require_e2e_prereqs();
     let _serial = e2e_serial_lock();
     let _cleanup = E2eRoleCleanup {
@@ -169,14 +168,13 @@ fn jackin_load_sentinel_role_resolves_rich_prompts_and_keeps_build_output_off_sc
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", SENTINEL_ROLE_KEY, &target, "--agent", "codex"];
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
-    let prompt_input = concat!("\nrequired-value\n\n\n\n\n\n", "\u{2}d");
     let output = run_in_pty_with_input(
         &jackin,
         &args,
         &home,
         &workspace_dir,
         &extra_env,
-        prompt_input,
+        CAPSULE_DETACH_KEYS,
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -208,8 +206,14 @@ fn jackin_load_sentinel_role_resolves_rich_prompts_and_keeps_build_output_off_sc
         stdout.contains("COMBINED_LABEL=frontend-typed-default"),
         "{stdout}"
     );
-    assert!(stdout.contains("OPTIONAL_API_KEY=unset"), "{stdout}");
-    assert!(stdout.contains("OPTIONAL_DERIVED=unset"), "{stdout}");
+    assert!(
+        stdout.contains("OPTIONAL_API_KEY=optional-from-config"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("OPTIONAL_DERIVED=derived-from-config"),
+        "{stdout}"
+    );
     assert!(stdout.contains("JACKIN_SENTINEL_SOURCE_HOOK=1"), "{stdout}");
     assert!(
         stdout.contains("JACKIN_SENTINEL_PREFLIGHT_COUNT=1"),
@@ -346,27 +350,10 @@ fn run_in_pty_with_input(
         .spawn()
         .expect("script must spawn");
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
-    let deadline = Instant::now() + Duration::from_mins(2);
-    std::thread::sleep(Duration::from_secs(2));
-    loop {
-        if child
-            .try_wait()
-            .expect("script status probe must succeed")
-            .is_some()
-        {
-            break;
-        }
-        if stdin.write_all(input.as_bytes()).is_err() {
-            break;
-        }
-        if stdin.flush().is_err() {
-            break;
-        }
-        if Instant::now() >= deadline {
-            break;
-        }
-        std::thread::sleep(Duration::from_secs(5));
-    }
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    stdin
+        .write_all(input.as_bytes())
+        .expect("script stdin write must succeed");
     drop(stdin);
     child.wait_with_output().expect("script must finish")
 }
@@ -483,6 +470,16 @@ fn write_sentinel_config(path: &Path, role_source: &Path) {
             r#"[roles."{SENTINEL_ROLE_KEY}"]
 git = "{}"
 trusted = true
+
+[roles."{SENTINEL_ROLE_KEY}".env]
+FREE_TEXT = "typed-default"
+FREE_TEXT_REQUIRED = "required-value"
+SELECT_PROJECT = "frontend"
+SELECT_MODE = "diagnostic"
+BRANCH = "feature/frontend"
+COMBINED_LABEL = "frontend-typed-default"
+OPTIONAL_API_KEY = "optional-from-config"
+OPTIONAL_DERIVED = "derived-from-config"
 "#,
             role_source.display()
         ),
