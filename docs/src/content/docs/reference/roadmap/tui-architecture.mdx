@@ -14,6 +14,18 @@ This item defines the **architectural target** for all three surfaces: a clear M
 
 This is a north-star design item, not a big-bang rewrite. The work lands incrementally, one surface and one layer at a time, behind the snapshot-test regression net, with **no operator-visible behavior change** at any step.
 
+## What this roadmap must deliver
+
+This item exists to make future TUI work obvious to place, easy to read, and hard to block at runtime. Every phase below should be judged against these three outcomes:
+
+| Outcome | Target | How an implementation proves it |
+|---|---|---|
+| **Clear structure** | Every TUI concern has one obvious owner: app session/runtime, app model, update/effects, reusable components, surface-specific domain state, terminal capability handling, and tests/lookbook. | A contributor changing a footer, modal, launch stage, capsule dialog, or async refresh knows which module owns it without searching unrelated surfaces. `src/runtime` no longer imports `src/console/widgets`; capsule UI code no longer lives as raw ANSI copies beside daemon business logic. |
+| **Understandable, idiomatic Ratatui code** | The host console, launch cockpit, and capsule all read like Ratatui applications: typed messages, central update, pure view, `StatefulWidget` components, explicit effects, decomposed state, and snapshot-backed render tests. | Event handlers do not directly mutate god-structs; render functions do not take `&mut state`; repeated visual patterns are named `jackin-tui` components; module boundaries follow Model / Update / View and component seams rather than file-size-only splits. |
+| **Non-blocking UX** | The TUI keeps responding and animating while Docker, git, 1Password, filesystem, capsule socket, diagnostics, and launch work is in flight. | Long-running work runs as typed effects or subscriptions and reports back through messages. The only draw owner is the TUI runtime. No disk, socket, subprocess, or sleep runs inside render or on the update path unless it is demonstrably trivial and bounded. |
+
+The intended operator-visible result is not a redesign. The screens should look the same unless a later UX roadmap item deliberately changes them. The visible improvement from this item is responsiveness and consistency: no frozen progress cockpit, no event loop blocked by refresh work, no host/capsule drift in common components, and no terminal handoff flash introduced by the refactor.
+
 ## Scope — one continuous Ratatui experience
 
 This item covers **every terminal surface jackin' renders**, unified under Ratatui and one shared component library:
@@ -140,6 +152,21 @@ crates/jackin-tui/src/
 ```
 
 The `runtime/` module can start as small shared traits and types if moving the full host loop into the crate is too much at first. The important boundary is that product crates own domain data and effects, while `jackin-tui` owns reusable UI state machines, rendering, tokens, and layout math.
+
+### Target ownership map
+
+The refactor should leave a contributor-facing map like this. The exact filenames can evolve, but the ownership boundaries should not:
+
+| Owner | Lives in | Owns | Must not own |
+|---|---|---|---|
+| App TUI session | `src/app/` plus shared runtime types in `jackin-tui` | terminal lifecycle, raw mode, alternate screen, mouse capture, diagnostics routing, suspend/resume, console → launch → attach handoff | product state, component drawing, Docker/git/1Password work inline |
+| Host console app | `src/console/` | console domain model, workspace/editor/settings state, host-specific messages/effects, adapters from shared component outcomes to console actions | shared visual primitives, palette literals, blocking refresh work in render/update |
+| Launch app state | `src/runtime/launch.rs` / `src/runtime/progress.rs` until folded into the app session | launch-stage domain state, launch-specific effects, forced choices, failure acknowledgement, build-log state | its own private TUI runtime, direct dependency on `src/console/widgets` |
+| Capsule app | `crates/jackin-capsule/src/` | PTY/session model, mux mode, attach protocol, capsule-specific messages/effects, pane-body rendering decision | duplicated confirm/picker/tab/status implementations, raw ANSI chrome once Ratatui frame lands |
+| Shared design system | `crates/jackin-tui/src/` | tokens, themes/adapters, geometry, reusable component state machines, Ratatui widgets, common runtime contracts, lookbook stories | host workspace semantics, container session lifecycle, direct terminal writes |
+| Tests/lookbook | `tests/`, crate-local tests, generated docs assets | message/update tests, snapshot renders, component stories, Buffer/SVG generation, terminal handoff smoke notes | hand-drawn component previews that can drift from real widgets |
+
+This map is the answer to "where does TUI code go?" New work under this roadmap should either move code toward one of these owners or explain why a temporary bridge is still needed.
 
 ### Component extraction order
 
@@ -336,6 +363,21 @@ The external frameworks validate the pattern, but jackin' should not depend on o
 - The shared `jackin-tui` crate already exists and already owns tokens and pure layout helpers. The right move is to grow it into the project-specific runtime/component layer rather than route through a generic framework and then fight its assumptions.
 
 The implementation can still borrow proven vocabulary: Bubble Tea's `Cmd` becomes jackin's typed `Effect`; Textual's smart refresh becomes explicit dirty invalidation; Ratatui's component template supplies the file boundary; `tui-term` supplies the pane-body benchmark baseline.
+
+### Async architecture contract
+
+"Async-first" does not mean every function becomes `async fn`. It means the render/update path never waits for unbounded work, and the terminal has one clear draw owner. The implementation contract:
+
+- **Only the runtime draws.** `terminal.draw` and Ratatui buffer flushing happen in the app runtime / capsule backend, never inside components, background tasks, launch steps, or domain helpers.
+- **Update is fast and bounded.** `update(&mut model, msg) -> Vec<Effect>` may mutate memory and enqueue effects; it must not call Docker, git, 1Password, the filesystem for unbounded inspection, the capsule socket, network APIs, or `thread::sleep`.
+- **Effects own work.** Blocking subprocesses, filesystem walks, Docker CLI calls, `op` calls, GitHub/PR context loading, diagnostics writes, and retry loops run as effects. Async-capable work uses `tokio::spawn`; CPU-bound or blocking library work uses `spawn_blocking`; already-threaded capsule PTY work reports back through the same message boundary.
+- **Subscriptions own streams.** Terminal input, resize/focus, animation ticks, launch logs, instance refresh cadence, capsule protocol events, and diagnostics lifecycle updates are subscriptions that send messages. They can be started/stopped based on the active view.
+- **Cancellation is explicit.** Effects that outlive the view that requested them carry a generation id, request id, or cancellation handle so stale results cannot mutate a newer screen.
+- **Backpressure is deliberate.** High-volume streams (PTY output, build logs, animation ticks) coalesce or drop superseded redraw messages instead of growing an unbounded queue.
+- **Locks never cross await points.** Shared view snapshots may use short-lived locks, but no update/effect path may hold a mutex while awaiting Docker, socket, filesystem, or channel work.
+- **Errors are messages.** Background failures return typed messages and render through the normal error component. They do not panic, print over a rich surface, or disappear into logs only.
+
+The practical test is simple: while a long image build, instance refresh, git/PR context load, or 1Password lookup is slow, key input still queues, animations still tick, diagnostics still record, and the terminal can still redraw or show cancellation/error state.
 
 ## Gap analysis
 
@@ -568,6 +610,28 @@ A single token layer makes graceful degradation a property of the tokens, not of
 - **Pre-release freedom.** Internal types may change freely; no migration shims or compatibility layers (these are not versioned schemas).
 - **Incremental only.** No big-bang rewrite. One surface, one layer, behind tests. A half-migrated state (some handlers on `Message`, some not) must compile and pass tests at every commit.
 - **DRY.** Extend the shared scrollable/widget helpers and the `jackin-tui` crate; do not fork parallel implementations.
+
+## Goal-ready work slices
+
+The phases below describe the long-range order. For `/goal` execution, use slices like these so each run has a bounded diff and a concrete exit condition:
+
+| Slice | Depends on | Deliverable | Exit condition |
+|---|---|---|---|
+| Snapshot baseline | none | TUI render snapshots for the screens/components about to move | The next structural refactor can prove "same render" with `TestBackend` or a documented real-terminal smoke check. |
+| Component inventory | none | A tracked inventory of repeated TUI patterns, current owners, call sites, maturity levels, and drift notes | New TUI work can name the component it uses; missing components are visible as debt instead of discovered ad hoc. |
+| Token/geometry promotion | snapshot baseline | Move palette, spacing, glyph, tab, scrollbar, centering, and text-measurement helpers into `jackin-tui` | Product code imports semantic tokens/helpers; new `Color::Rgb(...)` and raw ANSI chrome literals disappear from touched code. |
+| Host message boundary | snapshot baseline | `Message` plus central `update` around one host-console path, then expanded across keys/mouse/resize/focus | State changes flow through messages; tests can drive update without a terminal. |
+| Host pure-view pass | host message boundary | Remove `&mut` and I/O from one renderer family at a time | The renderer under migration accepts immutable model/UI state and cannot stat the filesystem or mutate scroll geometry during draw. |
+| Host async refresh | host message boundary | Move one blocking refresh source at a time (`mount_info`, instances, 1Password, snapshot fan-out) behind effects/subscriptions | Slow work reports back as messages; redraw/input remain live while the work runs. |
+| Shared primitive extraction | token/geometry promotion | Promote one primitive (`HintBar`, `ButtonStrip`, `ScrollablePanel`, `TabStrip`, etc.) into `jackin-tui` | Host/launch use the shared primitive; snapshots prove unchanged output. |
+| Launch consolidation | host message boundary, shared primitives | Replace launch-private widget/runtime seams with app messages/effects and `jackin-tui` components | `src/runtime` no longer imports `src/console/widgets`; launch stage updates are messages/effects. |
+| Terminal session spine | host message boundary, launch consolidation | Replace global rich-surface/host-screen coordination with typed `TerminalSession` ownership | Console → launch → capsule still handoffs cleanly; diagnostics/debug routing and panic-safe restore still work. |
+| Capsule action/mode split | none | `MuxMode`, generalized `Action`, daemon module split, dispatch/dialog tests | Input dispatch is testable without a live PTY and invalid mode combinations are unrepresentable. |
+| Capsule Ratatui frame | capsule action/mode split, shared primitives | Custom Ratatui backend over attach socket; chrome/dialogs/pickers rendered as shared widgets | Raw ANSI chrome copies are deleted; pane-body rendering remains the only measured choice. |
+| Pane-body benchmark | capsule Ratatui frame | `tui-term` vs custom widget benchmark and ADR decision | ADR records the chosen pane-body path with throughput/allocation evidence. |
+| Lookbook | shared components, snapshot infrastructure | `tui-lookbook` generator plus MDX pages from real renders | Component previews are generated from widget code and CI catches drift. |
+
+Each slice should update this page's status notes if it changes scope, closes a risk, or invalidates a later slice. If a slice reveals a feature-sized behavior change, split that behavior into its own roadmap item instead of hiding it inside the architecture refactor.
 
 ## Implementation phases
 
