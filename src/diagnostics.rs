@@ -10,6 +10,7 @@ use rand::RngExt as _;
 use serde::Serialize;
 
 use crate::paths::JackinPaths;
+use crate::prune_output;
 
 const RUN_DIR: &str = "diagnostics/runs";
 const MAX_RUN_ARTIFACTS: usize = 200;
@@ -207,35 +208,38 @@ pub fn prune_old_runs(paths: &JackinPaths) {
 
 pub fn prune_all_runs(paths: &JackinPaths) -> anyhow::Result<()> {
     let dir = run_dir(paths);
+    prune_output::section("Diagnostics", "removing diagnostic runs");
+    let row = prune_output::start("Deleting", "diagnostics");
+
     let active_path = active_run().map(|run| run.path().to_path_buf());
-    if let Some(active_path) = active_path
+    let result = active_path
         .as_deref()
         .filter(|path| path.parent() == Some(dir.as_path()))
-    {
-        return prune_all_runs_except(&dir, active_path);
-    }
-    match fs::remove_dir_all(&dir) {
-        Ok(()) => println!("Removed diagnostics runs ({}).", dir.display()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            println!("diagnostics runs already empty.");
-        }
-        Err(error) => {
-            return Err(anyhow::Error::from(error).context(format!(
-                "failed to remove diagnostics runs at {}",
-                dir.display()
-            )));
-        }
-    }
-    Ok(())
+        .map_or_else(
+            || prune_runs_all(&dir),
+            |active| prune_runs_preserving(&dir, active),
+        );
+
+    row.complete(result, |error| {
+        format!("could not remove diagnostics: {error}")
+    })
 }
 
-fn prune_all_runs_except(dir: &Path, preserved_path: &Path) -> anyhow::Result<()> {
+fn prune_runs_all(dir: &Path) -> anyhow::Result<()> {
+    match fs::remove_dir_all(dir) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(anyhow::Error::from(error).context(format!(
+            "failed to remove diagnostics runs at {}",
+            dir.display()
+        ))),
+    }
+}
+
+fn prune_runs_preserving(dir: &Path, preserved_path: &Path) -> anyhow::Result<()> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            println!("diagnostics runs already empty.");
-            return Ok(());
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => {
             return Err(anyhow::Error::from(error).context(format!(
                 "failed to read diagnostics runs at {}",
@@ -254,10 +258,6 @@ fn prune_all_runs_except(dir: &Path, preserved_path: &Path) -> anyhow::Result<()
         remove_run_entry(&path)
             .with_context(|| format!("removing diagnostics run {}", path.display()))?;
     }
-    println!(
-        "Removed diagnostics runs except active run ({}).",
-        dir.display()
-    );
     Ok(())
 }
 
@@ -461,7 +461,7 @@ mod tests {
         fs::write(&active, "active").unwrap();
         fs::write(&stale, "stale").unwrap();
 
-        prune_all_runs_except(&dir, &active).unwrap();
+        prune_runs_preserving(&dir, &active).unwrap();
 
         assert!(active.exists(), "active run must remain retrievable");
         assert!(!stale.exists(), "stale run should be pruned");

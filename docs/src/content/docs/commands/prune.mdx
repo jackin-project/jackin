@@ -11,6 +11,8 @@ jackin prune <SUBCOMMAND>
 
 `jackin prune` removes cached or stale data that jackin' manages on your host machine. Unlike `jackin purge`, which targets a specific instance by selector, `prune` operates in bulk across a category of data.
 
+Each prune command prints the phase it is running, then one aligned status row per deletion. Rows start before the deletion runs and finish with a colored `OK`, `SKIP`, or `FAILED` status; skip and failure details appear on the following line.
+
 ## Subcommands
 
 | Subcommand | What it removes |
