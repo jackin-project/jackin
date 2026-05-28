@@ -435,42 +435,6 @@ pub fn shorten_home(path: &str) -> String {
     }
 }
 
-/// Computed thumb position + length for a vertical scrollbar. Shared
-/// math between the host TUI's ratatui-based scrollable blocks and
-/// the in-container multiplexer's raw-ANSI overlay, so both surfaces
-/// pick the same thumb size and the same proportional position for
-/// the same (track_rows, content_filled, offset) triple.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VerticalThumb {
-    /// 0-based row inside the track where the thumb starts.
-    pub thumb_top: u16,
-    /// Number of rows the thumb spans. Always ≥ 1 when there is any
-    /// scrollback; clamps to `track_rows` when nearly everything is
-    /// off-screen.
-    pub thumb_rows: u16,
-}
-
-/// Compute thumb geometry for a vertical scrollbar.
-///
-/// - `track_rows`: how many rows the scrollbar track spans
-///   (typically the pane's interior height, excluding the top and
-///   bottom border rows).
-/// - `filled`: lines of scrollback currently held beyond the visible
-///   region.
-/// - `offset`: how many lines the operator has scrolled back from
-///   the live tail. `0` parks the thumb at the bottom of the track;
-///   `filled` parks it at the top.
-///
-/// Returns `None` when there is no thumb to draw (`track_rows == 0`
-/// or `filled == 0`).
-#[must_use]
-pub fn vertical_thumb(track_rows: u16, filled: usize, offset: usize) -> Option<VerticalThumb> {
-    scroll::tail_vertical_thumb(track_rows, filled, offset).map(|thumb| VerticalThumb {
-        thumb_top: thumb.start,
-        thumb_rows: thumb.len,
-    })
-}
-
 /// Shared ANSI helpers + a centred text-input dialog renderer. The
 /// host TUI uses ratatui directly; the in-container multiplexer
 /// emits raw ANSI. Keeping the visual recipe (border style, title

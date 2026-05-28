@@ -128,10 +128,10 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             }
         }
         KeyCode::Char('h' | 'H') => {
-            apply_settings_x_delta(&mut global.scroll_x, -8, term_width, content_width);
+            apply_term_width_scroll_delta(&mut global.scroll_x, -8, term_width, content_width);
         }
         KeyCode::Char('l' | 'L') => {
-            apply_settings_x_delta(&mut global.scroll_x, 8, term_width, content_width);
+            apply_term_width_scroll_delta(&mut global.scroll_x, 8, term_width, content_width);
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             global.selected = global.selected.saturating_sub(1);
@@ -972,10 +972,10 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             );
         }
         KeyCode::Char('h' | 'H') => {
-            apply_settings_x_delta(&mut trust.scroll_x, -8, term_width, content_width);
+            apply_term_width_scroll_delta(&mut trust.scroll_x, -8, term_width, content_width);
         }
         KeyCode::Char('l' | 'L') => {
-            apply_settings_x_delta(&mut trust.scroll_x, 8, term_width, content_width);
+            apply_term_width_scroll_delta(&mut trust.scroll_x, 8, term_width, content_width);
         }
         // Space is the W3C toggle key (checkbox/switch pattern). Enter is for actions.
         KeyCode::Char(' ') => {
@@ -988,10 +988,6 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         }
         _ => {}
     }
-}
-
-fn apply_settings_x_delta(value: &mut u16, delta: i16, term_width: u16, content_width: usize) {
-    apply_term_width_scroll_delta(value, delta, term_width, content_width);
 }
 
 #[allow(clippy::too_many_lines)]

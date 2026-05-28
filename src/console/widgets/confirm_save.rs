@@ -17,7 +17,9 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::scrollable::{apply_vertical_scroll_delta, render_lines_with_offset_in_area};
+use super::scrollable::{
+    apply_vertical_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
+};
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,7 +168,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ConfirmSaveState) {
         .split(inner);
 
     state.preview_rows = chunks[1].height;
-    jackin_tui::scroll::clamp_offset_u16(
+    clamp_scroll_offset(
         state.lines.len(),
         usize::from(chunks[1].height),
         &mut state.scroll_offset,

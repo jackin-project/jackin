@@ -48,14 +48,6 @@ pub(crate) const fn clamp_scroll_offset(
     effective
 }
 
-pub(crate) fn scrollbar_position_for_offset(
-    content_length: usize,
-    viewport: usize,
-    offset: usize,
-) -> u16 {
-    scroll::position_for_offset(content_length, viewport, offset).min(usize::from(u16::MAX)) as u16
-}
-
 pub(crate) fn cursor_follow_offset(
     cursor: usize,
     content_length: usize,
@@ -214,13 +206,12 @@ pub(crate) fn render_horizontal_scrollbar(
     if !is_scrollable(content_width, viewport) {
         return;
     }
-    let position = scrollbar_position_for_offset(content_width, viewport, usize::from(scroll_x));
     let area = horizontal_scrollbar_area(block_area);
     frame.render_widget(
         FixedScrollbar {
             content_length: content_width,
             viewport,
-            position,
+            offset: scroll_x,
             orientation: FixedScrollbarOrientation::Horizontal,
         },
         area,
@@ -251,12 +242,11 @@ pub(crate) fn render_vertical_scrollbar_in_area(
     if !is_scrollable(content_height, viewport) || area.height == 0 {
         return;
     }
-    let position = scrollbar_position_for_offset(content_height, viewport, usize::from(scroll_y));
     frame.render_widget(
         FixedScrollbar {
             content_length: content_height,
             viewport,
-            position,
+            offset: scroll_y,
             orientation: FixedScrollbarOrientation::Vertical,
         },
         area,
@@ -320,7 +310,7 @@ enum FixedScrollbarOrientation {
 struct FixedScrollbar {
     content_length: usize,
     viewport: usize,
-    position: u16,
+    offset: u16,
     orientation: FixedScrollbarOrientation,
 }
 
@@ -338,7 +328,7 @@ impl Widget for FixedScrollbar {
             self.content_length,
             self.viewport,
             track_len,
-            usize::from(self.position),
+            usize::from(self.offset),
         );
         let thumb_end = thumb_start.saturating_add(thumb_len);
         // Hoist orientation constants out of the per-cell loop.
@@ -412,8 +402,7 @@ mod tests {
     use super::{
         apply_horizontal_scroll_delta, clamp_scroll_offset, cursor_follow_offset,
         render_scrollable_block, render_selected_lines_in_area, render_vertical_scrollbar_in_area,
-        scrollbar_offset_for_track_position, scrollbar_position_for_offset,
-        scrollbar_thumb_geometry,
+        scrollbar_offset_for_track_position, scrollbar_thumb_geometry,
     };
     use crate::console::widgets::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, text::Line};
@@ -513,17 +502,6 @@ mod tests {
         assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 2), 0);
         assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 5), 1);
         assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 9), 2);
-    }
-
-    #[test]
-    fn scrollbar_position_maps_visible_end_to_track_end() {
-        assert_eq!(scrollbar_position_for_offset(13, 10, 0), 0);
-        assert_eq!(scrollbar_position_for_offset(13, 10, 3), 3);
-    }
-
-    #[test]
-    fn scrollbar_position_clamps_overscroll() {
-        assert_eq!(scrollbar_position_for_offset(13, 10, 99), 3);
     }
 
     #[test]

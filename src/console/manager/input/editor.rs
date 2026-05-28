@@ -98,7 +98,7 @@ pub(super) fn handle_editor_key(
     match key.code {
         KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
             editor.workspace_mounts_scroll_focused = true;
-            apply_editor_x_delta(
+            apply_term_width_scroll_delta(
                 &mut editor.workspace_mounts_scroll_x,
                 -8,
                 term_width,
@@ -107,7 +107,7 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
             editor.workspace_mounts_scroll_focused = true;
-            apply_editor_x_delta(
+            apply_term_width_scroll_delta(
                 &mut editor.workspace_mounts_scroll_x,
                 8,
                 term_width,
@@ -116,7 +116,7 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Char('h' | 'H') => {
             editor.tab_content_scroll_focused = true;
-            apply_editor_x_delta(
+            apply_term_width_scroll_delta(
                 &mut editor.tab_scroll_x,
                 -8,
                 term_width,
@@ -125,7 +125,7 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Char('l' | 'L') => {
             editor.tab_content_scroll_focused = true;
-            apply_editor_x_delta(
+            apply_term_width_scroll_delta(
                 &mut editor.tab_scroll_x,
                 8,
                 term_width,
@@ -483,10 +483,6 @@ pub(super) fn handle_editor_key(
         _ => {}
     }
     Ok(InputOutcome::Continue)
-}
-
-fn apply_editor_x_delta(value: &mut u16, delta: i16, term_width: u16, content_width: usize) {
-    apply_term_width_scroll_delta(value, delta, term_width, content_width);
 }
 
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {

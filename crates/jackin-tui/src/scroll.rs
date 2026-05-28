@@ -5,11 +5,7 @@
 //! those metrics into the full-cell thumbs and clamped offsets used by the
 //! host console, launch progress overlay, and capsule renderer.
 
-pub use tui_scrollbar::{
-    PointerButton, PointerEvent, PointerEventKind, SUBCELL, ScrollAxis, ScrollBar, ScrollBarArrows,
-    ScrollBarInteraction, ScrollBarOrientation, ScrollCommand, ScrollEvent, ScrollLengths,
-    ScrollMetrics, ScrollWheel, TrackClickBehavior,
-};
+use tui_scrollbar::{SUBCELL, ScrollLengths, ScrollMetrics};
 
 /// Full-cell thumb geometry for jackin-owned renderers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,10 +37,6 @@ impl TailScroll {
         self.offset
     }
 
-    pub const fn set_offset(&mut self, offset: usize) {
-        self.offset = offset;
-    }
-
     pub fn scroll_by(&mut self, filled: usize, delta: isize) -> usize {
         let current = self.offset.min(filled);
         self.offset = if delta.is_negative() {
@@ -61,32 +53,9 @@ impl TailScroll {
     }
 
     #[must_use]
-    pub fn clamped(self, filled: usize) -> Self {
-        Self {
-            offset: self.offset.min(filled),
-        }
-    }
-
-    #[must_use]
     pub fn to_top_offset(self, content_len: usize, viewport_len: usize) -> usize {
         let max = max_offset(content_len, viewport_len);
         max.saturating_sub(self.offset.min(max))
-    }
-
-    #[must_use]
-    pub fn from_top_offset(content_len: usize, viewport_len: usize, top_offset: usize) -> Self {
-        let max = max_offset(content_len, viewport_len);
-        Self {
-            offset: max.saturating_sub(top_offset.min(max)),
-        }
-    }
-}
-
-#[must_use]
-pub const fn lengths(content_len: usize, viewport_len: usize) -> ScrollLengths {
-    ScrollLengths {
-        content_len,
-        viewport_len,
     }
 }
 
@@ -104,25 +73,20 @@ pub const fn max_offset(content_len: usize, viewport_len: usize) -> usize {
     }
 }
 
-#[must_use]
-pub fn metrics(
+fn metrics(
     content_len: usize,
     viewport_len: usize,
     offset: usize,
     track_cells: u16,
 ) -> ScrollMetrics {
-    ScrollMetrics::new(lengths(content_len, viewport_len), offset, track_cells)
-}
-
-pub fn clamp_offset(content_len: usize, viewport_len: usize, offset: &mut usize) -> usize {
-    *offset = (*offset).min(max_offset(content_len, viewport_len));
-    *offset
-}
-
-pub fn clamp_offset_u16(content_len: usize, viewport_len: usize, offset: &mut u16) -> u16 {
-    let max = max_offset(content_len, viewport_len).min(usize::from(u16::MAX)) as u16;
-    *offset = (*offset).min(max);
-    *offset
+    ScrollMetrics::new(
+        ScrollLengths {
+            content_len,
+            viewport_len,
+        },
+        offset,
+        track_cells,
+    )
 }
 
 #[must_use]
@@ -142,16 +106,6 @@ pub fn offset_after_delta(
     }
 }
 
-pub fn apply_delta(
-    content_len: usize,
-    viewport_len: usize,
-    offset: &mut usize,
-    delta: isize,
-) -> usize {
-    *offset = offset_after_delta(content_len, viewport_len, *offset, delta);
-    *offset
-}
-
 pub fn apply_delta_u16(
     content_len: usize,
     viewport_len: usize,
@@ -162,11 +116,6 @@ pub fn apply_delta_u16(
         .min(usize::from(u16::MAX)) as u16;
     *offset = next;
     next
-}
-
-#[must_use]
-pub fn position_for_offset(content_len: usize, viewport_len: usize, offset: usize) -> usize {
-    max_offset(content_len, viewport_len).min(offset)
 }
 
 #[must_use]
@@ -285,10 +234,8 @@ mod tests {
     }
 
     #[test]
-    fn one_row_overflow_clamps_to_one() {
-        let mut offset = 99usize;
-        assert_eq!(clamp_offset(11, 10, &mut offset), 1);
-        assert_eq!(offset, 1);
+    fn one_row_overflow_has_one_row_range() {
+        assert_eq!(max_offset(11, 10), 1);
     }
 
     #[test]
@@ -322,10 +269,9 @@ mod tests {
     }
 
     #[test]
-    fn tail_scroll_converts_between_tail_and_top_offsets() {
+    fn tail_scroll_converts_to_top_offset() {
         let tail = TailScroll::new(0);
         assert_eq!(tail.to_top_offset(20, 5), 15);
-        assert_eq!(TailScroll::from_top_offset(20, 5, 0).offset(), 15);
     }
 
     #[test]
