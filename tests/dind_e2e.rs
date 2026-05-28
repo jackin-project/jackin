@@ -310,6 +310,7 @@ fn run_in_pty_with_input(
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("TERM", "xterm-256color")
+        .env_remove("CI")
         .env_remove("JACKIN_DEBUG")
         .env_remove("DOCKER_HOST")
         .env_remove("DOCKER_TLS_VERIFY")
