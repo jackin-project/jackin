@@ -9,6 +9,7 @@
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use fs2::FileExt as _;
 use jackin::derived_image::shell_quote;
@@ -20,6 +21,15 @@ const ROLE_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__agent-smith";
 const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
 const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
 const CAPSULE_DETACH_KEYS: &str = "\u{2}d";
+
+enum PtyInputMode {
+    OnceAfter(Duration),
+    Repeat {
+        first_after: Duration,
+        interval: Duration,
+        attempts: usize,
+    },
+}
 
 /// RAII cleanup so the test's Docker resources are removed even if an
 /// assertion or `script(1)` invocation panics. Without this, a flaky run
@@ -80,6 +90,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         &workspace_dir,
         &extra_env,
         CAPSULE_DETACH_KEYS,
+        PtyInputMode::OnceAfter(Duration::from_secs(2)),
     );
 
     // Agent prints its env + `docker ps` snapshot after a sentinel marker on
@@ -175,6 +186,11 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
         &workspace_dir,
         &extra_env,
         CAPSULE_DETACH_KEYS,
+        PtyInputMode::Repeat {
+            first_after: Duration::from_secs(5),
+            interval: Duration::from_secs(5),
+            attempts: 24,
+        },
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -295,6 +311,7 @@ fn run_in_pty_with_input(
     cwd: &Path,
     extra_env: &[(&str, &str)],
     input: &str,
+    input_mode: PtyInputMode,
 ) -> std::process::Output {
     let mut command = if cfg!(target_os = "linux") {
         let mut command = Command::new("timeout");
@@ -350,18 +367,31 @@ fn run_in_pty_with_input(
         .spawn()
         .expect("script must spawn");
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
-    let input = input.as_bytes().to_vec();
-    let writer = std::thread::spawn(move || {
-        for _ in 0..90 {
-            std::thread::sleep(std::time::Duration::from_secs(5));
-            if stdin.write_all(&input).is_err() {
-                return;
-            }
+    match input_mode {
+        PtyInputMode::OnceAfter(delay) => {
+            std::thread::sleep(delay);
+            stdin
+                .write_all(input.as_bytes())
+                .expect("script stdin write must succeed");
+            drop(stdin);
+            child.wait_with_output().expect("script must finish")
         }
-    });
-    let output = child.wait_with_output().expect("script must finish");
-    writer.join().expect("script stdin writer must not panic");
-    output
+        PtyInputMode::Repeat {
+            first_after,
+            interval,
+            attempts,
+        } => {
+            std::thread::sleep(first_after);
+            for _ in 0..attempts {
+                if stdin.write_all(input.as_bytes()).is_err() {
+                    break;
+                }
+                std::thread::sleep(interval);
+            }
+            drop(stdin);
+            child.wait_with_output().expect("script must finish")
+        }
+    }
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
