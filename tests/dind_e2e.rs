@@ -431,11 +431,13 @@ fn run_in_pty_until_file(
 
     let _ = child.kill();
     let output = child.wait_with_output().expect("script must finish");
+    let diagnostics = diagnostics_snapshot(home);
     panic!(
-        "timed out waiting for sentinel file {}\nstdout:\n{}\nstderr:\n{}",
+        "timed out waiting for sentinel file {}\nstdout:\n{}\nstderr:\n{}\ndiagnostics:\n{}",
         sentinel.path.display(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
+        diagnostics,
     );
 }
 
@@ -444,6 +446,58 @@ struct PtyFileSentinel<'a> {
     path: &'a Path,
     text: &'a str,
     timeout: Duration,
+}
+
+fn diagnostics_snapshot(home: &Path) -> String {
+    let dir = home.join(".jackin/data/diagnostics/runs");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return format!("no diagnostics directory at {}", dir.display());
+    };
+    let mut files = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            metadata
+                .modified()
+                .ok()
+                .map(|modified| (modified, entry.path()))
+        })
+        .collect::<Vec<_>>();
+    files.sort_by_key(|(modified, _)| *modified);
+    let Some((_, latest)) = files.last() else {
+        return format!("no diagnostics files in {}", dir.display());
+    };
+
+    let mut out = format!("latest diagnostics: {}\n", latest.display());
+    match std::fs::read_to_string(latest) {
+        Ok(contents) => {
+            let lines = contents.lines().rev().take(80).collect::<Vec<_>>();
+            for line in lines.into_iter().rev() {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        Err(error) => {
+            out.push_str(&format!("failed to read diagnostics file: {error}\n"));
+        }
+    }
+
+    let Some(stem) = latest.file_stem().and_then(|stem| stem.to_str()) else {
+        return out;
+    };
+    let build_log = latest.with_file_name(format!("{stem}.docker-build.log"));
+    if let Ok(contents) = std::fs::read_to_string(&build_log) {
+        out.push_str(&format!(
+            "latest docker build log: {}\n",
+            build_log.display()
+        ));
+        let lines = contents.lines().rev().take(80).collect::<Vec<_>>();
+        for line in lines.into_iter().rev() {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
