@@ -83,6 +83,10 @@ pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 // the launcher, the auth-panel, the launch summary, and tests all
 // reference the same identifiers instead of repeating the literals.
 
+/// Z.AI (GLM Coding Plan) API key env var. Carries the credential for the
+/// `AuthKind::Zai` env-only auth kind and gates the Z.AI provider picker.
+pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
+
 /// Primary GitHub token env var. `gh` reads this preferentially.
 pub const GH_TOKEN_ENV_NAME: &str = "GH_TOKEN";
 

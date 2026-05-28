@@ -161,6 +161,9 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
     workdir: PathBuf,
+    /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
+    /// was set at launch time; drives the provider picker for supported agents.
+    zai_key: Option<String>,
     /// Cached at construction; tool availability and `origin/HEAD`
     /// cannot change while the daemon is alive, and re-probing on
     /// the 1Hz state tick would shell out for a stable verdict.
@@ -540,6 +543,9 @@ impl Multiplexer {
             .saturating_sub(STATUS_BAR_ROWS)
             .saturating_sub(BRANCH_CONTEXT_BAR_ROWS);
         let agents = launch_config.supported_agents();
+        let zai_key = std::env::var("ZAI_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
 
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
@@ -598,6 +604,7 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
+            zai_key,
         }
     }
 
@@ -1311,23 +1318,72 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {agent_slug:?}: {reason}");
                 }
-                self.spawn_session(Some(agent_slug), env_overrides)
+                self.spawn_session(Some(agent_slug), env_overrides, None)
             }
-            SpawnRequest::Shell => self.spawn_session(None, env_overrides),
+            SpawnRequest::AgentWithProvider {
+                slug,
+                provider_label,
+            } => {
+                if let Err(reason) =
+                    crate::session::validate_agent_slug(&slug, &self.available_agents)
+                {
+                    anyhow::bail!("rejected agent {slug:?}: {reason}");
+                }
+                let token = self.zai_key.as_deref().filter(|value| !value.is_empty());
+                let resolved_env = match jackin_protocol::Provider::from_label(&provider_label) {
+                    Some(provider) => {
+                        // Token is resolved here (not on the wire) from the
+                        // container's ZAI_API_KEY; the host only sends the label.
+                        if provider == jackin_protocol::Provider::Zai && token.is_none() {
+                            crate::clog!(
+                                "spawn: provider Z.AI selected but ZAI_API_KEY unresolved in container; session falls back to the agent's default auth"
+                            );
+                        }
+                        provider.env_overrides(token)
+                    }
+                    None => {
+                        crate::clog!(
+                            "spawn: unknown provider label {provider_label:?}; no env redirect applied"
+                        );
+                        env_overrides.to_vec()
+                    }
+                };
+                self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))
+            }
+            SpawnRequest::Shell => self.spawn_session(None, env_overrides, None),
         }
+    }
+
+    /// Providers selectable for `agent`. An empty vec means only the
+    /// default provider is available and no picker step is needed; a
+    /// non-empty vec always has 2+ entries (enforced by the catalog).
+    fn providers_for_agent(&self, agent: Option<&str>) -> Vec<jackin_protocol::Provider> {
+        jackin_protocol::Provider::available_for(agent.unwrap_or_default(), self.zai_key.is_some())
     }
 
     fn session_launch(
         &self,
         agent: Option<&str>,
+        provider_label: Option<&str>,
         env_passthrough: &[(String, String)],
     ) -> SessionLaunch {
         let cwd = self.workdir.as_path();
         match agent {
-            Some(slug) => SessionLaunch {
-                label: capitalize(slug),
-                cmd: build_agent_command(slug, self.model_for_agent(slug), env_passthrough, cwd),
-            },
+            Some(slug) => {
+                let label = match provider_label {
+                    Some(p) => format!("{} ({})", capitalize(slug), p),
+                    None => capitalize(slug),
+                };
+                SessionLaunch {
+                    label,
+                    cmd: build_agent_command(
+                        slug,
+                        self.model_for_agent(slug),
+                        env_passthrough,
+                        cwd,
+                    ),
+                }
+            }
             None => SessionLaunch {
                 label: "Shell".to_string(),
                 cmd: build_shell_command(env_passthrough, cwd),
@@ -1372,11 +1428,33 @@ impl Multiplexer {
                 }
             }
             DialogAction::SpawnAgent { agent, intent } => {
-                // Terminal action — agent picked, spawn the session,
-                // close every dialog underneath (Menu / Split picker /
-                // …) so the operator drops straight onto the new pane.
+                let providers = self.providers_for_agent(agent.as_deref());
+                if providers.len() > 1 {
+                    // Multiple providers available — push ProviderPicker
+                    // on top so the operator chooses before spawning.
+                    self.dialog_push(Dialog::new_provider_picker(agent, providers, intent));
+                } else {
+                    // Zero or one provider — spawn immediately without
+                    // a picker step (operator experience unchanged when
+                    // Z.AI is not configured).
+                    self.dialog_clear();
+                    self.dispatch_spawn_intent(agent, intent);
+                }
+            }
+            DialogAction::SpawnAgentWithProvider {
+                agent,
+                provider,
+                intent,
+            } => {
                 self.dialog_clear();
-                self.dispatch_spawn_intent(agent, intent);
+                // Token resolved here from the container's ZAI_API_KEY.
+                let env_overrides = provider.env_overrides(self.zai_key.as_deref());
+                self.dispatch_spawn_intent_with_provider(
+                    agent,
+                    intent,
+                    &env_overrides,
+                    Some(provider.label()),
+                );
             }
             DialogAction::RenameTab { tab_idx, label } => {
                 self.dialog_clear();
@@ -1450,9 +1528,9 @@ impl Multiplexer {
     /// the operator can retry.
     fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
         let result: anyhow::Result<()> = match intent {
-            PickerIntent::NewTab => self.spawn_session(agent.clone(), &[]).map(|_| ()),
+            PickerIntent::NewTab => self.spawn_session(agent.clone(), &[], None).map(|_| ()),
             PickerIntent::Split(direction) => {
-                self.split_focused_into(direction, agent.clone(), &[])
+                self.split_focused_into(direction, agent.clone(), &[], None)
             }
         };
         if let Err(err) = result {
@@ -1466,10 +1544,34 @@ impl Multiplexer {
         }
     }
 
+    fn dispatch_spawn_intent_with_provider(
+        &mut self,
+        agent: Option<String>,
+        intent: PickerIntent,
+        env_overrides: &[(String, String)],
+        provider_label: Option<&str>,
+    ) {
+        let result: anyhow::Result<()> = match intent {
+            PickerIntent::NewTab => self
+                .spawn_session(agent.clone(), env_overrides, provider_label)
+                .map(|_| ()),
+            PickerIntent::Split(direction) => {
+                self.split_focused_into(direction, agent.clone(), env_overrides, provider_label)
+            }
+        };
+        if let Err(err) = result {
+            let agent_label = agent.as_deref().unwrap_or("shell");
+            crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
+            let banner = spawn_failure_banner(&format!("{agent_label}: {err:#}"));
+            self.send_output(banner);
+        }
+    }
+
     fn spawn_session(
         &mut self,
         agent: Option<String>,
         env_overrides: &[(String, String)],
+        provider_label: Option<&str>,
     ) -> Result<u64> {
         // Bound the per-container surface so a runaway client (or an
         // operator mis-click loop) cannot allocate unbounded PTYs.
@@ -1487,10 +1589,14 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent.as_deref(), &env_passthrough);
+        let launch = self.session_launch(agent.as_deref(), provider_label, &env_passthrough);
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
+            provider_label.map(|label| crate::session::SessionProvider {
+                label: label.to_string(),
+                env_overrides: env_overrides.to_vec(),
+            }),
             launch.cmd,
             self.content_rows.saturating_sub(2),
             self.term_cols.saturating_sub(2),
@@ -1548,6 +1654,7 @@ impl Multiplexer {
         direction: SplitDirection,
         agent_slug: Option<String>,
         env_overrides: &[(String, String)],
+        provider_label: Option<&str>,
     ) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
         // Any selection / drag-resize is anchored to a specific pane
@@ -1576,11 +1683,15 @@ impl Multiplexer {
             ),
         };
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let launch = self.session_launch(agent_slug.as_deref(), &env_passthrough);
+        let launch = self.session_launch(agent_slug.as_deref(), provider_label, &env_passthrough);
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,
             agent_slug,
+            provider_label.map(|label| crate::session::SessionProvider {
+                label: label.to_string(),
+                env_overrides: env_overrides.to_vec(),
+            }),
             launch.cmd,
             spawn_rows,
             spawn_cols,
@@ -1623,12 +1734,29 @@ impl Multiplexer {
     /// the source pane's runtime.
     fn split_focused(&mut self, direction: SplitDirection) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
+        let (agent_slug, provider_env_overrides, provider_label) = self.focused_spawn_metadata();
+        self.split_focused_into(
+            direction,
+            agent_slug,
+            &provider_env_overrides,
+            provider_label.as_deref(),
+        )
+    }
+
+    fn focused_spawn_metadata(&self) -> (Option<String>, Vec<(String, String)>, Option<String>) {
         let Some(tab) = self.tabs.get(self.active_tab) else {
-            return Ok(());
+            return (None, Vec::new(), None);
         };
         let from_id = tab.focused_id;
-        let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
-        self.split_focused_into(direction, agent_slug, &[])
+        self.sessions
+            .get(&from_id)
+            .map_or((None, Vec::new(), None), |session| {
+                let (env, label) = session.provider.as_ref().map_or_else(
+                    || (Vec::new(), None),
+                    |provider| (provider.env_overrides.clone(), Some(provider.label.clone())),
+                );
+                (session.agent.clone(), env, label)
+            })
     }
 
     fn close_focused_pane(&mut self) {
@@ -1785,23 +1913,24 @@ impl Multiplexer {
     fn tab_display_label(&self, tab: &Tab) -> String {
         let ids = tab.tree.all_ids();
         let pane_count = ids.len();
-        let mut agent_slugs: Vec<String> = Vec::new();
+        let mut agent_labels: Vec<String> = Vec::new();
         let mut has_shell = false;
         for id in ids {
             if let Some(s) = self.sessions.get(&id) {
                 match &s.agent {
-                    Some(slug) => {
-                        if !agent_slugs.iter().any(|s| s == slug) {
-                            agent_slugs.push(slug.clone());
+                    Some(_) => {
+                        let label = session_agent_label(s);
+                        if !agent_labels.iter().any(|existing| existing == &label) {
+                            agent_labels.push(label);
                         }
                     }
                     None => has_shell = true,
                 }
             }
         }
-        let base = match (agent_slugs.len(), has_shell) {
+        let base = match (agent_labels.len(), has_shell) {
             (0, _) => "Shell".to_string(),
-            (1, false) => capitalize(&agent_slugs[0]),
+            (1, false) => agent_labels[0].clone(),
             (_, false) => "Agents".to_string(),
             (_, true) => "Mix".to_string(),
         };
@@ -3170,12 +3299,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         launch_config.workdir.as_str()
     );
 
+    let initial_spawn =
+        initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
     let mut mux = Multiplexer::new(rows, cols, launch_config);
     // Defer the first pane until the first attach Hello has supplied
     // real outer-terminal dimensions. Later panes already spawn after
     // attach-time resize; routing the first pane through the same
     // path removes first-tab-only scrollback/chrome differences.
-    let mut pending_initial_spawn = Some(initial_spawn_request(&initial_agent));
+    let mut pending_initial_spawn = Some(initial_spawn);
 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
@@ -3839,9 +3970,17 @@ async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
     }
 }
 
-fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
+fn initial_spawn_request(
+    initial_agent: &str,
+    initial_provider: Option<&jackin_protocol::InitialProvider>,
+) -> SpawnRequest {
     if initial_agent.is_empty() {
         SpawnRequest::Shell
+    } else if let Some(provider) = initial_provider {
+        SpawnRequest::AgentWithProvider {
+            slug: initial_agent.to_string(),
+            provider_label: provider.label.clone(),
+        }
     } else {
         SpawnRequest::Agent(initial_agent.to_string())
     }
@@ -3850,6 +3989,12 @@ fn initial_spawn_request(initial_agent: &str) -> SpawnRequest {
 fn spawn_request_label(request: &SpawnRequest) -> String {
     match request {
         SpawnRequest::Agent(agent) => format!("agent {agent:?}"),
+        SpawnRequest::AgentWithProvider {
+            slug,
+            provider_label,
+        } => {
+            format!("agent {slug:?} (provider: {provider_label})")
+        }
         SpawnRequest::Shell => "shell".to_string(),
     }
 }
@@ -4011,6 +4156,16 @@ fn paint_selection_highlight(buf: &mut Vec<u8>, screen: &vt100::Screen, sel: &Se
             }
         }
         buf.extend_from_slice(b"\x1b[0m");
+    }
+}
+
+fn session_agent_label(session: &Session) -> String {
+    let Some(slug) = session.agent.as_deref() else {
+        return "Shell".to_string();
+    };
+    match session.provider.as_ref() {
+        Some(provider) => format!("{} ({})", capitalize(slug), provider.label),
+        None => capitalize(slug),
     }
 }
 
@@ -5157,6 +5312,7 @@ mod tests {
                 workdir: "/workspace".to_string(),
                 agents: Vec::new(),
                 models: std::collections::BTreeMap::new(),
+                initial_provider: None,
             },
         )
     }
@@ -5363,6 +5519,7 @@ mod tests {
             Session::new_for_test(
                 "Test".to_string(),
                 agent,
+                None,
                 (rows, cols),
                 100,
                 input_tx,
@@ -5371,6 +5528,48 @@ mod tests {
             ),
             input_rx,
         )
+    }
+
+    fn test_provider_session(
+        provider: jackin_protocol::Provider,
+    ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+        let (mut session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_string()));
+        session.provider = Some(crate::session::SessionProvider {
+            label: provider.label().to_string(),
+            env_overrides: provider.env_overrides(Some("zai-test-token")),
+        });
+        (session, input_rx)
+    }
+
+    #[test]
+    fn refresh_tab_labels_preserves_provider_suffix() {
+        let mut mux = test_mux(24, 80);
+        let (session, _rx) = test_provider_session(jackin_protocol::Provider::Zai);
+        mux.sessions.insert(1, session);
+        mux.tabs.push(Tab::new_single("Claude", 1));
+
+        mux.refresh_tab_labels();
+
+        assert_eq!(mux.tabs[0].label(), "Claude (Z.AI)");
+    }
+
+    #[test]
+    fn split_metadata_inherits_focused_provider() {
+        let mut mux = test_mux(24, 80);
+        let (session, _rx) = test_provider_session(jackin_protocol::Provider::Zai);
+        let expected_env = session
+            .provider
+            .as_ref()
+            .map(|p| p.env_overrides.clone())
+            .unwrap_or_default();
+        mux.sessions.insert(1, session);
+        mux.tabs.push(Tab::new_single("Claude (Z.AI)", 1));
+
+        let (agent, env, provider) = mux.focused_spawn_metadata();
+
+        assert_eq!(agent.as_deref(), Some("claude"));
+        assert_eq!(provider.as_deref(), Some("Z.AI"));
+        assert_eq!(env, expected_env);
     }
 
     fn split_tab_mux() -> Multiplexer {
@@ -5401,10 +5600,29 @@ mod tests {
     #[test]
     fn initial_spawn_request_is_data_only_agent_or_shell() {
         assert_eq!(
-            initial_spawn_request("codex"),
+            initial_spawn_request("codex", None),
             SpawnRequest::Agent("codex".to_string())
         );
-        assert_eq!(initial_spawn_request(""), SpawnRequest::Shell);
+        assert_eq!(initial_spawn_request("", None), SpawnRequest::Shell);
+    }
+
+    #[test]
+    fn initial_spawn_request_carries_provider_when_selected() {
+        let provider = jackin_protocol::InitialProvider {
+            label: jackin_protocol::Provider::Zai.label().to_string(),
+        };
+        assert_eq!(
+            initial_spawn_request("claude", Some(&provider)),
+            SpawnRequest::AgentWithProvider {
+                slug: "claude".to_string(),
+                provider_label: "Z.AI".to_string(),
+            }
+        );
+        // An empty agent still degrades to a shell even with a provider.
+        assert_eq!(
+            initial_spawn_request("", Some(&provider)),
+            SpawnRequest::Shell
+        );
     }
 
     #[test]

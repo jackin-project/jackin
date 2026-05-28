@@ -88,6 +88,7 @@ export default defineConfig({
                   ],
                 },
                 { label: 'GitHub CLI Authentication', slug: 'guides/authentication/github-cli' },
+                { label: 'Z.AI (GLM Coding Plan)', slug: 'guides/authentication/zai' },
               ],
             },
             { label: 'Running inside tmux', slug: 'guides/tmux' },
