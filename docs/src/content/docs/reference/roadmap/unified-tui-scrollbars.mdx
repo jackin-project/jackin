@@ -36,7 +36,7 @@ CSS/browser scrollbars in the docs landing page and Starlight theme are out of s
 
 ## Proposed Shared API
 
-Prefer reusing [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) for scrollbar geometry and interaction, then wrap it from `jackin_tui::scroll` so the rest of jackin' depends on one local API. If the integration proves too restrictive, keep the same local API and replace only the adapter internals.
+Prefer reusing [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) for scrollbar geometry and interaction, then wrap it from `jackin_tui::scroll` so the rest of jackin' depends on one local API. This is logic reuse, not a visual redesign: jackin' keeps its current symbols, colours, borders, focus behavior, footer hints, and capsule border-column rendering unless a later PR explicitly changes the design. If the integration proves too restrictive, keep the same local API and replace only the adapter internals.
 
 ## Crate Evaluation
 
@@ -46,7 +46,7 @@ Researched 2026-05-28 against the current Ratatui ecosystem:
 |---|---|---|
 | [`ratatui::widgets::ScrollbarState`](https://docs.rs/ratatui/latest/ratatui/widgets/struct.ScrollbarState.html) | Built-in stateful scrollbar with `content_length`, `viewport_content_length`, and position helpers. Already available because jackin' depends on Ratatui. | Useful for simple ratatui-only drawing, but not enough for this refactor. It is tied to Ratatui widgets, does not expose the backend-agnostic drag/wheel interaction model jackin' needs, and cannot directly serve the raw-ANSI capsule renderer. |
 | [`tui-scrollview`](https://crates.io/crates/tui-scrollview) | A scrollable Ratatui view backed by a larger off-screen `Buffer`; includes horizontal and vertical scrollbars. | Not a good primary fit. jackin' already renders virtualized line slices and capsule panes; rendering every scrollable surface into a larger buffer would be a heavier architectural change and still would not solve capsule raw-ANSI geometry sharing. Its state also follows the same "render clamps later" pattern that caused the build-log overscroll bug. |
-| [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) | A focused Ratatui scrollbar crate with `ScrollLengths`, pure `ScrollMetrics`, fractional thumb geometry, hit testing, backend-agnostic pointer/wheel events, `ScrollCommand::SetOffset`, and external app-owned state. | Best fit. It gives jackin' the unstyled logic layer requested here: content/viewport/offset metrics, clamped offset conversion, track click behavior, drag persistence, and wheel handling can be reused without forcing jackin' to adopt the crate's glyphs everywhere. The Ratatui renderer can optionally use its widget; capsule can consume the metrics only. |
+| [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) | A focused Ratatui scrollbar crate with `ScrollLengths`, pure `ScrollMetrics`, fractional thumb geometry, hit testing, backend-agnostic pointer/wheel events, `ScrollCommand::SetOffset`, and external app-owned state. | Best fit. It gives jackin' the unstyled logic layer requested here: content/viewport/offset metrics, clamped offset conversion, track click behavior, drag persistence, and wheel handling can be reused without forcing jackin' to adopt the crate's glyphs everywhere. The Ratatui renderer should preserve jackin' symbols and palette by default; capsule should consume the metrics only. |
 
 `tui-scrollbar` is also low-friction for the current toolchain: version 0.2.4 declares Rust 1.88 while jackin' currently requires Rust 1.94, and it is MIT/Apache-2.0 licensed. It lives in the `ratatui/tui-widgets` repository and depends on `ratatui-core`, matching Ratatui 0.30's modular direction for third-party widget libraries.
 
@@ -59,7 +59,7 @@ Expose jackin-owned names from `jackin_tui::scroll` even if the implementation d
 | `Axis` | `Vertical` or `Horizontal`, so the same model covers rows and columns. |
 | `ScrollMetrics { content_len, viewport_len, offset }` | Canonical bounded state for one axis. Delegates to `tui_scrollbar::ScrollMetrics` where possible and exposes jackin' naming for the rest of the codebase. |
 | `Thumb { start, len }` | Axis-agnostic thumb geometry in track cells or subcells. Replaces both console-local `scrollbar_thumb_geometry` and the current `VerticalThumb` shape. |
-| `thumb(metrics, track_len)` | Proportional thumb length and rounded position with invariants: offset `0` reaches the first track cell, max offset reaches the last track cell, thumb length is offset-invariant. This should be a thin adapter over `tui-scrollbar` metrics unless jackin' deliberately keeps full-cell thumbs. |
+| `thumb(metrics, track_len)` | Proportional thumb length and rounded position with invariants: offset `0` reaches the first track cell, max offset reaches the last track cell, thumb length is offset-invariant. This should be a thin adapter over `tui-scrollbar` metrics while preserving jackin' full-cell visual output unless a separate design change opts into fractional glyphs. |
 | `offset_for_track_position(metrics, track_len, track_pos)` | Drag/click mapping. Uses `tui-scrollbar`'s offset conversion or interaction API, clamps to max, and supports both axes. |
 | `apply_delta(metrics, delta)` and `apply_page(metrics, direction)` | Mutation helpers that return the new clamped offset. Prefer `tui-scrollbar` wheel/track-click behavior where the semantics match; keep local helpers for keyboard-only page movement. |
 | `follow_cursor(metrics, cursor)` | Cursor/selection-follow helper used by picker lists and editor rows. |
@@ -91,7 +91,7 @@ Keep rendering adapters thin:
 - A scroll offset can never remain above the current maximum after wheel, key, page, drag, resize, content refresh, or render.
 - The Docker build log overlay no longer sticks at the top: with a saturated top value, the first downward wheel event moves visible content toward the tail.
 - Horizontal and vertical scrollbar behavior is consistent across list view, editor tabs, settings tabs, picker lists, confirm/save details, launch progress, and capsule panes.
-- Existing visual styling remains stable unless intentionally changed: focused scrollable blocks keep green focus, inactive tracks keep the dialog-scroll palette, and capsule scrollbars keep border-column rendering.
+- Existing visual styling remains stable: focused scrollable blocks keep green focus, inactive tracks keep the dialog-scroll palette, current full-cell thumb/track glyphs remain the default, and capsule scrollbars keep border-column rendering. Any fractional glyphs, arrows, or other visual changes from `tui-scrollbar` are out of scope unless a later PR explicitly proposes them.
 - Tests cover shared math for zero viewport, content fits, one-row overflow, exact max offset, overscroll clamp, midpoint drag, thumb end reach, tail-relative conversion, and cursor-follow selection.
 - At least one integration test covers the launch build-log overscroll repro directly.
 
