@@ -31,7 +31,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 - Forward `xterm`-style extended key sequences verbatim (Kitty protocol, CSI u, etc.).
 - Never swallow, re-encode, or normalize key sequences before passing them to the active pane's PTY.
-- `TERM=xterm-256color` is set for all pane PTYs. The multiplexer itself must advertise `extkeys` capability to the sessions it spawns so that agent CLIs which query `TERM` get the right answer.
+- `TERM=xterm-256color` and `COLORTERM=truecolor` are set for all pane PTYs. The multiplexer itself must advertise `extkeys` capability to the sessions it spawns so that agent CLIs which query `TERM` get the right answer.
 
 ### Mouse events
 
