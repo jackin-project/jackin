@@ -4713,11 +4713,7 @@ fn start_git_context_watcher(workdir: PathBuf, event_tx: mpsc::UnboundedSender<S
 }
 
 #[cfg(not(target_os = "linux"))]
-fn start_git_context_watcher(
-    _workdir: PathBuf,
-    _event_tx: mpsc::UnboundedSender<SessionEvent>,
-) {
-}
+fn start_git_context_watcher(_workdir: PathBuf, _event_tx: mpsc::UnboundedSender<SessionEvent>) {}
 
 #[cfg(target_os = "linux")]
 fn git_dir_for_watch(workdir: &Path) -> Option<PathBuf> {
