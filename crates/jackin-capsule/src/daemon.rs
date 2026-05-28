@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Instant, SystemTime};
 
@@ -172,16 +172,18 @@ pub struct Multiplexer {
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
-    /// Cached at construction; tool availability and `origin/HEAD`
-    /// cannot change while the daemon is alive, and re-probing on
-    /// the 1Hz state tick would shell out for a stable verdict.
+    /// Cached at construction for the hot polling path. The only
+    /// mutation after that is `gh_available` flipping false → true when
+    /// a background PR lookup succeeds, so a startup PATH /
+    /// tool-availability race does not freeze PR discovery for the
+    /// daemon lifetime.
     workdir_context: WorkdirContext,
 }
 
-/// One-shot resolution of workdir + tool facts. The daemon never
-/// re-probes; if `git` or `gh` is installed mid-session the operator
-/// must restart the container to pick it up (a non-event for an
-/// orchestrator that already discards containers per launch).
+/// One-shot resolution of workdir + tool facts. `gh_available` may
+/// flip from false to true when a background PR lookup succeeds (so a
+/// startup PATH race doesn't freeze the feature for the daemon
+/// lifetime); the other fields are never re-probed.
 struct WorkdirContext {
     is_git_repo: bool,
     git_available: bool,
@@ -250,31 +252,51 @@ impl WorkdirContext {
 
 /// Probe `name --version` once at construction. Stdin/stdout/stderr
 /// are nulled so a misbehaving subprocess cannot leak output into the
-/// daemon's logs and cannot block on stdin. A `false` verdict
-/// short-circuits all later lookup spawns for the duration of the
-/// daemon process.
+/// daemon's logs and cannot block on stdin. As PID 1, Capsule has a
+/// SIGCHLD zombie reaper that can win the race against Rust's
+/// `Child::try_wait`; `ECHILD` after a successful spawn still proves
+/// the executable exists, so treat it as available instead of freezing
+/// the feature off for the daemon lifetime.
 fn command_in_path(name: &str) -> bool {
     let mut cmd = Command::new(name);
     cmd.arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    match cmd.status() {
-        Ok(status) if status.success() => true,
-        Ok(status) => {
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            crate::clog!(
+                "command_in_path[{name}]: spawn failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
+                e.raw_os_error()
+            );
+            return false;
+        }
+    };
+    let label = format!("command_in_path[{name}]");
+    match wait_child_with_timeout(&mut child, &label, GIT_CONTEXT_COMMAND_TIMEOUT) {
+        WaitOutcome::Exited(status) if status.success() => true,
+        WaitOutcome::Exited(status) => {
             crate::cdebug!(
                 "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
                 status.code()
             );
             false
         }
-        Err(e) => {
+        WaitOutcome::Reaped => {
             crate::clog!(
-                "command_in_path[{name}]: spawn failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
+                "command_in_path[{name}]: child was reaped before status collection; treating as available"
+            );
+            true
+        }
+        WaitOutcome::Failed(e) => {
+            crate::clog!(
+                "command_in_path[{name}]: try_wait failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
                 e.raw_os_error()
             );
             false
         }
+        WaitOutcome::TimedOut => false,
     }
 }
 
@@ -908,12 +930,6 @@ impl Multiplexer {
         now: Instant,
         mode: PullRequestLookupMode,
     ) -> bool {
-        if !self.workdir_context.gh_available {
-            if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!("pull-request-context: force-refresh skipped: gh unavailable");
-            }
-            return false;
-        }
         if self.pull_request_lookup.in_flight {
             if mode == PullRequestLookupMode::ForceRefresh {
                 crate::cdebug!(
@@ -922,6 +938,14 @@ impl Multiplexer {
                 );
             }
             return false;
+        }
+        if !self.workdir_context.gh_available {
+            if mode == PullRequestLookupMode::RespectCache {
+                return false;
+            }
+            crate::clog!(
+                "pull-request-context: force-refresh scheduling lookup despite startup gh unavailable"
+            );
         }
         let Some(branch) = self.pull_request_context_branch.clone() else {
             if mode == PullRequestLookupMode::ForceRefresh {
@@ -983,12 +1007,30 @@ impl Multiplexer {
         E: FnOnce(T) -> SessionEvent + Send + 'static,
     {
         let event_tx = self.event_tx.clone();
-        std::thread::spawn(move || {
+        let emit = move || {
             let value = work();
             if event_tx.send(to_event(value)).is_err() {
                 crate::clog!("{label}: event channel closed before result reached main loop");
             }
-        });
+        };
+        // Fire-and-forget worker — no `await`, no tokio context needed.
+        // Inside the daemon's `#[tokio::main]` we still route through
+        // `spawn_blocking` so the runtime accounts for blocking work;
+        // outside one (unit tests, ad-hoc tools) a plain OS thread
+        // avoids spinning up a second runtime.
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn_blocking(emit);
+            }
+            Err(_) => {
+                if let Err(e) = std::thread::Builder::new()
+                    .name(format!("capsule-blocking[{label}]"))
+                    .spawn(emit)
+                {
+                    crate::clog!("{label}: failed to spawn blocking worker thread: {e}");
+                }
+            }
+        }
     }
 
     fn apply_git_branch_context_loaded(
@@ -1111,7 +1153,13 @@ impl Multiplexer {
         // for a full minute after every blip. Preserve the previous
         // cached value; the next state-ticker tick retries.
         let pull_request = match outcome {
-            PullRequestLookupOutcome::Resolved(pr) => pr,
+            PullRequestLookupOutcome::Resolved(pr) => {
+                if !self.workdir_context.gh_available {
+                    crate::clog!("pull-request-context: gh lookup succeeded after startup miss");
+                    self.workdir_context.gh_available = true;
+                }
+                pr
+            }
             PullRequestLookupOutcome::TransientFailure => {
                 return loading_changed;
             }
@@ -4721,6 +4769,54 @@ fn watch_git_head_changes(git_dir: PathBuf, event_tx: mpsc::UnboundedSender<Sess
     }
 }
 
+const COMMAND_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+/// Outcome of polling a spawned `Child` to completion with a deadline.
+/// Callers translate this into their own result/Option/bool shape.
+enum WaitOutcome {
+    Exited(std::process::ExitStatus),
+    /// The kernel reaped the child out from under us (PID 1's zombie
+    /// reaper inside Capsule, or a sibling thread's `waitpid`). The
+    /// exit status is lost; callers that captured stdout/stderr should
+    /// trust those pipes, and presence-probes can treat the spawn
+    /// itself as proof the executable exists.
+    Reaped,
+    /// Timed out before the child finished. The helper has already
+    /// attempted `kill()` + `wait()` (best-effort) before returning.
+    TimedOut,
+    /// `try_wait` itself returned a non-`ECHILD` error.
+    Failed(std::io::Error),
+}
+
+/// Poll `child.try_wait()` at `COMMAND_PROBE_POLL_INTERVAL` until it
+/// finishes, the kernel reaps it, the deadline fires, or `try_wait`
+/// itself errors. `label` is only used in the "kill after timeout
+/// failed" log so the line names the program that lingered.
+fn wait_child_with_timeout(child: &mut Child, label: &str, timeout: Duration) -> WaitOutcome {
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return WaitOutcome::Exited(status),
+            Ok(None) => {}
+            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+                return WaitOutcome::Reaped;
+            }
+            Err(e) => return WaitOutcome::Failed(e),
+        }
+        if started.elapsed() >= timeout {
+            if let Err(e) = child.kill() {
+                crate::clog!(
+                    "{label}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
+                    e.raw_os_error()
+                );
+            }
+            let _ = child.wait();
+            return WaitOutcome::TimedOut;
+        }
+        std::thread::sleep(COMMAND_PROBE_POLL_INTERVAL);
+    }
+}
+
 fn git_current_context(workdir: &Path) -> GitContext {
     // Try the cheap path first: read `.git/HEAD` and parse the symref.
     // For a normal checkout on a branch the file is one line of
@@ -5291,51 +5387,30 @@ fn run_command_capturing_output(
     let stderr_label: &'static str = "stderr";
     let stdout_reader = read_pipe_bounded(program.clone(), stdout_label, stdout, 64 * 1024);
     let stderr_reader = read_pipe_bounded(program.clone(), stderr_label, stderr, 4 * 1024);
-    let started = Instant::now();
-    let status_success: Option<bool>;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                status_success = Some(
-                    status
-                        .code()
-                        .is_some_and(|code| accepted_statuses.contains(&code)),
-                );
-                break;
-            }
-            Ok(None) => {}
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                // PID 1 / sibling waitpid reaped the child; trust the
-                // stdout pipe. Stderr is still read for the caller's
-                // diagnostic context.
-                status_success = None;
-                break;
-            }
-            Err(e) => {
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return Err(LookupError::Failed(format!(
-                    "{program}: try_wait failed: {e} (errno={:?})",
-                    e.raw_os_error()
-                )));
-            }
-        }
-        if started.elapsed() >= timeout {
-            if let Err(e) = child.kill() {
-                crate::clog!(
-                    "{program}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
-                    e.raw_os_error()
-                );
-            }
-            let _ = child.wait();
+    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &program, timeout)
+    {
+        WaitOutcome::Exited(status) => Some(
+            status
+                .code()
+                .is_some_and(|code| accepted_statuses.contains(&code)),
+        ),
+        WaitOutcome::Reaped => None,
+        WaitOutcome::TimedOut => {
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
             return Err(LookupError::Failed(format!(
                 "{program}: timed out after {timeout:?}"
             )));
         }
-        std::thread::sleep(Duration::from_millis(25));
-    }
+        WaitOutcome::Failed(e) => {
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(LookupError::Failed(format!(
+                "{program}: try_wait failed: {e} (errno={:?})",
+                e.raw_os_error()
+            )));
+        }
+    };
     let stdout_bytes = stdout_reader
         .join()
         .map_err(|_| LookupError::Failed(format!("{program}: stdout reader panicked")))?
@@ -5427,54 +5502,35 @@ fn command_stdout_trimmed_with_timeout_and_statuses(
         stdout.read_to_end(&mut bytes)?;
         Ok(bytes)
     });
-    let started = Instant::now();
-    let status_success: Option<bool>;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let accepted = status
-                    .code()
-                    .is_some_and(|code| accepted_statuses.contains(&code));
-                status_success = Some(accepted);
-                break;
-            }
-            Ok(None) => {}
-            // The kernel reaped the child out from under us — either
-            // PID 1's zombie reaper inside the daemon or a sibling
-            // thread's waitpid. The exit status is lost; trust the
-            // stdout pipe (callers like the Container info dialog
-            // would otherwise show empty fields for healthy git/gh
-            // commands). Non-ECHILD errnos are surfaced.
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                status_success = None;
-                break;
-            }
-            Err(e) => {
-                crate::clog!(
-                    "command try_wait failed ({:?}): {e} (errno={:?})",
-                    command.get_program(),
-                    e.raw_os_error()
-                );
-                let _ = stdout_reader.join();
-                return None;
-            }
-        }
-        if started.elapsed() >= timeout {
-            if let Err(e) = child.kill() {
-                crate::clog!(
-                    "command timeout ({timeout:?}): child.kill() failed: {e} (errno={:?}); child may linger",
-                    e.raw_os_error()
-                );
-            }
-            let _ = child.wait();
-            // Joining the reader is bounded: kill() closed the pipe,
-            // so read_to_end returns quickly. Without the join the
-            // OS-thread is leaked across every timeout firing.
+    let label = format!("{:?}", command.get_program());
+    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
+        WaitOutcome::Exited(status) => Some(
+            status
+                .code()
+                .is_some_and(|code| accepted_statuses.contains(&code)),
+        ),
+        // Status is lost; trust the stdout pipe (callers like the
+        // Container info dialog would otherwise show empty fields for
+        // healthy git/gh commands).
+        WaitOutcome::Reaped => None,
+        WaitOutcome::TimedOut => {
+            // Joining the reader is bounded: kill() (inside the helper)
+            // closed the pipe, so read_to_end returns quickly. Without
+            // the join the OS-thread is leaked across every timeout
+            // firing.
             let _ = stdout_reader.join();
             return None;
         }
-        std::thread::sleep(Duration::from_millis(25));
-    }
+        WaitOutcome::Failed(e) => {
+            crate::clog!(
+                "command try_wait failed ({:?}): {e} (errno={:?})",
+                command.get_program(),
+                e.raw_os_error()
+            );
+            let _ = stdout_reader.join();
+            return None;
+        }
+    };
     if status_success == Some(false) {
         crate::cdebug!(
             "command exited non-accepted status ({:?}); stderr was nulled so reason is unavailable",
@@ -7028,6 +7084,86 @@ mod tests {
             mux.pull_request_lookup.request_id,
             id_before.wrapping_add(1),
             "force-spawn must bump request_id"
+        );
+    }
+
+    #[test]
+    fn open_github_context_dialog_force_spawns_when_startup_missed_gh() {
+        let mut mux = test_mux(24, 100);
+        mux.workdir_context.gh_available = false;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        let id_before = mux.pull_request_lookup.request_id;
+
+        mux.open_github_context_dialog(Instant::now());
+
+        assert!(
+            mux.pull_request_lookup.in_flight,
+            "manual refresh must schedule a background lookup even when startup marked gh unavailable"
+        );
+        assert_eq!(
+            mux.pull_request_lookup.request_id,
+            id_before.wrapping_add(1),
+            "manual refresh should not need a synchronous gh availability probe"
+        );
+        assert!(
+            !mux.workdir_context.gh_available,
+            "gh availability flips only after the background lookup succeeds"
+        );
+    }
+
+    #[test]
+    fn background_pull_request_success_marks_gh_available_after_startup_miss() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.workdir_context.gh_available = false;
+        mux.workdir_context.is_git_repo = true;
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_lookup.request_id = 7;
+        mux.pull_request_lookup.in_flight = true;
+
+        let changed = mux.apply_pull_request_context_loaded(
+            7,
+            Some(branch("feat/x")),
+            None,
+            PullRequestLookupOutcome::Resolved(Some(Arc::new(pull_request_fixture(436)))),
+            now,
+        );
+
+        assert!(changed);
+        assert!(
+            mux.workdir_context.gh_available,
+            "successful background gh lookup should unblock later conservative refreshes"
+        );
+    }
+
+    #[test]
+    fn open_github_context_dialog_bypasses_fresh_no_pr_cache() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.workdir_context.gh_available = true;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_context_cache.insert(
+            branch("feat/x"),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                head: None,
+                pull_request: None,
+            },
+        );
+
+        mux.open_github_context_dialog(now);
+
+        assert!(
+            mux.pull_request_lookup.in_flight,
+            "manual dialog open must refresh even when a recent background lookup saw no PR"
+        );
+        assert!(
+            mux.pull_request_context_loading(),
+            "dialog should show resolving while the forced refresh is in flight"
         );
     }
 
