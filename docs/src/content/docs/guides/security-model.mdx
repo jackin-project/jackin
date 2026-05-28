@@ -100,28 +100,11 @@ Trust is tied to the agent selector (e.g., `org/agent-name`), not the git URL. I
 </Aside>
 ### Branch trust gate
 
-Loading a role from an unmerged branch (`--role-branch`) triggers a separate, always-on confirmation prompt — even if the role is already trusted.
+Loading a role from an unmerged branch (`--role-branch`) triggers a separate, always-on rich confirmation dialog — even if the role is already trusted.
 
 The reason: trusting a role records that you reviewed the role's **default branch**. An external contributor can open a pull request on that same role repository with a modified Dockerfile that runs arbitrary commands during the image build. If you loaded the branch without a prompt, you could unknowingly execute code you never reviewed, in a context where you expected the behaviour of the trusted default branch.
 
-The branch trust gate shows the role, source repository, and branch name, then asks you to confirm that you have reviewed the diff:
-
-```
-!! Unreviewed branch — verify before proceeding !!
-
-  role:   the-architect
-  source: https://github.com/jackin-project/jackin-the-architect.git
-  branch: feat/some-pr
-
-  This branch has not been merged to the default branch.
-  Its Dockerfile and scripts may differ from the trusted main branch.
-  A malicious contributor could introduce harmful code that runs
-  on your machine during the image build.
-
-  Review the branch diff in the role repository before continuing.
-
-Have you reviewed branch "feat/some-pr" and verified it is safe to build? [y/N]
-```
+The branch trust gate shows the role, source repository, and branch name inside the launch cockpit, then asks you to confirm that you reviewed the diff before jackin' builds it.
 
 This gate cannot be bypassed: there is no `--force-branch` flag, no config option to skip it, and non-interactive terminals bail with an error rather than defaulting to yes.
 

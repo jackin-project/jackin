@@ -2268,7 +2268,7 @@ async fn load_role_with(
         // exactly once so the operator can address the dirty state inside the
         // role, then the safe cleanup is retried.
         let interactive_finalize = true;
-        let mut prompt = crate::isolation::finalize::StdinPrompt;
+        let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
         let outcome = inspect_attach_outcome(docker, &container_name).await?;
         write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
         let mut decision = crate::isolation::finalize::finalize_foreground_session(

@@ -538,7 +538,7 @@ async fn finalize_reconnected_foreground_session(
         crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
-    let mut prompt = crate::isolation::finalize::StdinPrompt;
+    let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
     let mut decision = crate::isolation::finalize::finalize_foreground_session(
         container_name,
         &paths.data_dir.join(container_name),

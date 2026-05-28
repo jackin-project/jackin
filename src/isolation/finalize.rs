@@ -80,8 +80,8 @@ pub trait FinalizerPrompt {
     ) -> anyhow::Result<usize>;
 }
 
-pub struct StdinPrompt;
-impl FinalizerPrompt for StdinPrompt {
+pub struct RichCleanupPrompt;
+impl FinalizerPrompt for RichCleanupPrompt {
     fn ask_unsafe_cleanup(
         &mut self,
         container: &str,
@@ -93,22 +93,16 @@ impl FinalizerPrompt for StdinPrompt {
         {
             return Ok(choice);
         }
-        let msg = match reason {
-            PreservedReason::Dirty => format!(
-                "Isolated worktree for {container} has uncommitted changes:\n  {worktree_path}\n\nWhat do you want to do?"
-            ),
-            PreservedReason::Unpushed => format!(
-                "Isolated worktree for {container} has unpushed commits on a local branch:\n  {worktree_path}\n\nWhat do you want to do?"
-            ),
+
+        let reason_str = match reason {
+            PreservedReason::Dirty => "uncommitted changes",
+            PreservedReason::Unpushed => "unpushed commits on a local branch",
         };
-        crate::tui::prompt::prompt_choice(
-            &msg,
-            &[
-                "Return to role to address it",
-                "Preserve worktree and exit",
-                "Force delete worktree and discard changes",
-            ],
-        )
+        eprintln!(
+            "[jackin] preserved isolated worktree for {container} because the rich cleanup dialog \
+             is unavailable:\n         {worktree_path}\n         reason: {reason_str}"
+        );
+        Ok(1)
     }
 }
 
@@ -854,6 +848,23 @@ mod tests {
         ) -> anyhow::Result<usize> {
             panic!("prompt should not be called in this test");
         }
+    }
+
+    #[test]
+    fn rich_cleanup_prompt_preserves_when_rich_dialog_is_unavailable() {
+        let mut prompt = RichCleanupPrompt;
+        let choice = prompt
+            .ask_unsafe_cleanup(
+                "jk-test",
+                "/tmp/jackin-preserved-worktree",
+                PreservedReason::Dirty,
+            )
+            .unwrap();
+
+        assert_eq!(
+            choice, 1,
+            "without a rich dialog, cleanup must preserve instead of falling back to a numbered CLI prompt"
+        );
     }
 
     use crate::runtime::test_support::FakeRunner;

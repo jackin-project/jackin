@@ -139,24 +139,7 @@ For choosing between a fresh instance and another agent session inside an existi
 
 ### Branch trust gate
 
-Every `--role-branch` load triggers an interactive confirmation, even for roles you have already trusted:
-
-```
-!! Unreviewed branch — verify before proceeding !!
-
-  role:   the-architect
-  source: https://github.com/jackin-project/jackin-the-architect.git
-  branch: feat/caveman-all-install
-
-  This branch has not been merged to the default branch.
-  Its Dockerfile and scripts may differ from the trusted main branch.
-  A malicious contributor could introduce harmful code that runs
-  on your machine during the image build.
-
-  Review the branch diff in the role repository before continuing.
-
-Have you reviewed branch "feat/caveman-all-install" and verified it is safe to build? [y/N]
-```
+Every `--role-branch` load triggers an interactive rich confirmation dialog, even for roles you have already trusted. The dialog names the role, source URL, and branch, then requires you to confirm that you reviewed the branch before jackin' builds it.
 
 This gate exists because `trusted = true` in your config covers the default branch of a role, not every PR branch an external contributor might open against it. See [Branch trust gate](/guides/security-model#branch-trust-gate) for the full threat model.
 
@@ -174,7 +157,7 @@ jackin load the-architect --role-branch feat/my-pr --rebuild
 
 When a workspace mount has `isolation = "worktree"`, `jackin load` materializes a new `git worktree` from the host repo's current `HEAD` before starting the container. If the host tree is dirty (staged changes, unstaged tracked changes, or untracked files — ignored files do not count), those edits stay on the host and are **not** carried into the agent's worktree.
 
-In an interactive shell jackin' prompts you to confirm before materializing. In non-interactive contexts (CI, scripts, piped input) the launch fails fast unless you pass `--force` to acknowledge that:
+In an interactive rich launch, jackin' asks for confirmation in the launch dialog before materializing. In non-interactive contexts (CI, scripts, piped input) the launch fails fast unless you pass `--force` to acknowledge that:
 
 - the worktree branches from `HEAD`, not from your working copy
 - uncommitted host edits will not appear inside the container
