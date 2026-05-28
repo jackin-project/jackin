@@ -10,6 +10,7 @@ use ratatui::{
 };
 
 use super::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::scroll;
 
 pub(crate) const fn viewport_width(area: Rect) -> usize {
     area.width.saturating_sub(2) as usize
@@ -20,26 +21,16 @@ pub(crate) const fn viewport_height(area: Rect) -> usize {
 }
 
 pub(crate) const fn max_offset(content_len: usize, viewport: usize) -> u16 {
-    if viewport == 0 || content_len <= viewport {
-        0
+    let max = scroll::max_offset(content_len, viewport);
+    if max > u16::MAX as usize {
+        u16::MAX
     } else {
-        let max = content_len.saturating_sub(viewport);
-        // Silent truncation: an overflow greater than u16::MAX cannot be fully
-        // addressed by a u16 scroll offset. Debug builds surface this.
-        debug_assert!(
-            max <= u16::MAX as usize,
-            "scroll overflow (content_len - viewport) exceeds u16::MAX — scrollbar position truncated"
-        );
-        if max > u16::MAX as usize {
-            u16::MAX
-        } else {
-            max as u16
-        }
+        max as u16
     }
 }
 
 pub(crate) const fn is_scrollable(content_len: usize, viewport: usize) -> bool {
-    viewport > 0 && content_len > viewport
+    scroll::is_scrollable(content_len, viewport)
 }
 
 pub(crate) const fn effective_offset(content_len: usize, viewport: usize, offset: u16) -> u16 {
@@ -62,13 +53,9 @@ pub(crate) fn scrollbar_position_for_offset(
     viewport: usize,
     offset: usize,
 ) -> u16 {
-    if is_scrollable(content_length, viewport) {
-        offset
-            .min(content_length.saturating_sub(viewport))
-            .min(usize::from(u16::MAX)) as u16
-    } else {
-        0
-    }
+    scroll::max_offset(content_length, viewport)
+        .min(offset)
+        .min(usize::from(u16::MAX)) as u16
 }
 
 pub(crate) fn cursor_follow_offset(
@@ -77,26 +64,8 @@ pub(crate) fn cursor_follow_offset(
     viewport: usize,
     stored_offset: u16,
 ) -> u16 {
-    if viewport == 0 {
-        return 0;
-    }
-
-    let max = max_offset(content_length, viewport);
-    let stored = stored_offset.min(max);
-    let stored_usize = usize::from(stored);
-    let raw = if cursor < stored_usize {
-        cursor.min(usize::from(u16::MAX)) as u16
-    } else if is_scrollable(content_length, viewport)
-        && cursor >= stored_usize.saturating_add(viewport)
-    {
-        cursor
-            .saturating_add(1)
-            .saturating_sub(viewport)
-            .min(usize::from(u16::MAX)) as u16
-    } else {
-        stored
-    };
-    raw.min(max)
+    scroll::cursor_follow_offset(cursor, content_length, viewport, usize::from(stored_offset))
+        .min(usize::from(u16::MAX)) as u16
 }
 
 fn scrollbar_thumb_geometry(
@@ -105,24 +74,15 @@ fn scrollbar_thumb_geometry(
     track_len: usize,
     offset: usize,
 ) -> (usize, usize) {
-    if !is_scrollable(content_length, viewport) || track_len == 0 {
-        return (0, 0);
-    }
-
-    // is_scrollable guarantees content_length > viewport >= 1, so both divisions are safe.
-    debug_assert!(content_length >= 1 && content_length > viewport);
-    let thumb_len = (track_len.saturating_mul(viewport) / content_length)
-        .max(1)
-        .min(track_len);
-    let max_start = track_len.saturating_sub(thumb_len);
-    let max_offset = content_length.saturating_sub(viewport);
-    let offset = offset.min(max_offset);
-    let thumb_start = offset
-        .saturating_mul(max_start)
-        .saturating_add(max_offset / 2)
-        / max_offset;
-
-    (thumb_start, thumb_len)
+    scroll::full_cell_thumb(
+        content_length,
+        viewport,
+        track_len.min(usize::from(u16::MAX)) as u16,
+        offset,
+    )
+    .map_or((0, 0), |thumb| {
+        (usize::from(thumb.start), usize::from(thumb.len))
+    })
 }
 
 pub(crate) fn scrollbar_offset_for_track_position(
@@ -135,20 +95,20 @@ pub(crate) fn scrollbar_offset_for_track_position(
         return 0;
     }
 
-    let max_scroll = content_length.saturating_sub(viewport);
-    let max_position = track_len.saturating_sub(1);
-    if max_position == 0 {
-        return 0;
-    }
-
-    // max_position >= 1: guarded by the explicit return above.
-    debug_assert!(max_position >= 1);
-    let position = track_position.min(max_position);
-    let offset = position
-        .saturating_mul(max_scroll)
-        .saturating_add(max_position / 2)
-        / max_position;
-    offset.min(usize::from(u16::MAX)) as u16
+    let metrics = scroll::metrics(
+        content_length,
+        viewport,
+        0,
+        track_len.min(usize::from(u16::MAX)) as u16,
+    );
+    let position = track_position
+        .min(track_len.saturating_sub(1))
+        .saturating_mul(scroll::SUBCELL)
+        .saturating_add(scroll::SUBCELL / 2);
+    let thumb_start = position.saturating_sub(metrics.thumb_len() / 2);
+    metrics
+        .offset_for_thumb_start(thumb_start)
+        .min(usize::from(u16::MAX)) as u16
 }
 
 // No upper clamp: every caller's render path calls effective_offset, which clamps.
@@ -166,14 +126,7 @@ pub(crate) fn apply_horizontal_scroll_delta(
     viewport: usize,
     content_width: usize,
 ) {
-    let max = max_offset(content_width, viewport);
-    let current = (*value).min(max);
-    let next = if delta.is_negative() {
-        current.saturating_sub(delta.unsigned_abs())
-    } else {
-        current.saturating_add(delta as u16)
-    };
-    *value = next.min(max);
+    scroll::apply_delta_u16(content_width, viewport, value, isize::from(delta));
 }
 
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
@@ -457,7 +410,7 @@ mod tests {
             .map(|offset| scrollbar_thumb_geometry(12, 10, 10, offset).1)
             .collect();
 
-        assert_eq!(lengths, vec![8, 8, 8]);
+        assert_eq!(lengths, vec![9, 9, 9]);
     }
 
     #[test]
@@ -482,9 +435,9 @@ mod tests {
             (0..10).filter(|y| buffer[(0, *y)].symbol() == "█").count()
         }
 
-        assert_eq!(rendered_thumb_len(0), 8);
-        assert_eq!(rendered_thumb_len(1), 8);
-        assert_eq!(rendered_thumb_len(2), 8);
+        assert_eq!(rendered_thumb_len(0), 9);
+        assert_eq!(rendered_thumb_len(1), 9);
+        assert_eq!(rendered_thumb_len(2), 9);
     }
 
     #[test]
@@ -617,7 +570,7 @@ mod tests {
         let vertical_thumb_len = (1..=4).filter(|y| buffer[(11, *y)].symbol() == "█").count();
 
         assert_eq!(horizontal_thumb_len, 9);
-        assert_eq!(vertical_thumb_len, 3);
+        assert_eq!(vertical_thumb_len, 4);
     }
 
     #[test]

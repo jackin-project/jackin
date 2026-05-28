@@ -8,8 +8,8 @@ use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
     workdir_pick::WorkdirPickState,
 };
-use super::super::render::apply_scroll_delta;
 use super::super::render::editor::{SecretsRow, secrets_flat_rows};
+use super::super::render::list::workspace_mounts_content_width;
 use super::super::state::{
     ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
     FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget,
@@ -88,6 +88,7 @@ pub(super) fn handle_editor_key(
     // Capture before the editor borrow (separate fields, but explicit is cleaner).
     let op_cache = state.op_cache.clone();
     let op_available = state.op_available;
+    let term_width = state.cached_term_size.width;
 
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(InputOutcome::Continue);
@@ -96,19 +97,39 @@ pub(super) fn handle_editor_key(
     match key.code {
         KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
             editor.workspace_mounts_scroll_focused = true;
-            apply_scroll_delta(&mut editor.workspace_mounts_scroll_x, -8);
+            apply_editor_x_delta(
+                &mut editor.workspace_mounts_scroll_x,
+                -8,
+                term_width,
+                workspace_mounts_content_width(&editor.pending.mounts),
+            );
         }
         KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
             editor.workspace_mounts_scroll_focused = true;
-            apply_scroll_delta(&mut editor.workspace_mounts_scroll_x, 8);
+            apply_editor_x_delta(
+                &mut editor.workspace_mounts_scroll_x,
+                8,
+                term_width,
+                workspace_mounts_content_width(&editor.pending.mounts),
+            );
         }
         KeyCode::Char('h' | 'H') => {
             editor.tab_content_scroll_focused = true;
-            apply_scroll_delta(&mut editor.tab_scroll_x, -8);
+            apply_editor_x_delta(
+                &mut editor.tab_scroll_x,
+                -8,
+                term_width,
+                editor.tab_content_width,
+            );
         }
         KeyCode::Char('l' | 'L') => {
             editor.tab_content_scroll_focused = true;
-            apply_scroll_delta(&mut editor.tab_scroll_x, 8);
+            apply_editor_x_delta(
+                &mut editor.tab_scroll_x,
+                8,
+                term_width,
+                editor.tab_content_width,
+            );
         }
         // W3C ARIA Tabs: Left/BackTab cycle backward, Right cycles forward when
         // the tab bar has focus. Tab and Down enter the content area.
@@ -461,6 +482,11 @@ pub(super) fn handle_editor_key(
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+fn apply_editor_x_delta(value: &mut u16, delta: i16, term_width: u16, content_width: usize) {
+    let viewport = term_width.saturating_sub(2) as usize;
+    jackin_tui::scroll::apply_delta_u16(content_width, viewport, value, isize::from(delta));
 }
 
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {

@@ -11,6 +11,8 @@
 //! dependency choice (ratatui vs raw ANSI) that doesn't belong in a
 //! shared crate. Keep the surface narrow.
 
+pub mod scroll;
+
 /// Three-byte RGB triple. Constructors below are the canonical
 /// phosphor palette used everywhere a jackin TUI surface needs to
 /// pick a colour.
@@ -463,18 +465,9 @@ pub struct VerticalThumb {
 /// or `filled == 0`).
 #[must_use]
 pub fn vertical_thumb(track_rows: u16, filled: usize, offset: usize) -> Option<VerticalThumb> {
-    if track_rows == 0 || filled == 0 {
-        return None;
-    }
-    let track = track_rows as usize;
-    let total = filled + track;
-    let thumb_rows = ((track * track) / total).max(1).min(track);
-    let unscrolled_room = track - thumb_rows;
-    let thumb_top_from_bottom = (offset * unscrolled_room).checked_div(filled).unwrap_or(0);
-    let thumb_top = unscrolled_room.saturating_sub(thumb_top_from_bottom);
-    Some(VerticalThumb {
-        thumb_top: thumb_top as u16,
-        thumb_rows: thumb_rows as u16,
+    scroll::tail_vertical_thumb(track_rows, filled, offset).map(|thumb| VerticalThumb {
+        thumb_top: thumb.start,
+        thumb_rows: thumb.len,
     })
 }
 

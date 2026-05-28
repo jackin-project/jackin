@@ -1,0 +1,300 @@
+//! Shared scrollbar state, metrics, and offset adapters.
+//!
+//! `tui-scrollbar` owns proportional metrics and pointer interaction math.
+//! jackin' owns rendering, so this module exposes small helpers that convert
+//! those metrics into the full-cell thumbs and clamped offsets used by the
+//! host console, launch progress overlay, and capsule renderer.
+
+pub use tui_scrollbar::{
+    PointerButton, PointerEvent, PointerEventKind, SUBCELL, ScrollAxis, ScrollBar, ScrollBarArrows,
+    ScrollBarInteraction, ScrollBarOrientation, ScrollCommand, ScrollEvent, ScrollLengths,
+    ScrollMetrics, ScrollWheel, TrackClickBehavior,
+};
+
+/// Full-cell thumb geometry for jackin-owned renderers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FullCellThumb {
+    /// 0-based cell inside the track where the thumb starts.
+    pub start: u16,
+    /// Number of cells the thumb spans.
+    pub len: u16,
+}
+
+/// Tail-relative scroll offset used by live surfaces.
+///
+/// Externally `0` means "live tail / newest content". Internally the helper
+/// clamps through the same top-relative `tui-scrollbar` metrics used by normal
+/// panels before converting back to the tail-relative representation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TailScroll {
+    offset: usize,
+}
+
+impl TailScroll {
+    #[must_use]
+    pub const fn new(offset: usize) -> Self {
+        Self { offset }
+    }
+
+    #[must_use]
+    pub const fn offset(self) -> usize {
+        self.offset
+    }
+
+    pub const fn set_offset(&mut self, offset: usize) {
+        self.offset = offset;
+    }
+
+    pub fn scroll_by(&mut self, filled: usize, delta: isize) -> usize {
+        let current = self.offset.min(filled);
+        self.offset = if delta.is_negative() {
+            current.saturating_sub(delta.unsigned_abs())
+        } else {
+            current.saturating_add(delta as usize).min(filled)
+        };
+        self.offset
+    }
+
+    pub fn clamp(&mut self, filled: usize) -> usize {
+        self.offset = self.offset.min(filled);
+        self.offset
+    }
+
+    #[must_use]
+    pub fn clamped(self, filled: usize) -> Self {
+        Self {
+            offset: self.offset.min(filled),
+        }
+    }
+
+    #[must_use]
+    pub fn to_top_offset(self, content_len: usize, viewport_len: usize) -> usize {
+        let max = max_offset(content_len, viewport_len);
+        max.saturating_sub(self.offset.min(max))
+    }
+
+    #[must_use]
+    pub fn from_top_offset(content_len: usize, viewport_len: usize, top_offset: usize) -> Self {
+        let max = max_offset(content_len, viewport_len);
+        Self {
+            offset: max.saturating_sub(top_offset.min(max)),
+        }
+    }
+}
+
+#[must_use]
+pub const fn lengths(content_len: usize, viewport_len: usize) -> ScrollLengths {
+    ScrollLengths {
+        content_len,
+        viewport_len,
+    }
+}
+
+#[must_use]
+pub const fn is_scrollable(content_len: usize, viewport_len: usize) -> bool {
+    viewport_len > 0 && content_len > viewport_len
+}
+
+#[must_use]
+pub const fn max_offset(content_len: usize, viewport_len: usize) -> usize {
+    if viewport_len == 0 || content_len <= viewport_len {
+        0
+    } else {
+        content_len - viewport_len
+    }
+}
+
+#[must_use]
+pub fn metrics(
+    content_len: usize,
+    viewport_len: usize,
+    offset: usize,
+    track_cells: u16,
+) -> ScrollMetrics {
+    ScrollMetrics::new(lengths(content_len, viewport_len), offset, track_cells)
+}
+
+pub fn clamp_offset(content_len: usize, viewport_len: usize, offset: &mut usize) -> usize {
+    *offset = (*offset).min(max_offset(content_len, viewport_len));
+    *offset
+}
+
+pub fn clamp_offset_u16(content_len: usize, viewport_len: usize, offset: &mut u16) -> u16 {
+    let max = max_offset(content_len, viewport_len).min(usize::from(u16::MAX)) as u16;
+    *offset = (*offset).min(max);
+    *offset
+}
+
+#[must_use]
+pub fn offset_after_delta(
+    content_len: usize,
+    viewport_len: usize,
+    offset: usize,
+    delta: isize,
+) -> usize {
+    let current = offset.min(max_offset(content_len, viewport_len));
+    if delta.is_negative() {
+        current.saturating_sub(delta.unsigned_abs())
+    } else {
+        current
+            .saturating_add(delta as usize)
+            .min(max_offset(content_len, viewport_len))
+    }
+}
+
+pub fn apply_delta(
+    content_len: usize,
+    viewport_len: usize,
+    offset: &mut usize,
+    delta: isize,
+) -> usize {
+    *offset = offset_after_delta(content_len, viewport_len, *offset, delta);
+    *offset
+}
+
+pub fn apply_delta_u16(
+    content_len: usize,
+    viewport_len: usize,
+    offset: &mut u16,
+    delta: isize,
+) -> u16 {
+    let next = offset_after_delta(content_len, viewport_len, usize::from(*offset), delta)
+        .min(usize::from(u16::MAX)) as u16;
+    *offset = next;
+    next
+}
+
+#[must_use]
+pub fn cursor_follow_offset(
+    cursor: usize,
+    content_len: usize,
+    viewport_len: usize,
+    stored_offset: usize,
+) -> usize {
+    if viewport_len == 0 {
+        return 0;
+    }
+
+    let max = max_offset(content_len, viewport_len);
+    let stored = stored_offset.min(max);
+    let raw = if cursor < stored {
+        cursor
+    } else if is_scrollable(content_len, viewport_len)
+        && cursor >= stored.saturating_add(viewport_len)
+    {
+        cursor.saturating_add(1).saturating_sub(viewport_len)
+    } else {
+        stored
+    };
+    raw.min(max)
+}
+
+#[must_use]
+pub fn full_cell_thumb(
+    content_len: usize,
+    viewport_len: usize,
+    track_cells: u16,
+    offset: usize,
+) -> Option<FullCellThumb> {
+    if !is_scrollable(content_len, viewport_len) || track_cells == 0 {
+        return None;
+    }
+    let metrics = metrics(content_len, viewport_len, offset, track_cells);
+    let len = metrics
+        .thumb_len()
+        .saturating_add(SUBCELL - 1)
+        .saturating_div(SUBCELL)
+        .max(1)
+        .min(usize::from(track_cells));
+    let max_start = usize::from(track_cells).saturating_sub(len);
+    let start = metrics
+        .thumb_start()
+        .saturating_add(SUBCELL / 2)
+        .saturating_div(SUBCELL)
+        .min(max_start);
+    (len > 0).then_some(FullCellThumb {
+        start: start as u16,
+        len: len as u16,
+    })
+}
+
+/// Full-cell vertical thumb for tail-relative scrollback surfaces.
+#[must_use]
+pub fn tail_vertical_thumb(
+    track_rows: u16,
+    filled: usize,
+    tail_offset: usize,
+) -> Option<FullCellThumb> {
+    if track_rows == 0 || filled == 0 {
+        return None;
+    }
+    let content_len = filled.saturating_add(usize::from(track_rows));
+    let viewport_len = usize::from(track_rows);
+    let top_offset = TailScroll::new(tail_offset).to_top_offset(content_len, viewport_len);
+    full_cell_thumb(content_len, viewport_len, track_rows, top_offset)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_viewport_is_not_scrollable() {
+        assert!(!is_scrollable(10, 0));
+        assert_eq!(max_offset(10, 0), 0);
+    }
+
+    #[test]
+    fn content_that_fits_has_zero_max_offset() {
+        assert!(!is_scrollable(5, 5));
+        assert_eq!(max_offset(5, 5), 0);
+    }
+
+    #[test]
+    fn one_row_overflow_clamps_to_one() {
+        let mut offset = 99usize;
+        assert_eq!(clamp_offset(11, 10, &mut offset), 1);
+        assert_eq!(offset, 1);
+    }
+
+    #[test]
+    fn delta_starts_from_clamped_offset() {
+        assert_eq!(offset_after_delta(12, 5, 99, -1), 6);
+        assert_eq!(offset_after_delta(12, 5, 99, 1), 7);
+    }
+
+    #[test]
+    fn full_cell_thumb_reaches_track_end_at_max_offset() {
+        let thumb = full_cell_thumb(20, 5, 10, 15).expect("overflowing content");
+        assert_eq!(thumb.start + thumb.len, 10);
+    }
+
+    #[test]
+    fn full_cell_thumb_moves_on_midpoint_drag_mapping() {
+        let m = metrics(20, 5, 15, 10);
+        let mid = m.offset_for_thumb_start(m.thumb_travel() / 2);
+        assert!(mid > 0 && mid < 15);
+    }
+
+    #[test]
+    fn tail_scroll_converts_between_tail_and_top_offsets() {
+        let tail = TailScroll::new(0);
+        assert_eq!(tail.to_top_offset(20, 5), 15);
+        assert_eq!(TailScroll::from_top_offset(20, 5, 0).offset(), 15);
+    }
+
+    #[test]
+    fn tail_scroll_down_from_overshoot_moves_visible_content() {
+        let mut tail = TailScroll::new(99);
+        tail.scroll_by(15, -3);
+        assert_eq!(tail.offset(), 12);
+    }
+
+    #[test]
+    fn cursor_follow_keeps_selection_visible() {
+        assert_eq!(cursor_follow_offset(0, 20, 5, 0), 0);
+        assert_eq!(cursor_follow_offset(5, 20, 5, 0), 1);
+        assert_eq!(cursor_follow_offset(19, 20, 5, 0), 15);
+        assert_eq!(cursor_follow_offset(7, 20, 0, 0), 0);
+    }
+}

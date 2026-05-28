@@ -53,6 +53,7 @@ jackin' is a functional proof of concept, not a stable product line. **`Claude C
 - Role authoring CLI — desktop role creation, validation, and migration are documented in the [`role` command reference](/commands/role/) and [Creating a Role](/developing/creating-roles/); the standalone CI/Renovate-style validator split is documented in [Architecture](/reference/architecture/#role-repository-tooling) and [Schema Versions](/reference/schema-versions/)
 - Async Docker API via bollard — `DockerApi` trait, `BollardDockerClient`, `FakeDockerClient`, `ContainerState` (all 9 Docker lifecycle states); typed API for lifecycle, cleanup, inspect, exec, and image operations, replacing CLI stderr string-matching; `docker build`, `docker exec -it`, and `docker run -it` stay on the CLI by design — see [Codebase Map](/reference/codebase-map/) for details
 - Z.AI (GLM Coding Plan) as an alternative provider for Claude Code sessions — `ZAI_API_KEY` env injection, in-container and console provider picker, and `AuthKind::Zai` auth tab row; see [Z.AI authentication](/guides/authentication/zai/)
+- Shared TUI scroll model — scrollbar geometry, clamping, cursor-follow offsets, drag/click mapping, launch-progress tail scrolling, and capsule scrollback all route through `jackin_tui::scroll` while keeping console and capsule visuals distinct; see [TUI Design Decisions](/reference/tui-design-decisions/#scrollbars-and-scrollable-blocks)
 
 ## Partially implemented
 
@@ -111,7 +112,7 @@ jackin' is a functional proof of concept, not a stable product line. **`Claude C
 
 ### Codebase health
 
-- **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, DRY deduplication, module-contract refactors, and test coverage. Re-analyzed May 2026 against the current codebase (~91K lines of production Rust, 13 files over 1000 lines, pervasive TUI/auth/Docker duplication). Includes the [unified TUI scrollbars](/reference/roadmap/unified-tui-scrollbars/) refactor plan for moving scrollbar geometry, clamping, drag mapping, and launch-progress overscroll fixes into one shared implementation. The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
+- **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, DRY deduplication, module-contract refactors, and test coverage. Re-analyzed May 2026 against the current codebase (~91K lines of production Rust, 13 files over 1000 lines, pervasive TUI/auth/Docker duplication). The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
 - **[Cargo workspace split](/reference/roadmap/cargo-workspace-split/)** — deferred multi-crate Cargo workspace plan for when LOC, compile time, or external-consumer triggers make crate boundaries worth the overhead (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
 - **[Open review findings catalog](/reference/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations. Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning").
 

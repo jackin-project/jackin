@@ -24,7 +24,7 @@ pub use editor::render_editor;
 pub(in crate::console::manager) use crate::console::widgets::scrollable::{
     apply_horizontal_scroll_delta, apply_scroll_delta, clamp_scroll_offset as clamp_scroll_x,
     cursor_follow_offset, horizontal_scrollbar_area, is_scrollable,
-    max_offset as max_scroll_offset, scrollbar_offset_for_track_position,
+    max_offset as max_scroll_offset, scrollbar_offset_for_track_position, vertical_scrollbar_area,
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
 pub(super) use crate::console::widgets::scrollable::{
@@ -444,7 +444,7 @@ fn clamp_global_mounts_scroll_for_frame(
     );
 }
 
-fn clamp_list_scroll_for_area(
+pub(in crate::console::manager) fn clamp_list_scroll_for_area(
     area: Rect,
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -479,6 +479,16 @@ fn clamp_list_scroll_for_area(
                 viewport,
                 &mut state.list_mounts_scroll_x,
             );
+            clamp_scroll_x(
+                list::workspace_mounts_content_height(&mounts),
+                scroll_viewport_height(Rect {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: list::mount_block_height(&mounts),
+                }),
+                &mut state.list_mounts_scroll_y,
+            );
         }
         ManagerListRow::SavedWorkspace(i) => {
             let Some(summary) = state.workspaces.get(i) else {
@@ -492,9 +502,20 @@ fn clamp_list_scroll_for_area(
                 viewport,
                 &mut state.list_mounts_scroll_x,
             );
+            clamp_scroll_x(
+                list::workspace_mounts_content_height(&workspace.mounts),
+                scroll_viewport_height(Rect {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: list::mount_block_height(&workspace.mounts),
+                }),
+                &mut state.list_mounts_scroll_y,
+            );
         }
         ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => {
             state.list_mounts_scroll_x = 0;
+            state.list_mounts_scroll_y = 0;
         }
     }
 
@@ -506,6 +527,8 @@ fn clamp_list_scroll_for_area(
     if global_rows.is_empty() {
         state.list_global_mounts_scroll_x = 0;
         state.list_role_global_mounts_scroll_x = 0;
+        state.list_global_mounts_scroll_y = 0;
+        state.list_role_global_mounts_scroll_y = 0;
     } else {
         let (global, scoped) = partition_mounts_by_scope(&global_rows);
         clamp_scroll_x(
@@ -514,9 +537,29 @@ fn clamp_list_scroll_for_area(
             &mut state.list_global_mounts_scroll_x,
         );
         clamp_scroll_x(
+            list::global_mounts_content_height(&global),
+            scroll_viewport_height(Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: list::global_mounts_block_height(&global),
+            }),
+            &mut state.list_global_mounts_scroll_y,
+        );
+        clamp_scroll_x(
             list::global_mounts_content_width(&scoped),
             viewport,
             &mut state.list_role_global_mounts_scroll_x,
+        );
+        clamp_scroll_x(
+            list::global_mounts_content_height(&scoped),
+            scroll_viewport_height(Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: list::global_mounts_block_height(&scoped),
+            }),
+            &mut state.list_role_global_mounts_scroll_y,
         );
     }
 
@@ -529,6 +572,33 @@ fn clamp_list_scroll_for_area(
     {
         state.list_scroll_focus = None;
     }
+
+    let ws_config = match state.selected_row() {
+        ManagerListRow::SavedWorkspace(i) => state
+            .workspaces
+            .get(i)
+            .and_then(|s| config.workspaces.get(&s.name)),
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::NewWorkspace
+        | ManagerListRow::WorkspaceInstance(_, _) => None,
+    };
+    let agent_count = list::agents_block_agent_count(ws_config, config);
+    clamp_scroll_x(
+        2 + agent_count,
+        scroll_viewport_height(Rect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: list::agents_block_height(agent_count),
+        }),
+        &mut state.list_roles_scroll_y,
+    );
+    clamp_scroll_x(
+        list::agents_block_content_width(ws_config, config),
+        viewport,
+        &mut state.list_roles_scroll_x,
+    );
 
     // Clamp left-pane name scroll to valid range.
     let left_viewport_w = scroll_viewport_width(columns[0]);

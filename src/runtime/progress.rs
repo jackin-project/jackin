@@ -151,7 +151,7 @@ struct LaunchView {
     build_log_open: bool,
     /// Lines scrolled up from the tail of the build log (0 = follow the
     /// newest output).
-    build_log_scroll: usize,
+    build_log_scroll: jackin_tui::scroll::TailScroll,
     /// Pointer is hovering the clickable footer activity (which opens the
     /// build-log overlay). Lifts the activity to the link colour.
     build_log_hover: bool,
@@ -248,6 +248,14 @@ impl RichDriver {
                             if !rr.no_motion {
                                 v.frame = v.frame.wrapping_add(1);
                             }
+                            if v.build_log_open {
+                                let area = crossterm::terminal::size()
+                                    .ok()
+                                    .map(|(width, height)| Rect::new(0, 0, width, height))
+                                    .unwrap_or_default();
+                                let filled = build_log_scroll_filled(area);
+                                v.build_log_scroll.clamp(filled);
+                            }
                             v.clone()
                         }
                         Err(_) => continue,
@@ -280,7 +288,7 @@ fn initial_view() -> LaunchView {
         failure_ack: false,
         frame: 0,
         build_log_open: false,
-        build_log_scroll: 0,
+        build_log_scroll: jackin_tui::scroll::TailScroll::default(),
         build_log_hover: false,
         label_transition: None,
         failure_copy_hover: None,
@@ -532,6 +540,27 @@ fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, 
 const BUILD_LOG_SCROLL_STEP: usize = 3;
 const BUILD_LOG_PAGE_STEP: usize = 10;
 
+fn build_log_scroll_filled(area: Rect) -> usize {
+    let box_area = Rect {
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let viewport_w = crate::console::widgets::scrollable::viewport_width(box_area);
+    let viewport_h = crate::console::widgets::scrollable::viewport_height(box_area);
+    let raw = crate::runtime::build_log::snapshot();
+    let line_count = if raw.is_empty() {
+        1
+    } else {
+        wrap_build_log_lines(raw, viewport_w).len()
+    };
+    jackin_tui::scroll::max_offset(line_count, viewport_h)
+}
+
+fn scroll_build_log(view: &mut LaunchView, area: Rect, delta: isize) {
+    let filled = build_log_scroll_filled(area);
+    view.build_log_scroll.scroll_by(filled, delta);
+}
+
 /// Whether `(col, row)` falls on the footer activity text ("Building Docker
 /// image…"). The footer is the last terminal row; the activity is left-aligned
 /// and the right-side chips never overlap it, so a left-edge span is enough.
@@ -619,7 +648,7 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
                         && hit_activity(&v, m.column, m.row)
                     {
                         v.build_log_open = true;
-                        v.build_log_scroll = 0;
+                        v.build_log_scroll = jackin_tui::scroll::TailScroll::default();
                         // Overlay now covers the activity; clear its hover lift
                         // and drop the hand pointer.
                         v.build_log_hover = false;
@@ -648,10 +677,10 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
                     }
                 }
                 MouseEventKind::ScrollUp if v.build_log_open => {
-                    v.build_log_scroll = v.build_log_scroll.saturating_add(BUILD_LOG_SCROLL_STEP);
+                    scroll_build_log(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
                 }
                 MouseEventKind::ScrollDown if v.build_log_open => {
-                    v.build_log_scroll = v.build_log_scroll.saturating_sub(BUILD_LOG_SCROLL_STEP);
+                    scroll_build_log(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
                 }
                 _ => {}
             },
@@ -668,13 +697,13 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
                 KeyCode::Esc | KeyCode::Char('q') => v.build_log_open = false,
-                KeyCode::Up => v.build_log_scroll = v.build_log_scroll.saturating_add(1),
-                KeyCode::Down => v.build_log_scroll = v.build_log_scroll.saturating_sub(1),
+                KeyCode::Up => scroll_build_log(&mut v, area, 1),
+                KeyCode::Down => scroll_build_log(&mut v, area, -1),
                 KeyCode::PageUp => {
-                    v.build_log_scroll = v.build_log_scroll.saturating_add(BUILD_LOG_PAGE_STEP);
+                    scroll_build_log(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
                 }
                 KeyCode::PageDown => {
-                    v.build_log_scroll = v.build_log_scroll.saturating_sub(BUILD_LOG_PAGE_STEP);
+                    scroll_build_log(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
                 }
                 _ => {}
             },
@@ -1649,12 +1678,10 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     };
 
     // `build_log_scroll` counts lines up from the tail (0 = follow newest).
-    // Convert to the shared block's top-offset; render_scrollable_block clamps
-    // and paints the green scrollbar only when the content overflows.
+    // Convert through the shared tail adapter to the block's top-offset.
     let viewport_h = viewport_height(box_area);
-    let max_top = lines.len().saturating_sub(viewport_h);
-    let mut scroll_y =
-        u16::try_from(max_top.saturating_sub(view.build_log_scroll)).unwrap_or(u16::MAX);
+    let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines.len(), viewport_h))
+        .unwrap_or(u16::MAX);
     let mut scroll_x = 0u16;
     render_scrollable_block(
         frame,
@@ -2159,6 +2186,7 @@ mod tests {
 
     #[test]
     fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
+        let _guard = crate::runtime::build_log::TEST_LOCK.lock().unwrap();
         crate::runtime::build_log::begin();
         crate::runtime::build_log::push_line(
             "#4 FROM docker.io/projectjackin/jackin-the-architect:latest@sha256:08d62f4027f941d8f5ee1742b6b0ba9e8a3e276ab7626967b0e1de27917a0e94",
@@ -2175,7 +2203,7 @@ mod tests {
             failure_ack: false,
             frame: 0,
             build_log_open: true,
-            build_log_scroll: 0,
+            build_log_scroll: jackin_tui::scroll::TailScroll::default(),
             build_log_hover: false,
             label_transition: None,
             failure_copy_hover: None,
@@ -2196,6 +2224,39 @@ mod tests {
             horizontal_scroll_cells, 0,
             "wrapped lines should fit the viewport and avoid horizontal scrollbar"
         );
+    }
+
+    #[test]
+    fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
+        let _guard = crate::runtime::build_log::TEST_LOCK.lock().unwrap();
+        crate::runtime::build_log::begin();
+        for idx in 0..20 {
+            crate::runtime::build_log::push_line(&format!("line {idx:02}"));
+        }
+        crate::runtime::build_log::end();
+
+        let area = Rect::new(0, 0, 40, 8);
+        let filled = build_log_scroll_filled(area);
+        assert!(filled > 1);
+        let mut view = LaunchView {
+            identity: None,
+            stages: Vec::new(),
+            status: String::new(),
+            failure: None,
+            failure_ack: false,
+            frame: 0,
+            build_log_open: true,
+            build_log_scroll: jackin_tui::scroll::TailScroll::new(usize::MAX),
+            build_log_hover: false,
+            label_transition: None,
+            failure_copy_hover: None,
+            failure_copied: None,
+        };
+
+        scroll_build_log(&mut view, area, -1);
+
+        assert_eq!(view.build_log_scroll.offset(), filled - 1);
+        assert_eq!(view.build_log_scroll.to_top_offset(20, 5), 1);
     }
 
     #[test]
@@ -2233,7 +2294,7 @@ mod tests {
             failure_ack: false,
             frame: 0,
             build_log_open: false,
-            build_log_scroll: 0,
+            build_log_scroll: jackin_tui::scroll::TailScroll::default(),
             build_log_hover: false,
             label_transition: None,
             failure_copy_hover: None,

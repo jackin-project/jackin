@@ -17,7 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::scrollable::{apply_scroll_delta, render_lines_with_offset_in_area};
+use super::scrollable::render_lines_with_offset_in_area;
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +44,7 @@ pub struct ConfirmSaveState {
     pub focus: ConfirmSaveFocus,
     /// Vertical scroll offset — how many lines are hidden above the visible window.
     pub scroll_offset: u16,
+    preview_rows: u16,
     /// `plan_edit`'s `effective_removals`, forwarded into
     /// `edit_workspace`. Empty for Create flows.
     pub effective_removals: Vec<String>,
@@ -63,23 +64,24 @@ impl ConfirmSaveState {
             lines,
             focus: ConfirmSaveFocus::Save,
             scroll_offset: 0,
+            preview_rows: 0,
             effective_removals: Vec::new(),
             final_mounts: None,
             has_collapses: false,
         }
     }
 
-    pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<SaveChoice> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<SaveChoice> {
         match key.code {
             KeyCode::Char('s' | 'S') => ModalOutcome::Commit(SaveChoice::Save),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
             // Up/Down/j/k scroll the content preview.
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                apply_scroll_delta(&mut self.scroll_offset, -1);
+                self.scroll_preview_by(-1);
                 ModalOutcome::Continue
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                apply_scroll_delta(&mut self.scroll_offset, 1);
+                self.scroll_preview_by(1);
                 ModalOutcome::Continue
             }
             // Tab / BackTab / Right / Left — only two buttons,
@@ -102,6 +104,15 @@ impl ConfirmSaveState {
             _ => ModalOutcome::Continue,
         }
     }
+
+    fn scroll_preview_by(&mut self, delta: isize) {
+        jackin_tui::scroll::apply_delta_u16(
+            self.lines.len(),
+            usize::from(self.preview_rows),
+            &mut self.scroll_offset,
+            delta,
+        );
+    }
 }
 
 /// Total rows the `ConfirmSave` modal wants given its current line count.
@@ -112,7 +123,7 @@ pub fn required_height(state: &ConfirmSaveState) -> u16 {
     lines.saturating_add(5)
 }
 
-pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
+pub fn render(frame: &mut Frame, area: Rect, state: &mut ConfirmSaveState) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
@@ -154,6 +165,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
         ])
         .split(inner);
 
+    state.preview_rows = chunks[1].height;
+    jackin_tui::scroll::clamp_offset_u16(
+        state.lines.len(),
+        usize::from(chunks[1].height),
+        &mut state.scroll_offset,
+    );
     render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
 
     // Buttons — focused choice highlights on white.
@@ -302,5 +319,23 @@ mod tests {
         ]);
         // 3 content lines + 5 chrome rows (2 borders + top blank + after-content blank + buttons)
         assert_eq!(required_height(&s), 8);
+    }
+
+    #[test]
+    fn confirm_save_scroll_keys_start_from_clamped_offset() {
+        let mut s = ConfirmSaveState::new(vec![
+            Line::from("one"),
+            Line::from("two"),
+            Line::from("three"),
+            Line::from("four"),
+        ]);
+        s.preview_rows = 2;
+        s.scroll_offset = 99;
+
+        s.handle_key(key(KeyCode::Down));
+        assert_eq!(s.scroll_offset, 2);
+
+        s.handle_key(key(KeyCode::Up));
+        assert_eq!(s.scroll_offset, 1);
     }
 }

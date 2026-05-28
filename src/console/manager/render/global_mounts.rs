@@ -214,6 +214,42 @@ pub(in crate::console::manager) fn trust_content_width(state: &SettingsState<'_>
     super::max_line_width(&trust_lines(state))
 }
 
+pub(in crate::console::manager) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
+    let mut height =
+        global_mount_lines(&state.mounts.pending, Some(state.mounts.selected), true).len();
+    if state.mounts.error.is_some() {
+        height = height.saturating_add(2);
+    }
+    height
+}
+
+pub(in crate::console::manager) fn env_content_height(
+    state: &SettingsState<'_>,
+    area_width: u16,
+) -> usize {
+    let mut height = env_lines(state, area_width).len();
+    if state.env.error.is_some() {
+        height = height.saturating_add(2);
+    }
+    height
+}
+
+pub(in crate::console::manager) fn auth_content_height(state: &SettingsState<'_>) -> usize {
+    let mut height = auth_lines(state).len();
+    if state.auth.error.is_some() {
+        height = height.saturating_add(2);
+    }
+    height
+}
+
+pub(in crate::console::manager) fn trust_content_height(state: &SettingsState<'_>) -> usize {
+    let mut height = trust_lines(state).len();
+    if state.trust.error.is_some() {
+        height = height.saturating_add(2);
+    }
+    height
+}
+
 fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
     if state.tab_bar_focused {
         // Tab bar has focus: show tab-navigation keys, then global actions.
