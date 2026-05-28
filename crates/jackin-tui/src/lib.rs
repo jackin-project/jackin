@@ -38,9 +38,24 @@ pub const PHOSPHOR_DIM: Rgb = Rgb::new(0, 140, 30);
 /// Dark green used for panel borders and dot separators.
 pub const PHOSPHOR_DARK: Rgb = Rgb::new(0, 80, 18);
 
-/// Pure black background for modal dialogs that need to mask the
-/// agent's content behind the overlay.
+/// Pure black base colour.
 pub const BLACK: Rgb = Rgb::new(0, 0, 0);
+
+/// Opaque full-screen backdrop behind modal dialogs. Capsule and the
+/// host launch cockpit both use this colour so overlays do not drift
+/// between terminal surfaces.
+pub const DIALOG_BACKDROP: Rgb = BLACK;
+
+/// Dialog box surface colour. Kept distinct from `DIALOG_BACKDROP` as
+/// a named token even though the current visual contract uses the same
+/// pure black for both.
+pub const DIALOG_SURFACE: Rgb = BLACK;
+
+/// Focused scroll/thumb accent for modal scroll regions.
+pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_GREEN;
+
+/// Scroll track and unfocused dialog border colour.
+pub const DIALOG_SCROLL_TRACK: Rgb = PHOSPHOR_DARK;
 
 /// White used for titles, hotkey glyphs, and the active-tab underline.
 pub const WHITE: Rgb = Rgb::new(255, 255, 255);
@@ -470,14 +485,13 @@ pub fn vertical_thumb(track_rows: u16, filled: usize, offset: usize) -> Option<V
 /// placement) in one place stops the two surfaces from drifting
 /// apart when one side picks up a tweak the other forgets.
 pub mod ansi {
-    use super::{INPUT_BG_DIM, PHOSPHOR_DARK, PHOSPHOR_GREEN, Rgb, WHITE};
+    use super::{DIALOG_SURFACE, INPUT_BG_DIM, PHOSPHOR_DARK, PHOSPHOR_GREEN, Rgb, WHITE};
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use std::io::Write as _;
 
-    /// Pure-black background for modal overlays. Matches the
-    /// `BG_DARK` constant the in-container dialog renderer uses.
-    pub const BG_DARK: &str = "\x1b[48;2;0;0;0m";
+    /// Pure-black dialog surface background for modal overlays.
+    pub const BG_DARK: &str = rgb_bg(DIALOG_SURFACE);
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
 
@@ -489,6 +503,44 @@ pub mod ansi {
     pub const POINTER_HAND: &str = "\x1b]22;pointer\x1b\\";
     pub const POINTER_DEFAULT: &str = "\x1b]22;default\x1b\\";
     pub const INVERSE: &str = "\x1b[7m";
+
+    /// Help/banner form of the brand pill, shared with the host and
+    /// capsule status bars so every surface shows the same logo.
+    pub const BRAND_BANNER: &str =
+        "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin' \x1b[0m\n";
+
+    /// Build a foreground SGR for a shared RGB token.
+    pub const fn rgb_fg(rgb: Rgb) -> &'static str {
+        match (rgb.r, rgb.g, rgb.b) {
+            (0, 255, 65) => "\x1b[38;2;0;255;65m",
+            (0, 140, 30) => "\x1b[38;2;0;140;30m",
+            (0, 80, 18) => "\x1b[38;2;0;80;18m",
+            (0, 80, 180) => "\x1b[38;2;0;80;180m",
+            (80, 80, 80) => "\x1b[38;2;80;80;80m",
+            (255, 255, 255) => "\x1b[38;2;255;255;255m",
+            (0, 0, 0) => "\x1b[38;2;0;0;0m",
+            _ => panic!("unsupported RGB foreground token"),
+        }
+    }
+
+    /// Build a background SGR for a shared RGB token.
+    pub const fn rgb_bg(rgb: Rgb) -> &'static str {
+        match (rgb.r, rgb.g, rgb.b) {
+            (0, 255, 65) => "\x1b[48;2;0;255;65m",
+            (42, 42, 42) => "\x1b[48;2;42;42;42m",
+            (255, 255, 255) => "\x1b[48;2;255;255;255m",
+            (0, 0, 0) => "\x1b[48;2;0;0;0m",
+            _ => panic!("unsupported RGB background token"),
+        }
+    }
+
+    /// Build a reset+background SGR for a shared RGB token.
+    pub const fn reset_rgb_bg(rgb: Rgb) -> &'static str {
+        match (rgb.r, rgb.g, rgb.b) {
+            (0, 0, 0) => "\x1b[0;48;2;0;0;0m",
+            _ => panic!("unsupported reset RGB background token"),
+        }
+    }
 
     /// OSC 52 clipboard-write sequence. Targets the system clipboard (`c`)
     /// and uses BEL termination, which is accepted by Ghostty, Kitty, iTerm2,

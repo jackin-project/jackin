@@ -4,6 +4,7 @@
 
 use std::io::Write;
 
+use jackin_tui::ansi::{RESET, fg};
 use unicode_width::UnicodeWidthChar;
 use vt100::{Color, Screen};
 
@@ -247,9 +248,9 @@ pub fn draw_scrollbar(
     // Active pane uses the brand phosphor-green; inactive panes a
     // neutral gray that matches their inactive border colour.
     let thumb_color = if focused {
-        "\x1b[0;38;2;0;255;65m"
+        jackin_tui::PHOSPHOR_GREEN
     } else {
-        "\x1b[0;38;2;160;160;160m"
+        jackin_tui::Rgb::new(160, 160, 160)
     };
 
     // Thumb rows are 0-based relative to the interior; skip the top
@@ -262,10 +263,11 @@ pub fn draw_scrollbar(
             track_start_row + thumb.thumb_top + r + 1,
             col + 1
         );
-        buf.extend_from_slice(thumb_color.as_bytes());
+        buf.extend_from_slice(RESET.as_bytes());
+        fg(buf, thumb_color);
         buf.extend_from_slice("█".as_bytes());
     }
-    buf.extend_from_slice(b"\x1b[0m");
+    buf.extend_from_slice(RESET.as_bytes());
 }
 
 fn cell_attrs(cell: &vt100::Cell) -> Attrs {
@@ -482,8 +484,8 @@ fn emit_bg(buf: &mut Vec<u8>, color: ColorKey) {
 
 /// Paint the whole terminal with a solid background colour, fully hiding
 /// whatever was beneath. Used as the opaque backdrop behind modal dialogs.
-pub fn fill_screen(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, rgb: (u8, u8, u8)) {
-    let (r, g, b) = rgb;
+pub fn fill_screen(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, rgb: jackin_tui::Rgb) {
+    let jackin_tui::Rgb { r, g, b } = rgb;
     for row in 0..term_rows {
         let _ = write!(buf, "\x1b[{};1H\x1b[0;48;2;{r};{g};{b}m", row + 1);
         for _ in 0..term_cols {

@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 pub(crate) const fn viewport_width(area: Rect) -> usize {
     area.width.saturating_sub(2) as usize
@@ -380,8 +380,8 @@ impl Widget for FixedScrollbar {
                 FixedScrollbarOrientation::Horizontal => ("━", "·", area.x, area.y, 1, 0),
                 FixedScrollbarOrientation::Vertical => ("█", "·", area.x, area.y, 0, 1),
             };
-        let thumb_style = Style::default().fg(PHOSPHOR_DIM);
-        let track_style = Style::default().fg(PHOSPHOR_DARK);
+        let thumb_style = Style::default().fg(DIALOG_SCROLL_THUMB);
+        let track_style = Style::default().fg(DIALOG_SCROLL_TRACK);
         for idx in 0..track_len {
             let in_thumb = (thumb_start..thumb_end).contains(&idx);
             let i = idx as u16;
@@ -448,6 +448,7 @@ mod tests {
         scrollbar_offset_for_track_position, scrollbar_position_for_offset,
         scrollbar_thumb_geometry,
     };
+    use crate::console::widgets::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, text::Line};
 
     #[test]
@@ -484,6 +485,24 @@ mod tests {
         assert_eq!(rendered_thumb_len(0), 8);
         assert_eq!(rendered_thumb_len(1), 8);
         assert_eq!(rendered_thumb_len(2), 8);
+    }
+
+    #[test]
+    fn scrollbar_uses_shared_dialog_scroll_palette() {
+        let backend = TestBackend::new(1, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_vertical_scrollbar_in_area(frame, Rect::new(0, 0, 1, 10), 20, 5, 0);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "█");
+        assert_eq!(buffer[(0, 0)].fg, DIALOG_SCROLL_THUMB);
+        assert_eq!(buffer[(0, 9)].symbol(), "·");
+        assert_eq!(buffer[(0, 9)].fg, DIALOG_SCROLL_TRACK);
     }
 
     #[test]
