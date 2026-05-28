@@ -13,6 +13,7 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -28,6 +29,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
+use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 use portable_pty::CommandBuilder;
 
 use crate::dialog::{
@@ -539,11 +541,10 @@ const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::
 /// the constant keeps the content-row math and renderer in sync; if
 /// the bar ever grows to two rows the change happens in one place.
 const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
-/// 100 ms keeps the branch bar inside the "immediate" threshold after
-/// `git checkout`. The hot path is a direct `.git/HEAD` read (including
-/// worktree-style `.git` files), so this does not put `git` subprocesses
-/// on the normal render path.
-const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// One second is quick enough for operator-visible title/chrome updates after
+/// `git checkout` while avoiding a 10Hz daemon wake-up just to inspect local
+/// branch state.
+const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// 60 s keeps the CI-status freshness within one PR turn while
 /// staying well under `gh`'s default secondary-rate-limit budget.
 /// The bar is operator-facing chrome, not a live feed.
@@ -861,15 +862,24 @@ impl Multiplexer {
     }
 
     fn maybe_spawn_git_branch_context_lookup(&mut self, now: Instant) {
+        self.spawn_git_branch_context_lookup(now, true);
+    }
+
+    fn force_spawn_git_branch_context_lookup(&mut self, now: Instant) {
+        self.spawn_git_branch_context_lookup(now, false);
+    }
+
+    fn spawn_git_branch_context_lookup(&mut self, now: Instant, respect_cooldown: bool) {
         if !self.workdir_context.git_available && !self.workdir_context.is_git_repo {
             return;
         }
         if self.git_branch_lookup.in_flight {
             return;
         }
-        if self
-            .git_branch_lookup
-            .cooldown_active(now, GIT_BRANCH_CONTEXT_POLL_INTERVAL)
+        if respect_cooldown
+            && self
+                .git_branch_lookup
+                .cooldown_active(now, GIT_BRANCH_CONTEXT_POLL_INTERVAL)
         {
             return;
         }
@@ -2940,7 +2950,7 @@ impl Multiplexer {
     fn append_outer_terminal_title(&mut self, buf: &mut Vec<u8>) {
         let title = compose_outer_terminal_title(
             &self.workdir,
-            self.pull_request_context_branch.as_deref(),
+            self.context_bar_branch(),
             self.pull_request_context.as_deref(),
         );
         if self.last_outer_terminal_title.as_deref() == Some(title.as_str()) {
@@ -3422,6 +3432,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let initial_spawn =
         initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
     let mut mux = Multiplexer::new(rows, cols, launch_config);
+    start_git_context_watcher(mux.workdir.clone(), mux.event_tx.clone());
     // Defer the first pane until the first attach Hello has supplied
     // real outer-terminal dimensions. Later panes already spawn after
     // attach-time resize; routing the first pane through the same
@@ -3746,6 +3757,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             drain_and_exit(&mut mux).await;
                             return Ok(());
                         }
+                    }
+                    SessionEvent::GitBranchContextRefreshRequested => {
+                        mux.force_spawn_git_branch_context_lookup(Instant::now());
                     }
                     SessionEvent::GitBranchContextLoaded {
                         request_id,
@@ -4623,6 +4637,89 @@ use jackin_tui::{display_cols, take_display_cols};
 
 const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
+const GIT_CONTEXT_WATCH_MASK: AddWatchFlags = AddWatchFlags::IN_CLOSE_WRITE
+    .union(AddWatchFlags::IN_MOVED_TO)
+    .union(AddWatchFlags::IN_CREATE)
+    .union(AddWatchFlags::IN_ATTRIB)
+    .union(AddWatchFlags::IN_DELETE_SELF)
+    .union(AddWatchFlags::IN_MOVE_SELF);
+
+fn start_git_context_watcher(workdir: PathBuf, event_tx: mpsc::UnboundedSender<SessionEvent>) {
+    let Some(git_dir) = git_dir_for_watch(&workdir) else {
+        crate::cdebug!(
+            "git-context-watch: no git metadata dir for {}; relying on periodic poll",
+            workdir.display()
+        );
+        return;
+    };
+    let builder = std::thread::Builder::new().name("git-context-watch".to_string());
+    if let Err(err) = builder.spawn(move || watch_git_head_changes(git_dir, event_tx)) {
+        crate::clog!(
+            "git-context-watch: failed to spawn watcher thread: {err}; relying on periodic poll"
+        );
+    }
+}
+
+fn git_dir_for_watch(workdir: &Path) -> Option<PathBuf> {
+    git_metadata_dirs(workdir)
+        .map(|metadata| metadata.git_dir)
+        .or_else(|| {
+            let raw = git_capture_at_workdir(workdir, &["rev-parse", "--git-dir"])?;
+            let path = PathBuf::from(raw);
+            Some(if path.is_absolute() {
+                path
+            } else {
+                workdir.join(path)
+            })
+        })
+}
+
+fn watch_git_head_changes(git_dir: PathBuf, event_tx: mpsc::UnboundedSender<SessionEvent>) {
+    let instance = match Inotify::init(InitFlags::IN_CLOEXEC) {
+        Ok(instance) => instance,
+        Err(err) => {
+            crate::clog!(
+                "git-context-watch: inotify init failed for {}: {err}; relying on periodic poll",
+                git_dir.display()
+            );
+            return;
+        }
+    };
+    if let Err(err) = instance.add_watch(git_dir.as_path(), GIT_CONTEXT_WATCH_MASK) {
+        crate::clog!(
+            "git-context-watch: add_watch failed for {}: {err}; relying on periodic poll",
+            git_dir.display()
+        );
+        return;
+    }
+    crate::cdebug!("git-context-watch: watching {}", git_dir.display());
+    loop {
+        let events = match instance.read_events() {
+            Ok(events) => events,
+            Err(err) => {
+                crate::clog!(
+                    "git-context-watch: read_events failed for {}: {err}; relying on periodic poll",
+                    git_dir.display()
+                );
+                return;
+            }
+        };
+        let changed = events.iter().any(|event| {
+            event.mask.intersects(
+                AddWatchFlags::IN_Q_OVERFLOW
+                    | AddWatchFlags::IN_DELETE_SELF
+                    | AddWatchFlags::IN_MOVE_SELF,
+            ) || event.name.as_deref() == Some(OsStr::new("HEAD"))
+        });
+        if changed
+            && event_tx
+                .send(SessionEvent::GitBranchContextRefreshRequested)
+                .is_err()
+        {
+            return;
+        }
+    }
+}
 
 fn git_current_context(workdir: &Path) -> GitContext {
     // Try the cheap path first: read `.git/HEAD` and parse the symref.
@@ -4676,39 +4773,17 @@ fn git_context_from_subprocess(workdir: &Path) -> GitContext {
 }
 
 fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContext> {
-    let git_path = workdir.join(".git");
-    // common_git_dir is only meaningful for worktrees (`.git` is a file
-    // pointing at `.git/worktrees/<name>/`). For a normal checkout
-    // (`.git` is the real dir), there is no `commondir` file and the
-    // `is_worktree` flag stays false — saves a per-poll ENOENT stat.
-    let (git_dir, is_worktree) = if git_path.is_dir() {
-        (git_path, false)
-    } else {
-        let git_file =
-            crate::util::read_text_bounded(".git", &git_path, GIT_METADATA_FILE_MAX_BYTES)?;
-        let Some(suffix) = git_file.trim().strip_prefix("gitdir:") else {
-            cdebug_malformed_git_file(".git", &git_path, &git_file);
-            return None;
-        };
-        let git_dir = PathBuf::from(suffix.trim());
-        let resolved = if git_dir.is_absolute() {
-            git_dir
-        } else {
-            workdir.join(git_dir)
-        };
-        (resolved, true)
-    };
-    let common_git_dir = if is_worktree {
-        common_git_dir(&git_dir, GIT_METADATA_FILE_MAX_BYTES)
-    } else {
-        None
-    };
-    let head_path = git_dir.join("HEAD");
+    let metadata = git_metadata_dirs(workdir)?;
+    let head_path = metadata.git_dir.join("HEAD");
     let head =
         crate::util::read_text_bounded(".git/HEAD", &head_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let trimmed = head.trim();
     if let Some(ref_name) = trimmed.strip_prefix("ref: ") {
-        let oid = read_git_ref_oid(&git_dir, common_git_dir.as_deref(), ref_name);
+        let oid = read_git_ref_oid(
+            &metadata.git_dir,
+            metadata.common_git_dir.as_deref(),
+            ref_name,
+        );
         return Some(match BranchName::parse(ref_name) {
             // `ref:` pointing outside `refs/heads/` (e.g. refs/remotes/origin/HEAD)
             // is treated as detached for our chrome purposes — we have no branch
@@ -4723,6 +4798,37 @@ fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContext> {
             cdebug_malformed_git_file(".git/HEAD", &head_path, trimmed);
             GitContext::Absent
         }
+    })
+}
+
+struct GitMetadataDirs {
+    git_dir: PathBuf,
+    common_git_dir: Option<PathBuf>,
+}
+
+fn git_metadata_dirs(workdir: &Path) -> Option<GitMetadataDirs> {
+    let git_path = workdir.join(".git");
+    if git_path.is_dir() {
+        return Some(GitMetadataDirs {
+            git_dir: git_path,
+            common_git_dir: None,
+        });
+    }
+    let git_file = crate::util::read_text_bounded(".git", &git_path, GIT_METADATA_FILE_MAX_BYTES)?;
+    let Some(suffix) = git_file.trim().strip_prefix("gitdir:") else {
+        cdebug_malformed_git_file(".git", &git_path, &git_file);
+        return None;
+    };
+    let git_dir = PathBuf::from(suffix.trim());
+    let git_dir = if git_dir.is_absolute() {
+        git_dir
+    } else {
+        workdir.join(git_dir)
+    };
+    let common_git_dir = common_git_dir(&git_dir, GIT_METADATA_FILE_MAX_BYTES);
+    Some(GitMetadataDirs {
+        git_dir,
+        common_git_dir,
     })
 }
 
@@ -5910,6 +6016,44 @@ mod tests {
         assert!(
             updated.contains("\x1b]2;jackin · PR #436 · Surface PR context in Capsule\x1b\\"),
             "PR context change should refresh title: {updated:?}"
+        );
+    }
+
+    #[test]
+    fn full_frame_updates_outer_terminal_title_on_branch_switch() {
+        let mut mux = single_pane_tab_mux();
+        mux.workdir = PathBuf::from("/workspace/jackin");
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/a"));
+
+        let first =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            first.contains("\x1b]2;jackin · feat/a\x1b\\"),
+            "first non-default branch should set title: {first:?}"
+        );
+
+        mux.pull_request_context_branch = Some(branch("feat/b"));
+        let switched =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            switched.contains("\x1b]2;jackin · feat/b\x1b\\"),
+            "branch switch should refresh title: {switched:?}"
+        );
+
+        mux.pull_request_context_branch = Some(branch("main"));
+        let default_branch =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            default_branch.contains("\x1b]2;jackin\x1b\\"),
+            "default branch should fall back to workspace-only title: {default_branch:?}"
+        );
+        assert!(
+            !default_branch.contains("jackin · main"),
+            "default branch name should not be propagated into title: {default_branch:?}"
         );
     }
 
