@@ -41,18 +41,18 @@ pub const PHOSPHOR_DARK: Rgb = Rgb::new(0, 80, 18);
 /// Pure black base colour.
 pub const BLACK: Rgb = Rgb::new(0, 0, 0);
 
-/// Opaque full-screen backdrop behind modal dialogs in the capsule
-/// multiplexer. Emitted as raw RGB so the overlay fully masks the
-/// pane content beneath.
+/// Opaque full-screen backdrop behind modal dialogs. Capsule and the
+/// host launch cockpit both use this colour so overlays do not drift
+/// between terminal surfaces.
 pub const DIALOG_BACKDROP: Rgb = BLACK;
 
-/// Dialog box surface colour for the capsule modals. Currently the same
-/// pure black as `DIALOG_BACKDROP`.
+/// Dialog box surface colour. Kept distinct from `DIALOG_BACKDROP` as
+/// a named token even though the current visual contract uses the same
+/// pure black for both.
 pub const DIALOG_SURFACE: Rgb = BLACK;
 
-/// Modal scrollbar thumb colour. Dim phosphor so the chrome reads as
-/// ambient rather than competing with focused content.
-pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_DIM;
+/// Focused scroll/thumb accent for modal scroll regions.
+pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_GREEN;
 
 /// Scroll track and unfocused dialog border colour.
 pub const DIALOG_SCROLL_TRACK: Rgb = PHOSPHOR_DARK;
