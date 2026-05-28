@@ -27,7 +27,6 @@ Kimi writes its host-side state under `~/.kimi-code`. jackin' reads these files 
 | `~/.kimi-code/config.toml` | Copied into the container's `/home/agent/.kimi-code/config.toml` before Kimi starts. This is not the OAuth token store, but Kimi's login flow writes the OAuth-backed provider, model, and service references here. A newly generated default config is empty and would not know which logged-in provider to use. |
 | `~/.kimi-code/credentials/` | Copied into the container's `/home/agent/.kimi-code/credentials/` before Kimi starts. This directory contains the OAuth token files. |
 | `~/.kimi-code/device_id` | Copied into the container's `/home/agent/.kimi-code/device_id` before Kimi starts. Kimi includes this device id in OAuth/device headers. |
-| `~/.kimi-code/mcp.json` | Copied into the container's `/home/agent/.kimi-code/mcp.json` before Kimi starts. |
 
 jackin' reads those host files but does not write back to them. If Kimi rotates or creates auth state inside the container, that state stays in jackin-managed instance storage for that container.
 

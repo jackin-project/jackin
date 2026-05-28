@@ -327,7 +327,6 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `kimi-code/config.toml` | Synced copy of host `~/.kimi-code/config.toml` under `auth_forward = "sync"`, `0600` perms (mounted under `/jackin/kimi-code/` and copied into `/home/agent/.kimi-code/` before Kimi starts). Kimi stores OAuth tokens separately, but its login flow writes the OAuth-backed provider/model/service references into this config file, so a fresh default config is not enough to use the forwarded token. |
 | `kimi-code/credentials/` | Synced copy of host `~/.kimi-code/credentials/` OAuth token files under `auth_forward = "sync"`, `0600` perms |
 | `kimi-code/device_id` | Synced copy of host `~/.kimi-code/device_id` under `auth_forward = "sync"`, `0600` perms; Kimi includes this device id in OAuth/device headers |
-| `kimi-code/mcp.json` | Synced copy of host `~/.kimi-code/mcp.json` under `auth_forward = "sync"`, `0600` perms |
 | `opencode/auth.json` | Synced copy of host `~/.local/share/opencode/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/opencode/auth.json`; absent when host has no auth.json). OpenCode stores provider credentials in this file — for example, a Z.AI Coding Plan API key |
 | `home/.claude/` and `home/.claude.json` | Durable Claude Code home state, including conversation history, runtime-local plugins, account metadata, and settings written during the session |
 | `home/.codex/` | Durable Codex home state, including conversation history, runtime-local config, and login state created inside the session |
