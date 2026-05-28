@@ -1004,21 +1004,47 @@ fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen:
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
 }
 
+fn display_stage_statuses(view: &LaunchView) -> Vec<StageStatus> {
+    if view.stages.is_empty() {
+        return Vec::new();
+    }
+
+    let active = active_stage_index(view);
+    view.stages
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            if index < active {
+                if row.status == StageStatus::Failed {
+                    StageStatus::Failed
+                } else {
+                    StageStatus::Done
+                }
+            } else if index == active {
+                row.status
+            } else {
+                StageStatus::Queued
+            }
+        })
+        .collect()
+}
+
 /// One block per stage, filling gray (queued) -> green (done) so a glance
 /// reads as a percent-complete bar; all green means loaded.
 fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
     let pulse = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
+    let display_statuses = display_stage_statuses(view);
     let mut spans: Vec<Span<'static>> = Vec::new();
-    for (i, row) in view.stages.iter().enumerate() {
+    for (i, status) in display_statuses.into_iter().enumerate() {
         if i > 0 {
             spans.push(Span::raw(" ".repeat(BLOCK_GAP)));
         }
         // Thin horizontal segments (a slim progress bar), not tall full
         // blocks: heavy `━` for reached/active stages, light `─` for queued.
-        let (glyph, color) = match row.status {
+        let (glyph, color) = match status {
             StageStatus::Done => ('━', PHOSPHOR_GREEN),
             StageStatus::Running => ('━', if pulse { WHITE } else { PHOSPHOR_GREEN }),
-            StageStatus::Skipped => ('━', PHOSPHOR_DIM),
+            StageStatus::Skipped => ('━', PHOSPHOR_GREEN),
             StageStatus::Failed => ('━', DANGER_RED),
             StageStatus::Blocked => ('━', WHITE),
             StageStatus::Queued => ('─', PHOSPHOR_DARK),
@@ -1087,20 +1113,30 @@ fn format_activity(status: &str) -> String {
 }
 
 fn active_stage_index(view: &LaunchView) -> usize {
-    view.stages
+    if let Some(failed) = view
+        .stages
         .iter()
         .position(|row| row.status == StageStatus::Failed)
-        .or_else(|| {
-            view.stages
-                .iter()
-                .position(|row| row.status == StageStatus::Running)
-        })
-        .or_else(|| {
-            view.stages
-                .iter()
-                .rposition(|row| matches!(row.status, StageStatus::Done | StageStatus::Skipped))
-        })
-        .unwrap_or(0)
+    {
+        return failed;
+    }
+
+    let first_incomplete = view
+        .stages
+        .iter()
+        .position(|row| !matches!(row.status, StageStatus::Done | StageStatus::Skipped));
+    let Some(frontier) = first_incomplete else {
+        return view.stages.len().saturating_sub(1);
+    };
+    if view.stages[frontier].status == StageStatus::Running {
+        return frontier;
+    }
+
+    view.stages
+        .iter()
+        .position(|row| row.status == StageStatus::Running)
+        .filter(|running| *running < frontier)
+        .unwrap_or_else(|| frontier.saturating_sub(1))
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {
@@ -1562,6 +1598,93 @@ mod tests {
             .find(|span| span.content == "derived image")
             .expect("failed stage label should be visible");
         assert_eq!(failed.style.fg, Some(DANGER_RED));
+    }
+
+    #[test]
+    fn progress_display_masks_out_of_order_completed_stages() {
+        let mut view = initial_view();
+        update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
+        update_stage(
+            &mut view,
+            LaunchStage::Role,
+            StageStatus::Running,
+            "resolving role",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::Workspace,
+            StageStatus::Done,
+            "materialized early",
+        );
+
+        let statuses = display_stage_statuses(&view);
+        assert_eq!(statuses[0], StageStatus::Done);
+        assert_eq!(statuses[1], StageStatus::Running);
+        assert!(
+            statuses[2..]
+                .iter()
+                .all(|status| *status == StageStatus::Queued),
+            "later out-of-order completions must not punch green holes in the progress rail: {statuses:?}"
+        );
+    }
+
+    #[test]
+    fn progress_display_fills_every_prior_stage_sequentially() {
+        let mut view = initial_view();
+        update_stage(
+            &mut view,
+            LaunchStage::Identity,
+            StageStatus::Skipped,
+            "already known",
+        );
+        update_stage(&mut view, LaunchStage::Role, StageStatus::Done, "trusted");
+        update_stage(
+            &mut view,
+            LaunchStage::Credentials,
+            StageStatus::Done,
+            "resolved",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::Construct,
+            StageStatus::Done,
+            "online",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::DerivedImage,
+            StageStatus::Running,
+            "building",
+        );
+
+        let statuses = display_stage_statuses(&view);
+        assert_eq!(
+            &statuses[..5],
+            &[
+                StageStatus::Done,
+                StageStatus::Done,
+                StageStatus::Done,
+                StageStatus::Done,
+                StageStatus::Running,
+            ]
+        );
+    }
+
+    #[test]
+    fn active_stage_uses_the_sequential_frontier() {
+        let mut view = initial_view();
+        update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
+        update_stage(
+            &mut view,
+            LaunchStage::Workspace,
+            StageStatus::Running,
+            "polling workspace",
+        );
+
+        assert_eq!(
+            view.stages[active_stage_index(&view)].stage,
+            LaunchStage::Identity
+        );
     }
 
     #[test]
