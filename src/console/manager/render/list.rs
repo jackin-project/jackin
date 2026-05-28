@@ -136,8 +136,9 @@ pub(super) fn render_list_body(
             .map_or("Current directory", |summary| summary.name.as_str());
         render_role_picker_sidebar(frame, list_area, title, picker);
     } else {
-        let list_lines = list_name_lines(state, super::scroll_viewport_width(list_area));
-        render_list_names_block(frame, list_area, list_lines, state);
+        let (list_lines, content_width) =
+            list_name_lines(state, super::scroll_viewport_width(list_area));
+        render_list_names_block(frame, list_area, list_lines, content_width, state);
     }
 }
 
@@ -145,10 +146,10 @@ pub(in crate::console::manager) fn list_names_content_width(
     state: &ManagerState<'_>,
     viewport: usize,
 ) -> usize {
-    super::max_line_width(&list_name_lines(state, viewport))
+    list_name_lines(state, viewport).1
 }
 
-fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'static>> {
+fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'static>>, usize) {
     let visual_rows = state.visual_rows_vec();
     let visual_selected = state.visual_selected();
     let mut max_w = viewport;
@@ -214,8 +215,12 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
         }
     }
 
-    // Extend the selected row's highlight to fill the viewport width.
-    let content_w = max_w;
+    // Compute scroll range before selected/hover background fill pads rows to
+    // the viewport. Highlight padding is visual only; it must not make a
+    // content-fitting list become horizontally scrollable.
+    let content_w = super::max_line_width(&lines).max(max_w);
+
+    // Extend the selected row's highlight to fill the content width.
     if let Some(line) = lines.get_mut(visual_selected) {
         let current_w = super::line_width(line);
         if current_w < content_w {
@@ -258,16 +263,16 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
         }
     }
 
-    lines
+    (lines, content_w)
 }
 
 fn render_list_names_block(
     frame: &mut Frame,
     area: Rect,
     lines: Vec<Line<'static>>,
+    content_width: usize,
     state: &mut ManagerState<'_>,
 ) {
-    let content_width = super::max_line_width(&lines);
     let content_height = lines.len();
     let viewport_w = super::scroll_viewport_width(area);
     let viewport_h = super::scroll_viewport_height(area);
@@ -1711,6 +1716,22 @@ mod list_name_scroll_tests {
         config
     }
 
+    fn config_with_sidebar_names_that_fit_wide_pane() -> AppConfig {
+        let mut config = AppConfig::default();
+        for name in [
+            "chainargos",
+            "chainargos-blockchain-nodes",
+            "jackin",
+            "parallax",
+            "scentbird",
+        ] {
+            config
+                .workspaces
+                .insert(name.into(), WorkspaceConfig::default());
+        }
+        config
+    }
+
     #[test]
     fn list_names_content_width_includes_trailing_scroll_padding() {
         let config = config_with_long_workspace_name();
@@ -1813,6 +1834,37 @@ mod list_name_scroll_tests {
         let buffer = terminal.backend().buffer();
         for x in 1..20 {
             assert_eq!(buffer[(x, 2)].bg, TAB_BG_INACTIVE_HOVER, "x={x}");
+        }
+    }
+
+    #[test]
+    fn hovered_fitting_list_name_does_not_make_sidebar_horizontally_scrollable() {
+        let config = config_with_sidebar_names_that_fit_wide_pane();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.hovered_list_row = Some(ManagerListRow::SavedWorkspace(0));
+
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 120, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        for x in 1..35 {
+            assert!(
+                !["━", "·"].contains(&buffer[(x, 23)].symbol()),
+                "unexpected horizontal scrollbar at x={x}"
+            );
         }
     }
 
