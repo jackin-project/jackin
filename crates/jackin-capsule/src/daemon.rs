@@ -543,7 +543,9 @@ impl Multiplexer {
             .saturating_sub(STATUS_BAR_ROWS)
             .saturating_sub(BRANCH_CONTEXT_BAR_ROWS);
         let agents = launch_config.supported_agents();
-        let zai_key = launch_config.zai_key.clone();
+        let zai_key = std::env::var("ZAI_API_KEY")
+            .ok()
+            .filter(|value| !value.is_empty());
 
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
@@ -5315,7 +5317,6 @@ mod tests {
                 workdir: "/workspace".to_string(),
                 agents: Vec::new(),
                 models: std::collections::BTreeMap::new(),
-                zai_key: None,
                 initial_provider: None,
             },
         )

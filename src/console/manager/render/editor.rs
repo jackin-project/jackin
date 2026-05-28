@@ -986,17 +986,13 @@ fn resolve_panel_mode(
         AuthKind::Zai => {
             // Z.AI has no auth_forward block; mode is derived from whether
             // ZAI_API_KEY is present in the effective env at this layer.
-            let key_present = (!role.is_empty()
-                && cfg
-                    .workspaces
-                    .get(workspace)
-                    .and_then(|ws| ws.roles.get(role))
-                    .is_some_and(|ro| ro.env.contains_key("ZAI_API_KEY")))
-                || cfg
-                    .workspaces
-                    .get(workspace)
-                    .is_some_and(|ws| ws.env.contains_key("ZAI_API_KEY"))
-                || cfg.env.contains_key("ZAI_API_KEY");
+            let key_present = crate::operator_env::lookup_operator_env_raw(
+                cfg,
+                (!role.is_empty()).then_some(role),
+                Some(workspace),
+                "ZAI_API_KEY",
+            )
+            .is_some();
             if key_present {
                 AuthMode::ApiKey
             } else {
@@ -3131,11 +3127,11 @@ mod parse_path_breadcrumb_tests {
 
 #[cfg(test)]
 mod auth_flat_rows_tests {
-    use super::{AuthRow, auth_flat_rows};
+    use super::{AuthRow, auth_flat_rows, resolve_panel_mode};
     use crate::config::AppConfig;
-    use crate::console::manager::auth_kind::AuthKind;
+    use crate::console::manager::auth_kind::{AuthKind, AuthMode};
     use crate::console::manager::state::EditorState;
-    use crate::workspace::WorkspaceConfig;
+    use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 
     #[test]
     fn root_view_lists_three_kinds_in_design_order() {
@@ -3164,6 +3160,64 @@ mod auth_flat_rows_tests {
                 },
             ],
             "root view must list Claude / Codex / Amp / Github in this order"
+        );
+    }
+
+    #[test]
+    fn zai_panel_mode_uses_all_operator_env_layers() {
+        let mut cfg = AppConfig::default();
+        cfg.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("global-key".into()),
+        );
+        cfg.workspaces
+            .insert("global-demo".into(), WorkspaceConfig::default());
+        assert_eq!(
+            resolve_panel_mode(&cfg, AuthKind::Zai, "global-demo", "the-architect"),
+            AuthMode::ApiKey
+        );
+        cfg.env.clear();
+
+        let mut workspace = WorkspaceConfig::default();
+        workspace.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("workspace-key".into()),
+        );
+        cfg.workspaces.insert("workspace-demo".into(), workspace);
+        assert_eq!(
+            resolve_panel_mode(&cfg, AuthKind::Zai, "workspace-demo", "the-architect"),
+            AuthMode::ApiKey
+        );
+
+        cfg.workspaces.remove("workspace-demo");
+        let mut role = crate::config::RoleSource::default();
+        role.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("role-key".into()),
+        );
+        cfg.roles.insert("the-architect".into(), role);
+        cfg.workspaces
+            .insert("role-demo".into(), WorkspaceConfig::default());
+        assert_eq!(
+            resolve_panel_mode(&cfg, AuthKind::Zai, "role-demo", "the-architect"),
+            AuthMode::ApiKey
+        );
+
+        cfg.roles.clear();
+        let mut workspace_role = WorkspaceConfig::default();
+        let mut override_cfg = WorkspaceRoleOverride::default();
+        override_cfg.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("workspace-role-key".into()),
+        );
+        workspace_role
+            .roles
+            .insert("the-architect".into(), override_cfg);
+        cfg.workspaces
+            .insert("workspace-role-demo".into(), workspace_role);
+        assert_eq!(
+            resolve_panel_mode(&cfg, AuthKind::Zai, "workspace-role-demo", "the-architect"),
+            AuthMode::ApiKey
         );
     }
 

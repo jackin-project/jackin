@@ -27,11 +27,6 @@ pub struct CapsuleConfig {
     pub agents: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, String>,
-    /// Resolved Z.AI API key. Present when `ZAI_API_KEY` is set in the
-    /// operator env at launch time. The daemon uses it to offer Z.AI as
-    /// a provider option in the agent picker for supported agents.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub zai_key: Option<String>,
     /// When the operator picked a specific provider in the console's
     /// launch flow (before the container existed), this field tells the
     /// capsule's initial spawn to use that provider and env overrides

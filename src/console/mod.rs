@@ -1404,25 +1404,86 @@ mod quit_confirm_tests {
     }
 
     #[test]
-    fn providers_for_launch_include_role_scoped_zai_key() {
+    fn providers_for_launch_include_all_zai_env_layers() {
         let mut config = AppConfig::default();
+        config.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("global-key".into()),
+        );
+        config.workspaces.insert(
+            "global-demo".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        assert_eq!(
+            super::providers_for_launch(
+                &config,
+                "global-demo",
+                "the-architect",
+                crate::agent::Agent::Claude,
+            )
+            .len(),
+            2
+        );
+        config.env.clear();
+
+        let mut workspace = crate::workspace::WorkspaceConfig::default();
+        workspace.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("workspace-key".into()),
+        );
+        config.workspaces.insert("workspace-demo".into(), workspace);
+        assert_eq!(
+            super::providers_for_launch(
+                &config,
+                "workspace-demo",
+                "the-architect",
+                crate::agent::Agent::Claude,
+            )
+            .len(),
+            2
+        );
+
+        config.workspaces.remove("workspace-demo");
         let mut role = crate::config::RoleSource::default();
         role.env.insert(
             "ZAI_API_KEY".into(),
             crate::operator_env::EnvValue::Plain("role-key".into()),
         );
         config.roles.insert("the-architect".into(), role);
+        config.workspaces.insert(
+            "role-demo".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        assert_eq!(
+            super::providers_for_launch(
+                &config,
+                "role-demo",
+                "the-architect",
+                crate::agent::Agent::Claude,
+            )
+            .len(),
+            2
+        );
+
+        config.roles.clear();
+        let mut workspace_role = crate::workspace::WorkspaceConfig::default();
+        let mut role_override = crate::workspace::WorkspaceRoleOverride::default();
+        role_override.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("workspace-role-key".into()),
+        );
+        workspace_role
+            .roles
+            .insert("the-architect".into(), role_override);
         config
             .workspaces
-            .insert("demo".into(), crate::workspace::WorkspaceConfig::default());
-
+            .insert("workspace-role-demo".into(), workspace_role);
         let providers = super::providers_for_launch(
             &config,
-            "demo",
+            "workspace-role-demo",
             "the-architect",
             crate::agent::Agent::Claude,
         );
-
         assert_eq!(providers.len(), 2);
         assert_eq!(providers[1].0, "Z.AI");
     }
