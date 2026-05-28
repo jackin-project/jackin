@@ -99,9 +99,7 @@ pub fn print_logo(logo_path: &std::path::Path) {
 pub fn fatal(msg: &str) {
     eprintln!();
     let mut lines = msg.lines();
-    let Some(first) = lines.next() else {
-        return;
-    };
+    let first = lines.next().unwrap_or("(no error message)");
     eprintln!(
         "  {} {}",
         "error:".color(rgb(ROSE)),

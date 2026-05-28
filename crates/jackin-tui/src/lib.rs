@@ -492,7 +492,9 @@ pub mod ansi {
 
     /// OSC 52 clipboard-write sequence. Targets the system clipboard (`c`)
     /// and uses BEL termination, which is accepted by Ghostty, Kitty, iTerm2,
-    /// Alacritty, WezTerm, and recent GNOME Terminal builds.
+    /// Alacritty, and WezTerm. (GNOME Terminal / VTE has historically required
+    /// ST `\x1b\\` for OSC 52 — keep it off the BEL-supported list until a
+    /// specific VTE version can be cited.)
     #[must_use]
     pub fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
         let encoded = BASE64.encode(payload.as_bytes());
@@ -764,5 +766,46 @@ mod tests {
     #[test]
     fn hint_row_cols_handles_empty_slice() {
         assert_eq!(hint_row_cols(&[]), 0);
+    }
+
+    #[test]
+    fn encode_osc52_clipboard_write_uses_bel_terminated_base64_framing() {
+        // The exact byte sequence terminals parse for OSC 52: `\x1b]52;c;` +
+        // base64 of the payload + BEL. A framing bug here silently copies
+        // nothing on the operator's terminal.
+        use base64::Engine as _;
+        let payload = "jk-run-42f9aa";
+        let bytes = super::ansi::encode_osc52_clipboard_write(payload);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(payload.as_bytes());
+        let mut expected = Vec::new();
+        expected.extend_from_slice(b"\x1b]52;c;");
+        expected.extend_from_slice(encoded.as_bytes());
+        expected.extend_from_slice(b"\x07");
+        assert_eq!(bytes, expected);
+    }
+
+    #[test]
+    fn encode_osc52_clipboard_write_handles_empty_payload() {
+        // Empty payloads still produce a well-formed OSC 52 sequence with an
+        // empty base64 body; the terminal interprets that as "clear".
+        let bytes = super::ansi::encode_osc52_clipboard_write("");
+        assert_eq!(bytes, b"\x1b]52;c;\x07");
+    }
+
+    #[test]
+    fn take_display_cols_truncates_to_display_width() {
+        // ASCII: char count == display width, plain prefix truncation.
+        assert_eq!(super::take_display_cols("abcdef", 3), "abc");
+        // Wide chars (CJK, width 2) must not be split mid-character: with a
+        // 3-col budget after `a` (1) we have 2 cols left, which fits one wide
+        // char (2) but not two.
+        assert_eq!(super::take_display_cols("a日本", 3), "a日");
+        // Control bytes are skipped, not counted.
+        assert_eq!(super::take_display_cols("a\x07bc", 3), "abc");
+    }
+
+    #[test]
+    fn take_display_cols_returns_empty_when_budget_is_zero() {
+        assert_eq!(super::take_display_cols("abc", 0), "");
     }
 }

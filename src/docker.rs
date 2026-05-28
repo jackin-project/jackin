@@ -349,7 +349,7 @@ impl ShellRunner {
         if opts.tee_to_build_log
             && let Some(run) = crate::diagnostics::active_run()
         {
-            run.write_command_output(
+            let wrote = run.write_command_output(
                 "docker-build",
                 &command,
                 cwd,
@@ -357,6 +357,16 @@ impl ShellRunner {
                 &stdout_buf,
                 &stderr_buf,
             );
+            if wrote.is_none() {
+                // Sidecar open failed (disk/perm/dir-gone). Surface via the
+                // run jsonl so `launch_failure_cli_error` can still point the
+                // operator at *something* instead of returning bare
+                // "Docker build command failed" with no diagnostics handle.
+                run.compact(
+                    "docker-build",
+                    "failed to write docker-build diagnostics sidecar",
+                );
+            }
         }
         if !status.success() {
             if opts.tee_to_build_log {
