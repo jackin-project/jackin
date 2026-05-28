@@ -19,6 +19,7 @@ const ROLE_KEY: &str = "jackin-e2e/agent-smith";
 const ROLE_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__agent-smith";
 const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
 const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
+const CAPSULE_DETACH_KEYS: &str = "\u{2}d";
 
 /// RAII cleanup so the test's Docker resources are removed even if an
 /// assertion or `script(1)` invocation panics. Without this, a flaky run
@@ -72,7 +73,14 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // so the E2E build succeeds in CI while the Dockerfile stays correctly
     // pinned for validation purposes.
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
-    let output = run_in_pty(&jackin, &args, &home, &workspace_dir, &extra_env);
+    let output = run_in_pty_with_input(
+        &jackin,
+        &args,
+        &home,
+        &workspace_dir,
+        &extra_env,
+        CAPSULE_DETACH_KEYS,
+    );
 
     assert!(
         output.status.success(),
@@ -167,7 +175,7 @@ fn jackin_load_sentinel_role_resolves_rich_prompts_and_keeps_build_output_off_sc
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", SENTINEL_ROLE_KEY, &target, "--agent", "codex"];
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
-    let prompt_input = "\nrequired-value\n\n\n\n\n\n";
+    let prompt_input = concat!("\nrequired-value\n\n\n\n\n\n", "\u{2}d");
     let output = run_in_pty_with_input(
         &jackin,
         &args,
@@ -285,16 +293,6 @@ fn e2e_serial_lock() -> std::fs::File {
     lock.lock_exclusive()
         .expect("e2e lock file must be lockable");
     lock
-}
-
-fn run_in_pty(
-    jackin: &str,
-    args: &[&str],
-    home: &Path,
-    cwd: &Path,
-    extra_env: &[(&str, &str)],
-) -> std::process::Output {
-    run_in_pty_with_input(jackin, args, home, cwd, extra_env, "")
 }
 
 fn run_in_pty_with_input(
