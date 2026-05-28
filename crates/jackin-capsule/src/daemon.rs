@@ -16,8 +16,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
-use std::time::Instant;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Instant, SystemTime};
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
@@ -4492,7 +4492,29 @@ fn read_loose_git_ref_oid(path: &Path) -> Option<String> {
 }
 
 fn read_packed_git_ref_oid(path: &Path, ref_name: &str) -> Option<String> {
+    let metadata = std::fs::metadata(path).ok()?;
+    let signature = PackedRefsCacheSignature {
+        len: metadata.len(),
+        modified: metadata.modified().ok(),
+    };
+    if let Ok(cache) = PACKED_REFS_CACHE.lock()
+        && let Some(entry) = cache.get(path)
+        && entry.signature == signature
+    {
+        return entry.refs.get(ref_name).cloned();
+    }
+
     let raw = crate::util::read_text_bounded("packed-refs", path, 4 * 1024 * 1024)?;
+    let refs = parse_packed_git_refs(&raw);
+    let oid = refs.get(ref_name).cloned();
+    if let Ok(mut cache) = PACKED_REFS_CACHE.lock() {
+        cache.insert(path.to_path_buf(), PackedRefsCacheEntry { signature, refs });
+    }
+    oid
+}
+
+fn parse_packed_git_refs(raw: &str) -> HashMap<String, String> {
+    let mut refs = HashMap::new();
     for line in raw.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') || line.starts_with('^') {
@@ -4502,16 +4524,32 @@ fn read_packed_git_ref_oid(path: &Path, ref_name: &str) -> Option<String> {
         let Some(oid) = parts.next() else {
             continue;
         };
-        if parts.next() == Some(ref_name) && is_full_hex_oid(oid) {
-            return Some(oid.to_string());
+        if let Some(ref_name) = parts.next()
+            && is_full_hex_oid(oid)
+        {
+            refs.insert(ref_name.to_string(), oid.to_string());
         }
     }
-    None
+    refs
 }
 
 fn is_full_hex_oid(value: &str) -> bool {
     value.len() == 40 && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PackedRefsCacheSignature {
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+struct PackedRefsCacheEntry {
+    signature: PackedRefsCacheSignature,
+    refs: HashMap<String, String>,
+}
+
+static PACKED_REFS_CACHE: LazyLock<Mutex<HashMap<PathBuf, PackedRefsCacheEntry>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Distinguishes "lookup succeeded but command was unavailable / failed
 /// in a way that means we should not cache" from "lookup succeeded with
@@ -6325,6 +6363,62 @@ mod tests {
         assert_eq!(
             context.head.as_deref(),
             Some("1111111111111111111111111111111111111111")
+        );
+    }
+
+    #[test]
+    fn read_context_from_git_metadata_reads_packed_head_oid() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/feat/context\n").unwrap();
+        std::fs::write(
+            git_dir.join("packed-refs"),
+            "\
+# pack-refs with: peeled fully-peeled sorted
+2222222222222222222222222222222222222222 refs/tags/v0.1.0
+1111111111111111111111111111111111111111 refs/heads/feat/context
+^3333333333333333333333333333333333333333
+",
+        )
+        .unwrap();
+
+        let context = read_context_from_git_metadata(temp.path()).unwrap();
+
+        assert_eq!(context.branch.as_deref(), Some("feat/context"));
+        assert_eq!(
+            context.head.as_deref(),
+            Some("1111111111111111111111111111111111111111")
+        );
+    }
+
+    #[test]
+    fn read_packed_git_ref_oid_refreshes_after_metadata_change() {
+        let temp = tempfile::tempdir().unwrap();
+        let packed_refs = temp.path().join("packed-refs");
+        std::fs::write(
+            &packed_refs,
+            "1111111111111111111111111111111111111111 refs/heads/feat/context\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_packed_git_ref_oid(&packed_refs, "refs/heads/feat/context").as_deref(),
+            Some("1111111111111111111111111111111111111111")
+        );
+
+        std::fs::write(
+            &packed_refs,
+            "\
+# changed
+2222222222222222222222222222222222222222 refs/heads/feat/context
+",
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_packed_git_ref_oid(&packed_refs, "refs/heads/feat/context").as_deref(),
+            Some("2222222222222222222222222222222222222222")
         );
     }
 
