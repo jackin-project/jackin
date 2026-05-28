@@ -36,33 +36,91 @@ pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRe
 
 pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<AgentBinary> {
     let stub_path = test_stub_path(paths, agent);
+    #[cfg(test)]
+    if !is_valid_cached_binary(&stub_path) {
+        install_test_stub(paths, agent).context("installing in-process agent binary test stub")?;
+    }
     if is_valid_cached_binary(&stub_path) {
+        record(
+            "agent_binary_cache_hit",
+            &format!("{} test stub at {}", agent.slug(), stub_path.display()),
+        );
         return Ok(AgentBinary {
             agent,
             path: stub_path,
         });
     }
 
+    record(
+        "agent_binary_resolve_started",
+        &format!("{} latest release", agent.slug()),
+    );
     let release = resolve_latest_release(agent)
         .await
-        .with_context(|| format!("resolving latest {} binary", agent.slug()))?;
+        .with_context(|| format!("resolving latest {} binary", agent.slug()))
+        .inspect_err(|error| {
+            record(
+                "agent_binary_failed",
+                &format!("{} resolve failed: {error:#}", agent.slug()),
+            );
+        })?;
+    record(
+        "agent_binary_resolved",
+        &format!("{} {} from {}", agent.slug(), release.version, release.url),
+    );
     let _ = write_cached_release(paths, &release);
     let _ = write_version_release(paths, &release);
     let cached = cached_binary_path(paths, &release);
     if is_valid_cached_binary(&cached) {
-        crate::debug_log!(
-            "agent_binary",
-            "cache hit for {} {} at {}",
-            agent.slug(),
-            release.version,
-            cached.display()
+        record(
+            "agent_binary_cache_hit",
+            &format!(
+                "{} {} at {}",
+                agent.slug(),
+                release.version,
+                cached.display()
+            ),
         );
         return Ok(AgentBinary {
             agent,
             path: cached,
         });
     }
-    download_and_cache(&release, &cached).await?;
+    record(
+        "agent_binary_download_started",
+        &format!(
+            "{} {} from {} to {}",
+            agent.slug(),
+            release.version,
+            release.url,
+            cached.display()
+        ),
+    );
+    download_and_cache(&release, &cached)
+        .await
+        .with_context(|| {
+            format!(
+                "downloading {} {} from {}",
+                agent.slug(),
+                release.version,
+                release.url
+            )
+        })
+        .inspect_err(|error| {
+            record(
+                "agent_binary_failed",
+                &format!("{} download failed: {error:#}", agent.slug()),
+            );
+        })?;
+    record(
+        "agent_binary_ready",
+        &format!(
+            "{} {} at {}",
+            agent.slug(),
+            release.version,
+            cached.display()
+        ),
+    );
     Ok(AgentBinary {
         agent,
         path: cached,
@@ -234,9 +292,25 @@ async fn download_and_cache(release: &AgentRelease, dest: &Path) -> Result<()> {
     }
     let tmp_download = dest.with_extension("download.tmp");
     let tmp_binary = dest.with_extension("tmp");
-    download_file(&release.url, &tmp_download).await?;
+    let _ = std::fs::remove_file(&tmp_download);
+    let _ = std::fs::remove_file(&tmp_binary);
+    let result = download_and_cache_inner(release, dest, &tmp_download, &tmp_binary).await;
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp_download);
+        let _ = std::fs::remove_file(&tmp_binary);
+    }
+    result
+}
+
+async fn download_and_cache_inner(
+    release: &AgentRelease,
+    dest: &Path,
+    tmp_download: &Path,
+    tmp_binary: &Path,
+) -> Result<()> {
+    download_file(&release.url, tmp_download).await?;
     if let Some(expected) = &release.checksum {
-        let actual = hash_file_sha256(&tmp_download)?;
+        let actual = hash_file_sha256(tmp_download)?;
         anyhow::ensure!(
             actual.eq_ignore_ascii_case(expected),
             "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
@@ -247,17 +321,18 @@ async fn download_and_cache(release: &AgentRelease, dest: &Path) -> Result<()> {
         );
     }
     if let Some(member) = &release.archive_member {
-        extract_tar_gz_member(&tmp_download, member, &tmp_binary)?;
-        let _ = std::fs::remove_file(&tmp_download);
+        extract_tar_gz_member(tmp_download, member, tmp_binary)?;
+        let _ = std::fs::remove_file(tmp_download);
     } else {
-        std::fs::rename(&tmp_download, &tmp_binary)?;
+        std::fs::rename(tmp_download, tmp_binary)?;
     }
-    chmod_executable(&tmp_binary)?;
-    std::fs::rename(&tmp_binary, dest)?;
+    chmod_executable(tmp_binary)?;
+    std::fs::rename(tmp_binary, dest)?;
     Ok(())
 }
 
 async fn curl_text(url: &str) -> Result<String> {
+    record("agent_binary_http_get", url);
     let output = tokio::process::Command::new("curl")
         .args([
             "--fail",
@@ -283,24 +358,38 @@ async fn download_file(url: &str, dest: &Path) -> Result<()> {
     let dest_str = dest
         .to_str()
         .with_context(|| format!("download path {} is not UTF-8", dest.display()))?;
-    let status = tokio::process::Command::new("curl")
+    let output = tokio::process::Command::new("curl")
         .args([
             "--fail",
             "--silent",
             "--show-error",
             "--location",
+            "--max-time",
+            "300",
             "--output",
             dest_str,
             url,
         ])
-        .status()
+        .output()
         .await
         .with_context(|| format!("running curl for {url}"))?;
-    if !status.success() {
+    if !output.status.success() {
         let _ = std::fs::remove_file(dest);
-        anyhow::bail!("{url} download failed with {status}");
+        anyhow::bail!(
+            "{url} download failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
     Ok(())
+}
+
+fn record(kind: &str, message: &str) {
+    if let Some(run) = crate::diagnostics::active_run() {
+        run.compact(kind, message);
+    } else {
+        crate::debug_log!("agent_binary", "{kind}: {message}");
+    }
 }
 
 fn extract_tar_gz_member(archive: &Path, member_name: &str, dest: &Path) -> Result<()> {

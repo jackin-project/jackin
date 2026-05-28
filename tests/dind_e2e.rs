@@ -42,6 +42,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 
     seed_agent_smith_role_repo(&role_source);
     write_config(&config_dir.join("config.toml"), &role_source);
+    seed_claude_installer_stub(&home);
 
     let jackin = std::env::var("CARGO_BIN_EXE_jackin").unwrap_or_else(|_| {
         std::env::current_dir()
@@ -211,7 +212,6 @@ fn run_in_pty(
 fn seed_agent_smith_role_repo(path: &Path) {
     std::fs::create_dir_all(path).unwrap();
     std::fs::write(path.join("Dockerfile"), role_dockerfile()).unwrap();
-    std::fs::write(path.join("fake-curl"), fake_curl()).unwrap();
     std::fs::write(
         path.join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -278,11 +278,31 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \
            /tmp/*
-COPY fake-curl /usr/local/bin/curl
-RUN chmod +x /usr/local/bin/curl
 USER agent
 "
 }
+
+fn seed_claude_installer_stub(home: &Path) {
+    let stub = home
+        .join(".jackin")
+        .join("cache")
+        .join("agent-binaries-test-stub")
+        .join("claude");
+    std::fs::create_dir_all(stub.parent().unwrap()).unwrap();
+    std::fs::write(&stub, fake_claude_installer()).unwrap();
+    chmod_executable(&stub);
+}
+
+#[cfg(unix)]
+fn chmod_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mut perms = std::fs::metadata(path).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms).unwrap();
+}
+
+#[cfg(not(unix))]
+fn chmod_executable(_path: &Path) {}
 
 /// The agent emits its env + `docker ps` snapshot after a sentinel marker on
 /// stdout. The test parses that block from the PTY-captured stdout, so the
@@ -291,11 +311,9 @@ USER agent
 /// interpolated via `format!` so the Rust consts remain the single source of
 /// truth; `${{...}}` in the body escapes the format string back to `${...}` for
 /// the embedded shell.
-fn fake_curl() -> String {
+fn fake_claude_installer() -> String {
     format!(
         r#"#!/bin/sh
-cat <<'INSTALL'
-#!/bin/sh
 set -eu
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/claude" <<'CLAUDE'
@@ -379,7 +397,6 @@ JAVA
 rm -rf "$tmpdir"
 CLAUDE
 chmod +x "$HOME/.local/bin/claude"
-INSTALL
 "#
     )
 }

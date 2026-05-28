@@ -7,11 +7,66 @@ use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
 use crate::version_check;
 use anyhow::Context as _;
+use std::path::PathBuf;
 
 use super::identity::HostIdentity;
 use super::naming::{
     LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
 };
+use super::progress::{LaunchProgress, LaunchStage};
+
+pub(super) struct PreparedRuntimeBinaries {
+    agent_binaries: Vec<(crate::agent::Agent, PathBuf)>,
+    jackin_capsule_src: String,
+}
+
+pub(super) async fn prepare_runtime_binaries(
+    paths: &JackinPaths,
+    validated_repo: &crate::repo::ValidatedRoleRepo,
+    mut progress: Option<&mut LaunchProgress>,
+) -> anyhow::Result<PreparedRuntimeBinaries> {
+    let mut agent_binaries = Vec::new();
+    for supported_agent in validated_repo.manifest.supported_agents() {
+        if let Some(progress) = &mut progress {
+            progress.stage_progress(
+                LaunchStage::AgentBinaries,
+                format!("preparing {} binary", supported_agent.slug()),
+            );
+        }
+        let binary = crate::agent_binary::ensure_available(paths, supported_agent)
+            .await
+            .with_context(|| format!("preparing {} binary", supported_agent.slug()))?;
+        agent_binaries.push((binary.agent, binary.path));
+    }
+
+    // Ensure the jackin-capsule binary is available in the local cache.
+    // Downloads from the GitHub preview release if not cached for this
+    // version. Propagate the error: the derived image's ENTRYPOINT is
+    // `/jackin/runtime/jackin-capsule`, so a Dockerfile built without
+    // the binary would build successfully then fail at `docker run`
+    // with the opaque "exec: file not found." Failing fast here with
+    // the actionable message from `capsule_binary` is much better.
+    if let Some(progress) = &mut progress {
+        progress.stage_progress(
+            LaunchStage::AgentBinaries,
+            "preparing jackin-capsule binary",
+        );
+    }
+    let jackin_capsule_binary = capsule_binary::ensure_available(paths)
+        .await
+        .context("preparing jackin-capsule binary")?;
+    let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "cached jackin-capsule path {} contains non-UTF-8 bytes; cannot reference it from Dockerfile",
+            jackin_capsule_binary.display()
+        )
+    })?;
+
+    Ok(PreparedRuntimeBinaries {
+        agent_binaries,
+        jackin_capsule_src: jackin_capsule_src.to_string(),
+    })
+}
 
 /// Build the Docker image for the role. Returns the image name.
 #[expect(
@@ -26,6 +81,7 @@ pub(super) async fn build_agent_image(
     validated_repo: &crate::repo::ValidatedRoleRepo,
     host: &HostIdentity,
     agent: crate::agent::Agent,
+    runtime_binaries: PreparedRuntimeBinaries,
     rebuild: bool,
     agent_update: bool,
     debug: bool,
@@ -33,6 +89,7 @@ pub(super) async fn build_agent_image(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
+    progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
     // Decide the build mode up front.
     //
@@ -121,36 +178,6 @@ pub(super) async fn build_agent_image(
         rebuild
     };
 
-    let mut agent_binaries = Vec::new();
-    for supported_agent in validated_repo.manifest.supported_agents() {
-        let binary = crate::agent_binary::ensure_available(paths, supported_agent)
-            .await
-            .with_context(|| {
-                format!(
-                    "preparing {} binary for derived image build",
-                    supported_agent.slug()
-                )
-            })?;
-        agent_binaries.push((binary.agent, binary.path));
-    }
-
-    // Ensure the jackin-capsule binary is available in the local cache.
-    // Downloads from the GitHub preview release if not cached for this
-    // version. Propagate the error: the derived image's ENTRYPOINT is
-    // `/jackin/runtime/jackin-capsule`, so a Dockerfile built without
-    // the binary would build successfully then fail at `docker run`
-    // with the opaque "exec: file not found." Failing fast here with
-    // the actionable message from `capsule_binary` is much better.
-    let jackin_capsule_binary = capsule_binary::ensure_available(paths)
-        .await
-        .context("preparing jackin-capsule binary for derived image build")?;
-    let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
-        anyhow::anyhow!(
-            "cached jackin-capsule path {} contains non-UTF-8 bytes; cannot reference it from Dockerfile",
-            jackin_capsule_binary.display()
-        )
-    })?;
-
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
@@ -158,8 +185,8 @@ pub(super) async fn build_agent_image(
         &cached_repo.repo_dir,
         validated_repo,
         base_image_override,
-        Some(jackin_capsule_src),
-        &agent_binaries,
+        Some(&runtime_binaries.jackin_capsule_src),
+        &runtime_binaries.agent_binaries,
     )?;
     drop(repo_lock);
 
@@ -285,6 +312,10 @@ pub(super) async fn build_agent_image(
         .map(|f| format!("id=github_token,src={}", f.path().display()));
     if let Some(ref s) = secret_arg {
         build_args.extend(["--secret", s.as_str()]);
+    }
+
+    if let Some(progress) = progress {
+        progress.stage_progress(LaunchStage::DerivedImage, "Building Docker image");
     }
 
     // Tee the build's captured output into the live build-log sink so the

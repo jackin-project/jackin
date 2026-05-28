@@ -54,11 +54,11 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN mkdir -p /home/agent/.local/bin
 COPY --chown=agent:agent {source} /home/agent/.local/bin/codex
+ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
     chmod 0755 \"${{HOME}}/.local/bin/codex\" && \\
-    \"${{HOME}}/.local/bin/codex\" --version
-ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
+    codex --version
 "
             ),
             Self::Amp => format!(
@@ -67,13 +67,13 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN mkdir -p /home/agent/.amp/bin
 COPY --chown=agent:agent {source} /home/agent/.amp/bin/amp
+ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
     chmod 0755 \"${{HOME}}/.amp/bin/amp\" && \\
     mkdir -p \"${{HOME}}/.local/bin\" && \\
     ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\" && \\
     amp --version
-ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
 "
             ),
             Self::Kimi => format!(
@@ -82,11 +82,11 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN mkdir -p /home/agent/.kimi-code/bin
 COPY --chown=agent:agent {source} /home/agent/.kimi-code/bin/kimi
+ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
     chmod 0755 \"${{HOME}}/.kimi-code/bin/kimi\" && \\
     kimi --version
-ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
 "
             ),
             Self::Opencode => format!(
@@ -95,11 +95,11 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN mkdir -p /home/agent/.opencode/bin
 COPY --chown=agent:agent {source} /home/agent/.opencode/bin/opencode
+ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
     chmod 0755 \"${{HOME}}/.opencode/bin/opencode\" && \\
-    \"${{HOME}}/.opencode/bin/opencode\" --version
-ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
+    opencode --version
 "
             ),
         }
@@ -223,11 +223,11 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN mkdir -p /home/agent/.local/bin
 COPY --chown=agent:agent .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
+ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
     chmod 0755 \"${HOME}/.local/bin/codex\" && \\
-    \"${HOME}/.local/bin/codex\" --version
-ENV PATH=\"/home/agent/.local/bin:${PATH}\"
+    codex --version
 "
         );
     }
@@ -259,13 +259,13 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN mkdir -p /home/agent/.amp/bin
 COPY --chown=agent:agent .jackin-runtime/agent-binaries/amp /home/agent/.amp/bin/amp
+ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
     chmod 0755 \"${HOME}/.amp/bin/amp\" && \\
     mkdir -p \"${HOME}/.local/bin\" && \\
     ln -sf \"${HOME}/.amp/bin/amp\" \"${HOME}/.local/bin/amp\" && \\
     amp --version
-ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${PATH}\"
 "
         );
     }
@@ -279,11 +279,11 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN mkdir -p /home/agent/.kimi-code/bin
 COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
+ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
     chmod 0755 \"${HOME}/.kimi-code/bin/kimi\" && \\
     kimi --version
-ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
 "
         );
     }
@@ -297,11 +297,11 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN mkdir -p /home/agent/.opencode/bin
 COPY --chown=agent:agent .jackin-runtime/agent-binaries/opencode /home/agent/.opencode/bin/opencode
+ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
     chmod 0755 \"${HOME}/.opencode/bin/opencode\" && \\
-    \"${HOME}/.opencode/bin/opencode\" --version
-ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"
+    opencode --version
 "
         );
     }

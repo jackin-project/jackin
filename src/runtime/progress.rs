@@ -26,6 +26,7 @@ pub enum LaunchStage {
     Role,
     Credentials,
     Construct,
+    AgentBinaries,
     DerivedImage,
     Workspace,
     Network,
@@ -35,11 +36,12 @@ pub enum LaunchStage {
 }
 
 impl LaunchStage {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Identity,
         Self::Role,
         Self::Credentials,
         Self::Construct,
+        Self::AgentBinaries,
         Self::DerivedImage,
         Self::Workspace,
         Self::Network,
@@ -54,6 +56,7 @@ impl LaunchStage {
             Self::Role => "role",
             Self::Credentials => "credentials",
             Self::Construct => "construct",
+            Self::AgentBinaries => "agent binaries",
             Self::DerivedImage => "derived image",
             Self::Workspace => "workspace",
             Self::Network => "network",
@@ -173,6 +176,7 @@ enum FailureCopyTarget {
 pub struct LaunchFailure {
     pub title: String,
     pub summary: String,
+    pub detail: Option<String>,
     pub next_step: Option<String>,
     pub stage: LaunchStage,
     pub diagnostics_path: Option<PathBuf>,
@@ -388,6 +392,7 @@ impl LaunchProgress {
         let stage = failure.stage;
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
+        let detail = failure.detail.clone();
         failure.diagnostics_path = Some(self.diagnostics.path().to_path_buf());
         if failure.command_output_path.is_none() {
             let docker_output = self.diagnostics.command_output_path("docker-build");
@@ -407,7 +412,7 @@ impl LaunchProgress {
             "stage_failed",
             stage.label(),
             &summary,
-            next_step.as_deref(),
+            detail.as_deref().or(next_step.as_deref()),
         );
         // On a rich surface the render task draws the failure popup and owns the
         // terminal's input; poll for the operator's Enter/Esc dismiss. Yielding
@@ -1837,6 +1842,7 @@ mod tests {
         LaunchFailure {
             title: "boom".to_string(),
             summary: "it failed".to_string(),
+            detail: None,
             next_step: None,
             stage: LaunchStage::Network,
             diagnostics_path: None,
@@ -1858,6 +1864,53 @@ mod tests {
         .expect("stage_failed must not block on a non-rich renderer");
         assert!(progress.view.lock().unwrap().failure.is_some());
         assert!(!progress.view.lock().unwrap().failure_ack);
+    }
+
+    #[tokio::test]
+    async fn stage_failed_writes_full_detail_to_diagnostics() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+        let mut progress = LaunchProgress::for_test(run.clone());
+
+        progress
+            .stage_failed(LaunchFailure {
+                title: "Launch failed".to_string(),
+                summary: "preparing kimi binary".to_string(),
+                detail: Some(
+                    "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds"
+                        .to_string(),
+                ),
+                next_step: None,
+                stage: LaunchStage::DerivedImage,
+                diagnostics_path: None,
+                command_output_path: None,
+            })
+            .await;
+
+        let body = std::fs::read_to_string(run.path()).unwrap();
+        let events = body
+            .lines()
+            .map(serde_json::from_str::<serde_json::Value>)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let event = events
+            .iter()
+            .find(|event| {
+                event.get("kind").and_then(serde_json::Value::as_str) == Some("stage_failed")
+            })
+            .unwrap();
+
+        assert_eq!(
+            event.get("message").and_then(serde_json::Value::as_str),
+            Some("preparing kimi binary"),
+        );
+        assert_eq!(
+            event.get("detail").and_then(serde_json::Value::as_str),
+            Some(
+                "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds"
+            ),
+        );
     }
 
     #[tokio::test]
@@ -1912,6 +1965,7 @@ mod tests {
                 "role",
                 "credentials",
                 "construct",
+                "agent binaries",
                 "derived image",
                 "workspace",
                 "network",
@@ -2017,6 +2071,12 @@ mod tests {
         );
         update_stage(
             &mut view,
+            LaunchStage::AgentBinaries,
+            StageStatus::Done,
+            "cached",
+        );
+        update_stage(
+            &mut view,
             LaunchStage::DerivedImage,
             StageStatus::Running,
             "building",
@@ -2024,8 +2084,9 @@ mod tests {
 
         let statuses = display_stage_statuses(&view);
         assert_eq!(
-            &statuses[..5],
+            &statuses[..6],
             &[
+                StageStatus::Done,
                 StageStatus::Done,
                 StageStatus::Done,
                 StageStatus::Done,
@@ -2105,14 +2166,7 @@ mod tests {
             .iter()
             .map(|span| &*span.content)
             .collect::<String>();
-        assert_eq!(rendered.chars().count(), LABEL_VIEW_WIDTH);
-        assert!(rendered.contains("construct"), "{rendered:?}");
-        assert!(rendered.contains("credentials"), "{rendered:?}");
-        assert!(rendered.contains("derived image"), "{rendered:?}");
-        assert!(
-            !rendered.contains("identity"),
-            "far labels should stay outside the clipped label viewport: {rendered:?}"
-        );
+        assert_eq!(rendered, "    credentials    construct    agent binaries ");
     }
 
     #[test]
@@ -2252,6 +2306,7 @@ mod tests {
         view.failure = Some(LaunchFailure {
             title: "Docker unavailable".to_string(),
             summary: "docker daemon is not responding".to_string(),
+            detail: None,
             next_step: Some("Start Docker and run the command again.".to_string()),
             stage: LaunchStage::Network,
             diagnostics_path: None,
@@ -2272,6 +2327,7 @@ mod tests {
         LaunchFailure {
             title: "Docker build failed".to_string(),
             summary: "Building the Docker container failed.".to_string(),
+            detail: None,
             next_step: None,
             stage: LaunchStage::DerivedImage,
             diagnostics_path: Some(PathBuf::from("/jk/run/x.jsonl")),

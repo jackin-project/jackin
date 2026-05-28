@@ -71,7 +71,7 @@ Every `jackin ...` invocation mints a run diagnostics ID before command-specific
 9. **Start the agent container detached** (`docker run -d ... <image> <agent>`) with `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the initial tab; it is not a container-level environment variable.
 10. **Attach the operator terminal** via `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and renders the in-container multiplexer.
 
-Launch progress is emitted through <RepoFile path="src/runtime/progress.rs" />. Rich terminals render the Ratatui launch cockpit; low-capability or non-interactive terminals receive compact deterministic stage lines. The public stages are stable (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even when implementation details change underneath. The rich cockpit may briefly dwell on stage changes so very fast work still produces a legible full-sequence rail before the terminal is handed to the Capsule client.
+Launch progress is emitted through <RepoFile path="src/runtime/progress.rs" />. Rich terminals render the Ratatui launch cockpit; low-capability or non-interactive terminals receive compact deterministic stage lines. The public stages are stable (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even when implementation details change underneath. The rich cockpit may briefly dwell on stage changes so very fast work still produces a legible full-sequence rail before the terminal is handed to the Capsule client.
 
 | Stage label | Technical work behind the label |
 |---|---|
@@ -79,7 +79,8 @@ Launch progress is emitted through <RepoFile path="src/runtime/progress.rs" />. 
 | `role` | Resolve the role source from config or command flags, acquire/update the role-repo cache, check out the requested ref/branch, and load the role manifest. |
 | `credentials` | Inspect host-side agent/GitHub/1Password credential availability read-only, materialize per-instance auth state under jackin-owned state, and prepare the credential mounts/env that the container receives. |
 | `construct` | Verify or pull the shared construct base image (`projectjackin/construct:trixie`) that the derived role image builds from. |
-| `derived image` | Generate the role-specific `DerivedDockerfile`, assemble the temporary Docker build context, include runtime assets such as `jackin-capsule`, run `docker build`, and capture Docker stdout/stderr to a plain run sidecar log on failure. |
+| `agent binaries` | Resolve and cache the declared agent runtime binaries plus the matching `jackin-capsule` binary under jackin-owned host cache state. |
+| `derived image` | Generate the role-specific `DerivedDockerfile`, assemble the temporary Docker build context, copy cached runtime assets into it, run `docker build`, and capture Docker stdout/stderr to a plain run sidecar log on failure. |
 | `workspace` | Prepare the mounted workspace/directory, optional workspace git-pull-on-entry work, per-instance manifest/index records, runtime directories, mount list, and Capsule launch config. |
 | `network` | Create or reconcile the per-instance Docker network and related host-side runtime names. |
 | `sidecar` | Start or recover the DinD sidecar container and its certs volume for the role container. |
