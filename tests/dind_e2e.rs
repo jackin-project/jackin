@@ -403,11 +403,12 @@ fn run_in_pty_until_file(
     sentinel: PtyFileSentinel<'_>,
 ) -> std::process::Output {
     let mut child = pty_command(jackin, args, home, cwd, extra_env, false)
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("script must spawn");
+    let _stdin = child.stdin.take().expect("script stdin must be piped");
 
     let deadline = Instant::now() + sentinel.timeout;
     while Instant::now() < deadline {
