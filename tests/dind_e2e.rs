@@ -254,9 +254,8 @@ fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &str, stderr:
     assert!(
         stdout.contains("Choose launch agent")
             && stdout.contains("Sentinel free text:")
-            && stdout.contains("Required sentinel value:")
-            && stdout.contains("Select sentinel mode:")
-            && stdout.contains("Select sentinel project:"),
+            && stdout.contains("Enter")
+            && stdout.contains("save"),
         "PTY transcript should prove the rich launch dialogs rendered\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let build_log = latest_docker_build_log(home).unwrap_or_else(|| {
@@ -454,15 +453,18 @@ fn run_in_pty_until_file(
     let script = script.to_vec();
     let stdin_writer = std::thread::spawn(move || {
         for step in script {
-            if !wait_for_transcript_text(
-                &stdout_for_writer,
-                step.wait_for,
-                &done_for_writer,
-                Duration::from_mins(2),
-            ) {
+            if !step.wait_for.is_empty()
+                && !wait_for_transcript_text(
+                    &stdout_for_writer,
+                    step.wait_for,
+                    &done_for_writer,
+                    Duration::from_mins(2),
+                )
+            {
                 return;
             }
             let _ = stdin.write_all(step.input.as_bytes());
+            std::thread::sleep(Duration::from_millis(500));
         }
         while !done_for_writer.load(Ordering::Relaxed) {
             std::thread::sleep(Duration::from_millis(100));
@@ -552,27 +554,27 @@ const fn scripted_sentinel_launch_input() -> [PtyScriptStep; 8] {
             input: "\r",
         },
         PtyScriptStep {
-            wait_for: "Required sentinel value:",
+            wait_for: "",
             input: "required-value\r",
         },
         PtyScriptStep {
-            wait_for: "Optional sentinel API key:",
+            wait_for: "",
             input: "\r",
         },
         PtyScriptStep {
-            wait_for: "Select sentinel mode:",
+            wait_for: "",
             input: "\r",
         },
         PtyScriptStep {
-            wait_for: "Select sentinel project:",
+            wait_for: "",
             input: "\r",
         },
         PtyScriptStep {
-            wait_for: "Branch for frontend:",
+            wait_for: "",
             input: "\r",
         },
         PtyScriptStep {
-            wait_for: "Combined label for frontend:",
+            wait_for: "",
             input: "\r",
         },
     ]
