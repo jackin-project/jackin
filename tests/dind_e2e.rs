@@ -603,7 +603,9 @@ fn write_config(path: &Path, role_source: &Path) {
     std::fs::write(
         path,
         format!(
-            r#"[roles."{ROLE_KEY}"]
+            r#"version = "v1alpha5"
+
+[roles."{ROLE_KEY}"]
 git = "{}"
 trusted = true
 
@@ -667,7 +669,9 @@ fn write_sentinel_config(path: &Path, role_source: &Path) {
     std::fs::write(
         path,
         format!(
-            r#"[roles."{SENTINEL_ROLE_KEY}"]
+            r#"version = "v1alpha5"
+
+[roles."{SENTINEL_ROLE_KEY}"]
 git = "{}"
 trusted = true
 
@@ -734,8 +738,8 @@ fn agent_installer(slug: &str, run_body: &str) -> String {
     };
     format!(
         r#"if [ "${{1:-}}" = "install" ]; then
-  mkdir -p /usr/local/bin
-  cat > /usr/local/bin/{slug} <<'AGENT'
+  mkdir -p "$HOME/.local/bin"
+  cat > "$HOME/.local/bin/{slug}" <<'AGENT'
 #!/bin/sh
 set -eu
 if [ "${{1:-}}" = "--version" ]; then
@@ -744,7 +748,7 @@ if [ "${{1:-}}" = "--version" ]; then
 fi
 {run_body}
 AGENT
-  chmod 0755 /usr/local/bin/{slug}
+  chmod 0755 "$HOME/.local/bin/{slug}"
   exit 0
 fi
 if [ "${{1:-}}" = "--version" ]; then
