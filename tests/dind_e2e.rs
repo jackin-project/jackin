@@ -467,11 +467,11 @@ fn run_in_pty_until_file(
     };
     let diagnostics = diagnostics_snapshot(home);
     panic!(
-        "timed out waiting for sentinel file {}\nstdout:\n{}\nstderr:\n{}\ndiagnostics:\n{}",
+        "timed out waiting for sentinel file {}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
         sentinel.path.display(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
         diagnostics,
+        tail_text(&String::from_utf8_lossy(&output.stdout)),
+        tail_text(&String::from_utf8_lossy(&output.stderr)),
     );
 }
 
@@ -539,6 +539,17 @@ fn append_tail_lines(out: &mut String, contents: &str) {
         out.push_str(line);
         out.push('\n');
     }
+}
+
+fn tail_text(contents: &str) -> String {
+    let mut lines = std::collections::VecDeque::with_capacity(80);
+    for line in contents.lines() {
+        if lines.len() == 80 {
+            lines.pop_front();
+        }
+        lines.push_back(line);
+    }
+    lines.into_iter().collect::<Vec<_>>().join("\n")
 }
 
 fn seed_existing_construct_entry(home: &Path) {
