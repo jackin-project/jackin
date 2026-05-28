@@ -482,8 +482,8 @@ fn emit_bg(buf: &mut Vec<u8>, color: ColorKey) {
 
 /// Paint the whole terminal with a solid background colour, fully hiding
 /// whatever was beneath. Used as the opaque backdrop behind modal dialogs.
-pub fn fill_screen(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, rgb: (u8, u8, u8)) {
-    let (r, g, b) = rgb;
+pub fn fill_screen(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, rgb: jackin_tui::Rgb) {
+    let jackin_tui::Rgb { r, g, b } = rgb;
     for row in 0..term_rows {
         let _ = write!(buf, "\x1b[{};1H\x1b[0;48;2;{r};{g};{b}m", row + 1);
         for _ in 0..term_cols {

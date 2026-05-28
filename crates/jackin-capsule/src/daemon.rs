@@ -2962,7 +2962,12 @@ impl Multiplexer {
         // stays hidden from the `?25l` above (append_cursor_state
         // no-ops while a dialog is open).
         if self.dialog_open() {
-            fill_screen(&mut buf, self.term_rows, self.term_cols, (0, 0, 0));
+            fill_screen(
+                &mut buf,
+                self.term_rows,
+                self.term_cols,
+                jackin_tui::DIALOG_BACKDROP,
+            );
             if let Some(dialog) = self.dialog_top() {
                 let github = self.github_context_view();
                 dialog.render_with_hover(

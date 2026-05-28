@@ -46,17 +46,20 @@ impl<'a> PullRequestStatus<'a> {
     }
 }
 
-use jackin_tui::ansi::{BG_DARK, BOLD, RESET};
+use jackin_tui::{
+    BLACK, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+    ansi::{BG_DARK, BOLD, RESET, rgb_bg, rgb_fg},
+};
 
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
-const FG_GREEN: &str = "\x1b[38;2;0;255;65m"; // PHOSPHOR_GREEN
-const FG_DIM: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
-const FG_BORDER: &str = "\x1b[38;2;0;80;18m"; // PHOSPHOR_DARK
-const FG_WHITE: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const FG_GREEN: &str = rgb_fg(PHOSPHOR_GREEN);
+const FG_DIM: &str = rgb_fg(PHOSPHOR_DIM);
+const FG_BORDER: &str = rgb_fg(PHOSPHOR_DARK);
+const FG_WHITE: &str = rgb_fg(WHITE);
 const FG_CLICK_HOVER: &str = "\x1b[38;2;180;255;180m"; // lifted clickable value
-const SELECT_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
-const SELECT_FG: &str = "\x1b[38;2;0;0;0m"; // BLACK fg
+const SELECT_BG: &str = rgb_bg(PHOSPHOR_GREEN);
+const SELECT_FG: &str = rgb_fg(BLACK);
 const SELECT_MARK: &str = "▸ ";
 const UNSELECT_MARK: &str = "  ";
 
