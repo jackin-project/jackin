@@ -1095,12 +1095,18 @@ fn scroll_active_panel_vertical(
             }
         }
         ManagerStage::Editor(editor) => {
+            if editor.modal.is_some() {
+                return;
+            }
+            let area = editor_content_area(editor, term_size);
+            if !point_in(mouse, area) {
+                return;
+            }
             match editor.active_tab {
                 // General has 4 fixed rows — no vertical scroll needed.
                 EditorTab::General => {}
                 // Mounts, Roles, Secrets, Auth all use tab_scroll_y.
                 EditorTab::Mounts | EditorTab::Roles | EditorTab::Secrets | EditorTab::Auth => {
-                    let area = editor_content_area(editor, term_size);
                     apply_vertical_scroll(
                         &mut editor.tab_scroll_y,
                         delta,
@@ -1407,6 +1413,7 @@ mod mouse_drag_tests {
         DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, MAX_SPLIT_PCT, MIN_SPLIT_PCT,
         ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag,
     };
+    use crate::console::widgets::save_discard::SaveDiscardState;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use ratatui::layout::Rect;
@@ -2401,6 +2408,61 @@ mod mouse_drag_tests {
         };
         assert_eq!(editor.tab_scroll_x, MOUSE_HORIZONTAL_SCROLL_STEP);
         assert!(editor.tab_content_scroll_focused);
+    }
+
+    #[test]
+    fn editor_vertical_wheel_scrolls_only_inside_content_area() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+        editor.tab_content_height = 50;
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 10, 1),
+            term(100),
+            None,
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_y, 0);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 10, 6),
+            term(100),
+            None,
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_y, 1);
+    }
+
+    #[test]
+    fn editor_vertical_wheel_ignores_background_when_modal_open() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+        editor.tab_content_height = 50;
+        editor.modal = Some(Modal::SaveDiscardCancel {
+            state: SaveDiscardState::new("Save changes?"),
+        });
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 10, 6),
+            term(100),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_y, 0);
     }
 
     #[test]
