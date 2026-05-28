@@ -255,6 +255,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                     )
                     .await;
                     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    if let Some((docker, claim)) = &console_entry {
+                        runtime::release_entry_if_idle(&paths, docker, claim).await;
+                    }
                     return result;
                 }
                 console::ConsoleOutcome::LaunchWithProvider {
@@ -291,6 +294,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                         &result,
                     );
                     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    if let Some((docker, claim)) = &console_entry {
+                        runtime::release_entry_if_idle(&paths, docker, claim).await;
+                    }
                     return result;
                 }
             };

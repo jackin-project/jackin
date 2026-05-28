@@ -418,13 +418,23 @@ fn cache_dco_identity_if_needed() {
     if !env_is_one("JACKIN_GIT_DCO") {
         return;
     }
-    let Some(name) = git_config_value("user.name") else {
+    let (Some(name), Some(email)) = (
+        git_config_value("user.name"),
+        git_config_value("user.email"),
+    ) else {
+        // DCO is on but git identity is unreadable at startup; the commit-time
+        // hook will fall back to live `git config` (and warn) per commit.
+        crate::clog!("dco identity cache skipped: user.name/user.email not configured at startup");
         return;
     };
-    let Some(email) = git_config_value("user.email") else {
-        return;
-    };
-    let _ = fs::write(GIT_DCO_IDENTITY_CACHE, format!("{name}\n{email}\n"));
+    if let Err(err) = fs::write(GIT_DCO_IDENTITY_CACHE, format!("{name}\n{email}\n")) {
+        // A failed cache write means every commit shells out to live git
+        // config — the exact failure this cache exists to prevent.
+        crate::clog!(
+            "dco identity cache write to {GIT_DCO_IDENTITY_CACHE} failed: {err} (errno={:?})",
+            err.raw_os_error()
+        );
+    }
 }
 
 fn read_cached_dco_identity() -> Option<(String, String)> {

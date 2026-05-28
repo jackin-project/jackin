@@ -165,7 +165,7 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
             AuthKind::Opencode => ro.opencode = None,
             AuthKind::Github => ro.github = None,
             AuthKind::Zai => {
-                ro.env.remove("ZAI_API_KEY");
+                ro.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
             }
         }
     }
@@ -180,7 +180,7 @@ fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKi
         AuthKind::Opencode => ws.opencode = None,
         AuthKind::Github => ws.github = None,
         AuthKind::Zai => {
-            ws.env.remove("ZAI_API_KEY");
+            ws.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
         }
     }
 }
@@ -2043,6 +2043,43 @@ mod tests {
         assert!(
             editor.pending.github.is_none(),
             "D on github WorkspaceMode must clear [workspaces.<ws>.github]"
+        );
+    }
+
+    /// `D` on a Z.AI workspace mode row removes `ZAI_API_KEY` from the
+    /// workspace `[env]` — the env-only kind has no typed block to null,
+    /// so the reset path must reach into the env map.
+    #[test]
+    fn d_on_zai_workspace_mode_row_clears_env_key() {
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        editor.pending.env.insert(
+            crate::env_model::ZAI_API_KEY_ENV_NAME.to_string(),
+            crate::operator_env::EnvValue::Plain("zai-key".into()),
+        );
+        // Detail rows render for the selected kind; focus the Z.AI section.
+        editor.auth_selected_kind = Some(AuthKind::Zai);
+        let idx = auth_flat_rows(editor, &cfg)
+            .iter()
+            .position(|r| {
+                matches!(
+                    r,
+                    AuthRow::WorkspaceMode {
+                        kind: AuthKind::Zai
+                    }
+                )
+            })
+            .expect("Z.AI WorkspaceMode row must exist with a key configured");
+        editor.active_field = FieldFocus::Row(idx);
+        handle_d_on_auth_row(editor, &cfg);
+        assert!(
+            !editor
+                .pending
+                .env
+                .contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME),
+            "D on Z.AI WorkspaceMode must remove ZAI_API_KEY from the workspace env"
         );
     }
 

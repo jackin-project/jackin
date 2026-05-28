@@ -29,7 +29,7 @@ To remove Z.AI, open the same row, cycle the mode back to **Ignore**, and save. 
 
 With `ZAI_API_KEY` configured:
 
-**In the console** — press `N` on an active container row to open a new session. After you select the Claude agent, a second picker appears:
+**At workspace launch** — launch a workspace and choose the Claude agent. Before the container starts, a provider picker appears:
 
 ```
 ▸ Anthropic
@@ -38,7 +38,7 @@ With `ZAI_API_KEY` configured:
 
 Use arrow keys and `Enter` to pick. `Escape` cancels back to the agent picker.
 
-**In the multiplexer** — press `N` inside a running container (the same `N` key that opens a new agent tab). The same two-step sequence applies: agent picker first, provider picker second if both are available.
+**In the multiplexer** — press `N` inside a running container (the same `N` key that opens a new agent tab). When you pick Claude, the same provider picker appears if both providers are available. Provider choice for an already-running container happens here, not from the console container row — only the running container's own session knows which key it was started with.
 
 ## Tab labels
 
@@ -68,7 +68,7 @@ When you select Z.AI in the provider picker, jackin' injects two environment var
 
 Claude Code's API client reads these from its process environment and routes all calls to Z.AI's endpoint. **No other tabs or sessions in the container are affected.** Anthropic tabs continue to use the container's Claude credentials; Z.AI tabs use the injected redirect. Both can run simultaneously in the same container.
 
-Your `ZAI_API_KEY` is never written to jackin's logs, including `--debug` output.
+Your `ZAI_API_KEY` is never written to the logs, including `--debug` output.
 
 ## See also
 

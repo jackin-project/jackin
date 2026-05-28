@@ -1593,8 +1593,10 @@ impl Multiplexer {
         let (session, id) = Session::spawn(
             &launch.label,
             agent.clone(),
-            provider_label.map(str::to_string),
-            env_overrides.to_vec(),
+            provider_label.map(|label| crate::session::SessionProvider {
+                label: label.to_string(),
+                env_overrides: env_overrides.to_vec(),
+            }),
             launch.cmd,
             self.content_rows.saturating_sub(2),
             self.term_cols.saturating_sub(2),
@@ -1686,8 +1688,10 @@ impl Multiplexer {
         let (session, new_id) = Session::spawn(
             &launch.label,
             agent_slug,
-            provider_label.map(str::to_string),
-            env_overrides.to_vec(),
+            provider_label.map(|label| crate::session::SessionProvider {
+                label: label.to_string(),
+                env_overrides: env_overrides.to_vec(),
+            }),
             launch.cmd,
             spawn_rows,
             spawn_cols,
@@ -1747,11 +1751,11 @@ impl Multiplexer {
         self.sessions
             .get(&from_id)
             .map_or((None, Vec::new(), None), |session| {
-                (
-                    session.agent.clone(),
-                    session.provider_env_overrides.clone(),
-                    session.provider_label.clone(),
-                )
+                let (env, label) = session.provider.as_ref().map_or_else(
+                    || (Vec::new(), None),
+                    |provider| (provider.env_overrides.clone(), Some(provider.label.clone())),
+                );
+                (session.agent.clone(), env, label)
             })
     }
 
@@ -4159,8 +4163,8 @@ fn session_agent_label(session: &Session) -> String {
     let Some(slug) = session.agent.as_deref() else {
         return "Shell".to_string();
     };
-    match session.provider_label.as_deref() {
-        Some(provider) => format!("{} ({provider})", capitalize(slug)),
+    match session.provider.as_ref() {
+        Some(provider) => format!("{} ({})", capitalize(slug), provider.label),
         None => capitalize(slug),
     }
 }
@@ -5516,7 +5520,6 @@ mod tests {
                 "Test".to_string(),
                 agent,
                 None,
-                Vec::new(),
                 (rows, cols),
                 100,
                 input_tx,
@@ -5531,8 +5534,10 @@ mod tests {
         provider: jackin_protocol::Provider,
     ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
         let (mut session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_string()));
-        session.provider_label = Some(provider.label().to_string());
-        session.provider_env_overrides = provider.env_overrides(Some("zai-test-token"));
+        session.provider = Some(crate::session::SessionProvider {
+            label: provider.label().to_string(),
+            env_overrides: provider.env_overrides(Some("zai-test-token")),
+        });
         (session, input_rx)
     }
 
@@ -5552,7 +5557,11 @@ mod tests {
     fn split_metadata_inherits_focused_provider() {
         let mut mux = test_mux(24, 80);
         let (session, _rx) = test_provider_session(jackin_protocol::Provider::Zai);
-        let expected_env = session.provider_env_overrides.clone();
+        let expected_env = session
+            .provider
+            .as_ref()
+            .map(|p| p.env_overrides.clone())
+            .unwrap_or_default();
         mux.sessions.insert(1, session);
         mux.tabs.push(Tab::new_single("Claude (Z.AI)", 1));
 

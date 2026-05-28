@@ -587,11 +587,20 @@ impl Callbacks for OscCapture {
     }
 }
 
+/// Resolved provider a session was spawned with. Label and env overrides
+/// travel together (both derived from one `jackin_protocol::Provider` at
+/// spawn time) so a split can faithfully inherit the source pane's provider
+/// without the label drifting from its redirect env.
+#[derive(Debug, Clone)]
+pub struct SessionProvider {
+    pub label: String,
+    pub env_overrides: Vec<(String, String)>,
+}
+
 pub struct Session {
     pub label: String,
     pub agent: Option<String>,
-    pub provider_label: Option<String>,
-    pub provider_env_overrides: Vec<(String, String)>,
+    pub provider: Option<SessionProvider>,
     pub state: AgentState,
     pub parser: vt100::Parser<OscCapture>,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -776,12 +785,10 @@ impl PullRequestChecks {
 }
 
 impl Session {
-    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
-        provider_label: Option<String>,
-        provider_env_overrides: Vec<(String, String)>,
+        provider: Option<SessionProvider>,
         cmd: CommandBuilder,
         rows: u16,
         cols: u16,
@@ -975,8 +982,7 @@ impl Session {
             Session {
                 label: label.into(),
                 agent,
-                provider_label,
-                provider_env_overrides,
+                provider,
                 state: AgentState::Working,
                 parser: vt100::Parser::new_with_callbacks(
                     rows,
@@ -1542,8 +1548,7 @@ impl Session {
     pub(crate) fn new_for_test(
         label: String,
         agent: Option<String>,
-        provider_label: Option<String>,
-        provider_env_overrides: Vec<(String, String)>,
+        provider: Option<SessionProvider>,
         size: (u16, u16),
         scrollback_len: usize,
         input_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -1553,8 +1558,7 @@ impl Session {
         Self {
             label,
             agent,
-            provider_label,
-            provider_env_overrides,
+            provider,
             state: AgentState::Working,
             parser: vt100::Parser::new_with_callbacks(
                 size.0,

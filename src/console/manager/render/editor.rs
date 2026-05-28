@@ -3219,6 +3219,19 @@ mod auth_flat_rows_tests {
             resolve_panel_mode(&cfg, AuthKind::Zai, "workspace-role-demo", "the-architect"),
             AuthMode::ApiKey
         );
+
+        // No ZAI_API_KEY at any layer → Ignore. This is the branch that
+        // suppresses the Source credential row; a regression to ApiKey here
+        // would render a phantom row for every Z.AI panel without a key.
+        assert_eq!(
+            resolve_panel_mode(
+                &AppConfig::default(),
+                AuthKind::Zai,
+                "absent",
+                "the-architect"
+            ),
+            AuthMode::Ignore
+        );
     }
 
     #[test]

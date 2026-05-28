@@ -152,9 +152,11 @@ pub struct ManagerState<'a> {
     )>,
     /// Agent picker opened when the operator presses `N` on an instance row
     /// to start a new session in the running container. Carries the target
-    /// `container_base`, the agent picker, and the available Claude provider
-    /// list (empty when `ZAI_API_KEY` is not configured for the instance's
-    /// workspace/role).
+    /// `container_base`, the agent picker, and a provider list. The list is
+    /// currently always empty: host config cannot prove which `ZAI_API_KEY`
+    /// the already-running daemon captured, so provider choice for a running
+    /// container is made in the multiplexer (daemon-owned), not here. The
+    /// field stays so a future daemon-queried list can populate it.
     #[allow(clippy::type_complexity)]
     pub inline_new_session_picker: Option<(
         String,
@@ -162,8 +164,9 @@ pub struct ManagerState<'a> {
         Vec<jackin_protocol::Provider>,
     )>,
     /// Provider picker shown after the agent is committed in
-    /// `inline_new_session_picker`, when multiple providers are available.
-    /// Context is the target `container`.
+    /// `inline_new_session_picker` when its provider list has 2+ entries.
+    /// Dormant while that list is always empty (see above); kept wired for
+    /// the future daemon-queried flow. Context is the target `container`.
     pub inline_provider_picker: Option<ProviderPickerState<String>>,
     /// Provider picker for the initial workspace launch (before the container
     /// exists). Shown after the operator commits an agent choice and

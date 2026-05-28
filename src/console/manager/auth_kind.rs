@@ -88,7 +88,7 @@ impl AuthKind {
             (Self::Kimi, AuthMode::ApiKey) => Some("KIMI_API_KEY"),
             (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(crate::env_model::GH_TOKEN_ENV_NAME),
-            (Self::Zai, AuthMode::ApiKey) => Some("ZAI_API_KEY"),
+            (Self::Zai, AuthMode::ApiKey) => Some(crate::env_model::ZAI_API_KEY_ENV_NAME),
             _ => None,
         }
     }
@@ -136,7 +136,7 @@ impl AuthKind {
             Self::Kimi => ro.kimi.is_some(),
             Self::Opencode => ro.opencode.is_some(),
             Self::Github => ro.github.is_some(),
-            Self::Zai => ro.env.contains_key("ZAI_API_KEY"),
+            Self::Zai => ro.env.contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME),
         }
     }
 }
@@ -402,6 +402,21 @@ mod tests {
         assert!(!AuthKind::Amp.role_override_present(&ro));
         assert!(!AuthKind::Kimi.role_override_present(&ro));
         assert!(!AuthKind::Opencode.role_override_present(&ro));
+        assert!(!AuthKind::Github.role_override_present(&ro));
+        assert!(!AuthKind::Zai.role_override_present(&ro));
+    }
+
+    #[test]
+    fn role_override_present_zai_keys_off_env_var() {
+        let mut ro = crate::config::WorkspaceRoleOverride::default();
+        assert!(!AuthKind::Zai.role_override_present(&ro));
+        ro.env.insert(
+            crate::env_model::ZAI_API_KEY_ENV_NAME.to_string(),
+            crate::operator_env::EnvValue::Plain("k".into()),
+        );
+        assert!(AuthKind::Zai.role_override_present(&ro));
+        // The env entry is Z.AI-specific; typed-block kinds stay false.
+        assert!(!AuthKind::Claude.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
     }
 

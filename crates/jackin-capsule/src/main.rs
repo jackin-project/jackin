@@ -43,10 +43,7 @@ async fn main() -> Result<()> {
                 let supported_agents = config::load_optional()
                     .map(|config| config.supported_agents())
                     .unwrap_or_default();
-                // Parse optional --provider=<label> flag from args[3..].
-                let provider_label: Option<String> = args[3..]
-                    .iter()
-                    .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_string));
+                let provider_label = parse_provider_flag(&args);
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
                     Some(raw) => match validate_agent_slug(raw, &supported_agents) {
@@ -152,6 +149,16 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
     None
 }
 
+/// Extract the `--provider=<label>` flag from a `new <agent> --provider=…`
+/// argv. Scans past the subcommand (index 1) and its agent positional
+/// (index 2). An empty `--provider=` yields `Some("")`, which the daemon
+/// routes through its unknown-provider fallback (no env redirect).
+fn parse_provider_flag(args: &[String]) -> Option<String> {
+    args.get(3..)?
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_string))
+}
+
 /// Resolve the initial agent slug for PID-1 daemon mode. The host launcher
 /// passes this as the container command argument after the image name so the
 /// container's global environment does not claim one agent for every session.
@@ -222,6 +229,38 @@ mod tests {
         assert_eq!(
             parse_focus_flag(&args(&["jackin-capsule", "status", "--focus", "5"])),
             None
+        );
+    }
+
+    #[test]
+    fn parse_provider_flag_extracts_label_after_agent() {
+        assert_eq!(
+            parse_provider_flag(&args(&[
+                "jackin-capsule",
+                "new",
+                "claude",
+                "--provider=Z.AI"
+            ])),
+            Some("Z.AI".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_provider_flag_absent_or_no_agent_is_none() {
+        assert_eq!(
+            parse_provider_flag(&args(&["jackin-capsule", "new", "claude"])),
+            None
+        );
+        // No agent positional → nothing at index 3+ to scan.
+        assert_eq!(parse_provider_flag(&args(&["jackin-capsule", "new"])), None);
+    }
+
+    #[test]
+    fn parse_provider_flag_empty_value_is_empty_label() {
+        // The daemon treats an empty label as an unknown provider (no redirect).
+        assert_eq!(
+            parse_provider_flag(&args(&["jackin-capsule", "new", "claude", "--provider="])),
+            Some(String::new())
         );
     }
 
