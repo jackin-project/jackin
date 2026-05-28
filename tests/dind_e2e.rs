@@ -471,14 +471,12 @@ fn diagnostics_snapshot(home: &Path) -> String {
     let mut out = format!("latest diagnostics: {}\n", latest.display());
     match std::fs::read_to_string(latest) {
         Ok(contents) => {
-            let lines = contents.lines().rev().take(80).collect::<Vec<_>>();
-            for line in lines.into_iter().rev() {
-                out.push_str(line);
-                out.push('\n');
-            }
+            append_tail_lines(&mut out, &contents);
         }
         Err(error) => {
-            out.push_str(&format!("failed to read diagnostics file: {error}\n"));
+            out.push_str("failed to read diagnostics file: ");
+            out.push_str(&error.to_string());
+            out.push('\n');
         }
     }
 
@@ -487,17 +485,26 @@ fn diagnostics_snapshot(home: &Path) -> String {
     };
     let build_log = latest.with_file_name(format!("{stem}.docker-build.log"));
     if let Ok(contents) = std::fs::read_to_string(&build_log) {
-        out.push_str(&format!(
-            "latest docker build log: {}\n",
-            build_log.display()
-        ));
-        let lines = contents.lines().rev().take(80).collect::<Vec<_>>();
-        for line in lines.into_iter().rev() {
-            out.push_str(line);
-            out.push('\n');
-        }
+        out.push_str("latest docker build log: ");
+        out.push_str(&build_log.display().to_string());
+        out.push('\n');
+        append_tail_lines(&mut out, &contents);
     }
     out
+}
+
+fn append_tail_lines(out: &mut String, contents: &str) {
+    let mut lines = std::collections::VecDeque::with_capacity(80);
+    for line in contents.lines() {
+        if lines.len() == 80 {
+            lines.pop_front();
+        }
+        lines.push_back(line);
+    }
+    for line in lines {
+        out.push_str(line);
+        out.push('\n');
+    }
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
