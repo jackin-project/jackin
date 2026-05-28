@@ -4,142 +4,74 @@ title: "Unified TUI scrollbars"
 import RepoFile from '../../../../components/RepoFile.astro'
 import { Aside } from '@astrojs/starlight/components'
 
-**Status**: Open — design proposal and refactor plan
+**Status**: Open — implementation plan
 
 ## Problem
 
-jackin' has several scrollbar implementations that share the same visual intent but not the same model. The Docker build log panel shown during launch exposes the main symptom: after scrolling up to the top, scrolling down can appear stuck because the stored scroll value remains beyond the content's current maximum and the render path only clamps the temporary top-offset it draws. The operator has to scroll through invisible overshoot before visible movement resumes. The same class of bug can reappear anywhere scroll state is mutated without the same canonical clamp and coordinate model used by rendering and hit testing.
-
-## Current Implementations
-
-| Surface | Files | Current behavior | Gap |
-|---|---|---|---|
-| Shared crate thumb helper | <RepoFile path="crates/jackin-tui/src/lib.rs" /> | `vertical_thumb(track_rows, filled, offset)` computes only vertical thumb geometry for capsule-style scrollback where `offset = 0` means live tail and larger offsets move upward. | It is too narrow: no horizontal support, no content/viewport/max-offset model, no wheel/page/clamp helpers, no hit-test mapping, and no ratatui/raw-ANSI adapter boundary. |
-| Console scrollable widgets | <RepoFile path="src/console/widgets/scrollable.rs" /> | Owns `max_offset`, `is_scrollable`, `effective_offset`, `scrollbar_thumb_geometry`, ratatui rendering, horizontal drag mapping, selected-list rendering, and scroll deltas. | This duplicates and diverges from `jackin-tui`; it stores offsets as `u16`, some deltas do not clamp until a later render, vertical drag is absent, and geometry is private to the host console. |
-| Launch Docker build log overlay | <RepoFile path="src/runtime/progress.rs" /> | `build_log_scroll` is tail-relative (`0 = newest`) and converted to a top-relative `scroll_y` during render before calling `render_scrollable_block`. Mouse wheel and PgUp/PgDn mutate the tail-relative value directly. | This is the sticky-top bug: the tail-relative value can overshoot `max_top`, render clamps the temporary value, and downward movement remains invisible until the overshoot is consumed. |
-| Console manager panels | <RepoFile path="src/console/manager/render/list.rs" />, <RepoFile path="src/console/manager/render/editor.rs" />, <RepoFile path="src/console/manager/render/global_mounts.rs" />, <RepoFile path="src/console/manager/input/mouse.rs" /> | The list, editor, settings, global mounts, and roles panels route through `render_scrollable_block` for drawing, while mouse handling reconstructs areas/content widths separately for wheel focus and horizontal dragging. | Rendering and input share helper functions but not a first-class `ScrollArea`/`ScrollModel`. Area reconstruction is repeated, vertical wheel and horizontal wheel use different clamp timing, and horizontal drag is implemented outside the renderer's reusable component. |
-| Picker and modal lists | <RepoFile path="src/console/widgets/role_picker.rs" />, <RepoFile path="src/console/widgets/workdir_pick.rs" />, <RepoFile path="src/console/widgets/select_list.rs" />, <RepoFile path="src/console/widgets/op_picker/render.rs" />, <RepoFile path="src/console/widgets/github_picker.rs" />, <RepoFile path="src/console/widgets/confirm_save.rs" /> | Most list-style popups use `render_selected_lines_in_area` or `render_lines_with_offset_in_area`, which draws a vertical thumb with console geometry. | Selection-follow scrolling and free-scroll offsets use a shared renderer but still depend on console-local math and cannot share with capsule or future widgets without reaching through `src/console/widgets`. |
-| Capsule pane scrollback | <RepoFile path="crates/jackin-capsule/src/session.rs" />, <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/render.rs" /> | `Session::scroll_by` already clamps upward motion to filled scrollback, and raw ANSI `draw_scrollbar` uses `jackin_tui::vertical_thumb`. | This is the closest to the desired behavior but only shares thumb geometry, not wheel/page/clamp constants or the unified content/viewport model. It also has a different coordinate vocabulary from host console panels. |
+jackin' has multiple terminal scrollbar paths that share the same visual intent but not the same state model, clamp policy, geometry, or hit-testing rules. The visible failure is the Docker build log overlay: scrolling up can leave a stored value beyond the current maximum, rendering clamps only a temporary top-offset, and the first downward wheel events are spent consuming invisible overshoot instead of moving visible content. The fix is one shared scroll model used by renderers, keyboard input, mouse wheel handling, drag/click hit testing, launch progress, and capsule scrollback.
 
 <Aside type="note">
-CSS/browser scrollbars in the docs landing page and Starlight theme are out of scope for this refactor. They are native browser scroll surfaces, not ratatui/raw-terminal scrollbars.
+CSS/browser scrollbars in the docs landing page and Starlight theme are out of scope. This item covers ratatui and raw-terminal scrollbars only.
 </Aside>
+
+## Final Approach
+
+Use [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) for scrollbar metrics and interaction. Add it at the `jackin-tui` boundary and compose its `ScrollLengths`, `ScrollMetrics`, `ScrollBarInteraction`, and `ScrollCommand` types instead of reimplementing those concepts locally.
+
+Keep jackin-owned rendering. Do not adopt `tui-scrollbar`'s fractional renderer, arrow endcaps, glyph sets, or default styles as the default output. The shared code owns state, metrics, clamping, drag/click mapping, and offset conversion only. It must not make horizontal and vertical scrollbars visually identical.
+
+Preserve the current visual split by design. Console horizontal scrollbars continue to render as a bottom-border-adjacent dotted track with a `━` thumb. Console vertical scrollbars continue to render as a right-side dotted track with a full-cell `█` thumb. Capsule scrollbars continue to paint only thumb cells into the pane's right border column so the border itself remains the track. This asymmetry is intentional and must be covered by surface tests.
+
+Use one canonical coordinate model per axis. Normal content panels store top-relative offsets: `0 = first row/column`, `max = last reachable row/column`. Live-tail surfaces use a small `TailScroll` adapter in `jackin_tui::scroll` that preserves `0 = newest/live tail` externally while clamping through `tui-scrollbar` metrics before every render or mutation.
+
+Clamp on every mutation. Wheel, keyboard, page movement, drag, click, resize, content refresh, cursor-follow updates, and render entry all write back a clamped value. Rendering may clamp defensively, but it must not be the only clamp.
+
+Do not create a parallel local metrics API. `jackin_tui::scroll` is an integration layer: constructors from jackin' viewport/content values, `TailScroll`, full-cell thumb conversion for existing visuals, and small helpers that compose `tui-scrollbar` rather than replacing it.
 
 ## Affected Implementation Inventory
 
-The implementation PR must audit and update each item below. This is the working checklist for the refactor, not a vague ownership map.
+The implementation PR must update each item below.
 
 | Area | Files | Required work |
 |---|---|---|
-| Dependency boundary | <RepoFile path="Cargo.toml" />, <RepoFile path="Cargo.lock" />, <RepoFile path="crates/jackin-tui/Cargo.toml" /> | Add `tui-scrollbar` only where the wrapper lives. Prefer depending on it from `jackin-tui` so app code consumes `jackin_tui::scroll`, not the third-party crate directly. |
-| Shared visual/logic crate | <RepoFile path="crates/jackin-tui/src/lib.rs" /> | Add `jackin_tui::scroll` wrappers around `tui-scrollbar` metrics and interaction commands. Keep `vertical_thumb` as a compatibility shim only if needed, and make it delegate to the shared wrapper. |
-| Console scroll adapter | <RepoFile path="src/console/widgets/scrollable.rs" /> | Replace local scrollbar geometry, offset clamping, track-position mapping, and wheel/page helpers with the `jackin_tui::scroll` wrapper. Keep the existing ratatui symbols, palette, block borders, focus-border rules, trailing-padding behavior, and selected-list render helpers. |
-| Console manager state | <RepoFile path="src/console/manager/state.rs" /> | Audit every stored scroll field: list workspace/global/role/roles x/y offsets, left-name x offset, global-mounts x/y, settings env/auth/trust/mount offsets, editor workspace-mounts x offset, shared editor `tab_scroll_x`/`tab_scroll_y`, focus booleans, and reset helpers. Decide whether these stay `u16` at the boundary or move to `usize`; either way, every write must clamp through the shared model. |
-| Console render re-exports and clamps | <RepoFile path="src/console/manager/render/mod.rs" /> | Update re-exports, `follow_cursor_y`, `cursor_scroll_for_panel`, frame-time x clamps, and stale-focus clearing so they use the same shared metrics as `render_scrollable_block`. This file is where render-time correction currently hides stale offsets. |
-| Workspace list/sidebar render | <RepoFile path="src/console/manager/render/list.rs" /> | Convert left workspace names, workspace mounts, global mounts, role-global mounts, and roles subpanels. Preserve the special throwaway vertical state for the left name list only if line count truly cannot overflow; otherwise give it the same model as other blocks. |
+| Dependency boundary | <RepoFile path="Cargo.toml" />, <RepoFile path="Cargo.lock" />, <RepoFile path="crates/jackin-tui/Cargo.toml" /> | Add `tui-scrollbar` at the `jackin-tui` boundary so app code consumes `jackin_tui::scroll` helpers and does not depend on the third-party crate directly. |
+| Shared TUI crate | <RepoFile path="crates/jackin-tui/src/lib.rs" /> | Add `jackin_tui::scroll` as the shared integration layer. Keep `vertical_thumb` only as a compatibility shim during the refactor and make it delegate to the new shared path. |
+| Console scroll adapter | <RepoFile path="src/console/widgets/scrollable.rs" /> | Replace local scrollbar geometry, max-offset clamping, track-position mapping, and delta helpers with `jackin_tui::scroll` + `tui-scrollbar` metrics. Keep current ratatui symbols, palette, block borders, focus-border rules, trailing-padding behavior, and selected-list render helpers. Preserve horizontal `━` thumbs and vertical `█` thumbs as separate render choices. |
+| Console manager state | <RepoFile path="src/console/manager/state.rs" /> | Audit and clamp every stored scroll field: list workspace/global/role/roles x/y offsets, left-name x offset, global-mounts x/y, settings env/auth/trust/mount offsets, editor workspace-mounts x offset, editor `tab_scroll_x`/`tab_scroll_y`, focus booleans, and reset helpers. Prefer `usize` for internal scroll math; downcast only at ratatui boundaries that require `u16`. |
+| Console render re-exports and clamps | <RepoFile path="src/console/manager/render/mod.rs" /> | Update re-exports, cursor-follow helpers, frame-time clamps, and stale-focus clearing to use the shared model. Remove render-only correction paths that let stale offsets survive until the next draw. |
+| Workspace list/sidebar render | <RepoFile path="src/console/manager/render/list.rs" /> | Convert left workspace names, workspace mounts, global mounts, role-global mounts, and roles subpanels to the shared model. Keep any non-scrollable throwaway state only where the rendered line count genuinely cannot overflow. |
 | Workspace editor render | <RepoFile path="src/console/manager/render/editor.rs" /> | Convert General, Mounts, Roles, Secrets, and Auth tab bodies. Preserve tab-specific content width/height accounting because mouse hit tests and cursor-follow logic consume those cached values. |
-| Global settings render | <RepoFile path="src/console/manager/render/global_mounts.rs" /> | Convert global mounts, environment, auth, and trust tabs. Preserve intentionally disabled horizontal scrolling on env/auth by using an explicit non-scrollable x model instead of an ad hoc `no_scroll_x` local. |
-| Mouse focus, wheel, and dragging | <RepoFile path="src/console/manager/input/mouse.rs" /> | Replace reconstructed horizontal scrollbar hit tests with rendered/shared track areas. Cover list subpanels, editor mounts/non-mount tabs, settings mounts/trust, vertical wheel dispatch, and future vertical drag/click behavior for visible vertical scrollbars. |
-| Keyboard list scrolling | <RepoFile path="src/console/manager/input/list.rs" /> | Route H/L and vertical list scroll actions through shared scroll deltas. Keep focus-specific routing through `MountScrollFocus`, but make max-offset behavior match mouse and render paths. |
-| Keyboard editor scrolling | <RepoFile path="src/console/manager/input/editor.rs" /> | Route tab changes, horizontal scroll keys, `tab_scroll_y` resets, and cursor-follow updates through shared helpers. Mounts-tab x scrolling and non-Mounts-tab x scrolling must share policy while staying separate state fields. |
+| Global settings render | <RepoFile path="src/console/manager/render/global_mounts.rs" /> | Convert global mounts, environment, auth, and trust tabs. Preserve intentionally disabled horizontal scrolling on env/auth through an explicit non-scrollable x model instead of ad hoc `no_scroll_x` locals. |
+| Mouse focus, wheel, and dragging | <RepoFile path="src/console/manager/input/mouse.rs" /> | Replace reconstructed horizontal scrollbar hit tests with shared/rendered track areas. Cover list subpanels, editor mounts/non-mount tabs, settings mounts/trust, vertical wheel dispatch, and vertical drag/click behavior for visible vertical scrollbars. |
+| Keyboard list scrolling | <RepoFile path="src/console/manager/input/list.rs" /> | Route H/L and vertical list scroll actions through shared deltas. Keep focus-specific routing through `MountScrollFocus`, but make max-offset behavior match mouse and render paths. |
+| Keyboard editor scrolling | <RepoFile path="src/console/manager/input/editor.rs" /> | Route tab changes, horizontal scroll keys, `tab_scroll_y` resets, and cursor-follow updates through shared helpers. Mounts-tab x scrolling and non-Mounts-tab x scrolling share policy while staying separate state fields. |
 | Keyboard global/settings scrolling | <RepoFile path="src/console/manager/input/global_mounts.rs" /> | Route global mounts and trust x scrolling plus env/trust cursor-follow y updates through shared helpers. Preserve each tab's focus and reset semantics. |
-| Picker and modal lists | <RepoFile path="src/console/widgets/github_picker.rs" />, <RepoFile path="src/console/widgets/role_picker.rs" />, <RepoFile path="src/console/widgets/workdir_pick.rs" />, <RepoFile path="src/console/widgets/select_list.rs" />, <RepoFile path="src/console/widgets/op_picker/render.rs" /> | These use selected-list rendering and cursor-follow offsets. Keep their public widget state intact, but move their vertical thumb/windowing math to the shared wrapper via `render_selected_lines_in_area`. |
-| Confirm-save details | <RepoFile path="src/console/widgets/confirm_save.rs" /> | Convert `scroll_offset` and Up/Down handling to shared clamped movement. This is the small free-scroll modal path distinct from selected-list cursor-follow rendering. |
-| Launch progress build-log overlay | <RepoFile path="src/runtime/progress.rs" /> | Fix the priority repro. Replace unbounded tail-relative `build_log_scroll` mutation with a clamped `TailScroll` adapter or top-relative stored offset. Update mouse wheel, Up/Down, PgUp/PgDn, rendering conversion, and tests that cover wrapped build-log output. |
-| Capsule session scrollback | <RepoFile path="crates/jackin-capsule/src/session.rs" /> | Keep `scrollback_offset = 0` as live tail externally, but route filled/max/clamp behavior through the shared wrapper or a tail-scroll adapter so capsule and host surfaces share the same max-offset and thumb invariants. |
-| Capsule daemon/render bridge | <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/render.rs" /> | Update `PaneScrollbar`, `pane_scrollbar`, wheel delta policy, debug telemetry, full/partial frame drawing, and `draw_scrollbar` to consume shared metrics while preserving raw ANSI drawing and border-column visuals. |
-| TUI design docs | <RepoFile path="docs/src/content/docs/reference/tui-design-decisions.mdx" /> | Update the existing scroll rules after implementation. That page currently names `src/console/widgets/scrollable.rs` as the source of truth and explicitly rejects Ratatui `ScrollbarState`; it must be revised to say `jackin_tui::scroll` is the source of truth and `tui-scrollbar` is used only behind the wrapper. |
+| Picker and modal lists | <RepoFile path="src/console/widgets/github_picker.rs" />, <RepoFile path="src/console/widgets/role_picker.rs" />, <RepoFile path="src/console/widgets/workdir_pick.rs" />, <RepoFile path="src/console/widgets/select_list.rs" />, <RepoFile path="src/console/widgets/op_picker/render.rs" /> | Keep public widget state intact, but move selected-list windowing and vertical thumb math through `render_selected_lines_in_area` backed by the shared model. |
+| Confirm-save details | <RepoFile path="src/console/widgets/confirm_save.rs" /> | Convert `scroll_offset` and Up/Down handling to shared clamped movement. This is the free-scroll modal path distinct from selected-list cursor-follow rendering. |
+| Launch progress build-log overlay | <RepoFile path="src/runtime/progress.rs" /> | Replace unbounded `build_log_scroll` mutation with `TailScroll`. Clamp on mouse wheel, Up/Down, PgUp/PgDn, render conversion, and build-log content refresh. Add the sticky-top regression test here. |
+| Capsule session scrollback | <RepoFile path="crates/jackin-capsule/src/session.rs" /> | Keep `scrollback_offset = 0` as live tail externally, but route filled/max/clamp behavior through `TailScroll` so capsule and host surfaces share max-offset and thumb invariants. |
+| Capsule daemon/render bridge | <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/render.rs" /> | Update `PaneScrollbar`, `pane_scrollbar`, wheel delta policy, debug telemetry, full/partial frame drawing, and `draw_scrollbar` to consume shared metrics while preserving raw ANSI drawing and the right-border-column thumb-only visual. |
+| TUI design docs | <RepoFile path="docs/src/content/docs/reference/tui-design-decisions.mdx" /> | Update the scroll rules after implementation. The source of truth becomes `jackin_tui::scroll`; `tui-scrollbar` is the underlying metrics/interaction dependency; visual output remains jackin-owned. |
 | Existing unit tests | <RepoFile path="src/console/widgets/scrollable.rs" />, <RepoFile path="src/console/manager/input/mouse.rs" />, <RepoFile path="src/console/manager/input/list.rs" />, <RepoFile path="src/console/manager/render/editor.rs" />, <RepoFile path="src/console/manager/render/list.rs" />, <RepoFile path="src/runtime/progress.rs" />, <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> | Move pure geometry tests into `jackin-tui`; keep adapter tests at each surface for symbols, palette, focus, hit areas, state routing, and the build-log sticky-top repro. |
 
-## Design Principles
+## Implementation Steps
 
-1. **One coordinate model per axis.** Store a top-relative offset for content panels: `0 = first row/column`, `max = last reachable row/column`. Capsule scrollback can keep its user-facing tail semantics, but it should convert through the same model at the API edge instead of owning separate thumb math.
-2. **Clamp on every mutation, not only during render.** Wheel, keyboard, page, drag, resize, content refresh, and cursor-follow operations must all write back a clamped value. Rendering may still clamp defensively, but it must not be the only clamp.
-3. **A scrollbar is geometry plus policy, not a drawing trick.** The shared type should expose `max_offset`, `thumb_start`, `thumb_len`, `offset_for_track_position`, `apply_delta`, `apply_page`, and `follow_cursor`; renderers should only translate that geometry into ratatui cells or raw ANSI bytes.
-4. **Input hit testing must consume the same geometry that rendering uses.** Drag/click mapping should use the rendered track area and the shared `offset_for_track_position` function for both axes. No panel should rebuild a slightly different area model just to process mouse input.
-5. **Snappy behavior beats deferred correction.** When content shrinks while the operator is at or beyond the previous end, the stored offset should immediately clamp to the new end. A downward wheel from the top clamp must move visible content on the first event whenever there is content below.
-6. **Shared crate owns reusable primitives.** Cross-surface scroll math belongs in <RepoFile path="crates/jackin-tui/src/lib.rs" /> or a `scroll` module inside that crate. `src/console/widgets/scrollable.rs` should become a ratatui adapter, not the source of truth.
-
-## Dependency Decision
-
-Use [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) for the scrollbar model and interaction layer. Do not reimplement its core metrics unless an implementation spike proves a hard mismatch. The crate already provides the exact reusable layer jackin' needs: app-owned `content_len`/`viewport_len`/`offset`, pure `ScrollMetrics`, maximum-offset clamping, thumb travel, track/thumb hit testing, drag grab-offset state, wheel commands, and backend-agnostic input events.
-
-Do **not** adopt `tui-scrollbar`'s renderer as the default visual output. That renderer is intentionally fractional and glyph-set driven; jackin' needs to keep its existing symbols, colours, borders, focus behavior, footer hints, full-cell default thumbs, and capsule border-column rendering. The implementation should use `tui-scrollbar` directly for metrics and interaction, then keep jackin-owned render adapters for ratatui and raw ANSI.
-
-The local code should not mirror the dependency with a parallel abstraction named the same way. `jackin_tui::scroll` should be a thin integration module: tail-scroll conversion for jackin' live-log/live-tail semantics, existing-look render helpers, and convenience functions that compose `tui_scrollbar::ScrollMetrics` / `ScrollBarInteraction` rather than replacing them.
-
-## Crate Evaluation
-
-Researched 2026-05-28 against the current Ratatui ecosystem:
-
-| Candidate | What it provides | Fit for jackin' |
-|---|---|---|
-| [`ratatui::widgets::ScrollbarState`](https://docs.rs/ratatui/latest/ratatui/widgets/struct.ScrollbarState.html) | Built-in stateful scrollbar with `content_length`, `viewport_content_length`, and position helpers. Already available because jackin' depends on Ratatui. | Useful for simple ratatui-only drawing, but not enough for this refactor. It is tied to Ratatui widgets, does not expose the backend-agnostic drag/wheel interaction model jackin' needs, and cannot directly serve the raw-ANSI capsule renderer. |
-| [`tui-scrollview`](https://crates.io/crates/tui-scrollview) | A scrollable Ratatui view backed by a larger off-screen `Buffer`; includes horizontal and vertical scrollbars. | Not a good primary fit. jackin' already renders virtualized line slices and capsule panes; rendering every scrollable surface into a larger buffer would be a heavier architectural change and still would not solve capsule raw-ANSI geometry sharing. Its state also follows the same "render clamps later" pattern that caused the build-log overscroll bug. |
-| [`tui-scrollbar`](https://crates.io/crates/tui-scrollbar) | A focused Ratatui scrollbar crate with `ScrollLengths`, pure `ScrollMetrics`, fractional thumb geometry, hit testing, backend-agnostic pointer/wheel events, `ScrollCommand::SetOffset`, and external app-owned state. | Best fit. It gives jackin' the unstyled logic layer requested here: content/viewport/offset metrics, clamped offset conversion, track click behavior, drag persistence, and wheel handling can be reused without forcing jackin' to adopt the crate's glyphs everywhere. Use its model directly; keep jackin-owned rendering by default. |
-
-`tui-scrollbar` is also low-friction for the current toolchain: version 0.2.4 declares Rust 1.88 while jackin' currently requires Rust 1.94, and it is MIT/Apache-2.0 licensed. It lives in the `ratatui/tui-widgets` repository, which was active in April 2026 and is part of the Ratatui-adjacent widget ecosystem. Crates.io reports roughly 915k total downloads and 639k recent downloads for `tui-scrollbar`; that is enough adoption for this scope, especially because the dependency is small and the integration can be isolated to `jackin-tui`.
-
-## How To Count "Better"
-
-The implementation decision should be judged on the following criteria, in order:
-
-1. **Behavioral fit.** The dependency must model scrollbars in the same terms jackin' needs: content length, viewport length, offset, max offset, thumb geometry, track/thumb hit testing, wheel deltas, drag state, and externally owned state. `tui-scrollbar` passes this; `tui-scrollview` does not because it wants to own an off-screen ratatui buffer.
-2. **Visual independence.** The dependency must let jackin' keep its design. `tui-scrollbar` passes only if jackin' uses its model/interaction layer and keeps local render adapters. Adopting its fractional renderer by default would fail this criterion.
-3. **Reduction of local bug surface.** The dependency should delete or simplify local code that currently encodes scroll math. `tui-scrollbar` can replace the local `scrollbar_thumb_geometry`, max-offset clamping, track-position conversion, and future vertical drag logic; this is real risk reduction.
-4. **Adapter cost.** The glue should be small and principled: tail-scroll conversion, full-cell rendering, and existing focus/palette integration. If implementation requires copying large chunks of `tui-scrollbar`, forking its math, or fighting its event model with many special cases, stop and keep the local implementation instead.
-5. **Maintenance quality.** Prefer the dependency when it is maintained, documented, licensed compatibly, and aligned with the project's existing stack. `tui-scrollbar` passes: it is documented, MIT/Apache-2.0, Ratatui 0.30-era, and maintained in the `ratatui/tui-widgets` repository.
-
-Under this scoring, `tui-scrollbar` is better than reimplementing for metrics and interaction. Reimplementing is better only for the final visual rendering layer, where jackin' has specific design requirements that the dependency intentionally does not share.
-
-## Local Wrapper Shape
-
-Expose jackin integration helpers from `jackin_tui::scroll` without cloning the dependency's API wholesale:
-
-| Type/function | Purpose |
-|---|---|
-| `Axis` | `Vertical` or `Horizontal`, so the same model covers rows and columns. |
-| `ScrollModel` or helper constructors | Build `tui_scrollbar::ScrollLengths` / `tui_scrollbar::ScrollMetrics` from jackin' viewport/content values and return clamped offsets. This should compose the dependency, not duplicate it. |
-| `FullCellThumb` | Convert `tui_scrollbar::ScrollMetrics` subcell geometry into jackin' current full-cell thumb output for ratatui and raw ANSI rendering. This is visual adaptation, not alternate scroll math. |
-| `offset_for_track_position` | Track/click mapping where jackin' needs exact legacy behavior. Prefer `tui-scrollbar` interaction commands; keep a local helper only if needed to preserve existing click semantics without adopting fractional visuals. |
-| `apply_delta` and `apply_page` | Mutation helpers that return the new clamped offset. Prefer `tui-scrollbar` wheel/track-click behavior where the semantics match; keep local helpers for keyboard-only page movement. |
-| `follow_cursor(metrics, cursor)` | Cursor/selection-follow helper used by picker lists and editor rows. |
-| `TailScroll` adapter | Optional adapter for surfaces like build logs or capsule scrollback where the UI wants `0 = newest`. The adapter must clamp the tail-relative stored value before conversion so overshoot cannot persist. |
-
-Keep rendering adapters thin:
-
-| Adapter | Location | Responsibility |
-|---|---|---|
-| Ratatui block/list renderer | <RepoFile path="src/console/widgets/scrollable.rs" /> | Render borders, content, track, thumb symbols, and palette using shared metrics. Also expose `ScrollArea`/`RenderedScrollArea` data for mouse hit testing. |
-| Raw ANSI capsule renderer | <RepoFile path="crates/jackin-capsule/src/render.rs" /> | Convert shared thumb geometry into ANSI writes on the pane border. |
-| Launch progress adapter | <RepoFile path="src/runtime/progress.rs" /> | Replace unbounded `build_log_scroll` mutation with `TailScroll` or store the canonical top-relative offset directly. |
-
-## Refactor Plan
-
-1. **Adopt `tui-scrollbar` for metrics and interaction.** Add it at the `jackin-tui` boundary, use `tui_scrollbar::ScrollLengths`, `ScrollMetrics`, `ScrollBarInteraction`, and `ScrollCommand` where they fit, and avoid creating a parallel local metrics type. Preserve the existing console test cases and add the capsule `vertical_thumb` invariants at the shared-crate level.
-2. **Replace `vertical_thumb` with the shared geometry.** Keep a compatibility wrapper only if it keeps the first PR smaller, but make it delegate to `jackin_tui::scroll::thumb` so capsule and console math cannot drift.
-3. **Convert console renderers to shared metrics.** Make `render_scrollable_block`, `render_lines_with_offset_in_area`, and `render_selected_lines_in_area` build `ScrollMetrics` for each axis, write the clamped offset back immediately, and draw from shared `Thumb` geometry.
-4. **Return rendered scroll areas from the renderer.** Introduce a compact `RenderedScrollbars` or `ScrollHitAreas` value that includes block area, viewport, content length, track rects, and current offsets. Mouse handlers should consume this instead of reconstructing track geometry and content width in parallel.
-5. **Fix the launch build-log state.** Either store `build_log_scroll_top` as the canonical top-relative offset or wrap the current tail-relative state in `TailScroll`. In both cases, wheel and page handlers must clamp immediately against the current wrapped log length and viewport height, so scrolling down from the top moves on the first event.
-6. **Unify wheel/page constants.** Replace per-surface literals such as build-log `BUILD_LOG_SCROLL_STEP`, capsule wheel delta `3`, and ad hoc horizontal `8` jumps with named shared policies where the UX should match. Keep intentionally different step sizes explicit through enum variants such as `ScrollStep::Line`, `ScrollStep::Wheel`, `ScrollStep::Page`, and `ScrollStep::HorizontalPage`.
-7. **Add vertical drag/click where there is a visible vertical scrollbar.** The current manager input path supports horizontal drag only. Any rendered thumb should have a predictable pointer/click path or deliberately opt out with a documented reason.
-8. **Add debug telemetry only where it explains state.** For regressions, use existing diagnostics patterns and `cdebug!`-style gated logging: before/after offset, content length, viewport, max offset, axis, input source, and clamp reason. Do not print debug lines over rich surfaces.
-9. **Retire duplicate tests.** Keep shared math tests in `jackin-tui`; keep adapter tests in console/capsule focused on symbols, palette, area placement, and integration behavior.
+1. Add `tui-scrollbar` to `jackin-tui`.
+2. Add `jackin_tui::scroll` with `TailScroll`, constructors for `tui_scrollbar::ScrollMetrics`, full-cell thumb conversion, clamped delta/page helpers, and cursor-follow helpers.
+3. Move pure geometry/clamp tests from console/capsule into `jackin-tui` and add coverage for zero viewport, content fits, one-row overflow, exact max offset, overscroll clamp, midpoint drag, thumb end reach, tail-relative conversion, and cursor-follow selection.
+4. Convert `src/console/widgets/scrollable.rs` to use `jackin_tui::scroll` while preserving existing visuals.
+5. Convert manager render/input/state paths listed in the affected inventory.
+6. Convert the launch build-log overlay to `TailScroll` and add the sticky-top regression test.
+7. Convert capsule scrollback and border-column rendering to shared metrics.
+8. Update `docs/src/content/docs/reference/tui-design-decisions.mdx` to name the new source of truth.
 
 ## Acceptance Criteria
 
-- All TUI scrollbars use shared `jackin_tui::scroll` geometry for thumb length, thumb position, clamp, and drag mapping.
-- A scroll offset can never remain above the current maximum after wheel, key, page, drag, resize, content refresh, or render.
+- All TUI scrollbars use `tui-scrollbar` metrics through `jackin_tui::scroll` for thumb length, thumb position, max offset, clamping, and drag/click mapping.
+- No scroll offset remains above the current maximum after wheel, key, page, drag, click, resize, content refresh, cursor-follow, or render.
 - The Docker build log overlay no longer sticks at the top: with a saturated top value, the first downward wheel event moves visible content toward the tail.
-- Horizontal and vertical scrollbar behavior is consistent across list view, editor tabs, settings tabs, picker lists, confirm/save details, launch progress, and capsule panes.
-- Existing visual styling remains stable: focused scrollable blocks keep green focus, inactive tracks keep the dialog-scroll palette, current full-cell thumb/track glyphs remain the default, and capsule scrollbars keep border-column rendering. Any fractional glyphs, arrows, or other visual changes from `tui-scrollbar` are out of scope unless a later PR explicitly proposes them.
-- Tests cover shared math for zero viewport, content fits, one-row overflow, exact max offset, overscroll clamp, midpoint drag, thumb end reach, tail-relative conversion, and cursor-follow selection.
-- At least one integration test covers the launch build-log overscroll repro directly.
-
-## Implementation Notes
-
-`u16` storage is a real limitation for very large logs. The current console helpers truncate with a debug assertion; the shared model should prefer `usize` internally and only downcast at the ratatui boundary. Public state structs can keep `u16` in a first pass if widening them creates too much churn, but every conversion must clamp and tests should pin the overflow behavior.
-
-The build-log overlay is the priority repro because it already uses the shared console renderer but owns a different state model. Fixing it first proves the shared API handles tail-following content before the broader console manager conversion.
-
-Capsule scrollback should not lose its live-tail semantics. The operator mental model for a terminal pane is still "scroll away from live output, then return to live output"; the refactor should centralize geometry and clamp policy without forcing every caller to expose the same external naming.
+- Horizontal and vertical scrollbar behavior is consistent across list view, editor tabs, settings tabs, picker lists, confirm-save details, launch progress, and capsule panes.
+- Existing visual styling remains stable: focused scrollable blocks keep green focus, inactive tracks keep the dialog-scroll palette, console horizontal scrollbars keep dotted tracks with `━` thumbs, console vertical scrollbars keep dotted tracks with `█` thumbs, and capsule scrollbars keep right-border-column thumb-only rendering.
+- Horizontal and vertical scrollbars are not normalized into a single visual treatment. Their metrics are shared; their visual representation remains intentionally different.
+- Fractional glyphs, arrows, and other `tui-scrollbar` renderer visuals are not introduced by this refactor.
+- Pure geometry tests live in `jackin-tui`; surface tests cover symbols, palette, focus, hit areas, state routing, and the build-log sticky-top repro.
