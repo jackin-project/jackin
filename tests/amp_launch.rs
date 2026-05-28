@@ -1,6 +1,6 @@
 mod common;
 
-use common::{FakeRunner, NoOpDocker, install_capsule_binary_stub};
+use common::{FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub};
 use jackin::agent::Agent;
 use jackin::config::AppConfig;
 use jackin::isolation::MountIsolation;
@@ -17,12 +17,22 @@ fn recorded_role_container_name(run_cmd: &str) -> &str {
         .expect("role docker run should include --name")
 }
 
+fn assert_cached_amp_install_block(dockerfile: &str) {
+    assert_eq!(
+        dockerfile
+            .matches(&Agent::Amp.install_block(".jackin-runtime/agent-binaries/amp"))
+            .count(),
+        1
+    );
+}
+
 #[tokio::test]
 async fn amp_launch_invokes_docker_run_with_amp_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     install_capsule_binary_stub(&paths);
+    install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]
@@ -59,11 +69,10 @@ agents = ["amp"]
 
     let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
     let build =
-        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
+        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None, &[])
             .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
-    assert!(dockerfile.contains("ampcode.com/install.sh"));
-    assert!(dockerfile.contains("RUN amp --version"));
+    assert_cached_amp_install_block(&dockerfile);
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = ResolvedWorkspace {
@@ -133,6 +142,7 @@ async fn amp_launch_under_sync_mounts_secrets_json_in_docker_run() {
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     install_capsule_binary_stub(&paths);
+    install_agent_binary_stubs(&paths);
 
     // Stage host ~/.local/share/amp/secrets.json under the test's fake
     // home (paths.home_dir, which load_role consults for host-side

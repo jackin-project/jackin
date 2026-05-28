@@ -209,9 +209,9 @@ It is a strength because it pushes you toward role repos as the real source of t
 
 It is a weakness because ad-hoc runtime setup work disappears when the container is removed.
 
-### 5. Runtime installation is not fully pinned
+### 5. Runtime binaries are cached by jackin'
 
-The current derived image installs the agent runtimes (Claude Code, Codex, Amp, Kimi, OpenCode) from their upstream installers. That keeps the runtimes current, but it is less reproducible than pinning exact versions and checksums.
+jackin' resolves agent runtime metadata on the host, downloads each required Linux binary once per version and architecture, and copies the cached binary into derived image builds. This keeps repeated rebuilds fast while still checking for newer Claude Code, Codex, Amp, Kimi, and OpenCode versions.
 
 ## Other approaches
 

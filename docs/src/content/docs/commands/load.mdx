@@ -21,7 +21,7 @@ Load an agent into an isolated `Docker` container directly from the command line
 
 `SELECTOR` chooses the **role** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
 
-Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. Rich terminals show a full-screen launch progress surface with a sliding stage rail for jackin' stages (`identity`, `role`, `credentials`, `construct`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`). Workspace repository polling from `git_pull_on_entry` is part of that surface; per-repo pull details go to diagnostics/debug evidence instead of printing over the launch cockpit. Non-rich terminals and non-interactive runs use compact deterministic progress lines with the same stage vocabulary.
+Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. Rich terminals show a full-screen launch progress surface with a sliding stage rail for jackin' stages (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`). Workspace repository polling from `git_pull_on_entry` is part of that surface; per-repo pull details go to diagnostics/debug evidence instead of printing over the launch cockpit. Non-rich terminals and non-interactive runs use compact deterministic progress lines with the same stage vocabulary.
 
 The full digital rain animation is a boundary marker. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and appears only when this launch starts with no jackin-managed role containers already running. The outro is two screens too — the decelerating warp, then the closing logo/time-in-construct caption — and appears only when the foreground session exits and no role containers remain. Launching or leaving a second concurrent instance does not play either boundary ritual because the operator is still inside the construct. Non-interactive shells and terminals that cannot host the rich surface naturally skip the boundary animation.
 
@@ -85,12 +85,13 @@ jackin load the-architect --role-branch feat/my-pr
 5. Resolves the runtime agent from `--agent`, workspace `default_agent`, a single supported role agent, or an interactive prompt for multi-agent roles
 6. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
 7. Prompts for interactive environment variables declared in the manifest
-8. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
-9. Checks the local instance index for missing recoverable work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances whose containers are gone can be recovered or rebuilt in place from the saved manifest source/ref. Running or stopped instances do not block a fresh launch.
-10. Creates a per-agent Docker network and DinD sidecar
-11. Launches the agent container with all resolved mounts and environment variables
-12. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)
-13. Starts the selected agent CLI
+8. Resolves and caches the required agent binaries and the matching `jackin-capsule` binary under jackin-owned host cache state
+9. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
+10. Checks the local instance index for missing recoverable work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances whose containers are gone can be recovered or rebuilt in place from the saved manifest source/ref. Running or stopped instances do not block a fresh launch.
+11. Creates a per-agent Docker network and DinD sidecar
+12. Launches the agent container with all resolved mounts and environment variables
+13. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)
+14. Starts the selected agent CLI
 
 Failures in the launch surface show a short diagnosis, the failed stage, the diagnostics run handle, and evidence paths under jackin-owned state. Raw Docker output, build logs, stack traces, and debug traces are not rendered in the failure popup. The live Docker build overlay uses a black terminal-style surface and interprets ANSI colour from Docker output when present. The run timeline remains JSONL for agent/debug analysis; Docker build failures also write a plain, colour-free `.log` sidecar with the command, working directory, exit status, stdout, and stderr so the operator can inspect the Docker output directly from a terminal.
 
