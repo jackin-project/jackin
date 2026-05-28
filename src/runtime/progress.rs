@@ -154,6 +154,7 @@ struct LaunchView {
     /// Pointer is hovering the clickable footer activity (which opens the
     /// build-log overlay). Lifts the activity to the link colour.
     build_log_hover: bool,
+    label_transition: Option<StageLabelTransition>,
     /// Pointer is hovering a copyable value in the failure popup.
     failure_copy_hover: Option<FailureCopyTarget>,
     /// Last failure-popup value copied via OSC 52. Drives visible feedback.
@@ -175,6 +176,13 @@ pub struct LaunchFailure {
     pub stage: LaunchStage,
     pub diagnostics_path: Option<PathBuf>,
     pub command_output_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StageLabelTransition {
+    from: usize,
+    to: usize,
+    start_frame: usize,
 }
 
 type SharedView = Arc<std::sync::Mutex<LaunchView>>;
@@ -273,6 +281,7 @@ fn initial_view() -> LaunchView {
         build_log_open: false,
         build_log_scroll: 0,
         build_log_hover: false,
+        label_transition: None,
         failure_copy_hover: None,
         failure_copied: None,
     }
@@ -504,9 +513,18 @@ impl LaunchProgress {
 }
 
 fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, detail: &str) {
+    let previous_active = active_stage_index(view);
     if let Some(row) = view.stages.iter_mut().find(|row| row.stage == stage) {
         row.status = status;
         row.detail = detail.to_string();
+    }
+    let next_active = active_stage_index(view);
+    if previous_active != next_active {
+        view.label_transition = Some(StageLabelTransition {
+            from: previous_active,
+            to: next_active,
+            start_frame: view.frame,
+        });
     }
 }
 
@@ -828,6 +846,11 @@ pub(crate) fn rich_terminal_supported() -> bool {
 const STAGE_PULSE_PERIOD: usize = 12;
 const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
+const LABEL_GAP: usize = 4;
+const LABEL_SLIDE_FRAMES: usize = 12;
+const PROGRESS_RAIL_WIDTH: usize =
+    LaunchStage::ALL.len() * BLOCK_WIDTH + (LaunchStage::ALL.len() - 1) * BLOCK_GAP;
+const LABEL_VIEW_WIDTH: usize = PROGRESS_RAIL_WIDTH + LABEL_GAP;
 
 fn render_launch_frame(
     frame: &mut Frame<'_>,
@@ -1053,25 +1076,52 @@ fn coalesce_cells(cells: impl IntoIterator<Item = (char, Style)>) -> Vec<Span<'s
 }
 
 fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
-    let lines = vec![blocks_line(view, frozen), labels_line(view, frozen)];
+    let label_width = usize::from(area.width).min(LABEL_VIEW_WIDTH);
+    let lines = vec![
+        blocks_line(view, frozen),
+        labels_line(view, frozen, label_width),
+    ];
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
+}
+
+fn display_stage_statuses(view: &LaunchView) -> Vec<StageStatus> {
+    if view.stages.is_empty() {
+        return Vec::new();
+    }
+
+    let active = active_stage_index(view);
+    view.stages
+        .iter()
+        .enumerate()
+        .map(|(index, row)| match index.cmp(&active) {
+            std::cmp::Ordering::Less => {
+                if row.status == StageStatus::Failed {
+                    StageStatus::Failed
+                } else {
+                    StageStatus::Done
+                }
+            }
+            std::cmp::Ordering::Equal => row.status,
+            std::cmp::Ordering::Greater => StageStatus::Queued,
+        })
+        .collect()
 }
 
 /// One block per stage, filling gray (queued) -> green (done) so a glance
 /// reads as a percent-complete bar; all green means loaded.
 fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
     let pulse = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
+    let display_statuses = display_stage_statuses(view);
     let mut spans: Vec<Span<'static>> = Vec::new();
-    for (i, row) in view.stages.iter().enumerate() {
+    for (i, status) in display_statuses.into_iter().enumerate() {
         if i > 0 {
             spans.push(Span::raw(" ".repeat(BLOCK_GAP)));
         }
         // Thin horizontal segments (a slim progress bar), not tall full
         // blocks: heavy `━` for reached/active stages, light `─` for queued.
-        let (glyph, color) = match row.status {
-            StageStatus::Done => ('━', PHOSPHOR_GREEN),
+        let (glyph, color) = match status {
+            StageStatus::Done | StageStatus::Skipped => ('━', PHOSPHOR_GREEN),
             StageStatus::Running => ('━', if pulse { WHITE } else { PHOSPHOR_GREEN }),
-            StageStatus::Skipped => ('━', PHOSPHOR_DIM),
             StageStatus::Failed => ('━', DANGER_RED),
             StageStatus::Blocked => ('━', WHITE),
             StageStatus::Queued => ('─', PHOSPHOR_DARK),
@@ -1084,42 +1134,111 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-fn labels_line(view: &LaunchView, frozen: bool) -> Line<'static> {
+#[derive(Clone, Copy)]
+struct LabelCell {
+    ch: char,
+    style: Style,
+}
+
+fn labels_line(view: &LaunchView, frozen: bool, width: usize) -> Line<'static> {
+    if width == 0 || view.stages.is_empty() {
+        return Line::from(String::new());
+    }
+
     let active = active_stage_index(view);
     let bright = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
-    let active_failed = view.stages[active].status == StageStatus::Failed;
-    let active_style = if active_failed {
-        Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD)
-    } else if bright {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    let display_statuses = display_stage_statuses(view);
+    let (strip, centers) = label_strip(view, active, bright, &display_statuses);
+    let active_center = centers.get(active).copied().unwrap_or(0);
+    let center = if frozen {
+        active_center
     } else {
-        Style::default()
-            .fg(PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD)
+        animated_label_center(view, &centers).unwrap_or(active_center)
     };
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    // Just-completed stage to the left (dim), focal stage in the middle
-    // (bright), queued stage to the right (dark): the operator reads where
-    // they came from, where they are, and where they are going.
-    if active > 0 {
-        spans.push(Span::styled(
-            view.stages[active - 1].stage.label().to_string(),
-            Style::default().fg(PHOSPHOR_DIM),
-        ));
-        spans.push(Span::raw("    "));
+    let start = center as isize - (width / 2) as isize;
+    let cells = (0..width).map(|x| {
+        let index = start + x as isize;
+        if index >= 0 {
+            strip
+                .get(index as usize)
+                .copied()
+                .unwrap_or_else(blank_label_cell)
+        } else {
+            blank_label_cell()
+        }
+    });
+    Line::from(coalesce_cells(cells.map(|cell| (cell.ch, cell.style))))
+}
+
+fn label_strip(
+    view: &LaunchView,
+    active: usize,
+    bright: bool,
+    display_statuses: &[StageStatus],
+) -> (Vec<LabelCell>, Vec<usize>) {
+    let mut cells = Vec::new();
+    let mut centers = Vec::with_capacity(view.stages.len());
+    for (index, row) in view.stages.iter().enumerate() {
+        if index > 0 {
+            cells.extend((0..LABEL_GAP).map(|_| blank_label_cell()));
+        }
+        let start = cells.len();
+        let style = label_style_for_stage(
+            display_statuses
+                .get(index)
+                .copied()
+                .unwrap_or(StageStatus::Queued),
+            index == active,
+            bright,
+        );
+        let label = row.stage.label();
+        cells.extend(label.chars().map(|ch| LabelCell { ch, style }));
+        centers.push(start + label.chars().count() / 2);
     }
-    spans.push(Span::styled(
-        view.stages[active].stage.label().to_string(),
-        active_style,
-    ));
-    if active + 1 < view.stages.len() {
-        spans.push(Span::raw("    "));
-        spans.push(Span::styled(
-            view.stages[active + 1].stage.label().to_string(),
-            Style::default().fg(PHOSPHOR_DARK),
-        ));
+    (cells, centers)
+}
+
+fn label_style_for_stage(status: StageStatus, active: bool, bright: bool) -> Style {
+    if active {
+        return match status {
+            StageStatus::Failed => Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
+            _ if bright => Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            _ => Style::default()
+                .fg(PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        };
     }
-    Line::from(spans)
+
+    match status {
+        StageStatus::Done | StageStatus::Skipped => Style::default().fg(PHOSPHOR_DIM),
+        StageStatus::Failed => Style::default().fg(DANGER_RED),
+        StageStatus::Running | StageStatus::Blocked => Style::default().fg(PHOSPHOR_GREEN),
+        StageStatus::Queued => Style::default().fg(PHOSPHOR_DARK),
+    }
+}
+
+fn blank_label_cell() -> LabelCell {
+    LabelCell {
+        ch: ' ',
+        style: Style::default(),
+    }
+}
+
+fn animated_label_center(view: &LaunchView, centers: &[usize]) -> Option<usize> {
+    let transition = view.label_transition?;
+    if transition.from == transition.to {
+        return None;
+    }
+    let from = *centers.get(transition.from)?;
+    let to = *centers.get(transition.to)?;
+    let elapsed = view.frame.saturating_sub(transition.start_frame);
+    if elapsed >= LABEL_SLIDE_FRAMES {
+        return None;
+    }
+    let progress = elapsed as f32 / LABEL_SLIDE_FRAMES as f32;
+    let eased = 1.0 - (1.0 - progress).powi(3);
+    let center = (from as f32).mul_add(1.0 - eased, to as f32 * eased);
+    Some(center.round() as usize)
 }
 
 /// The status-bar activity text: the current step with an upper-cased first
@@ -1140,20 +1259,30 @@ fn format_activity(status: &str) -> String {
 }
 
 fn active_stage_index(view: &LaunchView) -> usize {
-    view.stages
+    if let Some(failed) = view
+        .stages
         .iter()
         .position(|row| row.status == StageStatus::Failed)
-        .or_else(|| {
-            view.stages
-                .iter()
-                .position(|row| row.status == StageStatus::Running)
-        })
-        .or_else(|| {
-            view.stages
-                .iter()
-                .rposition(|row| matches!(row.status, StageStatus::Done | StageStatus::Skipped))
-        })
-        .unwrap_or(0)
+    {
+        return failed;
+    }
+
+    let first_incomplete = view
+        .stages
+        .iter()
+        .position(|row| !matches!(row.status, StageStatus::Done | StageStatus::Skipped));
+    let Some(frontier) = first_incomplete else {
+        return view.stages.len().saturating_sub(1);
+    };
+    if view.stages[frontier].status == StageStatus::Running {
+        return frontier;
+    }
+
+    view.stages
+        .iter()
+        .position(|row| row.status == StageStatus::Running)
+        .filter(|running| *running < frontier)
+        .unwrap_or_else(|| frontier.saturating_sub(1))
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {
@@ -1826,13 +1955,163 @@ mod tests {
             view.stages[active_stage_index(&view)].stage,
             LaunchStage::DerivedImage
         );
-        let labels = labels_line(&view, true);
+        let labels = labels_line(&view, true, 80);
         let failed = labels
             .spans
             .iter()
             .find(|span| span.content == "derived image")
             .expect("failed stage label should be visible");
         assert_eq!(failed.style.fg, Some(DANGER_RED));
+    }
+
+    #[test]
+    fn progress_display_masks_out_of_order_completed_stages() {
+        let mut view = initial_view();
+        update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
+        update_stage(
+            &mut view,
+            LaunchStage::Role,
+            StageStatus::Running,
+            "resolving role",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::Workspace,
+            StageStatus::Done,
+            "materialized early",
+        );
+
+        let statuses = display_stage_statuses(&view);
+        assert_eq!(statuses[0], StageStatus::Done);
+        assert_eq!(statuses[1], StageStatus::Running);
+        assert!(
+            statuses[2..]
+                .iter()
+                .all(|status| *status == StageStatus::Queued),
+            "later out-of-order completions must not punch green holes in the progress rail: {statuses:?}"
+        );
+    }
+
+    #[test]
+    fn progress_display_fills_every_prior_stage_sequentially() {
+        let mut view = initial_view();
+        update_stage(
+            &mut view,
+            LaunchStage::Identity,
+            StageStatus::Skipped,
+            "already known",
+        );
+        update_stage(&mut view, LaunchStage::Role, StageStatus::Done, "trusted");
+        update_stage(
+            &mut view,
+            LaunchStage::Credentials,
+            StageStatus::Done,
+            "resolved",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::Construct,
+            StageStatus::Done,
+            "online",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::DerivedImage,
+            StageStatus::Running,
+            "building",
+        );
+
+        let statuses = display_stage_statuses(&view);
+        assert_eq!(
+            &statuses[..5],
+            &[
+                StageStatus::Done,
+                StageStatus::Done,
+                StageStatus::Done,
+                StageStatus::Done,
+                StageStatus::Running,
+            ]
+        );
+    }
+
+    #[test]
+    fn active_stage_uses_the_sequential_frontier() {
+        let mut view = initial_view();
+        update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
+        update_stage(
+            &mut view,
+            LaunchStage::Workspace,
+            StageStatus::Running,
+            "polling workspace",
+        );
+
+        assert_eq!(
+            view.stages[active_stage_index(&view)].stage,
+            LaunchStage::Identity
+        );
+    }
+
+    #[test]
+    fn stage_label_transition_slides_between_centers() {
+        let mut view = initial_view();
+        update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
+        update_stage(
+            &mut view,
+            LaunchStage::Role,
+            StageStatus::Running,
+            "resolving role",
+        );
+
+        let transition = view
+            .label_transition
+            .expect("active stage change should start a label slide");
+        assert_eq!(transition.from, 0);
+        assert_eq!(transition.to, 1);
+
+        view.frame = transition.start_frame + LABEL_SLIDE_FRAMES / 2;
+        let active = active_stage_index(&view);
+        let display_statuses = display_stage_statuses(&view);
+        let (_, centers) = label_strip(&view, active, false, &display_statuses);
+        let center = animated_label_center(&view, &centers).unwrap();
+        assert!(center > centers[0], "label viewport should move right");
+        assert!(
+            center < centers[1],
+            "label viewport should not snap to the target"
+        );
+    }
+
+    #[test]
+    fn stage_label_line_stays_near_the_progress_rail() {
+        let mut view = initial_view();
+        update_stage(&mut view, LaunchStage::Identity, StageStatus::Done, "ready");
+        update_stage(&mut view, LaunchStage::Role, StageStatus::Done, "trusted");
+        update_stage(
+            &mut view,
+            LaunchStage::Credentials,
+            StageStatus::Done,
+            "resolved",
+        );
+        update_stage(
+            &mut view,
+            LaunchStage::Construct,
+            StageStatus::Running,
+            "online",
+        );
+
+        let labels = labels_line(&view, true, LABEL_VIEW_WIDTH);
+        let rendered = labels
+            .spans
+            .iter()
+            .map(|span| &*span.content)
+            .collect::<String>();
+        assert_eq!(rendered.chars().count(), LABEL_VIEW_WIDTH);
+        assert!(rendered.contains("construct"), "{rendered:?}");
+        assert!(rendered.contains("credentials"), "{rendered:?}");
+        assert!(rendered.contains("derived image"), "{rendered:?}");
+        assert!(
+            !rendered.contains("identity"),
+            "far labels should stay outside the clipped label viewport: {rendered:?}"
+        );
     }
 
     #[test]
@@ -1897,6 +2176,7 @@ mod tests {
             build_log_open: true,
             build_log_scroll: 0,
             build_log_hover: false,
+            label_transition: None,
             failure_copy_hover: None,
             failure_copied: None,
         };
@@ -1954,6 +2234,7 @@ mod tests {
             build_log_open: false,
             build_log_scroll: 0,
             build_log_hover: false,
+            label_transition: None,
             failure_copy_hover: None,
             failure_copied: None,
         };
