@@ -41,7 +41,7 @@ fn rich_prelaunch_choice(title: &str, items: Vec<String>) -> anyhow::Result<usiz
     let run = crate::diagnostics::active_run()
         .ok_or_else(|| anyhow::anyhow!("launch choice requires an active diagnostics run"))?;
     runtime::progress::prelaunch_select_choice(
-        run,
+        &run,
         std::env::var_os("JACKIN_NO_MOTION").is_some(),
         title,
         items,
@@ -117,16 +117,14 @@ pub async fn run(cli: Cli) -> Result<()> {
                             &name,
                             &config,
                             &cwd,
-                            |title, items| rich_prelaunch_choice(title, items),
+                            rich_prelaunch_choice,
                         )?,
                     },
                 };
                 (class, input)
             } else {
                 // No selector — resolve role from workspace context
-                resolve_agent_from_context_with_choice(&config, &cwd, |title, items| {
-                    rich_prelaunch_choice(title, items)
-                })?
+                resolve_agent_from_context_with_choice(&config, &cwd, rich_prelaunch_choice)?
             };
 
             let saved_workspace_name = if let LoadWorkspaceInput::Saved(ref name) = workspace_input

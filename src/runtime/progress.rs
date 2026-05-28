@@ -572,7 +572,7 @@ impl LaunchProgress {
 }
 
 pub fn prelaunch_select_choice(
-    diagnostics: Arc<RunDiagnostics>,
+    diagnostics: &Arc<RunDiagnostics>,
     no_motion: bool,
     title: &str,
     items: Vec<String>,
@@ -2344,7 +2344,7 @@ mod tests {
         assert!(rendered.contains("Trust role source"), "{rendered}");
         assert!(rendered.contains("acme/agent-jones"), "{rendered}");
         assert!(rendered.contains("jackin-agent-jones"), "{rendered}");
-        assert!(rendered.contains("Y"), "{rendered}");
+        assert!(rendered.contains('Y'), "{rendered}");
     }
 
     #[test]

@@ -487,12 +487,15 @@ fn seed_all_agent_stubs(home: &Path) {
     seed_agent_stub(
         home,
         "codex",
-        r#"if [ "${1:-}" = "--version" ]; then
+        concat!(
+            r#"if [ "$"#,
+            r#"{1:-}" = "--version" ]; then
   echo "codex 0.0.0-e2e"
   exit 0
 fi
 jackin-sentinel-report
 "#,
+        ),
     );
 }
 

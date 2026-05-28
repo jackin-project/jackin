@@ -1663,7 +1663,7 @@ async fn load_role_with(
                 .map(|a| a.slug().to_string())
                 .collect();
             if let Some(progress) = steps.progress_mut() {
-                let selection = progress.select_choice("Choose launch agent", labels.clone())?;
+                let selection = progress.select_choice("Choose launch agent", labels)?;
                 supported_agents[selection]
             } else {
                 anyhow::bail!(
@@ -2098,11 +2098,7 @@ async fn load_role_with(
         )?;
         seed_codex_project_trust(&state, workspace)?;
 
-        if agent == crate::agent::Agent::Codex {
-            if let Some(run) = crate::diagnostics::active_run() {
-                run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
-            }
-        } else {
+        if agent != crate::agent::Agent::Codex {
             let _expiry_days = workspace_name
                 .as_deref()
                 .filter(|_| auth_mode == crate::config::AuthForwardMode::OAuthToken)
@@ -2122,9 +2118,9 @@ async fn load_role_with(
                         }
                     }
                 });
-            if let Some(run) = crate::diagnostics::active_run() {
-                run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
-            }
+        }
+        if let Some(run) = crate::diagnostics::active_run() {
+            run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
         }
 
         // GitHub auth summary line — agent-neutral. The breadcrumb walks

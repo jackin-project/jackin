@@ -14,6 +14,13 @@ use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use crate::runtime::attach::JACKIN_STATUS_CMD;
+use crossterm::ExecutableCommand as _;
+use crossterm::event::{Event, KeyCode, KeyEventKind};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,61 +122,6 @@ fn rich_cleanup_prompt(
     worktree_path: &str,
     reason: PreservedReason,
 ) -> anyhow::Result<Option<usize>> {
-    use crossterm::ExecutableCommand as _;
-    use crossterm::event::{Event, KeyCode, KeyEventKind};
-    use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-    use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-    use ratatui::style::{Modifier, Style};
-    use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-
-    struct CleanupPromptGuard {
-        owns_screen: bool,
-        owns_raw: bool,
-        previous_rich: bool,
-    }
-
-    impl CleanupPromptGuard {
-        fn enter() -> anyhow::Result<Self> {
-            let owns_screen = !crate::tui::host_screen_owned();
-            let owns_raw = owns_screen;
-            let previous_rich = crate::tui::rich_surface_active();
-            let mut stdout = std::io::stdout();
-            if owns_raw {
-                crossterm::terminal::enable_raw_mode()?;
-            }
-            if owns_screen {
-                crate::tui::begin_debug_buffering();
-                stdout.execute(EnterAlternateScreen)?;
-            }
-            stdout.execute(crossterm::cursor::Hide)?;
-            crate::tui::set_rich_surface_active(true);
-            Ok(Self {
-                owns_screen,
-                owns_raw,
-                previous_rich,
-            })
-        }
-    }
-
-    impl Drop for CleanupPromptGuard {
-        fn drop(&mut self) {
-            use crossterm::ExecutableCommand as _;
-            let mut stdout = std::io::stdout();
-            let _ = stdout.execute(crossterm::cursor::Show);
-            if self.owns_screen {
-                let _ = stdout.execute(LeaveAlternateScreen);
-            }
-            if self.owns_raw {
-                let _ = crossterm::terminal::disable_raw_mode();
-            }
-            if self.owns_screen {
-                crate::tui::end_debug_buffering();
-            }
-            crate::tui::set_rich_surface_active(self.previous_rich);
-        }
-    }
-
     let _guard = CleanupPromptGuard::enter()?;
     let mut stdout = std::io::stdout();
     let backend = ratatui::backend::CrosstermBackend::new(&mut stdout);
@@ -212,131 +164,177 @@ fn rich_cleanup_prompt(
             }
         }
     }
+}
 
-    fn render_cleanup_prompt_frame(
-        frame: &mut ratatui::Frame<'_>,
-        area: Rect,
-        container: &str,
-        worktree_path: &str,
-        reason: PreservedReason,
-        options: &[&str; 3],
-        selected: usize,
-    ) {
-        let bg = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
-        let buf = frame.buffer_mut();
-        for y in area.top()..area.bottom() {
-            for x in area.left()..area.right() {
-                buf[(x, y)].set_style(bg);
-                buf[(x, y)].set_symbol(" ");
-            }
+struct CleanupPromptGuard {
+    owns_screen: bool,
+    owns_raw: bool,
+    previous_rich: bool,
+}
+
+impl CleanupPromptGuard {
+    fn enter() -> anyhow::Result<Self> {
+        let owns_screen = !crate::tui::host_screen_owned();
+        let owns_raw = owns_screen;
+        let previous_rich = crate::tui::rich_surface_active();
+        let mut stdout = std::io::stdout();
+        if owns_raw {
+            crossterm::terminal::enable_raw_mode()?;
         }
+        if owns_screen {
+            crate::tui::begin_debug_buffering();
+            stdout.execute(EnterAlternateScreen)?;
+        }
+        stdout.execute(crossterm::cursor::Hide)?;
+        crate::tui::set_rich_surface_active(true);
+        Ok(Self {
+            owns_screen,
+            owns_raw,
+            previous_rich,
+        })
+    }
+}
 
-        let header = Rect {
-            x: area.x,
-            y: area.y,
-            width: area.width,
-            height: area.height.min(2),
-        };
-        let brand = Line::from(vec![
-            Span::styled(
-                " jackin' ",
-                Style::default()
-                    .fg(crate::console::widgets::WHITE)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                " cleanup ",
-                Style::default().fg(crate::console::widgets::PHOSPHOR_GREEN),
-            ),
-        ]);
-        frame.render_widget(Paragraph::new(brand).alignment(Alignment::Center), header);
+impl Drop for CleanupPromptGuard {
+    fn drop(&mut self) {
+        let mut stdout = std::io::stdout();
+        let _ = stdout.execute(crossterm::cursor::Show);
+        if self.owns_screen {
+            let _ = stdout.execute(LeaveAlternateScreen);
+        }
+        if self.owns_raw {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
+        if self.owns_screen {
+            crate::tui::end_debug_buffering();
+        }
+        crate::tui::set_rich_surface_active(self.previous_rich);
+    }
+}
 
-        let dialog = centered_rect(86, 17, area);
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(crate::console::widgets::PHOSPHOR_DARK))
-            .title(Span::styled(
-                " Isolated Worktree ",
-                Style::default()
-                    .fg(crate::console::widgets::WHITE)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        let inner = block.inner(dialog);
-        frame.render_widget(block, dialog);
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(6),
-                Constraint::Length(1),
-                Constraint::Length(4),
-                Constraint::Min(1),
-            ])
-            .split(inner);
-        let reason_line = match reason {
-            PreservedReason::Dirty => "has uncommitted changes",
-            PreservedReason::Unpushed => "has unpushed commits on a local branch",
-        };
-        let summary = Paragraph::new(vec![
-            Line::from(Span::styled(
-                format!("Container {container} {reason_line}."),
-                Style::default()
-                    .fg(crate::console::widgets::WHITE)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                worktree_path.to_string(),
-                Style::default().fg(crate::console::widgets::LINK_BLUE),
-            )),
-        ])
-        .wrap(Wrap { trim: false });
-        frame.render_widget(summary, rows[0]);
-
-        let prompt = Paragraph::new("Choose how jackin' should handle this worktree.")
-            .style(Style::default().fg(crate::console::widgets::PHOSPHOR_DIM));
-        frame.render_widget(prompt, rows[1]);
-
-        let option_lines: Vec<Line<'static>> = options
-            .iter()
-            .enumerate()
-            .map(|(idx, option)| {
-                let style = if idx == selected {
-                    Style::default()
-                        .fg(crate::console::widgets::PHOSPHOR_GREEN)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(crate::console::widgets::WHITE)
-                };
-                let marker = if idx == selected { "\u{25b8}" } else { " " };
-                Line::from(Span::styled(
-                    format!("{marker} [{}] {option}", idx + 1),
-                    style,
-                ))
-            })
-            .collect();
-        frame.render_widget(Paragraph::new(option_lines), rows[2]);
-
-        let hints = Paragraph::new("↑/↓ navigate · 1/2/3 choose · Enter select")
-            .style(Style::default().fg(crate::console::widgets::PHOSPHOR_DIM))
-            .alignment(Alignment::Center);
-        let hint_row = Rect {
-            x: area.x,
-            y: area.bottom().saturating_sub(1),
-            width: area.width,
-            height: 1,
-        };
-        frame.render_widget(hints, hint_row);
+fn render_cleanup_prompt_frame(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    container: &str,
+    worktree_path: &str,
+    reason: PreservedReason,
+    options: &[&str; 3],
+    selected: usize,
+) {
+    let bg = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
+    let buf = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            buf[(x, y)].set_style(bg);
+            buf[(x, y)].set_symbol(" ");
+        }
     }
 
-    fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
-        let w = width.min(area.width.saturating_sub(2));
-        let h = height.min(area.height.saturating_sub(2));
-        Rect {
-            x: area.x + area.width.saturating_sub(w) / 2,
-            y: area.y + area.height.saturating_sub(h) / 2,
-            width: w,
-            height: h,
-        }
+    let header = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height.min(2),
+    };
+    let brand = Line::from(vec![
+        Span::styled(
+            " jackin' ",
+            Style::default()
+                .fg(crate::console::widgets::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " cleanup ",
+            Style::default().fg(crate::console::widgets::PHOSPHOR_GREEN),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(brand).alignment(Alignment::Center), header);
+
+    let dialog = centered_rect(86, 17, area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(crate::console::widgets::PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Isolated Worktree ",
+            Style::default()
+                .fg(crate::console::widgets::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(dialog);
+    frame.render_widget(block, dialog);
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(6),
+            Constraint::Length(1),
+            Constraint::Length(4),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+    let reason_line = match reason {
+        PreservedReason::Dirty => "has uncommitted changes",
+        PreservedReason::Unpushed => "has unpushed commits on a local branch",
+    };
+    let summary = Paragraph::new(vec![
+        Line::from(Span::styled(
+            format!("Container {container} {reason_line}."),
+            Style::default()
+                .fg(crate::console::widgets::WHITE)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            worktree_path.to_string(),
+            Style::default().fg(crate::console::widgets::LINK_BLUE),
+        )),
+    ])
+    .wrap(Wrap { trim: false });
+    frame.render_widget(summary, rows[0]);
+
+    let prompt = Paragraph::new("Choose how jackin' should handle this worktree.")
+        .style(Style::default().fg(crate::console::widgets::PHOSPHOR_DIM));
+    frame.render_widget(prompt, rows[1]);
+
+    let option_lines: Vec<Line<'static>> = options
+        .iter()
+        .enumerate()
+        .map(|(idx, option)| {
+            let style = if idx == selected {
+                Style::default()
+                    .fg(crate::console::widgets::PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(crate::console::widgets::WHITE)
+            };
+            let marker = if idx == selected { "\u{25b8}" } else { " " };
+            Line::from(Span::styled(
+                format!("{marker} [{}] {option}", idx + 1),
+                style,
+            ))
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(option_lines), rows[2]);
+
+    let hints = Paragraph::new("↑/↓ navigate · 1/2/3 choose · Enter select")
+        .style(Style::default().fg(crate::console::widgets::PHOSPHOR_DIM))
+        .alignment(Alignment::Center);
+    let hint_row = Rect {
+        x: area.x,
+        y: area.bottom().saturating_sub(1),
+        width: area.width,
+        height: 1,
+    };
+    frame.render_widget(hints, hint_row);
+}
+
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let w = width.min(area.width.saturating_sub(2));
+    let h = height.min(area.height.saturating_sub(2));
+    Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w,
+        height: h,
     }
 }
 
