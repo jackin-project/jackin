@@ -119,6 +119,37 @@ pub fn apply_delta_u16(
 }
 
 #[must_use]
+pub const fn max_offset_u16(content_len: usize, viewport_len: usize) -> u16 {
+    let max = max_offset(content_len, viewport_len);
+    if max > u16::MAX as usize {
+        u16::MAX
+    } else {
+        max as u16
+    }
+}
+
+#[must_use]
+pub const fn effective_offset_u16(content_len: usize, viewport_len: usize, offset: u16) -> u16 {
+    let max = max_offset_u16(content_len, viewport_len);
+    if offset > max { max } else { offset }
+}
+
+pub const fn clamp_offset_u16(content_len: usize, viewport_len: usize, offset: &mut u16) -> u16 {
+    let effective = effective_offset_u16(content_len, viewport_len, *offset);
+    *offset = effective;
+    effective
+}
+
+/// No upper clamp: render paths that know viewport/content clamp later.
+pub const fn apply_delta_unclamped_u16(offset: &mut u16, delta: i16) {
+    *offset = if delta.is_negative() {
+        offset.saturating_sub(delta.unsigned_abs())
+    } else {
+        offset.saturating_add(delta as u16)
+    };
+}
+
+#[must_use]
 pub fn offset_for_track_position(
     content_len: usize,
     viewport_len: usize,
@@ -242,6 +273,21 @@ mod tests {
     fn delta_starts_from_clamped_offset() {
         assert_eq!(offset_after_delta(12, 5, 99, -1), 6);
         assert_eq!(offset_after_delta(12, 5, 99, 1), 7);
+    }
+
+    #[test]
+    fn u16_offset_helpers_clamp_and_move() {
+        assert_eq!(max_offset_u16(12, 5), 7);
+        assert_eq!(effective_offset_u16(12, 5, 99), 7);
+        let mut clamped = 99;
+        assert_eq!(clamp_offset_u16(12, 5, &mut clamped), 7);
+        assert_eq!(clamped, 7);
+
+        let mut loose = 40;
+        apply_delta_unclamped_u16(&mut loose, -8);
+        assert_eq!(loose, 32);
+        apply_delta_unclamped_u16(&mut loose, 10);
+        assert_eq!(loose, 42);
     }
 
     #[test]

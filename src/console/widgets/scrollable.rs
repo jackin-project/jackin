@@ -21,12 +21,7 @@ pub(crate) const fn viewport_height(area: Rect) -> usize {
 }
 
 pub(crate) const fn max_offset(content_len: usize, viewport: usize) -> u16 {
-    let max = scroll::max_offset(content_len, viewport);
-    if max > u16::MAX as usize {
-        u16::MAX
-    } else {
-        max as u16
-    }
+    scroll::max_offset_u16(content_len, viewport)
 }
 
 pub(crate) const fn is_scrollable(content_len: usize, viewport: usize) -> bool {
@@ -34,8 +29,7 @@ pub(crate) const fn is_scrollable(content_len: usize, viewport: usize) -> bool {
 }
 
 pub(crate) const fn effective_offset(content_len: usize, viewport: usize, offset: u16) -> u16 {
-    let max = max_offset(content_len, viewport);
-    if offset > max { max } else { offset }
+    scroll::effective_offset_u16(content_len, viewport, offset)
 }
 
 pub(crate) const fn clamp_scroll_offset(
@@ -43,9 +37,7 @@ pub(crate) const fn clamp_scroll_offset(
     viewport: usize,
     offset: &mut u16,
 ) -> u16 {
-    let effective = effective_offset(content_len, viewport, *offset);
-    *offset = effective;
-    effective
+    scroll::clamp_offset_u16(content_len, viewport, offset)
 }
 
 pub(crate) fn cursor_follow_offset(
@@ -96,11 +88,7 @@ pub(crate) fn scrollbar_offset_for_track_position(
 
 // No upper clamp: every caller's render path calls effective_offset, which clamps.
 pub(crate) const fn apply_scroll_delta_unclamped(value: &mut u16, delta: i16) {
-    *value = if delta.is_negative() {
-        value.saturating_sub(delta.unsigned_abs())
-    } else {
-        value.saturating_add(delta as u16)
-    };
+    scroll::apply_delta_unclamped_u16(value, delta);
 }
 
 pub(crate) fn apply_scroll_delta(value: &mut u16, delta: i16, viewport: usize, content_len: usize) {
