@@ -79,7 +79,9 @@ impl Provider {
     /// hostile peer naming a provider this build does not know).
     #[must_use]
     pub fn from_label(label: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|provider| provider.label() == label)
+        Self::ALL
+            .into_iter()
+            .find(|provider| provider.label() == label)
     }
 
     /// Env overrides that redirect the agent to this provider. Anthropic
@@ -157,7 +159,7 @@ mod provider_tests {
 
     #[test]
     fn label_round_trips_through_from_label() {
-        for provider in [Provider::Anthropic, Provider::Zai] {
+        for provider in Provider::ALL {
             assert_eq!(Provider::from_label(provider.label()), Some(provider));
         }
         assert_eq!(Provider::from_label("Gemini"), None);
