@@ -9,6 +9,7 @@
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use fs2::FileExt as _;
 use jackin::derived_image::shell_quote;
@@ -345,10 +346,27 @@ fn run_in_pty_with_input(
         .spawn()
         .expect("script must spawn");
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
-    std::thread::sleep(std::time::Duration::from_secs(2));
-    stdin
-        .write_all(input.as_bytes())
-        .expect("script stdin write must succeed");
+    let deadline = Instant::now() + Duration::from_mins(2);
+    std::thread::sleep(Duration::from_secs(2));
+    loop {
+        if child
+            .try_wait()
+            .expect("script status probe must succeed")
+            .is_some()
+        {
+            break;
+        }
+        if stdin.write_all(input.as_bytes()).is_err() {
+            break;
+        }
+        if stdin.flush().is_err() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(5));
+    }
     drop(stdin);
     child.wait_with_output().expect("script must finish")
 }
