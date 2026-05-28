@@ -174,15 +174,17 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     });
 
     let target = format!("{}:/workspace", workspace_dir.display());
-    let args = ["load", SENTINEL_ROLE_KEY, &target, "--agent", "codex"];
+    let args = ["load", SENTINEL_ROLE_KEY, &target];
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
     let report_path = workspace_dir.join("jackin-sentinel-report.txt");
+    let input = scripted_sentinel_launch_input();
     let output = run_in_pty_until_file(
         &jackin,
         &args,
         &home,
         &workspace_dir,
         &extra_env,
+        input,
         PtyFileSentinel {
             path: &report_path,
             text: "JACKIN_SENTINEL_REPORT_END",
@@ -198,6 +200,11 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
             report_path.display()
         )
     });
+    assert_sentinel_report(&report, &stdout, &stderr);
+    assert_sentinel_build_output_routed_to_log(&home, &stdout, &stderr);
+}
+
+fn assert_sentinel_report(report: &str, stdout: &str, stderr: &str) {
     assert!(
         report.contains("JACKIN_SENTINEL_REPORT_BEGIN"),
         "sentinel report missing begin marker\nreport:\n{report}\nstdout:\n{stdout}\nstderr:\n{stderr}"
@@ -225,23 +232,46 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
         report.contains("COMBINED_LABEL=frontend-typed-default"),
         "{report}"
     );
-    assert!(
-        report.contains("OPTIONAL_API_KEY=optional-from-config"),
-        "{report}"
-    );
-    assert!(
-        report.contains("OPTIONAL_DERIVED=derived-from-config"),
-        "{report}"
-    );
+    assert!(!report.contains("OPTIONAL_API_KEY="), "{report}");
+    assert!(!report.contains("OPTIONAL_DERIVED="), "{report}");
     assert!(report.contains("JACKIN_SENTINEL_SOURCE_HOOK=1"), "{report}");
     assert!(
         report.contains("JACKIN_SENTINEL_PREFLIGHT_COUNT=1"),
         "{report}"
     );
+}
+
+fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &str, stderr: &str) {
     assert!(
         !stdout.contains("jackin-sentinel build layer")
             && !stderr.contains("jackin-sentinel build layer"),
         "Docker build output leaked onto the rich screen\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("Choose launch agent")
+            && stdout.contains("Sentinel free text:")
+            && stdout.contains("Required sentinel value:")
+            && stdout.contains("Select sentinel mode:")
+            && stdout.contains("Select sentinel project:"),
+        "PTY transcript should prove the rich launch dialogs rendered\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let build_log = latest_docker_build_log(home).unwrap_or_else(|| {
+        panic!(
+            "expected docker build log artifact under diagnostics\n{}",
+            diagnostics_snapshot(home)
+        )
+    });
+    let build_log_contents = std::fs::read_to_string(&build_log).unwrap_or_else(|error| {
+        panic!(
+            "failed to read docker build log {}: {error}",
+            build_log.display()
+        )
+    });
+    assert!(
+        build_log_contents.contains("jackin-sentinel build layer"),
+        "Docker build output should be captured in the build log artifact {}\n{}",
+        build_log.display(),
+        build_log_contents
     );
 }
 
@@ -400,6 +430,7 @@ fn run_in_pty_until_file(
     home: &Path,
     cwd: &Path,
     extra_env: &[(&str, &str)],
+    input: &str,
     sentinel: PtyFileSentinel<'_>,
 ) -> std::process::Output {
     let mut child = pty_command(jackin, args, home, cwd, extra_env, false)
@@ -408,9 +439,17 @@ fn run_in_pty_until_file(
         .stderr(Stdio::piped())
         .spawn()
         .expect("script must spawn");
-    let _stdin = child.stdin.take().expect("script stdin must be piped");
+    let mut stdin = child.stdin.take().expect("script stdin must be piped");
     let stdout = child.stdout.take().expect("script stdout must be piped");
     let stderr = child.stderr.take().expect("script stderr must be piped");
+    let input = input.as_bytes().to_vec();
+    let stdin_writer = std::thread::spawn(move || {
+        if input.is_empty() {
+            return;
+        }
+        std::thread::sleep(Duration::from_secs(2));
+        let _ = stdin.write_all(&input);
+    });
     let stdout_reader = std::thread::spawn(move || {
         let mut stdout = stdout;
         let mut bytes = Vec::new();
@@ -435,6 +474,7 @@ fn run_in_pty_until_file(
         {
             let _ = child.kill();
             let status = child.wait().expect("script must finish");
+            stdin_writer.join().expect("stdin writer must finish");
             return std::process::Output {
                 status,
                 stdout: stdout_reader.join().expect("stdout reader must finish"),
@@ -453,6 +493,7 @@ fn run_in_pty_until_file(
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr),
             );
+            stdin_writer.join().expect("stdin writer must finish");
             return output;
         }
         std::thread::sleep(Duration::from_millis(500));
@@ -465,6 +506,7 @@ fn run_in_pty_until_file(
         stdout: stdout_reader.join().expect("stdout reader must finish"),
         stderr: stderr_reader.join().expect("stderr reader must finish"),
     };
+    stdin_writer.join().expect("stdin writer must finish");
     let diagnostics = diagnostics_snapshot(home);
     panic!(
         "timed out waiting for sentinel file {}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
@@ -480,6 +522,21 @@ struct PtyFileSentinel<'a> {
     path: &'a Path,
     text: &'a str,
     timeout: Duration,
+}
+
+const fn scripted_sentinel_launch_input() -> &'static str {
+    // Choose codex from the multi-agent picker, then answer the manifest env
+    // prompts in deterministic topological order:
+    // FREE_TEXT, FREE_TEXT_REQUIRED, OPTIONAL_API_KEY, SELECT_MODE,
+    // SELECT_PROJECT, BRANCH, COMBINED_LABEL.
+    "\x1b[B\r\
+     \r\
+     required-value\r\
+     \r\
+     \r\
+     \r\
+     \r\
+     \r"
 }
 
 fn diagnostics_snapshot(home: &Path) -> String {
@@ -525,6 +582,28 @@ fn diagnostics_snapshot(home: &Path) -> String {
         append_tail_lines(&mut out, &contents);
     }
     out
+}
+
+fn latest_docker_build_log(home: &Path) -> Option<std::path::PathBuf> {
+    let dir = home.join(".jackin/data/diagnostics/runs");
+    let mut files = std::fs::read_dir(&dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".docker-build.log"))
+        })
+        .filter_map(|path| {
+            std::fs::metadata(&path)
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .map(|modified| (modified, path))
+        })
+        .collect::<Vec<_>>();
+    files.sort_by_key(|(modified, _)| *modified);
+    files.pop().map(|(_, path)| path)
 }
 
 fn append_tail_lines(out: &mut String, contents: &str) {
@@ -674,16 +753,6 @@ fn write_sentinel_config(path: &Path, role_source: &Path) {
 [roles."{SENTINEL_ROLE_KEY}"]
 git = "{}"
 trusted = true
-
-[roles."{SENTINEL_ROLE_KEY}".env]
-FREE_TEXT = "typed-default"
-FREE_TEXT_REQUIRED = "required-value"
-SELECT_PROJECT = "frontend"
-SELECT_MODE = "diagnostic"
-BRANCH = "feature/frontend"
-COMBINED_LABEL = "frontend-typed-default"
-OPTIONAL_API_KEY = "optional-from-config"
-OPTIONAL_DERIVED = "derived-from-config"
 "#,
             role_source.display()
         ),
