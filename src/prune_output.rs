@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn complete_propagates_errors_after_finalizing_row() {
         let row = PendingRow { finalized: false };
-        let result: Result<(), &str> = row.complete(Err("boom"), |error| error.to_string());
+        let result: Result<(), &str> = row.complete(Err("boom"), ToString::to_string);
 
         assert_eq!(result, Err("boom"));
     }
