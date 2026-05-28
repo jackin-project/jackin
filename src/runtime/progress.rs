@@ -1093,18 +1093,16 @@ fn display_stage_statuses(view: &LaunchView) -> Vec<StageStatus> {
     view.stages
         .iter()
         .enumerate()
-        .map(|(index, row)| {
-            if index < active {
+        .map(|(index, row)| match index.cmp(&active) {
+            std::cmp::Ordering::Less => {
                 if row.status == StageStatus::Failed {
                     StageStatus::Failed
                 } else {
                     StageStatus::Done
                 }
-            } else if index == active {
-                row.status
-            } else {
-                StageStatus::Queued
             }
+            std::cmp::Ordering::Equal => row.status,
+            std::cmp::Ordering::Greater => StageStatus::Queued,
         })
         .collect()
 }
@@ -1122,9 +1120,8 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
         // Thin horizontal segments (a slim progress bar), not tall full
         // blocks: heavy `━` for reached/active stages, light `─` for queued.
         let (glyph, color) = match status {
-            StageStatus::Done => ('━', PHOSPHOR_GREEN),
+            StageStatus::Done | StageStatus::Skipped => ('━', PHOSPHOR_GREEN),
             StageStatus::Running => ('━', if pulse { WHITE } else { PHOSPHOR_GREEN }),
-            StageStatus::Skipped => ('━', PHOSPHOR_GREEN),
             StageStatus::Failed => ('━', DANGER_RED),
             StageStatus::Blocked => ('━', WHITE),
             StageStatus::Queued => ('─', PHOSPHOR_DARK),
