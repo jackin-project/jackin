@@ -170,6 +170,26 @@ pub fn offset_for_track_position(
 }
 
 #[must_use]
+pub fn offset_for_track_position_u16(
+    content_len: usize,
+    viewport_len: usize,
+    track_cells: usize,
+    track_position: usize,
+) -> u16 {
+    if !is_scrollable(content_len, viewport_len) || track_cells == 0 {
+        return 0;
+    }
+
+    offset_for_track_position(
+        content_len,
+        viewport_len,
+        track_cells.min(usize::from(u16::MAX)) as u16,
+        track_position,
+    )
+    .min(usize::from(u16::MAX)) as u16
+}
+
+#[must_use]
 pub fn cursor_follow_offset(
     cursor: usize,
     content_len: usize,
@@ -312,6 +332,7 @@ mod tests {
     fn full_cell_thumb_moves_on_midpoint_drag_mapping() {
         let mid = offset_for_track_position(20, 5, 10, 5);
         assert!(mid > 0 && mid < 15);
+        assert_eq!(offset_for_track_position_u16(20, 5, 10, 5), mid as u16);
     }
 
     #[test]

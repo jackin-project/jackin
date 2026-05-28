@@ -73,17 +73,7 @@ pub(crate) fn scrollbar_offset_for_track_position(
     track_len: usize,
     track_position: usize,
 ) -> u16 {
-    if !is_scrollable(content_length, viewport) || track_len == 0 {
-        return 0;
-    }
-
-    scroll::offset_for_track_position(
-        content_length,
-        viewport,
-        track_len.min(usize::from(u16::MAX)) as u16,
-        track_position,
-    )
-    .min(usize::from(u16::MAX)) as u16
+    scroll::offset_for_track_position_u16(content_length, viewport, track_len, track_position)
 }
 
 // No upper clamp: every caller's render path calls effective_offset, which clamps.
