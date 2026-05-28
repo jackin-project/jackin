@@ -137,17 +137,7 @@ pub(super) fn render_list_body(
         render_role_picker_sidebar(frame, list_area, title, picker);
     } else {
         let list_lines = list_name_lines(state, super::scroll_viewport_width(list_area));
-
-        let mut scroll_y = 0u16;
-        super::render_scrollable_block(
-            frame,
-            list_area,
-            list_lines,
-            &mut state.list_names_scroll_x,
-            &mut scroll_y,
-            state.list_names_focused,
-            None,
-        );
+        render_list_names_block(frame, list_area, list_lines, state);
     }
 }
 
@@ -269,6 +259,58 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
     }
 
     lines
+}
+
+fn render_list_names_block(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    state: &mut ManagerState<'_>,
+) {
+    let content_width = super::max_line_width(&lines);
+    let content_height = lines.len();
+    let viewport_w = super::scroll_viewport_width(area);
+    let viewport_h = super::scroll_viewport_height(area);
+    let scrollable = super::is_scrollable(content_width, viewport_w);
+    let border_color = if state.list_names_focused && scrollable {
+        PHOSPHOR_GREEN
+    } else {
+        PHOSPHOR_DARK
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    super::clamp_scroll_x(content_width, viewport_w, &mut state.list_names_scroll_x);
+    let visible_rows = usize::from(inner.height).min(content_height);
+    for (row_idx, line) in lines.into_iter().take(visible_rows).enumerate() {
+        render_list_name_line(
+            frame,
+            inner,
+            row_idx as u16,
+            line,
+            usize::from(state.list_names_scroll_x),
+        );
+    }
+    if scrollable {
+        super::render_horizontal_scrollbar(frame, area, content_width, state.list_names_scroll_x);
+    }
+    if super::is_scrollable(content_height, viewport_h) {
+        super::render_vertical_scrollbar(frame, area, content_height, 0);
+    }
+}
+
+fn render_list_name_line(
+    frame: &mut Frame,
+    area: Rect,
+    row: u16,
+    line: Line<'static>,
+    scroll_x: usize,
+) {
+    const PREFIX_COLS: usize = 3;
+    super::render_line_with_fixed_prefix_scroll(frame, area, row, line, PREFIX_COLS, scroll_x);
 }
 
 /// Workspace / sentinel row. Shows `▶`/`▼` disclosure arrow only when the
@@ -1589,9 +1631,11 @@ fn render_agents_subpanel_scrollable(
 
 #[cfg(test)]
 mod list_name_scroll_tests {
-    use super::{list_names_content_width, render_list_body};
+    use super::{
+        PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, list_names_content_width, render_list_body,
+    };
     use crate::config::AppConfig;
-    use crate::console::manager::state::ManagerState;
+    use crate::console::manager::state::{ManagerListRow, ManagerState};
     use crate::console::widgets::scrollable::max_offset;
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
@@ -1645,6 +1689,71 @@ mod list_name_scroll_tests {
             .unwrap();
 
         assert_eq!(state.list_names_scroll_x, 14);
+    }
+
+    #[test]
+    fn list_name_horizontal_scroll_keeps_selected_prefix_visible() {
+        let config = config_with_long_workspace_name();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 1;
+        state.list_names_scroll_x = 8;
+        state.list_names_focused = true;
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 70, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(1, 2)].symbol(), "▸");
+        assert_eq!(buffer[(1, 2)].bg, PHOSPHOR_GREEN);
+        assert_eq!(buffer[(2, 2)].bg, PHOSPHOR_GREEN);
+        assert_eq!(buffer[(3, 2)].bg, PHOSPHOR_GREEN);
+        for x in 1..20 {
+            assert_eq!(buffer[(x, 2)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
+    }
+
+    #[test]
+    fn list_name_horizontal_scroll_keeps_hover_background_full_width() {
+        let config = config_with_long_workspace_name();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 0;
+        state.hovered_list_row = Some(ManagerListRow::SavedWorkspace(0));
+        state.list_names_scroll_x = 8;
+        state.list_names_focused = true;
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 70, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        for x in 1..20 {
+            assert_eq!(buffer[(x, 2)].bg, TAB_BG_INACTIVE_HOVER, "x={x}");
+        }
     }
 }
 

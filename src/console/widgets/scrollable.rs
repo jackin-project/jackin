@@ -128,6 +128,38 @@ pub(crate) fn line_width(line: &Line<'_>) -> usize {
         .sum()
 }
 
+pub(crate) fn render_line_with_fixed_prefix_scroll(
+    frame: &mut Frame,
+    area: Rect,
+    row: u16,
+    line: Line<'static>,
+    fixed_prefix_cols: usize,
+    scroll_x: usize,
+) {
+    let mut cells: Vec<(char, Style)> = Vec::new();
+    for span in line.spans {
+        let style = line.style.patch(span.style);
+        for ch in span.content.chars() {
+            cells.push((ch, style));
+        }
+    }
+
+    let width = usize::from(area.width);
+    let prefix_cols = fixed_prefix_cols.min(width);
+    let suffix_cols = width.saturating_sub(prefix_cols);
+    let iter = cells.iter().take(prefix_cols).chain(
+        cells
+            .iter()
+            .skip(fixed_prefix_cols + scroll_x)
+            .take(suffix_cols),
+    );
+    for (col, (ch, style)) in iter.enumerate() {
+        frame
+            .buffer_mut()
+            .set_string(area.x + col as u16, area.y + row, ch.to_string(), *style);
+    }
+}
+
 // Trailing padding mirrors leading spaces so indented content scrolls
 // symmetrically — without it the rightmost indent column is unreachable.
 fn leading_space_count(line: &Line<'_>) -> usize {
@@ -387,12 +419,12 @@ pub(crate) fn render_scrollable_block(
 mod tests {
     use super::{
         apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset,
-        cursor_follow_offset, render_scrollable_block, render_selected_lines_in_area,
-        render_vertical_scrollbar_in_area, scrollbar_offset_for_track_position,
-        scrollbar_thumb_geometry,
+        cursor_follow_offset, render_line_with_fixed_prefix_scroll, render_scrollable_block,
+        render_selected_lines_in_area, render_vertical_scrollbar_in_area,
+        scrollbar_offset_for_track_position, scrollbar_thumb_geometry,
     };
-    use crate::console::widgets::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK};
-    use ratatui::{Terminal, backend::TestBackend, layout::Rect, text::Line};
+    use crate::console::widgets::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_GREEN};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Style, text::Line};
 
     #[test]
     fn scrollbar_thumb_length_is_offset_invariant() {
@@ -476,6 +508,27 @@ mod tests {
         apply_scroll_delta_unclamped(&mut scroll_x, -8);
 
         assert_eq!(scroll_x, 32);
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_keeps_prefix_and_background_visible() {
+        let backend = TestBackend::new(8, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let style = Style::default().bg(PHOSPHOR_GREEN);
+        let line = Line::styled("▸  abcdef  ", style);
+
+        terminal
+            .draw(|frame| {
+                render_line_with_fixed_prefix_scroll(frame, Rect::new(0, 0, 8, 1), 0, line, 3, 2);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "▸");
+        assert_eq!(buffer[(3, 0)].symbol(), "c");
+        for x in 0..8 {
+            assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
     }
 
     #[test]

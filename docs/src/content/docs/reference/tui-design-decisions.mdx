@@ -248,13 +248,15 @@ It must **not** be cleared by `reset_list_scroll`. Workspace selection changes k
 
 ## Mouse Scroll (Hover-Scroll)
 
-Mouse `ScrollLeft`/`ScrollRight` scroll whichever block the cursor is currently over **without requiring a prior click**. This is hover-scroll semantics, not click-then-scroll.
+Mouse `ScrollLeft`/`ScrollRight` and `ScrollUp`/`ScrollDown` scroll whichever block the cursor is currently over **without requiring a prior click**. This is hover-scroll semantics, not click-then-scroll.
 
 In `scroll_active_panel`, dispatch order for the list stage:
 1. If `list_names_focused` → scroll `list_names_scroll_x` (left pane).
 2. Otherwise → compute `list_scroll_areas`, route to the block under the pointer.
 
-The left pane scroll uses the shared `jackin_tui::scroll` clamping path after each wheel/key mutation, then `render_scrollable_block` clamps defensively again on every frame.
+Every wheel path must resolve the target from the pointer position immediately before applying the delta. Stale focus state must never decide where a wheel event goes: when independently scrollable blocks share a screen, a wheel over one block must not scroll another block or no-op because a prior click or focus belonged elsewhere.
+
+The left pane scroll uses the shared `jackin_tui::scroll` clamping path after each wheel/key mutation, then the renderer clamps defensively again on every frame.
 
 ---
 
@@ -284,10 +286,11 @@ The canonical RGB values live in the `jackin-tui` crate palette (<RepoFile path=
 ## Left Sidebar (Workspace Name List)
 
 - Horizontal scroll only — no vertical scroll.
-- Uses `render_scrollable_block` with `scroll_y = 0u16` (a throwaway variable; vertical scrollbar never appears because line count always fits the list height).
+- Uses the shared fixed-prefix line renderer (`render_line_with_fixed_prefix_scroll`) so the disclosure/cursor prefix stays visible while only the workspace label scrolls.
 - H/L keys and `ScrollLeft`/`ScrollRight` both update `state.list_names_scroll_x`.
 - Focus set on click via `update_scroll_focus`; persists until user clicks the right pane.
 - Focus cleared by `clamp_list_scroll_for_area` when content width ≤ viewport (content fits horizontally).
+- Selected and hovered rows must paint their background across the full visible row after horizontal scroll. Do not let generic line scrolling clip the highlighted prefix or leave unpainted cells inside the row.
 
 ---
 

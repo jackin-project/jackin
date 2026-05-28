@@ -28,7 +28,8 @@ pub(in crate::console::manager) use crate::console::widgets::scrollable::{
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
 pub(super) use crate::console::widgets::scrollable::{
-    line_width, max_line_width, render_scrollable_block,
+    line_width, max_line_width, render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll,
+    render_scrollable_block, render_vertical_scrollbar,
 };
 pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER,

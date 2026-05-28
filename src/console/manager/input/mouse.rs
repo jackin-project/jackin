@@ -1103,6 +1103,7 @@ fn scroll_active_panel_vertical(
             }
         }
         ManagerStage::List => {
+            update_scroll_focus(state, mouse, term_size, config);
             // Scroll the focused block vertically.
             match state.list_scroll_focus {
                 Some(MountScrollFocus::Workspace) => {
@@ -1442,7 +1443,9 @@ mod mouse_drag_tests {
     //! These build `MouseEvent` values directly and bypass the ratatui
     //! event loop — enough to pin the seam hit-test + drag math without a
     //! real terminal.
-    use super::{MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config};
+    use super::{
+        MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config, list_scroll_areas,
+    };
     use crate::console::manager::state::{
         DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, MAX_SPLIT_PCT, MIN_SPLIT_PCT,
         ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag,
@@ -2205,6 +2208,38 @@ mod mouse_drag_tests {
         );
 
         assert_eq!(state.list_global_mounts_scroll_x, 0);
+    }
+
+    #[test]
+    fn vertical_mouse_wheel_routes_to_block_under_pointer_not_stale_focus() {
+        let mut config = config_with_scrollable_workspace_and_global_mounts();
+        for idx in 0..6 {
+            config.add_mount(
+                &format!("global-extra-{idx}"),
+                MountConfig {
+                    src: format!("/host/source/extra/{idx}"),
+                    dst: format!("/container/destination/extra/{idx}"),
+                    readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+                None,
+            );
+        }
+        let mut state = selected_demo_state(&config);
+        state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+
+        let areas = list_scroll_areas(&state, term(100), Some(&config)).expect("list areas");
+        let mouse = mouse_kind_at(
+            MouseEventKind::ScrollDown,
+            areas.global.area.x + 1,
+            areas.global.area.y + 1,
+        );
+
+        handle_mouse_with_config(&mut state, mouse, term(100), Some(&config));
+
+        assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Global));
+        assert_eq!(state.list_mounts_scroll_y, 0);
+        assert_eq!(state.list_global_mounts_scroll_y, 1);
     }
 
     #[test]
