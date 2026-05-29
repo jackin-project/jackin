@@ -305,6 +305,10 @@ body {
   width: 100%;
 }
 
+.jk-sidebar-footer .jk-social-link {
+  margin-inline-end: -0.125rem;
+}
+
 .jk-theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -1264,50 +1268,73 @@ header.header {
    Earlier attempts using .tablist-wrapper::after rendered the grey line
    at the wrapper's visible width only — when tabs overflowed and user
    scrolled, the rightmost tabs ended up past the line. */
+.sl-markdown-content [data-orientation='horizontal']:has(> [role='tablist']) {
+  border: 0;
+  background: color-mix(in srgb, var(--jk-brand) 5%, var(--jk-panel));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-brand) 14%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme='light'] .sl-markdown-content [data-orientation='horizontal']:has(> [role='tablist']) {
+  background: color-mix(in srgb, var(--jk-brand) 7%, var(--jk-bg));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-brand) 18%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 12px 26px color-mix(in srgb, var(--jk-brand) 9%, transparent);
+}
+
 .sl-markdown-content [role='tablist'] {
-  border-bottom: 2px solid rgba(255, 255, 255, 0.14);
+  gap: 0.35rem;
+  border-bottom: 0;
+  padding-block: 0.5rem;
 }
 
 :root[data-theme='light'] .sl-markdown-content [role='tablist'] {
-  border-bottom-color: rgba(0, 0, 0, 0.16);
+  border-bottom-color: transparent;
 }
 
 .sl-markdown-content .tab > [role='tab'] {
   --sl-tab-color-border: transparent;
   color: var(--jk-text-dim);
-  transition: color 0.15s;
+  transition: color 0.15s, background-color 0.15s, box-shadow 0.15s;
   /* Single-line labels; long labels scroll horizontally via
      .tablist-wrapper rather than wrapping and creating a staircase
      underline. */
   white-space: nowrap;
-  padding: 0.65rem 1rem;
+  padding: 0.45rem 0.85rem;
   font-size: 0.875rem;
   position: relative;
+  border-radius: 7px;
   border-bottom: 0;
   box-shadow: none;
 }
 
 .sl-markdown-content .tab > [role='tab']:hover {
   color: var(--jk-text);
+  background: color-mix(in srgb, var(--jk-brand) 8%, transparent);
 }
 
 .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
-  color: var(--jk-text);
+  color: var(--sl-color-text-invert);
+  background: var(--jk-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    0 1px 1px rgba(0, 0, 0, 0.04);
   font-weight: 600;
+}
+
+:root[data-theme='light'] .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
+  color: #ffffff;
 }
 
 /* Green indicator overlaps the tablist's border-bottom exactly — tab
    bottom sits at tablist content-box bottom; ::after at bottom: -2px
    reaches into the border-bottom area. z-index paints green over grey. */
 .sl-markdown-content .tab > [role='tab'][aria-selected='true']::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -2px;
-  height: 2px;
-  background: var(--jk-brand);
-  z-index: 1;
+  display: none;
 }
 
 /* ==========================================================================
