@@ -1,6 +1,6 @@
 {
   "title": "Roadmap",
-  "defaultOpen": true,
+  "defaultOpen": false,
   "pages": [
     "index",
     "(agent-orchestrator-research)",
