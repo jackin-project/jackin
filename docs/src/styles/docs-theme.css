@@ -1138,6 +1138,11 @@ html.theme-init *::after {
   padding-inline-end: 0.375rem !important;
 }
 
+#nd-sidebar [class~='p-4'] {
+  padding-inline-start: 0.5rem !important;
+  padding-inline-end: 0.5rem !important;
+}
+
 #nd-sidebar a[data-active],
 #nd-sidebar button[data-state] {
   color: var(--jk-text-dim);
