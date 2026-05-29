@@ -1656,6 +1656,16 @@ site-search dialog {
    Pagination cards
    ========================================================================== */
 
+@media (min-width: 640px) {
+  .pagination-links:has(> a:only-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pagination-links > a:only-child.text-end {
+    grid-column-start: 2;
+  }
+}
+
 .pagination-links a {
   /* 2px --jk-ui-strong — visible at equal weight in both themes. The
      earlier 1px --jk-ui read fine in dark but near-invisible in light
