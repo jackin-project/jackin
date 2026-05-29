@@ -1,0 +1,33 @@
+{
+  "title": "Agent Orchestrator Research",
+  "defaultOpen": false,
+  "pages": [
+    "../agent-orchestrator-research",
+    "../orca-research",
+    "../workspace-description",
+    "../operator-handler-system",
+    "../declarative-resource-limits",
+    "../ephemeral-mount-modes",
+    "../agent-runtime-status",
+    "../launch-progress-tui",
+    "../console-agent-session-control",
+    "../console-resource-panel",
+    "../agent-tag-protocol",
+    "../github-link-tracking",
+    "../public-attribution-and-growth",
+    "../custom-operator-tools",
+    "../persistent-storage-layer",
+    "../token-cost-telemetry",
+    "../task-source-abstraction",
+    "../agent-workflow-orchestration",
+    "../autonomous-task-queue",
+    "../idle-runtime-cleanup",
+    "../jackin-remote",
+    "../credential-source-pattern",
+    "../workspace-skills-mount",
+    "../session-contract-explain-mode",
+    "../stack-integration-contracts",
+    "../network-egress-policy",
+    "../session-snapshot-rollback"
+  ]
+}

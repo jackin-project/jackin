@@ -1,0 +1,13 @@
+{
+  "title": "Reactive daemon program",
+  "defaultOpen": false,
+  "pages": [
+    "../jackin-daemon",
+    "../jackin-capsule",
+    "../jackin-desktop-agent-hub",
+    "../live-auth-sync",
+    "../agent-attention-prompts",
+    "../host-bridge",
+    "../container-credential-exposure"
+  ]
+}

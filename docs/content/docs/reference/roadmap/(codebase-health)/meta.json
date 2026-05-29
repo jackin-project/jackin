@@ -1,0 +1,24 @@
+{
+  "title": "Codebase health",
+  "defaultOpen": false,
+  "pages": [
+    "../codebase-readability",
+    "../module-contracts",
+    "../behavioral-spec-runtime-launch",
+    "../behavioral-spec-op-picker",
+    "../per-directory-readme",
+    "../developer-reference-setup",
+    "../ci-project-structure-gate",
+    "../pub-crate-visibility",
+    "../architecture-decision-records",
+    "../snapshot-tests-tui",
+    "../agent-workflow-cc-sdd",
+    "../move-contributing-testing",
+    "../split-input-editor",
+    "../split-app-mod",
+    "../split-operator-env",
+    "../split-runtime-launch",
+    "../cargo-workspace-split",
+    "../rustdoc-json-fumadocs"
+  ]
+}

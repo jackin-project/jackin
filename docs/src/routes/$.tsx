@@ -21,6 +21,17 @@ import {
 } from 'fumadocs-ui/layouts/docs/page'
 import { Suspense } from 'react'
 
+type PageFooterItem = {
+  name: string
+  description?: string
+  url: string
+}
+
+type PageFooterItems = {
+  previous?: PageFooterItem
+  next?: PageFooterItem
+}
+
 export const Route = createFileRoute('/$')({
   component: Page,
   loader: async ({ params }) => {
@@ -39,8 +50,20 @@ const serverLoader = createServerFn({
   .middleware([staticFunctionMiddleware])
   .handler(async ({ data: slugs }) => {
     const { source } = await import('@/lib/source')
+    const { findNeighbour } = await import('fumadocs-core/page-tree')
     const page = source.getPage(slugs)
     if (!page) throw notFound()
+
+    const footerItems = findNeighbour(source.getPageTree(), page.url, { separateRoot: false })
+    const serializeFooterItem = (item: typeof footerItems.previous): PageFooterItem | undefined => {
+      if (!item) return undefined
+
+      return {
+        name: typeof item.name === 'string' ? item.name : String(item.name),
+        description: typeof item.description === 'string' ? item.description : undefined,
+        url: item.url,
+      }
+    }
 
     const slug = page.slugs.join('/')
     const sectionSegment = page.slugs[0]
@@ -51,6 +74,10 @@ const serverLoader = createServerFn({
     return {
       path: page.path,
       markdownUrl: slugsToMarkdownPath(page.slugs).url,
+      footerItems: {
+        previous: serializeFooterItem(footerItems.previous),
+        next: serializeFooterItem(footerItems.next),
+      },
       pageTree: await source.serializePageTree(source.getPageTree()),
       seo: pageSeo({
         title: page.data.title,
@@ -67,14 +94,16 @@ const clientLoader = browserCollections.docs.createClientLoader({
     { toc, frontmatter, default: MDX },
     {
       markdownUrl,
+      footerItems,
       path,
     }: {
       markdownUrl: string
+      footerItems: PageFooterItems
       path: string
     },
   ) {
     return (
-      <DocsPage toc={toc}>
+      <DocsPage toc={toc} footer={{ items: footerItems, className: 'jk-page-footer' }}>
         <DocsTitle className="jk-page-title">{frontmatter.title}</DocsTitle>
         <DocsDescription className="jk-page-description">{frontmatter.description}</DocsDescription>
         <div className="jk-page-actions">
@@ -93,7 +122,7 @@ const clientLoader = browserCollections.docs.createClientLoader({
 })
 
 function Page() {
-  const { pageTree, path, markdownUrl } = useFumadocsLoader(Route.useLoaderData())
+  const { pageTree, path, markdownUrl, footerItems } = useFumadocsLoader(Route.useLoaderData())
 
   return (
     <DocsLayout
@@ -110,7 +139,7 @@ function Page() {
       }}
     >
       <Link to={markdownUrl} hidden />
-      <Suspense>{clientLoader.useContent(path, { markdownUrl, path })}</Suspense>
+      <Suspense>{clientLoader.useContent(path, { markdownUrl, footerItems, path })}</Suspense>
     </DocsLayout>
   )
 }
