@@ -1132,7 +1132,7 @@ html.theme-init *::after {
 }
 
 #nd-sidebar > * {
-  width: calc(100% - 0.875rem) !important;
+  width: calc(100% - 0.75rem) !important;
   max-width: none !important;
 }
 
@@ -1167,23 +1167,19 @@ html.theme-init *::after {
   margin-top: 1rem !important;
 }
 
-#nd-sidebar :is(a, button, p)[style*='calc(2 * var(--spacing))'],
-#nd-sidebar :is(a, button, p)[style*='calc(var(--spacing) * 2)'] {
+#nd-sidebar :is(a, button, p)[style*='calc(2 * var(--spacing))'] {
   padding-inline-start: 0.375rem !important;
 }
 
-#nd-sidebar :is(a, button, p)[style*='calc(5 * var(--spacing))'],
-#nd-sidebar :is(a, button, p)[style*='calc(var(--spacing) * 5)'] {
+#nd-sidebar :is(a, button, p)[style*='calc(5 * var(--spacing))'] {
   padding-inline-start: 0.95rem !important;
 }
 
-#nd-sidebar :is(a, button, p)[style*='calc(8 * var(--spacing))'],
-#nd-sidebar :is(a, button, p)[style*='calc(var(--spacing) * 8)'] {
+#nd-sidebar :is(a, button, p)[style*='calc(8 * var(--spacing))'] {
   padding-inline-start: 1.5rem !important;
 }
 
-#nd-sidebar :is(a, button, p)[style*='calc(11 * var(--spacing))'],
-#nd-sidebar :is(a, button, p)[style*='calc(var(--spacing) * 11)'] {
+#nd-sidebar :is(a, button, p)[style*='calc(11 * var(--spacing))'] {
   padding-inline-start: 2.05rem !important;
 }
 
