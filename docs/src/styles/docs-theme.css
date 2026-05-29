@@ -27,7 +27,7 @@
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 
   /* Layout dimensions — keep navigation compact so documentation owns the page. */
-  --sl-sidebar-width: 15.5rem;
+  --sl-sidebar-width: 14rem;
   --sl-content-width: 56rem;
   --sl-nav-height: 3.5rem;
 
@@ -68,7 +68,7 @@
   --color-fd-border: var(--jk-ui);
   --color-fd-ring: var(--jk-accent);
   --fd-layout-width: 96rem;
-  --fd-sidebar-width: 15.5rem;
+  --fd-sidebar-width: 14rem;
 }
 
 /* ==========================================================================
@@ -912,11 +912,11 @@ html.theme-init *::after {
 
 @media (min-width: 768px) {
   #nd-docs-layout {
-    --fd-sidebar-width: 15.5rem !important;
+    --fd-sidebar-width: 14rem !important;
   }
 
   [data-sidebar-placeholder] {
-    --fd-sidebar-width: 15.5rem !important;
+    --fd-sidebar-width: 14rem !important;
   }
 
   #nd-page {
@@ -943,6 +943,15 @@ html.theme-init *::after {
   #nd-docs-layout[data-sidebar-collapsed='true'] {
     --fd-layout-width: 105rem;
   }
+}
+
+#nd-sidebar > div:first-child,
+#nd-sidebar > div:last-child {
+  padding-inline: 0.75rem !important;
+}
+
+#nd-sidebar [data-radix-scroll-area-viewport] {
+  padding-inline: 0.75rem !important;
 }
 
 #nd-sidebar a[data-active],
