@@ -52,10 +52,8 @@ pub(super) async fn prepare_runtime_binaries(
             .context("preparing jackin-capsule binary")
     };
 
-    let (agent_results, jackin_capsule_binary) =
+    let (agent_binaries, jackin_capsule_binary) =
         tokio::try_join!(try_join_all(agent_futures), capsule_future)?;
-
-    let agent_binaries: Vec<(crate::agent::Agent, std::path::PathBuf)> = agent_results;
 
     let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
         anyhow::anyhow!(

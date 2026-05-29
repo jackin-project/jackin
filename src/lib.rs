@@ -16,6 +16,7 @@ pub mod host_claude;
 pub mod instance;
 pub mod isolation;
 pub mod manifest;
+pub mod net;
 pub mod operator_env;
 pub mod paths;
 pub(crate) mod prune_output;

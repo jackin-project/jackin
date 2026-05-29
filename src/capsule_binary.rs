@@ -23,16 +23,6 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use fast_down::{
-    Event, Proxy,
-    fast_puller::{FastDownPuller, FastDownPullerOptions, build_client as build_http_client},
-    file::MmapFilePusher,
-    http::Prefetch,
-    multi::{self, download_multi},
-};
-use reqwest::header::HeaderMap;
-use std::sync::Arc;
-use std::time::Duration;
 
 use crate::paths::JackinPaths;
 
@@ -195,7 +185,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // Fetch the expected SHA-256 and download the archive concurrently.
     let (expected_sha_result, download_result) = tokio::join!(
         fetch_remote_sha256(&sha_url),
-        download_file_parallel(&url, &tmp_archive),
+        crate::net::download_parallel(&url, &tmp_archive),
     );
 
     let expected_sha = expected_sha_result
@@ -218,7 +208,6 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
 
     // Verify the published SHA-256. The CI pipeline emits `<asset>.sha256`
     // alongside every archive; a mismatch means a tampered or partial release.
-    let expected_sha = expected_sha;
     // Hashing a multi-MB archive parks the tokio worker; run it on the
     // blocking pool so concurrent launch / TUI tasks keep progressing.
     let archive_for_hash = tmp_archive.clone();
@@ -285,92 +274,11 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     Ok(())
 }
 
-/// Download `url` to `dest` using fast-down parallel chunks (work-stealing +
-/// mmap writes). All GitHub release CDN endpoints support Range requests.
-async fn download_file_parallel(url: &str, dest: &Path) -> Result<()> {
-    let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid URL {url}"))?;
-    let headers = HeaderMap::new();
-    let client = build_http_client(&headers, Proxy::System, false, false, None)
-        .context("building HTTP client")?;
-    let (info, _resp) = client
-        .prefetch(parsed)
-        .await
-        .map_err(|(err, _)| anyhow::anyhow!("prefetch {url}: {err:?}"))?;
-    anyhow::ensure!(
-        info.fast_download,
-        "server at {url} does not support Range requests; cannot download"
-    );
-    if let Some(parent) = dest.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    let file = tokio::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .read(true)
-        .truncate(true)
-        .open(dest)
-        .await
-        .with_context(|| format!("creating {}", dest.display()))?;
-    let puller = FastDownPuller::new(FastDownPullerOptions {
-        url: info.final_url,
-        headers: Arc::new(headers),
-        proxy: Proxy::System,
-        accept_invalid_certs: false,
-        accept_invalid_hostnames: false,
-        file_id: info.file_id,
-        resp: None,
-        available_ips: Arc::from([]),
-    })
-    .context("building parallel downloader")?;
-    let pusher = MmapFilePusher::new(file, info.size, false)
-        .await
-        .context("creating memory-mapped file writer")?;
-    let result = download_multi(
-        puller,
-        pusher,
-        multi::DownloadOptions {
-            download_chunks: std::iter::once(0..info.size),
-            concurrent: 8,
-            retry_gap: Duration::from_millis(500),
-            push_queue_cap: 1024,
-            pull_timeout: Duration::from_secs(30),
-            min_chunk_size: 8 * 1024 * 1024,
-            max_speculative: 3,
-        },
-    );
-    while let Ok(event) = result.event_chain.recv().await {
-        match event {
-            Event::PullError(id, err) => {
-                crate::debug_log!("capsule_binary", "worker {id} pull error: {err:?}");
-            }
-            Event::PushError(_, _, err) | Event::FlushError(err) => {
-                crate::debug_log!("capsule_binary", "write error: {err}");
-            }
-            _ => {}
-        }
-    }
-    result
-        .join()
-        .await
-        .map_err(|e| anyhow::anyhow!("download task panicked for {url}: {e}"))
-}
-
 /// Fetch the published SHA-256 hex string for a release asset. The CI
 /// workflow emits the file as one line of lowercase hex (no filename
 /// suffix) so trim + lowercase is enough.
 async fn fetch_remote_sha256(url: &str) -> Result<String> {
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("GET {url}"))?;
-    let status = resp.status();
-    anyhow::ensure!(status.is_success(), "{url} failed: HTTP {status}");
-    let text = resp
-        .text()
-        .await
-        .context("sha256 manifest body is not UTF-8")?;
+    let text = crate::net::fetch_text(url).await?;
     let hex = text.split_whitespace().next().unwrap_or("").to_lowercase();
     if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
         anyhow::bail!(

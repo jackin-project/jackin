@@ -1,20 +1,12 @@
 use crate::agent::Agent;
 use crate::paths::JackinPaths;
 use anyhow::{Context, Result};
-use fast_down::{
-    Event, Proxy,
-    fast_puller::{FastDownPuller, FastDownPullerOptions, build_client as build_http_client},
-    file::MmapFilePusher,
-    http::Prefetch,
-    multi::{self, download_multi},
-};
 use flate2::read::GzDecoder;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 
 const CACHE_TTL: std::time::Duration = std::time::Duration::from_hours(1);
@@ -61,58 +53,12 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         });
     }
 
-    // Check release metadata cache (TTL: 1hr) before hitting the network.
+    // Metadata cache hit (TTL: 1hr): skip the network resolve. Absence of the
+    // preceding `agent_binary_resolve_started` record is what marks this path
+    // in the diagnostics run.
     if let Some(cached_release) = read_cached_release(paths, agent) {
         let cached = cached_binary_path(paths, &cached_release);
-        if is_valid_cached_binary(&cached) {
-            record(
-                "agent_binary_cache_hit",
-                &format!(
-                    "{} {} at {} (metadata cached)",
-                    agent.slug(),
-                    cached_release.version,
-                    cached.display()
-                ),
-            );
-            return Ok(AgentBinary { agent, path: cached });
-        }
-        // Metadata cached but binary missing — fall through to download using cached release.
-        record(
-            "agent_binary_download_started",
-            &format!(
-                "{} {} from {} to {} (metadata cached, binary missing)",
-                agent.slug(),
-                cached_release.version,
-                cached_release.url,
-                cached.display()
-            ),
-        );
-        download_and_cache(&cached_release, &cached)
-            .await
-            .with_context(|| {
-                format!(
-                    "downloading {} {} from {}",
-                    agent.slug(),
-                    cached_release.version,
-                    cached_release.url
-                )
-            })
-            .inspect_err(|error| {
-                record(
-                    "agent_binary_failed",
-                    &format!("{} download failed: {error:#}", agent.slug()),
-                );
-            })?;
-        record(
-            "agent_binary_ready",
-            &format!(
-                "{} {} at {}",
-                agent.slug(),
-                cached_release.version,
-                cached.display()
-            ),
-        );
-        return Ok(AgentBinary { agent, path: cached });
+        return ensure_binary_for_release(agent, &cached_release, &cached).await;
     }
 
     record(
@@ -135,7 +81,18 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     let _ = write_cached_release(paths, &release);
     let _ = write_version_release(paths, &release);
     let cached = cached_binary_path(paths, &release);
-    if is_valid_cached_binary(&cached) {
+    ensure_binary_for_release(agent, &release, &cached).await
+}
+
+/// Return the cached binary if present, otherwise download `release` to
+/// `cached` and return it. Shared by the metadata-cache-hit and post-resolve
+/// paths so both emit the same breadcrumbs and run the same download sequence.
+async fn ensure_binary_for_release(
+    agent: Agent,
+    release: &AgentRelease,
+    cached: &Path,
+) -> Result<AgentBinary> {
+    if is_valid_cached_binary(cached) {
         record(
             "agent_binary_cache_hit",
             &format!(
@@ -147,7 +104,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         );
         return Ok(AgentBinary {
             agent,
-            path: cached,
+            path: cached.to_path_buf(),
         });
     }
     record(
@@ -160,7 +117,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
             cached.display()
         ),
     );
-    download_and_cache(&release, &cached)
+    download_and_cache(release, cached)
         .await
         .with_context(|| {
             format!(
@@ -187,7 +144,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     );
     Ok(AgentBinary {
         agent,
-        path: cached,
+        path: cached.to_path_buf(),
     })
 }
 
@@ -324,26 +281,9 @@ async fn resolve_opencode() -> Result<AgentRelease> {
     })
 }
 
-fn make_http_client(extra_headers: HeaderMap) -> Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .default_headers(extra_headers)
-        .build()
-        .context("building HTTP client")
-}
-
 async fn fetch_text(url: &str) -> Result<String> {
     record("agent_binary_http_get", url);
-    let client = make_http_client(HeaderMap::new())?;
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("GET {url}"))?;
-    let status = resp.status();
-    anyhow::ensure!(status.is_success(), "{url} failed: HTTP {status}");
-    resp.text()
-        .await
-        .with_context(|| format!("{url} body is not valid UTF-8"))
+    crate::net::fetch_text(url).await
 }
 
 async fn github_auth_token() -> Option<String> {
@@ -369,18 +309,13 @@ async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubRelea
             .context("building Authorization header from gh token")?;
         headers.insert(reqwest::header::AUTHORIZATION, val);
     }
-    let client = make_http_client(headers)?;
+    let client = crate::net::http_client(headers)?;
     let body = retry_with_backoff(3, Duration::from_millis(500), || {
         let c = client.clone();
         let u = api_url.clone();
         async move {
             record("agent_binary_http_get", &u);
-            let resp = c.get(&u).send().await.with_context(|| format!("GET {u}"))?;
-            let status = resp.status();
-            anyhow::ensure!(status.is_success(), "{u} failed: HTTP {status}");
-            resp.text()
-                .await
-                .with_context(|| format!("{u} body is not valid UTF-8"))
+            crate::net::get_text(&c, &u).await
         }
     })
     .await
@@ -460,7 +395,7 @@ async fn download_and_cache_inner(
     tmp_download: &Path,
     tmp_binary: &Path,
 ) -> Result<()> {
-    download_file(&release.url, tmp_download).await?;
+    crate::net::download_parallel(&release.url, tmp_download).await?;
     if let Some(expected) = &release.checksum {
         let actual = hash_file_sha256(tmp_download).await?;
         anyhow::ensure!(
@@ -481,81 +416,6 @@ async fn download_and_cache_inner(
     chmod_executable(tmp_binary)?;
     std::fs::rename(tmp_binary, dest)?;
     Ok(())
-}
-
-async fn download_file(url: &str, dest: &Path) -> Result<()> {
-    // Probe server: detect Range support + file size. Fan out 8 parallel chunks
-    // via fast-down (work-stealing + mmap writes). All CDNs used here support
-    // Range requests; bail fast if one somehow doesn't.
-    let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid URL {url}"))?;
-    let headers = HeaderMap::new();
-    let client =
-        build_http_client(&headers, Proxy::System, false, false, None).context("building HTTP client")?;
-    let (info, _resp) = client
-        .prefetch(parsed)
-        .await
-        .map_err(|(err, _)| anyhow::anyhow!("prefetch {url}: {err:?}"))?;
-    record(
-        "agent_binary_download_info",
-        &format!("{url}: size={}, parallel={}", info.size, info.fast_download),
-    );
-    anyhow::ensure!(
-        info.fast_download,
-        "server at {url} does not support Range requests; cannot download in parallel"
-    );
-    let file = tokio::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .read(true)
-        .truncate(true)
-        .open(dest)
-        .await
-        .with_context(|| format!("creating download destination {}", dest.display()))?;
-    let puller = FastDownPuller::new(FastDownPullerOptions {
-        url: info.final_url,
-        headers: Arc::new(headers),
-        proxy: Proxy::System,
-        accept_invalid_certs: false,
-        accept_invalid_hostnames: false,
-        file_id: info.file_id,
-        resp: None,
-        available_ips: Arc::from([]),
-    })
-    .context("building parallel downloader")?;
-    let pusher = MmapFilePusher::new(file, info.size, false)
-        .await
-        .context("creating memory-mapped file writer")?;
-    let result = download_multi(
-        puller,
-        pusher,
-        multi::DownloadOptions {
-            download_chunks: std::iter::once(0..info.size),
-            concurrent: 8,
-            retry_gap: Duration::from_millis(500),
-            push_queue_cap: 1024,
-            pull_timeout: Duration::from_secs(30),
-            min_chunk_size: 8 * 1024 * 1024,
-            max_speculative: 3,
-        },
-    );
-    while let Ok(event) = result.event_chain.recv().await {
-        match event {
-            Event::PullError(id, err) => {
-                record("download_pull_error", &format!("worker {id}: {err:?}"));
-            }
-            Event::PushError(_, _, err) => {
-                record("download_push_error", &format!("{err}"));
-            }
-            Event::FlushError(err) => {
-                record("download_flush_error", &format!("{err}"));
-            }
-            _ => {}
-        }
-    }
-    result
-        .join()
-        .await
-        .map_err(|e| anyhow::anyhow!("download task panicked for {url}: {e}"))
 }
 
 fn record(kind: &str, message: &str) {
