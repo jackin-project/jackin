@@ -73,8 +73,8 @@ const clientLoader = browserCollections.docs.createClientLoader({
   ) {
     return (
       <DocsPage toc={toc}>
-        <DocsTitle>{frontmatter.title}</DocsTitle>
-        <DocsDescription>{frontmatter.description}</DocsDescription>
+        <DocsTitle className="jk-page-title">{frontmatter.title}</DocsTitle>
+        <DocsDescription className="jk-page-description">{frontmatter.description}</DocsDescription>
         <div className="jk-page-actions">
           <MarkdownCopyButton markdownUrl={markdownUrl} />
           <ViewOptionsPopover

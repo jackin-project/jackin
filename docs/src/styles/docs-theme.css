@@ -305,11 +305,19 @@ body {
   background: var(--jk-bg-deep);
 }
 
+.jk-page-title {
+  margin: 0;
+}
+
+.jk-page-description {
+  margin: 0.875rem 0 0 !important;
+}
+
 .jk-page-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 0.875rem;
   padding-bottom: 1.5rem;
   border-bottom: 1px solid var(--jk-ui);
 }
