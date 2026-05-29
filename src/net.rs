@@ -19,7 +19,7 @@ use fast_down::{
     http::Prefetch,
     multi::{self, download_multi},
 };
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT as USER_AGENT_HEADER};
 
 /// Deadline for a small metadata/API GET (latest version, manifest, `.sha256`).
 const TEXT_GET_TIMEOUT: Duration = Duration::from_secs(30);
@@ -32,9 +32,17 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(5);
 /// Parallel chunk connections per download.
 const DOWNLOAD_CONCURRENCY: usize = 8;
 
+/// `User-Agent` sent on every HTTP request. GitHub's API rejects UA-less
+/// requests at the edge with HTTP 403 ("Request forbidden by administrative
+/// rules") before any auth or rate-limit logic runs — reqwest does not set a
+/// default UA — so leaving this off silently breaks Codex/Opencode release
+/// metadata even when a valid `gh` token is attached.
+pub(crate) const USER_AGENT: &str = concat!("jackin/", env!("JACKIN_VERSION"));
+
 /// Build a reqwest client carrying `headers` as defaults.
 pub fn http_client(headers: HeaderMap) -> Result<reqwest::Client> {
     reqwest::Client::builder()
+        .user_agent(USER_AGENT)
         .default_headers(headers)
         .timeout(TEXT_GET_TIMEOUT)
         .connect_timeout(CONNECT_TIMEOUT)
@@ -81,8 +89,11 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid URL {url}"))?;
     // No auth headers: every download URL is a public CDN asset (GitHub release
     // browser_download_url, Claude/Amp/Kimi CDNs), unlike the rate-limited
-    // GitHub API metadata path that carries a Bearer token.
-    let headers = HeaderMap::new();
+    // GitHub API metadata path that carries a Bearer token. UA is set for the
+    // same reason as the metadata client — bot/WAF rules at some CDNs reject
+    // UA-less clients.
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT_HEADER, HeaderValue::from_static(USER_AGENT));
     let client = build_client(
         &headers,
         proxy,
@@ -176,4 +187,57 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
         anyhow::bail!("download of {url} timed out after {DOWNLOAD_TIMEOUT:?}");
     };
     outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    #[test]
+    fn user_agent_includes_crate_version() {
+        // The bug this guards against: an empty UA causes GitHub's API edge to
+        // 403 ("Request forbidden by administrative rules") before any auth or
+        // rate-limit logic runs. Concrete `jackin/<version>` is easier to
+        // diagnose in remote access logs than a bare `jackin`.
+        assert!(USER_AGENT.starts_with("jackin/"), "got: {USER_AGENT}");
+        let version = USER_AGENT.strip_prefix("jackin/").unwrap();
+        assert!(!version.is_empty(), "version segment empty: {USER_AGENT}");
+    }
+
+    /// Spin up a one-shot HTTP listener, fire a request from `http_client`, and
+    /// confirm `User-Agent` arrived. Guards against reqwest's "no default UA"
+    /// behaviour silently coming back after a refactor.
+    #[tokio::test]
+    async fn http_client_sends_user_agent_header() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 2048];
+            let n = sock.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+            sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                .await
+                .unwrap();
+            sock.shutdown().await.ok();
+            request
+        });
+
+        let client = http_client(HeaderMap::new()).unwrap();
+        let body = get_text(&client, &format!("http://{addr}/")).await.unwrap();
+        assert_eq!(body, "ok");
+
+        let request = server.await.unwrap();
+        let ua_line = request
+            .lines()
+            .find(|line| line.to_ascii_lowercase().starts_with("user-agent:"))
+            .unwrap_or_else(|| panic!("no User-Agent header in request:\n{request}"));
+        assert!(
+            ua_line.contains(USER_AGENT),
+            "User-Agent line {ua_line:?} missing {USER_AGENT:?}"
+        );
+    }
 }
