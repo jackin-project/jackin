@@ -1128,11 +1128,11 @@ html.theme-init *::after {
 }
 
 #nd-sidebar {
-  align-items: stretch !important;
+  align-items: flex-start !important;
 }
 
 #nd-sidebar > * {
-  width: 100% !important;
+  width: calc(100% - 0.875rem) !important;
   max-width: none !important;
 }
 
