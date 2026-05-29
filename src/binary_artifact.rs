@@ -44,6 +44,26 @@ pub fn chmod_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// True if `path` is a regular file with an executable bit set.
+///
+/// Every cached binary is [`chmod_executable`]'d after download, so a cached
+/// file without the bit is corrupt and must be re-fetched. On non-Unix hosts —
+/// which cannot represent the bit — this falls back to a file-exists check,
+/// matching [`chmod_executable`]'s no-op there.
+#[cfg(unix)]
+pub fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt as _;
+    path.is_file()
+        && path
+            .metadata()
+            .is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+pub fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
 /// SHA-256 of a file, returned as lowercase hex.
 ///
 /// Synchronous: a multi-MB read parks the calling thread, so callers on an

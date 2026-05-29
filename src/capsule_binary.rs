@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::binary_artifact::{
-    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256,
+    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
 };
 use crate::paths::JackinPaths;
 
@@ -39,7 +39,7 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
     if let Some(bin_os) = std::env::var_os("JACKIN_CAPSULE_BIN") {
         let path = PathBuf::from(bin_os);
         anyhow::ensure!(
-            is_valid_cached_binary(&path),
+            is_executable_file(&path),
             "JACKIN_CAPSULE_BIN={} does not exist or is not executable",
             path.display()
         );
@@ -73,14 +73,14 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         install_test_stub(paths).context("installing in-process test stub")?;
         return Ok(stub_path);
     }
-    if stub_path.exists() && is_valid_cached_binary(&stub_path) {
+    if stub_path.exists() && is_executable_file(&stub_path) {
         return Ok(stub_path);
     }
 
     let arch = container_arch();
     let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, arch);
 
-    if is_valid_cached_binary(&cached) {
+    if is_executable_file(&cached) {
         crate::debug_log!(
             "capsule_binary",
             "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch}"
@@ -119,7 +119,7 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
 async fn packaged_binary_path(version: &str, arch: &str) -> Option<PathBuf> {
     let is_preview = version.contains("-dev") || version.contains("-preview.");
     for candidate in packaged_binary_candidates(arch) {
-        if !is_valid_cached_binary(&candidate) {
+        if !is_executable_file(&candidate) {
             continue;
         }
         match verify_version(&candidate, version, is_preview).await {
@@ -205,14 +205,13 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // Hashing a multi-MB archive parks the tokio worker; run it on the
     // blocking pool so concurrent launch / TUI tasks keep progressing.
     let archive_for_hash = tmp_archive.clone();
-    let archive_for_context = archive_for_hash.clone();
     let actual_sha = tokio::task::spawn_blocking(move || hash_file_sha256(&archive_for_hash))
         .await
         .context("hash worker join")?
         .with_context(|| {
             format!(
                 "hashing downloaded jackin-capsule archive at {}",
-                archive_for_context.display()
+                tmp_archive.display()
             )
         })?;
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
@@ -238,7 +237,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // the final cache path. Promoting the tmp file to `dest` first and
     // then bailing on verify failure would leave an executable-bit-set
     // file at the cache location — the next `ensure_available` would
-    // see `is_valid_cached_binary == true` and reuse the wrong-version
+    // see `is_executable_file == true` and reuse the wrong-version
     // binary forever.
     //
     // Verification shape depends on host OS and version channel:
@@ -299,14 +298,6 @@ fn linux_target(arch: &str) -> &'static str {
         "arm64" => "aarch64-unknown-linux-gnu",
         _ => "x86_64-unknown-linux-gnu",
     }
-}
-
-pub fn is_valid_cached_binary(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt as _;
-    path.is_file()
-        && path
-            .metadata()
-            .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
 }
 
 /// Write a placeholder file at `<cache_dir>/jackin-capsule-test-stub`

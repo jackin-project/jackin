@@ -2,9 +2,10 @@
 //!
 //! `agent_binary` and `capsule_binary` both fetch small release metadata over
 //! HTTP and download multi-MB binaries from Range-supporting CDNs. This module
-//! owns the single copy of the reqwest client builder, the GET-to-`String`
-//! shape, and the fast-down parallel-download pipeline so the two callers stay
-//! in lockstep — tuning the chunk count or timeout happens here once.
+//! owns the reqwest text-GET client, the GET-to-`String` shape, and the
+//! fast-down parallel-download pipeline (which builds its own client) so the
+//! two callers stay in lockstep — tuning the chunk count or timeout happens
+//! here once.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -54,10 +55,23 @@ pub async fn fetch_text(url: &str) -> Result<String> {
 /// from support Range requests; bail fast if one somehow does not. Creates
 /// `dest`'s parent directory when missing.
 pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
+    // TLS/proxy posture, bound once so the prefetch client and the chunk puller
+    // share one auditable security default instead of restating bare positional
+    // `false`s at two call sites.
+    let proxy = Proxy::System;
+    let accept_invalid_certs = false;
+    let accept_invalid_hostnames = false;
+
     let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid URL {url}"))?;
     let headers = HeaderMap::new();
-    let client = build_client(&headers, Proxy::System, false, false, None)
-        .context("building HTTP client")?;
+    let client = build_client(
+        &headers,
+        proxy,
+        accept_invalid_certs,
+        accept_invalid_hostnames,
+        None,
+    )
+    .context("building HTTP client")?;
     let (info, _resp) = client
         .prefetch(parsed)
         .await
@@ -88,9 +102,9 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     let puller = FastDownPuller::new(FastDownPullerOptions {
         url: info.final_url,
         headers: Arc::new(headers),
-        proxy: Proxy::System,
-        accept_invalid_certs: false,
-        accept_invalid_hostnames: false,
+        proxy,
+        accept_invalid_certs,
+        accept_invalid_hostnames,
         file_id: info.file_id,
         resp: None,
         available_ips: Arc::from([]),

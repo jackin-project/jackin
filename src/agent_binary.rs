@@ -1,6 +1,6 @@
 use crate::agent::Agent;
 use crate::binary_artifact::{
-    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256,
+    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
 };
 use crate::paths::JackinPaths;
 use anyhow::{Context, Result};
@@ -39,10 +39,10 @@ pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRe
 pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<AgentBinary> {
     let stub_path = test_stub_path(paths, agent);
     #[cfg(test)]
-    if !is_valid_cached_binary(&stub_path) {
+    if !is_executable_file(&stub_path) {
         install_test_stub(paths, agent).context("installing in-process agent binary test stub")?;
     }
-    if is_valid_cached_binary(&stub_path) {
+    if is_executable_file(&stub_path) {
         record(
             "agent_binary_cache_hit",
             &format!("{} test stub at {}", agent.slug(), stub_path.display()),
@@ -92,7 +92,7 @@ async fn ensure_binary_for_release(
     release: &AgentRelease,
     cached: &Path,
 ) -> Result<AgentBinary> {
-    if is_valid_cached_binary(cached) {
+    if is_executable_file(cached) {
         record(
             "agent_binary_cache_hit",
             &format!(
@@ -420,10 +420,6 @@ fn record(kind: &str, message: &str) {
     } else {
         crate::debug_log!("agent_binary", "{kind}: {message}");
     }
-}
-
-fn is_valid_cached_binary(path: &Path) -> bool {
-    path.is_file()
 }
 
 fn test_stub_path(paths: &JackinPaths, agent: Agent) -> PathBuf {
