@@ -1320,6 +1320,32 @@ header.header {
   border-bottom-color: var(--sl-color-text-accent);
 }
 
+.sl-markdown-content a:is([href^='http://'], [href^='https://']):not(
+  .sl-anchor-link,
+  [href*='jackin.tailrocks.com'],
+  [href*='github.com/jackin-project/jackin'],
+  :where(.not-content *)
+)::after {
+  content: '';
+  display: inline-block;
+  width: 0.78em;
+  height: 0.78em;
+  margin-inline-start: 0.18em;
+  vertical-align: -0.06em;
+  background-color: currentColor;
+  opacity: 0.72;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17 17 7'/%3E%3Cpath d='M8 7h9v9'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.sl-markdown-content a:is([href^='http://'], [href^='https://']):not(
+  .sl-anchor-link,
+  [href*='jackin.tailrocks.com'],
+  [href*='github.com/jackin-project/jackin'],
+  :where(.not-content *)
+):hover::after {
+  opacity: 1;
+}
+
 /* Heading anchor-link icon */
 .sl-markdown-content .sl-heading-wrapper {
   --sl-anchor-icon-gap: 12px;
