@@ -336,7 +336,7 @@ mod tests {
                 state,
                 "Unfinished instances",
                 context,
-            )
+            );
         })
         .unwrap();
         let buf = term.backend().buffer();

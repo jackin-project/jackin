@@ -277,11 +277,7 @@ fn initial_view() -> LaunchView {
 
 impl LaunchProgress {
     pub fn new(diagnostics: Arc<RunDiagnostics>, no_motion: bool) -> anyhow::Result<Self> {
-        if !rich_terminal_supported() {
-            anyhow::bail!(
-                "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
-            );
-        }
+        require_rich_terminal()?;
         let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
         let rich = RichRenderer::enter(no_motion)?;
         let renderer = Renderer::Rich(RichDriver::spawn(
@@ -526,11 +522,7 @@ pub fn prelaunch_select_choice(
     title: &str,
     items: Vec<String>,
 ) -> anyhow::Result<usize> {
-    if !rich_terminal_supported() {
-        anyhow::bail!(
-            "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
-        );
-    }
+    require_rich_terminal()?;
     let mut renderer = RichRenderer::enter(no_motion)?;
     renderer.select(title, items)
 }
@@ -1053,6 +1045,19 @@ pub(crate) fn rich_terminal_supported() -> bool {
         return false;
     }
     crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
+}
+
+/// Bail with the canonical rich-terminal requirement message unless the
+/// current terminal can host the launch surface. Both `LaunchProgress::new`
+/// and the pre-launch `prelaunch_select_choice` picker gate through this so
+/// the message cannot drift between them.
+pub(crate) fn require_rich_terminal() -> anyhow::Result<()> {
+    if !rich_terminal_supported() {
+        anyhow::bail!(
+            "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
+        );
+    }
+    Ok(())
 }
 
 const STAGE_PULSE_PERIOD: usize = 12;
