@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "../codebase-readability",
+    "../pr-verification",
     "(phase-1-docs-setup)",
     "(phase-2-file-splits)",
     "(phase-3-deferred)"
