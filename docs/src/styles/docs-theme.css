@@ -1410,6 +1410,9 @@ header.header {
 .sl-markdown-content figure.shiki > div[role='region'].fd-scroll-container,
 #nd-page figure.shiki > div[role='region'].fd-scroll-container {
   background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  border-radius: 0;
 }
 
 .sl-markdown-content figure.shiki button,
@@ -1439,8 +1442,8 @@ header.header {
   overflow: auto;
 }
 
-.sl-markdown-content div[role='region'].fd-scroll-container:has(> pre),
-#nd-page div[role='region'].fd-scroll-container:has(> pre) {
+.sl-markdown-content div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)),
+#nd-page div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) {
   background: var(--jk-code-bg) !important;
   border: 0 !important;
   border-radius: 10px;
@@ -1448,8 +1451,10 @@ header.header {
   color-scheme: dark;
 }
 
-.sl-markdown-content div[role='region'].fd-scroll-container:has(> pre) > pre,
-#nd-page div[role='region'].fd-scroll-container:has(> pre) > pre {
+.sl-markdown-content div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) > pre,
+#nd-page div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) > pre,
+.sl-markdown-content figure.shiki > div[role='region'].fd-scroll-container > pre,
+#nd-page figure.shiki > div[role='region'].fd-scroll-container > pre {
   background: transparent !important;
   border: 0 !important;
   border-radius: 0;
