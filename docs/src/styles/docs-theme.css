@@ -172,19 +172,19 @@
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --jk-bg:         #ffffff;
-  --jk-bg-deep:    #e9edeb;   /* recessed state (active toggle, pressed badge) */
-  --jk-panel:      #f6f8f7;   /* lifted surface (cards, pills, modals) */
-  --jk-text:       #1a1c1b;
-  --jk-prose:      #303633;
-  --jk-text-dim:   #5d6460;
-  --jk-text-ghost: #8a928e;
-  --jk-accent:     #007a22;   /* deep forest green — AA contrast on white (5.1:1) */
-  --jk-accent-dim: #005c1a;   /* deeper still for pressed/active highlights */
-  --jk-brand:      #16a34a;   /* juicy mid-green — usable as pill bg + underline on white */
-  --jk-ui:         rgba(0, 0, 0, 0.08);
-  --jk-ui-strong:  rgba(0, 0, 0, 0.18);
-  --jk-ui-subtle:  rgba(0, 0, 0, 0.04);
+  --jk-bg:         #fbfcfb;
+  --jk-bg-deep:    #e2e9e5;   /* recessed state (active toggle, pressed badge) */
+  --jk-panel:      #f2f6f3;   /* lifted surface (cards, pills, modals) */
+  --jk-text:       #111513;
+  --jk-prose:      #242b27;
+  --jk-text-dim:   #4b554f;
+  --jk-text-ghost: #76817b;
+  --jk-accent:     #006f22;   /* deep forest green — AA contrast on white */
+  --jk-accent-dim: #004f18;   /* deeper still for pressed/active highlights */
+  --jk-brand:      #10a846;   /* saturated mid-green for active chips + accents */
+  --jk-ui:         rgba(5, 20, 12, 0.1);
+  --jk-ui-strong:  rgba(5, 20, 12, 0.22);
+  --jk-ui-subtle:  rgba(5, 20, 12, 0.055);
   --jk-code-bg:    #070807;
   --jk-code-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -192,7 +192,7 @@
     0 1px 1px rgba(0, 0, 0, 0.04),
     0 16px 34px rgba(4, 9, 6, 0.14),
     0 5px 14px rgba(4, 9, 6, 0.1);
-  --jk-sidebar-hover-bg: rgba(0, 122, 34, 0.07);
+  --jk-sidebar-hover-bg: rgba(0, 111, 34, 0.095);
   --jk-sidebar-hover-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.72),
     0 1px 1px rgba(0, 0, 0, 0.04);
@@ -211,7 +211,7 @@
 
   --sl-color-bg-inline-code: var(--jk-panel);
 
-  --sl-color-accent-low:  rgba(0, 122, 34, 0.12);
+  --sl-color-accent-low:  rgba(0, 111, 34, 0.15);
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
@@ -1517,13 +1517,13 @@ header.header {
   position: relative;
   overflow: hidden;
   gap: 12px;
+  align-items: center;
   border: 0;
   border-radius: 8px;
   background: color-mix(in srgb, var(--jk-aside-color) 7%, var(--jk-panel));
   padding: 14px 16px !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
     0 1px 1px rgba(0, 0, 0, 0.04),
     0 12px 26px rgba(0, 0, 0, 0.12);
 }
@@ -1536,7 +1536,6 @@ header.header {
   flex: none;
   width: 28px;
   height: 28px;
-  margin-top: 1px;
   padding: 5px;
   border-radius: 7px;
   background: color-mix(in srgb, var(--jk-aside-color) 14%, transparent);
@@ -1572,18 +1571,17 @@ header.header {
 }
 
 :root[data-theme='light'] .jk-aside {
-  background: color-mix(in srgb, var(--jk-aside-color) 5%, #ffffff);
+  background: color-mix(in srgb, var(--jk-aside-color) 8%, var(--jk-bg));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 24%, transparent),
     0 1px 1px rgba(0, 0, 0, 0.04),
-    0 12px 28px color-mix(in srgb, var(--jk-aside-color) 10%, transparent);
+    0 10px 24px color-mix(in srgb, var(--jk-aside-color) 12%, transparent);
 }
 
 :root[data-theme='light'] .jk-aside svg {
-  background: color-mix(in srgb, var(--jk-aside-color) 11%, #ffffff);
+  background: color-mix(in srgb, var(--jk-aside-color) 16%, var(--jk-bg));
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 24%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 28%, transparent),
     0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
