@@ -65,7 +65,7 @@ flate2 = "1.1"
 tar = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rand = "0.10"
-tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time"] }
+tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 # `aws-lc-rs` enables bollard TLS (rustls protocol + the native AWS-LC crypto
 # backend) so connect_with_defaults honors a TLS DOCKER_HOST (DOCKER_TLS_VERIFY
 # + DOCKER_CERT_PATH) — every DinD/remote daemon on :2376. Without a TLS backend
@@ -73,12 +73,15 @@ tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros
 # OpenSSL/native-tls feature; aws-lc-rs is its native-crypto provider.
 bollard = { version = "0.21", features = ["aws-lc-rs"] }
 futures-util = "0.3"
+fast-down = { version = "5.0", features = ["fast-puller", "file", "reqwest-tls"] }
+reqwest = { version = "0.13", default-features = false }
 
 [build-dependencies]
 jackin-build-meta = { path = "crates/jackin-build-meta" }
 
 [dev-dependencies]
 assert_cmd = "=2.2.2"
+filetime = "=0.2.29"
 predicates = "=3.1.4"
 tokio = { version = "=1.52.3", features = ["test-util"] }
 

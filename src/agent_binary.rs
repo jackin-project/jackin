@@ -1,11 +1,14 @@
 use crate::agent::Agent;
+use crate::binary_artifact::{
+    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
+    parse_sha256_hex,
+};
 use crate::paths::JackinPaths;
 use anyhow::{Context, Result};
-use flate2::read::GzDecoder;
+use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const CACHE_TTL: std::time::Duration = std::time::Duration::from_hours(1);
 
@@ -29,18 +32,17 @@ pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRe
         return Some(cached);
     }
     let release = resolve_latest_release(agent).await.ok()?;
-    let _ = write_cached_release(paths, &release);
-    let _ = write_version_release(paths, &release);
+    persist_release_cache(paths, &release);
     Some(release)
 }
 
 pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<AgentBinary> {
     let stub_path = test_stub_path(paths, agent);
     #[cfg(test)]
-    if !is_valid_cached_binary(&stub_path) {
+    if !is_executable_file(&stub_path) {
         install_test_stub(paths, agent).context("installing in-process agent binary test stub")?;
     }
-    if is_valid_cached_binary(&stub_path) {
+    if is_executable_file(&stub_path) {
         record(
             "agent_binary_cache_hit",
             &format!("{} test stub at {}", agent.slug(), stub_path.display()),
@@ -49,6 +51,14 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
             agent,
             path: stub_path,
         });
+    }
+
+    // Metadata cache hit (TTL: 1hr): skip the network resolve. Absence of the
+    // preceding `agent_binary_resolve_started` record is what marks this path
+    // in the diagnostics run.
+    if let Some(cached_release) = read_cached_release(paths, agent) {
+        let cached = cached_binary_path(paths, &cached_release);
+        return ensure_binary_for_release(agent, &cached_release, &cached).await;
     }
 
     record(
@@ -68,10 +78,20 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         "agent_binary_resolved",
         &format!("{} {} from {}", agent.slug(), release.version, release.url),
     );
-    let _ = write_cached_release(paths, &release);
-    let _ = write_version_release(paths, &release);
+    persist_release_cache(paths, &release);
     let cached = cached_binary_path(paths, &release);
-    if is_valid_cached_binary(&cached) {
+    ensure_binary_for_release(agent, &release, &cached).await
+}
+
+/// Return the cached binary if present, otherwise download `release` to
+/// `cached` and return it. Shared by the metadata-cache-hit and post-resolve
+/// paths so both emit the same breadcrumbs and run the same download sequence.
+async fn ensure_binary_for_release(
+    agent: Agent,
+    release: &AgentRelease,
+    cached: &Path,
+) -> Result<AgentBinary> {
+    if is_executable_file(cached) {
         record(
             "agent_binary_cache_hit",
             &format!(
@@ -83,7 +103,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         );
         return Ok(AgentBinary {
             agent,
-            path: cached,
+            path: cached.to_path_buf(),
         });
     }
     record(
@@ -96,7 +116,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
             cached.display()
         ),
     );
-    download_and_cache(&release, &cached)
+    download_and_cache(release, cached)
         .await
         .with_context(|| {
             format!(
@@ -123,7 +143,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     );
     Ok(AgentBinary {
         agent,
-        path: cached,
+        path: cached.to_path_buf(),
     })
 }
 
@@ -135,14 +155,6 @@ pub fn cached_binary_path(paths: &JackinPaths, release: &AgentRelease) -> PathBu
         .join(release.version.replace('+', "_"))
         .join(format!("linux-{}", container_arch()))
         .join(release.agent.slug())
-}
-
-pub const fn container_arch() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "amd64"
-    }
 }
 
 async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
@@ -157,11 +169,11 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
 
 async fn resolve_claude() -> Result<AgentRelease> {
     let base = "https://downloads.claude.ai/claude-code-releases";
-    let version = curl_text(&format!("{base}/latest")).await?;
+    let version = fetch_text(&format!("{base}/latest")).await?;
     let version = version.trim().to_string();
     let platform = platform_x64_arm64();
     let manifest: ClaudeManifest =
-        serde_json::from_str(&curl_text(&format!("{base}/{version}/manifest.json")).await?)?;
+        serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
     let entry = manifest
         .platforms
         .get(platform)
@@ -177,7 +189,7 @@ async fn resolve_claude() -> Result<AgentRelease> {
 
 async fn resolve_amp() -> Result<AgentRelease> {
     let base = "https://static.ampcode.com";
-    let version = curl_text(&format!("{base}/cli/cli-version.txt"))
+    let version = fetch_text(&format!("{base}/cli/cli-version.txt"))
         .await?
         .trim()
         .to_string();
@@ -185,12 +197,9 @@ async fn resolve_amp() -> Result<AgentRelease> {
         "arm64" => "linux-arm64",
         _ => "linux-x64",
     };
-    let checksum = curl_text(&format!("{base}/cli/{version}/{platform}-amp.sha256"))
-        .await?
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_string();
+    let sha_text = fetch_text(&format!("{base}/cli/{version}/{platform}-amp.sha256")).await?;
+    let checksum = parse_sha256_hex(&sha_text)
+        .with_context(|| format!("amp published checksum for {version} {platform}"))?;
     Ok(AgentRelease {
         agent: Agent::Amp,
         version: version.clone(),
@@ -202,13 +211,13 @@ async fn resolve_amp() -> Result<AgentRelease> {
 
 async fn resolve_kimi() -> Result<AgentRelease> {
     let base = "https://code.kimi.com/kimi-code";
-    let version = curl_text(&format!("{base}/latest"))
+    let version = fetch_text(&format!("{base}/latest"))
         .await?
         .trim()
         .to_string();
     let platform = platform_x64_arm64();
     let manifest: KimiManifest =
-        serde_json::from_str(&curl_text(&format!("{base}/{version}/manifest.json")).await?)?;
+        serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
     let entry = manifest
         .platforms
         .get(platform)
@@ -260,14 +269,66 @@ async fn resolve_opencode() -> Result<AgentRelease> {
     })
 }
 
+async fn fetch_text(url: &str) -> Result<String> {
+    record("agent_binary_http_get", url);
+    crate::net::fetch_text(url).await
+}
+
+async fn github_auth_token() -> Option<String> {
+    // Degrade to unauthenticated (60 req/hr) on any failure, but log which one:
+    // `gh` missing is expected on CI, while present-but-erroring (not logged in)
+    // is the case an operator hitting a rate-limit 403 needs to see in --debug.
+    match tokio::process::Command::new("gh")
+        .args(["auth", "token", "--hostname", "github.com"])
+        .output()
+        .await
+    {
+        Ok(output) if output.status.success() => {
+            let token = String::from_utf8(output.stdout).ok()?.trim().to_string();
+            (!token.is_empty()).then_some(token)
+        }
+        Ok(output) => {
+            crate::debug_log!(
+                "agent_binary",
+                "gh auth token exited {}: {} — proceeding unauthenticated",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            None
+        }
+        Err(e) => {
+            crate::debug_log!(
+                "agent_binary",
+                "gh auth token not runnable ({e}) — proceeding unauthenticated"
+            );
+            None
+        }
+    }
+}
+
 async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubReleaseAssetMatch> {
-    let release: GithubRelease = serde_json::from_str(
-        &curl_text(&format!(
-            "https://api.github.com/repos/{repo}/releases/latest"
-        ))
-        .await?,
-    )
-    .with_context(|| format!("parsing latest GitHub release metadata for {repo}"))?;
+    let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    // Authenticated requests have 5 000 req/hr vs 60 req/hr unauthenticated.
+    let token = github_auth_token().await;
+    let mut headers = HeaderMap::new();
+    if let Some(ref t) = token {
+        let val = reqwest::header::HeaderValue::from_str(&format!("Bearer {t}"))
+            .context("building Authorization header from gh token")?;
+        headers.insert(reqwest::header::AUTHORIZATION, val);
+    }
+    let client = crate::net::http_client(headers)?;
+    let body = retry_with_backoff(3, Duration::from_millis(500), || {
+        let c = client.clone();
+        let u = api_url.clone();
+        async move {
+            record("agent_binary_http_get", &u);
+            crate::net::get_text(&c, &u).await
+        }
+    })
+    .await
+    .with_context(|| format!("fetching latest GitHub release metadata for {repo}"))?;
+    let release: GithubRelease = serde_json::from_str(&body)
+        .with_context(|| format!("parsing latest GitHub release metadata for {repo}"))?;
     let asset = release
         .assets
         .into_iter()
@@ -277,6 +338,39 @@ async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubRelea
         tag_name: release.tag_name,
         asset,
     })
+}
+
+async fn retry_with_backoff<T, F, Fut>(
+    max_attempts: u32,
+    initial_delay: Duration,
+    f: F,
+) -> Result<T>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut last_err = anyhow::anyhow!("no attempts made");
+    for attempt in 0..max_attempts {
+        if attempt > 0 {
+            let delay = initial_delay * (1 << (attempt - 1));
+            record(
+                "retry_backoff",
+                &format!("attempt {attempt}/{max_attempts}, waiting {delay:?}"),
+            );
+            tokio::time::sleep(delay).await;
+        }
+        match f().await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                record(
+                    "retry_failed",
+                    &format!("attempt {}/{max_attempts}: {e:#}", attempt + 1),
+                );
+                last_err = e;
+            }
+        }
+    }
+    Err(last_err).with_context(|| format!("giving up after {max_attempts} attempts"))
 }
 
 fn platform_x64_arm64() -> &'static str {
@@ -308,18 +402,32 @@ async fn download_and_cache_inner(
     tmp_download: &Path,
     tmp_binary: &Path,
 ) -> Result<()> {
-    download_file(&release.url, tmp_download).await?;
-    if let Some(expected) = &release.checksum {
-        let actual = hash_file_sha256(tmp_download)?;
-        anyhow::ensure!(
-            actual.eq_ignore_ascii_case(expected),
-            "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
+    crate::net::download_parallel(&release.url, tmp_download).await?;
+    // A dropped chunk leaves a zeroed hole in the pre-sized file rather than a
+    // short file, so the SHA-256 is the only integrity guard — require it. Every
+    // resolver populates a checksum (claude/kimi/amp from their manifests,
+    // codex/opencode from the GitHub asset digest); a missing one means an
+    // unverifiable binary we refuse to install rather than exec blind.
+    let expected = release.checksum.as_deref().with_context(|| {
+        format!(
+            "{} release {} has no published checksum; refusing to install an unverified binary",
             release.agent.slug(),
-            release.url,
-            expected,
-            actual
-        );
-    }
+            release.version
+        )
+    })?;
+    let tmp_for_hash = tmp_download.to_owned();
+    let actual = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
+        .await
+        .context("hash worker join")?
+        .with_context(|| format!("hashing {}", tmp_download.display()))?;
+    anyhow::ensure!(
+        actual.eq_ignore_ascii_case(expected),
+        "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
+        release.agent.slug(),
+        release.url,
+        expected,
+        actual
+    );
     if let Some(member) = &release.archive_member {
         extract_tar_gz_member(tmp_download, member, tmp_binary)?;
         let _ = std::fs::remove_file(tmp_download);
@@ -331,119 +439,12 @@ async fn download_and_cache_inner(
     Ok(())
 }
 
-async fn curl_text(url: &str) -> Result<String> {
-    record("agent_binary_http_get", url);
-    let output = tokio::process::Command::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--max-time",
-            "30",
-            url,
-        ])
-        .output()
-        .await
-        .with_context(|| format!("running curl for {url}"))?;
-    anyhow::ensure!(
-        output.status.success(),
-        "{url} failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-    String::from_utf8(output.stdout).with_context(|| format!("{url} returned non-UTF-8 body"))
-}
-
-async fn download_file(url: &str, dest: &Path) -> Result<()> {
-    let dest_str = dest
-        .to_str()
-        .with_context(|| format!("download path {} is not UTF-8", dest.display()))?;
-    let output = tokio::process::Command::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--max-time",
-            "300",
-            "--output",
-            dest_str,
-            url,
-        ])
-        .output()
-        .await
-        .with_context(|| format!("running curl for {url}"))?;
-    if !output.status.success() {
-        let _ = std::fs::remove_file(dest);
-        anyhow::bail!(
-            "{url} download failed with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(())
-}
-
 fn record(kind: &str, message: &str) {
     if let Some(run) = crate::diagnostics::active_run() {
         run.compact(kind, message);
     } else {
         crate::debug_log!("agent_binary", "{kind}: {message}");
     }
-}
-
-fn extract_tar_gz_member(archive: &Path, member_name: &str, dest: &Path) -> Result<()> {
-    let file = std::fs::File::open(archive)?;
-    let decoder = GzDecoder::new(file);
-    let mut archive = tar::Archive::new(decoder);
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let path = entry.path()?;
-        if path.file_name().and_then(|n| n.to_str()) == Some(member_name) {
-            let mut out = std::fs::File::create(dest)?;
-            std::io::copy(&mut entry, &mut out)?;
-            return Ok(());
-        }
-    }
-    anyhow::bail!("archive missing {member_name}")
-}
-
-fn hash_file_sha256(path: &Path) -> Result<String> {
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        use std::fmt::Write as _;
-        write!(&mut hex, "{byte:02x}")?;
-    }
-    Ok(hex)
-}
-
-#[cfg(unix)]
-fn chmod_executable(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let mut perms = std::fs::metadata(path)?.permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(path, perms)?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn chmod_executable(_path: &Path) -> Result<()> {
-    Ok(())
-}
-
-fn is_valid_cached_binary(path: &Path) -> bool {
-    path.is_file()
 }
 
 fn test_stub_path(paths: &JackinPaths, agent: Agent) -> PathBuf {
@@ -503,6 +504,26 @@ fn write_version_release(paths: &JackinPaths, release: &AgentRelease) -> Result<
     Ok(())
 }
 
+/// Best-effort write of the resolved release to the TTL metadata cache and the
+/// per-version sidecar. A failure only costs an extra network resolve next
+/// launch, so it's logged (to explain a re-resolve loop under `--debug`) rather
+/// than propagated.
+fn persist_release_cache(paths: &JackinPaths, release: &AgentRelease) {
+    let slug = release.agent.slug();
+    if let Err(e) = write_cached_release(paths, release) {
+        crate::debug_log!(
+            "agent_binary",
+            "caching {slug} release metadata failed: {e:#}"
+        );
+    }
+    if let Err(e) = write_version_release(paths, release) {
+        crate::debug_log!(
+            "agent_binary",
+            "writing {slug} version sidecar failed: {e:#}"
+        );
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct ClaudeManifest {
     platforms: std::collections::HashMap<String, ClaudePlatform>,
@@ -550,4 +571,144 @@ impl GithubAsset {
 struct GithubReleaseAssetMatch {
     tag_name: String,
     asset: GithubAsset,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_succeeds_on_first_try() {
+        let calls = Cell::new(0u32);
+        let r: Result<u32> = retry_with_backoff(3, Duration::from_millis(10), || {
+            calls.set(calls.get() + 1);
+            async { Ok(42) }
+        })
+        .await;
+        assert_eq!(r.unwrap(), 42);
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_recovers_after_transient_failures() {
+        let calls = Cell::new(0u32);
+        let r: Result<u32> = retry_with_backoff(3, Duration::from_millis(10), || {
+            let n = calls.get() + 1;
+            calls.set(n);
+            async move {
+                if n < 3 {
+                    anyhow::bail!("transient {n}")
+                }
+                Ok(n)
+            }
+        })
+        .await;
+        assert_eq!(r.unwrap(), 3);
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_exhausts_and_returns_last_error() {
+        let calls = Cell::new(0u32);
+        let r: Result<()> = retry_with_backoff(3, Duration::from_millis(10), || {
+            let n = calls.get() + 1;
+            calls.set(n);
+            async move { anyhow::bail!("attempt {n} failed") }
+        })
+        .await;
+        assert_eq!(calls.get(), 3);
+        // Chain carries the attempt count and preserves the LAST attempt's
+        // error (not the "no attempts made" seed).
+        let err = format!("{:#}", r.unwrap_err());
+        assert!(err.contains("giving up after 3 attempts"), "{err}");
+        assert!(err.contains("attempt 3 failed"), "{err}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_with_zero_attempts_never_calls_closure() {
+        let calls = Cell::new(0u32);
+        let r: Result<()> = retry_with_backoff(0, Duration::from_millis(10), || {
+            calls.set(calls.get() + 1);
+            async { Ok(()) }
+        })
+        .await;
+        assert!(r.is_err());
+        assert_eq!(calls.get(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_backoff_grows_exponentially() {
+        let start = tokio::time::Instant::now();
+        let _: Result<()> = retry_with_backoff(3, Duration::from_millis(100), || async {
+            anyhow::bail!("nope")
+        })
+        .await;
+        // Attempt 1 is immediate; attempts 2 and 3 wait 100ms then 200ms.
+        assert_eq!(start.elapsed(), Duration::from_millis(300));
+    }
+
+    fn release_fixture() -> AgentRelease {
+        AgentRelease {
+            agent: Agent::Claude,
+            version: "1.2.3".to_string(),
+            url: "https://example.test/claude".to_string(),
+            checksum: Some("abc".to_string()),
+            archive_member: None,
+        }
+    }
+
+    #[test]
+    fn read_cached_release_missing_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        assert!(read_cached_release(&paths, Agent::Claude).is_none());
+    }
+
+    #[test]
+    fn read_cached_release_fresh_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        let release = release_fixture();
+        write_cached_release(&paths, &release).unwrap();
+        let got = read_cached_release(&paths, Agent::Claude).expect("fresh cache should hit");
+        assert_eq!(got.version, release.version);
+        assert_eq!(got.url, release.url);
+    }
+
+    #[test]
+    fn read_cached_release_past_ttl_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        write_cached_release(&paths, &release_fixture()).unwrap();
+        let path = metadata_cache_path(&paths, Agent::Claude);
+        let stale = std::time::SystemTime::now() - Duration::from_hours(2);
+        filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(stale)).unwrap();
+        assert!(read_cached_release(&paths, Agent::Claude).is_none());
+    }
+
+    #[test]
+    fn read_cached_release_malformed_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        let path = metadata_cache_path(&paths, Agent::Claude);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"{ not valid json").unwrap();
+        assert!(read_cached_release(&paths, Agent::Claude).is_none());
+    }
+
+    #[test]
+    fn sha256_digest_strips_prefix_only_for_sha256() {
+        let asset = |digest: Option<&str>| GithubAsset {
+            name: "asset".to_string(),
+            browser_download_url: "https://example.test/a".to_string(),
+            digest: digest.map(str::to_string),
+        };
+        assert_eq!(
+            asset(Some("sha256:deadbeef")).sha256_digest().as_deref(),
+            Some("deadbeef")
+        );
+        assert!(asset(Some("md5:deadbeef")).sha256_digest().is_none());
+        assert!(asset(None).sha256_digest().is_none());
+    }
 }
