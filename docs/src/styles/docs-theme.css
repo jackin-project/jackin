@@ -1014,6 +1014,7 @@ html.theme-init *::after {
 
 #nd-toc {
   --jk-toc-wordmark-size: clamp(48px, 4.4vw, 64px);
+  width: 90% !important;
   padding-inline-end: 0.625rem !important;
 }
 
