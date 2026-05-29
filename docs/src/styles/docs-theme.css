@@ -1513,30 +1513,38 @@ header.header {
 
 .jk-aside {
   --callout-color: var(--jk-accent) !important;
+  --jk-aside-color: var(--jk-accent);
   position: relative;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--jk-accent) 18%, var(--jk-ui));
+  gap: 12px;
+  border: 0;
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--jk-accent) 9%, transparent), transparent 48%),
-    color-mix(in srgb, var(--jk-panel) 92%, var(--jk-bg));
+  background: color-mix(in srgb, var(--jk-aside-color) 7%, var(--jk-panel));
+  padding: 14px 16px !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 14px 34px rgba(0, 0, 0, 0.16);
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 22%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 12px 26px rgba(0, 0, 0, 0.12);
 }
 
 .jk-aside > [role='none'] {
-  width: 3px;
-  align-self: stretch;
-  margin-block: 0.125rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--jk-accent) 72%, var(--jk-text));
-  opacity: 0.86;
+  display: none;
 }
 
 .jk-aside svg {
-  color: var(--jk-accent);
-  fill: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+  padding: 5px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--jk-aside-color) 14%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 28%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+  color: var(--jk-aside-color);
+  fill: color-mix(in srgb, var(--jk-aside-color) 18%, transparent);
 }
 
 .jk-aside :is(p, li) {
@@ -1549,50 +1557,34 @@ header.header {
 
 .jk-aside--tip {
   --callout-color: var(--jk-accent) !important;
+  --jk-aside-color: var(--jk-accent);
 }
 
 .jk-aside--caution,
 .jk-aside--warning {
   --callout-color: #f59e0b !important;
-  border-color: color-mix(in srgb, #f59e0b 28%, var(--jk-ui));
-  background:
-    linear-gradient(135deg, color-mix(in srgb, #f59e0b 12%, transparent), transparent 50%),
-    color-mix(in srgb, var(--jk-panel) 92%, var(--jk-bg));
-}
-
-.jk-aside--caution > [role='none'],
-.jk-aside--warning > [role='none'] {
-  background: #f59e0b;
-}
-
-.jk-aside--caution svg,
-.jk-aside--warning svg {
-  color: #f59e0b;
-  fill: rgba(245, 158, 11, 0.14);
+  --jk-aside-color: #f59e0b;
 }
 
 .jk-aside--danger {
   --callout-color: #ff5e7a !important;
-  border-color: color-mix(in srgb, #ff5e7a 32%, var(--jk-ui));
-  background:
-    linear-gradient(135deg, color-mix(in srgb, #ff5e7a 12%, transparent), transparent 50%),
-    color-mix(in srgb, var(--jk-panel) 92%, var(--jk-bg));
-}
-
-.jk-aside--danger > [role='none'] {
-  background: #ff5e7a;
-}
-
-.jk-aside--danger svg {
-  color: #ff5e7a;
-  fill: rgba(255, 94, 122, 0.14);
+  --jk-aside-color: #ff5e7a;
 }
 
 :root[data-theme='light'] .jk-aside {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--jk-accent) 7%, transparent), transparent 48%),
-    #f8faf9;
-  box-shadow: 0 12px 28px rgba(13, 24, 18, 0.07);
+  background: color-mix(in srgb, var(--jk-aside-color) 5%, #ffffff);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 24%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 12px 28px color-mix(in srgb, var(--jk-aside-color) 10%, transparent);
+}
+
+:root[data-theme='light'] .jk-aside svg {
+  background: color-mix(in srgb, var(--jk-aside-color) 11%, #ffffff);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 24%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
 /* ==========================================================================
