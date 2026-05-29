@@ -496,6 +496,30 @@ mod tests {
     }
 
     #[test]
+    fn operator_override_wins_over_skipped_dependency_cascade() {
+        let mut decls = BTreeMap::new();
+        let mut project = interactive_select("Select:", vec!["api", "web"]);
+        project.skippable = true;
+        decls.insert("PROJECT".to_string(), project);
+
+        let mut branch = interactive_text("Branch:");
+        branch.depends_on = vec!["env.PROJECT".to_string()];
+        decls.insert("BRANCH".to_string(), branch);
+
+        // PROJECT is skipped, which would normally cascade-skip BRANCH — but
+        // BRANCH carries an operator override. The override check runs before
+        // the dep-skipped check, so the override survives the cascade.
+        let prompter = MockPrompter::new(vec![PromptResult::Skipped]);
+        let overrides = BTreeMap::from([("BRANCH".to_string(), "hotfix".to_string())]);
+        let resolved = resolve_env_with_overrides(&decls, &prompter, &overrides).unwrap();
+
+        assert_eq!(
+            resolved.vars,
+            vec![("BRANCH".to_string(), "hotfix".to_string())]
+        );
+    }
+
+    #[test]
     fn interpolates_static_default_value() {
         let mut decls = BTreeMap::new();
         decls.insert(

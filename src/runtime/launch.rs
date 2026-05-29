@@ -2696,8 +2696,8 @@ async fn resolve_restore_candidate(
     }
 
     // One dialog for every stale-state decision — same-role candidates and
-    // related-role candidates alike — so the operator always sees the rich
-    // forced-choice picker inside the TUI, never a divergent stdin prompt.
+    // related-role candidates alike — so the operator sees a single rich
+    // forced-choice picker inside the TUI.
     present_restore_choice(
         progress,
         paths,
@@ -2742,7 +2742,7 @@ fn present_restore_choice(
             "unfinished jackin instances exist for workspace `{workspace_label}` and role `{role_key}` but the rich launch dialog is unavailable; run {hint} to inspect or recover, or purge stale instances before a fresh load"
         );
     };
-    let choice = progress.select_choice("Unfinished jackin instances", labels.clone())?;
+    let choice = progress.select_choice("Unfinished jackin instances", labels)?;
 
     if choice == 0 {
         supersede_restore_candidates(paths, candidates)?;
@@ -3609,13 +3609,6 @@ fn build_env_layer_states(
     ]
 }
 
-/// Return a printable source reference for the credential env var
-/// `env_var` (e.g. `"CLAUDE_CODE_OAUTH_TOKEN"`, `"ANTHROPIC_API_KEY"`)
-/// given the raw (unresolved) declaration value from the operator env
-/// config (e.g. `"Private/Claude/security/auth token"` or
-/// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY ← value"` form
-/// consumed by `tui::auth_mode_notice`. When `raw` is `None` or the
-/// display string is empty, falls back to the bare env-var name.
 /// Append `KEY=value` to `env_strings` when `value` is `Some` and
 /// non-empty. Centralizes the "skip the env push when the value is
 /// missing or blank" check used by every optional env injection.
@@ -3662,6 +3655,12 @@ fn append_no_proxy_host(value: &str, host: &str) -> String {
     }
 }
 
+/// Printable source reference for the credential env var `env_var` (e.g.
+/// `"CLAUDE_CODE_OAUTH_TOKEN"`, `"ANTHROPIC_API_KEY"`) given the raw
+/// (unresolved) declaration value from the operator env config (e.g.
+/// `"Private/Claude/security/auth token"` or `"$CLAUDE_CODE_OAUTH_TOKEN"`).
+/// Produces the `"KEY ← value"` form; falls back to the bare env-var name
+/// when `raw` is `None` or empty.
 fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     match raw {
         None | Some("") => env_var.to_string(),
@@ -3755,6 +3754,28 @@ mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
     use crate::config::AppConfig;
+
+    #[test]
+    fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
+        let sensitive = vec![
+            crate::workspace::SensitiveMount {
+                src: "/home/op/.ssh".to_string(),
+                reason: "SSH private keys".to_string(),
+            },
+            crate::workspace::SensitiveMount {
+                src: "/home/op/.aws".to_string(),
+                reason: "AWS credentials".to_string(),
+            },
+        ];
+        let prompt = sensitive_mount_prompt(&sensitive);
+        // Every flagged path and its reason must reach the operator — a
+        // dropped hit would silently hide a credential exposure.
+        for hit in &sensitive {
+            assert!(prompt.contains(&hit.src), "missing src in: {prompt}");
+            assert!(prompt.contains(&hit.reason), "missing reason in: {prompt}");
+        }
+        assert!(prompt.contains("Continue with these mounts?"));
+    }
     use crate::isolation::MountIsolation;
     use crate::isolation::materialize::{
         MaterializedMount, MaterializedWorkspace, WorktreeAuxMounts,

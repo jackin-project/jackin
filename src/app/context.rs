@@ -60,7 +60,7 @@ fn find_dst_separator(target: &str) -> Option<usize> {
     None
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn resolve_target_name(
     name: &str,
     config: &AppConfig,
@@ -202,7 +202,7 @@ pub(crate) fn preferred_agent_index(
 /// 3. If multiple roles available — prompt
 /// 4. If exactly one role — use it
 /// 5. No match — error with guidance
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn resolve_agent_from_context(
     config: &AppConfig,
     cwd: &Path,

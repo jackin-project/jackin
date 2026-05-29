@@ -444,21 +444,31 @@ impl LaunchProgress {
         }
     }
 
-    /// Present a forced-choice picker over `items` and return the chosen
-    /// index. The picker cannot be cancelled — the operator must commit one
-    /// of the options.
-    pub fn select_choice(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+    /// Reclaim the rich renderer from the background render task and run a
+    /// modal dialog against it. The task try-locks per frame, so it simply
+    /// skips frames while the modal holds the lock. Bails when the launch is
+    /// not driving the rich surface — `what` names the dialog in that error.
+    fn with_rich_renderer<T>(
+        &mut self,
+        what: &str,
+        f: impl FnOnce(&mut RichRenderer) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
         if let Renderer::Rich(driver) = &mut self.renderer {
-            // Reclaim the renderer from the render task for the modal picker.
-            // The task try-locks, so it simply skips frames while we hold it.
             let mut renderer = driver
                 .renderer
                 .lock()
                 .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
-            renderer.select(title, items)
+            f(&mut renderer)
         } else {
-            anyhow::bail!("launch choice requires the rich launch dialog")
+            anyhow::bail!("{what} requires the rich launch dialog")
         }
+    }
+
+    /// Present a forced-choice picker over `items` and return the chosen
+    /// index. The picker cannot be cancelled — the operator must commit one
+    /// of the options.
+    pub fn select_choice(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+        self.with_rich_renderer("launch choice", |renderer| renderer.select(title, items))
     }
 
     pub fn prompt_text(
@@ -467,15 +477,9 @@ impl LaunchProgress {
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<crate::env_resolver::PromptResult> {
-        if let Renderer::Rich(driver) = &mut self.renderer {
-            let mut renderer = driver
-                .renderer
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+        self.with_rich_renderer("manifest env text prompt", |renderer| {
             renderer.prompt_text(title, default.unwrap_or_default(), skippable)
-        } else {
-            anyhow::bail!("manifest env text prompt requires the rich launch dialog")
-        }
+        })
     }
 
     pub fn prompt_select(
@@ -485,27 +489,15 @@ impl LaunchProgress {
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<crate::env_resolver::PromptResult> {
-        if let Renderer::Rich(driver) = &mut self.renderer {
-            let mut renderer = driver
-                .renderer
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+        self.with_rich_renderer("manifest env select prompt", |renderer| {
             renderer.prompt_select(title, options, default, skippable)
-        } else {
-            anyhow::bail!("manifest env select prompt requires the rich launch dialog")
-        }
+        })
     }
 
     pub fn confirm_prompt(&mut self, prompt: impl Into<String>) -> anyhow::Result<bool> {
-        if let Renderer::Rich(driver) = &mut self.renderer {
-            let mut renderer = driver
-                .renderer
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+        self.with_rich_renderer("launch confirmation", |renderer| {
             renderer.confirm(ConfirmState::new(prompt))
-        } else {
-            anyhow::bail!("launch confirmation requires the rich launch dialog")
-        }
+        })
     }
 
     pub fn confirm_role_trust(
@@ -513,15 +505,9 @@ impl LaunchProgress {
         role: impl Into<String>,
         repository: impl Into<String>,
     ) -> anyhow::Result<bool> {
-        if let Renderer::Rich(driver) = &mut self.renderer {
-            let mut renderer = driver
-                .renderer
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+        self.with_rich_renderer("role trust prompt", |renderer| {
             renderer.confirm(ConfirmState::role_trust(role, repository))
-        } else {
-            anyhow::bail!("role trust prompt requires the rich launch dialog")
-        }
+        })
     }
 
     #[allow(clippy::unused_self)]
@@ -547,6 +533,21 @@ pub fn prelaunch_select_choice(
     }
     let mut renderer = RichRenderer::enter(no_motion)?;
     renderer.select(title, items)
+}
+
+/// Standalone forced-choice picker with a `context` block above the options.
+///
+/// For callers that run after the launch progress surface has been torn down
+/// — the post-attach worktree-cleanup prompt. Enters its own rich surface (or
+/// draws into the host guard's screen when one is active); the caller is
+/// responsible for gating on terminal capability before calling.
+pub fn standalone_select_with_context(
+    title: &str,
+    context: &[Line<'_>],
+    items: Vec<String>,
+) -> anyhow::Result<usize> {
+    let mut renderer = RichRenderer::enter(false)?;
+    renderer.select_with_context(title, context, items)
 }
 
 fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, detail: &str) {
@@ -816,30 +817,57 @@ impl RichRenderer {
             .context("rendering launch progress TUI")
     }
 
-    /// Run a forced-choice picker over the dimmed launch frame. Enables
-    /// raw mode for the duration so key events arrive un-buffered, and
-    /// restores it on every exit path. `Ctrl-C` aborts the launch.
-    fn select(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
-        // The host guard already holds raw mode for the whole flow; only
-        // toggle it when this renderer is running standalone.
+    /// Run a modal dialog loop with raw mode held for its duration so key
+    /// events arrive un-buffered, restoring it on every exit path. The host
+    /// guard already holds raw mode for the whole flow; only toggle it when
+    /// this renderer is running standalone. `Ctrl-C` aborts the launch.
+    fn with_raw_mode<T>(
+        &mut self,
+        context: &'static str,
+        f: impl FnOnce(&mut Self) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
         let owns_raw = !crate::tui::host_screen_owned();
         if owns_raw {
-            crossterm::terminal::enable_raw_mode()
-                .context("entering raw mode for launch picker")?;
+            crossterm::terminal::enable_raw_mode().context(context)?;
         }
-        let outcome = self.select_loop(title, items);
+        let outcome = f(self);
         if owns_raw {
             let _ = crossterm::terminal::disable_raw_mode();
         }
         outcome
     }
 
-    fn select_loop(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+    /// Present a forced-choice picker over the dimmed launch frame.
+    fn select(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+        self.with_raw_mode("entering raw mode for launch picker", |renderer| {
+            renderer.select_loop(title, &[], items)
+        })
+    }
+
+    /// Forced-choice picker with a descriptive `context` block above the
+    /// options. Used by the standalone post-attach cleanup prompt.
+    fn select_with_context(
+        &mut self,
+        title: &str,
+        context: &[Line<'_>],
+        items: Vec<String>,
+    ) -> anyhow::Result<usize> {
+        self.with_raw_mode("entering raw mode for cleanup picker", |renderer| {
+            renderer.select_loop(title, context, items)
+        })
+    }
+
+    fn select_loop(
+        &mut self,
+        title: &str,
+        context: &[Line<'_>],
+        items: Vec<String>,
+    ) -> anyhow::Result<usize> {
         use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let mut picker = SelectListState::new(items);
         loop {
             self.terminal
-                .draw(|frame| draw_select(frame, title, &picker))
+                .draw(|frame| draw_select(frame, title, context, &picker))
                 .context("rendering launch picker")?;
             if let Event::Key(key) =
                 crossterm::event::read().context("reading launch picker input")?
@@ -864,16 +892,9 @@ impl RichRenderer {
         initial: &str,
         skippable: bool,
     ) -> anyhow::Result<crate::env_resolver::PromptResult> {
-        let owns_raw = !crate::tui::host_screen_owned();
-        if owns_raw {
-            crossterm::terminal::enable_raw_mode()
-                .context("entering raw mode for launch env prompt")?;
-        }
-        let outcome = self.prompt_text_loop(title, initial, skippable);
-        if owns_raw {
-            let _ = crossterm::terminal::disable_raw_mode();
-        }
-        outcome
+        self.with_raw_mode("entering raw mode for launch env prompt", |renderer| {
+            renderer.prompt_text_loop(title, initial, skippable)
+        })
     }
 
     fn prompt_text_loop(
@@ -922,16 +943,9 @@ impl RichRenderer {
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<crate::env_resolver::PromptResult> {
-        let owns_raw = !crate::tui::host_screen_owned();
-        if owns_raw {
-            crossterm::terminal::enable_raw_mode()
-                .context("entering raw mode for launch env select")?;
-        }
-        let outcome = self.prompt_select_loop(title, options, default, skippable);
-        if owns_raw {
-            let _ = crossterm::terminal::disable_raw_mode();
-        }
-        outcome
+        self.with_raw_mode("entering raw mode for launch env select", |renderer| {
+            renderer.prompt_select_loop(title, options, default, skippable)
+        })
     }
 
     fn prompt_select_loop(
@@ -954,7 +968,7 @@ impl RichRenderer {
         }
         loop {
             self.terminal
-                .draw(|frame| draw_select(frame, title, &picker))
+                .draw(|frame| draw_select(frame, title, &[], &picker))
                 .context("rendering launch env select prompt")?;
             if let Event::Key(key) =
                 crossterm::event::read().context("reading launch env select input")?
@@ -982,16 +996,9 @@ impl RichRenderer {
     }
 
     fn confirm(&mut self, mut state: ConfirmState) -> anyhow::Result<bool> {
-        let owns_raw = !crate::tui::host_screen_owned();
-        if owns_raw {
-            crossterm::terminal::enable_raw_mode()
-                .context("entering raw mode for launch confirmation")?;
-        }
-        let outcome = self.confirm_loop(&mut state);
-        if owns_raw {
-            let _ = crossterm::terminal::disable_raw_mode();
-        }
-        outcome
+        self.with_raw_mode("entering raw mode for launch confirmation", |renderer| {
+            renderer.confirm_loop(&mut state)
+        })
     }
 
     fn confirm_loop(&mut self, state: &mut ConfirmState) -> anyhow::Result<bool> {
@@ -1963,9 +1970,15 @@ fn push_wrapped_build_line(
     lines.push(Line::from(spans));
 }
 
-fn draw_select(frame: &mut Frame<'_>, title: &str, picker: &SelectListState) {
+fn draw_select(frame: &mut Frame<'_>, title: &str, context: &[Line<'_>], picker: &SelectListState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-    select_list::render(frame, picker_rect(box_area, picker), picker, title);
+    select_list::render(
+        frame,
+        picker_rect(box_area, picker, context),
+        picker,
+        title,
+        context,
+    );
     crate::console::widgets::hints::render(frame, hint_area, PICKER_HINT);
 }
 
@@ -1981,16 +1994,30 @@ fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     crate::console::widgets::hints::render(frame, hint_area, CONFIRM_HINT);
 }
 
-fn picker_rect(area: Rect, picker: &SelectListState) -> Rect {
-    // Interior: filter row + spacer + one row per item, plus two borders.
+fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Rect {
+    // Interior: filter row + spacer + one row per item, plus two borders; a
+    // non-empty context block adds its line count plus a spacer.
+    let context_rows = u16::try_from(context.len()).unwrap_or(u16::MAX);
+    let context_extra = if context_rows > 0 {
+        context_rows.saturating_add(1)
+    } else {
+        0
+    };
     let rows = u16::try_from(picker.len())
         .unwrap_or(u16::MAX)
-        .saturating_add(4);
+        .saturating_add(4)
+        .saturating_add(context_extra);
     let height = rows.clamp(6, area.height.saturating_sub(2).max(6));
     let min_w = 40.min(area.width);
     let max_w = (area.width.saturating_mul(4) / 5).max(min_w);
+    let context_w = context
+        .iter()
+        .map(|line| u16::try_from(line.width()).unwrap_or(u16::MAX))
+        .max()
+        .unwrap_or(0);
     let width = picker
         .max_label_width()
+        .max(context_w)
         .saturating_add(6)
         .clamp(min_w, max_w);
     centered_rect(width, height, area)
