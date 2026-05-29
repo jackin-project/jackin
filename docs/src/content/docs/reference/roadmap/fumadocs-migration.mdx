@@ -32,11 +32,15 @@ Fumadocs is a React documentation framework, **portable across React frameworks*
 - **`fumadocs-ui`** — the themed layer: `DocsLayout`, `HomeLayout`, `RootProvider`, the default MDX components (`Callout`, `Tabs`, `Steps`, `Cards`, `Accordion`, `Files`, code blocks), the Tailwind v4 preset, and OG helpers (`fumadocs-ui/og`).
 - **`fumadocs-mdx`** — the content pipeline: `source.config.ts` defines collections, validates frontmatter with Zod, and configures the MDX compiler (rehype/remark plugins, Shiki). On Vite it is the `fumadocs-mdx/vite` plugin; it generates a typed `.source` directory consumed by `loader()`.
 
-### Why TanStack Start (and Next.js as the fallback)
+### Why TanStack Start
 
-**TanStack Start is the chosen target** because it is the stack the project prefers and because it is the cleanest fit for the existing tooling: it is a Vite app, and **Bun runs Vite natively**, so the install-and-build story stays on Bun end to end (`bun install`, `bun run build`) with no Node-only bundler in the path. The current React landing islands assume a React-DOM client runtime, which TanStack Start provides directly.
+**TanStack Start is the target — the only target.** It is the stack the project standardises on, and it is the cleanest fit for the existing tooling: it is a Vite app, and **Bun runs Vite natively**, so the install-and-build story stays on Bun end to end (`bun install`, `bun run build`) with no Node-only bundler in the path. The current React landing islands assume a React-DOM client runtime, which TanStack Start provides directly.
 
-Next.js App Router is the most heavily documented Fumadocs target and remains the **fallback** if a TanStack Start blocker surfaces during the Phase 0 spike (the most likely candidates are static-prerender completeness and OG generation — see Risks). The plan is written for TanStack Start; if the spike forces a fallback, the only sections that change materially are the wiring and OG sections, because the theming, content, parity, and AI-friendly work are framework-independent.
+**Next.js is explicitly out of scope — not even a fallback.** This migration does not consider Next.js. If a TanStack Start blocker surfaces during the Phase 0 spike, resolve it on TanStack Start or raise it with the operator; do not switch frameworks. The theming, content, parity, and AI-friendly work are framework-independent regardless.
+
+### Versions: always the latest
+
+Install the **latest stable release** of every package — `fumadocs-core` / `fumadocs-ui` / `fumadocs-mdx`, TanStack Start, Takumi, Tailwind v4, Orama, and the Bun / Node toolchain — and verify every API and behavior in this plan against the **latest official docs**, not an older snapshot. Wherever this page says "confirm against the docs," it means the current release at implementation time. Resolve those latest versions into `bun.lock` and let the repo's Renovate automation keep them current, exactly as today. Do not deliberately hold an older major to dodge a migration step; take the newest and adapt.
 
 ### Bun stays
 
@@ -65,7 +69,7 @@ Verified constraints:
 - `autoSubfolderIndex: true` emits `/guides/mounts/index.html` (GitHub Pages' `index.html` convention). Note this controls the *file layout*, not router-level trailing-slash canonicalization — TanStack Router has known trailing-slash rough edges (active-link matching, SSR-vs-ignored differences). Set the router's `trailingSlash` option and verify that canonical URLs, the sitemap, internal links, and the active-page highlight all agree on the `/foo/bar/` shape, or inbound links and SEO drift.
 - The SPA shell (`_shell.html`) is the fallback for unknown routes; map it to a GitHub Pages `404.html`. A real 404 page is needed regardless (see the chrome inventory).
 - Server-only routes (Orama search, `llms.txt`, `llms-full.txt`, per-page `.md`, the OG images, the sitemap) must be emitted as **static files at build time**. The catch: `crawlLinks` can NOT discover these — nothing in the rendered HTML links to a search-index endpoint or an `image.webp` — so **each must be listed explicitly in the prerender `pages` array** with `prerender.enabled`. This is the make-or-break wiring for search + AI + OG on a static TanStack Start build; an endpoint left off the `pages` list silently 404s on GitHub Pages.
-- The static output directory (a Vite build dir — confirm the exact path for the pinned TanStack Start version) is what the deploy workflow uploads as the Pages artifact, replacing Astro's `dist/`.
+- The static output directory (a Vite build dir — confirm the exact path against the latest TanStack Start docs) is what the deploy workflow uploads as the Pages artifact, replacing Astro's `dist/`.
 
 ### Search: Orama, static index
 
@@ -79,7 +83,7 @@ Trade-off to validate during the spike: static Orama ships the index to the brow
 
 ### OG images: Takumi (the standard for this migration)
 
-**All OG image generation moves to [Takumi](https://takumi.kane.tw/).** Takumi is a Rust rendering engine with `next/og`-compatible APIs that rasterizes templates directly to PNG/JPEG/WebP/ICO with no browser, no V8, and no SVG intermediate step — roughly 2–10× faster than the satori + resvg pipeline the site uses today. It is framework-agnostic (Next.js, **TanStack Start**, React Router, Waku, any Vite/Nitro app), which is exactly why it fits: it gives TanStack Start the same turnkey OG story Next.js gets from `next/og`, so OG generation is no longer the rough edge it would otherwise be on a non-Next framework.
+**All OG image generation moves to [Takumi](https://takumi.kane.tw/).** Takumi is a Rust rendering engine with `next/og`-compatible APIs that rasterizes templates directly to PNG/JPEG/WebP/ICO with no browser, no V8, and no SVG intermediate step — roughly 2–10× faster than the satori + resvg pipeline the site uses today. It is framework-agnostic (works on **TanStack Start** and any Vite / Nitro app), which is exactly why it fits: it brings a turnkey, build-time OG story to TanStack Start, so OG generation is not a rough edge.
 
 Wiring:
 
@@ -161,7 +165,7 @@ The operator goal is an **AI-friendliest** docs site: agents and assistants read
 
 ## Component and feature mapping (Starlight → Fumadocs)
 
-The implementation spike must confirm exact prop names against the pinned Fumadocs version; the shapes below are the verified equivalents to target. Usage counts are audited from the current tree (see the inventory section).
+The implementation spike must confirm exact prop names against the latest Fumadocs release; the shapes below are the verified equivalents to target. Usage counts are audited from the current tree (see the inventory section).
 
 | Concern | Starlight (today) | Fumadocs (target) |
 |---|---|---|
@@ -270,7 +274,7 @@ The landing (<RepoFile path="docs/src/pages/index.astro" />) and the docs Head r
 
 ## Fumadocs + TanStack Start wiring (concrete)
 
-Verified against current Fumadocs/TanStack Start; pin the versions at implementation time and re-confirm. Files are TypeScript per <RepoFile path="docs/AGENTS.md" /> (no new `.mjs`/`.js`).
+Verified against current Fumadocs / TanStack Start; install the latest stable releases and re-confirm against their latest docs. Files are TypeScript per <RepoFile path="docs/AGENTS.md" /> (no new `.mjs`/`.js`).
 
 - **Vite plugin + MDX.** `vite.config.ts` composes `tanstackStart`, `tailwindcss`, `tsconfigPaths`, and the Fumadocs MDX plugin from `fumadocs-mdx/vite`:
 
@@ -307,7 +311,7 @@ Verified against current Fumadocs/TanStack Start; pin the versions at implementa
       rehypeCodeOptions: { themes: { light: 'github-dark', dark: 'github-dark' } }, // always-dark code
     },
     // AI-friendly: expose compiled Markdown for getLLMText / llms-full.txt / .md routes
-    // (confirm the exact postprocess key for the pinned version)
+    // (confirm the exact postprocess key against the latest fumadocs-mdx docs)
   })
   ```
 
@@ -338,7 +342,7 @@ The deploy pipeline in <RepoFile path=".github/workflows/docs.yml" /> changes sh
 ## Gotchas and easy-to-forget items
 
 - **Prerender orphans.** TanStack Start `crawlLinks` only prerenders pages it can reach by following links. A page reachable only by direct URL will be missing from the static build. Verify every page is linked from the nav/sidebar, or enumerate it in the prerender `pages` list. Cross-check the prerendered file count against the page count.
-- **SPA-shell-only prerender bug.** Some TanStack Start versions have had bugs where prerender in SPA mode renders only the root route. Pin a version where full prerender works and assert the page count in CI.
+- **SPA-shell-only prerender bug.** Some older TanStack Start versions had bugs where prerender in SPA mode rendered only the root route. Use the latest release (where these should be fixed) and assert the prerendered page count in CI regardless, so a regression fails the build instead of shipping a half-empty site.
 - **Takumi externalization + brand fonts.** Mark `@takumi-rs/image-response` external in the Vite SSR config (and trace its optional native deps on Nitro/TanStack Start) or the build fails. Takumi bundles Geist, not the brand fonts — load Inter + JetBrains Mono explicitly into the renderer. The digital-rain social card is a custom Takumi template (a node tree from the seeded rain state), not the default card — budget time for it.
 - **Live "Ask AI" needs a server.** The static-friendly AI features ship; an embedded chat panel does not, on a static host. Keep it deferred unless an external endpoint is in scope.
 - **SmartyPants dependency of `rehype-jk`.** <RepoFile path="docs/scripts/rehype-jk.ts" /> matches both the ASCII `'` and the typographic `’` because Starlight's SmartyPants rewrites apostrophes before the rehype stage. Confirm the Fumadocs/remark pipeline's apostrophe handling; if typographic quotes are part of the look, enable `remark-smartypants`. The plugin tolerates both forms, so brand-name wrapping won't break, but surrounding prose punctuation might change.
@@ -360,7 +364,7 @@ The deploy pipeline in <RepoFile path=".github/workflows/docs.yml" /> changes sh
 
 Per <RepoFile path="AGENTS.md" /> ("Project status: pre-release"), this can be a hard cut — no parallel docs trees, no compatibility shim. The phases are about **de-risking**, not shipping incrementally to production.
 
-**Phase 0 — Spike / proof of concept.** Stand up a minimal Fumadocs + TanStack Start app under Bun in a scratch directory or branch. Port 3–5 representative pages (one Getting Started, one Commands page with `<Tabs>`/`<Steps>`, one Reference page with tables and an `<Aside>`, the Roadmap overview with `<EarlyDevelopmentNotice />`). Wire the `--jk-*` token mapping, always-dark code blocks, fonts, `rehype-jk`, static Orama search, a Takumi OG card for one page (with the brand fonts and the externalization config), and the AI routes (`llms.txt`, one `.md` page). Validate: TanStack Start prerender produces a full static set (assert the page count, prove no SPA-shell-only bug); `next-themes` with `attribute="data-theme"` preserves the shared theme key and no-flash behavior; Bun runs the Vite build in CI; static search works; Takumi renders the card under Bun/Vite. **Exit criterion:** the pages are visually indistinguishable from production in both modes, the static build serves correctly with no server, Takumi emits the card, and the AI routes return clean Markdown. If TanStack Start blocks any of these without a clean fix (the main risk is prerender completeness), fall back to Next.js before going further.
+**Phase 0 — Spike / proof of concept.** Stand up a minimal Fumadocs + TanStack Start app under Bun in a scratch directory or branch. Port 3–5 representative pages (one Getting Started, one Commands page with `<Tabs>`/`<Steps>`, one Reference page with tables and an `<Aside>`, the Roadmap overview with `<EarlyDevelopmentNotice />`). Wire the `--jk-*` token mapping, always-dark code blocks, fonts, `rehype-jk`, static Orama search, a Takumi OG card for one page (with the brand fonts and the externalization config), and the AI routes (`llms.txt`, one `.md` page). Validate: TanStack Start prerender produces a full static set (assert the page count, prove no SPA-shell-only bug); `next-themes` with `attribute="data-theme"` preserves the shared theme key and no-flash behavior; Bun runs the Vite build in CI; static search works; Takumi renders the card under Bun/Vite. **Exit criterion:** the pages are visually indistinguishable from production in both modes, the static build serves correctly with no server, Takumi emits the card, and the AI routes return clean Markdown. If TanStack Start blocks any of these without a clean fix (the main risk is prerender completeness), stop and resolve it on TanStack Start or raise it with the operator before going further — Next.js is not a fallback.
 
 **Phase 1 — Scaffold the real app.** Create the TanStack Start structure (`vite.config.ts`, `source.config.ts`, `lib/source.ts` + `loader()`, `__root.tsx` + `RootProvider`, the root-mounted docs catch-all, `components/mdx.tsx`, `lib/layout.shared.tsx`, `routes/api/search.ts`, tsconfig path alias for `.source`). Port the full stylesheet set: `tempo-tokens.css` and the landing tokens move unchanged; `docs-theme.css` is re-authored against `--color-fd-*` and Fumadocs DOM; `fonts.css` carries over.
 
@@ -374,12 +378,12 @@ Per <RepoFile path="AGENTS.md" /> ("Project status: pre-release"), this can be a
 
 ## Risks and open questions
 
-- **TanStack Start static maturity.** Full static prerender of a dynamic-route doc tree is the riskiest assumption: orphan-page completeness and historical SPA-shell-only prerender bugs both need verifying on a pinned version. This is the primary reason Next.js is kept as a fallback.
+- **TanStack Start static maturity.** Full static prerender of a dynamic-route doc tree is the riskiest assumption: orphan-page completeness and historical SPA-shell-only prerender bugs both need verifying on the latest release. Mitigate by asserting the prerendered page count in CI; since Next.js is out of scope, a hard blocker here is resolved on TanStack Start or escalated to the operator, not worked around by switching frameworks.
 - **OG generation.** Takumi (`next/og`-compatible, framework-agnostic) is the chosen renderer and removes the "no `next/og` on TanStack Start" problem — its remaining cost is the externalization config, loading the brand fonts (Takumi bundles Geist, not Inter/JetBrains Mono), and porting the bespoke digital-rain social card to a Takumi template.
 - **Live "Ask AI" vs static hosting.** A runtime chat panel needs an inference endpoint a static site cannot provide from its own origin. The static AI features ship; embedded chat is deferred.
 - **`next-themes` attribute strategy.** The plan assumes `attribute="data-theme"` + a shared `storageKey` preserves the landing/docs theme continuity and the no-flash pre-paint script. If `RootProvider` does not cleanly forward those props, theme behavior (and the View Transitions cross-fade) needs redesign.
 - **Static Orama index size.** Validate the exported index size and cold-search latency at the current page count; document the ceiling at which a sharded/cloud search would be warranted.
-- **Exact Fumadocs component props.** The Callout variant set (info/warn/error vs note/tip/caution/danger) and the Tabs/Steps APIs must be confirmed against the pinned version; the mapping table is the target, not a guarantee.
+- **Exact Fumadocs component props.** The Callout variant set (info/warn/error vs note/tip/caution/danger) and the Tabs/Steps APIs must be confirmed against the latest release; the mapping table is the target, not a guarantee.
 - **Forked prose conflict.** The bespoke prose CSS must reconcile with Fumadocs' forked Tailwind Typography `prose`.
 - **Bun + Vite/TanStack build in CI.** Expected to work (Vite is Bun-friendly), but prove the prerender build under Bun on the runner, including the `postinstall` codegen ordering.
 - **Takumi native binary under Bun.** Takumi is a Rust renderer (native binary / WASM). Verify it resolves and runs under `bun install` + the Vite SSR build on both the local dev OS (macOS / OrbStack Linux) and the Linux CI runner; a Rust native dependency that installs cleanly under one package manager/OS can be a footgun under another. This is the riskiest part of the Takumi switch, separate from the layout work.
