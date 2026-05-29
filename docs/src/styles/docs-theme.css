@@ -922,6 +922,10 @@ html.theme-init *::after {
   #nd-page {
     max-width: 980px;
   }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] #nd-page {
+    max-width: 1120px;
+  }
 }
 
 @media (min-width: 1280px) {
@@ -932,6 +936,12 @@ html.theme-init *::after {
   #nd-toc,
   #nd-toc-placeholder {
     --fd-toc-width: 216px !important;
+  }
+}
+
+@media (min-width: 1536px) {
+  #nd-docs-layout[data-sidebar-collapsed='true'] {
+    --fd-layout-width: 105rem;
   }
 }
 
