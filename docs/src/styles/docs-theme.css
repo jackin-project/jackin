@@ -140,7 +140,7 @@
   --color-fd-muted-foreground: var(--jk-text-dim);
   --color-fd-card: var(--jk-panel);
   --color-fd-card-foreground: var(--jk-text);
-  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover: #f7f8f6;
   --color-fd-popover-foreground: var(--jk-text);
   --color-fd-primary: var(--jk-accent);
   --color-fd-primary-foreground: var(--jk-bg);
@@ -358,6 +358,41 @@ body {
   margin-top: 0.875rem;
   padding-bottom: 1.5rem;
   border-bottom: 1px solid var(--jk-ui);
+}
+
+:root[data-theme='light'] .jk-page-actions button {
+  border-color: rgba(17, 24, 39, 0.12);
+  background: #f5f6f4;
+  color: #1f2421;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme='light'] .jk-page-actions button:hover,
+:root[data-theme='light'] .jk-page-actions button:focus-visible,
+:root[data-theme='light'] .jk-page-actions button[data-state='open'] {
+  background: #ecefeb;
+  color: #111513;
+}
+
+:root[data-theme='light'] .jk-page-actions button svg {
+  color: #66716b !important;
+}
+
+:root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] {
+  border-color: rgba(17, 24, 39, 0.12);
+  background: rgba(247, 248, 246, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 18px 42px rgba(17, 24, 39, 0.12);
+  color: #1f2421;
+}
+
+:root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
+  background: #ecefeb;
+  color: #111513;
 }
 
 .jk-name {
@@ -830,8 +865,8 @@ html.theme-init *::after {
   display: table;
   width: 100%;
   table-layout: auto;
-  border: 1px solid var(--jk-ui);
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--jk-text) 13%, transparent);
+  border-radius: 8px;
   border-collapse: separate;
   border-spacing: 0;
   overflow: hidden;
@@ -860,15 +895,33 @@ html.theme-init *::after {
 }
 
 .sl-markdown-content thead:not(:where(.not-content *)) {
-  background: var(--jk-panel);
+  background: color-mix(in srgb, var(--jk-text) 7%, var(--jk-panel));
 }
 
 .sl-markdown-content th:not(:where(.not-content *)) {
   color: var(--jk-text);
-  font-weight: 600;
-  font-size: 0.875rem;
-  letter-spacing: 0.01em;
+  border-bottom-color: color-mix(in srgb, var(--jk-text) 18%, transparent);
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
   text-align: start;
+  text-transform: uppercase;
+}
+
+:root[data-theme='light'] .sl-markdown-content table:not(:where(.not-content *)) {
+  border-color: rgba(5, 20, 12, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 1px 1px rgba(0, 0, 0, 0.03);
+}
+
+:root[data-theme='light'] .sl-markdown-content thead:not(:where(.not-content *)) {
+  background: #e8eee9;
+}
+
+:root[data-theme='light'] .sl-markdown-content th:not(:where(.not-content *)) {
+  border-bottom-color: rgba(5, 20, 12, 0.16);
+  color: #1c241f;
 }
 
 .sl-markdown-content td:not(:where(.not-content *)) {
