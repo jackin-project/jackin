@@ -9,7 +9,7 @@ description: |
   URLs so that stale 503s from a previous run never poison the results.
 inputs:
   sitemap-url:
-    description: Absolute URL of the deployed sitemap-0.xml to dump.
+    description: Absolute URL of the deployed sitemap.xml to dump.
     required: true
   edit-url:
     description: Base URL for `<RepoFile />` GitHub edit links to remap.
@@ -90,7 +90,7 @@ runs:
           )
 
           if [[ "$EXTERNAL_LINKS" != "true" ]]; then
-            site_origin="${SITEMAP_URL%/sitemap-*}"
+            site_origin="${SITEMAP_URL%/sitemap.xml}"
             site_origin_re="$(printf '%s' "$site_origin" | sed 's/[][\/.^$*+?{}()|]/\\&/g')"
             args+=(--include "^${site_origin_re}(/|$)|^file://")
           fi

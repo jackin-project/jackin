@@ -1,0 +1,55 @@
+---
+title: "pub(crate) visibility pass"
+---
+
+**Status**: Open — Phase 1, no confirmation needed
+
+## Problem
+
+`jackin` has a real library surface: <RepoFile path="src/lib.rs" /> publicly exports most top-level modules and <RepoFile path="src/bin/role.rs" /> consumes the library. That means a blanket "binary crate ⇒ convert everything to `pub(crate)`" pass would be wrong. The actual readability problem is narrower: some items are still wider than needed.
+
+## Verified numbers (May 2026)
+
+| Declaration | `pub` | `pub(crate)` |
+|---|---|---|
+| `fn` | 383 | 42 (9.9%) |
+| `struct` | 124 | 3 |
+| `enum` | 91 | 3 |
+
+- <RepoFile path="src/lib.rs" /> currently exports 22 top-level modules (grew from 21) plus `app::run`
+- There are **zero** `pub(crate) mod` declarations — all 22 modules use bare `pub mod`
+- `RUSTFLAGS='-W unreachable_pub' cargo check` reported 10 warnings at the original analysis; the count may have changed — re-verify before starting
+
+## Current low-hanging fruit
+
+| File | Scope | Notes |
+|---|---|---|
+| <RepoFile path="src/workspace/planner.rs" /> | 5 current warnings | Plan structs/helpers are only consumed inside the crate today |
+| <RepoFile path="src/console/manager/agent_allow.rs" /> | 2 current warnings | Manager helper fns can likely tighten to `pub(super)` |
+| <RepoFile path="src/runtime/launch.rs" /> | 1 current warning | `inspect_attach_outcome` appears narrower than `pub` |
+| <RepoFile path="src/config/roles.rs" /> | 1 current warning | `BUILTIN_AGENTS` likely does not need full `pub` |
+| <RepoFile path="src/config/mounts.rs" /> | 1 current warning | `MountEntry` may be wider than necessary |
+
+## Steps
+
+1. Re-run `RUSTFLAGS='-W unreachable_pub' cargo check` to get the current warning set.
+2. Decide the intended library surface in <RepoFile path="src/lib.rs" /> first: what truly needs to stay `pub` for `main.rs`, `jackin-role`, and tests?
+3. Add to <RepoFile path="Cargo.toml" /> `[lints.rust]` section:
+   ```toml
+   [lints.rust]
+   unreachable_pub = "warn"
+   ```
+4. Run `cargo check` — compiler lists the items that are public but unreachable from the crate root.
+5. Convert each flagged item to the narrowest workable visibility (`pub(crate)` or `pub(super)` as appropriate).
+6. If a larger pass is still desired, shrink or reorganize the `lib.rs` export surface first, then rerun the lint.
+7. Verify `cargo nextest run` still passes and `cargo check` is warning-free.
+
+## What stays `pub`
+
+- `pub fn run` and other intentionally exported library entrypoints used by sibling binaries
+- validation helpers consumed by <RepoFile path="src/bin/role.rs" />
+- any types that are deliberately part of the internal library boundary exposed from <RepoFile path="src/lib.rs" />
+
+## Caveats
+
+Do not treat `unreachable_pub` as a turnkey "convert hundreds of bare `pub` items" script. It is a cleanup aid for the current exported shape, not a substitute for deciding what the library boundary should be.

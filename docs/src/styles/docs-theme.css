@@ -8,7 +8,7 @@
    the green accent so the product reads as one site in either mode. */
 
 :root {
-  /* Starlight's gray ramp — surface grays for chrome, not text. Mapped
+  /* Fumadocs's gray ramp — surface grays for chrome, not text. Mapped
      to Radix tokens from tempo-tokens.css so light-dark() handles both
      modes. Overridden inside [data-theme='dark'] for finer control. */
   --sl-color-gray-1: var(--color-gray2);
@@ -19,13 +19,16 @@
   --sl-color-gray-6: var(--color-gray10);
   --sl-color-gray-7: var(--color-gray11);
 
-  /* Fonts — injected via src/components/overrides/Head.astro. */
+  /* Fonts — injected via src/components/chrome/root route. */
   --sl-font: 'Inter', system-ui, sans-serif;
   --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --sl-font-system-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 
-  /* Layout dimensions — match Vocs proportions. */
-  --sl-sidebar-width: 19rem;
-  --sl-content-width: 48rem;
+  /* Layout dimensions — keep navigation compact so documentation owns the page. */
+  --sl-sidebar-width: 15.5rem;
+  --sl-content-width: 56rem;
   --sl-nav-height: 3.5rem;
 
   /* Brand accent — theme-aware so dark mode can keep the bright
@@ -47,6 +50,25 @@
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
+
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
+  --fd-layout-width: 96rem;
+  --fd-sidebar-width: 15.5rem;
 }
 
 /* ==========================================================================
@@ -95,6 +117,23 @@
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
+
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
 
   /* Expressive-code frame — outer border tracks theme; surfaces come
      from the shiki theme (github-dark in dark mode). */
@@ -149,6 +188,23 @@
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
+
   /* Light-mode expressive-code frame — the surface is still dark
      (--jk-code-bg applied in docs-theme.css below) with shiki's
      one-dark-pro palette for punchier syntax on the light page. */
@@ -162,6 +218,415 @@
   --ec-frm-trmTtbBrdBtmCol: transparent;
   --ec-frm-inlBrdCol: transparent;
   --ec-frm-frameBoxShdCssVal: none;
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--sl-font);
+  color: var(--jk-text);
+  background: var(--jk-bg);
+}
+
+.jk-site-title,
+.jk-sidebar-wordmark {
+  font-family: 'Inter Black', 'Inter', sans-serif;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--jk-text);
+  user-select: none;
+}
+
+.jk-site-title {
+  font-size: 1.375rem;
+}
+
+.jk-site-title .tick,
+.jk-sidebar-wordmark .tick {
+  color: #00ff41;
+  text-shadow: 0 0 0.2em rgba(0, 255, 65, 0.45);
+}
+
+:root[data-theme='light'] .jk-site-title .tick,
+:root[data-theme='light'] .jk-sidebar-wordmark .tick {
+  text-shadow: none;
+}
+
+.jk-social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--jk-text-dim);
+  padding: 0.5rem;
+  margin: -0.5rem;
+  transition: color 0.15s;
+}
+
+.jk-social-link:hover {
+  color: var(--jk-brand);
+}
+
+.jk-sidebar-footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.jk-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--jk-ui);
+  border-radius: 8px;
+  background: var(--jk-panel);
+}
+
+.jk-theme-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--jk-text-ghost);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.jk-theme-toggle button:hover {
+  color: var(--jk-text);
+}
+
+.jk-theme-toggle button[aria-pressed='true'] {
+  color: var(--jk-accent);
+  background: var(--jk-bg-deep);
+}
+
+.jk-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: -1rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--jk-ui);
+}
+
+.jk-name {
+  color: var(--jk-brand);
+  font-weight: 700;
+}
+
+#nd-page :is(h1, h2, h3, h4) {
+  font-family: var(--sl-font);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+#nd-page h1 {
+  font-size: 2.75rem;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+#nd-page h2 {
+  color: color-mix(in oklab, var(--jk-accent) 40%, var(--jk-text));
+}
+
+#nd-page :not(pre) > code {
+  border: 1px solid var(--jk-ui);
+  background: var(--jk-panel);
+  color: var(--jk-accent);
+  border-radius: 6px;
+  padding: 0.12em 0.35em;
+}
+
+#nd-page table {
+  width: 100%;
+  border: 1px solid var(--jk-ui);
+  border-radius: 10px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+#nd-page th {
+  background: var(--jk-panel);
+  color: var(--jk-text);
+}
+
+#nd-page :is(th, td) {
+  border-bottom: 1px solid var(--jk-ui-subtle);
+  padding: 0.65rem 0.85rem;
+}
+
+.jk-arch,
+.jk-layers {
+  margin: 1.5rem 0 2rem;
+  color: var(--jk-text);
+}
+
+.jk-arch-panel {
+  background: var(--jk-bg-deep);
+  border: 1px solid var(--jk-ui);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.jk-arch-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--jk-panel);
+  border-bottom: 1px solid var(--jk-ui);
+}
+
+.jk-arch-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--jk-ui-strong);
+}
+
+.jk-arch-dot:first-child {
+  background: color-mix(in srgb, var(--jk-brand) 60%, var(--jk-text-ghost));
+}
+
+.jk-arch-title,
+.jk-layer-owner,
+.jk-arch-chip,
+.jk-arch-sub-label--mono,
+.jk-arch-link-label {
+  font-family: var(--sl-font-system-mono);
+}
+
+.jk-arch-title {
+  margin-left: auto;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-ghost);
+}
+
+.jk-arch-body {
+  padding: 22px 24px;
+}
+
+.jk-arch-section-label {
+  margin: 0 0 12px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-dim);
+}
+
+.jk-arch-row,
+.jk-arch-sub-label,
+.jk-layer-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.jk-arch-sub {
+  position: relative;
+  padding-left: 20px;
+  margin-top: 14px;
+}
+
+.jk-arch-sub::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--jk-ui);
+}
+
+.jk-arch-sub-label {
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--jk-text);
+}
+
+.jk-arch-sub-label--mono,
+.jk-arch-link {
+  color: var(--jk-brand);
+}
+
+.jk-arch-note,
+.jk-layer-owner {
+  color: var(--jk-text-ghost);
+  font-size: 0.8rem;
+}
+
+.jk-arch-chip {
+  padding: 4px 12px;
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.jk-arch-chip--accent {
+  color: var(--jk-brand);
+  border-color: color-mix(in srgb, var(--jk-brand) 50%, var(--jk-ui));
+}
+
+.jk-arch-pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.jk-arch-service,
+.jk-layer {
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+}
+
+.jk-arch-service {
+  padding: 14px 16px;
+  border-radius: 8px;
+  margin: 0;
+}
+
+.jk-arch-service-name,
+.jk-layer-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--jk-text);
+}
+
+.jk-arch-service-role,
+.jk-arch-mount span,
+.jk-layer-items {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--jk-text-dim);
+}
+
+.jk-arch-link {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.jk-arch-rule {
+  border: 0;
+  height: 1px;
+  background: var(--jk-ui);
+  margin: 22px 0;
+}
+
+.jk-arch-mounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 28px;
+}
+
+.jk-arch-mount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jk-arch-mount code {
+  color: var(--jk-brand);
+  background: transparent;
+  padding: 0;
+  font-size: 0.84rem;
+}
+
+.jk-layers-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.25));
+}
+
+.jk-layer {
+  position: relative;
+  padding: 18px 22px 18px 26px;
+}
+
+.jk-layer + .jk-layer {
+  margin-top: -1px;
+}
+
+.jk-layer:first-child {
+  border-radius: 10px 10px 0 0;
+}
+
+.jk-layer:last-child {
+  border-radius: 0 0 10px 10px;
+}
+
+.jk-layer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.jk-layer--derived::before {
+  background: var(--jk-brand);
+}
+
+.jk-layer--agent::before {
+  background: color-mix(in srgb, var(--jk-brand) 35%, var(--jk-text-ghost));
+}
+
+.jk-layer--base::before {
+  background: var(--jk-text-ghost);
+}
+
+.jk-layer-title-row {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.jk-layer-items {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  column-gap: 24px;
+  row-gap: 4px;
+}
+
+.jk-layer-items li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.jk-layer-items li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 6px;
+  height: 1px;
+  background: var(--jk-text-ghost);
+}
+
+.jk-layer--derived .jk-layer-owner,
+.jk-layer--derived .jk-layer-items li::before {
+  color: var(--jk-brand);
+  background: var(--jk-brand);
 }
 
 /* ==========================================================================
@@ -179,7 +644,7 @@
    Initial-load transition suppression — stops CSS transitions on
    sidebar / TOC / pagination elements from animating color changes
    when the initial data-theme flip happens in head. Class added by
-   overrides/Head.astro, removed two animation frames after DOMReady.
+   chrome/root route, removed two animation frames after DOMReady.
    ========================================================================== */
 
 html.theme-init,
@@ -191,7 +656,7 @@ html.theme-init *::after {
 
 /* ==========================================================================
    Theme-change cross-fade — uses the View Transitions API.
-   overrides/ThemeSelect.astro calls document.startViewTransition() around
+   chrome/ThemeToggle.tsx calls document.startViewTransition() around
    the data-theme flip. The browser snapshots the page pre/post and
    animates between them, which avoids the per-property transition bugs
    on inherited colors (child elements previously snapped abruptly when
@@ -294,7 +759,7 @@ html.theme-init *::after {
 }
 
 /* ==========================================================================
-   Tables — Starlight defaults to rows separated only by a full-weight
+   Tables — Fumadocs defaults to rows separated only by a full-weight
    grey border from --sl-color-gray-5 with no cell padding on the first
    column. In our palette the border renders heavy and the missing
    left padding floats the first column out against the body text.
@@ -302,7 +767,7 @@ html.theme-init *::after {
    ========================================================================== */
 
 .sl-markdown-content table:not(:where(.not-content *)) {
-  /* Starlight defaults the table to display: block + overflow: auto for
+  /* Fumadocs defaults the table to display: block + overflow: auto for
      responsive scrolling, but that breaks the table layout — thead/tbody
      shrink to content width instead of filling the available row space.
      Force display: table so children behave as table-header-group /
@@ -324,7 +789,7 @@ html.theme-init *::after {
   vertical-align: top;
 }
 
-/* Override Starlight's zero first/last inline-padding — we want even
+/* Override Fumadocs's zero first/last inline-padding — we want even
    gutters inside the bordered table. */
 .sl-markdown-content :is(th:first-child, td:first-child):not(:where(.not-content *)) {
   padding-inline-start: 1rem;
@@ -375,30 +840,130 @@ html.theme-init *::after {
 }
 
 /* ==========================================================================
-   Sidebar — Starlight defaults for group labels + active-pill; we only
-   retint unstyled item text and hover state.
+   Early-development warning — high-visibility status callout.
    ========================================================================== */
 
-.sidebar-content ul li a {
+.jk-early-development-notice {
+  --callout-color: #422006 !important;
+  background: #fbbf24;
+  border-color: transparent;
+  border-width: 0;
+  padding: 1rem 1.125rem 1rem 0.875rem;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+}
+
+.jk-early-development-notice > [role='none'] {
+  display: none;
+}
+
+.jk-early-development-notice svg {
+  color: #422006;
+  fill: rgba(66, 32, 6, 0.14);
+  margin-top: 0.15rem;
+}
+
+.jk-early-development-notice p:first-child {
+  color: #422006;
+  font-weight: 800;
+}
+
+.jk-early-development-notice :is(p, strong) {
+  color: #241104;
+}
+
+.jk-early-development-notice [class*='text-fd-muted-foreground'] {
+  color: #3b1d06;
+}
+
+.jk-early-development-notice [class*='text-fd-muted-foreground'] strong {
+  color: #180b02;
+}
+
+:root[data-theme='light'] .jk-early-development-notice {
+  background: #fbbf24;
+  box-shadow: 0 18px 38px rgba(120, 53, 15, 0.14);
+}
+
+:root[data-theme='light'] .jk-early-development-notice svg,
+:root[data-theme='light'] .jk-early-development-notice p:first-child {
+  color: #422006;
+}
+
+:root[data-theme='light'] .jk-early-development-notice [class*='text-fd-muted-foreground'] {
+  color: #3b1d06;
+}
+
+/* ==========================================================================
+   Sidebar — Fumadocs page tree text, hover state, and active pill.
+   ========================================================================== */
+
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 15.5rem !important;
+  }
+
+  [data-sidebar-placeholder] {
+    --fd-sidebar-width: 15.5rem !important;
+  }
+
+  #nd-page {
+    max-width: 980px;
+  }
+}
+
+#nd-sidebar a[data-active],
+#nd-sidebar button[data-state] {
   color: var(--jk-text-dim);
   transition: color 0.1s, background-color 0.1s;
 }
 
-.sidebar-content ul li a:hover {
+#nd-sidebar a[data-active]:hover,
+#nd-sidebar button[data-state]:hover {
   color: var(--jk-text);
 }
 
-.sidebar-content ul li a[aria-current='page'],
-.sidebar-content ul li a[aria-current='page']:hover,
-.sidebar-content ul li a[aria-current='page']:focus {
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']) {
+  color: color-mix(in oklab, var(--jk-brand) 62%, var(--jk-text-dim));
+  background:
+    linear-gradient(90deg, rgba(0, 255, 65, 0.09), rgba(0, 255, 65, 0.02) 62%, transparent),
+    transparent;
+  font-weight: 500;
+}
+
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true'])::before {
+  content: "";
+  position: absolute;
+  width: 2px;
+  inset-block: 0.7rem;
+  inset-inline-start: 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--jk-brand) 72%, transparent);
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.24);
+}
+
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):hover,
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):focus {
+  color: color-mix(in oklab, var(--jk-brand) 76%, var(--jk-text));
+  background:
+    linear-gradient(90deg, rgba(0, 255, 65, 0.13), rgba(0, 255, 65, 0.03) 68%, transparent),
+    transparent;
+}
+
+#nd-sidebar a[data-active='true'],
+#nd-sidebar a[data-active='true']:hover,
+#nd-sidebar a[data-active='true']:focus {
   color: var(--sl-color-text-invert);
   background-color: var(--jk-brand);
   font-weight: 600;
 }
 
+#nd-sidebar a[data-active='true']::before {
+  display: none;
+}
+
 /* ==========================================================================
    Mobile menu footer (social icons + theme toggle + language select).
-   Starlight draws a 1px top border via .mobile-preferences { border-top:
+   Fumadocs draws a 1px top border via .mobile-preferences { border-top:
    ... var(--sl-color-gray-6) } which reads as a stray line hanging at
    the bottom of the menu. Dropped in both themes — the sidebar's last
    item already provides enough visual closure.
@@ -408,150 +973,95 @@ html.theme-init *::after {
   border-top: 0 !important;
 }
 
-/* Theme toggle in the mobile footer — add a tiny bit of internal
-   margin so it doesn't crowd the socials/language picker next to it. */
-.mobile-preferences starlight-theme-select.jk-theme-toggle {
-  margin-block: 0.5rem;
-}
-
 /* ==========================================================================
-   Mobile "On this page" (MobileTableOfContents) — Starlight defaults
-   resolve through --sl-color-black, --sl-color-gray-5, etc. which in
-   our palette rendered muddy (near-white button + faint grey border
-   in light mode; dark-on-dark with low contrast in dark mode).
+   Right-rail outline — follows Fumadocs's own quiet TOC pattern:
+   visible list icon, muted label, grey spine, accent only on active branch.
    ========================================================================== */
 
-mobile-starlight-toc > nav {
-  background-color: var(--jk-bg);
-  border-top-color: var(--jk-ui-strong);
+#nd-toc {
+  --jk-toc-wordmark-size: clamp(48px, 4.4vw, 64px);
 }
 
-mobile-starlight-toc summary {
-  border-bottom-color: var(--jk-ui-strong);
-}
-
-mobile-starlight-toc .toggle {
-  background-color: var(--jk-panel);
-  border-color: var(--jk-ui-strong);
-  color: var(--jk-text-dim);
-}
-
-mobile-starlight-toc details .toggle:hover {
-  color: var(--jk-text);
-  border-color: var(--jk-text-dim);
-}
-
-mobile-starlight-toc details[open] .toggle {
-  color: var(--jk-text);
-  border-color: var(--jk-brand);
-}
-
-mobile-starlight-toc .display-current {
-  color: var(--jk-text);
-}
-
-mobile-starlight-toc .caret {
-  color: var(--jk-text-dim);
-}
-
-mobile-starlight-toc .dropdown {
-  background-color: var(--jk-panel);
-  border-color: var(--jk-ui-strong);
-  border-top-color: var(--jk-ui-strong);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-}
-
-mobile-starlight-toc .dropdown a {
-  color: var(--jk-text-dim);
-  border-top-color: var(--jk-ui);
-}
-
-mobile-starlight-toc .dropdown a:hover {
-  color: var(--jk-text);
-  background-color: var(--jk-bg);
-}
-
-mobile-starlight-toc .dropdown a[aria-current='true'] {
-  color: var(--jk-brand);
-  font-weight: 500;
-  background-color: transparent;
-}
-
-mobile-starlight-toc .dropdown a[aria-current='true']::after {
-  background-color: var(--jk-brand);
-}
-
-/* ==========================================================================
-   Right-rail outline — tree structure; rails on nested groups only,
-   turn green when they contain the active heading.
-   ========================================================================== */
-
-.right-sidebar-panel h2 {
-  font-family: var(--sl-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+#nd-toc h3 {
+  font-family: var(--sl-font);
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--jk-text-ghost);
-  font-weight: 600;
-  margin-bottom: 0.75rem;
+  font-weight: 500;
+  margin-bottom: 0.85rem;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.5rem;
 }
 
-.right-sidebar-panel h2::before {
-  content: "";
-  width: 18px;
-  height: 1px;
-  background: var(--jk-brand);
-  flex-shrink: 0;
+#nd-toc h3 svg {
+  display: block;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--jk-text-ghost);
+  opacity: 0.8;
 }
 
-.right-sidebar-panel ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.right-sidebar-panel ul ul {
-  margin-left: 0.75rem;
-  border-left: 2px solid var(--jk-ui);
-  transition: border-color 0.15s;
-}
-
-.right-sidebar-panel ul ul:has(a[aria-current='true']) {
-  border-left-color: var(--jk-brand);
-}
-
-.right-sidebar-panel ul li a {
-  border-radius: 0;
+#nd-toc a {
+  border-radius: 6px;
   background: transparent;
   color: var(--jk-text-dim);
-  font-size: 0.75rem;       /* 12px — Starlight default; lost when we overrode PageSidebar.astro */
-  line-height: 1.4;
-  transition: color 0.1s;
-  padding-block: 0.2rem;
-  padding-left: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  transition: color 0.12s, background-color 0.12s;
+  padding-block: 0.285rem;
+  padding-inline: 0.75rem 0.5rem;
 }
 
-.right-sidebar-panel ul:not(ul ul) > li > a {
+#nd-toc a:hover {
   color: var(--jk-text);
-  font-weight: 500;
+  background: color-mix(in srgb, var(--jk-brand) 6%, transparent);
 }
 
-.right-sidebar-panel ul li a:hover {
-  color: var(--jk-text);
-  background: transparent;
-}
-
-.right-sidebar-panel ul li a[aria-current='true'] {
+#nd-toc a[data-active='true'] {
   color: var(--jk-brand);
   background: transparent;
-  font-weight: 500;
+  font-weight: 600;
 }
 
-.right-sidebar-panel ul li:has(> ul a[aria-current='true']) > a {
-  color: var(--jk-brand);
+#nd-toc [class*='border-s'] {
+  border-left-width: 1px;
+  border-left-color: color-mix(in srgb, var(--jk-text) 13%, transparent);
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#nd-toc [class*='border-s']:has(a[data-active='true']) {
+  border-left-width: 1px;
+  border-left-color: color-mix(in srgb, var(--jk-brand) 72%, var(--jk-ui));
+}
+
+#nd-toc [class*='border-s']:has(a:hover) {
+  border-left-color: color-mix(in srgb, var(--jk-text) 24%, transparent);
+}
+
+#nd-toc::after {
+  content: "jackin'";
+  display: block;
+  margin-top: auto;
+  padding-top: 2rem;
+  padding-bottom: 1rem;
+  font-family: var(--sl-font);
+  font-size: var(--jk-toc-wordmark-size);
+  font-weight: 900;
+  line-height: 0.82;
+  letter-spacing: 0;
+  background: linear-gradient(
+    90deg,
+    var(--jk-text) 0 5.9ch,
+    var(--jk-brand) 5.9ch 100%
+  );
+  background-clip: text;
+  color: transparent;
+  max-width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* ==========================================================================
@@ -565,7 +1075,7 @@ header.header {
 }
 
 /* ==========================================================================
-   Site title — wordmark styles live in overrides/SiteTitle.astro
+   Site title — wordmark styles live in chrome/SiteTitle.tsx
    ========================================================================== */
 
 .site-title {
@@ -608,7 +1118,7 @@ header.header {
 }
 
 /* ==========================================================================
-   MDX <Tabs> — Starlight's default inactive tab text resolves through
+   MDX <Tabs> — Fumadocs's default inactive tab text resolves through
    --sl-color-gray-3 which we remap to a dark surface gray, so it read
    too dim on both themes. Override with landing-tone dim/bright text
    and a subtle hairline bottom border; active tab carries the 2px
@@ -674,7 +1184,7 @@ header.header {
 
 /* ==========================================================================
    Tabs in chip form — activated only when the tablist would overflow
-   its container (see the inline ResizeObserver script in Head.astro
+   its container (see the inline ResizeObserver script in root route
    which toggles [data-overflow] on .tablist-wrapper). Horizontal
    scrolling tabs hide labels off-screen and make the active indicator
    hard to spot; chips keep every label visible at every width.
@@ -748,7 +1258,7 @@ header.header {
   /* Code blocks keep a dark surface in BOTH page modes:
      - Dark mode: slightly deeper than the page (recessed feel)
      - Light mode: high-contrast dark block against the white page
-     Single github-dark shiki theme (set in astro.config.mjs) paints the
+     Single github-dark shiki theme (set in source.config.ts) paints the
      syntax on top, so colors stay readable on either shade. */
   background: var(--jk-code-bg);
 }
@@ -809,16 +1319,97 @@ header.header {
    Asides
    ========================================================================== */
 
-.starlight-aside {
-  border-radius: 10px;
-  border: 1px solid var(--sl-color-hairline);
-  background: var(--jk-panel);
+.jk-aside {
+  --callout-color: var(--jk-accent) !important;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--jk-accent) 18%, var(--jk-ui));
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--jk-accent) 9%, transparent), transparent 48%),
+    color-mix(in srgb, var(--jk-panel) 92%, var(--jk-bg));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 14px 34px rgba(0, 0, 0, 0.16);
+}
+
+.jk-aside::before {
+  content: '';
+  position: absolute;
+  top: 0.875rem;
+  bottom: 0.875rem;
+  left: 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: color-mix(in srgb, var(--jk-accent) 72%, var(--jk-text));
+  opacity: 0.86;
+}
+
+.jk-aside svg {
+  color: var(--jk-accent);
+  fill: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+}
+
+.jk-aside :is(p, li) {
+  color: var(--jk-text-dim);
+}
+
+.jk-aside strong {
+  color: var(--jk-text);
+}
+
+.jk-aside--tip {
+  --callout-color: var(--jk-accent) !important;
+}
+
+.jk-aside--caution,
+.jk-aside--warning {
+  --callout-color: #f59e0b !important;
+  border-color: color-mix(in srgb, #f59e0b 28%, var(--jk-ui));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #f59e0b 12%, transparent), transparent 50%),
+    color-mix(in srgb, var(--jk-panel) 92%, var(--jk-bg));
+}
+
+.jk-aside--caution::before,
+.jk-aside--warning::before {
+  background: #f59e0b;
+}
+
+.jk-aside--caution svg,
+.jk-aside--warning svg {
+  color: #f59e0b;
+  fill: rgba(245, 158, 11, 0.14);
+}
+
+.jk-aside--danger {
+  --callout-color: #ff5e7a !important;
+  border-color: color-mix(in srgb, #ff5e7a 32%, var(--jk-ui));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #ff5e7a 12%, transparent), transparent 50%),
+    color-mix(in srgb, var(--jk-panel) 92%, var(--jk-bg));
+}
+
+.jk-aside--danger::before {
+  background: #ff5e7a;
+}
+
+.jk-aside--danger svg {
+  color: #ff5e7a;
+  fill: rgba(255, 94, 122, 0.14);
+}
+
+:root[data-theme='light'] .jk-aside {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--jk-accent) 7%, transparent), transparent 48%),
+    #f8faf9;
+  box-shadow: 0 12px 28px rgba(13, 24, 18, 0.07);
 }
 
 /* ==========================================================================
    Mobile menu toggle — keep the close-X icon high-contrast when expanded.
 
-   Starlight's MobileMenuToggle swaps the button bg to --sl-color-gray-2
+   Fumadocs's MobileMenuToggle swaps the button bg to --sl-color-gray-2
    (mid-grey) when the menu is open while keeping the icon at
    --sl-color-black. On the dark theme that produces a dark X on a
    mid-grey pill — visually it reads as disabled/invisible.
@@ -826,23 +1417,8 @@ header.header {
    Override: keep the resting bg (--sl-color-white, which is the inverted
    foreground token on dark theme and a dark surface on light theme) so
    the high-contrast icon color stays readable in both states. The
-   "expanded" visual feedback is carried by Starlight's box-shadow: none
+   "expanded" visual feedback is carried by Fumadocs's box-shadow: none
    transition, which we keep untouched.
-   ========================================================================== */
-
-starlight-menu-button[aria-expanded='true'] button {
-  background-color: var(--sl-color-white);
-}
-
-[data-theme='light'] starlight-menu-button[aria-expanded='true'] button {
-  background-color: var(--sl-color-black);
-}
-
-/* ==========================================================================
-   Top-nav social icons (GitHub) — plain fg color, green on hover.
-   Starlight defaults to accent-green for the resting state, but the user
-   wanted the icon to read as a neutral glyph (white on dark, near-black
-   on light) that only pops on interaction.
    ========================================================================== */
 
 .social-icons a {
@@ -854,8 +1430,8 @@ starlight-menu-button[aria-expanded='true'] button {
   color: var(--sl-color-text-accent);
 }
 
-/* Hide the vertical separator Starlight draws after the social icons
-   block (Header.astro injects .social-icons::after with a 1px border). */
+/* Hide the vertical separator Fumadocs draws after the social icons
+   block (Fumadocs header injects .social-icons::after with a 1px border). */
 .social-icons::after {
   display: none;
 }
@@ -894,28 +1470,8 @@ site-search dialog {
   border: 1px solid var(--jk-ui);
 }
 
-/* Pagefind UI inside the search dialog — restore contrast in dark mode.
-
-   Starlight maps --pagefind-ui-text to var(--sl-color-gray-2) which we
-   define as #1a1c1b in the dark palette — essentially black, drawn on
-   top of an already-dark search popup background (--sl-color-black =
-   #050605). Result-excerpt prose and the search input's typed text
-   become almost invisible.
-
-   Override the relevant Pagefind tokens so the popup draws on our
-   standard panel surface with full-strength text. Scoped to dark mode
-   only — light mode's Starlight defaults render fine against the light
-   palette. */
-:root[data-theme='dark'] #starlight__search {
-  --pagefind-ui-background: var(--jk-panel);
-  --pagefind-ui-text: var(--jk-text);
-  --pagefind-ui-primary: var(--jk-text);
-  --pagefind-ui-border: var(--jk-ui);
-  --pagefind-ui-tag: var(--jk-bg-deep);
-}
-
 /* ==========================================================================
-   Theme toggle styling lives in overrides/ThemeSelect.astro (scoped)
+   Theme toggle styling lives in chrome/ThemeToggle.tsx (scoped)
    ========================================================================== */
 
 /* ==========================================================================

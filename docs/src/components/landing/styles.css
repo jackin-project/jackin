@@ -333,9 +333,8 @@
    ========================================================================== */
 
 /* Normalise html/body on the landing page. Tailwind's preflight (which
-   zeroes default browser margins and sets body bg) is only loaded on
-   Starlight docs pages; the landing imports this file directly so it
-   needs its own tiny reset. Paint body from the theme token so browser
+   zeroes default browser margins and sets body bg) is loaded by the
+   docs app; this reset keeps the landing route self-contained. Paint body from the theme token so browser
    chrome areas (rubber-band scroll, mobile address bar) match the page. */
 html,
 body {
@@ -468,6 +467,14 @@ html.theme-init *::after {
   margin-top: 12px;
 }
 .landing-install-line .k { color: var(--landing-accent); }
+
+.landing-install-warning {
+  margin-top: 28px;
+}
+
+.landing-install-warning .landing-dev-warning {
+  margin: 0 auto;
+}
 
 .landing-install-ctas {
   margin-top: 48px;
@@ -1415,12 +1422,11 @@ nav.landing-topnav .landing-star {
   max-width: 960px;
   margin: 0 0 42px;
   padding: 18px 20px;
-  border: 1px solid rgba(251, 191, 36, 0.46);
-  border-left: 4px solid #fbbf24;
+  border: 0;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(251, 191, 36, 0.16), rgba(251, 191, 36, 0.055));
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
-  color: var(--landing-text);
+  background: #fbbf24;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+  color: #241104;
 }
 
 .landing-dev-warning-label {
@@ -1433,30 +1439,28 @@ nav.landing-topnav .landing-star {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #fbbf24;
+  color: #422006;
 }
 
 .landing-dev-warning p {
   margin: 0;
   max-width: 880px;
-  color: var(--landing-text-dim);
+  color: #3b1d06;
   font-size: 16px;
   line-height: 1.55;
 }
 
 .landing-dev-warning strong {
-  color: var(--landing-text);
+  color: #180b02;
 }
 
 :root[data-theme='light'] .landing-dev-warning {
-  border-color: rgba(180, 83, 9, 0.42);
-  border-left-color: #b45309;
-  background: linear-gradient(90deg, rgba(251, 191, 36, 0.34), rgba(255, 251, 235, 0.5));
-  box-shadow: 0 16px 34px rgba(10, 80, 30, 0.16);
+  background: #fbbf24;
+  box-shadow: 0 16px 34px rgba(120, 53, 15, 0.14);
 }
 
 :root[data-theme='light'] .landing-dev-warning-label {
-  color: #7c2d12;
+  color: #422006;
 }
 
 .landing-hero-grid {
