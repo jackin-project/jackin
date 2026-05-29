@@ -1,0 +1,513 @@
+---
+title: "Migrate the docs site to Fumadocs"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — research complete; design proposal and phased implementation plan. No implementation committed.
+
+## Goal
+
+Replace the documentation site's rendering engine. Today the site is [Astro](https://astro.build/) + [Starlight](https://starlight.astro.build/); the goal is to rebuild it on [Fumadocs](https://fumadocs.dev/), running on [TanStack Start](https://tanstack.com/start/) (Vite), built and run with [Bun](https://bun.sh/), and deployed as a fully static site to GitHub Pages — **with no visible change to the operator**. Same dark phosphor-green identity, same light/dark palette, same fonts, same landing page, same always-dark code blocks, same custom chrome (sidebar active-pill, right-rail tree TOC, pagination cards, brand-styled `jackin'` name). The engine and authoring model change underneath; the look and feel does not. On top of that parity, the migration adds a first-class **AI-friendly** surface (`llms.txt`, per-page Markdown, copy-for-LLM actions) that the current Starlight site does not have.
+
+This is a "swap the foundation, keep the house, add a door for robots" migration. The hard requirement is **pixel-level continuity** of the published site, not "a new Fumadocs default theme that happens to be green." The bright `#00ff41` phosphor green on `#0a0b0a`, the deep-forest `#007a22` light-mode accent, the JetBrains-Mono code surfaces that stay dark on a white page — all of it is the brand and must survive the move intact.
+
+**This is a pure, one-shot replacement — never two systems.** The site runs on exactly one engine at every point in time. We do NOT run Astro/Starlight and Fumadocs side by side, ship a partial or parallel Fumadocs site alongside the old one, keep the old build as a fallback, or migrate page-by-page in production. The whole site is rebuilt on Fumadocs on a branch, verified against the parity checklist, and cut over in a single change that **deletes Astro/Starlight in the same PR**. The phased plan below is a de-risking order of work on that branch, not an incremental rollout to live traffic. (Per the pre-release rule in <RepoFile path="AGENTS.md" />, a hard cut is the sanctioned shape — no compatibility shim, no dual trees.)
+
+This roadmap item exists to (a) prove the approach is sound, (b) record the verified Fumadocs / TanStack Start capabilities the migration depends on, and (c) lay out an exact, phased plan detailed enough that the implementation PR is execution, not rediscovery.
+
+## Why move off Astro Starlight
+
+Starlight serves the current site well, so this is not a "fix what is broken" change. The motivation is forward-looking:
+
+- **React-native composition on the stack we want.** The landing page is already a tree of React islands (<RepoFile path="docs/src/components/landing/Landing.tsx" /> and siblings). The interactive docs ambitions — embedded TUI demos, live config builders, the [agent orchestrator](/reference/roadmap/agent-orchestrator-research/) visualizations — are React work, and the team's preferred app stack is TanStack Start on Vite. Fumadocs runs first-class on TanStack Start, so the docs site lands on the same stack the project already wants to build on, instead of Astro's island bridge.
+- **One framework, one toolchain.** Astro's `.astro` component model and island hydration sit beside React in the same repo. A Fumadocs / TanStack Start site is React end to end — layouts, MDX components, the landing page — on Vite, which Bun runs natively. The result is one component idiom and one build tool.
+- **Customization ceiling.** The current site already overrides five Starlight chrome components (<RepoFile path="docs/src/components/overrides/PageSidebar.astro" /> and the rest) and carries ~1000 lines of CSS in <RepoFile path="docs/src/styles/docs-theme.css" /> to bend Starlight's `--sl-*` system to the brand. Fumadocs exposes its layout as composable React with a documented headless core (`fumadocs-core`), so deep customization is the supported path rather than an override-and-pray exercise.
+- **AI-friendliness as a built-in, not a bolt-on.** Fumadocs ships `llms.txt`, `llms-full.txt`, per-page Markdown, and copy-for-LLM page actions as supported features. Starlight has none of this natively. As more of the project's audience reads docs through AI agents, this matters.
+
+None of these is urgent. The bar for doing the migration is therefore high: it must land with **zero regression** in look, feel, SEO, link integrity, or build/deploy ergonomics. If it cannot, it should not land.
+
+## Chosen stack: Fumadocs on TanStack Start, built with Bun
+
+Fumadocs is a React documentation framework, **portable across React frameworks** (Next.js, TanStack Start, React Router, Waku). It is built from composable packages:
+
+- **`fumadocs-core`** — headless library: page-tree/navigation logic, search adapters, TOC, breadcrumb, link primitives, and the `llms`/LLM-text utilities. No opinion on styling. Ships per-framework adapters (`fumadocs-core/framework`, `fumadocs-ui/provider/tanstack`).
+- **`fumadocs-ui`** — the themed layer: `DocsLayout`, `HomeLayout`, `RootProvider`, the default MDX components (`Callout`, `Tabs`, `Steps`, `Cards`, `Accordion`, `Files`, code blocks), the Tailwind v4 preset, and OG helpers (`fumadocs-ui/og`).
+- **`fumadocs-mdx`** — the content pipeline: `source.config.ts` defines collections, validates frontmatter with Zod, and configures the MDX compiler (rehype/remark plugins, Shiki). On Vite it is the `fumadocs-mdx/vite` plugin; it generates a typed `.source` directory consumed by `loader()`.
+
+### Why TanStack Start
+
+**TanStack Start is the target — the only target.** It is the stack the project standardises on, and it is the cleanest fit for the existing tooling: it is a Vite app, and **Bun runs Vite natively**, so the install-and-build story stays on Bun end to end (`bun install`, `bun run build`) with no Node-only bundler in the path. The current React landing islands assume a React-DOM client runtime, which TanStack Start provides directly.
+
+**Next.js is explicitly out of scope — not even a fallback.** This migration does not consider Next.js. If a TanStack Start blocker surfaces during the Phase 0 spike, resolve it on TanStack Start or raise it with the operator; do not switch frameworks. The theming, content, parity, and AI-friendly work are framework-independent regardless.
+
+### Versions: always the latest
+
+Install the **latest stable release** of every package — `fumadocs-core` / `fumadocs-ui` / `fumadocs-mdx`, TanStack Start, Takumi, Tailwind v4, Orama, and the Bun / Node toolchain — and verify every API and behavior in this plan against the **latest official docs**, not an older snapshot. Wherever this page says "confirm against the docs," it means the current release at implementation time. Resolve those latest versions into `bun.lock` and let the repo's Renovate automation keep them current, exactly as today. Do not deliberately hold an older major to dodge a migration step; take the newest and adapt.
+
+### Bun stays
+
+Bun is the package manager and runtime, unchanged. <RepoFile path="docs/mise.toml" /> already pins `bun` and `node`; Vite builds run under Bun. The `bun.lock` lockfile, the `bun install --frozen-lockfile` CI step, and the `bun run <script>` entry points all carry over. Do not introduce npm/pnpm/yarn (per <RepoFile path="docs/AGENTS.md" />).
+
+### Static prerender to GitHub Pages
+
+The current site deploys as a **static bundle to GitHub Pages** behind a custom domain (`jackin.tailrocks.com`, via <RepoFile path="docs/public/CNAME" />). It must stay static — there is no server to run.
+
+TanStack Start produces a fully static site through the `prerender` option on its Vite plugin:
+
+```ts
+// vite.config.ts (sketch)
+tanstackStart({
+  prerender: {
+    enabled: true,
+    crawlLinks: true,          // follow links from each page → discovers the whole doc tree
+    autoSubfolderIndex: true,  // emit /guides/mounts/index.html, not /guides/mounts.html
+  },
+})
+```
+
+Verified constraints:
+
+- `crawlLinks: true` discovers pages by following links from already-rendered pages. The sidebar links every page, so the tree is reachable — **but a page reachable only by direct URL (an orphan) will not be prerendered.** Every page must be linked from the nav/sidebar, or enumerated explicitly in the prerender `pages` list. This is the single biggest TanStack-static gotcha.
+- `autoSubfolderIndex: true` emits `/guides/mounts/index.html` (GitHub Pages' `index.html` convention). Note this controls the *file layout*, not router-level trailing-slash canonicalization — TanStack Router has known trailing-slash rough edges (active-link matching, SSR-vs-ignored differences). Set the router's `trailingSlash` option and verify that canonical URLs, the sitemap, internal links, and the active-page highlight all agree on the `/foo/bar/` shape, or inbound links and SEO drift.
+- The SPA shell (`_shell.html`) is the fallback for unknown routes; map it to a GitHub Pages `404.html`. A real 404 page is needed regardless (see the chrome inventory).
+- Server-only routes (Orama search, `llms.txt`, `llms-full.txt`, per-page `.md`, the OG images, the sitemap) must be emitted as **static files at build time**. The catch: `crawlLinks` can NOT discover these — nothing in the rendered HTML links to a search-index endpoint or an `image.webp` — so **each must be listed explicitly in the prerender `pages` array** with `prerender.enabled`. This is the make-or-break wiring for search + AI + OG on a static TanStack Start build; an endpoint left off the `pages` list silently 404s on GitHub Pages.
+- The static output directory (a Vite build dir — confirm the exact path against the latest TanStack Start docs) is what the deploy workflow uploads as the Pages artifact, replacing Astro's `dist/`.
+
+### Search: Orama, static index
+
+Starlight ships [Pagefind](https://pagefind.app/) (build-time index, client-side query). Fumadocs' native search is [Orama](https://orama.com/), and it has a static mode that is the direct equivalent of Pagefind's model:
+
+- The search route (`routes/api/search.ts`) exports the **static** index from `createFromSource(source)` (the `staticGET` variant) instead of a live server handler, so the index is a static JSON asset.
+- The client switches to `useDocsSearch({ type: 'static' })`, which downloads the exported index and runs the query in the browser.
+- Fully compatible with static prerender. No server, no Orama Cloud, no Algolia account.
+
+Trade-off to validate during the spike: static Orama ships the index to the browser, so for a large site it can be a heavier download than Pagefind's sharded index. At the current doc count (~80 pages) this is a non-issue, but the spike should measure the index size and confirm cold-search latency is acceptable.
+
+### OG images: Takumi (the standard for this migration)
+
+**All OG image generation moves to [Takumi](https://takumi.kane.tw/).** Takumi is a Rust rendering engine with `next/og`-compatible APIs that rasterizes templates directly to PNG/JPEG/WebP/ICO with no browser, no V8, and no SVG intermediate step — roughly 2–10× faster than the satori + resvg pipeline the site uses today. It is framework-agnostic (works on **TanStack Start** and any Vite / Nitro app), which is exactly why it fits: it brings a turnkey, build-time OG story to TanStack Start, so OG generation is not a rough edge.
+
+Wiring:
+
+- Install `@takumi-rs/image-response`; the default card component is `generate` from `fumadocs-ui/og/takumi`.
+- Build-time static generation: enumerate every page in the TanStack Start prerender step (the same crawl/list used for pages), rendering one `image.webp` per page into the static output. WebP keeps the cards smaller than the current PNGs.
+- **Bundler externalization is required**: mark `@takumi-rs/image-response` external in the Vite SSR config (`ssr.external`), and on Nitro/TanStack Start trace its optional native dependencies (import its `package.json`). This is the single Takumi-specific setup gotcha.
+- Takumi ships full-axis Geist / Geist Mono fonts, but the jackin' cards use **Inter + JetBrains Mono**, so the brand fonts must be loaded explicitly into the Takumi renderer (the woff/woff2 files are already vendored via fontsource).
+
+**Takumi is the standard for every OG/social asset in the repo, not just per-page cards.** The audit below found two generators plus one icon generator that share the old raster pipeline; all of them move to Takumi (see the inventory). This is a deliberate consolidation: one Rust-based renderer for every generated image, replacing `satori` + `@resvg/resvg-js` + `astro-og-canvas` (all three drop out of <RepoFile path="docs/package.json" />).
+
+### Theming: `--color-fd-*` tokens on Tailwind v4
+
+This is the load-bearing finding for the "same look and feel" requirement. Fumadocs UI is **Tailwind v4** (CSS-first config), exactly like the current site (<RepoFile path="docs/src/styles/global.css" /> imports `tailwindcss` and uses `@theme`). Its entire visual surface is driven by a documented set of CSS variables, loaded via:
+
+```css
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';   /* a color preset — we override it */
+@import 'fumadocs-ui/css/preset.css';     /* the Fumadocs component styles */
+```
+
+Core tokens include `--color-fd-background`, `--color-fd-foreground`, `--color-fd-muted` / `--color-fd-muted-foreground`, `--color-fd-card` / `--color-fd-card-foreground`, `--color-fd-popover` / `--color-fd-popover-foreground`, `--color-fd-primary` / `--color-fd-primary-foreground`, `--color-fd-secondary` / `--color-fd-secondary-foreground`, `--color-fd-accent` / `--color-fd-accent-foreground`, `--color-fd-border`, and `--color-fd-ring`. Dark/light is driven by [`next-themes`](https://github.com/pacocoursey/next-themes) (framework-agnostic; Fumadocs uses it through `RootProvider` on every framework, including TanStack Start). Layout width is `--fd-layout-width`.
+
+The migration overrides these tokens with the existing `--jk-*` palette rather than picking a preset:
+
+```css
+@theme {
+  /* light mode — jackin' light palette */
+  --color-fd-background: #ffffff;
+  --color-fd-foreground: #1a1c1b;
+  --color-fd-primary: #007a22;   /* deep forest green, AA on white */
+  /* …map every fd token to the corresponding --jk-* value… */
+}
+
+.dark {
+  /* dark mode — landing identity */
+  --color-fd-background: #0a0b0a;
+  --color-fd-foreground: #f4f7f5;
+  --color-fd-primary: #00ff41;   /* bright phosphor green */
+  /* … */
+}
+```
+
+Both engines being Tailwind v4 means the existing token machinery ports almost directly: the Radix ramps in <RepoFile path="docs/src/styles/tempo-tokens.css" /> and the landing tokens in <RepoFile path="docs/src/styles/global.css" /> are framework-agnostic `@theme` blocks that move over unchanged. The work is re-pointing the *chrome* mappings — today `--sl-*` → `--jk-*` in <RepoFile path="docs/src/styles/docs-theme.css" />, after the move `--color-fd-*` → `--jk-*` — and re-authoring the bespoke component CSS (tables, code frames, tabs, sidebar, TOC, pagination) against Fumadocs' DOM and class names instead of Starlight's.
+
+### Fonts
+
+Self-hosted via fontsource today (<RepoFile path="docs/src/styles/fonts.css" />): variable Inter, variable JetBrains Mono, Fraunces, plus a static Inter Black for the wordmark. On Vite these load by importing the same `@fontsource*` CSS, keeping fonts same-origin (no third-party CDN, per <RepoFile path="docs/AGENTS.md" />). Fumadocs reads body/mono fonts from `--font-*` variables, so the existing families and weights carry over; the woff2 preload hints in the current `<head>` map to manual `<link rel="preload">` in the root document.
+
+### Code blocks — use the native Fumadocs stack (best practice)
+
+Drop Expressive Code entirely. Researched independently of the current setup, the best approach in Fumadocs is its **native code block**, which is more capable than what the site has today and needs zero custom JavaScript. It is two pieces:
+
+- **`rehypeCode`** — a wrapper over `@shikijs/rehype`, **enabled by default** in Fumadocs MDX, does the Shiki highlighting at build time. Configure it in `source.config.ts` via `mdxOptions.rehypeCodeOptions`.
+- **`CodeBlock` + `Pre`** from `fumadocs-ui/components/codeblock`, registered as the `pre` override in `mdx-components`. They render the frame and ship a **built-in copy button**, an optional **title**, and an **auto language icon** (injected by a Shiki transformer). A `keepBackground` prop chooses between Shiki's own background and a token-driven surface.
+
+Out of the box this covers every feature the current site has and several it does not, all from code-fence meta — no plugin stack to maintain:
+
+- Title: ` ```ts title="vite.config.ts" `
+- Line numbers: ` ```ts lineNumbers ` (or `lineNumbers=4` to start at 4)
+- Line / word / diff / focus highlighting via inline comments: `// [!code highlight]`, `// [!code word:foo]`, `// [!code ++]` / `// [!code --]`, `// [!code focus]`
+- **Code tabs / groups**: ` ```ts tab="Tab 1" ` with an optional `tab-group="..."` to sync selection across blocks (e.g. a bun/pnpm/npm switcher that moves together) — a capability the current Expressive Code setup lacks
+- Inline highlighted code: set `inline: 'tailing-curly-colon'`, then write `` `bun run build{:bash}` ``
+
+**Theme decision (the one real choice).** Fumadocs' idiomatic default is a **dual theme** (`themes: { light, dark }`) wired to CSS variables, so code follows the page mode — the framework best practice and the lowest-friction path. The current always-dark-in-both-modes code surface is a *brand* decision, not a technical requirement. To keep always-dark the clean way, do not fight the dual-theme CSS-var system; set a single dark Shiki theme (or both `light` and `dark` to dark themes) and let the Fumadocs codeblock surface render from a token:
+
+```ts
+// source.config.ts → mdxOptions
+rehypeCodeOptions: {
+  themes: { light: 'github-dark', dark: 'github-dark' }, // always-dark in both page modes
+  // or { theme: 'github-dark' } for a single theme
+},
+```
+
+The implementing agent should confirm with the operator whether to keep always-dark or adopt the Fumadocs dual-theme default — both are clean, and the default is one fewer brand override to carry. Either way the only CSS work is restyling the Fumadocs codeblock frame ("flat rounded panel, no terminal chrome, top-right copy button") against its DOM; the bespoke copy-button JS and mobile-scaling CSS from the Expressive Code era are gone because the copy button is native.
+
+**Twoslash (optional power-up).** For TypeScript-heavy examples, `fumadocs-twoslash` + `twoslash` add hover types and inline diagnostics — add the `twoslash` meta to a block. It costs build time and needs the renderer externalized from the Vite SSR bundle (same externalization class as Takumi), the common langs preloaded (`js`, `jsx`, `ts`, `tsx`, since Twoslash popups cannot lazy-load them), the `fumadocs-twoslash/twoslash.css` import, the popup UI components registered, and ideally `createFileSystemTypesCache()` to cut rebuild cost. Treat it as opt-in for the pages that benefit, not a global default.
+
+### Content model and sidebar
+
+Starlight today: MDX under `src/content/docs/`, file-based routing, and the entire sidebar hand-authored as a nested tree in <RepoFile path="docs/astro.config.ts" />. Fumadocs: MDX under a content dir wired through `source.config.ts` (`defineDocs`), consumed by `loader()`; the sidebar/page-tree is derived from the directory structure plus per-folder `meta.json` files (page order, titles, collapsible groups, separators, `root` sections). Frontmatter (`title`, `description`) maps directly; the per-page `title:` requirement is unchanged.
+
+This is the largest authoring-surface change: the ~250-line nested sidebar array in `astro.config.ts` becomes a set of `meta.json` files distributed across the content tree. The audience-split groups (Getting Started / Operator Guide / Commands / Role Authoring / Behind jackin') and the deeply nested Roadmap groups must be reproduced exactly, including order and collapse state. The two sidebar/overview audit scripts in <RepoFile path="docs/AGENTS.md" /> must be rewritten to read `meta.json` instead of grepping `astro.config.ts`.
+
+## AI-friendly docs (new capability this migration adds)
+
+The operator goal is an **AI-friendliest** docs site: agents and assistants reading these docs should get clean Markdown and a machine index, not scraped HTML. Fumadocs supports this directly; enable the full set:
+
+1. **Processed Markdown in the source.** Set `postprocess: { includeProcessedMarkdown: true }` in `source.config.ts` so each page exposes its compiled Markdown for LLM consumption.
+2. **A `getLLMText()` helper** that renders a page to LLM-ready text — title + canonical URL + processed Markdown:
+
+   ```ts
+   async function getLLMText(page) {
+     const processed = await page.data.getText('processed')
+     return `# ${page.data.title} (${page.url})\n\n${processed}`
+   }
+   ```
+3. **`/llms.txt`** — a concise machine index (page titles, one-line descriptions, URLs) built with the `llms` utility from `fumadocs-core/source`. Emitted as a static file at the site root so agents discover it at `https://jackin.tailrocks.com/llms.txt`.
+4. **`/llms-full.txt`** — the whole corpus as one Markdown document: `getPages().map(getLLMText)` joined with blank lines. Also a static file.
+5. **Per-page raw Markdown** — every page reachable as `<url>.md` (or via `Accept: text/markdown` negotiation), returning `getLLMText()` output with `Content-Type: text/markdown`. On the static build these are prerendered `.md` files alongside each page's `index.html`.
+6. **Copy-for-LLM page actions** — the `LLMCopyButton` / page-actions component (`@fumadocs/cli add ai/page-actions`) adds "Copy Markdown" / "Open in ChatGPT/Claude" affordances on each page. Styling must match the jackin' chrome (panel chip, phosphor hover).
+7. **`robots.txt` + `llms.txt` discovery** — keep <RepoFile path="docs/public/robots.txt" /> permissive and add the `llms.txt` reference so crawlers and agents find both the sitemap and the LLM index.
+
+**Static-hosting caveat for live "Ask AI".** Fumadocs' interactive *Ask AI* search panel (OpenRouter or Inkeep providers) needs a runtime inference endpoint and/or an API key — which a static GitHub Pages site cannot serve from its own origin. The static-friendly AI features (1–7 above) are the priority and ship cleanly. A live "Ask AI" chat box is **deferred**: it would require either a client-held key (unacceptable) or a small external serverless function (out of scope for a static site). Document that the AI surface is "LLM-readable + copy-to-LLM," not "embedded chatbot," unless/until an external endpoint is in scope.
+
+## Component and feature mapping (Starlight → Fumadocs)
+
+The implementation spike must confirm exact prop names against the latest Fumadocs release; the shapes below are the verified equivalents to target. Usage counts are audited from the current tree (see the inventory section).
+
+| Concern | Starlight (today) | Fumadocs (target) |
+|---|---|---|
+| Callouts | `<Aside type="note\|tip\|caution">` (65 uses; no `danger`) | `<Callout type="info\|warn\|error">` (note/tip→info, caution→warn; confirm variant set) |
+| Steps | `<Steps>` around an `<ol>` (9 uses) | `<Steps>` / `<Step>` from `fumadocs-ui/components/steps` |
+| Tabs | `<Tabs><TabItem label="…">` (6 / 11 uses) | `<Tabs items={[…]}><Tab value="…">` from `fumadocs-ui/components/tabs` |
+| Repo-file links | `<RepoFile />` `.astro` (666 uses) | `<RepoFile />` rewritten as React; import path changes in ~80 files (codemod) |
+| Early-dev notice | `<EarlyDevelopmentNotice />` `.astro` (7 uses) | React component wrapping the Fumadocs `Callout` |
+| Diagrams | `<ArchitectureDiagram />`, `<ImageLayers />` `.astro` (1 each) | port to React |
+| Cards | `<Card />` (1 use) | `<Card>` / `<Cards>` |
+| Brand name styling | `rehype-jk` (<RepoFile path="docs/scripts/rehype-jk.ts" />) | same plugin, registered in `source.config.ts` `mdxOptions.rehypePlugins` |
+| External-link hardening | `rehype-external-links` in `astro.config.ts` | same plugin in `source.config.ts` `mdxOptions.rehypePlugins` |
+| MDX registration | auto-provided by Starlight | `components/mdx.tsx` merging `defaultMdxComponents` from `fumadocs-ui/mdx` |
+| Edit-on-GitHub | Starlight `editLink.baseUrl` | `DocsPage` `editOnGithub` option |
+| Search | Pagefind | Orama static (`createFromSource` static index + `useDocsSearch({type:'static'})`) |
+| Theme provider | Starlight + custom inline script | `RootProvider` from `fumadocs-ui/provider/tanstack` (next-themes) + ported pre-paint script |
+| Sidebar config | nested array in `astro.config.ts` | `meta.json` per folder + `loader()` |
+| OG / social / icons | astro-og-canvas + satori + resvg | **Takumi** (`@takumi-rs/image-response` + `fumadocs-ui/og/takumi`), build-time static |
+
+The `rehype-jk` plugin and the `rehype-external-links` configuration are both standard rehype and move across engines untouched — only their registration site changes (from `astro.config.ts` `markdown.rehypePlugins` to `source.config.ts` `mdxOptions.rehypePlugins`). The `.jk-name` CSS that styles the wrapped brand name ports with the rest of the stylesheet.
+
+## Look-and-feel parity strategy
+
+Parity is the whole point, so it gets its own explicit checklist. The migration is "done" only when each item below renders identically (or measurably better) than the current site, verified in both light and dark mode:
+
+1. **Color tokens.** Every `--jk-*` value (dark and light) is mapped onto the matching `--color-fd-*` token. The phosphor green `#00ff41` (dark) / `#007a22` accent + `#16a34a` brand (light) relationships are preserved.
+2. **Dotted-grid backdrop.** The dark-mode `radial-gradient` body backdrop is re-applied to the Fumadocs body.
+3. **Typography.** Heading sizes/weights/tracking (the landing-matched `-0.02em`/`-0.03em`, the green-blend `h2`), list marker colors, and the filled `<Steps>` number badges are reproduced.
+4. **Tables.** The bordered, hairline-ruled, rounded table with panel-tinted header replaces Fumadocs' default table styling.
+5. **Inline code.** Panel chip with hairline border, monospace, accent color inside links.
+6. **Code blocks.** Native Fumadocs code block (Shiki via `rehypeCode`, `CodeBlock`/`Pre`) with the brand-restyled frame — flat rounded panel, no terminal chrome, the native copy button restyled to brand. Keep the always-dark surface in both modes, or adopt the Fumadocs dual-theme default (operator's call — see Code blocks above).
+7. **Sidebar.** Dim/bright item text, brand-green active pill (`aria-current`), hover state.
+8. **Right-rail TOC.** Tree structure with nested left-rails that turn green when they contain the active heading; the mono uppercase "ON THIS PAGE" header with its green leading dash; the giant bottom-anchored `jackin'` wordmark.
+9. **Pagination cards.** 2px bordered panel cards with green hover lift.
+10. **Header / top nav.** Backdrop-blur translucent header, wordmark site title (phosphor tick), neutral social icons that green on hover, the search pill.
+11. **Theme toggle + cross-fade.** The two-button toggle, the View Transitions theme cross-fade, and the pre-paint no-flash behavior shared with the landing.
+12. **Brand name.** `jackin'` mentions wrapped and weighted by `rehype-jk`.
+
+The fidelity bar is enforced, not eyeballed: the spike (Phase 0) stands up a handful of representative pages side by side with the production site, and the implementation PR includes before/after screenshots of each checklist item in both modes. A visual-regression pass (even manual) is the acceptance gate.
+
+## Inventory the migration must reproduce (audited)
+
+Counted from the current tree so nothing is discovered late.
+
+### MDX components in use
+
+- `<RepoFile />` — **666 uses** across ~80 pages. Renders a `blob/main` GitHub link wrapping a `<code>` label (<RepoFile path="docs/src/components/RepoFile.astro" />). The React port is trivial; the cost is that ~80 MDX files import it by relative path — do the rewrite as a codemod, then re-run `check:repo-links`.
+- `<Aside type="…">` — **65 uses**: note (24), tip (20), caution (19). No `danger`/`warning`. Map note/tip → `Callout` `info`, caution → `warn`; confirm the exact Fumadocs variant names.
+- `<Tabs>` / `<TabItem>` — 6 / 11 uses. `label=` → `items=[…]` + `<Tab value=…>`.
+- `<Steps>` — 9 uses (wraps an `<ol>`).
+- `<EarlyDevelopmentNotice />` — 7 uses; it is just an `Aside type="caution"` with fixed copy (<RepoFile path="docs/src/components/EarlyDevelopmentNotice.astro" />).
+- `<Card>` — 1 use; `<ArchitectureDiagram />` and `<ImageLayers />` — 1 use each (<RepoFile path="docs/src/components/diagrams/ArchitectureDiagram.astro" />, <RepoFile path="docs/src/components/diagrams/ImageLayers.astro" />).
+
+### Frontmatter
+
+Only `title:` (122 files) and `description:` (47 files). No `template: splash`, `sidebar`, `hero`, `tableOfContents`, `lastUpdated`, `prev`/`next`, `banner`, `editUrl`, or `head` anywhere. The Zod frontmatter schema is therefore minimal, and there are no hero/splash docs pages to special-case — the only non-docs route is the landing at `/`.
+
+### Per-page SEO (emitted today by the Head override)
+
+<RepoFile path="docs/src/components/overrides/Head.astro" /> emits per content page, and the migration must reproduce each:
+
+- A per-page Open Graph image at `https://jackin.tailrocks.com/og/<route-id>.png`, plus `og:image:width/height/alt`, `twitter:image`, `twitter:image:alt`.
+- `article:section` derived from the top-level path segment.
+- `TechArticle` JSON-LD (headline, description, url, image, articleSection, isPartOf WebSite, publisher).
+- `BreadcrumbList` JSON-LD — **Home → current page only.** The site has no section index pages, so do not synthesize intermediate crumbs; they would 404.
+- All of the above is suppressed on the 404 route. The landing carries its own `SoftwareApplication` JSON-LD (in <RepoFile path="docs/src/pages/index.astro" />).
+
+In Fumadocs this moves to per-page route metadata + a JSON-LD `<script>` injected from the page/layout; the 404 special-casing becomes a dedicated not-found route.
+
+### Per-page OG card design (reproduce pixel-for-pixel, in Takumi)
+
+The current cards (<RepoFile path="docs/src/pages/og/[...slug].png.ts" />, via astro-og-canvas → satori): background `#0a0b0a`; a 12px phosphor-green (`rgb(0,255,65)`) border on the inline-start edge; title in Inter Bold 72px near-white `rgb(244,247,245)`, line-height 1.1; description in Inter 32px grey `rgb(156,168,161)`, line-height 1.4; padding 80; no logo. The Takumi template must reproduce this exactly.
+
+### Image generators to migrate to Takumi (audited)
+
+A repo-wide audit found OG/raster generation lives entirely under `docs/`, in three places — all move to Takumi, replacing `satori`, `@resvg/resvg-js`, and `astro-og-canvas`:
+
+- **Per-page OG cards** — <RepoFile path="docs/src/pages/og/[...slug].png.ts" /> (astro-og-canvas → satori, build-time via `getStaticPaths`). Becomes the Takumi per-page card described above, rendered in the TanStack Start prerender step.
+- **Committed social cards** — <RepoFile path="docs/scripts/gen-og.ts" /> (satori + resvg) renders `og-image.png` (1200×630) and `og-image-github.png` (1280×640) with a deterministic digital-rain background from the shared <RepoFile path="docs/src/components/landing/rainEngine.ts" />. The rain background becomes a custom Takumi template (a node tree built from the same seeded rain state) — this is the most involved of the three because it is bespoke layout, not the default title/description card.
+- **Icons / favicons** — <RepoFile path="docs/scripts/gen-icons.ts" /> shares the resvg raster path. Takumi outputs ICO/PNG too, so it can replace this generator and consolidate every generated image on one renderer. Treat icon migration as in-scope but lower-priority than the OG cards.
+
+### Static assets that just relocate
+
+The committed outputs are content, not code, and only change directory: `og-image.png`, `og-image-github.png`, `favicon.svg`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, plus <RepoFile path="docs/public/CNAME" />, <RepoFile path="docs/public/robots.txt" />, and <RepoFile path="docs/public/site.webmanifest" />, move to the new `public/` directory. The generator scripts that produce them change engine (above); the regenerated outputs should be byte-comparable in design.
+
+### Chrome customizations (five Starlight overrides → Fumadocs layout composition)
+
+Each is a deliberate brand decision, not incidental — reproduce all five:
+
+- **Nav wordmark** (<RepoFile path="docs/src/components/overrides/SiteTitle.astro" />): `jackin'` in static Inter Black, the apostrophe a phosphor `#00ff41` "tick" with a dark-mode-only green glow (no glow in light).
+- **Giant right-rail wordmark** (<RepoFile path="docs/src/components/overrides/PageSidebar.astro" />): a `clamp(60px,7vw,96px)` `jackin'` anchored to the bottom of the TOC panel, same Inter Black + phosphor tick. This rides on Starlight's TOC; Fumadocs' TOC differs, so this is custom layout work (a TOC footer slot or a custom TOC).
+- **Theme toggle** (<RepoFile path="docs/src/components/overrides/ThemeSelect.astro" />): a two-button (dark/light) group — NOT a 3-way auto — with a View Transitions cross-fade that respects `prefers-reduced-motion`, `aria-pressed` state, and the shared theme storage key.
+- **Social icons** (<RepoFile path="docs/src/components/overrides/SocialIcons.astro" />): inline GitHub SVG, neutral color, accent-on-hover, new-tab with `rel="me noopener noreferrer"`.
+- **Head scripts** (<RepoFile path="docs/src/components/overrides/Head.astro" />): the pre-paint theme-resolution inline script (shared resolution order + storage key with the landing), the `.theme-init` transition-suppression trick, the static Inter Black preload, and a `ResizeObserver` that toggles `[data-overflow]` on `.tablist-wrapper` to swap the tab underline for a chip layout when tabs overflow. The tab-overflow→chip behavior is bespoke; decide whether to re-implement it over Fumadocs Tabs or accept Fumadocs' native overflow.
+
+### Theme key + no-flash continuity (landing ↔ docs)
+
+The landing (<RepoFile path="docs/src/pages/index.astro" />) and the docs Head run the **same** pre-paint resolver against the **same** `starlight-theme` localStorage key, so toggling light on the docs and returning to the landing does not flash. Whatever Fumadocs/next-themes configuration is chosen must preserve a single shared key and the no-flash pre-paint behavior across both surfaces, or that continuity breaks. Fumadocs' `RootProvider` exposes a `theme` option that forwards to next-themes' `ThemeProvider` (it accepts `theme={{ enabled: false }}` to disable, so it passes props through); the likely path is `theme={{ attribute: 'data-theme', storageKey: 'starlight-theme' }}` so the existing `[data-theme]` CSS selectors and the shared storage key both survive. Confirm the exact passthrough surface (and where to inject the pre-paint script in the TanStack root document) in the Phase 0 spike.
+
+### Link / SEO infrastructure
+
+- **lychee** config (<RepoFile path="docs/lychee.toml" />): `index_files = ["index.html"]` (so trailing-slash `foo/index.html` resolves), `exclude_path` for `404.html`, github.com throttling, `mailto`/`file` schemes, an external-domain exclude list. Engine-agnostic; only the build-output directory in the remap globs changes.
+- **check-repo-links** (<RepoFile path="docs/scripts/check-repo-links.ts" />): enforces the `<RepoFile />` contract for all 666 references; engine-agnostic, only the content-root path changes if content moves.
+- **check-deployed-docs** action (<RepoFile path=".github/actions/check-deployed-docs/action.yml" />): dumps the live sitemap and lychee-checks every deployed URL; its `sitemap-url` input must be re-pointed when the sitemap filename changes.
+- **Sitemap — build a custom route from `source.getPages()` (verified best practice).** TanStack Start ships a built-in sitemap (`sitemap: { enabled, host }` on the plugin when prerender + crawl are on), but it has a duplicate-entry bug for index routes (`/x/` and `/x` both listed) and no per-URL `lastmod`/`priority`/`changefreq`. The recommended approach is a **custom server route that enumerates pages from Fumadocs' own `source.getPages()`** — the authoritative page list, the same source the search index and OG cards use — and returns `application/xml`. In TanStack Start the file is `routes/sitemap[.]xml.ts` (the `[.]` escapes the dot so the route is literally `/sitemap.xml`). Disable the built-in (`sitemap: { enabled: false }`) and add the route to the prerender `pages` list, since server routes are not crawl-discovered. Emit absolute URLs against the production origin with the trailing-slash shape matching the rest of the site. The shape:
+
+  ```ts
+  // routes/sitemap[.]xml.ts (sketch) — pages from Fumadocs, not the route tree
+  const urls = source.getPages().map((page) => ({
+    url: new URL(page.url, 'https://jackin.tailrocks.com').toString(),
+    // lastModified, changeFrequency, priority as desired
+  }))
+  ```
+
+  This also resolves the rename ripple: the URL is `/sitemap.xml` (Astro emitted `sitemap-index.xml` / `sitemap-0.xml`), so update the `Sitemap:` line in <RepoFile path="docs/public/robots.txt" />, the `deploy` job's sitemap-URL step in <RepoFile path=".github/workflows/docs.yml" />, and the `check-deployed-docs` action (<RepoFile path=".github/actions/check-deployed-docs/action.yml" />) input to `/sitemap.xml`.
+
+## Fumadocs + TanStack Start wiring (concrete)
+
+Verified against current Fumadocs / TanStack Start; install the latest stable releases and re-confirm against their latest docs. Files are TypeScript per <RepoFile path="docs/AGENTS.md" /> (no new `.mjs`/`.js`).
+
+- **Vite plugin + MDX.** `vite.config.ts` composes `tanstackStart`, `tailwindcss`, `tsconfigPaths`, and the Fumadocs MDX plugin from `fumadocs-mdx/vite`:
+
+  ```ts
+  // vite.config.ts (sketch)
+  import { defineConfig } from 'vite'
+  import tailwindcss from '@tailwindcss/vite'
+  import tsconfigPaths from 'vite-tsconfig-paths'
+  import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+  import mdx from 'fumadocs-mdx/vite'
+
+  export default defineConfig({
+    plugins: [
+      mdx(await import('./source.config')),
+      tsconfigPaths(),
+      tailwindcss(),
+      tanstackStart({ prerender: { enabled: true, crawlLinks: true, autoSubfolderIndex: true } }),
+    ],
+  })
+  ```
+
+- **Content pipeline + codegen.** `source.config.ts` declares the collection, the AI postprocess flag, and the MDX options (reusing the existing rehype plugins and dual-dark Shiki):
+
+  ```ts
+  // source.config.ts (sketch)
+  import { defineDocs, defineConfig } from 'fumadocs-mdx/config'
+  import rehypeJk from './scripts/rehype-jk'                  // reused unchanged
+  import rehypeExternalLinks from 'rehype-external-links'
+
+  export const docs = defineDocs({ dir: 'content/docs' })
+  export default defineConfig({
+    mdxOptions: {
+      rehypePlugins: [rehypeJk, [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]],
+      rehypeCodeOptions: { themes: { light: 'github-dark', dark: 'github-dark' } }, // always-dark code
+    },
+    // AI-friendly: expose compiled Markdown for getLLMText / llms-full.txt / .md routes
+    // (confirm the exact postprocess key against the latest fumadocs-mdx docs)
+  })
+  ```
+
+  Register `"postinstall": "fumadocs-mdx"` in <RepoFile path="docs/package.json" /> so `bun install` runs the `.source` codegen before any build; CI must install before building. The `.source` directory is consumed via a tsconfig path alias.
+
+- **Source + root mount (differs from every tutorial).** jackin' docs live at **root** paths (`/guides/mounts/`, `/reference/architecture/`), NOT under `/docs/`. So `loader({ baseUrl: '/' })`, the docs catch-all route is mounted at the root (`routes/$.tsx`, not `routes/docs/$.tsx`), and the landing is `routes/index.tsx`. Do NOT scaffold the default `routes/docs/` layout — it would prefix every URL with `/docs` and break every inbound link and the sitemap.
+
+- **Providers + layout.** `__root.tsx` wraps the app in `RootProvider` from `fumadocs-ui/provider/tanstack`; the docs route renders `DocsLayout` with the serialized page tree (server loader serializes `source.getPageTree()`, client loader streams MDX). `components/mdx.tsx` merges `defaultMdxComponents` from `fumadocs-ui/mdx` with `RepoFile`, `EarlyDevelopmentNotice`, and the diagram components.
+
+- **Static-ify the server routes.** Under prerender, the Orama search route exports the static index (`staticGET`), and the AI routes (`llms.txt`, `llms-full.txt`, per-page `.md`) are emitted as static files. Anything left as a live server function will 404 on GitHub Pages.
+
+- **Landing.** Renders outside the docs layout (`HomeLayout` from `fumadocs-ui/layouts/home`, or a bare layout), with the React islands from <RepoFile path="docs/src/components/landing/Landing.tsx" /> mounted as client components.
+
+- **Tailwind.** `@import 'tailwindcss'` then the Fumadocs preset; confirm whether the installed Fumadocs version's `preset.css` self-declares the `@source` scan for `fumadocs-ui`, or whether an explicit `@source` for the `fumadocs-ui` dist is required so component classes survive the production purge.
+
+## Deployment and CI changes
+
+The deploy pipeline in <RepoFile path=".github/workflows/docs.yml" /> changes shape but not strategy — still build a static artifact with Bun, still publish to GitHub Pages:
+
+- Build command: `bun run build` stays the entry point, now running the Vite/TanStack Start build + prerender, emitting the static output directory instead of Astro's `dist/`.
+- The `upload-pages-artifact` path changes to the new build output directory.
+- A `.nojekyll` file ships in `public/` (and/or is written in the build step) so GitHub Pages serves the hashed asset directory instead of running Jekyll.
+- The CNAME custom-domain mapping is unchanged (<RepoFile path="docs/public/CNAME" />); the site serves at root, so there is no base-path/asset-prefix configuration.
+- Sitemap: update the three references noted above (robots.txt, deploy job step, check-deployed action) to the new sitemap filename.
+- `postinstall` codegen ordering: ensure `bun install --frozen-lockfile` (which runs the `fumadocs-mdx` codegen) completes before the build step in every CI job that builds.
+- Link tooling is preserved because it operates on built HTML/Markdown, not on engine internals: re-point lychee's remap globs to the new output directory; `check:repo-links` only needs its content-root path updated if content moves; the `<RepoFile />` → `blob/main` contract is unchanged.
+
+## Gotchas and easy-to-forget items
+
+- **Prerender orphans.** TanStack Start `crawlLinks` only prerenders pages it can reach by following links. A page reachable only by direct URL will be missing from the static build. Verify every page is linked from the nav/sidebar, or enumerate it in the prerender `pages` list. Cross-check the prerendered file count against the page count.
+- **SPA-shell-only prerender bug.** Some older TanStack Start versions had bugs where prerender in SPA mode rendered only the root route. Use the latest release (where these should be fixed) and assert the prerendered page count in CI regardless, so a regression fails the build instead of shipping a half-empty site.
+- **Takumi externalization + brand fonts.** Mark `@takumi-rs/image-response` external in the Vite SSR config (and trace its optional native deps on Nitro/TanStack Start) or the build fails. Takumi bundles Geist, not the brand fonts — load Inter + JetBrains Mono explicitly into the renderer. The digital-rain social card is a custom Takumi template (a node tree from the seeded rain state), not the default card — budget time for it.
+- **Live "Ask AI" needs a server.** The static-friendly AI features ship; an embedded chat panel does not, on a static host. Keep it deferred unless an external endpoint is in scope.
+- **SmartyPants dependency of `rehype-jk`.** <RepoFile path="docs/scripts/rehype-jk.ts" /> matches both the ASCII `'` and the typographic `’` because Starlight's SmartyPants rewrites apostrophes before the rehype stage. Confirm the Fumadocs/remark pipeline's apostrophe handling; if typographic quotes are part of the look, enable `remark-smartypants`. The plugin tolerates both forms, so brand-name wrapping won't break, but surrounding prose punctuation might change.
+- **Trailing-slash URL shape.** Keep `/guides/mounts/` stable (`autoSubfolderIndex`) for inbound links, the sitemap, and lychee's `index_files`.
+- **`.nojekyll` is mandatory.** Without it GitHub Pages runs Jekyll and drops hashed asset directories → every asset 404s.
+- **Per-page OG URLs change.** The old `/og/<route>.png` shape differs unless deliberately mirrored. External OG caches re-scrape on next share, so this is cosmetic, not an SEO regression — mirror the shape only if zero churn is required.
+- **No redirects in static export.** The current site ships none; if one is ever needed it must be a static HTML meta-refresh or a Pages-level rule.
+- **Last-updated timestamps.** Starlight isn't showing them today (`lastUpdated` unused). If Fumadocs' default surfaces a "last updated" line, disable it for parity (or wire it to git — needs `fetch-depth: 0`, already set in the docs workflow).
+- **404 + OG fallback.** Reproduce the 404 route and its fallback social card (the site-level `og-image.png`, not a per-page card).
+- **Reduced motion.** `prefers-reduced-motion` is honored today in DigitalRain, ThemeToggle, and CodePanel; preserve it through the client-component port.
+- **Fraunces font.** Used only by the landing (<RepoFile path="docs/src/components/landing/styles.css" />); keep it in the font set even though docs chrome doesn't use it.
+- **Forked prose plugin.** Fumadocs ships a forked Tailwind Typography `prose`; the bespoke heading/table/list/inline-code rules must layer over it cleanly rather than fight `@tailwindcss/typography`.
+- **666 RepoFile import rewrites.** Trivial component, but ~80 files import it by relative path — codemod, don't hand-edit, and re-run `check:repo-links`.
+- **Production origin for absolute URLs.** Canonical tags, OG `og:image`/`og:url`, the `SoftwareApplication`/`TechArticle` JSON-LD, and the sitemap all need the absolute `https://jackin.tailrocks.com` origin. Configure it once (env or a site-config constant); a dev-only relative base silently ships wrong canonical/OG URLs.
+- **No i18n — do not scaffold it.** The site is single-locale (English). Fumadocs and the starter templates have an i18n path; skip it. Use a non-i18n `loader()`/route shape so there is no `[lang]` segment polluting the root-mounted URLs.
+- **Tailwind `@source` must scan MDX content.** Tailwind v4 purges unused classes; any utility class written directly in an MDX file (or in a ported component) must be covered by an `@source` glob over the content/components, not just the `fumadocs-ui` dist, or those classes vanish in the production build. Also check whether the heavily-used Starlight `.not-content` escape hatch (referenced throughout <RepoFile path="docs/src/styles/docs-theme.css" />) has a Fumadocs equivalent or is simply unneeded — the bespoke selectors that key off it must be re-pointed either way.
+
+## Migration plan (phased)
+
+Per <RepoFile path="AGENTS.md" /> ("Project status: pre-release"), this can be a hard cut — no parallel docs trees, no compatibility shim. The phases are about **de-risking**, not shipping incrementally to production.
+
+**Phase 0 — Spike / proof of concept.** Stand up a minimal Fumadocs + TanStack Start app under Bun in a scratch directory or branch. Port 3–5 representative pages (one Getting Started, one Commands page with `<Tabs>`/`<Steps>`, one Reference page with tables and an `<Aside>`, the Roadmap overview with `<EarlyDevelopmentNotice />`). Wire the `--jk-*` token mapping, always-dark code blocks, fonts, `rehype-jk`, static Orama search, a Takumi OG card for one page (with the brand fonts and the externalization config), and the AI routes (`llms.txt`, one `.md` page). Validate: TanStack Start prerender produces a full static set (assert the page count, prove no SPA-shell-only bug); `next-themes` with `attribute="data-theme"` preserves the shared theme key and no-flash behavior; Bun runs the Vite build in CI; static search works; Takumi renders the card under Bun/Vite. **Exit criterion:** the pages are visually indistinguishable from production in both modes, the static build serves correctly with no server, Takumi emits the card, and the AI routes return clean Markdown. If TanStack Start blocks any of these without a clean fix (the main risk is prerender completeness), stop and resolve it on TanStack Start or raise it with the operator before going further — Next.js is not a fallback.
+
+**Phase 1 — Scaffold the real app.** Create the TanStack Start structure (`vite.config.ts`, `source.config.ts`, `lib/source.ts` + `loader()`, `__root.tsx` + `RootProvider`, the root-mounted docs catch-all, `components/mdx.tsx`, `lib/layout.shared.tsx`, `routes/api/search.ts`, tsconfig path alias for `.source`). Port the full stylesheet set: `tempo-tokens.css` and the landing tokens move unchanged; `docs-theme.css` is re-authored against `--color-fd-*` and Fumadocs DOM; `fonts.css` carries over.
+
+**Phase 2 — Content + navigation.** Move all MDX under the Fumadocs content root (frontmatter is compatible). Translate the entire `astro.config.ts` sidebar tree into `meta.json` files, reproducing every group, order, and collapse state — including the audience split and nested Roadmap program groups. Rewrite the two audit scripts in <RepoFile path="docs/AGENTS.md" /> to read `meta.json`. Codemod `<RepoFile />`, `<EarlyDevelopmentNotice />`, and the diagram components to React and fix their imports across all MDX.
+
+**Phase 3 — Landing page.** Move the landing's React components (<RepoFile path="docs/src/components/landing/Landing.tsx" /> and siblings) into a TanStack route outside the docs layout. Re-express the custom `index.astro` head — SEO meta, JSON-LD, OG tags, font preloads, the pre-paint theme script — via the root document and route metadata. The `DigitalRain`, `HeroStage`, and other islands need only client-component boundaries.
+
+**Phase 4 — Search, OG (Takumi), AI, sitemap, deploy.** Wire static Orama search end to end. Migrate all image generation to Takumi: per-page cards rendered in the prerender step, plus the social-card and icon generators (`gen-og.ts`, `gen-icons.ts`); drop `satori`, `@resvg/resvg-js`, and `astro-og-canvas`. Ship the AI surface (`getLLMText`, `llms.txt`, `llms-full.txt`, per-page `.md`, copy-for-LLM page actions). Build the custom `/sitemap.xml` route from `source.getPages()`, disable the built-in sitemap, and add the route to the prerender `pages` list. Update <RepoFile path=".github/workflows/docs.yml" /> (build command, output path, sitemap path, `.nojekyll`, postinstall ordering) and the `check-deployed-docs` action. Re-point lychee remaps.
+
+**Phase 5 — Cutover + cleanup.** Delete Astro/Starlight (`astro.config.ts`, `content.config.ts`, the `.astro` overrides, Starlight/Expressive-Code deps). Update <RepoFile path="docs/AGENTS.md" />, <RepoFile path="PROJECT_STRUCTURE.md" />, and any doc/reference page that names the stack ("Astro + Starlight"). Update the [Move documentation to a separate repository](/reference/roadmap/docs-separate-repository/) item, which currently describes the Astro Starlight site, and the [rustdoc JSON → Starlight](/reference/roadmap/rustdoc-json-starlight/) item, whose "Starlight" target must be re-pointed. Per the docs-as-source-of-truth rule, run `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` clean before the PR is ready.
+
+## Risks and open questions
+
+- **TanStack Start static maturity.** Full static prerender of a dynamic-route doc tree is the riskiest assumption: orphan-page completeness and historical SPA-shell-only prerender bugs both need verifying on the latest release. Mitigate by asserting the prerendered page count in CI; since Next.js is out of scope, a hard blocker here is resolved on TanStack Start or escalated to the operator, not worked around by switching frameworks.
+- **OG generation.** Takumi (`next/og`-compatible, framework-agnostic) is the chosen renderer and removes the "no `next/og` on TanStack Start" problem — its remaining cost is the externalization config, loading the brand fonts (Takumi bundles Geist, not Inter/JetBrains Mono), and porting the bespoke digital-rain social card to a Takumi template.
+- **Live "Ask AI" vs static hosting.** A runtime chat panel needs an inference endpoint a static site cannot provide from its own origin. The static AI features ship; embedded chat is deferred.
+- **`next-themes` attribute strategy.** The plan assumes `attribute="data-theme"` + a shared `storageKey` preserves the landing/docs theme continuity and the no-flash pre-paint script. If `RootProvider` does not cleanly forward those props, theme behavior (and the View Transitions cross-fade) needs redesign.
+- **Static Orama index size.** Validate the exported index size and cold-search latency at the current page count; document the ceiling at which a sharded/cloud search would be warranted.
+- **Exact Fumadocs component props.** The Callout variant set (info/warn/error vs note/tip/caution/danger) and the Tabs/Steps APIs must be confirmed against the latest release; the mapping table is the target, not a guarantee.
+- **Forked prose conflict.** The bespoke prose CSS must reconcile with Fumadocs' forked Tailwind Typography `prose`.
+- **Bun + Vite/TanStack build in CI.** Expected to work (Vite is Bun-friendly), but prove the prerender build under Bun on the runner, including the `postinstall` codegen ordering.
+- **Takumi native binary under Bun.** Takumi is a Rust renderer (native binary / WASM). Verify it resolves and runs under `bun install` + the Vite SSR build on both the local dev OS (macOS / OrbStack Linux) and the Linux CI runner; a Rust native dependency that installs cleanly under one package manager/OS can be a footgun under another. This is the riskiest part of the Takumi switch, separate from the layout work.
+- **Sidebar fidelity.** The audience-split + deeply nested Roadmap tree is intricate; reproducing it exactly in `meta.json` (order, collapse state, separators) is fiddly and is where regressions hide. The rewritten audit scripts are the guard.
+- **Sequencing vs. other docs roadmap items.** Coordinate with [Move documentation to a separate repository](/reference/roadmap/docs-separate-repository/) (a repo move should happen with or after the engine swap, not be redone twice), [Markdown linting for docs](/reference/roadmap/docs-markdown-linting/) (lint config is engine-adjacent), and the [Brand identity system](/reference/roadmap/brand-identity-system/) (which also touches <RepoFile path="docs/src/styles/docs-theme.css" /> and the site title). Decide ordering so the same files are not churned twice.
+
+## Acceptance criteria
+
+When this lands, all of the following are true:
+
+1. The published site is built by Fumadocs on TanStack Start (Vite), installed and built with Bun, and contains no Astro or Starlight dependency.
+2. The site is a fully static prerender served from GitHub Pages at the same custom domain, with no server runtime, and the prerendered page count matches the source page count (no orphans).
+3. Every item in the **Look-and-feel parity strategy** checklist renders identically (or better) in both light and dark mode, evidenced by before/after screenshots in the PR.
+4. Search works as a static, in-browser index (Orama) with acceptable latency.
+5. All image generation runs on Takumi (per-page OG cards, the committed social cards, and the icon generator); `satori`, `@resvg/resvg-js`, and `astro-og-canvas` are removed; the regenerated cards/icons match the current designs.
+6. The AI surface is live: `/llms.txt`, `/llms-full.txt`, per-page `.md`, and copy-for-LLM page actions, all served statically; `getLLMText` output is clean Markdown.
+7. The full sidebar — audience split and nested Roadmap groups — matches the current tree in order and collapse state, and the rewritten sidebar/overview audit scripts pass.
+8. lychee link-check (including fragments), `check:repo-links` (all 666 `<RepoFile />` refs valid post-codemod), `bunx tsc --noEmit`, and `bun test` all pass; the `<RepoFile />` blob-URL contract and the deployed-docs check still hold.
+9. The `rehype-jk` brand-name wrapping and `rehype-external-links` hardening behave exactly as today, and the five chrome customizations (nav + right-rail wordmark, two-button theme toggle with cross-fade, neutral social icons, tab-overflow handling) are reproduced.
+10. SEO parity: per-page OG + `TechArticle`/`BreadcrumbList` JSON-LD, canonical URLs, the site `SoftwareApplication` JSON-LD, sitemap, robots, and trailing-slash URL shape are unchanged so external links and indexing do not break.
+11. <RepoFile path="docs/AGENTS.md" />, <RepoFile path="PROJECT_STRUCTURE.md" />, and every page that names the docs stack are updated to describe Fumadocs on TanStack Start.
+
+## Out of scope / defer
+
+- **Live "Ask AI" chat panel.** Requires an external inference endpoint; revisit if/when one exists. The static LLM surface (llms.txt, .md, copy) ships now.
+- **Versioned docs** (multiple sidebars per major jackin' version). Fumadocs supports it; the project has no release to version yet.
+- **OpenAPI reference pages** (`fumadocs-openapi`). No HTTP surface to document today.
+- **Interactive embedded demos** (live TUI playgrounds, config builders). The migration unlocks them but must not bundle them, or it never ships.
+- **The repo move.** [Move documentation to a separate repository](/reference/roadmap/docs-separate-repository/) is tracked separately; coordinate sequencing but do not fold it in.
+- **Brand refresh.** [Brand identity system](/reference/roadmap/brand-identity-system/) is a separate program; this migration preserves the *current* identity, it does not advance the rebrand.
+
+## Related
+
+- [Move documentation to a separate repository](/reference/roadmap/docs-separate-repository/) — overlapping docs-infrastructure work; sequence the two deliberately.
+- [Markdown linting for docs](/reference/roadmap/docs-markdown-linting/) — lint pipeline is engine-adjacent and may need re-pointing after the move.
+- [Brand identity system](/reference/roadmap/brand-identity-system/) — also edits the docs theme tokens and site title; avoid double-churning the same files.
+- [rustdoc JSON → Starlight](/reference/roadmap/rustdoc-json-starlight/) — the "Starlight" target there must be re-pointed at Fumadocs if both proceed.
+
+## Related Files
+
+- <RepoFile path="docs/astro.config.ts" /> — Astro + Starlight config and the full sidebar tree (replaced by `source.config.ts` + `meta.json`)
+- <RepoFile path="docs/package.json" /> — Astro/Starlight/Expressive-Code deps and scripts (replaced by TanStack Start + Vite + Fumadocs; gains the `fumadocs-mdx` postinstall)
+- <RepoFile path="docs/mise.toml" /> — pins `bun` and `node` (carries over)
+- <RepoFile path="docs/src/content.config.ts" /> — Starlight content collection (replaced by `lib/source.ts` + `loader()`)
+- <RepoFile path="docs/src/styles/docs-theme.css" /> — `--sl-*` → `--jk-*` chrome mappings (re-authored against `--color-fd-*`)
+- <RepoFile path="docs/src/styles/global.css" /> — Tailwind v4 + landing `@theme` tokens (port mostly unchanged)
+- <RepoFile path="docs/src/styles/tempo-tokens.css" /> — Radix color ramps (port unchanged)
+- <RepoFile path="docs/src/styles/fonts.css" /> — self-hosted fontsource faces (port to Vite font loading)
+- <RepoFile path="docs/src/pages/index.astro" /> — landing entry: head, SEO, JSON-LD, OG, pre-paint theme script (re-expressed in the TanStack root + route metadata)
+- <RepoFile path="docs/src/components/landing/Landing.tsx" /> — landing React island root (moves nearly verbatim)
+- <RepoFile path="docs/src/components/landing/rainEngine.ts" /> — deterministic digital-rain engine shared by the landing and the OG scripts
+- <RepoFile path="docs/src/components/overrides/Head.astro" /> — pre-paint theme script, Inter Black preload, tab-overflow ResizeObserver, per-page SEO/JSON-LD
+- <RepoFile path="docs/src/components/overrides/SiteTitle.astro" /> — nav wordmark (Inter Black + phosphor tick)
+- <RepoFile path="docs/src/components/overrides/PageSidebar.astro" /> — right-rail TOC + giant bottom wordmark
+- <RepoFile path="docs/src/components/overrides/ThemeSelect.astro" /> — two-button theme toggle with View Transitions cross-fade
+- <RepoFile path="docs/src/components/overrides/SocialIcons.astro" /> — neutral GitHub icon, accent-on-hover
+- <RepoFile path="docs/src/components/EarlyDevelopmentNotice.astro" /> — fixed-copy caution Aside (7 uses)
+- <RepoFile path="docs/src/components/RepoFile.astro" /> — repo blob-link component (666 uses; codemod to React)
+- <RepoFile path="docs/src/components/diagrams/ArchitectureDiagram.astro" /> — diagram component (port to React)
+- <RepoFile path="docs/src/components/diagrams/ImageLayers.astro" /> — diagram component (port to React)
+- <RepoFile path="docs/scripts/rehype-jk.ts" /> — brand-name rehype plugin (re-registered in `source.config.ts`)
+- <RepoFile path="docs/scripts/gen-og.ts" /> — satori+resvg social-card generator with digital-rain background (migrate to a custom Takumi template)
+- <RepoFile path="docs/scripts/gen-icons.ts" /> — resvg favicon/icon generator (migrate to Takumi to consolidate on one renderer)
+- <RepoFile path="docs/scripts/check-repo-links.ts" /> — engine-agnostic repo-link check (path update only)
+- <RepoFile path="docs/lychee.toml" /> — lychee config (remap output dir change only)
+- <RepoFile path="docs/public/robots.txt" /> — sitemap reference (update on sitemap rename; add llms.txt)
+- <RepoFile path="docs/public/site.webmanifest" /> — PWA manifest (carries over)
+- <RepoFile path="docs/public/CNAME" /> — custom domain (carries over)
+- <RepoFile path=".github/workflows/docs.yml" /> — build/deploy pipeline (build command, artifact path, sitemap path, `.nojekyll`, postinstall ordering)
+- <RepoFile path=".github/actions/check-deployed-docs/action.yml" /> — deployed-link check (sitemap-url input update)
+- <RepoFile path="docs/AGENTS.md" /> — docs stack description and the sidebar/overview audit scripts (rewritten for `meta.json`)
+- <RepoFile path="PROJECT_STRUCTURE.md" /> — names the docs stack; update on cutover
+
+## External references
+
+- [Fumadocs](https://fumadocs.dev/) — framework home.
+- [Fumadocs + TanStack Start manual installation](https://www.fumadocs.dev/docs/manual-installation/tanstack-start) — `RootProvider`, `DocsLayout`, the docs route loader, search route.
+- [Fumadocs MDX on Vite / TanStack Start](https://www.fumadocs.dev/docs/mdx/vite/tanstack) — `fumadocs-mdx/vite` plugin, `source.config.ts`, codegen.
+- [Fumadocs UI theming](https://fumadocs.dev/docs/ui/theme) — `--color-fd-*` tokens, Tailwind v4 preset, presets, dark mode, layout width.
+- [Fumadocs static build](https://www.fumadocs.dev/docs/deploying/static) — static output, static search, what breaks server-side.
+- [Fumadocs Orama search](https://fumadocs.dev/docs/headless/search/orama) — server vs. static search.
+- [Fumadocs AI & LLMs](https://www.fumadocs.dev/docs/integrations/llms) — `llms.txt`, `llms-full.txt`, `getLLMText`, per-page Markdown, copy-for-LLM actions, Ask AI.
+- [Fumadocs OG with Takumi](https://www.fumadocs.dev/docs/integrations/og/takumi) — `@takumi-rs/image-response`, `fumadocs-ui/og/takumi`, build-time static generation, externalization.
+- [Takumi](https://takumi.kane.tw/docs) — the Rust OG/metadata-image renderer with `next/og`-compatible APIs.
+- [Dynamic OG images on TanStack Start with Takumi](https://www.gvizo.so/posts/tanstack-start-dynamic-og-images) — worked TanStack Start + Takumi example.
+- [TanStack Start static prerendering](https://tanstack.com/start/latest/docs/framework/react/guide/static-prerendering) — `prerender` options, `crawlLinks`, `autoSubfolderIndex`.
+- [TanStack Start SPA mode](https://tanstack.com/start/latest/docs/framework/react/guide/spa-mode) — SPA shell, 404 fallback, CDN/GitHub Pages deploy.
+- [Serve TanStack Start + Fumadocs statically (discussion)](https://github.com/TanStack/router/discussions/5478) — worked notes on static serving.
+- [llmstxt.org](https://llmstxt.org/) — the `llms.txt` convention.
+- [Fumadocs vs Nextra vs Starlight (2026)](https://www.pkgpulse.com/guides/fumadocs-vs-nextra-v4-vs-starlight-documentation-sites-2026) — positioning and trade-offs.

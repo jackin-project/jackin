@@ -347,6 +347,7 @@ export default defineConfig({
                   items: [
                     { label: 'Brand identity system', slug: 'reference/roadmap/brand-identity-system' },
                     { label: 'Docs markdown linting', slug: 'reference/roadmap/docs-markdown-linting' },
+                    { label: 'Migrate docs to Fumadocs', slug: 'reference/roadmap/fumadocs-migration' },
                     { label: 'Move documentation to a separate repository', slug: 'reference/roadmap/docs-separate-repository' },
                   ],
                 },
