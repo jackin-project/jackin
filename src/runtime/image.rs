@@ -330,12 +330,10 @@ pub(super) async fn build_agent_image(
             &RunOptions {
                 capture_stderr: true,
                 capture_stdout: true,
+                null_stdin: true,
                 stream_captured_output: should_stream_build_output(debug),
                 tee_to_build_log: true,
-                extra_env: github_token
-                    .as_ref()
-                    .map(|_| vec![("DOCKER_BUILDKIT".to_string(), "1".to_string())])
-                    .unwrap_or_default(),
+                extra_env: docker_build_env(github_token.is_some()),
                 ..RunOptions::default()
             },
         )
@@ -361,7 +359,15 @@ async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) ->
 }
 
 fn should_stream_build_output(debug: bool) -> bool {
-    !debug && !crate::tui::rich_surface_active()
+    !debug && !crate::tui::rich_terminal_owned()
+}
+
+fn docker_build_env(has_github_token: bool) -> Vec<(String, String)> {
+    let mut env = vec![("BUILDKIT_PROGRESS".to_string(), "plain".to_string())];
+    if has_github_token {
+        env.push(("DOCKER_BUILDKIT".to_string(), "1".to_string()));
+    }
+    env
 }
 
 fn emit_compact_image_warning(message: &str) {
@@ -539,6 +545,7 @@ mod tests {
     impl Drop for RichSurfaceTestGuard {
         fn drop(&mut self) {
             crate::tui::set_rich_surface_active(false);
+            crate::tui::set_host_screen_owned(false);
         }
     }
 
@@ -547,6 +554,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::tui::set_rich_surface_active(false);
+        crate::tui::set_host_screen_owned(false);
         RichSurfaceTestGuard { _guard: guard }
     }
 
@@ -572,6 +580,25 @@ mod tests {
 
         crate::tui::set_rich_surface_active(true);
         assert!(!should_stream_build_output(false));
+        crate::tui::set_rich_surface_active(false);
+
+        crate::tui::set_host_screen_owned(true);
+        assert!(!should_stream_build_output(false));
+    }
+
+    #[test]
+    fn docker_build_env_forces_plain_buildkit_progress() {
+        assert_eq!(
+            docker_build_env(false),
+            vec![("BUILDKIT_PROGRESS".to_string(), "plain".to_string())]
+        );
+        assert_eq!(
+            docker_build_env(true),
+            vec![
+                ("BUILDKIT_PROGRESS".to_string(), "plain".to_string()),
+                ("DOCKER_BUILDKIT".to_string(), "1".to_string()),
+            ]
+        );
     }
 
     #[test]
