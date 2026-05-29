@@ -957,12 +957,6 @@ html.theme-init *::after {
   #nd-toc-placeholder {
     --fd-toc-width: 216px !important;
   }
-
-  #nd-docs-layout[data-sidebar-collapsed='true'] [data-sidebar-placeholder] {
-    --fd-sidebar-width: 216px !important;
-    width: 216px !important;
-    flex-basis: 216px !important;
-  }
 }
 
 @media (min-width: 1536px) {
