@@ -1301,19 +1301,26 @@ html.theme-init *::after {
 #nd-toc div.relative > .absolute.inset-y-0 {
   display: block;
   pointer-events: none;
-  inset-inline-start: -0.25rem !important;
-  width: calc(100% - 0.125rem) !important;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--jk-brand) 7%, var(--jk-ui)) !important;
+  inset-inline-start: 0 !important;
+  width: 100% !important;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.075) !important;
   box-shadow: 0 1px 2px color-mix(in srgb, #000 4%, transparent);
   clip-path: polygon(
-    0 calc(var(--track-top, 0px) - 0.25rem),
-    100% calc(var(--track-top, 0px) - 0.25rem),
-    100% calc(var(--track-bottom, 0px) + 0.25rem),
-    0 calc(var(--track-bottom, 0px) + 0.25rem)
+    0 calc(var(--track-top, 0px) - 0.3125rem),
+    100% calc(var(--track-top, 0px) - 0.3125rem),
+    100% calc(var(--track-bottom, 0px) + 0.3125rem),
+    0 calc(var(--track-bottom, 0px) + 0.3125rem)
   ) !important;
   opacity: 0.92;
   z-index: 0;
+}
+
+:root[data-theme='light'] #nd-toc div.relative > .absolute.inset-y-0 {
+  background: color-mix(in srgb, #dfe7f0 64%, #ffffff) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 2px rgba(17, 24, 39, 0.04);
 }
 
 #nd-toc a[class*='ps-6'],
