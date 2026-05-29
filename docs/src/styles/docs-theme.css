@@ -1289,12 +1289,12 @@ html.theme-init *::after {
 }
 
 #nd-toc [class*='border-s'] {
-  border-left-width: 0;
-  border-left-color: transparent;
+  border-inline-start-width: 0;
+  border-inline-start-color: transparent;
   transition: border-color 0.15s, color 0.15s;
 }
 
-#nd-toc [class*='border-s'] > .absolute {
+#nd-toc div.relative > .absolute.inset-y-0 {
   display: none;
 }
 
@@ -1315,12 +1315,12 @@ html.theme-init *::after {
 }
 
 #nd-toc [class*='border-s']:has(a[data-active='true']) {
-  border-left-width: 0;
-  border-left-color: transparent;
+  border-inline-start-width: 0;
+  border-inline-start-color: transparent;
 }
 
 #nd-toc [class*='border-s']:has(a:hover) {
-  border-left-color: transparent;
+  border-inline-start-color: transparent;
 }
 
 #nd-toc::after {
