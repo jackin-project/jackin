@@ -309,7 +309,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-top: -1rem;
+  margin-top: 0.75rem;
   padding-bottom: 1.5rem;
   border-bottom: 1px solid var(--jk-ui);
 }
