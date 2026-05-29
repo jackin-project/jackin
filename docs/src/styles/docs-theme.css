@@ -43,6 +43,7 @@
   --jk-bg-deep:    #050605;
   --jk-panel:      #0f1110;
   --jk-text:       #f4f7f5;
+  --jk-prose:      #dce4e0;
   --jk-text-dim:   #9ca8a1;
   --jk-text-ghost: #5e6a64;
   --jk-accent:     #00ff41;
@@ -79,6 +80,9 @@
   --color-fd-ring: var(--jk-accent);
   --fd-layout-width: 99rem;
   --fd-sidebar-width: 16.75rem;
+  --jk-docs-side-rail: 16.75rem;
+  --jk-docs-page-width: 980px;
+  --jk-docs-collapsed-page-width: 1120px;
 }
 
 /* ==========================================================================
@@ -92,6 +96,7 @@
   --jk-bg-deep:    #050605;
   --jk-panel:      #0f1110;
   --jk-text:       #f4f7f5;
+  --jk-prose:      #dce4e0;
   --jk-text-dim:   #9ca8a1;
   --jk-text-ghost: #5e6a64;
   --jk-accent:     #00ff41;
@@ -170,6 +175,7 @@
   --jk-bg-deep:    #e9edeb;   /* recessed state (active toggle, pressed badge) */
   --jk-panel:      #f6f8f7;   /* lifted surface (cards, pills, modals) */
   --jk-text:       #1a1c1b;
+  --jk-prose:      #303633;
   --jk-text-dim:   #5d6460;
   --jk-text-ghost: #8a928e;
   --jk-accent:     #007a22;   /* deep forest green — AA contrast on white (5.1:1) */
@@ -242,6 +248,10 @@
 body {
   min-height: 100vh;
   font-family: var(--sl-font);
+  font-weight: 400;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   color: var(--jk-text);
   background: var(--jk-bg);
 }
@@ -719,6 +729,15 @@ html.theme-init *::after {
    Typography — landing-matched weight + tracking on headings
    ========================================================================== */
 
+.sl-markdown-content {
+  color: var(--jk-prose);
+  font-weight: 400;
+}
+
+.sl-markdown-content :is(p, li, blockquote, td):not(:where(.not-content *)) {
+  font-weight: 400;
+}
+
 .sl-markdown-content :is(h1, h2, h3, h4) {
   font-family: var(--sl-font);
   letter-spacing: -0.02em;
@@ -774,7 +793,7 @@ html.theme-init *::after {
 .sl-markdown-content li:not(:where(.sl-steps > li))::marker {
   /* Ordered-list numbers + unordered bullets use the body text color so
      they read as part of the flow — white in dark, black in light. */
-  color: var(--jk-text);
+  color: var(--jk-prose);
 }
 
 /* <Steps> number badge — solid filled circle for a bolder structural
@@ -847,7 +866,7 @@ html.theme-init *::after {
 }
 
 .sl-markdown-content td:not(:where(.not-content *)) {
-  color: var(--jk-text);
+  color: var(--jk-prose);
   font-size: 0.9375rem;
 }
 
@@ -950,18 +969,44 @@ html.theme-init *::after {
 
 @media (min-width: 1280px) {
   #nd-docs-layout {
-    --fd-toc-width: 216px !important;
+    --fd-toc-width: var(--jk-docs-side-rail) !important;
+    justify-content: center;
+    grid-template:
+      "sidebar sidebar header toc toc"
+      "sidebar sidebar toc-popover toc toc"
+      "sidebar sidebar main toc toc" 1fr /
+      0
+      var(--jk-docs-side-rail)
+      minmax(0, min(var(--jk-docs-page-width), calc(100vw - (var(--jk-docs-side-rail) + var(--jk-docs-side-rail)))))
+      var(--jk-docs-side-rail)
+      0 !important;
   }
 
   #nd-toc,
   #nd-toc-placeholder {
-    --fd-toc-width: 216px !important;
+    --fd-toc-width: var(--jk-docs-side-rail) !important;
+    width: var(--jk-docs-side-rail) !important;
+    flex-basis: var(--jk-docs-side-rail) !important;
+    max-width: var(--jk-docs-side-rail) !important;
   }
 
   #nd-docs-layout[data-sidebar-collapsed='true'] [data-sidebar-placeholder] {
-    --fd-sidebar-width: 371px !important;
-    width: 371px !important;
-    flex-basis: 371px !important;
+    --fd-sidebar-width: var(--jk-docs-side-rail) !important;
+    width: var(--jk-docs-side-rail) !important;
+    flex-basis: var(--jk-docs-side-rail) !important;
+    max-width: var(--jk-docs-side-rail) !important;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] {
+    grid-template:
+      "sidebar sidebar header toc toc"
+      "sidebar sidebar toc-popover toc toc"
+      "sidebar sidebar main toc toc" 1fr /
+      var(--jk-docs-side-rail)
+      0
+      minmax(0, min(var(--jk-docs-collapsed-page-width), calc(100vw - (var(--jk-docs-side-rail) + var(--jk-docs-side-rail)))))
+      var(--jk-docs-side-rail)
+      0 !important;
   }
 }
 
@@ -1057,7 +1102,6 @@ html.theme-init *::after {
 
 #nd-toc {
   --jk-toc-wordmark-size: clamp(48px, 4.4vw, 64px);
-  width: 90% !important;
   padding-inline-end: 0.625rem !important;
 }
 
@@ -1631,7 +1675,7 @@ site-search dialog {
    blocks. */
 .jk-name {
   color: var(--jk-text);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .jk-name:hover {
