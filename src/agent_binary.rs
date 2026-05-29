@@ -32,8 +32,7 @@ pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRe
         return Some(cached);
     }
     let release = resolve_latest_release(agent).await.ok()?;
-    let _ = write_cached_release(paths, &release);
-    let _ = write_version_release(paths, &release);
+    persist_release_cache(paths, &release);
     Some(release)
 }
 
@@ -79,8 +78,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         "agent_binary_resolved",
         &format!("{} {} from {}", agent.slug(), release.version, release.url),
     );
-    let _ = write_cached_release(paths, &release);
-    let _ = write_version_release(paths, &release);
+    persist_release_cache(paths, &release);
     let cached = cached_binary_path(paths, &release);
     ensure_binary_for_release(agent, &release, &cached).await
 }
@@ -372,7 +370,7 @@ where
             }
         }
     }
-    Err(last_err)
+    Err(last_err).with_context(|| format!("giving up after {max_attempts} attempts"))
 }
 
 fn platform_x64_arm64() -> &'static str {
@@ -506,6 +504,26 @@ fn write_version_release(paths: &JackinPaths, release: &AgentRelease) -> Result<
     Ok(())
 }
 
+/// Best-effort write of the resolved release to the TTL metadata cache and the
+/// per-version sidecar. A failure only costs an extra network resolve next
+/// launch, so it's logged (to explain a re-resolve loop under `--debug`) rather
+/// than propagated.
+fn persist_release_cache(paths: &JackinPaths, release: &AgentRelease) {
+    let slug = release.agent.slug();
+    if let Err(e) = write_cached_release(paths, release) {
+        crate::debug_log!(
+            "agent_binary",
+            "caching {slug} release metadata failed: {e:#}"
+        );
+    }
+    if let Err(e) = write_version_release(paths, release) {
+        crate::debug_log!(
+            "agent_binary",
+            "writing {slug} version sidecar failed: {e:#}"
+        );
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct ClaudeManifest {
     platforms: std::collections::HashMap<String, ClaudePlatform>,
@@ -600,8 +618,11 @@ mod tests {
         })
         .await;
         assert_eq!(calls.get(), 3);
-        // Surfaces the LAST attempt's error, not the "no attempts made" seed.
-        assert_eq!(r.unwrap_err().to_string(), "attempt 3 failed");
+        // Chain carries the attempt count and preserves the LAST attempt's
+        // error (not the "no attempts made" seed).
+        let err = format!("{:#}", r.unwrap_err());
+        assert!(err.contains("giving up after 3 attempts"), "{err}");
+        assert!(err.contains("attempt 3 failed"), "{err}");
     }
 
     #[tokio::test(start_paused = true)]
