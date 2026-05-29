@@ -1127,6 +1127,10 @@ html.theme-init *::after {
   }
 }
 
+#nd-sidebar {
+  --fd-sidebar-width: 18rem;
+}
+
 #nd-sidebar > div:first-child,
 #nd-sidebar > div:last-child {
   padding-inline-start: 0 !important;
