@@ -140,7 +140,7 @@
   --color-fd-muted-foreground: var(--jk-text-dim);
   --color-fd-card: var(--jk-panel);
   --color-fd-card-foreground: var(--jk-text);
-  --color-fd-popover: #f7f8f6;
+  --color-fd-popover: var(--jk-panel);
   --color-fd-popover-foreground: var(--jk-text);
   --color-fd-primary: var(--jk-accent);
   --color-fd-primary-foreground: var(--jk-bg);
@@ -222,7 +222,7 @@
   --color-fd-muted-foreground: var(--jk-text-dim);
   --color-fd-card: var(--jk-panel);
   --color-fd-card-foreground: var(--jk-text);
-  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover: #f7f8f6;
   --color-fd-popover-foreground: var(--jk-text);
   --color-fd-primary: var(--jk-accent);
   --color-fd-primary-foreground: var(--jk-bg);
@@ -393,6 +393,21 @@ body {
 :root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
   background: #ecefeb;
   color: #111513;
+}
+
+:root[data-theme='dark'] [data-radix-popper-content-wrapper] > [data-side][data-align] {
+  border-color: rgba(244, 247, 245, 0.1);
+  background: rgba(15, 17, 16, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 18px 42px rgba(0, 0, 0, 0.34);
+  color: var(--jk-text);
+}
+
+:root[data-theme='dark'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
+  background: rgba(244, 247, 245, 0.08);
+  color: var(--jk-text);
 }
 
 .jk-name {
