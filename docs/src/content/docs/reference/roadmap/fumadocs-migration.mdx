@@ -11,6 +11,8 @@ Replace the documentation site's rendering engine. Today the site is [Astro](htt
 
 This is a "swap the foundation, keep the house, add a door for robots" migration. The hard requirement is **pixel-level continuity** of the published site, not "a new Fumadocs default theme that happens to be green." The bright `#00ff41` phosphor green on `#0a0b0a`, the deep-forest `#007a22` light-mode accent, the JetBrains-Mono code surfaces that stay dark on a white page — all of it is the brand and must survive the move intact.
 
+**This is a pure, one-shot replacement — never two systems.** The site runs on exactly one engine at every point in time. We do NOT run Astro/Starlight and Fumadocs side by side, ship a partial or parallel Fumadocs site alongside the old one, keep the old build as a fallback, or migrate page-by-page in production. The whole site is rebuilt on Fumadocs on a branch, verified against the parity checklist, and cut over in a single change that **deletes Astro/Starlight in the same PR**. The phased plan below is a de-risking order of work on that branch, not an incremental rollout to live traffic. (Per the pre-release rule in <RepoFile path="AGENTS.md" />, a hard cut is the sanctioned shape — no compatibility shim, no dual trees.)
+
 This roadmap item exists to (a) prove the approach is sound, (b) record the verified Fumadocs / TanStack Start capabilities the migration depends on, and (c) lay out an exact, phased plan detailed enough that the implementation PR is execution, not rediscovery.
 
 ## Why move off Astro Starlight
@@ -132,9 +134,34 @@ Both engines being Tailwind v4 means the existing token machinery ports almost d
 
 Self-hosted via fontsource today (<RepoFile path="docs/src/styles/fonts.css" />): variable Inter, variable JetBrains Mono, Fraunces, plus a static Inter Black for the wordmark. On Vite these load by importing the same `@fontsource*` CSS, keeping fonts same-origin (no third-party CDN, per <RepoFile path="docs/AGENTS.md" />). Fumadocs reads body/mono fonts from `--font-*` variables, so the existing families and weights carry over; the woff2 preload hints in the current `<head>` map to manual `<link rel="preload">` in the root document.
 
-### Code blocks
+### Code blocks — use the native Fumadocs stack (best practice)
 
-Starlight uses [Expressive Code](https://expressive-code.com/) with two Shiki themes and a hard rule that **code surfaces stay dark in both page modes** (`--jk-code-bg`, github-dark in dark mode, one-dark-pro in light). Fumadocs renders code through Shiki directly (`rehype-code`), with `themes: { light, dark }`, a built-in copy button, titles, and line highlighting via code-fence meta. The always-dark behavior is reproduced by setting both `themes.light` and `themes.dark` to dark Shiki themes (or a single `theme`) and overriding the code-figure background with `--jk-code-bg`. The "flat rounded panel, no terminal chrome" styling in <RepoFile path="docs/src/styles/docs-theme.css" /> is re-authored against Fumadocs' codeblock DOM. Expressive Code itself is dropped.
+Drop Expressive Code entirely. Researched independently of the current setup, the best approach in Fumadocs is its **native code block**, which is more capable than what the site has today and needs zero custom JavaScript. It is two pieces:
+
+- **`rehypeCode`** — a wrapper over `@shikijs/rehype`, **enabled by default** in Fumadocs MDX, does the Shiki highlighting at build time. Configure it in `source.config.ts` via `mdxOptions.rehypeCodeOptions`.
+- **`CodeBlock` + `Pre`** from `fumadocs-ui/components/codeblock`, registered as the `pre` override in `mdx-components`. They render the frame and ship a **built-in copy button**, an optional **title**, and an **auto language icon** (injected by a Shiki transformer). A `keepBackground` prop chooses between Shiki's own background and a token-driven surface.
+
+Out of the box this covers every feature the current site has and several it does not, all from code-fence meta — no plugin stack to maintain:
+
+- Title: ` ```ts title="vite.config.ts" `
+- Line numbers: ` ```ts lineNumbers ` (or `lineNumbers=4` to start at 4)
+- Line / word / diff / focus highlighting via inline comments: `// [!code highlight]`, `// [!code word:foo]`, `// [!code ++]` / `// [!code --]`, `// [!code focus]`
+- **Code tabs / groups**: ` ```ts tab="Tab 1" ` with an optional `tab-group="..."` to sync selection across blocks (e.g. a bun/pnpm/npm switcher that moves together) — a capability the current Expressive Code setup lacks
+- Inline highlighted code: set `inline: 'tailing-curly-colon'`, then write `` `bun run build{:bash}` ``
+
+**Theme decision (the one real choice).** Fumadocs' idiomatic default is a **dual theme** (`themes: { light, dark }`) wired to CSS variables, so code follows the page mode — the framework best practice and the lowest-friction path. The current always-dark-in-both-modes code surface is a *brand* decision, not a technical requirement. To keep always-dark the clean way, do not fight the dual-theme CSS-var system; set a single dark Shiki theme (or both `light` and `dark` to dark themes) and let the Fumadocs codeblock surface render from a token:
+
+```ts
+// source.config.ts → mdxOptions
+rehypeCodeOptions: {
+  themes: { light: 'github-dark', dark: 'github-dark' }, // always-dark in both page modes
+  // or { theme: 'github-dark' } for a single theme
+},
+```
+
+The implementing agent should confirm with the operator whether to keep always-dark or adopt the Fumadocs dual-theme default — both are clean, and the default is one fewer brand override to carry. Either way the only CSS work is restyling the Fumadocs codeblock frame ("flat rounded panel, no terminal chrome, top-right copy button") against its DOM; the bespoke copy-button JS and mobile-scaling CSS from the Expressive Code era are gone because the copy button is native.
+
+**Twoslash (optional power-up).** For TypeScript-heavy examples, `fumadocs-twoslash` + `twoslash` add hover types and inline diagnostics — add the `twoslash` meta to a block. It costs build time and needs the renderer externalized from the Vite SSR bundle (same externalization class as Takumi), the common langs preloaded (`js`, `jsx`, `ts`, `tsx`, since Twoslash popups cannot lazy-load them), the `fumadocs-twoslash/twoslash.css` import, the popup UI components registered, and ideally `createFileSystemTypesCache()` to cut rebuild cost. Treat it as opt-in for the pages that benefit, not a global default.
 
 ### Content model and sidebar
 
@@ -196,7 +223,7 @@ Parity is the whole point, so it gets its own explicit checklist. The migration 
 3. **Typography.** Heading sizes/weights/tracking (the landing-matched `-0.02em`/`-0.03em`, the green-blend `h2`), list marker colors, and the filled `<Steps>` number badges are reproduced.
 4. **Tables.** The bordered, hairline-ruled, rounded table with panel-tinted header replaces Fumadocs' default table styling.
 5. **Inline code.** Panel chip with hairline border, monospace, accent color inside links.
-6. **Code blocks.** Always-dark surface in both page modes; flat rounded panel, no terminal chrome; top-right copy button; mobile copy-button scaling.
+6. **Code blocks.** Native Fumadocs code block (Shiki via `rehypeCode`, `CodeBlock`/`Pre`) with the brand-restyled frame — flat rounded panel, no terminal chrome, the native copy button restyled to brand. Keep the always-dark surface in both modes, or adopt the Fumadocs dual-theme default (operator's call — see Code blocks above).
 7. **Sidebar.** Dim/bright item text, brand-green active pill (`aria-current`), hover state.
 8. **Right-rail TOC.** Tree structure with nested left-rails that turn green when they contain the active heading; the mono uppercase "ON THIS PAGE" header with its green leading dash; the giant bottom-anchored `jackin'` wordmark.
 9. **Pagination cards.** 2px bordered panel cards with green hover lift.
@@ -270,7 +297,17 @@ The landing (<RepoFile path="docs/src/pages/index.astro" />) and the docs Head r
 - **lychee** config (<RepoFile path="docs/lychee.toml" />): `index_files = ["index.html"]` (so trailing-slash `foo/index.html` resolves), `exclude_path` for `404.html`, github.com throttling, `mailto`/`file` schemes, an external-domain exclude list. Engine-agnostic; only the build-output directory in the remap globs changes.
 - **check-repo-links** (<RepoFile path="docs/scripts/check-repo-links.ts" />): enforces the `<RepoFile />` contract for all 666 references; engine-agnostic, only the content-root path changes if content moves.
 - **check-deployed-docs** action (<RepoFile path=".github/actions/check-deployed-docs/action.yml" />): dumps the live sitemap and lychee-checks every deployed URL; its `sitemap-url` input must be re-pointed when the sitemap filename changes.
-- **Sitemap rename ripple + TanStack caveats**: Astro emits `sitemap-index.xml` / `sitemap-0.xml`; the new build emits its own sitemap (likely `/sitemap.xml`). That rename touches three places — <RepoFile path="docs/public/robots.txt" /> (`Sitemap:` line), the `deploy` job's sitemap-URL step in <RepoFile path=".github/workflows/docs.yml" />, and the `check-deployed-docs` action input — update all three together. TanStack Start's built-in sitemap (auto-generated when prerender + crawl are on) has known limitations: a duplicate-entry bug for index routes (`/posts/` and `/posts` both listed) and no per-URL `lastmod`/`priority`/`changefreq`. The sitemap is itself a server route, so it must be in the prerender `pages` list. Decide built-in vs. a custom sitemap route, and reconcile its URL shape with the trailing-slash decision above.
+- **Sitemap — build a custom route from `source.getPages()` (verified best practice).** TanStack Start ships a built-in sitemap (`sitemap: { enabled, host }` on the plugin when prerender + crawl are on), but it has a duplicate-entry bug for index routes (`/x/` and `/x` both listed) and no per-URL `lastmod`/`priority`/`changefreq`. The recommended approach is a **custom server route that enumerates pages from Fumadocs' own `source.getPages()`** — the authoritative page list, the same source the search index and OG cards use — and returns `application/xml`. In TanStack Start the file is `routes/sitemap[.]xml.ts` (the `[.]` escapes the dot so the route is literally `/sitemap.xml`). Disable the built-in (`sitemap: { enabled: false }`) and add the route to the prerender `pages` list, since server routes are not crawl-discovered. Emit absolute URLs against the production origin with the trailing-slash shape matching the rest of the site. The shape:
+
+  ```ts
+  // routes/sitemap[.]xml.ts (sketch) — pages from Fumadocs, not the route tree
+  const urls = source.getPages().map((page) => ({
+    url: new URL(page.url, 'https://jackin.tailrocks.com').toString(),
+    // lastModified, changeFrequency, priority as desired
+  }))
+  ```
+
+  This also resolves the rename ripple: the URL is `/sitemap.xml` (Astro emitted `sitemap-index.xml` / `sitemap-0.xml`), so update the `Sitemap:` line in <RepoFile path="docs/public/robots.txt" />, the `deploy` job's sitemap-URL step in <RepoFile path=".github/workflows/docs.yml" />, and the `check-deployed-docs` action (<RepoFile path=".github/actions/check-deployed-docs/action.yml" />) input to `/sitemap.xml`.
 
 ## Fumadocs + TanStack Start wiring (concrete)
 
@@ -372,7 +409,7 @@ Per <RepoFile path="AGENTS.md" /> ("Project status: pre-release"), this can be a
 
 **Phase 3 — Landing page.** Move the landing's React components (<RepoFile path="docs/src/components/landing/Landing.tsx" /> and siblings) into a TanStack route outside the docs layout. Re-express the custom `index.astro` head — SEO meta, JSON-LD, OG tags, font preloads, the pre-paint theme script — via the root document and route metadata. The `DigitalRain`, `HeroStage`, and other islands need only client-component boundaries.
 
-**Phase 4 — Search, OG (Takumi), AI, sitemap, deploy.** Wire static Orama search end to end. Migrate all image generation to Takumi: per-page cards rendered in the prerender step, plus the social-card and icon generators (`gen-og.ts`, `gen-icons.ts`); drop `satori`, `@resvg/resvg-js`, and `astro-og-canvas`. Ship the AI surface (`getLLMText`, `llms.txt`, `llms-full.txt`, per-page `.md`, copy-for-LLM page actions). Generate the sitemap. Update <RepoFile path=".github/workflows/docs.yml" /> (build command, output path, sitemap path, `.nojekyll`, postinstall ordering) and the `check-deployed-docs` action. Re-point lychee remaps.
+**Phase 4 — Search, OG (Takumi), AI, sitemap, deploy.** Wire static Orama search end to end. Migrate all image generation to Takumi: per-page cards rendered in the prerender step, plus the social-card and icon generators (`gen-og.ts`, `gen-icons.ts`); drop `satori`, `@resvg/resvg-js`, and `astro-og-canvas`. Ship the AI surface (`getLLMText`, `llms.txt`, `llms-full.txt`, per-page `.md`, copy-for-LLM page actions). Build the custom `/sitemap.xml` route from `source.getPages()`, disable the built-in sitemap, and add the route to the prerender `pages` list. Update <RepoFile path=".github/workflows/docs.yml" /> (build command, output path, sitemap path, `.nojekyll`, postinstall ordering) and the `check-deployed-docs` action. Re-point lychee remaps.
 
 **Phase 5 — Cutover + cleanup.** Delete Astro/Starlight (`astro.config.ts`, `content.config.ts`, the `.astro` overrides, Starlight/Expressive-Code deps). Update <RepoFile path="docs/AGENTS.md" />, <RepoFile path="PROJECT_STRUCTURE.md" />, and any doc/reference page that names the stack ("Astro + Starlight"). Update the [Move documentation to a separate repository](/reference/roadmap/docs-separate-repository/) item, which currently describes the Astro Starlight site, and the [rustdoc JSON → Starlight](/reference/roadmap/rustdoc-json-starlight/) item, whose "Starlight" target must be re-pointed. Per the docs-as-source-of-truth rule, run `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` clean before the PR is ready.
 
