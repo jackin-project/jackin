@@ -924,6 +924,17 @@ html.theme-init *::after {
   }
 }
 
+@media (min-width: 1280px) {
+  #nd-docs-layout {
+    --fd-toc-width: 216px !important;
+  }
+
+  #nd-toc,
+  #nd-toc-placeholder {
+    --fd-toc-width: 216px !important;
+  }
+}
+
 #nd-sidebar a[data-active],
 #nd-sidebar button[data-state] {
   color: var(--jk-text-dim);
@@ -993,6 +1004,7 @@ html.theme-init *::after {
 
 #nd-toc {
   --jk-toc-wordmark-size: clamp(48px, 4.4vw, 64px);
+  padding-inline-end: 0.625rem !important;
 }
 
 #nd-toc h3 {
