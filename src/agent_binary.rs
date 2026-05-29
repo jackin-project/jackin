@@ -1,6 +1,7 @@
 use crate::agent::Agent;
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
+    parse_sha256_hex,
 };
 use crate::paths::JackinPaths;
 use anyhow::{Context, Result};
@@ -198,12 +199,9 @@ async fn resolve_amp() -> Result<AgentRelease> {
         "arm64" => "linux-arm64",
         _ => "linux-x64",
     };
-    let checksum = fetch_text(&format!("{base}/cli/{version}/{platform}-amp.sha256"))
-        .await?
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_string();
+    let sha_text = fetch_text(&format!("{base}/cli/{version}/{platform}-amp.sha256")).await?;
+    let checksum = parse_sha256_hex(&sha_text)
+        .with_context(|| format!("amp published checksum for {version} {platform}"))?;
     Ok(AgentRelease {
         agent: Agent::Amp,
         version: version.clone(),
@@ -279,15 +277,34 @@ async fn fetch_text(url: &str) -> Result<String> {
 }
 
 async fn github_auth_token() -> Option<String> {
-    let output = tokio::process::Command::new("gh")
+    // Degrade to unauthenticated (60 req/hr) on any failure, but log which one:
+    // `gh` missing is expected on CI, while present-but-erroring (not logged in)
+    // is the case an operator hitting a rate-limit 403 needs to see in --debug.
+    match tokio::process::Command::new("gh")
         .args(["auth", "token", "--hostname", "github.com"])
         .output()
         .await
-        .ok()?;
-    if output.status.success() {
-        Some(String::from_utf8(output.stdout).ok()?.trim().to_string())
-    } else {
-        None
+    {
+        Ok(output) if output.status.success() => {
+            let token = String::from_utf8(output.stdout).ok()?.trim().to_string();
+            (!token.is_empty()).then_some(token)
+        }
+        Ok(output) => {
+            crate::debug_log!(
+                "agent_binary",
+                "gh auth token exited {}: {} — proceeding unauthenticated",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            None
+        }
+        Err(e) => {
+            crate::debug_log!(
+                "agent_binary",
+                "gh auth token not runnable ({e}) — proceeding unauthenticated"
+            );
+            None
+        }
     }
 }
 
@@ -388,21 +405,31 @@ async fn download_and_cache_inner(
     tmp_binary: &Path,
 ) -> Result<()> {
     crate::net::download_parallel(&release.url, tmp_download).await?;
-    if let Some(expected) = &release.checksum {
-        let tmp_for_hash = tmp_download.to_owned();
-        let actual = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
-            .await
-            .context("hash worker join")?
-            .with_context(|| format!("hashing {}", tmp_download.display()))?;
-        anyhow::ensure!(
-            actual.eq_ignore_ascii_case(expected),
-            "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
+    // A dropped chunk leaves a zeroed hole in the pre-sized file rather than a
+    // short file, so the SHA-256 is the only integrity guard — require it. Every
+    // resolver populates a checksum (claude/kimi/amp from their manifests,
+    // codex/opencode from the GitHub asset digest); a missing one means an
+    // unverifiable binary we refuse to install rather than exec blind.
+    let expected = release.checksum.as_deref().with_context(|| {
+        format!(
+            "{} release {} has no published checksum; refusing to install an unverified binary",
             release.agent.slug(),
-            release.url,
-            expected,
-            actual
-        );
-    }
+            release.version
+        )
+    })?;
+    let tmp_for_hash = tmp_download.to_owned();
+    let actual = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
+        .await
+        .context("hash worker join")?
+        .with_context(|| format!("hashing {}", tmp_download.display()))?;
+    anyhow::ensure!(
+        actual.eq_ignore_ascii_case(expected),
+        "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
+        release.agent.slug(),
+        release.url,
+        expected,
+        actual
+    );
     if let Some(member) = &release.archive_member {
         extract_tar_gz_member(tmp_download, member, tmp_binary)?;
         let _ = std::fs::remove_file(tmp_download);
@@ -526,4 +553,141 @@ impl GithubAsset {
 struct GithubReleaseAssetMatch {
     tag_name: String,
     asset: GithubAsset,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_succeeds_on_first_try() {
+        let calls = Cell::new(0u32);
+        let r: Result<u32> = retry_with_backoff(3, Duration::from_millis(10), || {
+            calls.set(calls.get() + 1);
+            async { Ok(42) }
+        })
+        .await;
+        assert_eq!(r.unwrap(), 42);
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_recovers_after_transient_failures() {
+        let calls = Cell::new(0u32);
+        let r: Result<u32> = retry_with_backoff(3, Duration::from_millis(10), || {
+            let n = calls.get() + 1;
+            calls.set(n);
+            async move {
+                if n < 3 {
+                    anyhow::bail!("transient {n}")
+                }
+                Ok(n)
+            }
+        })
+        .await;
+        assert_eq!(r.unwrap(), 3);
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_exhausts_and_returns_last_error() {
+        let calls = Cell::new(0u32);
+        let r: Result<()> = retry_with_backoff(3, Duration::from_millis(10), || {
+            let n = calls.get() + 1;
+            calls.set(n);
+            async move { anyhow::bail!("attempt {n} failed") }
+        })
+        .await;
+        assert_eq!(calls.get(), 3);
+        // Surfaces the LAST attempt's error, not the "no attempts made" seed.
+        assert_eq!(r.unwrap_err().to_string(), "attempt 3 failed");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_with_zero_attempts_never_calls_closure() {
+        let calls = Cell::new(0u32);
+        let r: Result<()> = retry_with_backoff(0, Duration::from_millis(10), || {
+            calls.set(calls.get() + 1);
+            async { Ok(()) }
+        })
+        .await;
+        assert!(r.is_err());
+        assert_eq!(calls.get(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_backoff_grows_exponentially() {
+        let start = tokio::time::Instant::now();
+        let _: Result<()> = retry_with_backoff(3, Duration::from_millis(100), || async {
+            anyhow::bail!("nope")
+        })
+        .await;
+        // Attempt 1 is immediate; attempts 2 and 3 wait 100ms then 200ms.
+        assert_eq!(start.elapsed(), Duration::from_millis(300));
+    }
+
+    fn release_fixture() -> AgentRelease {
+        AgentRelease {
+            agent: Agent::Claude,
+            version: "1.2.3".to_string(),
+            url: "https://example.test/claude".to_string(),
+            checksum: Some("abc".to_string()),
+            archive_member: None,
+        }
+    }
+
+    #[test]
+    fn read_cached_release_missing_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        assert!(read_cached_release(&paths, Agent::Claude).is_none());
+    }
+
+    #[test]
+    fn read_cached_release_fresh_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        let release = release_fixture();
+        write_cached_release(&paths, &release).unwrap();
+        let got = read_cached_release(&paths, Agent::Claude).expect("fresh cache should hit");
+        assert_eq!(got.version, release.version);
+        assert_eq!(got.url, release.url);
+    }
+
+    #[test]
+    fn read_cached_release_past_ttl_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        write_cached_release(&paths, &release_fixture()).unwrap();
+        let path = metadata_cache_path(&paths, Agent::Claude);
+        let stale = std::time::SystemTime::now() - Duration::from_hours(2);
+        filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(stale)).unwrap();
+        assert!(read_cached_release(&paths, Agent::Claude).is_none());
+    }
+
+    #[test]
+    fn read_cached_release_malformed_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        let path = metadata_cache_path(&paths, Agent::Claude);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"{ not valid json").unwrap();
+        assert!(read_cached_release(&paths, Agent::Claude).is_none());
+    }
+
+    #[test]
+    fn sha256_digest_strips_prefix_only_for_sha256() {
+        let asset = |digest: Option<&str>| GithubAsset {
+            name: "asset".to_string(),
+            browser_download_url: "https://example.test/a".to_string(),
+            digest: digest.map(str::to_string),
+        };
+        assert_eq!(
+            asset(Some("sha256:deadbeef")).sha256_digest().as_deref(),
+            Some("deadbeef")
+        );
+        assert!(asset(Some("md5:deadbeef")).sha256_digest().is_none());
+        assert!(asset(None).sha256_digest().is_none());
+    }
 }

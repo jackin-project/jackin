@@ -26,6 +26,7 @@ use anyhow::{Context, Result};
 
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
+    parse_sha256_hex,
 };
 use crate::paths::JackinPaths;
 
@@ -182,9 +183,9 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         crate::net::download_parallel(&url, &tmp_archive),
     );
 
-    let expected_sha = expected_sha_result
-        .with_context(|| format!("fetching jackin-capsule SHA-256 manifest at {sha_url}"))?;
-
+    // Either failure must remove the partial archive so a retry starts clean —
+    // the SHA fetch and the download run concurrently, so a SHA error can land
+    // with the archive already fully written.
     if let Err(e) = download_result {
         let _ = std::fs::remove_file(&tmp_archive);
         return Err(e).context(format!(
@@ -199,6 +200,14 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
                https://github.com/jackin-project/jackin/releases/tag/preview"
         ));
     }
+    let expected_sha = match expected_sha_result {
+        Ok(sha) => sha,
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_archive);
+            return Err(e)
+                .with_context(|| format!("fetching jackin-capsule SHA-256 manifest at {sha_url}"));
+        }
+    };
 
     // Verify the published SHA-256. The CI pipeline emits `<asset>.sha256`
     // alongside every archive; a mismatch means a tampered or partial release.
@@ -267,19 +276,11 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     Ok(())
 }
 
-/// Fetch the published SHA-256 hex string for a release asset. The CI
-/// workflow emits the file as one line of lowercase hex (no filename
-/// suffix) so trim + lowercase is enough.
+/// Fetch the published SHA-256 hex string for a release asset. The CI workflow
+/// emits one line of hex (optionally `<hex>  <filename>`).
 async fn fetch_remote_sha256(url: &str) -> Result<String> {
     let text = crate::net::fetch_text(url).await?;
-    let hex = text.split_whitespace().next().unwrap_or("").to_lowercase();
-    if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        anyhow::bail!(
-            "{url} did not return a 64-char hex sha256 (got {:?})",
-            hex.chars().take(80).collect::<String>()
-        );
-    }
-    Ok(hex)
+    parse_sha256_hex(&text).with_context(|| format!("{url} did not return a valid sha256"))
 }
 
 fn download_url(version: &str, arch: &str) -> String {

@@ -21,10 +21,23 @@ use fast_down::{
 };
 use reqwest::header::HeaderMap;
 
+/// Deadline for a small metadata/API GET (latest version, manifest, `.sha256`).
+const TEXT_GET_TIMEOUT: Duration = Duration::from_secs(30);
+/// Connection-establishment deadline shared by every client here.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// Overall ceiling for one parallel binary download. fast-down classifies every
+/// bounded-range chunk error as recoverable and retries with no attempt cap, so
+/// without this a persistently-failing CDN loops forever and wedges the launch.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(5);
+/// Parallel chunk connections per download.
+const DOWNLOAD_CONCURRENCY: usize = 8;
+
 /// Build a reqwest client carrying `headers` as defaults.
 pub fn http_client(headers: HeaderMap) -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .default_headers(headers)
+        .timeout(TEXT_GET_TIMEOUT)
+        .connect_timeout(CONNECT_TIMEOUT)
         .build()
         .context("building HTTP client")
 }
@@ -51,9 +64,12 @@ pub async fn fetch_text(url: &str) -> Result<String> {
 
 /// Download `url` to `dest` using fast-down parallel chunks.
 ///
-/// Work-stealing across 8 connections with mmap writes. All CDNs jackin' pulls
-/// from support Range requests; bail fast if one somehow does not. Creates
-/// `dest`'s parent directory when missing.
+/// Work-stealing across `DOWNLOAD_CONCURRENCY` connections with mmap writes. All
+/// CDNs jackin' pulls from support Range requests; bail fast if one somehow does
+/// not. Creates `dest`'s parent directory when missing. Bounded by
+/// `DOWNLOAD_TIMEOUT` — completeness/integrity of the result is the caller's
+/// SHA-256 check, since the mmap pre-sizes the file (a dropped chunk leaves a
+/// zeroed hole, not a short file).
 pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     // TLS/proxy posture, bound once so the prefetch client and the chunk puller
     // share one auditable security default instead of restating bare positional
@@ -63,6 +79,9 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     let accept_invalid_hostnames = false;
 
     let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid URL {url}"))?;
+    // No auth headers: every download URL is a public CDN asset (GitHub release
+    // browser_download_url, Claude/Amp/Kimi CDNs), unlike the rate-limited
+    // GitHub API metadata path that carries a Bearer token.
     let headers = HeaderMap::new();
     let client = build_client(
         &headers,
@@ -106,6 +125,9 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
         accept_invalid_certs,
         accept_invalid_hostnames,
         file_id: info.file_id,
+        // resp: None — every chunk (including the first) issues its own ranged
+        // GET rather than reusing the prefetch body; prefetch is consumed only
+        // for the size + Range-support probe above.
         resp: None,
         available_ips: Arc::from([]),
     })
@@ -118,7 +140,7 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
         pusher,
         multi::DownloadOptions {
             download_chunks: std::iter::once(0..info.size),
-            concurrent: 8,
+            concurrent: DOWNLOAD_CONCURRENCY,
             retry_gap: Duration::from_millis(500),
             push_queue_cap: 1024,
             pull_timeout: Duration::from_secs(30),
@@ -126,21 +148,32 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
             max_speculative: 3,
         },
     );
-    // Per-chunk errors are recoverable (fast-down retries) and high-frequency,
-    // so they go on the gated `debug_log!` tier, not the always-on diagnostics log.
-    while let Ok(event) = result.event_chain.recv().await {
-        match event {
-            Event::PullError(id, err) => {
-                crate::debug_log!("download", "worker {id} pull error: {err:?}");
+    // Drain the event stream, then await the writer — bounded by an overall
+    // deadline. A persistently-failing chunk retries forever (every bounded
+    // range is classified recoverable), so both the drain and the join can hang
+    // indefinitely; the timeout + abort is the only ceiling. Per-chunk errors
+    // are recoverable and high-frequency, so they go on the gated `debug_log!`
+    // tier, not the always-on diagnostics log.
+    let drive = async {
+        while let Ok(event) = result.event_chain.recv().await {
+            match event {
+                Event::PullError(id, err) => {
+                    crate::debug_log!("download", "worker {id} pull error: {err:?}");
+                }
+                Event::PushError(_, _, err) | Event::FlushError(err) => {
+                    crate::debug_log!("download", "write error: {err}");
+                }
+                _ => {}
             }
-            Event::PushError(_, _, err) | Event::FlushError(err) => {
-                crate::debug_log!("download", "write error: {err}");
-            }
-            _ => {}
         }
-    }
-    result
-        .join()
-        .await
-        .map_err(|e| anyhow::anyhow!("download task panicked for {url}: {e}"))
+        result
+            .join()
+            .await
+            .map_err(|e| anyhow::anyhow!("download task panicked for {url}: {e}"))
+    };
+    let Ok(outcome) = tokio::time::timeout(DOWNLOAD_TIMEOUT, drive).await else {
+        result.abort();
+        anyhow::bail!("download of {url} timed out after {DOWNLOAD_TIMEOUT:?}");
+    };
+    outcome
 }

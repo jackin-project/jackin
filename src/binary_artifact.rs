@@ -1,11 +1,11 @@
 //! Post-download artifact helpers shared by `agent_binary` and `capsule_binary`.
 //!
 //! Both modules fetch a binary (or a `.tar.gz` carrying one), verify its
-//! SHA-256, extract it, and set the executable bit, all keyed off the same
-//! host-derived container arch. These steps are identical across the two
-//! callers, so they live here once rather than as drifting copies. The network
-//! transfer itself lives in [`crate::net`]; this module owns everything that
-//! happens to the bytes once they land on disk.
+//! SHA-256, extract it, and set the executable bit. These steps are identical
+//! across the two callers, so they live here once rather than as drifting
+//! copies. The network transfer itself lives in [`crate::net`]; this module
+//! owns everything that happens to the bytes once they land on disk, plus the
+//! host-derived [`container_arch`] both callers key their cache paths on.
 
 use std::path::Path;
 
@@ -88,6 +88,22 @@ pub fn hash_file_sha256(path: &Path) -> Result<String> {
     for byte in digest {
         let _ = write!(hex, "{byte:02x}");
     }
+    Ok(hex)
+}
+
+/// Parse the first whitespace-delimited token of a `.sha256` manifest as a
+/// lowercase 64-char hex digest, erroring if it isn't one.
+///
+/// Publishers emit either a bare digest or `<digest>  <filename>`; both reduce
+/// to the first token. A blank or malformed line is caught here rather than
+/// surfacing later as a confusing "checksum mismatch against empty".
+pub fn parse_sha256_hex(text: &str) -> Result<String> {
+    let hex = text.split_whitespace().next().unwrap_or("").to_lowercase();
+    anyhow::ensure!(
+        hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()),
+        "expected a 64-char hex sha256, got {:?}",
+        hex.chars().take(80).collect::<String>()
+    );
     Ok(hex)
 }
 
@@ -174,5 +190,42 @@ mod tests {
 
         extract_tar_gz_member(&archive_path, "jackin-capsule", &dest).unwrap();
         assert_eq!(std::fs::read(&dest).unwrap(), bytes);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn is_executable_file_requires_exec_bit() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+
+        let exec = dir.path().join("exec");
+        std::fs::write(&exec, b"x").unwrap();
+        std::fs::set_permissions(&exec, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(is_executable_file(&exec), "0o755 file should be executable");
+
+        let plain = dir.path().join("plain");
+        std::fs::write(&plain, b"x").unwrap();
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!is_executable_file(&plain), "0o644 file must be rejected");
+
+        assert!(!is_executable_file(dir.path()), "a directory is not a file");
+        assert!(!is_executable_file(&dir.path().join("missing")));
+    }
+
+    #[test]
+    fn parse_sha256_hex_accepts_valid_and_rejects_garbage() {
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        assert_eq!(parse_sha256_hex(digest).unwrap(), digest);
+        // Uppercase is normalized; a trailing filename token is ignored.
+        assert_eq!(
+            parse_sha256_hex(&format!("{}  some-asset.tar.gz", digest.to_uppercase())).unwrap(),
+            digest
+        );
+        assert!(parse_sha256_hex("").is_err(), "empty");
+        assert!(parse_sha256_hex("deadbeef").is_err(), "too short");
+        assert!(
+            parse_sha256_hex(&"z".repeat(64)).is_err(),
+            "64 non-hex chars"
+        );
     }
 }

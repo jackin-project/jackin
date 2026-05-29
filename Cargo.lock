@@ -1532,6 +1532,7 @@ dependencies = [
  "directories",
  "dockerfile-parser-rs",
  "fast-down",
+ "filetime",
  "flate2",
  "fs2",
  "futures-util",
