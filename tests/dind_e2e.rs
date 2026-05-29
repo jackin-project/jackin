@@ -310,14 +310,14 @@ fn require_e2e_prereqs() {
 }
 
 fn docker_available() -> bool {
-    let mut command = Command::new("docker");
-    command
+    // Probe the same daemon jackin will drive: honor DOCKER_HOST (and the
+    // active docker context when unset), exactly as the host-side client
+    // does. Stripping DOCKER_HOST here would gate on a default-socket daemon
+    // that jackin itself would bypass whenever the operator set one.
+    Command::new("docker")
         .arg("info")
-        .env_remove("DOCKER_HOST")
-        .env_remove("DOCKER_TLS_VERIFY")
-        .env_remove("DOCKER_CERT_PATH")
-        .env_remove("TESTCONTAINERS_HOST_OVERRIDE");
-    command.output().is_ok_and(|output| output.status.success())
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 /// Probe `script(1)` via the canonical PATH lookup. The previous
@@ -416,9 +416,11 @@ fn pty_command(
         .env("TERM", "xterm-256color")
         .env_remove("CI")
         .env_remove("JACKIN_DEBUG")
-        .env_remove("DOCKER_HOST")
-        .env_remove("DOCKER_TLS_VERIFY")
-        .env_remove("DOCKER_CERT_PATH")
+        // Inherit DOCKER_HOST/DOCKER_TLS_VERIFY/DOCKER_CERT_PATH so the launch
+        // drives whatever daemon the operator points at — the DOCKER_HOST
+        // behavior architecture.mdx documents. TESTCONTAINERS_HOST_OVERRIDE
+        // stays stripped so a host value can't bleed past jackin's reserved
+        // per-container override into the in-container testcontainers smoke.
         .env_remove("TESTCONTAINERS_HOST_OVERRIDE");
     for (k, v) in extra_env {
         command.env(k, v);
