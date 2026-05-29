@@ -959,9 +959,9 @@ html.theme-init *::after {
   }
 
   #nd-docs-layout[data-sidebar-collapsed='true'] [data-sidebar-placeholder] {
-    --fd-sidebar-width: 216px !important;
-    width: 216px !important;
-    flex-basis: 216px !important;
+    --fd-sidebar-width: 371px !important;
+    width: 371px !important;
+    flex-basis: 371px !important;
   }
 }
 
