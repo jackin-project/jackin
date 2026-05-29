@@ -50,6 +50,12 @@
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
+  --jk-code-bg:    #050605;
+  --jk-code-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 22px 54px rgba(0, 0, 0, 0.32),
+    0 8px 18px rgba(0, 0, 0, 0.22);
 
   --color-fd-background: var(--jk-bg);
   --color-fd-foreground: var(--jk-text);
@@ -135,10 +141,10 @@
   --color-fd-border: var(--jk-ui);
   --color-fd-ring: var(--jk-accent);
 
-  /* Expressive-code frame — outer border tracks theme; surfaces come
-     from the shiki theme (github-dark in dark mode). */
+  /* Expressive-code frame — code blocks stay terminal-dark in both
+     modes; the custom frame rule below provides the visible depth. */
   --ec-brdRad: 10px;
-  --ec-brdCol: var(--jk-ui);
+  --ec-brdCol: transparent;
   --ec-frm-edActTabIndBtmCol: transparent;
   --ec-frm-edActTabIndTopCol: transparent;
   --ec-frm-edTabBarBrdBtmCol: transparent;
@@ -168,6 +174,12 @@
   --jk-ui:         rgba(0, 0, 0, 0.08);
   --jk-ui-strong:  rgba(0, 0, 0, 0.18);
   --jk-ui-subtle:  rgba(0, 0, 0, 0.04);
+  --jk-code-bg:    #070807;
+  --jk-code-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 24px 52px rgba(4, 9, 6, 0.18),
+    0 8px 20px rgba(4, 9, 6, 0.12);
 
   --sl-color-bg: var(--jk-bg);
   --sl-color-bg-nav: var(--jk-bg);
@@ -206,10 +218,9 @@
   --color-fd-ring: var(--jk-accent);
 
   /* Light-mode expressive-code frame — the surface is still dark
-     (--jk-code-bg applied in docs-theme.css below) with shiki's
-     one-dark-pro palette for punchier syntax on the light page. */
+     (--jk-code-bg) so snippets read like terminal output. */
   --ec-brdRad: 10px;
-  --ec-brdCol: var(--jk-ui);
+  --ec-brdCol: transparent;
   --ec-frm-edActTabIndBtmCol: transparent;
   --ec-frm-edActTabIndTopCol: transparent;
   --ec-frm-edTabBarBrdBtmCol: transparent;
@@ -1300,36 +1311,24 @@ header.header {
 }
 
 /* ==========================================================================
-   Code blocks — flat rounded panel, no terminal chrome or tab bar
+   Code blocks — terminal-dark panel, no chrome or tab bar
    ========================================================================== */
 
 .expressive-code .frame {
-  box-shadow: none;
-  /* Border is a subtle white-alpha hairline in BOTH modes because the
-     code surface is always dark (--jk-code-bg). Using var(--jk-ui),
-     which flips to black-alpha in light mode, made the border invisible
-     against the dark code panel. */
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--jk-code-shadow);
+  border: 0;
   border-radius: 10px;
   overflow: hidden;
   /* Code blocks keep a dark surface in BOTH page modes:
      - Dark mode: slightly deeper than the page (recessed feel)
      - Light mode: high-contrast dark block against the white page
-     Single github-dark shiki theme (set in source.config.ts) paints the
-     syntax on top, so colors stay readable on either shade. */
+     A stacked inset/outer shadow keeps the edge sharp without a gray
+     border. */
   background: var(--jk-code-bg);
 }
 
 .expressive-code .frame pre {
   background: var(--jk-code-bg) !important;
-}
-
-:root[data-theme='dark'] {
-  --jk-code-bg: #050605;
-}
-
-:root[data-theme='light'] {
-  --jk-code-bg: #0a0b0a;   /* near-black for maximum contrast on a white page */
 }
 
 .expressive-code .frame .header {
