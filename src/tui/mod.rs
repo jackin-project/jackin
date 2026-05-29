@@ -199,8 +199,7 @@ pub mod prompt;
 
 pub use animation::{warp_end_caption, warp_intro, warp_out};
 pub use output::{
-    CodexSyncState, agent_outcome_notice, auth_mode_notice, clear_screen, codex_auth_notice, fatal,
-    github_auth_notice, hint, print_deploying, set_terminal_title, shorten_home, step_fail,
+    clear_screen, fatal, hint, print_deploying, set_terminal_title, shorten_home, step_fail,
 };
 pub use prompt::{prompt_choice, require_interactive_stdin, spin_wait};
 
