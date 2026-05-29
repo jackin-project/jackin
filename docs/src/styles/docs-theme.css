@@ -1397,22 +1397,22 @@ header.header {
    Body links — green with underline-on-hover
    ========================================================================== */
 
-.sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)) {
+:is(.sl-markdown-content, .prose) a:not(.sl-anchor-link, :where(.not-content *, .not-prose *)) {
   color: var(--sl-color-text-accent);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition: border-color 0.1s;
 }
 
-.sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)):hover {
+:is(.sl-markdown-content, .prose) a:not(.sl-anchor-link, :where(.not-content *, .not-prose *)):hover {
   border-bottom-color: var(--sl-color-text-accent);
 }
 
-.sl-markdown-content a:is([href^='http://'], [href^='https://']):not(
+:is(.sl-markdown-content, .prose) a:is([href^='http://'], [href^='https://']):not(
   .sl-anchor-link,
   [href^='https://jackin.tailrocks.com'],
   [href^='http://jackin.tailrocks.com'],
-  :where(.not-content *)
+  :where(.not-content *, .not-prose *)
 )::after {
   content: '';
   display: inline-block;
@@ -1425,11 +1425,11 @@ header.header {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M10 14 21 3'/%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-.sl-markdown-content a:is([href^='http://'], [href^='https://']):not(
+:is(.sl-markdown-content, .prose) a:is([href^='http://'], [href^='https://']):not(
   .sl-anchor-link,
   [href^='https://jackin.tailrocks.com'],
   [href^='http://jackin.tailrocks.com'],
-  :where(.not-content *)
+  :where(.not-content *, .not-prose *)
 ):hover::after {
   opacity: 1;
 }
