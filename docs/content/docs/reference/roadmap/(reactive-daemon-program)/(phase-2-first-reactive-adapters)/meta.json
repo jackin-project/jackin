@@ -1,0 +1,8 @@
+{
+  "title": "Phase 2 — First reactive adapters",
+  "defaultOpen": false,
+  "pages": [
+    "../../live-auth-sync",
+    "../../agent-attention-prompts"
+  ]
+}

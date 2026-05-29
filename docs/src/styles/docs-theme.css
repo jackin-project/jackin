@@ -1208,6 +1208,29 @@ html.theme-init *::after {
   display: none;
 }
 
+#nd-sidebar [class*='before:bg-fd-primary']::before,
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true'])::before {
+  display: none !important;
+}
+
+#nd-sidebar [data-state][class~='relative']::before {
+  content: "";
+  position: absolute;
+  inset-block: 0.35rem;
+  inset-inline-start: 0.72rem;
+  width: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--jk-text) 13%, transparent);
+}
+
+:root[data-theme='dark'] #nd-sidebar [data-state][class~='relative']::before {
+  background: color-mix(in srgb, var(--jk-text) 11%, transparent);
+}
+
+#nd-sidebar [data-state][class~='relative']:has(a[data-active='true'])::before {
+  background: color-mix(in srgb, var(--jk-brand) 34%, var(--jk-text) 10%, transparent);
+}
+
 /* ==========================================================================
    Mobile menu footer (social icons + theme toggle + language select).
    Fumadocs draws a 1px top border via .mobile-preferences { border-top:

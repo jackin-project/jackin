@@ -5,9 +5,7 @@
     "../jackin-daemon",
     "../jackin-capsule",
     "../jackin-desktop-agent-hub",
-    "../live-auth-sync",
-    "../agent-attention-prompts",
-    "../host-bridge",
-    "../container-credential-exposure"
+    "(phase-2-first-reactive-adapters)",
+    "(phase-3-host-bridge)"
   ]
 }
