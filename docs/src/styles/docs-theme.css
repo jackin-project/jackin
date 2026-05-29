@@ -901,7 +901,10 @@ html.theme-init *::after {
   border-radius: 8px;
   color: #fff7ed;
   padding: 18px 20px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(251, 191, 36, 0.13),
+    0 16px 36px rgba(0, 0, 0, 0.18);
 }
 
 .jk-early-development-notice-label {
@@ -929,9 +932,14 @@ html.theme-init *::after {
 }
 
 :root[data-theme='light'] .jk-early-development-notice {
-  background: #fff1b8;
+  background: #fff3c4;
   color: #2f1d05;
-  box-shadow: 0 16px 34px rgba(120, 53, 15, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    inset 0 0 0 1px rgba(146, 64, 14, 0.2),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 18px 42px rgba(146, 64, 14, 0.12),
+    0 6px 16px rgba(146, 64, 14, 0.08);
 }
 
 :root[data-theme='light'] .jk-early-development-notice-label {
