@@ -1101,7 +1101,20 @@ html.theme-init *::after {
 #nd-sidebar button[data-state] {
   color: var(--jk-text-dim);
   border-radius: 8px;
+  padding-block: 0.35rem !important;
   transition: color 0.12s, background-color 0.12s, box-shadow 0.12s;
+}
+
+#nd-sidebar [class~='gap-0.5'] {
+  gap: 0.125rem !important;
+}
+
+#nd-sidebar [class~='pt-0.5'] {
+  padding-top: 0.125rem !important;
+}
+
+#nd-sidebar [class~='mt-6'] {
+  margin-top: 1rem !important;
 }
 
 #nd-sidebar a[data-active]:hover,
