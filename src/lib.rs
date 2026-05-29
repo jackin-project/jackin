@@ -2,6 +2,7 @@ pub mod agent;
 pub mod agent_binary;
 pub mod ansi_text;
 pub mod app;
+pub mod binary_artifact;
 pub mod capsule_binary;
 pub mod cli;
 pub mod config;

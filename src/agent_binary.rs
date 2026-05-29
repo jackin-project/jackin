@@ -1,11 +1,11 @@
 use crate::agent::Agent;
+use crate::binary_artifact::{
+    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256,
+};
 use crate::paths::JackinPaths;
 use anyhow::{Context, Result};
-use flate2::read::GzDecoder;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -156,14 +156,6 @@ pub fn cached_binary_path(paths: &JackinPaths, release: &AgentRelease) -> PathBu
         .join(release.version.replace('+', "_"))
         .join(format!("linux-{}", container_arch()))
         .join(release.agent.slug())
-}
-
-pub const fn container_arch() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "amd64"
-    }
 }
 
 async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
@@ -397,7 +389,11 @@ async fn download_and_cache_inner(
 ) -> Result<()> {
     crate::net::download_parallel(&release.url, tmp_download).await?;
     if let Some(expected) = &release.checksum {
-        let actual = hash_file_sha256(tmp_download).await?;
+        let tmp_for_hash = tmp_download.to_owned();
+        let actual = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
+            .await
+            .context("hash worker join")?
+            .with_context(|| format!("hashing {}", tmp_download.display()))?;
         anyhow::ensure!(
             actual.eq_ignore_ascii_case(expected),
             "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
@@ -424,61 +420,6 @@ fn record(kind: &str, message: &str) {
     } else {
         crate::debug_log!("agent_binary", "{kind}: {message}");
     }
-}
-
-fn extract_tar_gz_member(archive: &Path, member_name: &str, dest: &Path) -> Result<()> {
-    let file = std::fs::File::open(archive)?;
-    let decoder = GzDecoder::new(file);
-    let mut archive = tar::Archive::new(decoder);
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let path = entry.path()?;
-        if path.file_name().and_then(|n| n.to_str()) == Some(member_name) {
-            let mut out = std::fs::File::create(dest)?;
-            std::io::copy(&mut entry, &mut out)?;
-            return Ok(());
-        }
-    }
-    anyhow::bail!("archive missing {member_name}")
-}
-
-async fn hash_file_sha256(path: &Path) -> Result<String> {
-    let path = path.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let mut file = std::fs::File::open(&path)?;
-        let mut hasher = Sha256::new();
-        let mut buf = [0u8; 8192];
-        loop {
-            let n = file.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buf[..n]);
-        }
-        let digest = hasher.finalize();
-        let mut hex = String::with_capacity(digest.len() * 2);
-        for byte in digest {
-            use std::fmt::Write as _;
-            write!(&mut hex, "{byte:02x}")?;
-        }
-        Ok(hex)
-    })
-    .await
-    .context("sha256 hash task panicked")?
-}
-
-#[cfg(unix)]
-fn chmod_executable(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let mut perms = std::fs::metadata(path)?.permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(path, perms)?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn chmod_executable(_path: &Path) -> Result<()> {
-    Ok(())
 }
 
 fn is_valid_cached_binary(path: &Path) -> bool {

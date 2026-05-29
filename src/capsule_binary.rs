@@ -24,6 +24,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::binary_artifact::{
+    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256,
+};
 use crate::paths::JackinPaths;
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
@@ -163,15 +166,6 @@ fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
         .join("jackin-capsule")
 }
 
-/// Linux arch for the container target, derived from the host machine arch.
-pub const fn container_arch() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "amd64"
-    }
-}
-
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let sha_url = format!("{url}.sha256");
@@ -229,7 +223,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         );
     }
 
-    extract_capsule_from_archive(&tmp_archive, &tmp)
+    extract_tar_gz_member(&tmp_archive, "jackin-capsule", &tmp)
         .with_context(|| format!("extracting jackin-capsule from {}", tmp_archive.display()))?;
     let _ = std::fs::remove_file(&tmp_archive);
 
@@ -289,32 +283,6 @@ async fn fetch_remote_sha256(url: &str) -> Result<String> {
     Ok(hex)
 }
 
-/// SHA-256 of a file, returned as lowercase hex.
-fn hash_file_sha256(path: &Path) -> Result<String> {
-    use sha2::{Digest, Sha256};
-    use std::fmt::Write as _;
-    use std::io::Read as _;
-    let mut file = std::fs::File::open(path)
-        .with_context(|| format!("opening {} for hashing", path.display()))?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .with_context(|| format!("reading {} for hashing", path.display()))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(64);
-    for byte in &digest {
-        let _ = write!(hex, "{byte:02x}");
-    }
-    Ok(hex)
-}
-
 fn download_url(version: &str, arch: &str) -> String {
     let target = linux_target(arch);
     if version.contains("-dev") || version.contains("-preview.") {
@@ -324,32 +292,6 @@ fn download_url(version: &str, arch: &str) -> String {
         let asset = format!("{ASSET_PREFIX}-{version}-{target}.tar.gz");
         format!("https://github.com/jackin-project/jackin/releases/download/v{version}/{asset}")
     }
-}
-
-fn extract_capsule_from_archive(archive_path: &Path, dest: &Path) -> Result<()> {
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("opening {}", archive_path.display()))?;
-    let decoder = flate2::read::GzDecoder::new(file);
-    let mut archive = tar::Archive::new(decoder);
-    for entry in archive
-        .entries()
-        .with_context(|| format!("reading entries from {}", archive_path.display()))?
-    {
-        let mut entry =
-            entry.with_context(|| format!("reading entry from {}", archive_path.display()))?;
-        let is_capsule = entry.path().context("reading archive entry path")?.as_ref()
-            == Path::new("jackin-capsule");
-        if is_capsule && entry.header().entry_type().is_file() {
-            entry
-                .unpack(dest)
-                .with_context(|| format!("unpacking jackin-capsule to {}", dest.display()))?;
-            return Ok(());
-        }
-    }
-    anyhow::bail!(
-        "{} does not contain a top-level jackin-capsule binary",
-        archive_path.display()
-    )
 }
 
 fn linux_target(arch: &str) -> &'static str {
@@ -389,16 +331,6 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
     chmod_executable(&stub)
         .with_context(|| format!("setting +x on test stub {}", stub.display()))?;
     Ok(())
-}
-
-pub fn chmod_executable(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let meta =
-        std::fs::metadata(path).with_context(|| format!("stating {} for chmod", path.display()))?;
-    let mut perms = meta.permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("chmod 0755 on {}", path.display()))
 }
 
 /// Verify the downloaded binary is a jackin-capsule of the expected
@@ -547,54 +479,5 @@ mod tests {
         assert_eq!(linux_target("arm64"), "aarch64-unknown-linux-gnu");
         assert_eq!(linux_target("amd64"), "x86_64-unknown-linux-gnu");
         assert_eq!(linux_target("x86_64"), "x86_64-unknown-linux-gnu");
-    }
-
-    #[test]
-    fn hash_file_sha256_matches_known_vector() {
-        // SHA-256 of the empty string is the well-known
-        // e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let digest = hash_file_sha256(tmp.path()).unwrap();
-        assert_eq!(
-            digest,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
-    }
-
-    #[test]
-    fn hash_file_sha256_matches_for_known_bytes() {
-        // SHA-256 of the ASCII string "abc" is
-        // ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(tmp.path(), b"abc").unwrap();
-        let digest = hash_file_sha256(tmp.path()).unwrap();
-        assert_eq!(
-            digest,
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-    }
-
-    #[test]
-    fn extract_capsule_from_archive_writes_top_level_binary() {
-        let temp = tempfile::tempdir().unwrap();
-        let archive_path = temp.path().join("jackin-capsule.tar.gz");
-        let dest = temp.path().join("jackin-capsule");
-        let bytes = b"#!/bin/sh\necho capsule\n";
-
-        let archive_file = std::fs::File::create(&archive_path).unwrap();
-        let encoder = flate2::write::GzEncoder::new(archive_file, flate2::Compression::default());
-        let mut archive = tar::Builder::new(encoder);
-        let mut header = tar::Header::new_gnu();
-        header.set_size(bytes.len() as u64);
-        header.set_mode(0o755);
-        header.set_cksum();
-        archive
-            .append_data(&mut header, "jackin-capsule", &bytes[..])
-            .unwrap();
-        let encoder = archive.into_inner().unwrap();
-        encoder.finish().unwrap();
-
-        extract_capsule_from_archive(&archive_path, &dest).unwrap();
-        assert_eq!(std::fs::read(&dest).unwrap(), bytes);
     }
 }

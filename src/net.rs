@@ -113,7 +113,7 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
         },
     );
     // Per-chunk errors are recoverable (fast-down retries) and high-frequency,
-    // so they belong on the verbose `cdebug!` tier, not the always-on log.
+    // so they go on the gated `debug_log!` tier, not the always-on diagnostics log.
     while let Ok(event) = result.event_chain.recv().await {
         match event {
             Event::PullError(id, err) => {
