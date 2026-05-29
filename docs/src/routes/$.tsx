@@ -3,7 +3,7 @@ import { SocialIcons } from '@/components/chrome/SocialIcons'
 import { ThemeToggle } from '@/components/chrome/ThemeToggle'
 import { baseOptions } from '@/lib/layout.shared'
 import { pageSeo } from '@/lib/seo'
-import { slugsToMarkdownPath, source } from '@/lib/source'
+import { slugsToMarkdownPath, splatToSlugs } from '@/lib/source-paths'
 import { gitConfig } from '@/lib/shared'
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
@@ -24,7 +24,7 @@ import { Suspense } from 'react'
 export const Route = createFileRoute('/$')({
   component: Page,
   loader: async ({ params }) => {
-    const slugs = params._splat?.split('/').filter(Boolean) ?? []
+    const slugs = splatToSlugs(params._splat)
     const data = await serverLoader({ data: slugs })
     await clientLoader.preload(data.path)
     return data
@@ -38,6 +38,7 @@ const serverLoader = createServerFn({
   .inputValidator((slugs: string[]) => slugs)
   .middleware([staticFunctionMiddleware])
   .handler(async ({ data: slugs }) => {
+    const { source } = await import('@/lib/source')
     const page = source.getPage(slugs)
     if (!page) throw notFound()
 
