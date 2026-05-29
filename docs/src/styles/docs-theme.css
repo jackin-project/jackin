@@ -1088,11 +1088,13 @@ html.theme-init *::after {
 
 #nd-sidebar > div:first-child,
 #nd-sidebar > div:last-child {
-  padding-inline: 0.25rem !important;
+  padding-inline-start: 0.125rem !important;
+  padding-inline-end: 0.5rem !important;
 }
 
 #nd-sidebar [data-radix-scroll-area-viewport] {
-  padding-inline: 0.25rem !important;
+  padding-inline-start: 0.125rem !important;
+  padding-inline-end: 0.5rem !important;
 }
 
 #nd-sidebar a[data-active],
