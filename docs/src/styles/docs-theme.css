@@ -1127,15 +1127,6 @@ html.theme-init *::after {
   }
 }
 
-#nd-sidebar {
-  align-items: flex-start !important;
-}
-
-#nd-sidebar > * {
-  width: calc(100% - 0.75rem) !important;
-  max-width: none !important;
-}
-
 #nd-sidebar > div:first-child,
 #nd-sidebar > div:last-child {
   padding-inline-start: 0 !important;
