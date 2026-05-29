@@ -1,4 +1,5 @@
 import { useMDXComponents } from '@/components/mdx'
+import { SocialIcons } from '@/components/chrome/SocialIcons'
 import { ThemeToggle } from '@/components/chrome/ThemeToggle'
 import { baseOptions } from '@/lib/layout.shared'
 import { pageSeo } from '@/lib/seo'
@@ -102,6 +103,7 @@ function Page() {
         footer: (
           <div className="jk-sidebar-footer">
             <ThemeToggle />
+            <SocialIcons />
           </div>
         ),
       }}

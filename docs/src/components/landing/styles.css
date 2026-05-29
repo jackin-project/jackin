@@ -1424,9 +1424,9 @@ nav.landing-topnav .landing-star {
   padding: 18px 20px;
   border: 0;
   border-radius: 8px;
-  background: #fbbf24;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
-  color: #241104;
+  background: #2a1a07;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  color: #fff7ed;
 }
 
 .landing-dev-warning-label {
@@ -1439,28 +1439,37 @@ nav.landing-topnav .landing-star {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #422006;
+  color: #fbbf24;
 }
 
 .landing-dev-warning p {
   margin: 0;
   max-width: 880px;
-  color: #3b1d06;
+  color: #f4d6a5;
   font-size: 16px;
   line-height: 1.55;
 }
 
 .landing-dev-warning strong {
-  color: #180b02;
+  color: #fff8e7;
 }
 
 :root[data-theme='light'] .landing-dev-warning {
-  background: #fbbf24;
-  box-shadow: 0 16px 34px rgba(120, 53, 15, 0.14);
+  background: #fff1b8;
+  color: #2f1d05;
+  box-shadow: 0 16px 34px rgba(120, 53, 15, 0.11);
 }
 
 :root[data-theme='light'] .landing-dev-warning-label {
-  color: #422006;
+  color: #8a4b05;
+}
+
+:root[data-theme='light'] .landing-dev-warning p {
+  color: #4a2b06;
+}
+
+:root[data-theme='light'] .landing-dev-warning strong {
+  color: #241104;
 }
 
 .landing-hero-grid {
