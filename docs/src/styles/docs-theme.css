@@ -909,19 +909,24 @@ html.theme-init *::after {
 }
 
 :root[data-theme='light'] .sl-markdown-content table:not(:where(.not-content *)) {
-  border-color: rgba(5, 20, 12, 0.14);
+  background: #ffffff;
+  border-color: rgba(31, 36, 33, 0.13);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    0 1px 1px rgba(0, 0, 0, 0.03);
+    0 1px 1px rgba(17, 24, 39, 0.03);
+}
+
+:root[data-theme='light'] .sl-markdown-content table :is(th, td):not(:where(.not-content *)) {
+  border-bottom-color: rgba(31, 36, 33, 0.1);
 }
 
 :root[data-theme='light'] .sl-markdown-content thead:not(:where(.not-content *)) {
-  background: #e8eee9;
+  background: #ecefed;
 }
 
 :root[data-theme='light'] .sl-markdown-content th:not(:where(.not-content *)) {
-  border-bottom-color: rgba(5, 20, 12, 0.16);
-  color: #1c241f;
+  border-bottom-color: rgba(31, 36, 33, 0.16);
+  color: #222725;
 }
 
 .sl-markdown-content td:not(:where(.not-content *)) {
