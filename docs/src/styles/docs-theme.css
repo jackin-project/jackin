@@ -8,7 +8,7 @@
    the green accent so the product reads as one site in either mode. */
 
 :root {
-  /* Starlight's gray ramp — surface grays for chrome, not text. Mapped
+  /* Fumadocs's gray ramp — surface grays for chrome, not text. Mapped
      to Radix tokens from tempo-tokens.css so light-dark() handles both
      modes. Overridden inside [data-theme='dark'] for finer control. */
   --sl-color-gray-1: var(--color-gray2);
@@ -19,13 +19,16 @@
   --sl-color-gray-6: var(--color-gray10);
   --sl-color-gray-7: var(--color-gray11);
 
-  /* Fonts — injected via src/components/overrides/Head.astro. */
+  /* Fonts — injected via src/components/chrome/root route. */
   --sl-font: 'Inter', system-ui, sans-serif;
   --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --sl-font-system-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 
-  /* Layout dimensions — match Vocs proportions. */
-  --sl-sidebar-width: 19rem;
-  --sl-content-width: 48rem;
+  /* Layout dimensions — keep navigation compact so documentation owns the page. */
+  --sl-sidebar-width: 15.25rem;
+  --sl-content-width: 56rem;
   --sl-nav-height: 3.5rem;
 
   /* Brand accent — theme-aware so dark mode can keep the bright
@@ -40,6 +43,7 @@
   --jk-bg-deep:    #050605;
   --jk-panel:      #0f1110;
   --jk-text:       #f4f7f5;
+  --jk-prose:      #dce4e0;
   --jk-text-dim:   #9ca8a1;
   --jk-text-ghost: #5e6a64;
   --jk-accent:     #00ff41;
@@ -47,6 +51,39 @@
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
+  --jk-code-bg:    #050605;
+  --jk-code-radius: 6px;
+  --jk-code-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 0 1px rgba(92, 138, 111, 0.2),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 16px 34px rgba(0, 0, 0, 0.26),
+    0 5px 14px rgba(0, 0, 0, 0.18);
+  --jk-sidebar-hover-bg: rgba(244, 247, 245, 0.055);
+  --jk-sidebar-hover-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
+  --fd-layout-width: 96rem;
+  --fd-sidebar-width: 15.25rem;
+  --jk-docs-rail-width: 216px;
+  --jk-docs-collapsed-rail-width: 10rem;
 }
 
 /* ==========================================================================
@@ -60,6 +97,7 @@
   --jk-bg-deep:    #050605;
   --jk-panel:      #0f1110;
   --jk-text:       #f4f7f5;
+  --jk-prose:      #dce4e0;
   --jk-text-dim:   #9ca8a1;
   --jk-text-ghost: #5e6a64;
   --jk-accent:     #00ff41;
@@ -96,10 +134,27 @@
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
-  /* Expressive-code frame — outer border tracks theme; surfaces come
-     from the shiki theme (github-dark in dark mode). */
-  --ec-brdRad: 10px;
-  --ec-brdCol: var(--jk-ui);
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: var(--jk-panel);
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
+
+  /* Expressive-code frame — code blocks stay terminal-dark in both
+     modes; the custom frame rule below provides the visible depth. */
+  --ec-brdRad: var(--jk-code-radius);
+  --ec-brdCol: transparent;
   --ec-frm-edActTabIndBtmCol: transparent;
   --ec-frm-edActTabIndTopCol: transparent;
   --ec-frm-edTabBarBrdBtmCol: transparent;
@@ -117,18 +172,30 @@
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --jk-bg:         #ffffff;
-  --jk-bg-deep:    #e9edeb;   /* recessed state (active toggle, pressed badge) */
-  --jk-panel:      #f6f8f7;   /* lifted surface (cards, pills, modals) */
-  --jk-text:       #1a1c1b;
-  --jk-text-dim:   #5d6460;
-  --jk-text-ghost: #8a928e;
-  --jk-accent:     #007a22;   /* deep forest green — AA contrast on white (5.1:1) */
-  --jk-accent-dim: #005c1a;   /* deeper still for pressed/active highlights */
-  --jk-brand:      #16a34a;   /* juicy mid-green — usable as pill bg + underline on white */
-  --jk-ui:         rgba(0, 0, 0, 0.08);
-  --jk-ui-strong:  rgba(0, 0, 0, 0.18);
-  --jk-ui-subtle:  rgba(0, 0, 0, 0.04);
+  --jk-bg:         #fbfcfb;
+  --jk-bg-deep:    #e2e9e5;   /* recessed state (active toggle, pressed badge) */
+  --jk-panel:      #f2f6f3;   /* lifted surface (cards, pills, modals) */
+  --jk-text:       #111513;
+  --jk-prose:      #242b27;
+  --jk-text-dim:   #4b554f;
+  --jk-text-ghost: #76817b;
+  --jk-accent:     #006f22;   /* deep forest green — AA contrast on white */
+  --jk-accent-dim: #004f18;   /* deeper still for pressed/active highlights */
+  --jk-brand:      #10a846;   /* saturated mid-green for active chips + accents */
+  --jk-ui:         rgba(5, 20, 12, 0.1);
+  --jk-ui-strong:  rgba(5, 20, 12, 0.22);
+  --jk-ui-subtle:  rgba(5, 20, 12, 0.055);
+  --jk-code-bg:    #070807;
+  --jk-code-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(24, 92, 48, 0.28),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 16px 34px rgba(4, 9, 6, 0.14),
+    0 5px 14px rgba(4, 9, 6, 0.1);
+  --jk-sidebar-hover-bg: rgba(0, 111, 34, 0.095);
+  --jk-sidebar-hover-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 1px 1px rgba(0, 0, 0, 0.04);
 
   --sl-color-bg: var(--jk-bg);
   --sl-color-bg-nav: var(--jk-bg);
@@ -144,16 +211,32 @@
 
   --sl-color-bg-inline-code: var(--jk-panel);
 
-  --sl-color-accent-low:  rgba(0, 122, 34, 0.12);
+  --sl-color-accent-low:  rgba(0, 111, 34, 0.15);
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
+  --color-fd-background: var(--jk-bg);
+  --color-fd-foreground: var(--jk-text);
+  --color-fd-muted: var(--jk-panel);
+  --color-fd-muted-foreground: var(--jk-text-dim);
+  --color-fd-card: var(--jk-panel);
+  --color-fd-card-foreground: var(--jk-text);
+  --color-fd-popover: #f7f8f6;
+  --color-fd-popover-foreground: var(--jk-text);
+  --color-fd-primary: var(--jk-accent);
+  --color-fd-primary-foreground: var(--jk-bg);
+  --color-fd-secondary: var(--jk-bg-deep);
+  --color-fd-secondary-foreground: var(--jk-text);
+  --color-fd-accent: var(--jk-panel);
+  --color-fd-accent-foreground: var(--jk-text);
+  --color-fd-border: var(--jk-ui);
+  --color-fd-ring: var(--jk-accent);
+
   /* Light-mode expressive-code frame — the surface is still dark
-     (--jk-code-bg applied in docs-theme.css below) with shiki's
-     one-dark-pro palette for punchier syntax on the light page. */
-  --ec-brdRad: 10px;
-  --ec-brdCol: var(--jk-ui);
+     (--jk-code-bg) so snippets read like terminal output. */
+  --ec-brdRad: var(--jk-code-radius);
+  --ec-brdCol: transparent;
   --ec-frm-edActTabIndBtmCol: transparent;
   --ec-frm-edActTabIndTopCol: transparent;
   --ec-frm-edTabBarBrdBtmCol: transparent;
@@ -162,6 +245,525 @@
   --ec-frm-trmTtbBrdBtmCol: transparent;
   --ec-frm-inlBrdCol: transparent;
   --ec-frm-frameBoxShdCssVal: none;
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--sl-font);
+  font-weight: 400;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  color: var(--jk-text);
+  background: var(--jk-bg);
+}
+
+.jk-site-title,
+.jk-sidebar-wordmark {
+  font-family: 'Inter Black', 'Inter', sans-serif;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--jk-text);
+  user-select: none;
+}
+
+.jk-site-title {
+  font-size: 1.375rem;
+}
+
+.jk-site-title .tick,
+.jk-sidebar-wordmark .tick {
+  color: #00ff41;
+  text-shadow: 0 0 0.2em rgba(0, 255, 65, 0.45);
+}
+
+:root[data-theme='light'] .jk-site-title .tick,
+:root[data-theme='light'] .jk-sidebar-wordmark .tick {
+  text-shadow: none;
+}
+
+.jk-social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--jk-text-dim);
+  padding: 0.5rem;
+  margin: -0.5rem;
+  transition: color 0.15s;
+}
+
+.jk-social-link:hover {
+  color: var(--jk-brand);
+}
+
+.jk-sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+
+.jk-sidebar-footer .jk-social-link {
+  margin-inline-end: -0.125rem;
+}
+
+.jk-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--jk-ui);
+  border-radius: 8px;
+  background: var(--jk-panel);
+}
+
+.jk-theme-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--jk-text-ghost);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.jk-theme-toggle button:hover {
+  color: var(--jk-text);
+}
+
+.jk-theme-toggle button[aria-pressed='true'] {
+  color: var(--jk-accent);
+  background: var(--jk-bg-deep);
+}
+
+.jk-page-title {
+  margin: 0;
+}
+
+.jk-page-description {
+  margin: 0.15rem 0 0 !important;
+}
+
+.jk-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.875rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--jk-ui);
+}
+
+.jk-page-footer {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.jk-page-footer > a:only-child.text-end {
+  grid-column: 2;
+}
+
+.jk-page-footer > a {
+  border: 0;
+  background: var(--jk-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px var(--jk-ui),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.jk-page-footer > a:hover,
+.jk-page-footer > a:focus-visible {
+  background: var(--jk-sidebar-hover-bg);
+  box-shadow: var(--jk-sidebar-hover-shadow);
+}
+
+:root[data-theme='light'] .jk-page-footer > a {
+  background: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 0 0 1px rgba(31, 36, 33, 0.12),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+@media (max-width: 640px) {
+  .jk-page-footer {
+    grid-template-columns: 1fr !important;
+  }
+
+  .jk-page-footer > a:only-child.text-end {
+    grid-column: 1;
+  }
+}
+
+:root[data-theme='light'] .jk-page-actions button {
+  border-color: rgba(17, 24, 39, 0.12);
+  background: #f5f6f4;
+  color: #1f2421;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme='light'] .jk-page-actions button:hover,
+:root[data-theme='light'] .jk-page-actions button:focus-visible,
+:root[data-theme='light'] .jk-page-actions button[data-state='open'] {
+  background: #ecefeb;
+  color: #111513;
+}
+
+:root[data-theme='light'] .jk-page-actions button svg {
+  color: #66716b !important;
+}
+
+:root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] {
+  border-color: rgba(17, 24, 39, 0.12);
+  background: rgba(247, 248, 246, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 18px 42px rgba(17, 24, 39, 0.12);
+  color: #1f2421;
+}
+
+:root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
+  background: #ecefeb;
+  color: #111513;
+}
+
+:root[data-theme='dark'] [data-radix-popper-content-wrapper] > [data-side][data-align] {
+  border-color: rgba(244, 247, 245, 0.1);
+  background: rgba(15, 17, 16, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 18px 42px rgba(0, 0, 0, 0.34);
+  color: var(--jk-text);
+}
+
+:root[data-theme='dark'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
+  background: rgba(244, 247, 245, 0.08);
+  color: var(--jk-text);
+}
+
+.jk-name {
+  color: var(--jk-brand);
+  font-weight: 700;
+}
+
+#nd-page :is(h1, h2, h3, h4) {
+  font-family: var(--sl-font);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+#nd-page h1 {
+  font-size: 2.75rem;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+#nd-page h2 {
+  color: color-mix(in oklab, var(--jk-accent) 40%, var(--jk-text));
+}
+
+#nd-page :not(pre) > code {
+  border: 1px solid var(--jk-ui);
+  background: var(--jk-panel);
+  color: var(--jk-accent);
+  border-radius: 6px;
+  padding: 0.12em 0.35em;
+}
+
+#nd-page table {
+  width: 100%;
+  border: 1px solid var(--jk-ui);
+  border-radius: 10px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+#nd-page th {
+  background: var(--jk-panel);
+  color: var(--jk-text);
+}
+
+#nd-page :is(th, td) {
+  border-bottom: 1px solid var(--jk-ui-subtle);
+  padding: 0.65rem 0.85rem;
+}
+
+.jk-arch,
+.jk-layers {
+  margin: 1.5rem 0 2rem;
+  color: var(--jk-text);
+}
+
+.jk-arch-panel {
+  background: var(--jk-bg-deep);
+  border: 1px solid var(--jk-ui);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.jk-arch-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--jk-panel);
+  border-bottom: 1px solid var(--jk-ui);
+}
+
+.jk-arch-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--jk-ui-strong);
+}
+
+.jk-arch-dot:first-child {
+  background: color-mix(in srgb, var(--jk-brand) 60%, var(--jk-text-ghost));
+}
+
+.jk-arch-title,
+.jk-layer-owner,
+.jk-arch-chip,
+.jk-arch-sub-label--mono,
+.jk-arch-link-label {
+  font-family: var(--sl-font-system-mono);
+}
+
+.jk-arch-title {
+  margin-left: auto;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-ghost);
+}
+
+.jk-arch-body {
+  padding: 22px 24px;
+}
+
+.jk-arch-section-label {
+  margin: 0 0 12px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-dim);
+}
+
+.jk-arch-row,
+.jk-arch-sub-label,
+.jk-layer-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.jk-arch-sub {
+  position: relative;
+  padding-left: 20px;
+  margin-top: 14px;
+}
+
+.jk-arch-sub::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--jk-ui);
+}
+
+.jk-arch-sub-label {
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--jk-text);
+}
+
+.jk-arch-sub-label--mono,
+.jk-arch-link {
+  color: var(--jk-brand);
+}
+
+.jk-arch-note,
+.jk-layer-owner {
+  color: var(--jk-text-ghost);
+  font-size: 0.8rem;
+}
+
+.jk-arch-chip {
+  padding: 4px 12px;
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.jk-arch-chip--accent {
+  color: var(--jk-brand);
+  border-color: color-mix(in srgb, var(--jk-brand) 50%, var(--jk-ui));
+}
+
+.jk-arch-pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.jk-arch-service,
+.jk-layer {
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+}
+
+.jk-arch-service {
+  padding: 14px 16px;
+  border-radius: 8px;
+  margin: 0;
+}
+
+.jk-arch-service-name,
+.jk-layer-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--jk-text);
+}
+
+.jk-arch-service-role,
+.jk-arch-mount span,
+.jk-layer-items {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--jk-text-dim);
+}
+
+.jk-arch-link {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.jk-arch-rule {
+  border: 0;
+  height: 1px;
+  background: var(--jk-ui);
+  margin: 22px 0;
+}
+
+.jk-arch-mounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 28px;
+}
+
+.jk-arch-mount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jk-arch-mount code {
+  color: var(--jk-brand);
+  background: transparent;
+  padding: 0;
+  font-size: 0.84rem;
+}
+
+.jk-layers-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.25));
+}
+
+.jk-layer {
+  position: relative;
+  padding: 18px 22px 18px 26px;
+}
+
+.jk-layer + .jk-layer {
+  margin-top: -1px;
+}
+
+.jk-layer:first-child {
+  border-radius: 10px 10px 0 0;
+}
+
+.jk-layer:last-child {
+  border-radius: 0 0 10px 10px;
+}
+
+.jk-layer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.jk-layer--derived::before {
+  background: var(--jk-brand);
+}
+
+.jk-layer--agent::before {
+  background: color-mix(in srgb, var(--jk-brand) 35%, var(--jk-text-ghost));
+}
+
+.jk-layer--base::before {
+  background: var(--jk-text-ghost);
+}
+
+.jk-layer-title-row {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.jk-layer-items {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  column-gap: 24px;
+  row-gap: 4px;
+}
+
+.jk-layer-items li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.jk-layer-items li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 6px;
+  height: 1px;
+  background: var(--jk-text-ghost);
+}
+
+.jk-layer--derived .jk-layer-owner,
+.jk-layer--derived .jk-layer-items li::before {
+  color: var(--jk-brand);
+  background: var(--jk-brand);
 }
 
 /* ==========================================================================
@@ -179,7 +781,7 @@
    Initial-load transition suppression — stops CSS transitions on
    sidebar / TOC / pagination elements from animating color changes
    when the initial data-theme flip happens in head. Class added by
-   overrides/Head.astro, removed two animation frames after DOMReady.
+   chrome/root route, removed two animation frames after DOMReady.
    ========================================================================== */
 
 html.theme-init,
@@ -191,7 +793,7 @@ html.theme-init *::after {
 
 /* ==========================================================================
    Theme-change cross-fade — uses the View Transitions API.
-   overrides/ThemeSelect.astro calls document.startViewTransition() around
+   chrome/ThemeToggle.tsx calls document.startViewTransition() around
    the data-theme flip. The browser snapshots the page pre/post and
    animates between them, which avoids the per-property transition bugs
    on inherited colors (child elements previously snapped abruptly when
@@ -223,6 +825,15 @@ html.theme-init *::after {
 /* ==========================================================================
    Typography — landing-matched weight + tracking on headings
    ========================================================================== */
+
+.sl-markdown-content {
+  color: var(--jk-prose);
+  font-weight: 400;
+}
+
+.sl-markdown-content :is(p, li, blockquote, td):not(:where(.not-content *)) {
+  font-weight: 400;
+}
 
 .sl-markdown-content :is(h1, h2, h3, h4) {
   font-family: var(--sl-font);
@@ -279,7 +890,7 @@ html.theme-init *::after {
 .sl-markdown-content li:not(:where(.sl-steps > li))::marker {
   /* Ordered-list numbers + unordered bullets use the body text color so
      they read as part of the flow — white in dark, black in light. */
-  color: var(--jk-text);
+  color: var(--jk-prose);
 }
 
 /* <Steps> number badge — solid filled circle for a bolder structural
@@ -294,7 +905,7 @@ html.theme-init *::after {
 }
 
 /* ==========================================================================
-   Tables — Starlight defaults to rows separated only by a full-weight
+   Tables — Fumadocs defaults to rows separated only by a full-weight
    grey border from --sl-color-gray-5 with no cell padding on the first
    column. In our palette the border renders heavy and the missing
    left padding floats the first column out against the body text.
@@ -302,7 +913,7 @@ html.theme-init *::after {
    ========================================================================== */
 
 .sl-markdown-content table:not(:where(.not-content *)) {
-  /* Starlight defaults the table to display: block + overflow: auto for
+  /* Fumadocs defaults the table to display: block + overflow: auto for
      responsive scrolling, but that breaks the table layout — thead/tbody
      shrink to content width instead of filling the available row space.
      Force display: table so children behave as table-header-group /
@@ -310,8 +921,8 @@ html.theme-init *::after {
   display: table;
   width: 100%;
   table-layout: auto;
-  border: 1px solid var(--jk-ui);
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--jk-text) 13%, transparent);
+  border-radius: 8px;
   border-collapse: separate;
   border-spacing: 0;
   overflow: hidden;
@@ -324,7 +935,7 @@ html.theme-init *::after {
   vertical-align: top;
 }
 
-/* Override Starlight's zero first/last inline-padding — we want even
+/* Override Fumadocs's zero first/last inline-padding — we want even
    gutters inside the bordered table. */
 .sl-markdown-content :is(th:first-child, td:first-child):not(:where(.not-content *)) {
   padding-inline-start: 1rem;
@@ -340,19 +951,42 @@ html.theme-init *::after {
 }
 
 .sl-markdown-content thead:not(:where(.not-content *)) {
-  background: var(--jk-panel);
+  background: color-mix(in srgb, var(--jk-text) 7%, var(--jk-panel));
 }
 
 .sl-markdown-content th:not(:where(.not-content *)) {
   color: var(--jk-text);
-  font-weight: 600;
-  font-size: 0.875rem;
-  letter-spacing: 0.01em;
+  border-bottom-color: color-mix(in srgb, var(--jk-text) 18%, transparent);
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
   text-align: start;
+  text-transform: uppercase;
+}
+
+:root[data-theme='light'] .sl-markdown-content table:not(:where(.not-content *)) {
+  background: #ffffff;
+  border-color: rgba(31, 36, 33, 0.13);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 1px 1px rgba(17, 24, 39, 0.03);
+}
+
+:root[data-theme='light'] .sl-markdown-content table :is(th, td):not(:where(.not-content *)) {
+  border-bottom-color: rgba(31, 36, 33, 0.1);
+}
+
+:root[data-theme='light'] .sl-markdown-content thead:not(:where(.not-content *)) {
+  background: #ecefed;
+}
+
+:root[data-theme='light'] .sl-markdown-content th:not(:where(.not-content *)) {
+  border-bottom-color: rgba(31, 36, 33, 0.16);
+  color: #222725;
 }
 
 .sl-markdown-content td:not(:where(.not-content *)) {
-  color: var(--jk-text);
+  color: var(--jk-prose);
   font-size: 0.9375rem;
 }
 
@@ -375,30 +1009,242 @@ html.theme-init *::after {
 }
 
 /* ==========================================================================
-   Sidebar — Starlight defaults for group labels + active-pill; we only
-   retint unstyled item text and hover state.
+   Early-development warning — visible, but quiet enough for doc flow.
    ========================================================================== */
 
-.sidebar-content ul li a {
+.jk-early-development-notice {
+  display: block;
+  background: #2a1a07;
+  border: 0;
+  border-radius: 8px;
+  color: #fff7ed;
+  padding: 18px 20px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(251, 191, 36, 0.13),
+    0 16px 36px rgba(0, 0, 0, 0.18);
+}
+
+.jk-early-development-notice-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #fbbf24;
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.jk-early-development-notice p {
+  margin: 0;
+  color: #f4d6a5;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.jk-early-development-notice strong {
+  color: #fff8e7;
+}
+
+:root[data-theme='light'] .jk-early-development-notice {
+  background: #fff3c4;
+  color: #2f1d05;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    inset 0 0 0 1px rgba(146, 64, 14, 0.2),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 18px 42px rgba(146, 64, 14, 0.12),
+    0 6px 16px rgba(146, 64, 14, 0.08);
+}
+
+:root[data-theme='light'] .jk-early-development-notice-label {
+  color: #8a4b05;
+}
+
+:root[data-theme='light'] .jk-early-development-notice p {
+  color: #4a2b06;
+}
+
+:root[data-theme='light'] .jk-early-development-notice strong {
+  color: #241104;
+}
+
+/* ==========================================================================
+   Sidebar — Fumadocs page tree text, hover state, and active pill.
+   ========================================================================== */
+
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 15.25rem !important;
+  }
+
+  [data-sidebar-placeholder] {
+    --fd-sidebar-width: 15.25rem !important;
+  }
+
+  #nd-page {
+    max-width: 980px;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] #nd-page {
+    max-width: 1180px;
+  }
+}
+
+@media (min-width: 1280px) {
+  #nd-docs-layout {
+    --fd-toc-width: var(--jk-docs-rail-width) !important;
+  }
+
+  #nd-toc,
+  #nd-toc-placeholder {
+    --fd-toc-width: var(--jk-docs-rail-width) !important;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] {
+    --fd-layout-width: 105rem !important;
+    --fd-toc-width: var(--jk-docs-collapsed-rail-width) !important;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] #nd-toc,
+  #nd-docs-layout[data-sidebar-collapsed='true'] #nd-toc-placeholder {
+    --fd-toc-width: var(--jk-docs-collapsed-rail-width) !important;
+  }
+
+  #nd-docs-layout[data-sidebar-collapsed='true'] [data-sidebar-placeholder] {
+    --fd-sidebar-width: var(--jk-docs-collapsed-rail-width) !important;
+    width: var(--jk-docs-collapsed-rail-width) !important;
+    flex-basis: var(--jk-docs-collapsed-rail-width) !important;
+  }
+}
+
+@media (min-width: 1536px) {
+  #nd-docs-layout[data-sidebar-collapsed='true'] {
+    --fd-layout-width: 105rem;
+  }
+}
+
+#nd-sidebar:not([data-collapsed='true']) {
+  --fd-sidebar-width: 18rem;
+}
+
+#nd-sidebar[data-collapsed='true'][data-hovered='true'] {
+  --fd-sidebar-width: 18rem;
+}
+
+#nd-sidebar:not([data-collapsed='true']) > div:first-child,
+#nd-sidebar:not([data-collapsed='true']) > div:last-child {
+  padding-inline-start: 0 !important;
+  padding-inline-end: 0.375rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) [data-radix-scroll-area-viewport] {
+  padding-inline-start: 0 !important;
+  padding-inline-end: 0.375rem !important;
+}
+
+#nd-sidebar[data-collapsed='true'] > div:first-child,
+#nd-sidebar[data-collapsed='true'] > div:last-child,
+#nd-sidebar[data-collapsed='true'] [data-radix-scroll-area-viewport] {
+  padding-inline-start: 1.25rem !important;
+}
+
+#nd-sidebar a[data-active],
+#nd-sidebar button[data-state] {
   color: var(--jk-text-dim);
-  transition: color 0.1s, background-color 0.1s;
+  border-radius: 8px;
+  padding-block: 0.35rem !important;
+  transition: color 0.12s, background-color 0.12s, box-shadow 0.12s;
 }
 
-.sidebar-content ul li a:hover {
+#nd-sidebar [class~='gap-0.5'] {
+  gap: 0.125rem !important;
+}
+
+#nd-sidebar [class~='pt-0.5'] {
+  padding-top: 0.125rem !important;
+}
+
+#nd-sidebar [class~='mt-6'] {
+  margin-top: 1rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(2 * var(--spacing))'] {
+  padding-inline-start: 0.625rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(5 * var(--spacing))'] {
+  padding-inline-start: 1.25rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(8 * var(--spacing))'] {
+  padding-inline-start: 1.875rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(11 * var(--spacing))'] {
+  padding-inline-start: 2.5rem !important;
+}
+
+#nd-sidebar:not([data-collapsed='true']) [class*='before:inset-s-2.5']::before {
+  inset-inline-start: 0.5rem !important;
+}
+
+#nd-sidebar a[data-active]:hover,
+#nd-sidebar a[data-active]:focus-visible,
+#nd-sidebar button[data-state]:hover,
+#nd-sidebar button[data-state]:focus-visible {
   color: var(--jk-text);
+  background-color: var(--jk-sidebar-hover-bg);
+  box-shadow: var(--jk-sidebar-hover-shadow);
 }
 
-.sidebar-content ul li a[aria-current='page'],
-.sidebar-content ul li a[aria-current='page']:hover,
-.sidebar-content ul li a[aria-current='page']:focus {
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']) {
+  color: color-mix(in oklab, var(--jk-brand) 58%, var(--jk-text-dim));
+  background-color: color-mix(in srgb, var(--jk-brand) 8%, transparent);
+  font-weight: 500;
+}
+
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true'])::before {
+  content: "";
+  position: absolute;
+  width: 2px;
+  inset-block: 0.7rem;
+  inset-inline-start: 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--jk-brand) 66%, transparent);
+}
+
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):hover,
+#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):focus {
+  color: color-mix(in oklab, var(--jk-brand) 76%, var(--jk-text));
+  background-color: color-mix(in srgb, var(--jk-brand) 11%, transparent);
+}
+
+#nd-sidebar a[data-active='true'],
+#nd-sidebar a[data-active='true']:hover,
+#nd-sidebar a[data-active='true']:focus {
   color: var(--sl-color-text-invert);
-  background-color: var(--jk-brand);
+  background-color: var(--jk-accent);
+  box-shadow: none;
   font-weight: 600;
+}
+
+:root[data-theme='light'] #nd-sidebar a[data-active='true'],
+:root[data-theme='light'] #nd-sidebar a[data-active='true']:hover,
+:root[data-theme='light'] #nd-sidebar a[data-active='true']:focus {
+  color: #ffffff;
+}
+
+#nd-sidebar a[data-active='true']::before {
+  display: none;
 }
 
 /* ==========================================================================
    Mobile menu footer (social icons + theme toggle + language select).
-   Starlight draws a 1px top border via .mobile-preferences { border-top:
+   Fumadocs draws a 1px top border via .mobile-preferences { border-top:
    ... var(--sl-color-gray-6) } which reads as a stray line hanging at
    the bottom of the menu. Dropped in both themes — the sidebar's last
    item already provides enough visual closure.
@@ -408,150 +1254,156 @@ html.theme-init *::after {
   border-top: 0 !important;
 }
 
-/* Theme toggle in the mobile footer — add a tiny bit of internal
-   margin so it doesn't crowd the socials/language picker next to it. */
-.mobile-preferences starlight-theme-select.jk-theme-toggle {
-  margin-block: 0.5rem;
-}
-
 /* ==========================================================================
-   Mobile "On this page" (MobileTableOfContents) — Starlight defaults
-   resolve through --sl-color-black, --sl-color-gray-5, etc. which in
-   our palette rendered muddy (near-white button + faint grey border
-   in light mode; dark-on-dark with low contrast in dark mode).
+   Right-rail outline — follows Fumadocs's own quiet TOC pattern:
+   visible list icon, muted label, grey spine, accent only on active branch.
    ========================================================================== */
 
-mobile-starlight-toc > nav {
-  background-color: var(--jk-bg);
-  border-top-color: var(--jk-ui-strong);
+#nd-toc {
+  --jk-toc-wordmark-size: clamp(48px, 4.4vw, 64px);
+  width: 90% !important;
+  padding-inline-end: 0.625rem !important;
 }
 
-mobile-starlight-toc summary {
-  border-bottom-color: var(--jk-ui-strong);
-}
-
-mobile-starlight-toc .toggle {
-  background-color: var(--jk-panel);
-  border-color: var(--jk-ui-strong);
-  color: var(--jk-text-dim);
-}
-
-mobile-starlight-toc details .toggle:hover {
-  color: var(--jk-text);
-  border-color: var(--jk-text-dim);
-}
-
-mobile-starlight-toc details[open] .toggle {
-  color: var(--jk-text);
-  border-color: var(--jk-brand);
-}
-
-mobile-starlight-toc .display-current {
-  color: var(--jk-text);
-}
-
-mobile-starlight-toc .caret {
-  color: var(--jk-text-dim);
-}
-
-mobile-starlight-toc .dropdown {
-  background-color: var(--jk-panel);
-  border-color: var(--jk-ui-strong);
-  border-top-color: var(--jk-ui-strong);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-}
-
-mobile-starlight-toc .dropdown a {
-  color: var(--jk-text-dim);
-  border-top-color: var(--jk-ui);
-}
-
-mobile-starlight-toc .dropdown a:hover {
-  color: var(--jk-text);
-  background-color: var(--jk-bg);
-}
-
-mobile-starlight-toc .dropdown a[aria-current='true'] {
-  color: var(--jk-brand);
-  font-weight: 500;
-  background-color: transparent;
-}
-
-mobile-starlight-toc .dropdown a[aria-current='true']::after {
-  background-color: var(--jk-brand);
-}
-
-/* ==========================================================================
-   Right-rail outline — tree structure; rails on nested groups only,
-   turn green when they contain the active heading.
-   ========================================================================== */
-
-.right-sidebar-panel h2 {
-  font-family: var(--sl-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+#nd-toc h3 {
+  font-family: var(--sl-font);
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--jk-text-ghost);
-  font-weight: 600;
-  margin-bottom: 0.75rem;
+  font-weight: 500;
+  margin-bottom: 0.85rem;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.5rem;
 }
 
-.right-sidebar-panel h2::before {
-  content: "";
-  width: 18px;
-  height: 1px;
-  background: var(--jk-brand);
-  flex-shrink: 0;
+#nd-toc h3 svg {
+  display: block;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--jk-text-ghost);
+  opacity: 0.8;
 }
 
-.right-sidebar-panel ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.right-sidebar-panel ul ul {
-  margin-left: 0.75rem;
-  border-left: 2px solid var(--jk-ui);
-  transition: border-color 0.15s;
-}
-
-.right-sidebar-panel ul ul:has(a[aria-current='true']) {
-  border-left-color: var(--jk-brand);
-}
-
-.right-sidebar-panel ul li a {
-  border-radius: 0;
+#nd-toc a {
+  border-radius: 6px;
   background: transparent;
   color: var(--jk-text-dim);
-  font-size: 0.75rem;       /* 12px — Starlight default; lost when we overrode PageSidebar.astro */
-  line-height: 1.4;
-  transition: color 0.1s;
-  padding-block: 0.2rem;
-  padding-left: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  position: relative;
+  z-index: 1;
+  transition: color 0.12s, background-color 0.12s;
+  padding-block: 0.285rem;
+  padding-inline: 0.75rem 0.5rem;
 }
 
-.right-sidebar-panel ul:not(ul ul) > li > a {
+#nd-toc a[class*='ps-3'] {
+  padding-inline-start: 0.75rem;
+}
+
+#nd-toc a[class*='ps-6'] {
+  margin-inline-start: 0.75rem;
+  padding-inline-start: 0.75rem;
+}
+
+#nd-toc a[class*='ps-8'] {
+  margin-inline-start: 0.75rem;
+  padding-inline-start: 1.3rem;
+}
+
+#nd-toc a:hover {
   color: var(--jk-text);
-  font-weight: 500;
+  background: color-mix(in srgb, var(--jk-brand) 6%, transparent);
 }
 
-.right-sidebar-panel ul li a:hover {
-  color: var(--jk-text);
-  background: transparent;
-}
-
-.right-sidebar-panel ul li a[aria-current='true'] {
+#nd-toc a[data-active='true'] {
   color: var(--jk-brand);
   background: transparent;
-  font-weight: 500;
+  font-weight: 600;
 }
 
-.right-sidebar-panel ul li:has(> ul a[aria-current='true']) > a {
-  color: var(--jk-brand);
+#nd-toc [class*='border-s'] {
+  position: relative;
+  z-index: 1;
+  border-inline-start-width: 0;
+  border-inline-start-color: transparent;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#nd-toc div.relative > .absolute.inset-y-0 {
+  display: block;
+  pointer-events: none;
+  inset-inline-start: 0 !important;
+  width: 100% !important;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.075) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 4%, transparent);
+  clip-path: polygon(
+    0 calc(var(--track-top, 0px) - 0.3125rem),
+    100% calc(var(--track-top, 0px) - 0.3125rem),
+    100% calc(var(--track-bottom, 0px) + 0.3125rem),
+    0 calc(var(--track-bottom, 0px) + 0.3125rem)
+  ) !important;
+  opacity: 0.92;
+  z-index: 0;
+}
+
+:root[data-theme='light'] #nd-toc div.relative > .absolute.inset-y-0 {
+  background: color-mix(in srgb, #dfe7f0 64%, #ffffff) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 2px rgba(17, 24, 39, 0.04);
+}
+
+#nd-toc a[class*='ps-6'],
+#nd-toc a[class*='ps-8'] {
+  border-inline-start: 1px solid color-mix(in srgb, var(--jk-text) 13%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+
+#nd-toc a[class*='ps-6']:hover,
+#nd-toc a[class*='ps-8']:hover {
+  border-inline-start-color: color-mix(in srgb, var(--jk-text) 24%, transparent);
+}
+
+#nd-toc a[class*='ps-6'][data-active='true'],
+#nd-toc a[class*='ps-8'][data-active='true'] {
+  border-inline-start-color: color-mix(in srgb, var(--jk-brand) 72%, var(--jk-ui));
+}
+
+#nd-toc [class*='border-s']:has(a[data-active='true']) {
+  border-inline-start-width: 0;
+  border-inline-start-color: transparent;
+}
+
+#nd-toc [class*='border-s']:has(a:hover) {
+  border-inline-start-color: transparent;
+}
+
+#nd-toc::after {
+  content: "jackin'";
+  display: block;
+  margin-top: auto;
+  padding-top: 2rem;
+  padding-bottom: 1rem;
+  font-family: var(--sl-font);
+  font-size: var(--jk-toc-wordmark-size);
+  font-weight: 900;
+  line-height: 0.82;
+  letter-spacing: 0;
+  background: linear-gradient(
+    90deg,
+    var(--jk-text) 0 5.9ch,
+    var(--jk-brand) 5.9ch 100%
+  );
+  background-clip: text;
+  color: transparent;
+  max-width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* ==========================================================================
@@ -565,7 +1417,7 @@ header.header {
 }
 
 /* ==========================================================================
-   Site title — wordmark styles live in overrides/SiteTitle.astro
+   Site title — wordmark styles live in chrome/SiteTitle.tsx
    ========================================================================== */
 
 .site-title {
@@ -579,15 +1431,41 @@ header.header {
    Body links — green with underline-on-hover
    ========================================================================== */
 
-.sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)) {
+:is(.sl-markdown-content, .prose) a:not(.sl-anchor-link, :where(.not-content *, .not-prose *)) {
   color: var(--sl-color-text-accent);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition: border-color 0.1s;
 }
 
-.sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)):hover {
+:is(.sl-markdown-content, .prose) a:not(.sl-anchor-link, :where(.not-content *, .not-prose *)):hover {
   border-bottom-color: var(--sl-color-text-accent);
+}
+
+:is(.sl-markdown-content, .prose) a:is([href^='http://'], [href^='https://']):not(
+  .sl-anchor-link,
+  [href^='https://jackin.tailrocks.com'],
+  [href^='http://jackin.tailrocks.com'],
+  :where(.not-content *, .not-prose *)
+)::after {
+  content: '';
+  display: inline-block;
+  width: 0.82em;
+  height: 0.82em;
+  margin-inline-start: 0.22em;
+  vertical-align: -0.08em;
+  background-color: currentColor;
+  opacity: 0.78;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M10 14 21 3'/%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+:is(.sl-markdown-content, .prose) a:is([href^='http://'], [href^='https://']):not(
+  .sl-anchor-link,
+  [href^='https://jackin.tailrocks.com'],
+  [href^='http://jackin.tailrocks.com'],
+  :where(.not-content *, .not-prose *)
+):hover::after {
+  opacity: 1;
 }
 
 /* Heading anchor-link icon */
@@ -608,7 +1486,7 @@ header.header {
 }
 
 /* ==========================================================================
-   MDX <Tabs> — Starlight's default inactive tab text resolves through
+   MDX <Tabs> — Fumadocs's default inactive tab text resolves through
    --sl-color-gray-3 which we remap to a dark surface gray, so it read
    too dim on both themes. Override with landing-tone dim/bright text
    and a subtle hairline bottom border; active tab carries the 2px
@@ -626,55 +1504,78 @@ header.header {
    Earlier attempts using .tablist-wrapper::after rendered the grey line
    at the wrapper's visible width only — when tabs overflowed and user
    scrolled, the rightmost tabs ended up past the line. */
+.sl-markdown-content [data-orientation='horizontal']:has(> [role='tablist']) {
+  border: 0;
+  background: color-mix(in srgb, var(--jk-brand) 5%, var(--jk-panel));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-brand) 14%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme='light'] .sl-markdown-content [data-orientation='horizontal']:has(> [role='tablist']) {
+  background: color-mix(in srgb, var(--jk-brand) 7%, var(--jk-bg));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-brand) 18%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 12px 26px color-mix(in srgb, var(--jk-brand) 9%, transparent);
+}
+
 .sl-markdown-content [role='tablist'] {
-  border-bottom: 2px solid rgba(255, 255, 255, 0.14);
+  gap: 0.35rem;
+  border-bottom: 0;
+  padding-block: 0.5rem;
 }
 
 :root[data-theme='light'] .sl-markdown-content [role='tablist'] {
-  border-bottom-color: rgba(0, 0, 0, 0.16);
+  border-bottom-color: transparent;
 }
 
 .sl-markdown-content .tab > [role='tab'] {
   --sl-tab-color-border: transparent;
   color: var(--jk-text-dim);
-  transition: color 0.15s;
+  transition: color 0.15s, background-color 0.15s, box-shadow 0.15s;
   /* Single-line labels; long labels scroll horizontally via
      .tablist-wrapper rather than wrapping and creating a staircase
      underline. */
   white-space: nowrap;
-  padding: 0.65rem 1rem;
+  padding: 0.45rem 0.85rem;
   font-size: 0.875rem;
   position: relative;
+  border-radius: 7px;
   border-bottom: 0;
   box-shadow: none;
 }
 
 .sl-markdown-content .tab > [role='tab']:hover {
   color: var(--jk-text);
+  background: color-mix(in srgb, var(--jk-brand) 8%, transparent);
 }
 
 .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
-  color: var(--jk-text);
+  color: var(--sl-color-text-invert);
+  background: var(--jk-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    0 1px 1px rgba(0, 0, 0, 0.04);
   font-weight: 600;
+}
+
+:root[data-theme='light'] .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
+  color: #ffffff;
 }
 
 /* Green indicator overlaps the tablist's border-bottom exactly — tab
    bottom sits at tablist content-box bottom; ::after at bottom: -2px
    reaches into the border-bottom area. z-index paints green over grey. */
 .sl-markdown-content .tab > [role='tab'][aria-selected='true']::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -2px;
-  height: 2px;
-  background: var(--jk-brand);
-  z-index: 1;
+  display: none;
 }
 
 /* ==========================================================================
    Tabs in chip form — activated only when the tablist would overflow
-   its container (see the inline ResizeObserver script in Head.astro
+   its container (see the inline ResizeObserver script in root route
    which toggles [data-overflow] on .tablist-wrapper). Horizontal
    scrolling tabs hide labels off-screen and make the active indicator
    hard to spot; chips keep every label visible at every width.
@@ -733,36 +1634,26 @@ header.header {
 }
 
 /* ==========================================================================
-   Code blocks — flat rounded panel, no terminal chrome or tab bar
+   Code blocks — terminal-dark panel, no chrome or tab bar
    ========================================================================== */
 
 .expressive-code .frame {
-  box-shadow: none;
-  /* Border is a subtle white-alpha hairline in BOTH modes because the
-     code surface is always dark (--jk-code-bg). Using var(--jk-ui),
-     which flips to black-alpha in light mode, made the border invisible
-     against the dark code panel. */
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  box-shadow: var(--jk-code-shadow);
+  border: 0 !important;
+  border-radius: var(--jk-code-radius);
   overflow: hidden;
   /* Code blocks keep a dark surface in BOTH page modes:
      - Dark mode: slightly deeper than the page (recessed feel)
      - Light mode: high-contrast dark block against the white page
-     Single github-dark shiki theme (set in astro.config.mjs) paints the
-     syntax on top, so colors stay readable on either shade. */
+     A stacked inset/outer shadow keeps the edge sharp without a gray
+     border. */
   background: var(--jk-code-bg);
+  color-scheme: dark;
 }
 
 .expressive-code .frame pre {
   background: var(--jk-code-bg) !important;
-}
-
-:root[data-theme='dark'] {
-  --jk-code-bg: #050605;
-}
-
-:root[data-theme='light'] {
-  --jk-code-bg: #0a0b0a;   /* near-black for maximum contrast on a white page */
+  color-scheme: dark;
 }
 
 .expressive-code .frame .header {
@@ -770,12 +1661,85 @@ header.header {
 }
 
 .expressive-code .frame pre {
-  border: 0;
+  border: 0 !important;
   border-radius: 0;
 }
 
 .expressive-code .frame pre code {
+  background: transparent !important;
+  border: 0 !important;
   border-radius: 0;
+}
+
+.sl-markdown-content figure.shiki,
+#nd-page figure.shiki {
+  background: var(--jk-code-bg) !important;
+  border: 0 !important;
+  border-radius: var(--jk-code-radius);
+  box-shadow: var(--jk-code-shadow) !important;
+  color-scheme: dark;
+}
+
+.sl-markdown-content figure.shiki > div[role='region'].fd-scroll-container,
+#nd-page figure.shiki > div[role='region'].fd-scroll-container {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  border-radius: 0;
+}
+
+.sl-markdown-content figure.shiki button,
+#nd-page figure.shiki button {
+  background: rgba(244, 247, 245, 0.09);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+  color: rgba(244, 247, 245, 0.78);
+}
+
+.sl-markdown-content figure.shiki button:hover,
+#nd-page figure.shiki button:hover,
+.sl-markdown-content figure.shiki button[data-checked],
+#nd-page figure.shiki button[data-checked] {
+  background: rgba(244, 247, 245, 0.14);
+  color: #f4f7f5;
+}
+
+.sl-markdown-content pre:not(:where(.expressive-code *)),
+#nd-page pre:not(:where(.expressive-code *)) {
+  background: var(--jk-code-bg) !important;
+  border: 0 !important;
+  border-radius: var(--jk-code-radius);
+  box-shadow: var(--jk-code-shadow);
+  color-scheme: dark;
+  overflow: auto;
+}
+
+.sl-markdown-content div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)),
+#nd-page div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) {
+  background: var(--jk-code-bg) !important;
+  border: 0 !important;
+  border-radius: var(--jk-code-radius);
+  box-shadow: var(--jk-code-shadow);
+  color-scheme: dark;
+}
+
+.sl-markdown-content div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) > pre,
+#nd-page div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) > pre,
+.sl-markdown-content figure.shiki > div[role='region'].fd-scroll-container > pre,
+#nd-page figure.shiki > div[role='region'].fd-scroll-container > pre {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+}
+
+.sl-markdown-content pre:not(:where(.expressive-code *)) code,
+#nd-page pre:not(:where(.expressive-code *)) code {
+  background: transparent !important;
+  border: 0 !important;
+  color: inherit;
 }
 
 /* Copy button — expressive-code calculates its top offset (--button-spacing)
@@ -809,16 +1773,84 @@ header.header {
    Asides
    ========================================================================== */
 
-.starlight-aside {
-  border-radius: 10px;
-  border: 1px solid var(--sl-color-hairline);
-  background: var(--jk-panel);
+.jk-aside {
+  --callout-color: var(--jk-accent) !important;
+  --jk-aside-color: var(--jk-accent);
+  position: relative;
+  overflow: hidden;
+  gap: 12px;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--jk-aside-color) 7%, var(--jk-panel));
+  padding: 14px 16px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 12px 26px rgba(0, 0, 0, 0.12);
+}
+
+.jk-aside > [role='none'] {
+  display: none;
+}
+
+.jk-aside svg {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--jk-aside-color) 14%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 28%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+  color: var(--jk-aside-color);
+  fill: color-mix(in srgb, var(--jk-aside-color) 18%, transparent);
+}
+
+.jk-aside :is(p, li) {
+  color: var(--jk-text-dim);
+}
+
+.jk-aside strong {
+  color: var(--jk-text);
+}
+
+.jk-aside--tip {
+  --callout-color: var(--jk-accent) !important;
+  --jk-aside-color: var(--jk-accent);
+}
+
+.jk-aside--caution,
+.jk-aside--warning {
+  --callout-color: #f59e0b !important;
+  --jk-aside-color: #f59e0b;
+}
+
+.jk-aside--danger {
+  --callout-color: #ff5e7a !important;
+  --jk-aside-color: #ff5e7a;
+}
+
+:root[data-theme='light'] .jk-aside {
+  background: color-mix(in srgb, var(--jk-aside-color) 8%, var(--jk-bg));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 10px 24px color-mix(in srgb, var(--jk-aside-color) 12%, transparent);
+}
+
+:root[data-theme='light'] .jk-aside svg {
+  background: color-mix(in srgb, var(--jk-aside-color) 16%, var(--jk-bg));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 28%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
 /* ==========================================================================
    Mobile menu toggle — keep the close-X icon high-contrast when expanded.
 
-   Starlight's MobileMenuToggle swaps the button bg to --sl-color-gray-2
+   Fumadocs's MobileMenuToggle swaps the button bg to --sl-color-gray-2
    (mid-grey) when the menu is open while keeping the icon at
    --sl-color-black. On the dark theme that produces a dark X on a
    mid-grey pill — visually it reads as disabled/invisible.
@@ -826,23 +1858,8 @@ header.header {
    Override: keep the resting bg (--sl-color-white, which is the inverted
    foreground token on dark theme and a dark surface on light theme) so
    the high-contrast icon color stays readable in both states. The
-   "expanded" visual feedback is carried by Starlight's box-shadow: none
+   "expanded" visual feedback is carried by Fumadocs's box-shadow: none
    transition, which we keep untouched.
-   ========================================================================== */
-
-starlight-menu-button[aria-expanded='true'] button {
-  background-color: var(--sl-color-white);
-}
-
-[data-theme='light'] starlight-menu-button[aria-expanded='true'] button {
-  background-color: var(--sl-color-black);
-}
-
-/* ==========================================================================
-   Top-nav social icons (GitHub) — plain fg color, green on hover.
-   Starlight defaults to accent-green for the resting state, but the user
-   wanted the icon to read as a neutral glyph (white on dark, near-black
-   on light) that only pops on interaction.
    ========================================================================== */
 
 .social-icons a {
@@ -854,8 +1871,8 @@ starlight-menu-button[aria-expanded='true'] button {
   color: var(--sl-color-text-accent);
 }
 
-/* Hide the vertical separator Starlight draws after the social icons
-   block (Header.astro injects .social-icons::after with a 1px border). */
+/* Hide the vertical separator Fumadocs draws after the social icons
+   block (Fumadocs header injects .social-icons::after with a 1px border). */
 .social-icons::after {
   display: none;
 }
@@ -894,33 +1911,23 @@ site-search dialog {
   border: 1px solid var(--jk-ui);
 }
 
-/* Pagefind UI inside the search dialog — restore contrast in dark mode.
-
-   Starlight maps --pagefind-ui-text to var(--sl-color-gray-2) which we
-   define as #1a1c1b in the dark palette — essentially black, drawn on
-   top of an already-dark search popup background (--sl-color-black =
-   #050605). Result-excerpt prose and the search input's typed text
-   become almost invisible.
-
-   Override the relevant Pagefind tokens so the popup draws on our
-   standard panel surface with full-strength text. Scoped to dark mode
-   only — light mode's Starlight defaults render fine against the light
-   palette. */
-:root[data-theme='dark'] #starlight__search {
-  --pagefind-ui-background: var(--jk-panel);
-  --pagefind-ui-text: var(--jk-text);
-  --pagefind-ui-primary: var(--jk-text);
-  --pagefind-ui-border: var(--jk-ui);
-  --pagefind-ui-tag: var(--jk-bg-deep);
-}
-
 /* ==========================================================================
-   Theme toggle styling lives in overrides/ThemeSelect.astro (scoped)
+   Theme toggle styling lives in chrome/ThemeToggle.tsx (scoped)
    ========================================================================== */
 
 /* ==========================================================================
    Pagination cards
    ========================================================================== */
+
+@media (min-width: 640px) {
+  .pagination-links:has(> a:only-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pagination-links > a:only-child.text-end {
+    grid-column-start: 2;
+  }
+}
 
 .pagination-links a {
   /* 2px --jk-ui-strong — visible at equal weight in both themes. The
@@ -978,7 +1985,7 @@ site-search dialog {
    blocks. */
 .jk-name {
   color: var(--jk-text);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .jk-name:hover {

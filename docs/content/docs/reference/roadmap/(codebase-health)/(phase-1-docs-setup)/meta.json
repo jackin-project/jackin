@@ -1,0 +1,17 @@
+{
+  "title": "Phase 1 — Documentation & setup",
+  "defaultOpen": false,
+  "pages": [
+    "../../module-contracts",
+    "../../behavioral-spec-runtime-launch",
+    "../../behavioral-spec-op-picker",
+    "../../per-directory-readme",
+    "../../developer-reference-setup",
+    "../../ci-project-structure-gate",
+    "../../pub-crate-visibility",
+    "../../architecture-decision-records",
+    "../../snapshot-tests-tui",
+    "../../agent-workflow-cc-sdd",
+    "../../move-contributing-testing"
+  ]
+}

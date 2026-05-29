@@ -1,0 +1,14 @@
+{
+  "title": "Fleet phase 2 — Live operator surface",
+  "defaultOpen": false,
+  "pages": [
+    "../../agent-runtime-status",
+    "../../launch-progress-tui",
+    "../../console-agent-session-control",
+    "../../console-resource-panel",
+    "../../agent-tag-protocol",
+    "../../github-link-tracking",
+    "../../public-attribution-and-growth",
+    "../../custom-operator-tools"
+  ]
+}

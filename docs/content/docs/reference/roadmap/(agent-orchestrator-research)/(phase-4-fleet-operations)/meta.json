@@ -1,0 +1,10 @@
+{
+  "title": "Fleet phase 4 — Fleet operations",
+  "defaultOpen": false,
+  "pages": [
+    "../../task-source-abstraction",
+    "../../agent-workflow-orchestration",
+    "../../autonomous-task-queue",
+    "../../idle-runtime-cleanup"
+  ]
+}

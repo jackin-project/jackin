@@ -1,0 +1,5 @@
+{
+  "title": "Commands",
+  "defaultOpen": false,
+  "pages": ["console", "load", "hardline", "eject", "exile", "purge", "prune", "workspace", "config", "role", "logs"]
+}
