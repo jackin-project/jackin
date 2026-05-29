@@ -1208,29 +1208,6 @@ html.theme-init *::after {
   display: none;
 }
 
-#nd-sidebar [class*='before:bg-fd-primary']::before,
-#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true'])::before {
-  display: none !important;
-}
-
-#nd-sidebar [data-state][class~='relative']::before {
-  content: "";
-  position: absolute;
-  inset-block: 0.35rem;
-  inset-inline-start: 0.72rem;
-  width: 1px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--jk-text) 13%, transparent);
-}
-
-:root[data-theme='dark'] #nd-sidebar [data-state][class~='relative']::before {
-  background: color-mix(in srgb, var(--jk-text) 11%, transparent);
-}
-
-#nd-sidebar [data-state][class~='relative']:has(a[data-active='true'])::before {
-  background: color-mix(in srgb, var(--jk-brand) 34%, var(--jk-text) 10%, transparent);
-}
-
 /* ==========================================================================
    Mobile menu footer (social icons + theme toggle + language select).
    Fumadocs draws a 1px top border via .mobile-preferences { border-top:
@@ -1291,11 +1268,13 @@ html.theme-init *::after {
 }
 
 #nd-toc a[class*='ps-6'] {
-  padding-inline-start: 1.45rem;
+  margin-inline-start: 0.75rem;
+  padding-inline-start: 0.75rem;
 }
 
 #nd-toc a[class*='ps-8'] {
-  padding-inline-start: 2rem;
+  margin-inline-start: 0.75rem;
+  padding-inline-start: 1.3rem;
 }
 
 #nd-toc a:hover {
@@ -1310,18 +1289,38 @@ html.theme-init *::after {
 }
 
 #nd-toc [class*='border-s'] {
-  border-left-width: 1px;
-  border-left-color: color-mix(in srgb, var(--jk-text) 13%, transparent);
+  border-left-width: 0;
+  border-left-color: transparent;
   transition: border-color 0.15s, color 0.15s;
 }
 
+#nd-toc [class*='border-s'] > .absolute {
+  display: none;
+}
+
+#nd-toc a[class*='ps-6'],
+#nd-toc a[class*='ps-8'] {
+  border-inline-start: 1px solid color-mix(in srgb, var(--jk-text) 13%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+
+#nd-toc a[class*='ps-6']:hover,
+#nd-toc a[class*='ps-8']:hover {
+  border-inline-start-color: color-mix(in srgb, var(--jk-text) 24%, transparent);
+}
+
+#nd-toc a[class*='ps-6'][data-active='true'],
+#nd-toc a[class*='ps-8'][data-active='true'] {
+  border-inline-start-color: color-mix(in srgb, var(--jk-brand) 72%, var(--jk-ui));
+}
+
 #nd-toc [class*='border-s']:has(a[data-active='true']) {
-  border-left-width: 1px;
-  border-left-color: color-mix(in srgb, var(--jk-brand) 72%, var(--jk-ui));
+  border-left-width: 0;
+  border-left-color: transparent;
 }
 
 #nd-toc [class*='border-s']:has(a:hover) {
-  border-left-color: color-mix(in srgb, var(--jk-text) 24%, transparent);
+  border-left-color: transparent;
 }
 
 #nd-toc::after {
