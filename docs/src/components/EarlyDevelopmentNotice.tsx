@@ -1,15 +1,15 @@
-import { Callout } from 'fumadocs-ui/components/callout'
-
 export function EarlyDevelopmentNotice() {
   return (
-    <Callout className="jk-early-development-notice" type="warn" title="Active early development">
+    <aside className="jk-early-development-notice" aria-label="Active early development warning">
+      <div className="jk-early-development-notice-label">
+        <span aria-hidden="true">🚧</span>
+        Active early development
+      </div>
       <p>
-        <strong>jackin' is not production-ready.</strong> It is intentionally in active early development while the
-        core concept, runtime integrations, CLI/TUI workflows, schemas, and documentation are still being refined.
-        Major breaking changes are expected before a stable release; features may be redesigned, replaced, or removed
-        when that leads to a better project. Early adopters are welcome, but the priority right now is concept quality
-        and fast iteration rather than freezing today's behavior.
+        <strong>jackin' is not production-ready.</strong> Major breaking changes are expected while the core concept,
+        runtime integrations, CLI/TUI workflows, schemas, and docs are still being refined. Early adopters are welcome;
+        the priority right now is concept quality and fast iteration, not freezing today's behavior.
       </p>
-    </Callout>
+    </aside>
   )
 }
