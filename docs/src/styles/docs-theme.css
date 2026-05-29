@@ -1131,6 +1131,10 @@ html.theme-init *::after {
   --fd-sidebar-width: 18rem;
 }
 
+#nd-sidebar[data-collapsed='true'][data-hovered='true'] {
+  --fd-sidebar-width: 18rem;
+}
+
 #nd-sidebar:not([data-collapsed='true']) > div:first-child,
 #nd-sidebar:not([data-collapsed='true']) > div:last-child {
   padding-inline-start: 0 !important;
