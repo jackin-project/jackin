@@ -24,6 +24,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::binary_artifact::{
+    chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
+    parse_sha256_hex,
+};
 use crate::paths::JackinPaths;
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
@@ -36,7 +40,7 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
     if let Some(bin_os) = std::env::var_os("JACKIN_CAPSULE_BIN") {
         let path = PathBuf::from(bin_os);
         anyhow::ensure!(
-            is_valid_cached_binary(&path),
+            is_executable_file(&path),
             "JACKIN_CAPSULE_BIN={} does not exist or is not executable",
             path.display()
         );
@@ -70,14 +74,14 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         install_test_stub(paths).context("installing in-process test stub")?;
         return Ok(stub_path);
     }
-    if stub_path.exists() && is_valid_cached_binary(&stub_path) {
+    if stub_path.exists() && is_executable_file(&stub_path) {
         return Ok(stub_path);
     }
 
     let arch = container_arch();
     let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, arch);
 
-    if is_valid_cached_binary(&cached) {
+    if is_executable_file(&cached) {
         crate::debug_log!(
             "capsule_binary",
             "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch}"
@@ -116,7 +120,7 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
 async fn packaged_binary_path(version: &str, arch: &str) -> Option<PathBuf> {
     let is_preview = version.contains("-dev") || version.contains("-preview.");
     for candidate in packaged_binary_candidates(arch) {
-        if !is_valid_cached_binary(&candidate) {
+        if !is_executable_file(&candidate) {
             continue;
         }
         match verify_version(&candidate, version, is_preview).await {
@@ -163,15 +167,6 @@ fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
         .join("jackin-capsule")
 }
 
-/// Linux arch for the container target, derived from the host machine arch.
-pub const fn container_arch() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "amd64"
-    }
-}
-
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let sha_url = format!("{url}.sha256");
@@ -181,30 +176,20 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     );
     let tmp_archive = dest.with_extension("tar.gz.tmp");
     let tmp = dest.with_extension("tmp");
-    let tmp_archive_path_str = tmp_archive.to_str().ok_or_else(|| {
-        anyhow::anyhow!(
-            "cache temp path {} contains non-UTF-8 bytes; cannot pass to curl",
-            tmp_archive.display()
-        )
-    })?;
-    let status = tokio::process::Command::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--output",
-            tmp_archive_path_str,
-            &url,
-        ])
-        .status()
-        .await
-        .context("failed to run curl to download jackin-capsule archive")?;
 
-    if !status.success() {
+    // Fetch the expected SHA-256 and download the archive concurrently.
+    let (expected_sha_result, download_result) = tokio::join!(
+        fetch_remote_sha256(&sha_url),
+        crate::net::download_parallel(&url, &tmp_archive),
+    );
+
+    // Either failure must remove the partial archive so a retry starts clean —
+    // the SHA fetch and the download run concurrently, so a SHA error can land
+    // with the archive already fully written.
+    if let Err(e) = download_result {
         let _ = std::fs::remove_file(&tmp_archive);
-        anyhow::bail!(
-            "jackin-capsule {version} not found in GitHub Releases.\n\
+        return Err(e).context(format!(
+            "jackin-capsule {version} download failed.\n\
              \n\
              Developing locally? Build and cache it first:\n\
                cargo run --bin build-jackin-capsule\n\
@@ -213,28 +198,29 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
              Using an installed jackin? The CI preview build may not\n\
              have completed yet. Wait a few minutes and retry, or check:\n\
                https://github.com/jackin-project/jackin/releases/tag/preview"
-        );
+        ));
     }
+    let expected_sha = match expected_sha_result {
+        Ok(sha) => sha,
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_archive);
+            return Err(e)
+                .with_context(|| format!("fetching jackin-capsule SHA-256 manifest at {sha_url}"));
+        }
+    };
 
-    // Fetch and verify the published SHA-256. The preview/release CI
-    // pipeline emits `<asset>.sha256` alongside every archive asset; if
-    // that companion file is missing or doesn't match the downloaded
-    // bytes the archive may have come from a tampered or partial
-    // release and we must refuse to cache it.
-    let expected_sha = fetch_remote_sha256(&sha_url)
-        .await
-        .with_context(|| format!("fetching jackin-capsule SHA-256 manifest at {sha_url}"))?;
+    // Verify the published SHA-256. The CI pipeline emits `<asset>.sha256`
+    // alongside every archive; a mismatch means a tampered or partial release.
     // Hashing a multi-MB archive parks the tokio worker; run it on the
     // blocking pool so concurrent launch / TUI tasks keep progressing.
     let archive_for_hash = tmp_archive.clone();
-    let archive_for_context = archive_for_hash.clone();
     let actual_sha = tokio::task::spawn_blocking(move || hash_file_sha256(&archive_for_hash))
         .await
         .context("hash worker join")?
         .with_context(|| {
             format!(
                 "hashing downloaded jackin-capsule archive at {}",
-                archive_for_context.display()
+                tmp_archive.display()
             )
         })?;
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
@@ -245,7 +231,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         );
     }
 
-    extract_capsule_from_archive(&tmp_archive, &tmp)
+    extract_tar_gz_member(&tmp_archive, "jackin-capsule", &tmp)
         .with_context(|| format!("extracting jackin-capsule from {}", tmp_archive.display()))?;
     let _ = std::fs::remove_file(&tmp_archive);
 
@@ -260,7 +246,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // the final cache path. Promoting the tmp file to `dest` first and
     // then bailing on verify failure would leave an executable-bit-set
     // file at the cache location — the next `ensure_available` would
-    // see `is_valid_cached_binary == true` and reuse the wrong-version
+    // see `is_executable_file == true` and reuse the wrong-version
     // binary forever.
     //
     // Verification shape depends on host OS and version channel:
@@ -290,65 +276,11 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     Ok(())
 }
 
-/// Fetch the published SHA-256 hex string for a release asset. The CI
-/// workflow emits the file as one line of lowercase hex (no filename
-/// suffix) so trim + lowercase is enough.
+/// Fetch the published SHA-256 hex string for a release asset. The CI workflow
+/// emits one line of hex (optionally `<hex>  <filename>`).
 async fn fetch_remote_sha256(url: &str) -> Result<String> {
-    let output = tokio::process::Command::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--max-time",
-            "30",
-            url,
-        ])
-        .output()
-        .await
-        .context("failed to run curl for sha256 manifest")?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "{url} download failed (status={}, stderr={})",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    let text = String::from_utf8(output.stdout).context("sha256 manifest body is not UTF-8")?;
-    let hex = text.split_whitespace().next().unwrap_or("").to_lowercase();
-    if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        anyhow::bail!(
-            "{url} did not return a 64-char hex sha256 (got {:?})",
-            hex.chars().take(80).collect::<String>()
-        );
-    }
-    Ok(hex)
-}
-
-/// SHA-256 of a file, returned as lowercase hex.
-fn hash_file_sha256(path: &Path) -> Result<String> {
-    use sha2::{Digest, Sha256};
-    use std::fmt::Write as _;
-    use std::io::Read as _;
-    let mut file = std::fs::File::open(path)
-        .with_context(|| format!("opening {} for hashing", path.display()))?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .with_context(|| format!("reading {} for hashing", path.display()))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(64);
-    for byte in &digest {
-        let _ = write!(hex, "{byte:02x}");
-    }
-    Ok(hex)
+    let text = crate::net::fetch_text(url).await?;
+    parse_sha256_hex(&text).with_context(|| format!("{url} did not return a valid sha256"))
 }
 
 fn download_url(version: &str, arch: &str) -> String {
@@ -362,45 +294,11 @@ fn download_url(version: &str, arch: &str) -> String {
     }
 }
 
-fn extract_capsule_from_archive(archive_path: &Path, dest: &Path) -> Result<()> {
-    let file = std::fs::File::open(archive_path)
-        .with_context(|| format!("opening {}", archive_path.display()))?;
-    let decoder = flate2::read::GzDecoder::new(file);
-    let mut archive = tar::Archive::new(decoder);
-    for entry in archive
-        .entries()
-        .with_context(|| format!("reading entries from {}", archive_path.display()))?
-    {
-        let mut entry =
-            entry.with_context(|| format!("reading entry from {}", archive_path.display()))?;
-        let is_capsule = entry.path().context("reading archive entry path")?.as_ref()
-            == Path::new("jackin-capsule");
-        if is_capsule && entry.header().entry_type().is_file() {
-            entry
-                .unpack(dest)
-                .with_context(|| format!("unpacking jackin-capsule to {}", dest.display()))?;
-            return Ok(());
-        }
-    }
-    anyhow::bail!(
-        "{} does not contain a top-level jackin-capsule binary",
-        archive_path.display()
-    )
-}
-
 fn linux_target(arch: &str) -> &'static str {
     match arch {
         "arm64" => "aarch64-unknown-linux-gnu",
         _ => "x86_64-unknown-linux-gnu",
     }
-}
-
-pub fn is_valid_cached_binary(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt as _;
-    path.is_file()
-        && path
-            .metadata()
-            .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
 }
 
 /// Write a placeholder file at `<cache_dir>/jackin-capsule-test-stub`
@@ -425,16 +323,6 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
     chmod_executable(&stub)
         .with_context(|| format!("setting +x on test stub {}", stub.display()))?;
     Ok(())
-}
-
-pub fn chmod_executable(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let meta =
-        std::fs::metadata(path).with_context(|| format!("stating {} for chmod", path.display()))?;
-    let mut perms = meta.permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("chmod 0755 on {}", path.display()))
 }
 
 /// Verify the downloaded binary is a jackin-capsule of the expected
@@ -583,54 +471,5 @@ mod tests {
         assert_eq!(linux_target("arm64"), "aarch64-unknown-linux-gnu");
         assert_eq!(linux_target("amd64"), "x86_64-unknown-linux-gnu");
         assert_eq!(linux_target("x86_64"), "x86_64-unknown-linux-gnu");
-    }
-
-    #[test]
-    fn hash_file_sha256_matches_known_vector() {
-        // SHA-256 of the empty string is the well-known
-        // e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let digest = hash_file_sha256(tmp.path()).unwrap();
-        assert_eq!(
-            digest,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
-    }
-
-    #[test]
-    fn hash_file_sha256_matches_for_known_bytes() {
-        // SHA-256 of the ASCII string "abc" is
-        // ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(tmp.path(), b"abc").unwrap();
-        let digest = hash_file_sha256(tmp.path()).unwrap();
-        assert_eq!(
-            digest,
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-    }
-
-    #[test]
-    fn extract_capsule_from_archive_writes_top_level_binary() {
-        let temp = tempfile::tempdir().unwrap();
-        let archive_path = temp.path().join("jackin-capsule.tar.gz");
-        let dest = temp.path().join("jackin-capsule");
-        let bytes = b"#!/bin/sh\necho capsule\n";
-
-        let archive_file = std::fs::File::create(&archive_path).unwrap();
-        let encoder = flate2::write::GzEncoder::new(archive_file, flate2::Compression::default());
-        let mut archive = tar::Builder::new(encoder);
-        let mut header = tar::Header::new_gnu();
-        header.set_size(bytes.len() as u64);
-        header.set_mode(0o755);
-        header.set_cksum();
-        archive
-            .append_data(&mut header, "jackin-capsule", &bytes[..])
-            .unwrap();
-        let encoder = archive.into_inner().unwrap();
-        encoder.finish().unwrap();
-
-        extract_capsule_from_archive(&archive_path, &dest).unwrap();
-        assert_eq!(std::fs::read(&dest).unwrap(), bytes);
     }
 }
