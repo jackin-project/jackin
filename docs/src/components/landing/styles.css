@@ -72,8 +72,12 @@
      green-tinted glow that echoes the dark-mode phosphor bleed. */
   --landing-card-shadow-soft: 0 24px 40px rgba(0, 0, 0, 0.35);
   --landing-card-shadow-strong: 0 28px 50px rgba(0, 0, 0, 0.45);
-  --landing-hero-codepanel-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
-  --landing-term-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+  --landing-terminal-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 30px 60px rgba(0, 0, 0, 0.45);
+  --landing-hero-codepanel-shadow: var(--landing-terminal-shadow);
+  --landing-term-shadow: var(--landing-terminal-shadow);
 
   /* Small UI surfaces — chip bgs, chrome bars, hover tints. */
   --landing-chip-bg: rgba(255, 255, 255, 0.04);
@@ -131,8 +135,12 @@
      casting a plain black drop. */
   --landing-card-shadow-soft: 0 14px 32px rgba(10, 80, 30, 0.12);
   --landing-card-shadow-strong: 0 20px 48px rgba(10, 80, 30, 0.18);
-  --landing-hero-codepanel-shadow: 0 22px 48px rgba(10, 80, 30, 0.18);
-  --landing-term-shadow: 0 14px 28px rgba(10, 80, 30, 0.14);
+  --landing-terminal-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 22px 48px rgba(4, 9, 6, 0.18);
+  --landing-hero-codepanel-shadow: var(--landing-terminal-shadow);
+  --landing-term-shadow: var(--landing-terminal-shadow);
 
   --landing-chip-bg: rgba(0, 0, 0, 0.05);
   --landing-toolset-chip-bg: rgba(0, 0, 0, 0.04);
@@ -457,7 +465,7 @@ html.theme-init *::after {
 /* Install block (Section 08) — always-dark terminal block */
 .landing-install {
   background: var(--landing-panel);
-  border: 1px solid var(--landing-ui);
+  border: 0;
   border-radius: 10px;
   padding: 24px 28px;
   font-family: 'JetBrains Mono', monospace;
@@ -465,6 +473,7 @@ html.theme-init *::after {
   color: var(--landing-text);
   line-height: 1.85;
   margin-top: 12px;
+  box-shadow: var(--landing-term-shadow);
 }
 .landing-install-line .k { color: var(--landing-accent); }
 
@@ -678,17 +687,18 @@ html.theme-init *::after {
    through and turn the terminal muddy grey. */
 .landing-builder {
   background: var(--landing-bg-deep);
-  border: 1px solid var(--landing-ui);
+  border: 0;
   border-radius: 6px;
   overflow: hidden;
   margin: 18px 0 22px;
   font-family: 'JetBrains Mono', monospace;
+  box-shadow: var(--landing-term-shadow);
 }
 .landing-builder-head {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 12px;
   background: var(--landing-surface-chrome-bar);
-  border-bottom: 1px solid var(--landing-ui-subtle);
+  box-shadow: inset 0 -1px rgba(255, 255, 255, 0.06);
   font-size: 10.5px; color: var(--landing-text-ghost); letter-spacing: 0.04em;
 }
 .landing-builder-head .landing-dot { width: 10px; height: 10px; border-radius: 50%; }
@@ -1192,7 +1202,7 @@ section.landing-section.landing-voc-scroll-section {
      channel and the terminal reads as muddy grey instead of the
      near-black it's meant to be. */
   background: var(--landing-bg-deep);
-  border: 1px solid var(--landing-ui-strong);
+  border: 0;
   border-radius: 8px;
   overflow: hidden;
   box-shadow: var(--landing-term-shadow);
@@ -1201,8 +1211,8 @@ section.landing-section.landing-voc-scroll-section {
 .landing-loop-term-bar {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 14px;
-  border-bottom: 1px solid var(--landing-ui);
   background: var(--landing-surface-chrome-bar);
+  box-shadow: inset 0 -1px rgba(255, 255, 255, 0.06);
 }
 .landing-loop-term-bar .landing-dot { width: 10px; height: 10px; border-radius: 50%; }
 .landing-loop-term-bar .landing-dot.r { background: #ff5f57; }
@@ -1238,7 +1248,7 @@ section.landing-section.landing-voc-scroll-section {
 
 /* Hero CodePanel — always-dark terminal block */
 .landing-code-panel {
-  border: 1px solid var(--landing-ui);
+  border: 0;
   border-radius: 10px;
   background: var(--landing-panel);
   overflow: hidden;
@@ -1247,8 +1257,8 @@ section.landing-section.landing-voc-scroll-section {
 .landing-code-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--landing-ui);
   background: var(--landing-surface-chrome-bar);
+  box-shadow: inset 0 -1px rgba(255, 255, 255, 0.06);
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--landing-text-ghost);

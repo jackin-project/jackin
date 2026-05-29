@@ -27,7 +27,7 @@
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 
   /* Layout dimensions — keep navigation compact so documentation owns the page. */
-  --sl-sidebar-width: 14rem;
+  --sl-sidebar-width: 15.25rem;
   --sl-content-width: 56rem;
   --sl-nav-height: 3.5rem;
 
@@ -78,7 +78,7 @@
   --color-fd-border: var(--jk-ui);
   --color-fd-ring: var(--jk-accent);
   --fd-layout-width: 96rem;
-  --fd-sidebar-width: 14rem;
+  --fd-sidebar-width: 15.25rem;
 }
 
 /* ==========================================================================
@@ -931,11 +931,11 @@ html.theme-init *::after {
 
 @media (min-width: 768px) {
   #nd-docs-layout {
-    --fd-sidebar-width: 14rem !important;
+    --fd-sidebar-width: 15.25rem !important;
   }
 
   [data-sidebar-placeholder] {
-    --fd-sidebar-width: 14rem !important;
+    --fd-sidebar-width: 15.25rem !important;
   }
 
   #nd-page {
@@ -1332,7 +1332,7 @@ header.header {
 
 .expressive-code .frame {
   box-shadow: var(--jk-code-shadow);
-  border: 0;
+  border: 0 !important;
   border-radius: 10px;
   overflow: hidden;
   /* Code blocks keep a dark surface in BOTH page modes:
@@ -1341,10 +1341,12 @@ header.header {
      A stacked inset/outer shadow keeps the edge sharp without a gray
      border. */
   background: var(--jk-code-bg);
+  color-scheme: dark;
 }
 
 .expressive-code .frame pre {
   background: var(--jk-code-bg) !important;
+  color-scheme: dark;
 }
 
 .expressive-code .frame .header {
@@ -1352,12 +1354,31 @@ header.header {
 }
 
 .expressive-code .frame pre {
-  border: 0;
+  border: 0 !important;
   border-radius: 0;
 }
 
 .expressive-code .frame pre code {
+  background: transparent !important;
+  border: 0 !important;
   border-radius: 0;
+}
+
+.sl-markdown-content pre:not(:where(.expressive-code *)),
+#nd-page pre:not(:where(.expressive-code *)) {
+  background: var(--jk-code-bg) !important;
+  border: 0 !important;
+  border-radius: 10px;
+  box-shadow: var(--jk-code-shadow);
+  color-scheme: dark;
+  overflow: auto;
+}
+
+.sl-markdown-content pre:not(:where(.expressive-code *)) code,
+#nd-page pre:not(:where(.expressive-code *)) code {
+  background: transparent !important;
+  border: 0 !important;
+  color: inherit;
 }
 
 /* Copy button — expressive-code calculates its top offset (--button-spacing)
