@@ -448,7 +448,6 @@ impl LaunchProgress {
     /// index. The picker cannot be cancelled — the operator must commit one
     /// of the options.
     pub fn select_choice(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
-        let run_id = self.diagnostics.run_id().to_string();
         if let Renderer::Rich(driver) = &mut self.renderer {
             // Reclaim the renderer from the render task for the modal picker.
             // The task try-locks, so it simply skips frames while we hold it.
@@ -456,12 +455,7 @@ impl LaunchProgress {
                 .renderer
                 .lock()
                 .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
-            let view = self
-                .view
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
-                .clone();
-            renderer.select(&view, &run_id, title, items)
+            renderer.select(title, items)
         } else {
             anyhow::bail!("launch choice requires the rich launch dialog")
         }
@@ -473,24 +467,12 @@ impl LaunchProgress {
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<crate::env_resolver::PromptResult> {
-        let run_id = self.diagnostics.run_id().to_string();
         if let Renderer::Rich(driver) = &mut self.renderer {
             let mut renderer = driver
                 .renderer
                 .lock()
                 .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
-            let view = self
-                .view
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
-                .clone();
-            renderer.prompt_text(
-                &view,
-                &run_id,
-                title,
-                default.unwrap_or_default(),
-                skippable,
-            )
+            renderer.prompt_text(title, default.unwrap_or_default(), skippable)
         } else {
             anyhow::bail!("manifest env text prompt requires the rich launch dialog")
         }
@@ -503,36 +485,24 @@ impl LaunchProgress {
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<crate::env_resolver::PromptResult> {
-        let run_id = self.diagnostics.run_id().to_string();
         if let Renderer::Rich(driver) = &mut self.renderer {
             let mut renderer = driver
                 .renderer
                 .lock()
                 .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
-            let view = self
-                .view
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
-                .clone();
-            renderer.prompt_select(&view, &run_id, title, options, default, skippable)
+            renderer.prompt_select(title, options, default, skippable)
         } else {
             anyhow::bail!("manifest env select prompt requires the rich launch dialog")
         }
     }
 
     pub fn confirm_prompt(&mut self, prompt: impl Into<String>) -> anyhow::Result<bool> {
-        let run_id = self.diagnostics.run_id().to_string();
         if let Renderer::Rich(driver) = &mut self.renderer {
             let mut renderer = driver
                 .renderer
                 .lock()
                 .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
-            let view = self
-                .view
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
-                .clone();
-            renderer.confirm(&view, &run_id, ConfirmState::new(prompt))
+            renderer.confirm(ConfirmState::new(prompt))
         } else {
             anyhow::bail!("launch confirmation requires the rich launch dialog")
         }
@@ -543,18 +513,12 @@ impl LaunchProgress {
         role: impl Into<String>,
         repository: impl Into<String>,
     ) -> anyhow::Result<bool> {
-        let run_id = self.diagnostics.run_id().to_string();
         if let Renderer::Rich(driver) = &mut self.renderer {
             let mut renderer = driver
                 .renderer
                 .lock()
                 .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
-            let view = self
-                .view
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
-                .clone();
-            renderer.confirm(&view, &run_id, ConfirmState::role_trust(role, repository))
+            renderer.confirm(ConfirmState::role_trust(role, repository))
         } else {
             anyhow::bail!("role trust prompt requires the rich launch dialog")
         }
@@ -572,7 +536,6 @@ impl LaunchProgress {
 }
 
 pub fn prelaunch_select_choice(
-    diagnostics: &Arc<RunDiagnostics>,
     no_motion: bool,
     title: &str,
     items: Vec<String>,
@@ -583,8 +546,7 @@ pub fn prelaunch_select_choice(
         );
     }
     let mut renderer = RichRenderer::enter(no_motion)?;
-    let view = initial_view();
-    renderer.select(&view, diagnostics.run_id(), title, items)
+    renderer.select(title, items)
 }
 
 fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, detail: &str) {
@@ -857,13 +819,7 @@ impl RichRenderer {
     /// Run a forced-choice picker over the dimmed launch frame. Enables
     /// raw mode for the duration so key events arrive un-buffered, and
     /// restores it on every exit path. `Ctrl-C` aborts the launch.
-    fn select(
-        &mut self,
-        view: &LaunchView,
-        run_id: &str,
-        title: &str,
-        items: Vec<String>,
-    ) -> anyhow::Result<usize> {
+    fn select(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
         // The host guard already holds raw mode for the whole flow; only
         // toggle it when this renderer is running standalone.
         let owns_raw = !crate::tui::host_screen_owned();
@@ -871,25 +827,19 @@ impl RichRenderer {
             crossterm::terminal::enable_raw_mode()
                 .context("entering raw mode for launch picker")?;
         }
-        let outcome = self.select_loop(view, run_id, title, items);
+        let outcome = self.select_loop(title, items);
         if owns_raw {
             let _ = crossterm::terminal::disable_raw_mode();
         }
         outcome
     }
 
-    fn select_loop(
-        &mut self,
-        view: &LaunchView,
-        run_id: &str,
-        title: &str,
-        items: Vec<String>,
-    ) -> anyhow::Result<usize> {
+    fn select_loop(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
         use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let mut picker = SelectListState::new(items);
         loop {
             self.terminal
-                .draw(|frame| draw_select(frame, view, run_id, title, &picker))
+                .draw(|frame| draw_select(frame, title, &picker))
                 .context("rendering launch picker")?;
             if let Event::Key(key) =
                 crossterm::event::read().context("reading launch picker input")?
@@ -910,8 +860,6 @@ impl RichRenderer {
 
     fn prompt_text(
         &mut self,
-        view: &LaunchView,
-        run_id: &str,
         title: &str,
         initial: &str,
         skippable: bool,
@@ -921,7 +869,7 @@ impl RichRenderer {
             crossterm::terminal::enable_raw_mode()
                 .context("entering raw mode for launch env prompt")?;
         }
-        let outcome = self.prompt_text_loop(view, run_id, title, initial, skippable);
+        let outcome = self.prompt_text_loop(title, initial, skippable);
         if owns_raw {
             let _ = crossterm::terminal::disable_raw_mode();
         }
@@ -930,8 +878,6 @@ impl RichRenderer {
 
     fn prompt_text_loop(
         &mut self,
-        view: &LaunchView,
-        run_id: &str,
         title: &str,
         initial: &str,
         skippable: bool,
@@ -944,7 +890,7 @@ impl RichRenderer {
         };
         loop {
             self.terminal
-                .draw(|frame| draw_text_prompt(frame, view, run_id, &input, skippable))
+                .draw(|frame| draw_text_prompt(frame, &input, skippable))
                 .context("rendering launch env text prompt")?;
             if let Event::Key(key) =
                 crossterm::event::read().context("reading launch env prompt input")?
@@ -971,8 +917,6 @@ impl RichRenderer {
 
     fn prompt_select(
         &mut self,
-        view: &LaunchView,
-        run_id: &str,
         title: &str,
         options: &[String],
         default: Option<&str>,
@@ -983,7 +927,7 @@ impl RichRenderer {
             crossterm::terminal::enable_raw_mode()
                 .context("entering raw mode for launch env select")?;
         }
-        let outcome = self.prompt_select_loop(view, run_id, title, options, default, skippable);
+        let outcome = self.prompt_select_loop(title, options, default, skippable);
         if owns_raw {
             let _ = crossterm::terminal::disable_raw_mode();
         }
@@ -992,8 +936,6 @@ impl RichRenderer {
 
     fn prompt_select_loop(
         &mut self,
-        view: &LaunchView,
-        run_id: &str,
         title: &str,
         options: &[String],
         default: Option<&str>,
@@ -1012,7 +954,7 @@ impl RichRenderer {
         }
         loop {
             self.terminal
-                .draw(|frame| draw_select(frame, view, run_id, title, &picker))
+                .draw(|frame| draw_select(frame, title, &picker))
                 .context("rendering launch env select prompt")?;
             if let Event::Key(key) =
                 crossterm::event::read().context("reading launch env select input")?
@@ -1039,34 +981,24 @@ impl RichRenderer {
         }
     }
 
-    fn confirm(
-        &mut self,
-        view: &LaunchView,
-        run_id: &str,
-        mut state: ConfirmState,
-    ) -> anyhow::Result<bool> {
+    fn confirm(&mut self, mut state: ConfirmState) -> anyhow::Result<bool> {
         let owns_raw = !crate::tui::host_screen_owned();
         if owns_raw {
             crossterm::terminal::enable_raw_mode()
                 .context("entering raw mode for launch confirmation")?;
         }
-        let outcome = self.confirm_loop(view, run_id, &mut state);
+        let outcome = self.confirm_loop(&mut state);
         if owns_raw {
             let _ = crossterm::terminal::disable_raw_mode();
         }
         outcome
     }
 
-    fn confirm_loop(
-        &mut self,
-        view: &LaunchView,
-        run_id: &str,
-        state: &mut ConfirmState,
-    ) -> anyhow::Result<bool> {
+    fn confirm_loop(&mut self, state: &mut ConfirmState) -> anyhow::Result<bool> {
         use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         loop {
             self.terminal
-                .draw(|frame| draw_confirm(frame, view, run_id, state))
+                .draw(|frame| draw_confirm(frame, state))
                 .context("rendering launch confirmation")?;
             if let Event::Key(key) =
                 crossterm::event::read().context("reading launch confirmation input")?
@@ -1880,17 +1812,15 @@ const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
 /// continuation rows carry a visible prefix so wrapped Docker output remains
 /// easy to distinguish from separate log lines. The key hint renders in the
 /// bottom footer row, never inside the box (TUI design rule).
-fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
-    use crate::console::widgets::scrollable::{render_scrollable_block, viewport_height};
-
-    // Shared dialog backdrop fully hides the cockpit behind the overlay
-    // (same solid look as the capsule modals).
+/// Paint the shared solid dialog backdrop over `area` (capsule modal
+/// convention — hide the cockpit, never dim it) and split off the bottom row
+/// for the footer hint. Returns `(box_area, hint_area)` so every launch dialog
+/// centers its box and renders its hint the same way.
+fn dialog_backdrop(frame: &mut Frame<'_>, area: Rect) -> (Rect, Rect) {
     frame.render_widget(
         Block::default().style(Style::default().bg(DIALOG_BACKDROP)),
         area,
     );
-
-    // Bottom row is the footer hint; the bordered box takes the rest.
     let box_area = Rect {
         height: area.height.saturating_sub(1),
         ..area
@@ -1900,6 +1830,13 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
         height: 1,
         ..area
     };
+    (box_area, hint_area)
+}
+
+fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
+    use crate::console::widgets::scrollable::{render_scrollable_block, viewport_height};
+
+    let (box_area, hint_area) = dialog_backdrop(frame, area);
 
     let title = if crate::runtime::build_log::is_active() {
         " Docker build · building… "
@@ -2026,53 +1963,22 @@ fn push_wrapped_build_line(
     lines.push(Line::from(spans));
 }
 
-fn draw_select(
-    frame: &mut Frame<'_>,
-    view: &LaunchView,
-    run_id: &str,
-    title: &str,
-    picker: &SelectListState,
-) {
-    let area = frame.area();
-    render_launch_frame(frame, view, run_id, true, None);
-    dim_buffer(frame, area);
-    select_list::render(frame, picker_rect(area, picker), picker, title);
-    render_picker_hints(frame, area);
+fn draw_select(frame: &mut Frame<'_>, title: &str, picker: &SelectListState) {
+    let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+    select_list::render(frame, picker_rect(box_area, picker), picker, title);
+    crate::console::widgets::hints::render(frame, hint_area, PICKER_HINT);
 }
 
-fn draw_text_prompt(
-    frame: &mut Frame<'_>,
-    view: &LaunchView,
-    run_id: &str,
-    input: &TextInputState<'_>,
-    skippable: bool,
-) {
-    let area = frame.area();
-    render_launch_frame(frame, view, run_id, true, None);
-    dim_buffer(frame, area);
-    text_input::render(frame, text_prompt_rect(area), input);
-    render_text_prompt_hints(frame, area, skippable);
+fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable: bool) {
+    let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+    text_input::render(frame, text_prompt_rect(box_area), input);
+    crate::console::widgets::hints::render(frame, hint_area, text_prompt_hint(skippable));
 }
 
-fn draw_confirm(frame: &mut Frame<'_>, view: &LaunchView, run_id: &str, state: &ConfirmState) {
-    let area = frame.area();
-    render_launch_frame(frame, view, run_id, true, None);
-    dim_buffer(frame, area);
-    confirm::render(frame, confirm_rect(area, state), state);
-    render_confirm_hints(frame, area);
-}
-
-/// Knock every cell behind the dialog back to a dim phosphor so the
-/// modal reads as the foreground surface (matches the console modal-dim
-/// rule). Runs after the frame is drawn and before the picker overlay.
-fn dim_buffer(frame: &mut Frame<'_>, area: Rect) {
-    let dark = Style::reset().fg(PHOSPHOR_DARK);
-    let buf = frame.buffer_mut();
-    for y in area.top()..area.bottom() {
-        for x in area.left()..area.right() {
-            buf[(x, y)].set_style(dark);
-        }
-    }
+fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
+    let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+    confirm::render(frame, confirm_rect(box_area, state), state);
+    crate::console::widgets::hints::render(frame, hint_area, CONFIRM_HINT);
 }
 
 fn picker_rect(area: Rect, picker: &SelectListState) -> Rect {
@@ -2090,19 +1996,6 @@ fn picker_rect(area: Rect, picker: &SelectListState) -> Rect {
     centered_rect(width, height, area)
 }
 
-fn render_picker_hints(frame: &mut Frame<'_>, area: Rect) {
-    if area.height == 0 {
-        return;
-    }
-    let row = Rect {
-        x: area.x,
-        y: area.bottom().saturating_sub(1),
-        width: area.width,
-        height: 1,
-    };
-    crate::console::widgets::hints::render(frame, row, PICKER_HINT);
-}
-
 fn text_prompt_rect(area: Rect) -> Rect {
     let min_w = 50.min(area.width);
     let width = (area.width.saturating_mul(3) / 5).clamp(min_w, area.width.max(min_w));
@@ -2115,59 +2008,45 @@ fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
     centered_rect(width, height, area)
 }
 
-fn render_text_prompt_hints(frame: &mut Frame<'_>, area: Rect, skippable: bool) {
-    if area.height == 0 {
-        return;
-    }
-    let row = Rect {
-        x: area.x,
-        y: area.bottom().saturating_sub(1),
-        width: area.width,
-        height: 1,
-    };
-    let hint = if skippable {
-        &[
-            HintSpan::Key("Enter"),
-            HintSpan::Text("save"),
-            HintSpan::Key("empty"),
-            HintSpan::Text("skip"),
-            HintSpan::Key("Ctrl-C"),
-            HintSpan::Text("cancel"),
-        ][..]
+/// Footer-hint keys for the launch text prompt. `skippable` adds the
+/// leave-empty-to-skip group; both share the rest of the vocabulary.
+const fn text_prompt_hint(skippable: bool) -> &'static [HintSpan<'static>] {
+    if skippable {
+        TEXT_PROMPT_SKIP_HINT
     } else {
-        &[
-            HintSpan::Key("Enter"),
-            HintSpan::Text("save"),
-            HintSpan::Key("Ctrl-C"),
-            HintSpan::Text("cancel"),
-        ][..]
-    };
-    crate::console::widgets::hints::render(frame, row, hint);
+        TEXT_PROMPT_HINT
+    }
 }
 
-fn render_confirm_hints(frame: &mut Frame<'_>, area: Rect) {
-    if area.height == 0 {
-        return;
-    }
-    let row = Rect {
-        x: area.x,
-        y: area.bottom().saturating_sub(1),
-        width: area.width,
-        height: 1,
-    };
-    crate::console::widgets::hints::render(
-        frame,
-        row,
-        &[
-            HintSpan::Key("Y"),
-            HintSpan::Text("yes"),
-            HintSpan::Key("N/Esc"),
-            HintSpan::Text("no"),
-            HintSpan::Key("Tab"),
-            HintSpan::Text("focus"),
-        ],
-    );
-}
+const TEXT_PROMPT_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("save"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("cancel"),
+];
+
+const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("save"),
+    HintSpan::GroupSep,
+    HintSpan::Key("empty"),
+    HintSpan::Text("skip"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("cancel"),
+];
+
+const CONFIRM_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Y"),
+    HintSpan::Text("yes"),
+    HintSpan::GroupSep,
+    HintSpan::Key("N/Esc"),
+    HintSpan::Text("no"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Tab"),
+    HintSpan::Text("focus"),
+];
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let w = width.min(area.width.saturating_sub(2));
@@ -2313,11 +2192,10 @@ mod tests {
     fn text_prompt_dialog_renders_prompt_and_default() {
         let backend = TestBackend::new(90, 24);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        let view = initial_view();
         let input = TextInputState::new("Branch name", "main");
 
         terminal
-            .draw(|frame| draw_text_prompt(frame, &view, "run-123", &input, false))
+            .draw(|frame| draw_text_prompt(frame, &input, false))
             .unwrap();
 
         let rendered = format!("{:?}", terminal.backend().buffer());
@@ -2330,15 +2208,12 @@ mod tests {
     fn confirm_dialog_renders_role_trust_details() {
         let backend = TestBackend::new(100, 26);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        let view = initial_view();
         let state = ConfirmState::role_trust(
             "acme/agent-jones",
             "https://github.com/acme/jackin-agent-jones.git",
         );
 
-        terminal
-            .draw(|frame| draw_confirm(frame, &view, "run-123", &state))
-            .unwrap();
+        terminal.draw(|frame| draw_confirm(frame, &state)).unwrap();
 
         let rendered = format!("{:?}", terminal.backend().buffer());
         assert!(rendered.contains("Trust role source"), "{rendered}");

@@ -38,10 +38,7 @@ fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
 }
 
 fn rich_prelaunch_choice(title: &str, items: Vec<String>) -> anyhow::Result<usize> {
-    let run = crate::diagnostics::active_run()
-        .ok_or_else(|| anyhow::anyhow!("launch choice requires an active diagnostics run"))?;
     runtime::progress::prelaunch_select_choice(
-        &run,
         std::env::var_os("JACKIN_NO_MOTION").is_some(),
         title,
         items,
