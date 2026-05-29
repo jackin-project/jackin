@@ -7,6 +7,7 @@ use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
 use crate::version_check;
 use anyhow::Context as _;
+use futures_util::future::try_join_all;
 use std::path::PathBuf;
 
 use super::identity::HostIdentity;
@@ -25,36 +26,37 @@ pub(super) async fn prepare_runtime_binaries(
     validated_repo: &crate::repo::ValidatedRoleRepo,
     mut progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<PreparedRuntimeBinaries> {
-    let mut agent_binaries = Vec::new();
-    for supported_agent in validated_repo.manifest.supported_agents() {
-        if let Some(progress) = &mut progress {
-            progress.stage_progress(
-                LaunchStage::AgentBinaries,
-                format!("preparing {} binary", supported_agent.slug()),
-            );
-        }
-        let binary = crate::agent_binary::ensure_available(paths, supported_agent)
-            .await
-            .with_context(|| format!("preparing {} binary", supported_agent.slug()))?;
-        agent_binaries.push((binary.agent, binary.path));
+    if let Some(progress) = &mut progress {
+        progress.stage_progress(LaunchStage::AgentBinaries, "preparing agent binaries");
     }
 
-    // Ensure the jackin-capsule binary is available in the local cache.
-    // Downloads from the GitHub preview release if not cached for this
-    // version. Propagate the error: the derived image's ENTRYPOINT is
-    // `/jackin/runtime/jackin-capsule`, so a Dockerfile built without
-    // the binary would build successfully then fail at `docker run`
-    // with the opaque "exec: file not found." Failing fast here with
-    // the actionable message from `capsule_binary` is much better.
-    if let Some(progress) = &mut progress {
-        progress.stage_progress(
-            LaunchStage::AgentBinaries,
-            "preparing jackin-capsule binary",
-        );
-    }
-    let jackin_capsule_binary = capsule_binary::ensure_available(paths)
-        .await
-        .context("preparing jackin-capsule binary")?;
+    let agents = validated_repo.manifest.supported_agents();
+
+    // Resolve + download all agent binaries and jackin-capsule concurrently.
+    // Each ensure_available call is network-bound (HTTP resolve + optional download),
+    // so running them in parallel cuts wall-clock time to the slowest single binary
+    // rather than the sum of all.
+    //
+    // Derived image ENTRYPOINT is `/jackin/runtime/jackin-capsule`, so a missing
+    // capsule binary would produce an opaque "exec: file not found" at `docker run`.
+    // Failing fast here gives an actionable error message.
+    let agent_futures = agents.into_iter().map(|agent| async move {
+        let binary = crate::agent_binary::ensure_available(paths, agent)
+            .await
+            .with_context(|| format!("preparing {} binary", agent.slug()))?;
+        Ok::<_, anyhow::Error>((binary.agent, binary.path))
+    });
+    let capsule_future = async {
+        capsule_binary::ensure_available(paths)
+            .await
+            .context("preparing jackin-capsule binary")
+    };
+
+    let (agent_results, jackin_capsule_binary) =
+        tokio::try_join!(try_join_all(agent_futures), capsule_future)?;
+
+    let agent_binaries: Vec<(crate::agent::Agent, std::path::PathBuf)> = agent_results;
+
     let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
         anyhow::anyhow!(
             "cached jackin-capsule path {} contains non-UTF-8 bytes; cannot reference it from Dockerfile",

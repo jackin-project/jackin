@@ -1,11 +1,21 @@
 use crate::agent::Agent;
 use crate::paths::JackinPaths;
 use anyhow::{Context, Result};
+use fast_down::{
+    Event, Proxy,
+    fast_puller::{FastDownPuller, FastDownPullerOptions, build_client as build_http_client},
+    file::MmapFilePusher,
+    http::Prefetch,
+    multi::{self, download_multi},
+};
 use flate2::read::GzDecoder;
+use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 const CACHE_TTL: std::time::Duration = std::time::Duration::from_hours(1);
 
@@ -49,6 +59,60 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
             agent,
             path: stub_path,
         });
+    }
+
+    // Check release metadata cache (TTL: 1hr) before hitting the network.
+    if let Some(cached_release) = read_cached_release(paths, agent) {
+        let cached = cached_binary_path(paths, &cached_release);
+        if is_valid_cached_binary(&cached) {
+            record(
+                "agent_binary_cache_hit",
+                &format!(
+                    "{} {} at {} (metadata cached)",
+                    agent.slug(),
+                    cached_release.version,
+                    cached.display()
+                ),
+            );
+            return Ok(AgentBinary { agent, path: cached });
+        }
+        // Metadata cached but binary missing — fall through to download using cached release.
+        record(
+            "agent_binary_download_started",
+            &format!(
+                "{} {} from {} to {} (metadata cached, binary missing)",
+                agent.slug(),
+                cached_release.version,
+                cached_release.url,
+                cached.display()
+            ),
+        );
+        download_and_cache(&cached_release, &cached)
+            .await
+            .with_context(|| {
+                format!(
+                    "downloading {} {} from {}",
+                    agent.slug(),
+                    cached_release.version,
+                    cached_release.url
+                )
+            })
+            .inspect_err(|error| {
+                record(
+                    "agent_binary_failed",
+                    &format!("{} download failed: {error:#}", agent.slug()),
+                );
+            })?;
+        record(
+            "agent_binary_ready",
+            &format!(
+                "{} {} at {}",
+                agent.slug(),
+                cached_release.version,
+                cached.display()
+            ),
+        );
+        return Ok(AgentBinary { agent, path: cached });
     }
 
     record(
@@ -157,11 +221,11 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
 
 async fn resolve_claude() -> Result<AgentRelease> {
     let base = "https://downloads.claude.ai/claude-code-releases";
-    let version = curl_text(&format!("{base}/latest")).await?;
+    let version = fetch_text(&format!("{base}/latest")).await?;
     let version = version.trim().to_string();
     let platform = platform_x64_arm64();
     let manifest: ClaudeManifest =
-        serde_json::from_str(&curl_text(&format!("{base}/{version}/manifest.json")).await?)?;
+        serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
     let entry = manifest
         .platforms
         .get(platform)
@@ -177,7 +241,7 @@ async fn resolve_claude() -> Result<AgentRelease> {
 
 async fn resolve_amp() -> Result<AgentRelease> {
     let base = "https://static.ampcode.com";
-    let version = curl_text(&format!("{base}/cli/cli-version.txt"))
+    let version = fetch_text(&format!("{base}/cli/cli-version.txt"))
         .await?
         .trim()
         .to_string();
@@ -185,7 +249,7 @@ async fn resolve_amp() -> Result<AgentRelease> {
         "arm64" => "linux-arm64",
         _ => "linux-x64",
     };
-    let checksum = curl_text(&format!("{base}/cli/{version}/{platform}-amp.sha256"))
+    let checksum = fetch_text(&format!("{base}/cli/{version}/{platform}-amp.sha256"))
         .await?
         .split_whitespace()
         .next()
@@ -202,13 +266,13 @@ async fn resolve_amp() -> Result<AgentRelease> {
 
 async fn resolve_kimi() -> Result<AgentRelease> {
     let base = "https://code.kimi.com/kimi-code";
-    let version = curl_text(&format!("{base}/latest"))
+    let version = fetch_text(&format!("{base}/latest"))
         .await?
         .trim()
         .to_string();
     let platform = platform_x64_arm64();
     let manifest: KimiManifest =
-        serde_json::from_str(&curl_text(&format!("{base}/{version}/manifest.json")).await?)?;
+        serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
     let entry = manifest
         .platforms
         .get(platform)
@@ -260,14 +324,69 @@ async fn resolve_opencode() -> Result<AgentRelease> {
     })
 }
 
+fn make_http_client(extra_headers: HeaderMap) -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .default_headers(extra_headers)
+        .build()
+        .context("building HTTP client")
+}
+
+async fn fetch_text(url: &str) -> Result<String> {
+    record("agent_binary_http_get", url);
+    let client = make_http_client(HeaderMap::new())?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("GET {url}"))?;
+    let status = resp.status();
+    anyhow::ensure!(status.is_success(), "{url} failed: HTTP {status}");
+    resp.text()
+        .await
+        .with_context(|| format!("{url} body is not valid UTF-8"))
+}
+
+async fn github_auth_token() -> Option<String> {
+    let output = tokio::process::Command::new("gh")
+        .args(["auth", "token", "--hostname", "github.com"])
+        .output()
+        .await
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8(output.stdout).ok()?.trim().to_string())
+    } else {
+        None
+    }
+}
+
 async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubReleaseAssetMatch> {
-    let release: GithubRelease = serde_json::from_str(
-        &curl_text(&format!(
-            "https://api.github.com/repos/{repo}/releases/latest"
-        ))
-        .await?,
-    )
-    .with_context(|| format!("parsing latest GitHub release metadata for {repo}"))?;
+    let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    // Authenticated requests have 5 000 req/hr vs 60 req/hr unauthenticated.
+    let token = github_auth_token().await;
+    let mut headers = HeaderMap::new();
+    if let Some(ref t) = token {
+        let val = reqwest::header::HeaderValue::from_str(&format!("Bearer {t}"))
+            .context("building Authorization header from gh token")?;
+        headers.insert(reqwest::header::AUTHORIZATION, val);
+    }
+    let client = make_http_client(headers)?;
+    let body = retry_with_backoff(3, Duration::from_millis(500), || {
+        let c = client.clone();
+        let u = api_url.clone();
+        async move {
+            record("agent_binary_http_get", &u);
+            let resp = c.get(&u).send().await.with_context(|| format!("GET {u}"))?;
+            let status = resp.status();
+            anyhow::ensure!(status.is_success(), "{u} failed: HTTP {status}");
+            resp.text()
+                .await
+                .with_context(|| format!("{u} body is not valid UTF-8"))
+        }
+    })
+    .await
+    .with_context(|| format!("fetching latest GitHub release metadata for {repo}"))?;
+    let release: GithubRelease = serde_json::from_str(&body)
+        .with_context(|| format!("parsing latest GitHub release metadata for {repo}"))?;
     let asset = release
         .assets
         .into_iter()
@@ -277,6 +396,39 @@ async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubRelea
         tag_name: release.tag_name,
         asset,
     })
+}
+
+async fn retry_with_backoff<T, F, Fut>(
+    max_attempts: u32,
+    initial_delay: Duration,
+    f: F,
+) -> Result<T>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut last_err = anyhow::anyhow!("no attempts made");
+    for attempt in 0..max_attempts {
+        if attempt > 0 {
+            let delay = initial_delay * (1 << (attempt - 1));
+            record(
+                "retry_backoff",
+                &format!("attempt {attempt}/{max_attempts}, waiting {delay:?}"),
+            );
+            tokio::time::sleep(delay).await;
+        }
+        match f().await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                record(
+                    "retry_failed",
+                    &format!("attempt {}/{max_attempts}: {e:#}", attempt + 1),
+                );
+                last_err = e;
+            }
+        }
+    }
+    Err(last_err)
 }
 
 fn platform_x64_arm64() -> &'static str {
@@ -310,7 +462,7 @@ async fn download_and_cache_inner(
 ) -> Result<()> {
     download_file(&release.url, tmp_download).await?;
     if let Some(expected) = &release.checksum {
-        let actual = hash_file_sha256(tmp_download)?;
+        let actual = hash_file_sha256(tmp_download).await?;
         anyhow::ensure!(
             actual.eq_ignore_ascii_case(expected),
             "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
@@ -331,57 +483,79 @@ async fn download_and_cache_inner(
     Ok(())
 }
 
-async fn curl_text(url: &str) -> Result<String> {
-    record("agent_binary_http_get", url);
-    let output = tokio::process::Command::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--max-time",
-            "30",
-            url,
-        ])
-        .output()
-        .await
-        .with_context(|| format!("running curl for {url}"))?;
-    anyhow::ensure!(
-        output.status.success(),
-        "{url} failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-    String::from_utf8(output.stdout).with_context(|| format!("{url} returned non-UTF-8 body"))
-}
-
 async fn download_file(url: &str, dest: &Path) -> Result<()> {
-    let dest_str = dest
-        .to_str()
-        .with_context(|| format!("download path {} is not UTF-8", dest.display()))?;
-    let output = tokio::process::Command::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--max-time",
-            "300",
-            "--output",
-            dest_str,
-            url,
-        ])
-        .output()
+    // Probe server: detect Range support + file size. Fan out 8 parallel chunks
+    // via fast-down (work-stealing + mmap writes). All CDNs used here support
+    // Range requests; bail fast if one somehow doesn't.
+    let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid URL {url}"))?;
+    let headers = HeaderMap::new();
+    let client =
+        build_http_client(&headers, Proxy::System, false, false, None).context("building HTTP client")?;
+    let (info, _resp) = client
+        .prefetch(parsed)
         .await
-        .with_context(|| format!("running curl for {url}"))?;
-    if !output.status.success() {
-        let _ = std::fs::remove_file(dest);
-        anyhow::bail!(
-            "{url} download failed with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        .map_err(|(err, _)| anyhow::anyhow!("prefetch {url}: {err:?}"))?;
+    record(
+        "agent_binary_download_info",
+        &format!("{url}: size={}, parallel={}", info.size, info.fast_download),
+    );
+    anyhow::ensure!(
+        info.fast_download,
+        "server at {url} does not support Range requests; cannot download in parallel"
+    );
+    let file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .read(true)
+        .truncate(true)
+        .open(dest)
+        .await
+        .with_context(|| format!("creating download destination {}", dest.display()))?;
+    let puller = FastDownPuller::new(FastDownPullerOptions {
+        url: info.final_url,
+        headers: Arc::new(headers),
+        proxy: Proxy::System,
+        accept_invalid_certs: false,
+        accept_invalid_hostnames: false,
+        file_id: info.file_id,
+        resp: None,
+        available_ips: Arc::from([]),
+    })
+    .context("building parallel downloader")?;
+    let pusher = MmapFilePusher::new(file, info.size, false)
+        .await
+        .context("creating memory-mapped file writer")?;
+    let result = download_multi(
+        puller,
+        pusher,
+        multi::DownloadOptions {
+            download_chunks: std::iter::once(0..info.size),
+            concurrent: 8,
+            retry_gap: Duration::from_millis(500),
+            push_queue_cap: 1024,
+            pull_timeout: Duration::from_secs(30),
+            min_chunk_size: 8 * 1024 * 1024,
+            max_speculative: 3,
+        },
+    );
+    while let Ok(event) = result.event_chain.recv().await {
+        match event {
+            Event::PullError(id, err) => {
+                record("download_pull_error", &format!("worker {id}: {err:?}"));
+            }
+            Event::PushError(_, _, err) => {
+                record("download_push_error", &format!("{err}"));
+            }
+            Event::FlushError(err) => {
+                record("download_flush_error", &format!("{err}"));
+            }
+            _ => {}
+        }
     }
-    Ok(())
+    result
+        .join()
+        .await
+        .map_err(|e| anyhow::anyhow!("download task panicked for {url}: {e}"))
 }
 
 fn record(kind: &str, message: &str) {
@@ -408,24 +582,29 @@ fn extract_tar_gz_member(archive: &Path, member_name: &str, dest: &Path) -> Resu
     anyhow::bail!("archive missing {member_name}")
 }
 
-fn hash_file_sha256(path: &Path) -> Result<String> {
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
+async fn hash_file_sha256(path: &Path) -> Result<String> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let mut file = std::fs::File::open(&path)?;
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
         }
-        hasher.update(&buf[..n]);
-    }
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        use std::fmt::Write as _;
-        write!(&mut hex, "{byte:02x}")?;
-    }
-    Ok(hex)
+        let digest = hasher.finalize();
+        let mut hex = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            use std::fmt::Write as _;
+            write!(&mut hex, "{byte:02x}")?;
+        }
+        Ok(hex)
+    })
+    .await
+    .context("sha256 hash task panicked")?
 }
 
 #[cfg(unix)]
