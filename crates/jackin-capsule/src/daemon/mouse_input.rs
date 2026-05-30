@@ -232,3 +232,40 @@ impl Multiplexer {
         Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
     }
 }
+
+impl Multiplexer {
+    pub(super) fn detect_drag_start(&self, row: u16, col: u16) -> Option<DragState> {
+        if row < STATUS_BAR_ROWS || self.active_zoomed_id().is_some() {
+            return None;
+        }
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let tab = self.tabs.get(self.active_tab)?;
+        let (path, orient, rect) = tab.tree.border_at(content_rect, row, col)?;
+        Some(DragState {
+            tab_idx: self.active_tab,
+            path,
+            orient,
+            rect,
+        })
+    }
+
+    pub(super) fn drag_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        let drag = self.drag.clone()?;
+        let new_ratio = match drag.orient {
+            SplitOrient::Horizontal => {
+                let off = col.saturating_sub(drag.rect.col);
+                (off as f32 / drag.rect.cols as f32).clamp(0.05, 0.95)
+            }
+            SplitOrient::Vertical => {
+                let off = row.saturating_sub(drag.rect.row);
+                (off as f32 / drag.rect.rows as f32).clamp(0.05, 0.95)
+            }
+        };
+        let tab = self.tabs.get_mut(drag.tab_idx)?;
+        if !tab.tree.set_ratio_at(&drag.path, new_ratio) {
+            return None;
+        }
+        self.resize_panes();
+        Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+    }
+}
