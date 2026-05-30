@@ -225,7 +225,7 @@ pub enum PaletteCloseLabel {
 }
 
 impl PaletteCloseLabel {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::ChooseTarget => "Close",
             Self::CloseTab => "Close tab",
@@ -233,7 +233,7 @@ impl PaletteCloseLabel {
     }
 }
 
-const CLOSE_TARGET_ITEMS: &[(ConfirmKind, &str)] = &[
+pub(crate) const CLOSE_TARGET_ITEMS: &[(ConfirmKind, &str)] = &[
     (ConfirmKind::ClosePane, "Close pane"),
     (ConfirmKind::CloseTab, "Close tab"),
 ];
@@ -313,7 +313,7 @@ pub enum PaletteCommand {
 /// duplicate those existing paths bloats the modal with no new
 /// capability. `PaletteCommand::NextTab` / `PrevTab` stay in the enum
 /// so prefix-mode bindings continue to work.
-const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
+pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::NewTab, "New tab"),
     (PaletteCommand::Split, "Split pane"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
@@ -327,7 +327,7 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
 /// vertical pair. The dialog is filter-able like the other list
 /// dialogs — typing `a` narrows to "Above," typing `l` narrows to
 /// "Left," etc.
-const SPLIT_DIRECTION_ITEMS: &[SplitDirection] = &[
+pub(crate) const SPLIT_DIRECTION_ITEMS: &[SplitDirection] = &[
     SplitDirection::Right,
     SplitDirection::Left,
     SplitDirection::Below,

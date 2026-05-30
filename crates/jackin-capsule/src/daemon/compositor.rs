@@ -12,23 +12,18 @@ impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
         if let Some(reason) = self.pending_full_redraw.take() {
             self.dirty_panes.clear();
-            // Use the Ratatui compositor for full frames when no dialog is
-            // open — dialog rendering still uses the raw-ANSI path until
-            // dedicated Ratatui dialog widgets are added.
-            // When a dialog IS open, fall through to compose_full_frame so
-            // the full overlay (backdrop + dialog content) renders correctly.
-            if !self.dialog_open() {
-                if let Some(ratatui_output) = self.compose_ratatui_frame() {
-                    crate::cdebug!(
-                        "render: kind=full reason={} via=ratatui bytes={}",
-                        reason.as_str(),
-                        ratatui_output.len()
-                    );
-                    let mut out = Vec::with_capacity(ratatui_output.len() + 64);
-                    self.append_outer_terminal_title(&mut out);
-                    out.extend_from_slice(&ratatui_output);
-                    return out;
-                }
+            // Use the Ratatui compositor for all full frames — dialogs are
+            // now rendered via shared jackin-tui widgets inside compose_ratatui_frame.
+            if let Some(ratatui_output) = self.compose_ratatui_frame() {
+                crate::cdebug!(
+                    "render: kind=full reason={} via=ratatui bytes={}",
+                    reason.as_str(),
+                    ratatui_output.len()
+                );
+                let mut out = Vec::with_capacity(ratatui_output.len() + 64);
+                self.append_outer_terminal_title(&mut out);
+                out.extend_from_slice(&ratatui_output);
+                return out;
             }
             return self.compose_full_frame(reason);
         }
@@ -61,6 +56,7 @@ impl Multiplexer {
     /// the Ratatui terminal fails to draw (falls back to raw-ANSI).
     pub(super) fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
         use crate::chrome_widget::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
+        use crate::dialog_widgets::{render_dialog_ratatui, DialogRatatuiSnapshot};
         use crate::pane_widget::PaneBodyWidget;
         use crate::title::display_title;
         use ratatui::layout::Rect as RatatuiRect;
@@ -85,6 +81,21 @@ impl Multiplexer {
             })
             .collect();
 
+        // Snapshot dialog state (fully owned) before the draw closure.
+        let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> =
+            if dialog_open {
+                let pr_branch = self.pull_request_context_branch.as_deref();
+                let pr_info = self.pull_request_context.as_deref();
+                let pr_loading = self.pull_request_context_loading();
+                self.dialog_top().map(|d| {
+                    let rect = d.box_rect(term_rows, term_cols);
+                    let snapshot = d.to_ratatui_snapshot(pr_branch, pr_info, pr_loading);
+                    (snapshot, rect)
+                })
+            } else {
+                None
+            };
+
         let sessions = &self.sessions;
         let status_bar = StatusBarWidget {
             tabs,
@@ -103,7 +114,7 @@ impl Multiplexer {
             frame.render_widget(status_bar, status_area);
 
             if dialog_open {
-                // Dialog backdrop fills the content area.
+                // Backdrop fills the content area behind the dialog.
                 let content_area = RatatuiRect {
                     x: 0,
                     y: crate::statusbar::STATUS_BAR_ROWS,
@@ -111,8 +122,10 @@ impl Multiplexer {
                     height: term_rows.saturating_sub(crate::statusbar::STATUS_BAR_ROWS),
                 };
                 frame.render_widget(DialogBackdrop, content_area);
-                // Dialog content itself is still rendered via raw ANSI in the
-                // caller; the backdrop here just fills the buffer correctly.
+                // Render dialog content via shared jackin-tui components.
+                if let Some((snapshot, rect)) = &dialog_snapshot {
+                    render_dialog_ratatui(frame, *rect, snapshot);
+                }
                 return;
             }
 
