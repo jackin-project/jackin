@@ -4,6 +4,7 @@ pub mod brand_header;
 pub mod error_dialog;
 pub mod filter_input;
 pub mod hint_bar;
+pub mod select_list;
 pub mod status_footer;
 
 pub use brand_header::{BrandHeader, brand_header_line, render_brand_header};
@@ -12,4 +13,5 @@ pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
 pub use hint_bar::{
     HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, wrapped_height,
 };
+pub use select_list::{SelectList, SelectListState, render_select_list};
 pub use status_footer::{StatusFooter, render_status_footer};

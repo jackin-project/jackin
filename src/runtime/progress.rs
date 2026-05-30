@@ -6,6 +6,11 @@ use std::time::Duration;
 use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use jackin_tui::components::{
+    ErrorPopupState, SelectListState, render_error_dialog, render_hint_bar, render_select_list,
+    render_status_footer, required_height as error_dialog_required_height,
+};
+use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -13,18 +18,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::console::widgets::confirm::{self, ConfirmState};
-use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::text_input::{self, TextInputState};
 use crate::console::widgets::{
     DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
     PHOSPHOR_GREEN, WHITE,
 };
 use crate::diagnostics::RunDiagnostics;
-use jackin_tui::components::{
-    ErrorPopupState, render_error_dialog, render_hint_bar, render_status_footer,
-    required_height as error_dialog_required_height,
-};
-use jackin_tui::{HintSpan, ModalOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum LaunchStage {
@@ -2067,7 +2066,7 @@ fn push_wrapped_build_line(
 
 fn draw_select(frame: &mut Frame<'_>, title: &str, context: &[Line<'_>], picker: &SelectListState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-    select_list::render(
+    render_select_list(
         frame,
         picker_rect(box_area, picker, context),
         picker,
