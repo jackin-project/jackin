@@ -17,6 +17,7 @@ pub mod render;
 pub mod runtime_setup;
 pub mod session;
 pub mod socket;
+pub mod socket_backend;
 pub mod statusbar;
 pub mod terminal_geometry;
 pub mod util;

@@ -42,6 +42,7 @@ url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 jackin-tui = { path = "../jackin-tui" }
+ratatui = { version = "0.30", features = ["unstable-widget-ref"] }
 
 [build-dependencies]
 jackin-build-meta = { path = "../jackin-build-meta" }
