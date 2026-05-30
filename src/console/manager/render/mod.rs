@@ -97,7 +97,7 @@ pub(crate) fn prepare_for_render(
         ManagerStage::Editor(editor) => {
             let footer = editor::editor_footer_items(editor, config, state.op_available);
             editor.cached_footer_h = footer_height(&footer, area.width).max(1);
-            clamp_editor_scroll_for_frame(area, editor);
+            editor::prepare_editor_for_render(area, editor, config);
         }
         ManagerStage::Settings(settings) => {
             let footer = global_mounts::settings_footer_items(settings, state.op_available);
@@ -433,29 +433,6 @@ pub fn render(
         let overlay_area = centered_rect_fixed(area, 50, 7);
         super::super::widgets::status_popup::render(frame, overlay_area, overlay);
     }
-}
-
-fn clamp_editor_scroll_for_frame(area: Rect, editor: &mut super::state::EditorState<'_>) {
-    if editor.active_tab != super::state::EditorTab::Mounts {
-        return;
-    }
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(8),
-            Constraint::Length(2),
-        ])
-        .split(area);
-    clamp_scroll_x(
-        list::workspace_mounts_content_width_with_cache(
-            &editor.pending.mounts,
-            &editor.mount_info_cache,
-        ),
-        scroll_viewport_width(chunks[2]),
-        &mut editor.workspace_mounts_scroll_x,
-    );
 }
 
 fn clamp_global_mounts_scroll_for_frame(

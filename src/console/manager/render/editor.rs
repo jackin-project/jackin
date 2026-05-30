@@ -126,7 +126,7 @@ pub(super) fn editor_footer_items(
 
 pub fn render_editor(
     frame: &mut Frame,
-    state: &mut EditorState<'_>,
+    state: &EditorState<'_>,
     config: &AppConfig,
     op_available: bool,
 ) {
@@ -184,6 +184,50 @@ pub fn render_editor(
         frame.render_widget(ratatui::widgets::Clear, banner_area);
         frame.render_widget(banner, banner_area);
     }
+}
+
+pub(in crate::console::manager) fn prepare_editor_for_render(
+    area: Rect,
+    state: &mut EditorState<'_>,
+    config: &AppConfig,
+) {
+    let body = editor_body_area(area, state.cached_footer_h);
+    prepare_editor_tab_for_area(body, state, config);
+}
+
+pub(in crate::console::manager) fn prepare_editor_tab_for_area(
+    body: Rect,
+    state: &mut EditorState<'_>,
+    config: &AppConfig,
+) {
+    let lines = editor_tab_lines(body, state, config);
+    state.tab_content_width = super::max_line_width(&lines);
+    state.tab_content_height = lines.len();
+    let viewport_w = super::scroll_viewport_width(body);
+    let viewport_h = super::scroll_viewport_height(body);
+    if state.active_tab == EditorTab::Mounts {
+        let content_width = super::list::workspace_mounts_content_width_with_cache(
+            &state.pending.mounts,
+            &state.mount_info_cache,
+        );
+        super::clamp_scroll_x(content_width, viewport_w, &mut state.workspace_mounts_scroll_x);
+    } else {
+        super::clamp_scroll_x(state.tab_content_width, viewport_w, &mut state.tab_scroll_x);
+    }
+    super::clamp_scroll_x(state.tab_content_height, viewport_h, &mut state.tab_scroll_y);
+}
+
+fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(footer_h),
+        ])
+        .split(area);
+    chunks[2]
 }
 
 /// Compute a row-specific hint fragment based on the active tab and cursor.
@@ -441,7 +485,30 @@ pub(in crate::console::manager) fn render_tab_strip(
         .render(frame, area);
 }
 
-fn render_general_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>) {
+fn editor_tab_lines(area: Rect, state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
+    match state.active_tab {
+        EditorTab::General => general_tab_lines(state),
+        EditorTab::Mounts => mounts_tab_lines(state),
+        EditorTab::Roles => roles_tab_lines(state, config),
+        EditorTab::Secrets => secrets_tab_lines(area, state, config),
+        EditorTab::Auth => auth_tab_lines(state, config),
+    }
+}
+
+fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
+    let rows = general_tab_lines(state);
+    super::render_scrollable_block_at(
+        frame,
+        area,
+        rows,
+        state.tab_scroll_x,
+        state.tab_scroll_y,
+        state.tab_content_scroll_focused,
+        None,
+    );
+}
+
+fn general_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
 
     let name_value = match &state.mode {
@@ -496,17 +563,7 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>
     };
     rows.push(render_editor_row(3, cursor, "Git pull", git_pull_display));
 
-    state.tab_content_width = super::max_line_width(&rows);
-    state.tab_content_height = rows.len();
-    super::render_scrollable_block(
-        frame,
-        area,
-        rows,
-        &mut state.tab_scroll_x,
-        &mut state.tab_scroll_y,
-        state.tab_content_scroll_focused,
-        None,
-    );
+    rows
 }
 
 /// Render a field row with cursor highlight when `row == cursor`.
@@ -532,7 +589,20 @@ fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Lin
     Line::from(spans)
 }
 
-fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>) {
+fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
+    let lines = mounts_tab_lines(state);
+    super::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.workspace_mounts_scroll_x,
+        state.tab_scroll_y,
+        state.workspace_mounts_scroll_focused,
+        None,
+    );
+}
+
+fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Build aligned table rows for all mounts.
@@ -606,24 +676,28 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>)
         action_row_style(sentinel_selected),
     )));
 
-    state.tab_content_height = lines.len();
-    super::render_scrollable_block(
-        frame,
-        area,
-        lines,
-        &mut state.workspace_mounts_scroll_x,
-        &mut state.tab_scroll_y,
-        state.workspace_mounts_scroll_focused,
-        None,
-    );
+    lines
 }
 
 fn render_roles_tab(
     frame: &mut Frame,
     area: Rect,
-    state: &mut EditorState<'_>,
+    state: &EditorState<'_>,
     config: &AppConfig,
 ) {
+    let lines = roles_tab_lines(state, config);
+    super::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.tab_scroll_x,
+        state.tab_scroll_y,
+        state.tab_content_scroll_focused,
+        None,
+    );
+}
+
+fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Status line: "Allowed roles:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
@@ -696,17 +770,7 @@ fn render_roles_tab(
         format!("{sentinel_prefix}+ Load role"),
         action_row_style(sentinel_selected),
     )));
-    state.tab_content_height = lines.len();
-    state.tab_content_width = super::max_line_width(&lines);
-    super::render_scrollable_block(
-        frame,
-        area,
-        lines,
-        &mut state.tab_scroll_x,
-        &mut state.tab_scroll_y,
-        state.tab_content_scroll_focused,
-        None,
-    );
+    lines
 }
 
 /// Flat row model for the Secrets tab; cursor is a single index.
@@ -967,9 +1031,26 @@ pub(in crate::console::manager) fn eligible_agents_for_override(
 fn render_secrets_tab(
     frame: &mut Frame,
     area: Rect,
-    state: &mut EditorState<'_>,
+    state: &EditorState<'_>,
     config: &AppConfig,
 ) {
+    let lines = secrets_tab_lines(area, state, config);
+    super::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.tab_scroll_x,
+        state.tab_scroll_y,
+        state.tab_content_scroll_focused,
+        None,
+    );
+}
+
+fn secrets_tab_lines(
+    area: Rect,
+    state: &EditorState<'_>,
+    config: &AppConfig,
+) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
 
     let rows = secrets_flat_rows(state);
@@ -1056,17 +1137,7 @@ fn render_secrets_tab(
         }
     }
 
-    state.tab_content_height = lines.len();
-    state.tab_content_width = super::max_line_width(&lines);
-    super::render_scrollable_block(
-        frame,
-        area,
-        lines,
-        &mut state.tab_scroll_x,
-        &mut state.tab_scroll_y,
-        state.tab_content_scroll_focused,
-        None,
-    );
+    lines
 }
 
 /// Display-side breadcrumb parser for `OpRef.path`.
@@ -1256,7 +1327,21 @@ pub(in crate::console::manager) fn render_secrets_key_line(
 /// Materializes a synthetic [`AppConfig`] from the editor's pending workspace
 /// merged with the (mostly read-only) global layer of the live config so
 /// in-flight edits are reflected immediately.
-fn render_auth_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>, config: &AppConfig) {
+fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
+    let lines = auth_tab_lines(state, config);
+    let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
+    super::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.tab_scroll_x,
+        state.tab_scroll_y,
+        state.tab_content_scroll_focused,
+        title.as_deref(),
+    );
+}
+
+fn auth_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
     let synthesized = synthesize_appconfig_for_auth(state, config);
     let workspace_name = workspace_name_for_panel(state);
     let rows = auth_flat_rows(state, config);
@@ -1265,24 +1350,11 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>, c
     let max_idx = rows.len().saturating_sub(1);
     let selected = cursor.min(max_idx);
 
-    let lines: Vec<ratatui::text::Line> = rows
+    rows
         .iter()
         .enumerate()
         .map(|(i, r)| render_auth_row(i == selected, r, &synthesized, &workspace_name))
-        .collect();
-
-    state.tab_content_height = lines.len();
-    state.tab_content_width = super::max_line_width(&lines);
-    let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
-    super::render_scrollable_block(
-        frame,
-        area,
-        lines,
-        &mut state.tab_scroll_x,
-        &mut state.tab_scroll_y,
-        state.tab_content_scroll_focused,
-        title.as_deref(),
-    );
+        .collect()
 }
 
 fn render_auth_row(
@@ -1846,7 +1918,8 @@ mod contextual_row_items_tests {
 
 #[cfg(test)]
 mod general_tab_render_tests {
-    use super::render_general_tab;
+    use super::{prepare_editor_tab_for_area, render_general_tab};
+    use crate::config::AppConfig;
     use crate::console::manager::state::{EditorState, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
@@ -1863,15 +1936,17 @@ mod general_tab_render_tests {
         editor.active_field = FieldFocus::Row(1);
         editor.tab_content_scroll_focused = true;
         editor.tab_scroll_x = u16::MAX;
+        let area = Rect::new(0, 0, 42, 8);
+        prepare_editor_tab_for_area(area, &mut editor, &AppConfig::default());
 
         let backend = TestBackend::new(42, 8);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_general_tab(f, Rect::new(0, 0, 42, 8), &mut editor);
+            render_general_tab(f, area, &editor);
         })
         .unwrap();
 
-        let viewport = super::super::scroll_viewport_width(Rect::new(0, 0, 42, 8));
+        let viewport = super::super::scroll_viewport_width(area);
         assert_eq!(
             editor.tab_scroll_x,
             super::super::max_scroll_offset(editor.tab_content_width, viewport)
@@ -1884,7 +1959,7 @@ mod general_tab_render_tests {
 mod agents_tab_render_tests {
     //! Pins `[x]`/`[ ]` to the *effectively allowed* state — empty
     //! `allowed_roles` is the "all allowed" shorthand.
-    use super::render_roles_tab;
+    use super::{prepare_editor_tab_for_area, render_roles_tab};
     use crate::config::{AppConfig, RoleSource};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::WorkspaceConfig;
@@ -1914,7 +1989,7 @@ mod agents_tab_render_tests {
         let backend = TestBackend::new(60, 10);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_roles_tab(f, Rect::new(0, 0, 60, 10), &mut editor, config);
+            render_roles_tab(f, Rect::new(0, 0, 60, 10), &editor, config);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -1964,15 +2039,17 @@ mod agents_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
         editor.tab_content_scroll_focused = true;
         editor.tab_scroll_x = u16::MAX;
+        let area = Rect::new(0, 0, 42, 8);
+        prepare_editor_tab_for_area(area, &mut editor, &cfg);
         let backend = TestBackend::new(42, 8);
         let mut term = Terminal::new(backend).unwrap();
 
         term.draw(|f| {
-            render_roles_tab(f, Rect::new(0, 0, 42, 8), &mut editor, &cfg);
+            render_roles_tab(f, area, &editor, &cfg);
         })
         .unwrap();
 
-        let viewport = super::super::scroll_viewport_width(Rect::new(0, 0, 42, 8));
+        let viewport = super::super::scroll_viewport_width(area);
         assert_eq!(
             editor.tab_scroll_x,
             super::super::max_scroll_offset(editor.tab_content_width, viewport)
