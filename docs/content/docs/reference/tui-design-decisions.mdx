@@ -8,7 +8,7 @@ This document is the **canonical record of every binding TUI design decision** �
 
 If a proposed implementation conflicts with a rule here, fix the implementation, not the rule (or open a discussion to amend the rule first). Violations are bugs and must be fixed before a PR lands.
 
-Every PR review that touches a TUI surface must verify the diff against this page before producing review output. Reviewers must call out any mismatch as a TUI design-decision violation, especially missing clickable affordances, missing footer hints, focusability drift, or layout geometry that diverges from the shared helpers.
+Every PR review that touches a TUI surface must verify the diff against this page before producing review output. Reviewers must call out any mismatch as a TUI design-decision violation, especially invisible long-running work, missing clickable affordances, missing footer hints, focusability drift, or layout geometry that diverges from the shared helpers.
 
 ---
 
@@ -61,6 +61,23 @@ Rules:
 - When a key applies only under certain conditions (e.g. `O open in GitHub` only for GitHub-origin mounts), show it only when the condition holds — but never suppress a key that is unconditionally active.
 - `Tab switch tab`, `S save`, and `Esc back/discard` are always shown in the global footer.
 - Keep each hint concise: one symbol or key name, one word label. Use `·` separators between hints.
+
+### Long-running work must be visible while it is happening
+
+Any TUI action that can take noticeable time, waits on I/O, talks to Docker, touches git/network state, waits on a background worker, or otherwise keeps the operator from immediately seeing the result **must show an in-surface progress or status state for the whole wait**. A static unchanged screen after an operator commits an action is a bug: it makes the interface feel stuck even when work is happening correctly.
+
+This rule is the TUI version of visibility of system status. Nielsen Norman Group's [visibility-of-system-status heuristic](https://www.nngroup.com/articles/visibility-system-status/) says systems should keep people informed through timely feedback, and specifically calls out progress indicators for work that needs longer to finish. Material's [progress-indicator guidance](https://material-web.dev/components/progress/) defines progress indicators as the component that informs users about ongoing processes such as loading or submitting work. jackin' applies that guidance to terminal UI: the operator must be able to glance at the screen and answer "what is happening now?"
+
+Required implementation shape:
+
+1. **Foreground waits get a foreground status surface.** If the action blocks the current flow, show a modal/status popup, launch cockpit, progress rail, spinner, or equivalent visual state. The role editor's `Loading role` popup and the launch cockpit are the exemplars: the operator sees the action has started, the UI remains alive, and completion transitions to the next decision or error surface.
+2. **Background work still needs a visible owner.** If a worker thread, async task, Docker command, git clone, cache refresh, token mint, or diagnostics-producing command is running because of an operator action, the screen that accepted the action owns the loading state until the worker reports success or failure. Do not leave the previous input modal, list row, or unchanged editor frame on screen while the work happens.
+3. **Use determinate progress when it is real, otherwise use indeterminate status.** A stage rail, percent, or progress bar is appropriate only when the implementation has meaningful progress signals. Unknown duration uses an indeterminate spinner/status text such as `Loading role`, `Building image`, or `Minting token`; do not fake percentages.
+4. **Name the work in operator language.** The status text should say what jackin' is doing now, not expose implementation plumbing. Use `Loading role`, `Building derived image`, `Opening hardline`, or `Refreshing 1Password items`; avoid raw command names as the primary status.
+5. **Completion must transition visibly.** Success moves to the next visible state (for example a trust prompt, updated row, opened session, or saved confirmation). Failure moves to the shared red error surface with the same diagnostics/error detail rules as the rest of the TUI. A worker result must never silently close the screen or leave the operator guessing whether anything changed.
+6. **Motion is optional; status is not.** `JACKIN_NO_MOTION=1` and low-capability renderers may freeze animation or replace a spinner with static text, but they must keep the same explicit "work is happening" state.
+
+Review checklist: whenever a PR adds or changes a TUI action that can wait, reviewers must ask: after the operator presses the committing key or clicks the action, what visible state appears before the result? If the answer is "the screen stays the same until it finishes," the PR violates this rule.
 
 ### Clickable targets must look clickable (hover + hand pointer — non-negotiable)
 

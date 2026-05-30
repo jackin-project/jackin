@@ -265,10 +265,10 @@ fn contextual_row_items(
                     HintSpan::Text("set/unset default"),
                     HintSpan::Sep,
                     HintSpan::Key("A"),
-                    HintSpan::Text("add role"),
+                    HintSpan::Text("load role"),
                 ]
             } else {
-                vec![HintSpan::Key("Enter/A"), HintSpan::Text("add role")]
+                vec![HintSpan::Key("Enter/A"), HintSpan::Text("load role")]
             }
         }
         EditorTab::Secrets => {
@@ -748,7 +748,7 @@ fn render_roles_tab(
         lines.push(Line::from(""));
     }
     lines.push(Line::from(Span::styled(
-        format!("{sentinel_prefix}+ Add role"),
+        format!("{sentinel_prefix}+ Load role"),
         action_row_style(sentinel_selected),
     )));
     state.tab_content_height = lines.len();

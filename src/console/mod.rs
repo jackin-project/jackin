@@ -236,6 +236,7 @@ const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> 
         Modal::GithubPicker { .. } => "GithubPicker",
         Modal::ConfirmSave { .. } => "ConfirmSave",
         Modal::ErrorPopup { .. } => "ErrorPopup",
+        Modal::StatusPopup { .. } => "StatusPopup",
         Modal::OpPicker { .. } => "OpPicker",
         Modal::RolePicker { .. } => "RolePicker",
         Modal::RoleOverridePicker { .. } => "RoleOverridePicker",
@@ -964,7 +965,7 @@ pub async fn run_console(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            ms.poll_picker_loads();
+            manager::input::poll_background_loads(ms, &mut config, paths);
             ms.refresh_instances(paths);
         }
 

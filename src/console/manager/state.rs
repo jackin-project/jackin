@@ -736,10 +736,31 @@ pub struct EditorState<'a> {
     /// Set by the `op_picker` commit when `generating_token_target` was
     /// present; drained by the `run_console` loop to run the mint.
     pub pending_token_generate: Option<PendingTokenGenerate>,
+    /// Role repository registration kicked off from the Roles tab. Drained by
+    /// the outer console loop so the editor can keep rendering a loading
+    /// dialog instead of blocking the TUI while git works.
+    pub pending_role_load: Option<PendingRoleLoad>,
     /// Footer height (rows) the renderer last laid out, cached so mouse
     /// hit-testing subtracts the same dynamic footer the frame drew rather than
     /// a stale constant — otherwise clicks near the bottom mis-map.
     pub cached_footer_h: u16,
+}
+
+pub struct PendingRoleLoad {
+    pub raw: String,
+    pub key: String,
+    pub source: crate::config::RoleSource,
+    pub rx: std::sync::mpsc::Receiver<anyhow::Result<()>>,
+}
+
+impl std::fmt::Debug for PendingRoleLoad {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingRoleLoad")
+            .field("raw", &self.raw)
+            .field("key", &self.key)
+            .field("source", &self.source)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -1375,6 +1396,9 @@ pub enum Modal<'a> {
     },
     ErrorPopup {
         state: ErrorPopupState,
+    },
+    StatusPopup {
+        state: crate::console::widgets::status_popup::StatusPopupState,
     },
     /// Boxed because the picker's `Vec`s + runner + channel are
     /// substantially larger than other variants.
@@ -2326,6 +2350,7 @@ impl EditorState<'_> {
             tab_content_height: 0,
             generating_token_target: None,
             pending_token_generate: None,
+            pending_role_load: None,
             cached_footer_h: 1,
         }
     }
@@ -2363,6 +2388,7 @@ impl EditorState<'_> {
             tab_content_height: 0,
             generating_token_target: None,
             pending_token_generate: None,
+            pending_role_load: None,
             cached_footer_h: 1,
         }
     }
