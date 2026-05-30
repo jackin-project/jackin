@@ -13,6 +13,7 @@ pub mod layout;
 pub mod logging;
 pub mod mux_mode;
 pub mod pid1;
+pub mod pr_context;
 pub mod protocol;
 pub mod render;
 pub mod runtime_setup;
