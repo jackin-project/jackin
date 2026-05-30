@@ -344,7 +344,7 @@ The canonical RGB values live in the `jackin-tui` crate palette (<RepoFile path=
 **W3C ARIA Tabs pattern** (see `AGENTS.md` → TUI navigation conventions for full spec). Summary:
 
 - Tab bar has its own focus area (`tab_bar_focused: bool` in state).
-- **Tab chrome is shared with the in-container multiplexer status bar** (`jackin-capsule`): inactive tabs render on a dark-grey background (`TAB_BG_INACTIVE`), the active tab lifts to graphite (`TAB_BG_ACTIVE` — never the brand green, so it stays distinct from the ` jackin' ` pill), both with WHITE text and the active tab bold. These backgrounds live in the shared `jackin-tui` crate (`TAB_BG_*`) and are consumed by both the console tab strips (workspace editor, settings) and the multiplexer, so the two surfaces cannot drift.
+- **Tab chrome is shared with the in-container multiplexer status bar** (`jackin-capsule`): inactive tabs render on a dark-grey background (`TAB_BG_INACTIVE`), the active tab lifts to graphite (`TAB_BG_ACTIVE` — never the brand green, so it stays distinct from the ` jackin' ` pill), both with WHITE text and the active tab bold. These backgrounds and the Ratatui renderer live in the shared `jackin-tui` crate (`TAB_BG_*`, `components::TabStrip`) and are consumed by the console tab strips (workspace editor, settings); the multiplexer currently consumes the shared `TabCell` layout through raw ANSI until its Ratatui frame lands.
 - **Tab bar focused**: the active tab additionally shows a WHITE `━` underline bar beneath its label — the keyboard-focus cue.
 - **Content focused** (tab bar not focused): same graphite active tab, no underline bar.
 - `←`/`→` cycle tabs when tab bar is focused.

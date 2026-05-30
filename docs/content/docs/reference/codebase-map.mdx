@@ -167,6 +167,10 @@ The interactive console lives in `src/console/`:
 - <RepoFile path="crates/jackin-tui/src/lookbook.rs" /> — renderable
   component stories used as the source for future docs/SVG preview
   generation.
+- <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" /> —
+  shared Ratatui tab chrome used by the console editor/settings screens;
+  capsule still consumes the shared tab layout model through raw ANSI
+  until its Ratatui frame lands.
 
 Capsule input-mode ownership starts in <RepoFile path="crates/jackin-capsule/src/mux_mode.rs" />,
 and dispatch actions start in <RepoFile path="crates/jackin-capsule/src/action.rs" />; the large

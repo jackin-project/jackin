@@ -13,7 +13,7 @@ use ratatui::{
 
 use crate::components::{
     ButtonStrip, ButtonStripItem, ConfirmState, ErrorPopupState, Panel, PanelFocus,
-    render_confirm_dialog, render_error_dialog,
+    TabStrip, render_confirm_dialog, render_error_dialog,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +59,7 @@ pub fn stories() -> Vec<Story> {
             3,
             story_button_strip,
         ),
+        Story::new("tab-strip/basic", "Tab strip", 54, 2, story_tab_strip),
         Story::new(
             "confirm/default",
             "Confirm dialog",
@@ -123,6 +124,19 @@ fn story_button_strip(frame: &mut Frame<'_>, area: Rect) {
         ButtonStripItem::new("Cancel"),
     ];
     ButtonStrip::new(&items).focused(1).render(frame, inner);
+}
+
+fn story_tab_strip(frame: &mut Frame<'_>, area: Rect) {
+    let labels = [
+        ("General", true),
+        ("Mounts", false),
+        ("Roles", false),
+        ("Secrets", false),
+    ];
+    TabStrip::new(&labels)
+        .focused(true)
+        .hovered(Some(2))
+        .render(frame, area);
 }
 
 fn story_confirm_default(frame: &mut Frame<'_>, area: Rect) {

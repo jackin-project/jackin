@@ -3,8 +3,9 @@
 This inventory tracks repeatable terminal UI patterns, their current owner, call sites, and maturity. New TUI work should name the existing component it uses or add a row before introducing a new repeated pattern.
 
 Renderable component stories live in `crates/jackin-tui/src/lookbook.rs`. The
-first story set covers `Panel`, `ButtonStrip`, `ConfirmDialog`, and `ErrorDialog`
-and gives future docs/SVG generation one source of truth for previews.
+first story set covers `Panel`, `ButtonStrip`, `TabStrip`, `ConfirmDialog`, and
+`ErrorDialog` and gives future docs/SVG generation one source of truth for
+previews.
 
 | Component / pattern | Owner | Current call sites | Maturity | Notes |
 |---|---|---|---|---|
@@ -16,7 +17,7 @@ and gives future docs/SVG generation one source of truth for previews.
 | `TextField` / `TextInput` | `jackin_tui::TextField`, `jackin_tui::components::text_input` | Console text input, launch text prompt, capsule rename dialog model | 3 — shared Ratatui widget | Capsule still uses the shared model through raw ANSI until its Ratatui frame lands. |
 | `ButtonStrip` | `jackin_tui::components::button_strip` | Confirm dialog, confirm-save modal, scope picker, source picker, mount-destination choice, save/discard modal | 3 — shared Ratatui primitive | New button rows should consume this instead of declaring focused/unfocused button styles locally; capsule menus still need the Ratatui migration. |
 | `Panel` | `jackin_tui::components::panel` | Shared scrollable panel | 2 — shared primitive | Dialogs still build blocks directly; migrate them onto `Panel` as their props are normalized. |
-| `TabCell` / tab layout | `jackin_tui` root | Console tab strips, capsule status bar | 2 — shared model | Ratatui `TabStrip` component still needs promotion. |
+| `TabStrip` / `TabCell` | `jackin_tui::components::tab_strip`, `jackin_tui` root | Console editor/settings tab strips, capsule status bar geometry | 3 — shared Ratatui primitive + model | Host uses the Ratatui component; capsule still consumes the shared `TabCell` layout through raw ANSI until its Ratatui frame lands. |
 | `ScrollablePanel` / scroll metrics | `jackin_tui::components::scrollable_panel`, `jackin_tui::scroll` | Console scrollable blocks, launch build-log overlay, capsule scroll math | 3 — shared Ratatui widget + model | Capsule consumes only the scroll math until its Ratatui frame lands. |
 | `ModalOutcome` | `jackin_tui::ModalOutcome` | Console widgets, launch forced-choice prompts | 2 — shared update contract | Event vocabulary is shared; composed modal flows still need one runtime loop per surface. |
 | `ConfirmDialog` | `jackin_tui::components::confirm_dialog` | Console, launch | 3 — shared Ratatui widget | Capsule still redraws confirm actions in raw ANSI until its Ratatui frame lands. |

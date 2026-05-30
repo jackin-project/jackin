@@ -10,6 +10,7 @@ pub mod panel;
 pub mod select_list;
 pub mod scrollable_panel;
 pub mod status_footer;
+pub mod tab_strip;
 pub mod text_input;
 
 pub use brand_header::{BrandHeader, brand_header_line, render_brand_header};
@@ -35,4 +36,5 @@ pub use scrollable_panel::{
     viewport_height, viewport_width,
 };
 pub use status_footer::{StatusFooter, render_status_footer};
+pub use tab_strip::{TabStrip, tab_label_line, tab_underline_line};
 pub use text_input::{BorderStyle, TextInput, TextInputState, render_text_input};

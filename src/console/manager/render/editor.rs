@@ -19,8 +19,8 @@ use super::list::{
     render_mount_header,
 };
 use super::{
-    PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE,
-    TAB_BG_INACTIVE_HOVER, WHITE, footer_height, render_footer, render_header,
+    PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE, footer_height, render_footer,
+    render_header,
 };
 use crate::config::AppConfig;
 use crate::operator_env::EnvValue;
@@ -439,61 +439,10 @@ pub(in crate::console::manager) fn render_tab_strip(
     tab_bar_focused: bool,
     hovered: Option<usize>,
 ) {
-    let mut label_spans: Vec<Span> = Vec::new();
-    // Row 1: underline bar shown only when the tab bar has keyboard focus
-    // so the operator can see which area is active.
-    let mut bar_spans: Vec<Span> = Vec::new();
-
-    for (i, &(label, active)) in labels.iter().enumerate() {
-        let cell_width = label.len() + 2; // " label " padding
-        // Tab chrome mirrors the in-container multiplexer status bar
-        // (jackin-capsule) via the shared jackin-tui palette: inactive cells
-        // sit on dark grey, the active cell lifts to graphite (never the
-        // brand green, so it stays distinct from the ` jackin' ` pill), and
-        // the cell under the pointer lifts one step further (the shared
-        // TAB_BG_*_HOVER). Both surfaces react to hover identically.
-        let bg = match (active, hovered == Some(i)) {
-            (true, true) => TAB_BG_ACTIVE_HOVER,
-            (true, false) => TAB_BG_ACTIVE,
-            (false, true) => TAB_BG_INACTIVE_HOVER,
-            (false, false) => TAB_BG_INACTIVE,
-        };
-        let label_style = if active {
-            Style::default()
-                .bg(bg)
-                .fg(WHITE)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().bg(bg).fg(WHITE)
-        };
-        label_spans.push(Span::styled(format!(" {label} "), label_style));
-        label_spans.push(Span::raw(" "));
-
-        // Underline bar only meaningful when tab bar is focused.
-        if tab_bar_focused {
-            let bar_text = if active {
-                "━".repeat(cell_width)
-            } else {
-                " ".repeat(cell_width)
-            };
-            bar_spans.push(Span::styled(
-                bar_text,
-                if active {
-                    Style::default().fg(WHITE)
-                } else {
-                    Style::default()
-                },
-            ));
-        } else {
-            bar_spans.push(Span::raw(" ".repeat(cell_width)));
-        }
-        bar_spans.push(Span::raw(" "));
-    }
-
-    frame.render_widget(
-        Paragraph::new(vec![Line::from(label_spans), Line::from(bar_spans)]),
-        area,
-    );
+    jackin_tui::components::TabStrip::new(labels)
+        .focused(tab_bar_focused)
+        .hovered(hovered)
+        .render(frame, area);
 }
 
 fn render_general_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>) {

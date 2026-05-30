@@ -32,8 +32,7 @@ pub(super) use crate::console::widgets::scrollable::{
     render_scrollable_block, render_vertical_scrollbar,
 };
 pub(super) use crate::console::widgets::{
-    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER,
-    TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER, WHITE,
+    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 /// Distinct accent for live-state surfaces (instances, sessions).
 /// Cyan contrasts clearly with the phosphor-green config panels.
