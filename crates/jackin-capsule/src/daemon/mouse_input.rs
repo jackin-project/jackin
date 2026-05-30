@@ -1,0 +1,234 @@
+//! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
+
+use super::*;
+
+impl Multiplexer {
+    pub(super) fn set_pointer_shape(&mut self, shape: PointerShape) {
+        if !self.pointer_shapes_supported || self.pointer_shape == shape {
+            return;
+        }
+        self.pointer_shape = shape;
+        self.send_output(osc22_pointer_shape(shape));
+    }
+
+    pub(super) fn update_pointer_shape_for_mouse(&mut self, row: u16, col: u16, button: u8) {
+        if !self.pointer_shapes_supported {
+            return;
+        }
+        let shape = self.pointer_shape_at(row, col, button);
+        self.set_pointer_shape(shape);
+    }
+
+    pub(super) fn update_hover_for_mouse(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        let next = self.hover_target_at(row, col);
+        if self.hover_target == next {
+            return None;
+        }
+        self.hover_target = next;
+        if self.dialog_open() {
+            Some(self.compose_full_frame(FullRedrawReason::DialogChange))
+        } else {
+            Some(self.compose_chrome_hover_frame())
+        }
+    }
+
+    /// Resolve the chrome target a hit at `(row, col)` (0-based)
+    /// would land on, walking dialog → tab strip → menu → branch bar
+    /// in priority order. Both `hover_target_at` and `pointer_shape_at`
+    /// consume this so the priority ordering lives once.
+    pub(super) fn chrome_hit_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
+        if let Some(dialog) = self.dialog_top() {
+            let github = self.github_context_view();
+            return dialog
+                .clickable_at(
+                    row + 1,
+                    col + 1,
+                    self.term_rows,
+                    self.term_cols,
+                    Some(&github),
+                )
+                .then_some(HoverTarget::DialogCopyTarget);
+        }
+        let row_1based = row + 1;
+        let col_1based = col + 1;
+        if row_1based == 1
+            && let Some(tab_idx) = self.status_bar.tab_at_col(col_1based)
+        {
+            return Some(HoverTarget::Tab(tab_idx));
+        }
+        if self.status_bar.hint_at(row_1based, col_1based) {
+            return Some(HoverTarget::Menu);
+        }
+        match branch_context_bar_hit(
+            row_1based,
+            col_1based,
+            self.term_rows,
+            self.term_cols,
+            self.context_bar_branch(),
+            self.pull_request_context.as_deref(),
+            self.pull_request_context_loading(),
+            self.status_bar.instance_id_label(),
+        ) {
+            Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
+            Some(BranchContextBarHit::Container) => Some(HoverTarget::Container),
+            None => None,
+        }
+    }
+
+    pub(super) fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
+        if self.drag.is_some() || self.selection.is_some() {
+            return None;
+        }
+        self.chrome_hit_target_at(row, col)
+    }
+
+    pub(super) fn pointer_shape_at(&self, row: u16, col: u16, button: u8) -> PointerShape {
+        if self.drag.is_some() {
+            return PointerShape::Grabbing;
+        }
+        if self.selection.is_some() {
+            return PointerShape::Text;
+        }
+        match self.chrome_hit_target_at(row, col) {
+            Some(HoverTarget::DialogCopyTarget) => return PointerShape::Pointer,
+            // Non-clickable dialog interior still pins the pointer to the
+            // default cursor — the dialog "captures" pointer state.
+            None if self.dialog_top().is_some() => return PointerShape::Default,
+            Some(_) => return PointerShape::Pointer,
+            None => {}
+        }
+        if let Some(drag) = self.detect_drag_start(row, col) {
+            return match drag.orient {
+                SplitOrient::Horizontal => PointerShape::EwResize,
+                SplitOrient::Vertical => PointerShape::NsResize,
+            };
+        }
+        if button == SGR_NO_BUTTON_MOTION && self.detect_selection_start(row, col).is_some() {
+            return PointerShape::Text;
+        }
+        PointerShape::Default
+    }
+
+    pub(super) fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) -> bool {
+        self.forward_mouse_to_focused_pane_with_kind(col, row, button, true)
+    }
+
+    /// Re-encode an SGR mouse event in the focused pane's local
+    /// coordinate space and forward to its PTY. `press = true` emits
+    /// the `M` final, `false` emits `m` (release). Forwarding is
+    /// gated by the focused pane's requested mouse mode so shells and
+    /// pre-mount agents never see raw mouse bytes leak out as
+    /// command-line garbage, and press-only panes do not receive
+    /// motion events from the multiplexer's always-on outer tracking.
+    pub(super) fn forward_mouse_to_focused_pane_with_kind(
+        &mut self,
+        col: u16,
+        row: u16,
+        button: u8,
+        press: bool,
+    ) -> bool {
+        let Some(focused) = self.active_focused_id() else {
+            return false;
+        };
+        let Some(session) = self.sessions.get(&focused) else {
+            return false;
+        };
+        let Some(encoding) = mouse_event_encoding_for_session(session, button, press) else {
+            return false;
+        };
+        let Some(inner) = self.active_focused_inner_rect() else {
+            return false;
+        };
+        if row < inner.row || row >= inner.row + inner.rows {
+            return false;
+        }
+        if col < inner.col || col >= inner.col + inner.cols {
+            return false;
+        }
+        let local_row = row - inner.row;
+        let local_col = col - inner.col;
+        let Some(buf) =
+            encode_mouse_for_protocol(button, local_col + 1, local_row + 1, press, encoding)
+        else {
+            return false;
+        };
+        session.send_input(&buf);
+        true
+    }
+
+    /// Test whether the click at `(row, col)` lands inside the inner
+    /// content area of a pane whose program never opted into a
+    /// mouse protocol. If so, this is the start of a text selection
+    /// (zellij-style "drag in shell pane → copy to clipboard").
+    pub(super) fn detect_selection_start(&self, row: u16, col: u16) -> Option<SelectionState> {
+        if row < STATUS_BAR_ROWS {
+            return None;
+        }
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let (id, outer) = if let Some(zoom_id) = self.active_zoomed_id() {
+            (zoom_id, content_rect)
+        } else {
+            let tab = self.tabs.get(self.active_tab)?;
+            tab.tree.leaves(content_rect).into_iter().find(|(_, r)| {
+                row >= r.row && row < r.row + r.rows && col >= r.col && col < r.col + r.cols
+            })?
+        };
+        let inner = outer.shrink(1);
+        if row < inner.row
+            || row >= inner.row + inner.rows
+            || col < inner.col
+            || col >= inner.col + inner.cols
+        {
+            return None;
+        }
+        let session = self.sessions.get(&id)?;
+        if session.mouse_enabled() {
+            // Pane's program wants the mouse — defer to PTY forward.
+            return None;
+        }
+        let anchor_row = row - inner.row;
+        let anchor_col = col - inner.col;
+        Some(SelectionState {
+            session_id: id,
+            inner,
+            anchor_row,
+            anchor_col,
+            end_row: anchor_row,
+            end_col: anchor_col,
+        })
+    }
+
+    /// Update the active selection's end-cell to the new motion
+    /// position. Clamps to the inner pane rect so a drag that leaves
+    /// the pane still produces a reasonable highlight.
+    pub(super) fn selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        let sel = self.selection.as_mut()?;
+        let inner = sel.inner;
+        let clamped_row = row.clamp(inner.row, inner.row + inner.rows.saturating_sub(1));
+        let clamped_col = col.clamp(inner.col, inner.col + inner.cols.saturating_sub(1));
+        sel.end_row = clamped_row - inner.row;
+        sel.end_col = clamped_col - inner.col;
+        Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
+    }
+
+    /// Commit the active selection: extract the selected text from
+    /// the source session's `vt100` grid, emit OSC 52 to the
+    /// attached client (which the outer terminal turns into a
+    /// real clipboard write), and clear the highlight.
+    pub(super) fn finalize_selection(&mut self) -> Option<Vec<u8>> {
+        let sel = self.selection.take()?;
+        // Suppress single-cell selections: a click-to-focus with no
+        // drag motion lands anchor==end and would otherwise OSC 52
+        // whatever character sat under the cursor — a silent host-
+        // clipboard overwrite on every focus click.
+        let dragged = sel.anchor_row != sel.end_row || sel.anchor_col != sel.end_col;
+        if dragged && let Some(session) = self.sessions.get(&sel.session_id) {
+            let text = selection_text(session.screen(), &sel);
+            if !text.is_empty() && self.attached_out.is_some() {
+                let bytes = encode_osc52_clipboard_write(&text);
+                self.send_output(bytes);
+            }
+        }
+        Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
+    }
+}
