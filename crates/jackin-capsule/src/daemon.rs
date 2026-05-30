@@ -89,6 +89,7 @@ mod context_mgmt;
 mod dialog_mgmt;
 mod input_dispatch;
 mod mouse_input;
+mod multiplexer_utils;
 mod pane_layout;
 mod session_lifecycle;
 
@@ -550,137 +551,6 @@ impl Multiplexer {
         self.send_to_client(ServerFrame::Output(bytes));
     }
 
-    fn env_for_spawn(&self, overrides: &[(String, String)]) -> Vec<(String, String)> {
-        let mut env = self.env_passthrough.clone();
-        for (key, value) in overrides {
-            if !SESSION_ENV_PASSTHROUGH.iter().any(|allowed| allowed == key) {
-                crate::clog!("spawn env: rejected non-allowlisted key {key:?}");
-                continue;
-            }
-            if let Some((_, existing)) =
-                env.iter_mut().find(|(existing_key, _)| existing_key == key)
-            {
-                *existing = value.clone();
-            } else {
-                env.push((key.clone(), value.clone()));
-            }
-        }
-        env
-    }
-
-    fn palette_close_label(&self) -> PaletteCloseLabel {
-        if self.active_tab_pane_count() == 1 {
-            PaletteCloseLabel::CloseTab
-        } else {
-            PaletteCloseLabel::ChooseTarget
-        }
-    }
-
-    fn open_command_palette(&mut self) {
-        let close_label = self.palette_close_label();
-        self.dialog_push(Dialog::new_command_palette(close_label));
-    }
-
-    fn model_for_agent(&self, agent: &str) -> Option<&str> {
-        self.launch_config.model_for_agent(agent)
-    }
-
-    /// Providers selectable for `agent`. An empty vec means only the
-    /// default provider is available and no picker step is needed; a
-    /// non-empty vec always has 2+ entries (enforced by the catalog).
-    fn providers_for_agent(&self, agent: Option<&str>) -> Vec<jackin_protocol::Provider> {
-        jackin_protocol::Provider::available_for(agent.unwrap_or_default(), self.zai_key.is_some())
-    }
-
-    /// Bound the per-container surface for any path that allocates a
-    /// new PTY (top-level spawn, split, etc.). All such paths must
-    /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced
-    /// uniformly — runaway-mis-click defence. `add_tab=true` enforces
-    /// both caps; `add_tab=false` enforces only `MAX_SESSIONS` because
-    /// the caller is reusing an existing tab.
-    fn ensure_capacity_for_new_session(&self, add_tab: bool) -> Result<()> {
-        if add_tab && self.tabs.len() >= MAX_TABS {
-            anyhow::bail!("tab limit reached ({MAX_TABS}); close one before spawning another");
-        }
-        if self.sessions.len() >= MAX_SESSIONS {
-            anyhow::bail!(
-                "pane limit reached ({MAX_SESSIONS}); close some panes before opening more"
-            );
-        }
-        Ok(())
-    }
-
-    /// True when there are no sessions left.
-    /// `sessions.is_empty()` covers the operator-explicitly-killed-all
-    /// case; `all !alive` covers the natural-exit case (every agent /
-    /// shell process closed its PTY).
-    fn no_live_sessions(&self) -> bool {
-        self.sessions.is_empty()
-    }
-
-    fn request_full_redraw(&mut self, reason: FullRedrawReason) {
-        self.pending_full_redraw = Some(reason);
-        self.dirty_panes.clear();
-    }
-
-    fn has_pending_render(&self) -> bool {
-        self.pending_full_redraw.is_some() || !self.dirty_panes.is_empty()
-    }
-
-    fn session_infos(&self) -> Vec<SessionInfo> {
-        let focused = self.active_focused_id();
-        self.sessions
-            .iter()
-            .map(|(&id, s)| SessionInfo {
-                id,
-                label: s.label.clone(),
-                agent: s.agent.clone(),
-                state: s.state,
-                active: Some(id) == focused,
-            })
-            .collect()
-    }
-
-    /// Build a tab/pane tree snapshot for the host console's preview
-    /// pane. The leaf order matches `PaneTree::leaves` so the operator
-    /// sees panes in the same left-to-right / top-to-bottom order the
-    /// multiplexer renders. Missing sessions (race against a kill)
-    /// fall back to a placeholder so the snapshot still covers every
-    /// leaf the tree references — the host UI can dim those rows.
-    fn tab_snapshots(&self) -> Vec<crate::protocol::control::TabSnapshot> {
-        use crate::layout::Rect;
-        use crate::protocol::control::{PaneSnapshot, TabSnapshot};
-        let placeholder_rect = Rect::new(0, 0, self.term_rows, self.term_cols);
-        self.tabs
-            .iter()
-            .map(|tab| {
-                let panes = tab
-                    .tree
-                    .leaves(placeholder_rect)
-                    .into_iter()
-                    .map(|(id, _)| match self.sessions.get(&id) {
-                        Some(session) => PaneSnapshot {
-                            session_id: id,
-                            label: session.label.clone(),
-                            agent: session.agent.clone(),
-                            state: session.state,
-                        },
-                        None => PaneSnapshot {
-                            session_id: id,
-                            label: "(missing)".to_string(),
-                            agent: None,
-                            state: crate::protocol::control::AgentState::Idle,
-                        },
-                    })
-                    .collect();
-                TabSnapshot {
-                    label: tab.label_owned(),
-                    focused_pane: tab.focused_id,
-                    panes,
-                }
-            })
-            .collect()
-    }
 }
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
