@@ -7,6 +7,7 @@ pub mod error_dialog;
 pub mod filter_input;
 pub mod hint_bar;
 pub mod panel;
+pub mod save_discard_dialog;
 pub mod select_list;
 pub mod scrollable_panel;
 pub mod status_footer;
@@ -25,6 +26,9 @@ pub use hint_bar::{
     HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, wrapped_height,
 };
 pub use panel::{Panel, PanelFocus};
+pub use save_discard_dialog::{
+    SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState, render_save_discard_dialog,
+};
 pub use select_list::{SelectList, SelectListState, render_select_list};
 pub use scrollable_panel::{
     apply_scroll_delta, apply_scroll_delta_unclamped, apply_term_width_scroll_delta,

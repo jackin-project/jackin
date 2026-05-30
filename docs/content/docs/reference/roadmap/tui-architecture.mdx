@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus a small `Dirty` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components, host list navigation/tree/preview/editor/settings-tab state, mouse list/tab/content-row selection, editor cursor/scroll/auth-kind/header/toggle state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and generated docs/SVG lookbook output remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus dirty-exit dialog and a small `Dirty` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components, host list navigation/tree/preview/editor/settings-tab state, mouse list/tab/content-row selection, editor cursor/scroll/auth-kind/header/toggle state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and generated docs/SVG lookbook output remain open.
 
 ## Goal
 
@@ -691,7 +691,7 @@ The audit's patterns, grouped by atomic layer. This is the seed inventory the lo
 | `FilterListPicker` | filter + list pick | filter row 0, spacer, items 2+; box `items + 4` | host <RepoFile path="src/console/widgets/role_picker.rs" /> + launch `select_list` + capsule palette / agent / split pickers — many impls |
 | `ErrorPopup` | the only error surface | red border + title; scrollable; dismissible | host and launch share <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" />; capsule has none |
 | `ConfirmSaveDialog` | diff-preview save | scrollable diff; default focus Save | host only |
-| `SaveDiscardStrip` | 3-button dirty-exit | standard strip; default Cancel | host <RepoFile path="src/console/widgets/save_discard.rs" /> (re-declares palette locally — intra-host drift) |
+| `SaveDiscardStrip` | 3-button dirty-exit | standard strip; default Cancel | shared <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> with host facade <RepoFile path="src/console/widgets/save_discard.rs" /> |
 | `TextInputDialog` | modal text entry | 60% width clamp `[40,100]`, 5 rows | **already shared** via `render_text_input_dialog` in <RepoFile path="crates/jackin-tui/src/lib.rs" /> |
 | `InfoDialog` | read-only label/value | right-aligned labels; copy-target row emphasized + hover lift; `✓ Copied!` | capsule container-info / github-context in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> |
 
