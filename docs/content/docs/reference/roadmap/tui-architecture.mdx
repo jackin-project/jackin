@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals, and the capsule dispatch layer has an initial `MuxMode` boundary. Host `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and the lookbook remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and the lookbook remain open.
 
 ## Goal
 
@@ -397,7 +397,7 @@ The in-container control plane (the [jackin' Capsule](/reference/roadmap/jackin-
 6. **No tests** for `handle_input` dispatch, `apply_dialog_action`, the dialog `handle_key`/`handle_click`, the drag/selection state machines, or the compositor. The parser, protocol, and `render_pane` are tested in isolation; the daemon's decision layer is not.
 
 <Aside type="note">
-The capsule already has one piece of the target in place: `Dialog::handle_key`/`handle_click` return a `DialogAction` enum (`Command`, `SpawnAgent`, `RenameTab`, `Dismiss`, …) rather than mutating state directly. That is exactly the `Action` pattern this item generalizes to the whole dispatch layer.
+The capsule now has the first pieces of the target in place: `Dialog::handle_key`/`handle_click` return a `DialogAction` enum (`Command`, `SpawnAgent`, `RenameTab`, `Dismiss`, …), and <RepoFile path="crates/jackin-capsule/src/action.rs" /> starts the daemon-wide `Action` wrapper for palette, prefix, resize, and dialog actions. The remaining work is routing every dispatch arm through that boundary instead of mutating state inline.
 </Aside>
 
 ## Current state — the console → launch → container flow
@@ -500,7 +500,7 @@ The practical test is simple: while a long image build, instance refresh, git/PR
 
 | Ratatui best practice | Host console today | `jackin-capsule` today |
 |---|---|---|
-| `Message`/`Action` enum, central `update` | Absent — inline mutation in handlers | Partial — `DialogAction` exists; dispatch layer still mutates inline |
+| `Message`/`Action` enum, central `update` | Absent — inline mutation in handlers | Partial — `Action` wraps dialog/prefix/palette/resize paths; many mouse/data/session arms still mutate inline |
 | Pure `view` (no `&mut`, no I/O) | Violated — `&mut state`, scroll-clamp + FS reads in draw | Violated — render writes ANSI + diffs in the compose path on the loop |
 | State decomposed (domain / UI / ephemeral) | Violated — god-structs mix all three | Violated — one `Multiplexer` god-struct |
 | Reusable `StatefulWidget` components | Absent — free `fn(frame, &mut state)` | Absent — raw ANSI free functions |

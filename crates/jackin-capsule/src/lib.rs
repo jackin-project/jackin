@@ -1,6 +1,7 @@
 /// Library target so integration tests under `tests/` can exercise
 /// the protocol, prefix-key parser, VT round-trips, and status bar
 /// without spawning a PTY.
+pub mod action;
 pub mod client;
 pub mod config;
 pub mod daemon;

@@ -162,9 +162,10 @@ The interactive console lives in `src/console/`:
   <RepoFile path="crates/jackin-tui/src/components.rs" /> and are tracked in
   <RepoFile path="crates/jackin-tui/COMPONENTS.md" />.
 
-Capsule input-mode ownership starts in <RepoFile path="crates/jackin-capsule/src/mux_mode.rs" />;
-the large <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> file still owns most dispatch and
-rendering while the TUI architecture split proceeds.
+Capsule input-mode ownership starts in <RepoFile path="crates/jackin-capsule/src/mux_mode.rs" />,
+and dispatch actions start in <RepoFile path="crates/jackin-capsule/src/action.rs" />; the large
+<RepoFile path="crates/jackin-capsule/src/daemon.rs" /> file still owns most dispatch and rendering
+while the TUI architecture split proceeds.
 
 General terminal-UI helpers (palette, intro/outro animation, prompt
 helpers) are split out into `src/tui/`.

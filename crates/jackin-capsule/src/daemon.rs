@@ -34,6 +34,7 @@ use tokio::time::{Duration, interval};
 use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 use portable_pty::CommandBuilder;
 
+use crate::action::Action;
 use crate::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
     PickerIntent, PullRequestStatus, SplitDirection,
@@ -1715,6 +1716,36 @@ impl Multiplexer {
         self.compose_full_frame(FullRedrawReason::DialogChange)
     }
 
+    fn apply_action(&mut self, action: Action) -> Option<Vec<u8>> {
+        match action {
+            Action::OpenPalette => {
+                self.cancel_drag();
+                if self.dialog_open() {
+                    self.dialog_clear();
+                } else {
+                    self.open_command_palette();
+                }
+                Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
+            }
+            Action::Prefix(cmd) => {
+                if self.dialog_captures_input() {
+                    None
+                } else {
+                    self.handle_prefix_command(cmd)
+                }
+            }
+            Action::ResizePane(dir) => {
+                if self.dialog_captures_input() {
+                    None
+                } else {
+                    self.resize_focused(dir);
+                    Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+                }
+            }
+            Action::Dialog(action) => Some(self.apply_dialog_action(action)),
+        }
+    }
+
     /// Single dispatch point for `DialogAction::SpawnAgent`. Spawn
     /// failures (PTY allocation, missing agent binary, cap hit) are
     /// clog'd with their intent and agent label so a `jackin load
@@ -2321,33 +2352,16 @@ impl Multiplexer {
         }
         match event {
             InputEvent::OpenPalette => {
-                // Toggle: opening the palette key while any dialog is
-                // already on the stack closes the whole flow (faster
-                // than walking back with Esc). Operator opens fresh
-                // when the stack was empty.
-                self.cancel_drag();
-                if self.dialog_captures_input() {
-                    self.dialog_clear();
-                } else {
-                    self.open_command_palette();
-                }
-                Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
+                self.apply_action(Action::OpenPalette)
             }
             InputEvent::PrefixCommand(cmd) => {
                 // While a dialog is open the prefix gesture's payload
                 // must not reach the focused pane — operator's intent
                 // is to act on the dialog, not the agent underneath.
-                if self.dialog_captures_input() {
-                    return None;
-                }
-                self.handle_prefix_command(cmd)
+                self.apply_action(Action::Prefix(cmd))
             }
             InputEvent::ResizePane(dir) => {
-                if self.dialog_captures_input() {
-                    return None;
-                }
-                self.resize_focused(dir);
-                Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+                self.apply_action(Action::ResizePane(dir))
             }
             InputEvent::FocusIn | InputEvent::FocusOut => {
                 // Forward only when the focused agent actually
@@ -2392,7 +2406,7 @@ impl Multiplexer {
                         dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
                     })
                     .expect("dialog presence checked");
-                Some(self.apply_dialog_action(action))
+                self.apply_action(Action::Dialog(action))
             }
             InputEvent::MousePress { .. } if self.dialog_captures_input() => {
                 // Any non-wheel mouse event with the dialog up that
@@ -2634,7 +2648,7 @@ impl Multiplexer {
                 if let Some(action) =
                     self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
                 {
-                    Some(self.apply_dialog_action(action))
+                    self.apply_action(Action::Dialog(action))
                 } else {
                     // Any keyboard input from the operator returns the
                     // focused pane to the live tail. Matches the
