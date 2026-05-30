@@ -53,23 +53,48 @@ The connective tissue across all four is the shared design-component crate (`jac
 
 ## Rust engineering practices this refactor must follow
 
-The architecture above is only as strong as the Rust it is written in, so this item is explicit about the idioms every phase is reviewed against — "restructure for readability" then has a concrete standard, not a taste argument. These extend, and never weaken, the repo-wide rules in <RepoFile path="AGENTS.md" /> (DRY / reuse-before-writing, prefer maintained crates over hand-rolled parsers and format handlers, comment only the non-obvious *why*).
+The architecture above is only as strong as the Rust it is written in, so this item is explicit about the idioms every phase is reviewed against — "restructure for readability" then has a concrete standard, not a taste argument. These mirror the project's Rust-best-practices guidance and extend, never weaken, the repo-wide rules in <RepoFile path="AGENTS.md" /> (DRY / reuse-before-writing, prefer maintained crates over hand-rolled parsers and format handlers, comment only the non-obvious *why*). They are grouped so a reviewer can scan by concern.
 
-- **Make illegal states unrepresentable.** Boolean soup becomes enums: the capsule's scattered `dialog_open()` / `drag.is_some()` / `selection.is_some()` checks collapse into one `MuxMode`; the host's three coexisting modal shapes converge on a single `Vec<Modal>`; focus is one `Focus` enum, not several parallel `bool`s. If two fields can never be true at once, they are one enum.
+**Ownership & allocation**
+
+- **Borrow by default; own only when you keep it.** Take `&str` over `String`, `&[T]` over `Vec<T>`, `&Path` over `PathBuf`, and `Option<&T>` over `&Option<T>`. Take ownership only when the function stores, moves, or sends the value — let the caller decide where a clone happens.
+- **`.clone()` is a design decision, not a borrow-checker escape.** The pure view takes `&Model` / `&UiState` and builds from borrowed data; avoid per-frame `String` / `Vec` / `Span` churn. Use `Cow<'_, str>` and pre-derived rows where a clone is otherwise implied every draw — the current host renderers rebuild picker `ListItem` vectors and mount-row `format!` chains on every frame, which is exactly what this removes.
+- **No needless intermediates, but clarity wins over cleverness.** Skip throwaway `Vec` / `String` allocations where an iterator, slice, or borrowed view is enough; but prefer plain control flow over a combinator chain that hides branching, errors, ownership, or side effects.
+
+**Type-driven design — make illegal states unrepresentable**
+
+- **Enums over boolean soup.** The capsule's scattered `dialog_open()` / `drag.is_some()` / `selection.is_some()` checks collapse into one `MuxMode`; the host's three coexisting modal shapes converge on a single `Vec<Modal>`; focus is one `Focus` enum. If two fields can never be true at once, they are one enum.
 - **Newtypes over primitive obsession.** Typed ids — `ComponentId`, `SessionId`, `PaneId`, and a `Generation` / `RequestId` for cancellation — replace bare `u64` / `usize`, so a stale background result cannot mutate a newer screen and a pane id cannot be passed where a session id is expected.
-- **Errors are values; the loop never panics.** Component and effect APIs return `Result` with `thiserror`-typed errors, and background failures arrive as typed `Message`s routed to the one shared error component. No `unwrap` / `expect` / `panic!` / `todo!` on any render, update, or effect path; `clippy::unwrap_used` is denied for the TUI crates.
-- **Traits define the seams.** Components implement `StatefulWidget` plus a small `Component` trait (`update` / `handle_event` / `render`) so the renderer, the wider ecosystem, and the [Ratatui component template](https://ratatui.rs/templates/component/project-structure/) all recognize the shape. Prefer generics with trait bounds for zero-cost reuse (`FilterListPicker<T>`); reach for `dyn` only where heterogeneity is real, such as the modal stack.
-- **Borrow, don't clone, on the hot path.** The pure view takes `&Model` / `&UiState` and builds from borrowed data; avoid per-frame `String` / `Vec` / `Span` churn. Use `Cow<'_, str>` and pre-derived rows where a clone is otherwise implied on every draw — the current host renderers rebuild picker `ListItem` vectors and mount-row `format!` chains every frame, which is exactly what this rule removes.
-- **Narrow the public surface.** `pub(crate)` is the default; only the design crate's component contract is `pub`. This dovetails with [pub(crate) visibility](/reference/roadmap/pub-crate-visibility/) and keeps the shared crate's API small and intentional.
-- **Props are data with `Default` and builders.** Component `Props` structs implement `Default` and are populated by a builder or struct-update syntax, so a call site sets only what differs — no eight-positional-argument render functions.
-- **Reuse the canonical crate; never re-implement what a crate already owns.** Per <RepoFile path="AGENTS.md" />, the capsule's hand-rolled `PaneBodyCache` row diff re-implements `ratatui::buffer::Buffer::diff` and is deleted in favor of it; scroll math already moved behind `tui-scrollbar` (the merged <RepoFile path="crates/jackin-tui/src/scroll.rs" /> wraps it) and that is the model — wrap the maintained crate, do not hand-roll the math. Text input consolidates on the in-house `TextField` and drops the pre-1.0 `ratatui-textarea`.
-- **Structured concurrency and explicit cancellation.** One runtime; effects are spawned tasks that carry a cancellation handle or generation id; a `tokio::select!` cancellation branch beats ad-hoc "is this result still relevant?" checks. No mutex is held across an `.await`, and no code path builds a nested runtime to run a single future (see the [performance anti-pattern table](#async-anti-patterns-the-grounding-pass-found)).
-- **`#[must_use]` on outcome and effect types** so an emitted `Effect` or a `ModalOutcome` cannot be silently dropped.
-- **Module docs and intent comments.** Each promoted module opens with a `//!` line stating its one responsibility; public components carry `///` docs whose usage example doubles as a doctest. Inline comments follow the repo rule — name the non-obvious constraint, never narrate the code.
-- **Lints are CI-enforced, not review-enforced.** `cargo clippy` (pedantic where practical), `cargo fmt --check`, and the no-panic lints run in CI for the TUI crates, so these practices are mechanical rather than dependent on a reviewer remembering them.
-- **Tests ship with the component.** No component becomes canonical without `TestBackend` snapshot renders of every state and unit tests that drive `update` from messages — the replay-by-construction property the runtime section depends on.
+- **Props are validated data with `Default` + builders.** Component `Props` structs implement `Default` and are populated by a builder or struct-update syntax, so a call site sets only what differs — no eight-positional-argument render functions.
+- **Implement the common traits where they carry meaning** — `Debug`, `Clone`, `Default`, `Display`, `Error`, `From` / `TryFrom`, `AsRef` — and follow the `as_` / `to_` / `into_` conversion conventions.
 
-This list is the review checklist for every phase below; a phase that lands code violating one of these without a written exception is incomplete. The operator may extend it with further concrete examples — fold each into the matching bullet (or add a new one) with a one-line rationale so this stays the single checklist.
+**Errors & panics**
+
+- **`Result` for expected failure, `Option` only for detail-free absence.** The shared `jackin-tui` crate exposes typed (`thiserror`) errors; `anyhow`-style errors stay at the binary / app boundary — the `jackin` and `jackin-capsule` mains and the CLI dispatch. Propagate with `?`, adding context at IO / socket / subprocess / parse boundaries; background failures become typed `Message`s routed to the one shared error component.
+- **The loop never panics.** No `unwrap` / `expect` / `panic!` / `todo!` on any render, update, or effect path. Reserve them for tests and genuinely-unreachable invariants, and only with a precise `expect` message. Public component and effect APIs document `# Errors` (and `# Panics` / `# Safety` where relevant).
+
+**API design & boundaries — the `jackin-tui` surface**
+
+- **Narrow the public surface.** `pub(crate)` is the default; the only stable `pub` API is the design crate's component contract. Keep struct fields private unless the representation is part of the contract, and use sealed traits where a downstream impl would freeze future evolution. Dovetails with [pub(crate) visibility](/reference/roadmap/pub-crate-visibility/).
+- **No accidental compatibility commitments.** No public dependencies, re-exports, blanket generic impls, or `serde` derives on the shared crate unless they are intentional and documented as stable.
+- **Traits define the seams.** Components implement `StatefulWidget` plus a small `Component` trait (`update` / `handle_event` / `render`) so the renderer, the wider ecosystem, and the [Ratatui component template](https://ratatui.rs/templates/component/project-structure/) all recognize the shape. Prefer generics with bounds for zero-cost reuse (`FilterListPicker<T>`); reach for `dyn` only where heterogeneity is real, such as the modal stack. `#[must_use]` on `Effect` / `Outcome` types so a side-effect request cannot be silently dropped.
+- **Reuse the canonical crate; never re-implement what one owns.** Per <RepoFile path="AGENTS.md" />, the capsule's hand-rolled `PaneBodyCache` row diff re-implements `ratatui::buffer::Buffer::diff` and is deleted in favor of it; scroll math already moved behind `tui-scrollbar` (the merged <RepoFile path="crates/jackin-tui/src/scroll.rs" /> wraps it) and is the model to follow; text input consolidates on the in-house `TextField`, dropping the pre-1.0 `ratatui-textarea`.
+
+**Concurrency**
+
+- **One runtime, explicit cancellation.** Effects are spawned tasks that carry a cancellation handle or generation id; a `tokio::select!` cancellation branch beats ad-hoc "is this result still relevant?" checks. No mutex is held across an `.await`, and no code path builds a nested runtime to run a single future (see the [performance anti-patterns](#async-anti-patterns-the-grounding-pass-found)).
+
+**Tests & documentation**
+
+- **Tests ship with the component, at the stable boundary.** No component is canonical without `TestBackend` snapshot renders of every state and unit tests that drive `update` from messages — behavior tests at the boundary, not tests that freeze incidental helper signatures. Snapshots stay deterministic and redacted.
+- **Docs that stay true.** Doc-test examples on public components propagate with `?`, not `unwrap`. Each promoted module opens with a `//!` line stating its one responsibility; public items carry `///` docs. Comments name the non-obvious *why* — invariant, ordering, platform quirk — never narrate the code (repo rule).
+
+**Lints & suppression**
+
+- **Clippy as a design-review assistant, enforced in CI, not by reviewers' memory.** CI runs `cargo fmt --check` and `cargo clippy --all-targets --all-features -- -D warnings`. Fix a warning before suppressing it; a justified suppression uses `#[expect(clippy::lint_name, reason = "…")]` so it is flagged when it goes stale.
+- **No blanket strictness on the reusable crate.** Do not enable the `restriction` / `pedantic` / `nursery` groups wholesale, and do not add crate-level `#![deny(warnings)]` to `jackin-tui` — a future compiler warning must not break the library build. Apply strict lints selectively: the "loop never panics" rule is enforced by selectively denying the unwrap / panic lints in the TUI crates via the CI flag, not by a blanket group.
+
+This grouped checklist is the review standard for every phase below; a phase that lands code violating a rule without an `#[expect]`-style documented exception is incomplete.
 
 ## Product goal — component library first
 
