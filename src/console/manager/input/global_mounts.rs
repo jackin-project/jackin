@@ -80,10 +80,9 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         _ => {}
     }
 
-    let ManagerStage::Settings(settings) = &mut state.stage else {
+    let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
-
     match key.code {
         // Right on an Environments role header expands it; Right elsewhere is
         // intra-area and must not cycle tabs.
@@ -93,7 +92,13 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 rows.get(settings.env.selected).cloned()
                 && !expanded
             {
-                settings.env.expanded.insert(role);
+                dispatch_manager(
+                    state,
+                    ManagerMessage::SetSettingsEnvRoleExpanded {
+                        role,
+                        expanded: true,
+                    },
+                );
             }
             return;
         }
@@ -104,7 +109,13 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 rows.get(settings.env.selected).cloned()
                 && expanded
             {
-                settings.env.expanded.remove(&role);
+                dispatch_manager(
+                    state,
+                    ManagerMessage::SetSettingsEnvRoleExpanded {
+                        role,
+                        expanded: false,
+                    },
+                );
             }
             return;
         }
@@ -189,6 +200,10 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             );
             return;
         }
+        KeyCode::Char('r' | 'R') => {
+            dispatch_manager(state, ManagerMessage::ToggleSettingsGlobalMountReadonly);
+            return;
+        }
         _ => {}
     }
 
@@ -215,11 +230,6 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         // can receive all of `settings` without conflicting with the `global` borrow.
         KeyCode::Char('d' | 'D') if !global.pending.is_empty() => {
             global.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
-        }
-        KeyCode::Char('r' | 'R') => {
-            if let Some(row) = global.pending.get_mut(global.selected) {
-                row.mount.readonly = !row.mount.readonly;
-            }
         }
         KeyCode::Char('o' | 'O') => {
             if let Some(row) = global.pending.get(global.selected) {
@@ -1016,25 +1026,22 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             );
             return;
         }
+        KeyCode::Char(' ') => {
+            dispatch_manager(state, ManagerMessage::ToggleSettingsTrustSelected);
+            return;
+        }
         _ => {}
     }
 
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let trust = &mut settings.trust;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
             if settings.is_dirty() {
                 settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
             } else {
                 state.stage = ManagerStage::List;
-            }
-        }
-        // Space is the W3C toggle key (checkbox/switch pattern). Enter is for actions.
-        KeyCode::Char(' ') => {
-            if let Some(row) = trust.pending.get_mut(trust.selected) {
-                row.trusted = !row.trusted;
             }
         }
         KeyCode::Char('s' | 'S') => {

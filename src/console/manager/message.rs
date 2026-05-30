@@ -84,6 +84,10 @@ pub enum ManagerMessage {
     MoveSettingsAuthSelection {
         delta: isize,
     },
+    SetSettingsEnvRoleExpanded {
+        role: String,
+        expanded: bool,
+    },
     SetEditorAuthRoleExpanded {
         role: String,
         expanded: bool,
@@ -92,7 +96,9 @@ pub enum ManagerMessage {
         role: String,
         expanded: bool,
     },
+    ToggleSettingsGlobalMountReadonly,
     ToggleSettingsGeneralSelected,
+    ToggleSettingsTrustSelected,
     MoveListSelection(isize),
     MovePreviewPane {
         container: String,
@@ -172,13 +178,20 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         ManagerMessage::MoveSettingsAuthSelection { delta } => {
             move_settings_auth_selection(state, delta);
         }
+        ManagerMessage::SetSettingsEnvRoleExpanded { role, expanded } => {
+            set_settings_env_role_expanded(state, role, expanded);
+        }
         ManagerMessage::SetEditorAuthRoleExpanded { role, expanded } => {
             set_editor_auth_role_expanded(state, role, expanded);
         }
         ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded } => {
             set_editor_secrets_role_expanded(state, role, expanded);
         }
+        ManagerMessage::ToggleSettingsGlobalMountReadonly => {
+            toggle_settings_global_mount_readonly(state);
+        }
         ManagerMessage::ToggleSettingsGeneralSelected => toggle_settings_general_selected(state),
+        ManagerMessage::ToggleSettingsTrustSelected => toggle_settings_trust_selected(state),
         ManagerMessage::MoveListSelection(delta) => move_list_selection(state, delta),
         ManagerMessage::MovePreviewPane { container, delta } => {
             move_preview_pane(state, &container, delta);
@@ -377,6 +390,35 @@ fn set_editor_secrets_role_expanded(state: &mut ManagerState<'_>, role: String, 
         editor.secrets_expanded.insert(role);
     } else {
         editor.secrets_expanded.remove(&role);
+    }
+}
+
+fn set_settings_env_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    if expanded {
+        settings.env.expanded.insert(role);
+    } else {
+        settings.env.expanded.remove(&role);
+    }
+}
+
+fn toggle_settings_global_mount_readonly(state: &mut ManagerState<'_>) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    if let Some(row) = settings.mounts.pending.get_mut(settings.mounts.selected) {
+        row.mount.readonly = !row.mount.readonly;
+    }
+}
+
+fn toggle_settings_trust_selected(state: &mut ManagerState<'_>) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    if let Some(row) = settings.trust.pending.get_mut(settings.trust.selected) {
+        row.trusted = !row.trusted;
     }
 }
 
@@ -1134,6 +1176,67 @@ mod tests {
             panic!("expected settings stage");
         };
         assert_eq!(settings.env.selected, 3);
+    }
+
+    #[test]
+    fn settings_env_role_header_message_sets_expansion() {
+        let mut state = state_with_saved_count(0);
+        state.stage =
+            ManagerStage::Settings(SettingsState::from_config(&crate::config::AppConfig::default()));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::SetSettingsEnvRoleExpanded {
+                    role: "smith".into(),
+                    expanded: true,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(settings.env.expanded.contains("smith"));
+    }
+
+    #[test]
+    fn settings_mount_and_trust_toggle_messages_update_selected_rows() {
+        let mut state = state_with_saved_count(0);
+        let mut config = crate::config::AppConfig::default();
+        config.roles.insert(
+            "chainargos/agent-smith".into(),
+            crate::config::RoleSource {
+                git: "https://github.com/chainargos/agent-smith".into(),
+                trusted: false,
+                ..crate::config::RoleSource::default()
+            },
+        );
+        let mut settings = SettingsState::from_config(&config);
+        settings.mounts.pending.push(crate::config::GlobalMountRow {
+            scope: None,
+            name: "cache".into(),
+            mount: crate::workspace::MountConfig {
+                src: "/tmp/cache".into(),
+                dst: "/home/agent/.cache".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        });
+        state.stage = ManagerStage::Settings(settings);
+
+        assert!(
+            update_manager(&mut state, ManagerMessage::ToggleSettingsGlobalMountReadonly)
+                .is_dirty()
+        );
+        assert!(update_manager(&mut state, ManagerMessage::ToggleSettingsTrustSelected).is_dirty());
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(settings.mounts.pending[0].mount.readonly);
+        assert!(settings.trust.pending[0].trusted);
     }
 
     #[test]

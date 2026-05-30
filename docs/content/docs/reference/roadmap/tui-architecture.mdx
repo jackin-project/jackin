@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus a small `Dirty` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components, host list navigation/tree/preview/editor/settings-tab state, editor cursor/scroll/auth-kind/header state, and simple settings content state now have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and generated docs/SVG lookbook output remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus a small `Dirty` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components, host list navigation/tree/preview/editor/settings-tab state, editor cursor/scroll/auth-kind/header state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and generated docs/SVG lookbook output remain open.
 
 ## Goal
 
@@ -500,7 +500,7 @@ The practical test is simple: while a long image build, instance refresh, git/PR
 
 | Ratatui best practice | Host console today | `jackin-capsule` today |
 |---|---|---|
-| `Message`/`Action` enum, central `update` | Partial — `ManagerMessage` wraps list selection, scroll, tree expand/collapse, preview focus/cursor mutations, editor/settings tab focus/navigation, editor cursor/scroll/auth-kind/header state, and simple settings content state, returning `jackin_tui::runtime::Dirty`; most handlers still mutate inline | Partial — `Action` wraps dialog/prefix/palette/resize/focus-report/pane-data paths; many mouse/session arms still mutate inline |
+| `Message`/`Action` enum, central `update` | Partial — `ManagerMessage` wraps list selection, scroll, tree expand/collapse, preview focus/cursor mutations, editor/settings tab focus/navigation, editor cursor/scroll/auth-kind/header state, and simple settings content cursor/toggle/header state, returning `jackin_tui::runtime::Dirty`; most handlers still mutate inline | Partial — `Action` wraps dialog/prefix/palette/resize/focus-report/pane-data paths; many mouse/session arms still mutate inline |
 | Pure `view` (no `&mut`, no I/O) | Violated — `&mut state`, scroll-clamp + FS reads in draw | Violated — render writes ANSI + diffs in the compose path on the loop |
 | State decomposed (domain / UI / ephemeral) | Violated — god-structs mix all three | Violated — one `Multiplexer` god-struct |
 | Reusable `StatefulWidget` components | Absent — free `fn(frame, &mut state)` | Absent — raw ANSI free functions |
@@ -798,7 +798,7 @@ Land the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/)
 
 ### Phase 1 — Host: `Message` boundary
 
-Introduce the `Message` enum and central `update`; route existing key/mouse handlers through it without moving the renderers. Behavior identical; the win is a testable update layer. The first slice is <RepoFile path="src/console/manager/message.rs" />, which routes list selection, scroll, tree expand/collapse, preview focus/cursor mutations, editor/settings tab focus/navigation, editor cursor/scroll/auth-kind/header state, and simple settings content state through `ManagerMessage` and returns the shared <RepoFile path="crates/jackin-tui/src/runtime.rs" /> `Dirty` contract; remaining modal, effect-producing, mouse, edit, and complex settings content handlers still need to move.
+Introduce the `Message` enum and central `update`; route existing key/mouse handlers through it without moving the renderers. Behavior identical; the win is a testable update layer. The first slice is <RepoFile path="src/console/manager/message.rs" />, which routes list selection, scroll, tree expand/collapse, preview focus/cursor mutations, editor/settings tab focus/navigation, editor cursor/scroll/auth-kind/header state, and simple settings content cursor/toggle/header state through `ManagerMessage` and returns the shared <RepoFile path="crates/jackin-tui/src/runtime.rs" /> `Dirty` contract; remaining modal, effect-producing, mouse, edit, and complex settings content handlers still need to move.
 
 ### Phase 2 — Host: pure view
 
