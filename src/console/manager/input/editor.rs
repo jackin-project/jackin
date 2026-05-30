@@ -491,7 +491,7 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         // 0=Name, 1=Working dir, 2=Keep awake, 3=Git pull
         EditorTab::General => 3,
         EditorTab::Mounts => editor.pending.mounts.len(),
-        // One extra sentinel row: + Add role.
+        // One extra sentinel row: + Load role.
         EditorTab::Roles => config.roles.len(),
         // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
@@ -759,7 +759,7 @@ fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
         .filter(|(_, source)| source.trusted)
         .map(|(key, _)| key.clone())
         .collect();
-    let mut state = TextInputState::new_with_forbidden("Add role", "", trusted_roles);
+    let mut state = TextInputState::new_with_forbidden("Load role", "", trusted_roles);
     state.forbidden_label = "trusted role registry".into();
     editor.modal = Some(Modal::TextInput {
         target: TextInputTarget::Role,
@@ -1656,12 +1656,10 @@ pub(super) fn apply_text_input_to_pending(
             editor.clear_modal_chain();
         }
         TextInputTarget::Role => {
-            // Role text-input is dispatched via apply_role_input before
-            // reaching this match — landing here means a future caller
-            // wired Role through the wrong path. Panic so the regression
-            // is loud at the point of misuse rather than silently
-            // discarding the user's input.
-            unreachable!("TextInputTarget::Role is dispatched via apply_role_input");
+            open_role_input_error(
+                editor,
+                "Role input was routed through the generic text-input handler.",
+            );
         }
         TextInputTarget::EnvKey { scope } => {
             // Empty key re-opens the EnvKey modal with the inline
@@ -1798,20 +1796,20 @@ fn open_role_resolution_error(
     let message = source_url.map_or_else(
         || {
             format!(
-                "Could not understand role {raw:?}.\n\nUse a configured role such as \
+                "Could not load role {raw:?}.\n\nUse a configured role such as \
              \"agent-smith\" or a GitHub selector like \"owner/agent-name\"."
             )
         },
         |source_url| {
             format!(
-                "Could not resolve role {raw:?}.\n\nLooked for repository:\n{source_url}\n\n{}",
+                "Could not load role {raw:?}.\n\nLooked for repository:\n{source_url}\n\n{}",
                 friendly_role_resolution_error(err)
             )
         },
     );
     editor.modal = Some(Modal::ErrorPopup {
         state: crate::console::widgets::error_popup::ErrorPopupState::new(
-            "Role not found",
+            "Load role failed",
             message,
         ),
     });
@@ -1823,6 +1821,15 @@ fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Di
         state: crate::console::widgets::error_popup::ErrorPopupState::new(
             "Could not apply change",
             format!("The change could not be saved.\n\n{err}"),
+        ),
+    });
+}
+
+fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
+    editor.modal = Some(Modal::ErrorPopup {
+        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+            "Load role failed",
+            message,
         ),
     });
 }
@@ -2650,7 +2657,7 @@ plugins = []
     // ── Roles tab: `*` default-toggle binding ───────────────────────
 
     #[test]
-    fn roles_tab_enter_on_add_role_row_opens_role_input() {
+    fn roles_tab_enter_on_load_role_row_opens_role_input() {
         let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
@@ -2669,7 +2676,7 @@ plugins = []
         match &e.modal {
             Some(Modal::TextInput { target, state }) => {
                 assert_eq!(target, &TextInputTarget::Role);
-                assert_eq!(state.label, "Add role");
+                assert_eq!(state.label, "Load role");
             }
             other => panic!("expected TextInput(Role); got {other:?}"),
         }
@@ -3005,8 +3012,8 @@ plugins = []
 
         match &editor.modal {
             Some(Modal::ErrorPopup { state }) => {
-                assert_eq!(state.title, "Role not found");
-                assert!(state.message.contains("Could not resolve role"));
+                assert_eq!(state.title, "Load role failed");
+                assert!(state.message.contains("Could not load role"));
                 assert!(
                     state
                         .message
@@ -3079,7 +3086,7 @@ plugins = []
 
         match &editor.modal {
             Some(Modal::ErrorPopup { state }) => {
-                assert_eq!(state.title, "Role not found");
+                assert_eq!(state.title, "Load role failed");
                 assert!(
                     state.message.contains(
                         "Repository is not a valid Jackin role: missing jackin.role.toml."
@@ -3120,7 +3127,7 @@ plugins = []
         editor.modal = Some(Modal::TextInput {
             target: TextInputTarget::Role,
             state: crate::console::widgets::text_input::TextInputState::new(
-                "Add role",
+                "Load role",
                 "Chain Argus Agent Brown",
             ),
         });
@@ -3129,8 +3136,8 @@ plugins = []
 
         match &editor.modal {
             Some(Modal::ErrorPopup { state }) => {
-                assert_eq!(state.title, "Role not found");
-                assert!(state.message.contains("Could not understand role"));
+                assert_eq!(state.title, "Load role failed");
+                assert!(state.message.contains("Could not load role"));
             }
             other => panic!("expected ErrorPopup for invalid selector; got {other:?}"),
         }
@@ -3138,6 +3145,36 @@ plugins = []
             config.roles.is_empty(),
             "invalid selector must not mutate config"
         );
+    }
+
+    #[test]
+    fn role_text_input_misroute_uses_error_popup_instead_of_panicking() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let config = AppConfig::default();
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+
+        apply_text_input_to_pending(
+            &TextInputTarget::Role,
+            &mut editor,
+            "agent-smith",
+            false,
+        );
+
+        match &editor.modal {
+            Some(Modal::ErrorPopup { state }) => {
+                assert_eq!(state.title, "Load role failed");
+                assert!(
+                    state.message.contains("generic text-input handler"),
+                    "message should explain the misrouted role input:\n{}",
+                    state.message
+                );
+            }
+            other => panic!("expected ErrorPopup for role misroute; got {other:?}"),
+        }
+        assert!(config.roles.is_empty());
+        let _ = paths;
     }
 
     #[test]
