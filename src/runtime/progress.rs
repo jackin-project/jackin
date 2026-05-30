@@ -1064,7 +1064,7 @@ const STAGE_PULSE_PERIOD: usize = 12;
 const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
 const LABEL_GAP: usize = 4;
-const LABEL_SIDE_OVERHANG: usize = 18;
+const LABEL_SIDE_OVERHANG: usize = 12;
 const LABEL_EDGE_FADE_WIDTH: usize = 24;
 const LABEL_SLIDE_FRAMES: usize = 12;
 const PROGRESS_RAIL_WIDTH: usize =
@@ -1453,7 +1453,7 @@ fn label_edge_fade_factor(index: usize, width: usize) -> f32 {
 
     let ratio = ((edge_distance + 1) as f32 / fade_width as f32).clamp(0.0, 1.0);
     let smooth = ratio * ratio * (3.0 - 2.0 * ratio);
-    0.02 + 0.98 * smooth
+    smooth
 }
 
 fn faded_color(color: Color, factor: f32) -> Color {
