@@ -173,7 +173,9 @@ impl Widget for SelectList<'_> {
 
         FilterInput::new(&self.state.filter).render(rows[0], buf);
 
-        let list_area = *rows.last().expect("layout always includes the list row");
+        let Some(list_area) = rows.last().copied() else {
+            return;
+        };
         if !self.context.is_empty() {
             Paragraph::new(self.context.to_vec()).render(rows[2], buf);
         }
