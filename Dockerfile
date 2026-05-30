@@ -12,7 +12,7 @@ ARG JAVA_VERSION=oracle-graalvm-25.0.1
 ARG PROTOC_VERSION=34.1
 ARG CARGO_BINSTALL_VERSION=1.19.1
 ARG TESSL_VERSION=0.77.0
-ARG CTX7_VERSION=0.4.2
+ARG CTX7_VERSION=0.4.4
 ARG CAVEMAN_VERSION=1.8.2
 
 # `libclang-dev` is required by Rust crates with `bindgen` build-deps
