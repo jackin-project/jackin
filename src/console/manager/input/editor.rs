@@ -54,12 +54,7 @@ pub(super) fn handle_editor_key(
                 // field doc). A subsequent Esc on the picker view
                 // falls through to the dirty branch below.
                 if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() {
-                    if let ManagerStage::Editor(editor) = &mut state.stage {
-                        editor.auth_selected_kind = None;
-                        editor.active_field = FieldFocus::Row(0);
-                        editor.tab_scroll_x = 0;
-                        editor.tab_scroll_y = 0;
-                    }
+                    dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
                     return Ok(InputOutcome::Continue);
                 }
                 let dirty = editor.is_dirty();
@@ -178,6 +173,84 @@ pub(super) fn handle_editor_key(
                 );
                 return Ok(InputOutcome::Continue);
             }
+            KeyCode::Right if editor.active_tab == EditorTab::Secrets => {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = secrets_flat_rows(editor);
+                if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
+                    if !expanded {
+                        dispatch_manager(
+                            state,
+                            ManagerMessage::SetEditorSecretsRoleExpanded {
+                                role,
+                                expanded: true,
+                            },
+                        );
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
+            KeyCode::Left if editor.active_tab == EditorTab::Secrets => {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = secrets_flat_rows(editor);
+                if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
+                    if expanded {
+                        dispatch_manager(
+                            state,
+                            ManagerMessage::SetEditorSecretsRoleExpanded {
+                                role,
+                                expanded: false,
+                            },
+                        );
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
+            KeyCode::Right if editor.active_tab == EditorTab::Auth => {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor, config);
+                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
+                    rows.get(n).cloned()
+                {
+                    if !expanded {
+                        dispatch_manager(
+                            state,
+                            ManagerMessage::SetEditorAuthRoleExpanded {
+                                role,
+                                expanded: true,
+                            },
+                        );
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
+            KeyCode::Left if editor.active_tab == EditorTab::Auth => {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor, config);
+                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
+                    rows.get(n).cloned()
+                {
+                    if expanded {
+                        dispatch_manager(
+                            state,
+                            ManagerMessage::SetEditorAuthRoleExpanded {
+                                role,
+                                expanded: false,
+                            },
+                        );
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
+            KeyCode::Enter if editor.active_tab == EditorTab::Auth => {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor, config);
+                if let Some(super::super::render::editor::AuthRow::AuthKindRow { kind }) =
+                    rows.get(n)
+                {
+                    dispatch_manager(state, ManagerMessage::EnterEditorAuthKind { kind: *kind });
+                    return Ok(InputOutcome::Continue);
+                }
+            }
             _ => {}
         }
     }
@@ -187,57 +260,6 @@ pub(super) fn handle_editor_key(
     };
 
     match key.code {
-        // Right expands role headers in Secrets/Auth tabs; no-op everywhere else.
-        // Left/Right are intra-area horizontal keys and must not cycle tabs.
-        KeyCode::Right => {
-            if editor.active_tab == EditorTab::Secrets {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor);
-                if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
-                    if !expanded {
-                        editor.secrets_expanded.insert(role);
-                    }
-                    return Ok(InputOutcome::Continue);
-                }
-            }
-            if editor.active_tab == EditorTab::Auth {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor, config);
-                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
-                    rows.get(n).cloned()
-                {
-                    if !expanded {
-                        editor.auth_expanded.insert(role);
-                    }
-                    return Ok(InputOutcome::Continue);
-                }
-            }
-        }
-        // Left collapses role headers in Secrets/Auth tabs; no-op everywhere else.
-        KeyCode::Left => {
-            if editor.active_tab == EditorTab::Secrets {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor);
-                if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
-                    if expanded {
-                        editor.secrets_expanded.remove(&role);
-                    }
-                    return Ok(InputOutcome::Continue);
-                }
-            }
-            if editor.active_tab == EditorTab::Auth {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor, config);
-                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
-                    rows.get(n).cloned()
-                {
-                    if expanded {
-                        editor.auth_expanded.remove(&role);
-                    }
-                    return Ok(InputOutcome::Continue);
-                }
-            }
-        }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             let FieldFocus::Row(n) = editor.active_field;
             let candidate = n.saturating_sub(1);
@@ -329,12 +351,7 @@ pub(super) fn handle_editor_key(
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = super::super::render::editor::auth_flat_rows(editor, config);
                 match rows.get(n) {
-                    Some(super::super::render::editor::AuthRow::AuthKindRow { kind }) => {
-                        editor.auth_selected_kind = Some(*kind);
-                        editor.active_field = FieldFocus::Row(0);
-                        editor.tab_scroll_x = 0;
-                        editor.tab_scroll_y = 0;
-                    }
+                    Some(super::super::render::editor::AuthRow::AuthKindRow { .. }) => {}
                     Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {
                         super::auth::open_auth_role_picker(editor, config);
                     }

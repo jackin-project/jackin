@@ -4,17 +4,22 @@
 //! Input handlers should increasingly translate terminal events into these
 //! messages instead of mutating `ManagerState` inline.
 
+use super::auth_kind::AuthKind;
+use super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
 use super::state::{
     EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, SettingsTab,
 };
-use super::render::global_mounts::{settings_env_flat_rows, SettingsEnvRow};
 use jackin_tui::runtime::Dirty;
 use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManagerMessage {
     CollapseSelectedTree,
+    ClearEditorAuthKind,
     EnterPreview,
+    EnterEditorAuthKind {
+        kind: AuthKind,
+    },
     FocusEditorContent,
     FocusEditorTabBar,
     FocusSettingsContent,
@@ -72,6 +77,14 @@ pub enum ManagerMessage {
     MoveSettingsAuthSelection {
         delta: isize,
     },
+    SetEditorAuthRoleExpanded {
+        role: String,
+        expanded: bool,
+    },
+    SetEditorSecretsRoleExpanded {
+        role: String,
+        expanded: bool,
+    },
     ToggleSettingsGeneralSelected,
     MoveListSelection(isize),
     MovePreviewPane {
@@ -85,7 +98,9 @@ pub enum ManagerMessage {
 pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> Dirty {
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
+        ManagerMessage::ClearEditorAuthKind => clear_editor_auth_kind(state),
         ManagerMessage::EnterPreview => state.preview_focused = true,
+        ManagerMessage::EnterEditorAuthKind { kind } => enter_editor_auth_kind(state, kind),
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
         ManagerMessage::FocusSettingsContent => set_settings_tab_bar_focus(state, false),
@@ -143,6 +158,12 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         ManagerMessage::MoveSettingsAuthSelection { delta } => {
             move_settings_auth_selection(state, delta);
         }
+        ManagerMessage::SetEditorAuthRoleExpanded { role, expanded } => {
+            set_editor_auth_role_expanded(state, role, expanded);
+        }
+        ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded } => {
+            set_editor_secrets_role_expanded(state, role, expanded);
+        }
         ManagerMessage::ToggleSettingsGeneralSelected => toggle_settings_general_selected(state),
         ManagerMessage::MoveListSelection(delta) => move_list_selection(state, delta),
         ManagerMessage::MovePreviewPane { container, delta } => {
@@ -168,6 +189,26 @@ fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
         return;
     };
     settings.tab_bar_focused = focused;
+}
+
+fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    editor.auth_selected_kind = None;
+    editor.active_field = FieldFocus::Row(0);
+    editor.tab_scroll_x = 0;
+    editor.tab_scroll_y = 0;
+}
+
+fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    editor.auth_selected_kind = Some(kind);
+    editor.active_field = FieldFocus::Row(0);
+    editor.tab_scroll_x = 0;
+    editor.tab_scroll_y = 0;
 }
 
 fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
@@ -247,6 +288,28 @@ fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
             settings.general.pending_dco = !settings.general.pending_dco;
         }
         _ => {}
+    }
+}
+
+fn set_editor_auth_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    if expanded {
+        editor.auth_expanded.insert(role);
+    } else {
+        editor.auth_expanded.remove(&role);
+    }
+}
+
+fn set_editor_secrets_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    if expanded {
+        editor.secrets_expanded.insert(role);
+    } else {
+        editor.secrets_expanded.remove(&role);
     }
 }
 
@@ -670,6 +733,84 @@ mod tests {
         assert_eq!(editor.tab_scroll_x, 0);
         assert_eq!(editor.tab_scroll_y, 0);
         assert!(editor.secrets_expanded.is_empty());
+    }
+
+    #[test]
+    fn editor_auth_kind_messages_reset_local_view_state() {
+        let mut state = state_with_saved_count(0);
+        let mut editor = EditorState::new_edit(
+            "workspace".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        editor.active_field = FieldFocus::Row(5);
+        editor.tab_scroll_x = 9;
+        editor.tab_scroll_y = 7;
+        state.stage = ManagerStage::Editor(editor);
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::EnterEditorAuthKind {
+                    kind: crate::console::manager::auth_kind::AuthKind::Claude,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(
+            editor.auth_selected_kind,
+            Some(crate::console::manager::auth_kind::AuthKind::Claude)
+        );
+        assert_eq!(editor.active_field, FieldFocus::Row(0));
+        assert_eq!(editor.tab_scroll_x, 0);
+        assert_eq!(editor.tab_scroll_y, 0);
+
+        assert!(update_manager(&mut state, ManagerMessage::ClearEditorAuthKind).is_dirty());
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(editor.auth_selected_kind.is_none());
+        assert_eq!(editor.active_field, FieldFocus::Row(0));
+    }
+
+    #[test]
+    fn editor_role_header_messages_set_expansion() {
+        let mut state = state_with_saved_count(0);
+        state.stage = ManagerStage::Editor(EditorState::new_edit(
+            "workspace".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        ));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::SetEditorSecretsRoleExpanded {
+                    role: "smith".into(),
+                    expanded: true,
+                },
+            )
+            .is_dirty()
+        );
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::SetEditorAuthRoleExpanded {
+                    role: "smith".into(),
+                    expanded: true,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(editor.secrets_expanded.contains("smith"));
+        assert!(editor.auth_expanded.contains("smith"));
     }
 
     #[test]
