@@ -83,25 +83,8 @@ impl FinalizerPrompt for RichCleanupPrompt {
         worktree_path: &str,
         reason: PreservedReason,
     ) -> anyhow::Result<usize> {
-        if rich_cleanup_prompt_supported() {
-            return rich_cleanup_prompt(container, worktree_path, reason);
-        }
-
-        let reason_str = match reason {
-            PreservedReason::Dirty => "uncommitted changes",
-            PreservedReason::Unpushed => "unpushed commits on a local branch",
-        };
-        eprintln!(
-            "[jackin] preserved isolated worktree for {container} because the rich cleanup dialog \
-             is unavailable:\n         {worktree_path}\n         reason: {reason_str}"
-        );
-        Ok(1)
+        rich_cleanup_prompt(container, worktree_path, reason)
     }
-}
-
-fn rich_cleanup_prompt_supported() -> bool {
-    (crate::tui::host_screen_owned() || crate::runtime::progress::rich_terminal_supported())
-        && std::io::IsTerminal::is_terminal(&std::io::stdin())
 }
 
 /// Forced-choice worktree-cleanup picker, rendered through the shared launch
@@ -141,7 +124,27 @@ fn rich_cleanup_prompt(
         "Preserve worktree and exit".to_string(),
         "Force delete worktree and discard changes".to_string(),
     ];
-    crate::runtime::progress::standalone_select_with_context("Isolated Worktree", &context, options)
+    match crate::runtime::progress::standalone_select_with_context(
+        "Isolated Worktree",
+        &context,
+        options,
+    ) {
+        Ok(choice) => Ok(choice),
+        Err(err) => {
+            let reason_str = match reason {
+                PreservedReason::Dirty => "uncommitted changes",
+                PreservedReason::Unpushed => "unpushed commits on a local branch",
+            };
+            let message = format!(
+                "Container {container} {reason_str}.\n\n{worktree_path}\n\nCould not render the cleanup dialog:\n{err:#}\n\nThe worktree will be preserved."
+            );
+            let _ = crate::runtime::progress::standalone_error_popup(
+                "Isolated Worktree Error",
+                &message,
+            );
+            Ok(1)
+        }
+    }
 }
 
 pub async fn finalize_foreground_session(
