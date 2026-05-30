@@ -16,7 +16,7 @@ path = "src/lib.rs"
 [dependencies]
 base64 = "0.22"
 crossterm = "0.29"
-ratatui = { version = "0.30", features = ["unstable-widget-ref"] }
+ratatui = "0.30"
 tui-scrollbar = "0.2.4"
 unicode-width = "0.2"
 

@@ -42,7 +42,7 @@ url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 jackin-tui = { path = "../jackin-tui" }
-ratatui = { version = "0.30", features = ["unstable-widget-ref"] }
+ratatui = "0.30"
 # tui-term was evaluated for pane-body rendering (see ADR-004) but is
 # incompatible with our vt100 fork. The custom cell widget approach is used instead.
 
