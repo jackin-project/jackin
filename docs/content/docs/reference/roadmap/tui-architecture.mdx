@@ -17,7 +17,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Lookbook: 14 stories, real `TestBackend`-backed SVG previews, CI drift check; `unstable-widget-ref` feature removed.
 - `insta` snapshot tests for 4 key render paths.
 
-**Open (Phase 5):** Typed session spine further cleanup — `run_console` now accepts `parent_session: Option<&TerminalSession>` and uses `is_active()` instead of the global for its own screen-ownership decision. The `host_screen_owned` global still serves as the ambient query mechanism for subsystems that don't receive a session reference (`runtime/attach.rs` for `JACKIN_HOST_ALT_SCREEN`, `runtime/progress.rs`, `tui/animation.rs`, `docker.rs`, `operator_env.rs`). `TerminalSession` owns the terminal lifecycle and manages the global; eliminating the global entirely requires threading the reference through the full launch stack.
+**Open (Phase 5):** Typed session spine further cleanup — `run_console` now accepts `parent_session: Option<&TerminalSession>` and uses `is_active()` instead of the global for its own screen-ownership decision. `RichRenderer` now stores `entered_alt_screen: bool` at construction and uses the stored flag in `Drop`/`with_raw_mode`, eliminating two global reads from the renderer lifecycle. The `host_screen_owned` global remains as the ambient query mechanism for subsystems that don't receive a session reference (`runtime/attach.rs` for `JACKIN_HOST_ALT_SCREEN`, `tui/animation.rs` animation helpers, `docker.rs`, `operator_env.rs`). `TerminalSession` owns the terminal lifecycle and manages the global; eliminating the global entirely would require threading the reference through the full launch stack.
 
 ## Goal
 
