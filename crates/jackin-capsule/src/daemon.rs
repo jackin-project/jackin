@@ -35,9 +35,12 @@ use portable_pty::CommandBuilder;
 
 use crate::action::Action;
 use crate::branch_context_bar::{
-    BRANCH_CONTEXT_BAR_HOVER_BG, BRANCH_CONTEXT_BAR_HOVER_FG, BRANCH_CONTEXT_BAR_ROWS,
-    BranchContextBarHit, branch_context_bar_hit,
-    branch_context_bar_layout, render_branch_context_bar,
+    BRANCH_CONTEXT_BAR_ROWS, BranchContextBarHit, branch_context_bar_hit,
+    render_branch_context_bar,
+};
+#[cfg(test)]
+use crate::branch_context_bar::{
+    BRANCH_CONTEXT_BAR_HOVER_BG, BRANCH_CONTEXT_BAR_HOVER_FG, branch_context_bar_layout,
 };
 use crate::git_context::{WorkdirContext, git_capture_at_workdir, resolve_default_branch};
 use crate::selection::{SelectionState, paint_selection_highlight, selection_text};
