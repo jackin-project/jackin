@@ -5,6 +5,7 @@
 //! messages instead of mutating `ManagerState` inline.
 
 use super::state::{ManagerListRow, ManagerState};
+use jackin_tui::runtime::Dirty;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManagerMessage {
@@ -21,7 +22,7 @@ pub enum ManagerMessage {
     ScrollFocusedListBlockVertical(i16),
 }
 
-pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
+pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> Dirty {
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
         ManagerMessage::EnterPreview => state.preview_focused = true,
@@ -36,6 +37,7 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
             scroll_focused_mount_block_vertical(state, delta);
         }
     }
+    Dirty::Redraw
 }
 
 fn collapse_selected_tree(state: &mut ManagerState<'_>) {
@@ -151,7 +153,7 @@ mod tests {
         let mut state = state_with_saved_count(2);
         state.selected = 1;
 
-        update_manager(&mut state, ManagerMessage::MoveListSelection(99));
+        assert!(update_manager(&mut state, ManagerMessage::MoveListSelection(99)).is_dirty());
 
         assert_eq!(state.selected, state.row_count() - 1);
     }
@@ -161,9 +163,12 @@ mod tests {
         let mut state = state_with_saved_count(1);
         state.list_scroll_focus = Some(MountScrollFocus::Workspace);
 
-        update_manager(
-            &mut state,
-            ManagerMessage::ScrollFocusedListBlockVertical(3),
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::ScrollFocusedListBlockVertical(3),
+            )
+            .is_dirty()
         );
 
         assert_eq!(state.list_mounts_scroll_y, 3);
@@ -173,10 +178,10 @@ mod tests {
     fn expand_and_collapse_selected_tree_updates_current_dir() {
         let mut state = state_with_saved_count(1);
 
-        update_manager(&mut state, ManagerMessage::ExpandSelectedTree);
+        assert!(update_manager(&mut state, ManagerMessage::ExpandSelectedTree).is_dirty());
         assert!(state.current_dir_expanded);
 
-        update_manager(&mut state, ManagerMessage::CollapseSelectedTree);
+        assert!(update_manager(&mut state, ManagerMessage::CollapseSelectedTree).is_dirty());
         assert!(!state.current_dir_expanded);
     }
 }

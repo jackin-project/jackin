@@ -161,6 +161,9 @@ The interactive console lives in `src/console/`:
   widgets. Shared tokens and promoted components live in
   <RepoFile path="crates/jackin-tui/src/components.rs" /> and are tracked in
   <RepoFile path="crates/jackin-tui/COMPONENTS.md" />.
+- <RepoFile path="crates/jackin-tui/src/runtime.rs" /> — small shared
+  runtime contracts such as `Dirty`, used by host and launch update
+  functions while the fuller message/effect split proceeds.
 
 Capsule input-mode ownership starts in <RepoFile path="crates/jackin-capsule/src/mux_mode.rs" />,
 and dispatch actions start in <RepoFile path="crates/jackin-capsule/src/action.rs" />; the large

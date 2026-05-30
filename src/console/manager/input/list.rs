@@ -45,7 +45,7 @@ pub(super) fn handle_list_key(
             selected_instance_container(state, ConsoleInstanceAction::Reconnect)
         && !state.flattened_preview_panes(&container).is_empty()
     {
-        update_manager(state, ManagerMessage::EnterPreview);
+        dispatch_manager(state, ManagerMessage::EnterPreview);
         return Ok(InputOutcome::Continue);
     }
     match key.code {
@@ -53,38 +53,38 @@ pub(super) fn handle_list_key(
         // Left/Right arrows: tree expand/collapse.
         // h/l keep horizontal scroll so the details pane stays scrollable.
         KeyCode::Left => {
-            update_manager(state, ManagerMessage::CollapseSelectedTree);
+            dispatch_manager(state, ManagerMessage::CollapseSelectedTree);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Right => {
-            update_manager(state, ManagerMessage::ExpandSelectedTree);
+            dispatch_manager(state, ManagerMessage::ExpandSelectedTree);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('h' | 'H') => {
-            update_manager(state, ManagerMessage::ScrollListHorizontal(-8));
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(-8));
             clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('l' | 'L') => {
-            update_manager(state, ManagerMessage::ScrollListHorizontal(8));
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(8));
             clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             if state.list_scroll_focus.is_some() {
-                update_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(-3));
+                dispatch_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(-3));
                 clamp_list_scroll_after_key(state, config, cwd);
             } else {
-                update_manager(state, ManagerMessage::MoveListSelection(-1));
+                dispatch_manager(state, ManagerMessage::MoveListSelection(-1));
             }
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             if state.list_scroll_focus.is_some() {
-                update_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(3));
+                dispatch_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(3));
                 clamp_list_scroll_after_key(state, config, cwd);
             } else {
-                update_manager(state, ManagerMessage::MoveListSelection(1));
+                dispatch_manager(state, ManagerMessage::MoveListSelection(1));
             }
             Ok(InputOutcome::Continue)
         }
@@ -239,6 +239,10 @@ fn clamp_list_scroll_after_key(
     super::super::render::clamp_list_scroll_for_area(body, state, config, cwd);
 }
 
+fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
+    let _dirty = update_manager(state, message);
+}
+
 fn instance_action_outcome(
     state: &mut ManagerState<'_>,
     action: ConsoleInstanceAction,
@@ -305,12 +309,12 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
         // Selection slid off an instance row while preview was open
         // (refresh purged the entry). Clear focus and let the next
         // input fall through to the workspace tree.
-        update_manager(state, ManagerMessage::ExitPreview);
+        dispatch_manager(state, ManagerMessage::ExitPreview);
         return InputOutcome::Continue;
     };
     let panes = state.flattened_preview_panes(&container);
     if panes.is_empty() {
-        update_manager(state, ManagerMessage::ExitPreview);
+        dispatch_manager(state, ManagerMessage::ExitPreview);
         return InputOutcome::Continue;
     }
     let cursor = state
@@ -321,11 +325,11 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
         .min(panes.len() - 1);
     match key.code {
         KeyCode::Esc | KeyCode::BackTab | KeyCode::Left => {
-            update_manager(state, ManagerMessage::ExitPreview);
+            dispatch_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::Continue
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            update_manager(
+            dispatch_manager(
                 state,
                 ManagerMessage::MovePreviewPane {
                     container,
@@ -335,7 +339,7 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
             InputOutcome::Continue
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            update_manager(
+            dispatch_manager(
                 state,
                 ManagerMessage::MovePreviewPane {
                     container,
@@ -346,7 +350,7 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
         }
         KeyCode::Enter => {
             let (_, session_id) = panes[cursor];
-            update_manager(state, ManagerMessage::ExitPreview);
+            dispatch_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::InstanceAction {
                 container,
                 action: ConsoleInstanceAction::ReconnectFocus(session_id),
@@ -576,11 +580,11 @@ pub(super) fn handle_inline_role_picker(
     };
     match key.code {
         KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            update_manager(state, ManagerMessage::ScrollListHorizontal(-8));
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(-8));
             InputOutcome::Continue
         }
         KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            update_manager(state, ManagerMessage::ScrollListHorizontal(8));
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(8));
             InputOutcome::Continue
         }
         KeyCode::Char('q' | 'Q') => InputOutcome::ExitJackin,
@@ -607,11 +611,11 @@ pub(super) fn handle_inline_agent_picker(
     };
     match key.code {
         KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            update_manager(state, ManagerMessage::ScrollListHorizontal(-8));
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(-8));
             InputOutcome::Continue
         }
         KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            update_manager(state, ManagerMessage::ScrollListHorizontal(8));
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(8));
             InputOutcome::Continue
         }
         _ => match picker.handle_key(key) {
