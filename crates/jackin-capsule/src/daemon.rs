@@ -3143,30 +3143,7 @@ impl Multiplexer {
                 // case — matches zellij's "every pane is framed"
                 // convention and gives the operator a reliable place
                 // to read the live `OSC 2` title.
-                let highlight_focus = if zoomed {
-                    scrollbar.visible()
-                } else {
-                    multi_pane || scrollbar.visible()
-                };
-                draw_pane_box(
-                    &mut buf,
-                    pane.outer.row,
-                    pane.outer.col,
-                    pane.outer.rows,
-                    pane.outer.cols,
-                    &title,
-                    pane.focused && highlight_focus,
-                );
-                draw_scrollbar(
-                    &mut buf,
-                    pane.outer.row,
-                    pane.outer.col,
-                    pane.outer.rows,
-                    pane.outer.cols,
-                    scrollbar.offset,
-                    scrollbar.filled,
-                    pane.focused && highlight_focus,
-                );
+                draw_pane_chrome(&mut buf, pane, &title, scrollbar, zoomed, multi_pane);
             }
         }
 
@@ -3324,30 +3301,7 @@ impl Multiplexer {
                 pane_body_bytes += buf.len() - before;
             }
             if let Some(title) = title {
-                let highlight_focus = if zoomed {
-                    scrollbar.visible()
-                } else {
-                    multi_pane || scrollbar.visible()
-                };
-                draw_pane_box(
-                    &mut buf,
-                    pane.outer.row,
-                    pane.outer.col,
-                    pane.outer.rows,
-                    pane.outer.cols,
-                    &title,
-                    pane.focused && highlight_focus,
-                );
-                draw_scrollbar(
-                    &mut buf,
-                    pane.outer.row,
-                    pane.outer.col,
-                    pane.outer.rows,
-                    pane.outer.cols,
-                    scrollbar.offset,
-                    scrollbar.filled,
-                    pane.focused && highlight_focus,
-                );
+                draw_pane_chrome(&mut buf, pane, &title, scrollbar, zoomed, multi_pane);
             }
         }
 
@@ -5685,6 +5639,47 @@ fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16)
         }
     );
     scrollbar
+}
+
+/// Draw the pane box and optional scrollbar for one visible pane.
+///
+/// Called identically from compose_full_frame and compose_partial_frame;
+/// lives here so both compositors stay in lock-step when the chrome rules
+/// change.
+fn draw_pane_chrome(
+    buf: &mut Vec<u8>,
+    pane: &VisiblePane,
+    title: &str,
+    scrollbar: PaneScrollbar,
+    zoomed: bool,
+    multi_pane: bool,
+) {
+    // Focused-border highlight: show the bright focus ring when the
+    // operator must look at this pane to understand scroll state.
+    let highlight_focus = if zoomed {
+        scrollbar.visible()
+    } else {
+        multi_pane || scrollbar.visible()
+    };
+    draw_pane_box(
+        buf,
+        pane.outer.row,
+        pane.outer.col,
+        pane.outer.rows,
+        pane.outer.cols,
+        title,
+        pane.focused && highlight_focus,
+    );
+    draw_scrollbar(
+        buf,
+        pane.outer.row,
+        pane.outer.col,
+        pane.outer.rows,
+        pane.outer.cols,
+        scrollbar.offset,
+        scrollbar.filled,
+        pane.focused && highlight_focus,
+    );
 }
 
 struct ScrollAffordanceMetrics {
