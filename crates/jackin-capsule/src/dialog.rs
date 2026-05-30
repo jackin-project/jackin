@@ -47,7 +47,7 @@ impl<'a> PullRequestStatus<'a> {
 }
 
 use jackin_tui::{
-    BLACK, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+    ACTION_ACCENT, BLACK, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
     ansi::{BG_DARK, BOLD, RESET, rgb_bg, rgb_fg},
 };
 
@@ -57,7 +57,7 @@ const FG_GREEN: &str = rgb_fg(PHOSPHOR_GREEN);
 const FG_DIM: &str = rgb_fg(PHOSPHOR_DIM);
 const FG_BORDER: &str = rgb_fg(PHOSPHOR_DARK);
 const FG_WHITE: &str = rgb_fg(WHITE);
-const FG_CLICK_HOVER: &str = "\x1b[38;2;180;255;180m"; // lifted clickable value
+const FG_CLICK_HOVER: &str = rgb_fg(ACTION_ACCENT);
 const SELECT_BG: &str = rgb_bg(PHOSPHOR_GREEN);
 const SELECT_FG: &str = rgb_fg(BLACK);
 const CONFIRM_BG: &str = rgb_bg(WHITE);
