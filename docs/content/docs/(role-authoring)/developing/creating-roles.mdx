@@ -220,7 +220,7 @@ The fastest way to test is to load it:
 jackin load your-agent-name --rebuild
 ```
 
-The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and refreshing agent install layers. Agent binaries are resolved and cached by jackin' on the host, so unchanged versions are copied into the build context instead of downloaded again.
+The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and refreshing agent install layers. Agent binaries are resolved and cached by jackin' on the host, so unchanged versions are copied into the build context instead of downloaded again. If jackin' cannot reach an agent's release metadata service but already has an executable cached for that agent, launch continues with the cached binary and records a warning in the diagnostics run.
 
 Use `--debug` to see raw Docker output if something goes wrong:
 
