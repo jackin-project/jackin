@@ -89,6 +89,172 @@ Findings from auditing the exit/restore path and the in-flight rich-dialog chang
 
 </Steps>
 
+## TUI design — screens, flow, and storage
+
+Every screen below renders on the existing rich surface and obeys the canonical [TUI Design Decisions](/reference/tui-design-decisions/): the shared ` jackin' ` brand pill + `·` + screen label on top, the forced-choice `select_list` (`Filter:` row over a `▸`-marked list, `Start …` as the default first row), footer-only hints, and an opaque modal backdrop. Mockups use the same light, terminal-native vocabulary as the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — no heavy borders, compact labels, bright state words.
+
+### Exit flow
+
+```text
+session ends (foreground attach returned)
+  │
+  ├─ policy = clean ───────────────────────────► CLEAN  (no prompt)
+  ├─ policy = keep  ───────────────────────────► KEEP   (no prompt)
+  └─ policy = ask
+        │  assess isolated mounts  (worktree + clone; shared skipped)
+        ├─ all clean / all pushed ─────────────► CLEAN  (no prompt)
+        └─ any dirty or unpushed
+              │  Screen A — Unfinished work (acknowledge)
+              ▼
+              Screen B — How to end this session
+                 ├─ Keep            ─────────────► KEEP
+                 ├─ Clean up        ─────────────► CLEAN
+                 └─ Return to agent ─────────────► RESTART → reattach → re-assess
+```
+
+**Screen A — Unfinished work** (shown only on `ask` + dirty/unpushed; the verify-and-acknowledge gate):
+
+```text
+ jackin'  · session ended
+
+ the-architect (claude) · workspace jackin · jk-sz2v4p0e
+
+ This session has unfinished work in 1 isolated mount.
+
+   worktree  /workspace/jackin
+     uncommitted   3 files
+       M  src/runtime/launch.rs
+       M  src/isolation/finalize.rs
+       ?? notes.md
+     unpushed      1 branch
+       feature/cleanup-flow   2 commits ahead of origin
+
+ Review the above before choosing how to end the session.
+```
+
+Footer hint: `Enter continue · Ctrl-C abort`.
+
+**Screen B — How to end this session** (forced-choice):
+
+```text
+ jackin'  · session ended
+
+ the-architect (claude) · workspace jackin · jk-sz2v4p0e
+ 1 isolated mount has unfinished work.
+
+ Filter:
+ ▸ Keep — preserve everything, resume from the selection bar later
+   Clean up — discard the worktree and delete all instance state
+   Return to agent — restart the container and reconnect to fix it
+```
+
+Footer hint: `↑/↓ navigate · Enter select · Ctrl-C abort`.
+
+`Keep` tears the container down to free Docker resources but retains the host state and marks the instance restorable (it is **not** the same as a `Ctrl-B D` detach, which keeps the container running for `jackin hardline`). `Clean up` runs the terminal-cleanup path (see *Data-directory and index lifecycle*). `Return to agent` is today's `ReturnToAgent`.
+
+### Launch flow
+
+```text
+operator selects role + agent for a workspace
+  │  resolve restorable instances for (workspace, role, agent)
+  ├─ none ─────────────────────────────────────► START NEW (fresh instance_id)
+  └─ one or more
+        │  Screen C — Resume or start new
+        ├─ Start new ──────────────────────────► START NEW
+        └─ Resume <id>
+              │  Screen D — Verify preserved state (acknowledge)
+              ▼
+              rebind same container_base + same data dir
+                → re-materialize the same worktree/clone
+                → attach   (home, plugins, conversation return in place)
+```
+
+**Screen C — Resume or start new** (forced-choice; `Start new` is the default first row per the launch-dialog rule):
+
+```text
+ jackin'  · resume or start new
+
+ the-architect (claude) · workspace jackin
+
+ Filter:
+ ▸ Start new session
+   Resume  jk-sz2v4p0e · 2h ago · clean · ready
+   Resume  jk-fme29j3j · 5h ago · 3 files dirty · 1 branch unpushed
+```
+
+Footer hint: `↑/↓ navigate · type to filter · Enter select · Ctrl-C abort`.
+
+**Screen D — Verify preserved state** (shown only when the chosen instance has a worktree/clone mount):
+
+```text
+ jackin'  · resume jk-fme29j3j
+
+ Restoring the-architect (claude) · workspace jackin
+ Reusing the preserved worktree at /workspace/jackin:
+
+   uncommitted   3 files   (M src/runtime/launch.rs · ?? notes.md · …)
+   unpushed      feature/cleanup-flow   2 commits ahead
+
+ Host repo unchanged since this worktree was preserved — safe to reuse.
+```
+
+Footer hint: `Enter resume · Esc back · Ctrl-C abort`. If the host repo **has** diverged since preservation, this screen states the conflict and the only safe actions are `Esc back` or starting new.
+
+### Storage layout — the unit that is kept or deleted
+
+```text
+~/.jackin/
+├── data/
+│   ├── instances.json                  index — one row per instance {status, updated_at}
+│   ├── instances.json.lock
+│   ├── jk-<id>-<ws>-<role>/            ← THE PER-INSTANCE UNIT
+│   │   ├── .jackin/
+│   │   │   ├── instance.json           manifest (status, sessions, role, agent)
+│   │   │   └── isolation.json          mount records (worktree | clone | shared)
+│   │   ├── home/                       agent homes — .claude, .claude.json, .codex,
+│   │   │                               amp, kimi, opencode  (conversation + plugins)
+│   │   ├── claude/ codex/ amp/ …       per-agent auth slots
+│   │   └── git/
+│   │       ├── worktree/repo/<dst>/<container>/    materialized worktree
+│   │       └── clone/repo/<dst>/<container>/       materialized clone
+│   └── jk-<id>-<ws>-<role>.lock        per-instance lock (sibling of the dir)
+└── sockets/
+    └── jk-<id>-<ws>-<role>/            capsule socket dir (separate root)
+```
+
+### What is kept vs deleted, per outcome
+
+| Artifact | KEEP / resume-later | CLEAN / clean-up / `clean` policy |
+|---|---|---|
+| Docker container + DinD + certs volume + network | removed (freed) | removed (freed) |
+| `data/jk-…/` (home, manifest, isolation, auth, git) | **kept** | **deleted** |
+| materialized `git/worktree` or `git/clone` | **kept** | **deleted** |
+| `data/jk-….lock` sibling | kept | **deleted** |
+| `sockets/jk-…/` | kept (recreated on resume) | **deleted** |
+| `instances.json` row | **kept**, status → `restore_available` | **removed** |
+
+The right-hand column is the invariant the current code violates: today everything in it survives a clean exit. The only outcomes that may leave a `jk-…/` directory or an index row behind are `Keep` and a `keep`-policy exit.
+
+### Instance status transitions
+
+```text
+                jackin load / console
+                        │
+                        ▼
+          ┌────────► active ─────────────────────────────────┐
+          │           │  │                                    │
+          │           │  └─ clean exit (ask, clean tree)      │ clean-up / clean policy
+   resume │           │     · clean-up · clean policy ───────►│
+ (rebind  │           │                                       ▼
+  same id)│           └─ keep / dirty-keep ──► restore_available     delete fs
+          │                                          │               + drop index row
+          └──────────────────────────────────────────┘                    │
+                                                                           ▼
+   crashed · superseded · failed_setup ──► (reaped by the same path) ──►  ⌫ gone
+```
+
+`restore_available` is the durable "container gone, host state survives" state — reached by an explicit `Keep`, and also the state a power-off or external `docker rm` should resolve to once index reconciliation (F12) runs. `resume` rebinds it back to `active` against the same identity.
+
 ## Per-workspace cleanup policy
 
 A new per-workspace setting selects the exit behaviour:
