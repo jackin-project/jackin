@@ -22,3 +22,72 @@ impl Dirty {
         }
     }
 }
+
+/// Marker effect type for update loops that do not produce side effects yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoEffect {}
+
+/// Result of applying one message to a TUI model.
+///
+/// `dirty` tells the runtime whether to redraw. `effects` carries typed
+/// side-effect requests for the app runtime to execute outside the update
+/// function.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use]
+pub struct UpdateResult<E = NoEffect> {
+    dirty: Dirty,
+    effects: Vec<E>,
+}
+
+impl<E> UpdateResult<E> {
+    #[must_use]
+    pub const fn clean() -> Self {
+        Self {
+            dirty: Dirty::Clean,
+            effects: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn redraw() -> Self {
+        Self {
+            dirty: Dirty::Redraw,
+            effects: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_effect(effect: E) -> Self {
+        Self {
+            dirty: Dirty::Redraw,
+            effects: vec![effect],
+        }
+    }
+
+    #[must_use]
+    pub const fn dirty(&self) -> Dirty {
+        self.dirty
+    }
+
+    #[must_use]
+    pub const fn is_dirty(&self) -> bool {
+        self.dirty.is_dirty()
+    }
+
+    #[must_use]
+    pub fn effects(&self) -> &[E] {
+        &self.effects
+    }
+
+    #[must_use]
+    pub fn into_effects(self) -> Vec<E> {
+        self.effects
+    }
+
+    #[must_use]
+    pub fn merge(mut self, other: Self) -> Self {
+        self.dirty = self.dirty.merge(other.dirty);
+        self.effects.extend(other.effects);
+        self
+    }
+}

@@ -10,7 +10,7 @@ use super::state::{
     EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, SecretsScopeTag,
     SettingsTab,
 };
-use jackin_tui::runtime::Dirty;
+use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,7 +120,9 @@ pub enum ManagerMessage {
     ScrollFocusedListBlockVertical(i16),
 }
 
-pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> Dirty {
+pub type ManagerUpdate = UpdateResult<NoEffect>;
+
+pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> ManagerUpdate {
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
         ManagerMessage::ClearEditorAuthKind => clear_editor_auth_kind(state),
@@ -225,7 +227,7 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             scroll_focused_mount_block_vertical(state, delta);
         }
     }
-    Dirty::Redraw
+    UpdateResult::redraw()
 }
 
 fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
