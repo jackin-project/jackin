@@ -255,6 +255,12 @@ fn render_story_to_buffer(story: Story) -> Buffer {
     };
     match terminal.draw(|frame| {
         let area = frame.area();
+        // Pre-fill with black so cells not touched by the story match the
+        // real terminal background instead of appearing as Color::Reset.
+        frame.render_widget(
+            Block::default().style(Style::default().bg(Color::Black)),
+            area,
+        );
         story.render(frame, area);
     }) {
         Ok(_) => {}
@@ -330,7 +336,8 @@ fn color_to_css(color: Color) -> &'static str {
         Color::Rgb(0, 80, 180) => "#0050b4",
         Color::Rgb(204, 92, 0) => "#cc5c00",
         Color::Rgb(80, 80, 80) => "#505050",
-        Color::Rgb(_, _, _) | Color::Indexed(_) | Color::Reset => "#ffffff",
+        Color::Reset => "#000000",
+        Color::Rgb(_, _, _) | Color::Indexed(_) => "#ffffff",
     }
 }
 
