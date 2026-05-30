@@ -1,53 +1,40 @@
 ---
 title: "Code-intelligence tooling for the-architect role"
-description: "Pilot: bake ast-grep, rust-analyzer, verifiers, and the fff file-search MCP into the-architect, with agent guidance — opt-in, role-scoped, no jackin-core change"
+description: "Pilot: equip the-architect with ast-grep, rust-analyzer, the cargo verifiers, and the fff file-search MCP, plus baked agent guidance — opt-in, role-scoped, no jackin-core change"
 ---
 
 **Status**: Open — ready to implement (pilot: the-architect role only, opt-in, no jackin-core code change)
 
-## Problem
+## Objective
 
-Agents waste tokens and wall-clock re-discovering code by ad-hoc text search and by guessing at definitions instead of resolving them. A reasonable proposal to fix this for Rust roles is a four-tool stack: a fast file searcher, a structural code searcher (`ast-grep`), the official LSP (`rust-analyzer`), and the cargo verifiers (`nextest`, `clippy`, `fmt`). The tool *choices* are the current consensus stack. The risk is in the *assembly*: wiring every tool as a Model Context Protocol (MCP) server injects tool-schema tokens into every agent turn (a five-server setup is ~55K tokens before the first message), and a single repo-level `.mcp.json` only configures `Claude Code`, not the four other runtimes the-architect supports. For a multi-agent orchestrator, CLI tools on `PATH` are the uniform, zero-permanent-cost surface; MCP earns its schema cost only where a warm long-lived process (like a resident file index) can't be had from a cold CLI spawn.
+Equip the the-architect role with a Rust code-intelligence stack and make the agent use it: structural search and refactor (`ast-grep`), semantic navigation (`rust-analyzer`), the cargo verifiers (`nextest`, `clippy`, `rustfmt`), and a resident file-search server (`fff`). Deliver everything inside the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository, opt-in and role-scoped, with no change to jackin core.
 
-This item pilots the stack on **one role — the-architect** — so the approach can be measured before any broader rollout, and so nothing changes for operators who do not load the-architect.
+## Scope
 
-## Scope and principles
+- **the-architect only.** No other role is touched.
+- **Opt-in.** The tools exist only inside a container the operator loads; operators who never `jackin load the-architect` see no change.
+- **No jackin-core change.** The pilot rides existing extension points: the role `Dockerfile`, a role `setup_once` hook, and default-home seeding of the agent memory file (<RepoFile path="src/derived_image.rs" />).
+- **Reversible.** Reverting the the-architect commit removes every trace.
 
-- **One role only.** All changes land in the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository. No other role is touched.
-- **Opt-in by construction.** A tool only exists in a container the operator explicitly loads. Operators who never `jackin load the-architect` see no change.
-- **No jackin-core change.** The pilot rides plumbing that already exists: role `Dockerfile` tool installs, role `hooks` for MCP registration, and default-home seeding of agent memory files. Nothing in <RepoFile path="src/derived_image.rs" />, the manifest schema, or the runtime needs to change. This keeps the experiment fully decoupled and reversible — reverting the the-architect commit removes every trace.
-- **Reversible and measurable.** The goal is to evaluate whether the stack makes the-architect measurably more productive (fewer tokens per code lookup, fewer wrong-path edits) before deciding whether to generalize it to a shared base or a manifest feature.
+## Tools and exposure
 
-## Corrections to the original proposals
-
-Two external write-ups motivated this item. Both contained errors that an implementer must not copy forward:
-
-| Claim in the source material | Correct form | Why it matters |
+| Capability | Tool | Exposure |
 |---|---|---|
-| `cargo install ast-grep-cli` | `cargo install ast-grep --locked` (or a prebuilt binary) | `ast-grep-cli` is not the crate; the build fails. |
-| `cargo install ast-grep-mcp-server` | `cargo install ast-grep-mcp --locked` | `ast-grep-mcp` is the crate; `ast-grep-mcp-server` is the binary it produces. |
-| Invoke the structural tool as `sg` | Invoke as `ast-grep` | `sg` is the system set-group command (shadow-utils, Debian `login` package). The construct is Debian Trixie, so `sg` is taken. Upstream recommends the full `ast-grep` name on Linux. |
-| "avoid `rg`/`grep` unless explicitly plain-text" | Prefer `ast-grep` **for code structure**; keep `rg`/built-in grep for plain text | Most agent searches are plain text (string literals, messages, paths, config keys). Forcing structural search on those slows the agent and produces awkward patterns. |
+| Structural Rust search / refactor / lint | `ast-grep` | CLI on `PATH` (invoke as `ast-grep`, never `sg`) |
+| Definitions / references / types / impls | `rust-analyzer` | LSP (rustup component on `PATH`) |
+| Test / coverage / lint / format | `cargo-nextest`, `clippy`, `rustfmt` | CLI (already present in the-architect) |
+| Resident file / text search | `fff` (`fff-mcp`) | MCP, registered at Claude user scope |
 
-## The tool stack and how each is exposed
+CLI tools sit on `PATH` so every runtime the role supports reaches them with no per-turn schema cost. `fff` is exposed over MCP because its value is a warm resident index that a cold CLI spawn cannot provide.
 
-| Capability | Tool | Exposure | Rationale |
-|---|---|---|---|
-| Structural Rust search / refactor / lint | `ast-grep` | **CLI** on `PATH` | Agents call `ast-grep -l rust -p '…'` in the shell. Zero permanent schema cost; works for every runtime the role supports. |
-| Definitions / references / types / impls | `rust-analyzer` | **LSP** (rustup component on `PATH`) | `Claude Code`'s native LSP integration drives it directly — no MCP bridge needed. Other runtimes fall back to text + ast-grep. |
-| Test / coverage / lint / format | `cargo-nextest`, `cargo-llvm-cov`, `clippy`, `rustfmt` | **CLI** | Already present in the-architect (the Rust dev role). Verification stays CLI-native. |
-| Fast file / text search at scale | `fff` (`fff-mcp`) | **MCP** (role-scoped, user-scope registration) | The one tool whose value is a warm resident index across many searches in one session — exactly what a cold CLI can't provide, so MCP is the right interface. Included in the pilot to evaluate it on the-architect even though the repo is medium-sized (the dramatic win is monorepo-scale; the pilot will tell us whether it helps here). |
-
-The honest trade-off on `fff`: it carries a permanent MCP schema cost in every turn, and on a ~91K-line repo its index warmth saves less than on a 500K-file monorepo. The pilot includes it deliberately so we measure rather than assume.
-
-## Implementation (in the-architect repo)
+## Implementation (the-architect repo)
 
 ### 1. Install the tools (`Dockerfile`)
 
-The-architect already builds on the construct and already carries the Rust toolchain plus `nextest`/`clippy`/`rustfmt`. Add the missing pieces. Prefer prebuilt binaries so image builds stay fast:
+The-architect already carries the Rust toolchain plus `nextest`/`clippy`/`rustfmt`. Add the missing pieces, preferring prebuilt binaries so image builds stay fast:
 
 ```dockerfile
-# --- Code-intelligence tooling (pilot — see roadmap) ---
+# --- Code-intelligence tooling ---
 
 # rust-analyzer: official LSP as a rustup component (no compile)
 RUN rustup component add rust-analyzer
@@ -57,40 +44,37 @@ RUN rustup component add rust-analyzer
 # `sg`, which is the system set-group command on Debian.
 RUN mise use --global "aqua:ast-grep/ast-grep"
 
-# fff: resident file-search MCP server. Upstream-blessed installer (the project
-# ships no Debian package); pins land via the installer's release resolution.
+# fff: resident file-search MCP server, installed via the upstream installer
+# (the project ships no Debian package).
 RUN curl -fsSL https://dmtrkovalenko.dev/install-mcp.sh | bash
 ```
 
-A `cargo install ast-grep --locked` is an acceptable fallback for `ast-grep` since the toolchain is present, but it compiles from source and slows the build; prefer the prebuilt path.
+`cargo install ast-grep --locked` is an acceptable fallback for `ast-grep` since the toolchain is present, but it compiles from source; prefer the prebuilt path.
 
-### 2. Register `fff-MCP` for Claude (role hook)
+### 2. Register fff-MCP (role hook)
 
-Role hooks already register MCP servers (the `preflight` example in the [role manifest reference](/developing/role-manifest/) runs an MCP setup). Register `fff` at **user scope** so it writes to the container's `~/.claude.json`, never to a project `.mcp.json` inside the operator's mounted repo. Use `setup_once` so it runs once per instance, after auth handoff:
+Register `fff` at **user scope** so it writes to the container's `~/.claude.json`, never to a project `.mcp.json` inside the operator's mounted repo. Use a `setup_once` hook so it runs once per instance, after auth handoff:
 
 ```bash title="hooks/setup-once.sh"
 #!/bin/bash
 set -euo pipefail
 
 # Register the fff file-search MCP server for Claude at user scope.
-# User scope keeps this out of the operator's mounted repo.
 if command -v fff-mcp >/dev/null 2>&1; then
   claude mcp list 2>/dev/null | grep -q '^fff' || claude mcp add -s user fff -- fff-mcp
 fi
 ```
 
-Wire it in the manifest if a `setup_once` hook is not already declared:
+Wire it in the manifest if a `setup_once` hook is not already declared (no manifest *schema* change is needed — `[hooks]` already exists):
 
 ```toml title="jackin.role.toml"
 [hooks]
 setup_once = "hooks/setup-once.sh"
 ```
 
-No manifest *schema* change is required — `[hooks]` already exists. If the-architect already has a `setup_once` hook, append the block instead of adding a second hook.
+### 3. Bake agent guidance
 
-### 3. Tell the agent the tools exist (baked memory file)
-
-Installing tools is not enough — the model must be told they are available and when to prefer them. Bake a guidance file into the agent's home memory in the `Dockerfile`. For Claude this is `~/.claude/CLAUDE.md`:
+Bake a guidance file into the agent's home memory so the model knows the tools exist and when to use them. For Claude this is `~/.claude/CLAUDE.md`:
 
 ```dockerfile
 COPY --chown=agent:agent code-intelligence.md /home/agent/.claude/CLAUDE.md
@@ -122,7 +106,7 @@ Definitions, references, types, and implementations come from rust-analyzer (on 
 - Format: `cargo fmt --check`
 ```
 
-For the other runtimes the-architect supports, bake the same body into each one's home memory file. The default-home capture in <RepoFile path="src/derived_image.rs" /> copies `~/.claude/`, `~/.codex/`, and the other agent homes, so a role-baked file in any of them survives into the live container:
+Bake the same body into each supported runtime's home memory file. The default-home capture in <RepoFile path="src/derived_image.rs" /> copies `~/.claude/`, `~/.codex/`, and the other agent homes, so a role-baked file in any of them survives into the live container:
 
 | Runtime | Memory file to bake |
 |---|---|
@@ -130,32 +114,20 @@ For the other runtimes the-architect supports, bake the same body into each one'
 | `codex` | `~/.codex/AGENTS.md` |
 | `amp` / `kimi` / `opencode` | the runtime's user-level instructions file |
 
-For the pilot, Claude is the primary target; baking the Codex file too is cheap and recommended.
+Claude and Codex are the priority targets for the pilot.
 
-## How the model learns about the tools
+## How the agent learns the tools
 
-This is the load-bearing question, and it is already answered by existing plumbing — no jackin-core change:
+1. The the-architect `Dockerfile` writes `code-intelligence.md` to `/home/agent/.claude/CLAUDE.md` in the agent layer, on top of the construct.
+2. The jackin-generated derived layer runs after the agent layer. Its default-home capture step (`cp -a /home/agent/.claude/. /jackin/default-home/.claude/`, see <RepoFile path="src/derived_image.rs" />) snapshots that file into `/jackin/default-home/`.
+3. On first boot, the runtime seeds `/jackin/default-home/` into `/home/agent/`, so the file lands in the live agent home.
+4. `Claude Code` reads `~/.claude/CLAUDE.md` as user-level memory at startup, so the guidance is in context for every session regardless of which repo the operator mounted. The same chain delivers `~/.codex/AGENTS.md` to Codex.
 
-1. The the-architect `Dockerfile` writes `code-intelligence.md` to `/home/agent/.claude/CLAUDE.md` in the **agent layer**, on top of the construct.
-2. The jackin-generated **derived layer** runs after the agent layer. Its default-home capture step (`cp -a /home/agent/.claude/. /jackin/default-home/.claude/`, see <RepoFile path="src/derived_image.rs" />) snapshots that file into `/jackin/default-home/`.
-3. On **first boot**, the runtime seeds `/jackin/default-home/` into `/home/agent/`, so the file lands in the live agent home.
-4. `Claude Code` reads `~/.claude/CLAUDE.md` as **user-level memory** at startup — so the guidance is in context for every session, regardless of which repo the operator mounted.
-
-The same chain delivers `~/.codex/AGENTS.md` to Codex. Because the guidance lives in the agent's *home*, not in the operator's repo, it applies to every workspace the-architect runs against and never mutates a host repository.
-
-## Why no jackin-core change
-
-Every piece rides an existing extension point:
-
-- **Tool installs** → the role `Dockerfile` (agent layer). The construct's "prefer apt over `cargo install`" rule is construct-scoped; role Dockerfiles use `mise` and prebuilt binaries by convention (see [Creating a Role](/developing/creating-roles/)).
-- **MCP registration** → a role `setup_once` hook running `claude mcp add -s user` (the same pattern the [role manifest reference](/developing/role-manifest/) documents for other MCP servers).
-- **Agent guidance** → a baked home memory file carried by the existing default-home seeding in <RepoFile path="src/derived_image.rs" />.
-
-Keeping the pilot out of jackin core is the point: it can be trialed, measured, and reverted entirely within one role repo.
+Because the guidance lives in the agent's home, it applies to every workspace the-architect runs against and never mutates a host repository.
 
 ## Verification
 
-Smoke-test from a jackin checkout (always `--debug`, and share the printed run id if something misbehaves):
+Smoke-test from a jackin checkout (always `--debug`; share the printed run id if something misbehaves):
 
 ```bash
 cargo run --bin jackin -- load the-architect . --debug
@@ -167,32 +139,26 @@ Inside the container, confirm each surface:
 - `command -v rust-analyzer` resolves; `Claude Code` go-to-definition works on a symbol.
 - `claude mcp list` shows `fff`; ask the agent to "use fff" for a file search.
 - `cargo nextest run` runs the suite.
-- The agent, when asked to find all trait impls or `.unwrap()` calls, reaches for `ast-grep` rather than `rg` — confirming the baked guidance took effect.
+- When asked to find all trait impls or `.unwrap()` calls, the agent reaches for `ast-grep` rather than `rg`.
 
-## Evaluation criteria
+## Success criteria
 
-The pilot decides whether the stack generalizes. Track, over a handful of representative the-architect sessions:
+The pilot succeeds when, across a handful of representative the-architect sessions:
 
-- **Token cost per code lookup** — does ast-grep/LSP reduce tokens versus repeated `rg` + file reads, net of the `fff` MCP schema overhead carried every turn?
-- **Tool adoption** — does the agent actually invoke ast-grep/LSP/fff when appropriate, or ignore the guidance? (If ignored, the guidance phrasing or a skill-based delivery is the lever, not more tools.)
-- **Correctness** — fewer wrong-path edits from resolving symbols instead of guessing.
-- **`fff` specifically** — does the warm index measurably beat the construct's ripgrep on this repo size, or is its value only monorepo-scale? This is the one tool whose inclusion is a genuine open question.
+- the agent invokes `ast-grep` for structural queries and `rust-analyzer` for symbol resolution instead of ad-hoc text search;
+- code lookups cost fewer tokens than repeated `rg` plus file reads, net of the `fff` MCP schema carried each turn;
+- fewer edits land on wrong paths because symbols were resolved rather than guessed;
+- `fff`'s resident index measurably beats the construct's ripgrep on this repo — or the pilot concludes it does not, and `fff` is dropped while the CLI and LSP tools stay.
 
-A positive result motivates the follow-ups; a negative `fff` result drops it from any general rollout while keeping the CLI + LSP tools.
+## Follow-ups (deferred)
 
-## Optional: ast-grep rules as a lint gate
-
-The structural rules from the original proposal (flag `todo!()`/`unimplemented!()`, audit `.unwrap()`) are better as a CI/pre-commit lint than as agent prose. If adopted, add `sgconfig.yml` plus `.ast-grep/rules/*.yml` to the-architect (or the linted repo) and run `ast-grep scan` in CI. This is independent of the agent-guidance pilot and can land separately.
-
-## Follow-ups (deferred — not part of the pilot)
-
-- **Declarative MCP servers in the manifest.** A first-class `[claude].mcp_servers` (and per-runtime equivalents) field in `jackin.role.toml` would let roles register MCP servers without a hook. This is a versioned-schema change (one `CURRENT_MANIFEST_VERSION` bump with migration + fixtures, per the schema-evolution rules) and should only be designed if the pilot proves MCP servers are worth generalizing.
-- **Skill-based guidance.** Delivering tool guidance as a `Claude Code` skill (loaded on demand) instead of always-on `CLAUDE.md` would cut the standing memory cost and is more discoverable; the-architect already installs plugins via a marketplace, so a `code-intelligence` skill is a natural next step if the pilot succeeds.
-- **Generalize to a shared layer.** If the stack proves out, move the CLI tools (ast-grep, rust-analyzer) into a shared base so other Rust roles inherit them, keeping `fff`/MCP opt-in.
+- **ast-grep lint gate.** Add `sgconfig.yml` plus `.ast-grep/rules/*.yml` (flag `todo!()`/`unimplemented!()`, audit `.unwrap()`) and run `ast-grep scan` in CI. Independent of the agent-guidance pilot; can land separately.
+- **Declarative MCP servers in the manifest.** A first-class `[claude].mcp_servers` (and per-runtime equivalents) field in `jackin.role.toml` would register MCP servers without a hook. This is a versioned-schema change (one `CURRENT_MANIFEST_VERSION` bump with migration and fixtures) and is only worth designing if the pilot proves MCP servers worth generalizing.
+- **Skill-based guidance.** Deliver the guidance as a `Claude Code` skill loaded on demand instead of always-on `CLAUDE.md`, cutting standing memory cost.
+- **Generalize to a shared layer.** Move the CLI tools (`ast-grep`, `rust-analyzer`) into a shared base so other Rust roles inherit them, keeping `fff`/MCP opt-in.
 
 ## References
 
-- [Anthropic — Code execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp) and [Advanced tool use](https://www.anthropic.com/engineering/advanced-tool-use) — MCP schema-token overhead and on-demand tool discovery.
-- [ast-grep](https://ast-grep.github.io/) — structural search/rewrite CLI; [the `sg` name conflict](https://github.com/ast-grep/ast-grep/issues/706) on Linux.
+- [ast-grep](https://ast-grep.github.io/) — structural search/rewrite CLI.
 - [fff](https://github.com/dmtrKovalenko/fff) — file-search toolkit for AI agents with an MCP server.
-- [Creating a Role](/developing/creating-roles/), [Role Manifest](/developing/role-manifest/), [The Construct Image](/developing/construct-image/) — the role extension points this pilot rides.
+- [Creating a Role](/developing/creating-roles/), [Role Manifest](/developing/role-manifest/), [The Construct Image](/developing/construct-image/) — the role extension points this pilot uses.
