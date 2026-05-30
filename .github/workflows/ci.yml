@@ -148,6 +148,10 @@ jobs:
           cargo build -p jackin-capsule --bin jackin-capsule
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
       - run: cargo nextest run --all-features --color=always
+      # Build (but don't run) the frame-time and pane-body benchmarks to
+      # ensure they compile on every CI run. Full criterion runs happen
+      # locally or in dedicated perf workflows.
+      - run: cargo build --bench console_frame --bench pane_body -p jackin-capsule
 
   msrv:
     needs: changes
