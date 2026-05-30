@@ -10,8 +10,10 @@ use super::state::{
     CreatePreludeState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
     ManagerListRow, ManagerStage, ManagerState, SecretsScopeTag, SettingsState, SettingsTab,
 };
+use crate::config::AppConfig;
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub(crate) enum ManagerMessage {
@@ -131,6 +133,10 @@ pub(crate) enum ManagerMessage {
     MovePreviewPane {
         container: String,
         delta: isize,
+    },
+    ReloadFromConfig {
+        config: Box<AppConfig>,
+        cwd: PathBuf,
     },
     ReturnToList,
     ScrollListHorizontal(i16),
@@ -260,6 +266,9 @@ pub(crate) fn update_manager(
         ManagerMessage::MovePreviewPane { container, delta } => {
             move_preview_pane(state, &container, delta);
         }
+        ManagerMessage::ReloadFromConfig { config, cwd } => {
+            reload_from_config(state, &config, &cwd);
+        }
         ManagerMessage::ReturnToList => state.stage = ManagerStage::List,
         ManagerMessage::ScrollListHorizontal(delta) => scroll_list_horizontal(state, delta),
         ManagerMessage::ScrollFocusedListBlockVertical(delta) => {
@@ -331,6 +340,12 @@ fn enter_create_editor(
     editor.pending_name = Some(name);
     editor.refresh_mount_info_cache();
     state.stage = ManagerStage::Editor(editor);
+}
+
+fn reload_from_config(state: &mut ManagerState<'_>, config: &AppConfig, cwd: &std::path::Path) {
+    let cache = state.op_cache.clone();
+    let op_available = state.op_available;
+    *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
 }
 
 fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
@@ -1384,6 +1399,43 @@ mod tests {
         assert!(update_manager(&mut state, ManagerMessage::ReturnToList).is_dirty());
 
         assert!(matches!(state.stage, ManagerStage::List));
+    }
+
+    #[test]
+    fn reload_from_config_preserves_session_cache_and_rebuilds_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path();
+        let mut state = state_with_saved_count(0);
+        state.op_available = true;
+        state.stage = ManagerStage::Settings(SettingsState::from_config(
+            &crate::config::AppConfig::default(),
+        ));
+        let cache = state.op_cache.clone();
+        let mut config = crate::config::AppConfig::default();
+        config.workspaces.insert(
+            "reloaded".into(),
+            crate::workspace::WorkspaceConfig {
+                workdir: cwd.display().to_string(),
+                ..crate::workspace::WorkspaceConfig::default()
+            },
+        );
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::ReloadFromConfig {
+                    config: Box::new(config),
+                    cwd: cwd.to_path_buf(),
+                },
+            )
+            .is_dirty()
+        );
+
+        assert!(std::rc::Rc::ptr_eq(&state.op_cache, &cache));
+        assert!(state.op_available);
+        assert!(matches!(state.stage, ManagerStage::List));
+        assert_eq!(state.workspaces.len(), 1);
+        assert_eq!(state.workspaces[0].name, "reloaded");
     }
 
     #[test]

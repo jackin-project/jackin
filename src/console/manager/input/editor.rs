@@ -67,13 +67,12 @@ pub(super) fn handle_editor_key(
                         });
                     }
                 } else {
-                    let cache = state.op_cache.clone();
-                    let op_available = state.op_available;
-                    *state = ManagerState::from_config_with_cache_and_op(
-                        config,
-                        cwd,
-                        cache,
-                        op_available,
+                    let _ = update_manager(
+                        state,
+                        ManagerMessage::ReloadFromConfig {
+                            config: Box::new(config.clone()),
+                            cwd: cwd.to_path_buf(),
+                        },
                     );
                 }
             }

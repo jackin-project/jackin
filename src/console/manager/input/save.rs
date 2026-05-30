@@ -5,6 +5,7 @@
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
 };
+use super::super::message::{ManagerMessage, update_manager};
 use crate::config::AppConfig;
 use crate::config::editor::EnvScope;
 use crate::paths::JackinPaths;
@@ -486,10 +487,13 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                     })
                 )
             {
-                let cache = state.op_cache.clone();
-                let op_available = state.op_available;
-                *state =
-                    ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
+                let _ = update_manager(
+                    state,
+                    ManagerMessage::ReloadFromConfig {
+                        config: Box::new(config.clone()),
+                        cwd: cwd.to_path_buf(),
+                    },
+                );
                 // Land on the workspace that was just saved.
                 let saved_count = state.workspaces.len();
                 if let Some(idx) = state.workspaces.iter().position(|w| w.name == current_name) {

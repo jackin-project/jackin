@@ -182,13 +182,12 @@ pub fn handle_key(
                     save::begin_editor_save(state, config, true)?;
                 }
                 ExitIntent::Discard => {
-                    let cache = state.op_cache.clone();
-                    let op_available = state.op_available;
-                    *state = ManagerState::from_config_with_cache_and_op(
-                        config,
-                        cwd,
-                        cache,
-                        op_available,
+                    let _ = update_manager(
+                        state,
+                        ManagerMessage::ReloadFromConfig {
+                            config: Box::new(config.clone()),
+                            cwd: cwd.to_path_buf(),
+                        },
                     );
                 }
             }
@@ -291,13 +290,12 @@ pub fn handle_key(
                     );
                 }
                 PreludeStatus::Cancelled => {
-                    let cache = state.op_cache.clone();
-                    let op_available = state.op_available;
-                    *state = ManagerState::from_config_with_cache_and_op(
-                        config,
-                        cwd,
-                        cache,
-                        op_available,
+                    let _ = update_manager(
+                        state,
+                        ManagerMessage::ReloadFromConfig {
+                            config: Box::new(config.clone()),
+                            cwd: cwd.to_path_buf(),
+                        },
                     );
                 }
                 PreludeStatus::InProgress => {}
@@ -391,9 +389,13 @@ fn handle_confirm_delete_key(
             let mut editor = crate::config::ConfigEditor::open(paths)?;
             editor.remove_workspace(&ws_name)?;
             *config = editor.save()?;
-            let cache = state.op_cache.clone();
-            let op_available = state.op_available;
-            *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
+            let _ = update_manager(
+                state,
+                ManagerMessage::ReloadFromConfig {
+                    config: Box::new(config.clone()),
+                    cwd: cwd.to_path_buf(),
+                },
+            );
             Ok(InputOutcome::Continue)
         }
         ModalOutcome::Commit(false) | ModalOutcome::Cancel => {

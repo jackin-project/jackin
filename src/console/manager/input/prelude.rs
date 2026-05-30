@@ -5,6 +5,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::super::widgets::{ModalOutcome, workdir_pick::WorkdirPickState};
+use super::super::message::{ManagerMessage, update_manager};
 use super::super::state::{ManagerState, Modal};
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -18,9 +19,13 @@ pub(super) fn handle_prelude_key(
     key: KeyEvent,
 ) -> InputOutcome {
     if key.code == KeyCode::Esc {
-        let cache = state.op_cache.clone();
-        let op_available = state.op_available;
-        *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
+        let _ = update_manager(
+            state,
+            ManagerMessage::ReloadFromConfig {
+                config: Box::new(config.clone()),
+                cwd: cwd.to_path_buf(),
+            },
+        );
     }
     InputOutcome::Continue
 }
