@@ -18,8 +18,7 @@ use super::super::super::widgets::role_picker::RolePickerState;
 use super::super::auth_kind::{AuthKind, AuthMode};
 use super::super::render::editor::resolve_auth_row_target;
 use super::super::state::{
-    AuthFormFocus, AuthFormTarget, EditorState, FieldFocus, Modal,
-    TextInputTarget,
+    AuthFormFocus, AuthFormTarget, EditorState, FieldFocus, Modal, TextInputTarget,
 };
 use crate::config::AppConfig;
 use crate::config::{

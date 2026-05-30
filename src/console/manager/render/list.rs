@@ -1814,13 +1814,7 @@ mod list_name_scroll_tests {
 
         terminal
             .draw(|frame| {
-                render_list_body(
-                    frame,
-                    Rect::new(0, 0, 70, 24),
-                    &state,
-                    &config,
-                    tmp.path(),
-                );
+                render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
             })
             .unwrap();
 
@@ -2334,15 +2328,7 @@ mod subpanel_padding_tests {
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
             let cache = MountInfoCache::default();
-            render_mounts_subpanel(
-                f,
-                Rect::new(0, 0, 40, 4),
-                &[],
-                &cache,
-                0,
-                0,
-                false,
-            );
+            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[], &cache, 0, 0, false);
         })
         .unwrap();
         let mounts_col = first_content_indent(&term).expect("mounts has content");

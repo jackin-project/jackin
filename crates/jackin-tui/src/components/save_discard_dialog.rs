@@ -9,7 +9,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::{ModalOutcome, theme::{PHOSPHOR_DARK, WHITE}};
+use crate::{
+    ModalOutcome,
+    theme::{PHOSPHOR_DARK, WHITE},
+};
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
 
@@ -73,11 +76,7 @@ impl SaveDiscardState {
     }
 }
 
-pub fn render_save_discard_dialog(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    state: &SaveDiscardState,
-) {
+pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &SaveDiscardState) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
@@ -117,7 +116,9 @@ pub fn render_save_discard_dialog(
         SaveDiscardFocus::Discard => 1,
         SaveDiscardFocus::Cancel => 2,
     };
-    ButtonStrip::new(&items).focused(focused).render(frame, chunks[2]);
+    ButtonStrip::new(&items)
+        .focused(focused)
+        .render(frame, chunks[2]);
 }
 
 #[cfg(test)]
@@ -153,7 +154,10 @@ mod tests {
             ModalOutcome::Commit(SaveDiscardChoice::Discard)
         ));
         let mut s = SaveDiscardState::new("?");
-        assert!(matches!(s.handle_key(key(KeyCode::Esc)), ModalOutcome::Cancel));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Esc)),
+            ModalOutcome::Cancel
+        ));
     }
 
     #[test]
@@ -166,6 +170,9 @@ mod tests {
         ));
 
         let mut s = SaveDiscardState::new("?");
-        assert!(matches!(s.handle_key(key(KeyCode::Enter)), ModalOutcome::Cancel));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Cancel
+        ));
     }
 }

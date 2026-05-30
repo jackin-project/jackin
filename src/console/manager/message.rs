@@ -303,10 +303,7 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::OpenListErrorPopup { title, message } => {
             state.list_modal = Some(super::state::Modal::ErrorPopup {
-                state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                    title,
-                    message,
-                ),
+                state: crate::console::widgets::error_popup::ErrorPopupState::new(title, message),
             });
         }
         ManagerMessage::DismissListModal => {
@@ -520,9 +517,16 @@ fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
         return;
     };
     settings.general.selected = if delta.is_negative() {
-        settings.general.selected.saturating_sub(delta.unsigned_abs())
+        settings
+            .general
+            .selected
+            .saturating_sub(delta.unsigned_abs())
     } else {
-        settings.general.selected.saturating_add(delta as usize).min(1)
+        settings
+            .general
+            .selected
+            .saturating_add(delta as usize)
+            .min(1)
     };
 }
 
@@ -532,8 +536,7 @@ fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
     };
     match settings.general.selected {
         0 => {
-            settings.general.pending_coauthor_trailer =
-                !settings.general.pending_coauthor_trailer;
+            settings.general.pending_coauthor_trailer = !settings.general.pending_coauthor_trailer;
         }
         1 => {
             settings.general.pending_dco = !settings.general.pending_dco;
@@ -633,7 +636,11 @@ fn move_settings_auth_selection(state: &mut ManagerState<'_>, delta: isize) {
     settings.auth.selected = if delta.is_negative() {
         settings.auth.selected.saturating_sub(delta.unsigned_abs())
     } else {
-        settings.auth.selected.saturating_add(delta as usize).min(max)
+        settings
+            .auth
+            .selected
+            .saturating_add(delta as usize)
+            .min(max)
     };
 }
 
@@ -751,7 +758,11 @@ fn move_settings_env_selection(
     let candidate = if delta.is_negative() {
         settings.env.selected.saturating_sub(delta.unsigned_abs())
     } else {
-        settings.env.selected.saturating_add(delta as usize).min(max)
+        settings
+            .env
+            .selected
+            .saturating_add(delta as usize)
+            .min(max)
     };
     settings.env.selected = if delta.is_negative() {
         step_settings_env_cursor_up(&rows, candidate)
@@ -803,10 +814,7 @@ fn move_settings_trust_selection(
     };
     let max = settings.trust.pending.len().saturating_sub(1);
     settings.trust.selected = if delta.is_negative() {
-        settings
-            .trust
-            .selected
-            .saturating_sub(delta.unsigned_abs())
+        settings.trust.selected.saturating_sub(delta.unsigned_abs())
     } else {
         settings
             .trust
@@ -1070,7 +1078,13 @@ mod tests {
         ));
         state.stage = ManagerStage::Editor(editor);
 
-        assert!(update_manager(&mut state, ManagerMessage::SelectEditorTab(EditorTab::Mounts)).is_dirty());
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::SelectEditorTab(EditorTab::Mounts)
+            )
+            .is_dirty()
+        );
         assert!(update_manager(&mut state, ManagerMessage::SelectEditorMountRow(2)).is_dirty());
 
         let ManagerStage::Editor(editor) = &state.stage else {
@@ -1082,11 +1096,15 @@ mod tests {
         assert!(editor.secrets_expanded.is_empty());
         assert!(editor.unmasked_rows.is_empty());
 
-        state.stage =
-            ManagerStage::Settings(SettingsState::from_config(&crate::config::AppConfig::default()));
+        state.stage = ManagerStage::Settings(SettingsState::from_config(
+            &crate::config::AppConfig::default(),
+        ));
         assert!(
-            update_manager(&mut state, ManagerMessage::SelectSettingsTab(SettingsTab::Trust))
-                .is_dirty()
+            update_manager(
+                &mut state,
+                ManagerMessage::SelectSettingsTab(SettingsTab::Trust)
+            )
+            .is_dirty()
         );
         assert!(update_manager(&mut state, ManagerMessage::SelectSettingsTrustRow(0)).is_dirty());
 
@@ -1296,8 +1314,11 @@ mod tests {
         editor.active_field = FieldFocus::Row(0);
 
         assert!(
-            update_manager(&mut state, ManagerMessage::ToggleEditorMountReadonlySelected)
-                .is_dirty()
+            update_manager(
+                &mut state,
+                ManagerMessage::ToggleEditorMountReadonlySelected
+            )
+            .is_dirty()
         );
         assert!(
             update_manager(
@@ -1314,11 +1335,10 @@ mod tests {
             panic!("expected editor stage");
         };
         assert!(editor.pending.mounts[0].readonly);
-        assert!(
-            editor
-                .unmasked_rows
-                .contains(&(crate::console::manager::state::SecretsScopeTag::Workspace, "TOKEN".into()))
-        );
+        assert!(editor.unmasked_rows.contains(&(
+            crate::console::manager::state::SecretsScopeTag::Workspace,
+            "TOKEN".into()
+        )));
     }
 
     #[test]
@@ -1361,7 +1381,9 @@ mod tests {
             )
             .is_dirty()
         );
-        assert!(update_manager(&mut state, ManagerMessage::ToggleSettingsGeneralSelected).is_dirty());
+        assert!(
+            update_manager(&mut state, ManagerMessage::ToggleSettingsGeneralSelected).is_dirty()
+        );
 
         let ManagerStage::Settings(settings) = state.stage else {
             panic!("expected settings stage");
@@ -1373,8 +1395,9 @@ mod tests {
     #[test]
     fn settings_auth_selection_and_kind_entry_update_state() {
         let mut state = state_with_saved_count(0);
-        state.stage =
-            ManagerStage::Settings(SettingsState::from_config(&crate::config::AppConfig::default()));
+        state.stage = ManagerStage::Settings(SettingsState::from_config(
+            &crate::config::AppConfig::default(),
+        ));
 
         assert!(
             update_manager(
@@ -1405,14 +1428,17 @@ mod tests {
         let mut state = state_with_saved_count(0);
         let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
         settings.error_popup = Some(ErrorPopupState::new("Token mint failed", "op item missing"));
-        settings.auth.modal_parents.push(SettingsAuthModal::AuthForm {
-            target: AuthFormTarget::Workspace {
-                kind: AuthKind::Claude,
-            },
-            state: Box::new(AuthForm::new(AuthKind::Claude)),
-            focus: AuthFormFocus::Save,
-            literal_buffer: "token".into(),
-        });
+        settings
+            .auth
+            .modal_parents
+            .push(SettingsAuthModal::AuthForm {
+                target: AuthFormTarget::Workspace {
+                    kind: AuthKind::Claude,
+                },
+                state: Box::new(AuthForm::new(AuthKind::Claude)),
+                focus: AuthFormFocus::Save,
+                literal_buffer: "token".into(),
+            });
         state.stage = ManagerStage::Settings(settings);
 
         assert!(update_manager(&mut state, ManagerMessage::DismissSettingsErrorPopup).is_dirty());
@@ -1626,8 +1652,9 @@ mod tests {
     #[test]
     fn scroll_settings_global_mounts_updates_offset() {
         let mut state = state_with_saved_count(0);
-        state.stage =
-            ManagerStage::Settings(SettingsState::from_config(&crate::config::AppConfig::default()));
+        state.stage = ManagerStage::Settings(SettingsState::from_config(
+            &crate::config::AppConfig::default(),
+        ));
 
         assert!(
             update_manager(
@@ -1685,16 +1712,14 @@ mod tests {
     fn move_settings_env_selection_skips_section_spacers() {
         let mut state = state_with_saved_count(0);
         let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
-        settings
-            .env
-            .pending
-            .env
-            .insert("ALPHA".into(), crate::operator_env::EnvValue::Plain("one".into()));
-        settings
-            .env
-            .pending
-            .env
-            .insert("BETA".into(), crate::operator_env::EnvValue::Plain("two".into()));
+        settings.env.pending.env.insert(
+            "ALPHA".into(),
+            crate::operator_env::EnvValue::Plain("one".into()),
+        );
+        settings.env.pending.env.insert(
+            "BETA".into(),
+            crate::operator_env::EnvValue::Plain("two".into()),
+        );
         settings.env.selected = 1;
         state.stage = ManagerStage::Settings(settings);
 
@@ -1719,8 +1744,9 @@ mod tests {
     #[test]
     fn settings_env_role_header_message_sets_expansion() {
         let mut state = state_with_saved_count(0);
-        state.stage =
-            ManagerStage::Settings(SettingsState::from_config(&crate::config::AppConfig::default()));
+        state.stage = ManagerStage::Settings(SettingsState::from_config(
+            &crate::config::AppConfig::default(),
+        ));
 
         assert!(
             update_manager(
@@ -1765,8 +1791,11 @@ mod tests {
         state.stage = ManagerStage::Settings(settings);
 
         assert!(
-            update_manager(&mut state, ManagerMessage::ToggleSettingsGlobalMountReadonly)
-                .is_dirty()
+            update_manager(
+                &mut state,
+                ManagerMessage::ToggleSettingsGlobalMountReadonly
+            )
+            .is_dirty()
         );
         assert!(update_manager(&mut state, ManagerMessage::ToggleSettingsTrustSelected).is_dirty());
 
@@ -1857,13 +1886,15 @@ mod tests {
         assert!(state.list_scroll_focus.is_none());
 
         assert!(
-            update_manager(&mut state, ManagerMessage::SetListScrollFocus(Some(MountScrollFocus::Workspace))).is_dirty()
+            update_manager(
+                &mut state,
+                ManagerMessage::SetListScrollFocus(Some(MountScrollFocus::Workspace))
+            )
+            .is_dirty()
         );
         assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
 
-        assert!(
-            update_manager(&mut state, ManagerMessage::SetListScrollFocus(None)).is_dirty()
-        );
+        assert!(update_manager(&mut state, ManagerMessage::SetListScrollFocus(None)).is_dirty());
         assert!(state.list_scroll_focus.is_none());
     }
 
@@ -1886,7 +1917,10 @@ mod tests {
         let mut state = ManagerState::from_config(&config, cwd);
         assert!(state.drag_state.is_none());
 
-        let drag = DragState { anchor_pct: 50, anchor_x: 40 };
+        let drag = DragState {
+            anchor_pct: 50,
+            anchor_x: 40,
+        };
         assert!(update_manager(&mut state, ManagerMessage::SetDragState(Some(drag))).is_dirty());
         assert!(state.drag_state.is_some());
         assert!(update_manager(&mut state, ManagerMessage::SetDragState(None)).is_dirty());
@@ -1919,9 +1953,13 @@ mod tests {
                     title: "Test error".into(),
                     message: "Something went wrong.".into(),
                 }
-            ).is_dirty()
+            )
+            .is_dirty()
         );
-        assert!(matches!(state.list_modal, Some(super::super::state::Modal::ErrorPopup { .. })));
+        assert!(matches!(
+            state.list_modal,
+            Some(super::super::state::Modal::ErrorPopup { .. })
+        ));
     }
 
     #[test]

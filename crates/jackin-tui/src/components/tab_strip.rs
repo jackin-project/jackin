@@ -131,7 +131,11 @@ mod tests {
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
 
         terminal
-            .draw(|frame| TabStrip::new(&labels).focused(true).render(frame, frame.area()))
+            .draw(|frame| {
+                TabStrip::new(&labels)
+                    .focused(true)
+                    .render(frame, frame.area())
+            })
             .unwrap();
 
         let buffer = terminal.backend().buffer();

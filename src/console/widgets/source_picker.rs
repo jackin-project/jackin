@@ -123,7 +123,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
                     .fg(PHOSPHOR_DARK)
                     .add_modifier(Modifier::DIM),
             ))
-                .alignment(Alignment::Center),
+            .alignment(Alignment::Center),
             chunks[2],
         );
     }

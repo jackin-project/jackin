@@ -15,12 +15,12 @@ pub mod terminal;
 pub mod widgets;
 
 pub use op_cache::OpCache;
-pub use run::run_console;
+#[cfg(test)]
+use prompts::{prompt_agent_for_launch, providers_for_launch};
 pub(super) use run::consumes_letter_input;
 #[cfg(test)]
 use run::is_on_main_screen;
-#[cfg(test)]
-use prompts::{prompt_agent_for_launch, providers_for_launch};
+pub use run::run_console;
 pub use state::ConsoleStage;
 pub use state::ConsoleState;
 pub use state::WorkspaceChoice;
@@ -164,12 +164,11 @@ impl ConsoleState {
 mod quit_confirm_tests {
     //! Pin the gates for the Q-intercept and the
     //! `ConfirmState::handle_key` outcomes the run-loop dispatches.
-    use super::*;
     use super::prompts::{
         OnPromptFailure, PromptOutcome, console_location_debug, invalidate_op_cache_for_ref,
         key_debug_name, show_role_resolution_error,
     };
-    use crate::paths::JackinPaths;
+    use super::*;
     use crate::console::manager::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
@@ -177,6 +176,7 @@ mod quit_confirm_tests {
         ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
         text_input::TextInputState,
     };
+    use crate::paths::JackinPaths;
 
     fn fresh_state() -> ConsoleState {
         let cwd = std::env::temp_dir();
@@ -567,8 +567,8 @@ mod quit_confirm_tests {
 
 #[cfg(test)]
 mod op_cache_invalidation_tests {
-    use crate::console::prompts::invalidate_op_cache_for_ref;
     use crate::console::op_cache::OpCache;
+    use crate::console::prompts::invalidate_op_cache_for_ref;
     use crate::operator_env::{OpField, OpItem, OpRef};
     use std::cell::RefCell;
     use std::rc::Rc;

@@ -114,11 +114,7 @@ pub fn required_height(state: &ErrorPopupState, inner_width: u16, max_rows: u16)
     body.saturating_add(6).min(max_rows.max(7))
 }
 
-pub fn render_error_dialog(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    state: &ErrorPopupState,
-) {
+pub fn render_error_dialog(frame: &mut ratatui::Frame<'_>, area: Rect, state: &ErrorPopupState) {
     frame.render_widget(ErrorDialog::new(state), area);
 }
 

@@ -350,11 +350,17 @@ fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             return;
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            dispatch_manager(state, ManagerMessage::MoveSettingsAuthSelection { delta: -1 });
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsAuthSelection { delta: -1 },
+            );
             return;
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            dispatch_manager(state, ManagerMessage::MoveSettingsAuthSelection { delta: 1 });
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsAuthSelection { delta: 1 },
+            );
             return;
         }
         KeyCode::Enter if settings.auth.selected_kind.is_none() => {
@@ -613,11 +619,15 @@ pub(super) fn handle_settings_auth_modal(
             }
             match outcome {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
-                    let literal = auth.modal_parents.last()
-                        .and_then(|m| if let SettingsAuthModal::AuthForm { literal_buffer, .. } = m {
-                            Some(literal_buffer.clone())
-                        } else {
-                            None
+                    let literal = auth
+                        .modal_parents
+                        .last()
+                        .and_then(|m| {
+                            if let SettingsAuthModal::AuthForm { literal_buffer, .. } = m {
+                                Some(literal_buffer.clone())
+                            } else {
+                                None
+                            }
                         })
                         .unwrap_or_default();
                     auth.modal = Some(SettingsAuthModal::TextInput {
@@ -877,9 +887,7 @@ fn persist_settings_auth_form(
             }
         }
     }
-    auth.selected = auth
-        .selected
-        .min(auth.row_count().saturating_sub(1));
+    auth.selected = auth.selected.min(auth.row_count().saturating_sub(1));
 }
 
 fn clear_settings_auth_kind(
@@ -915,11 +923,17 @@ fn clear_settings_auth_kind(
 fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     match key.code {
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            dispatch_manager(state, ManagerMessage::MoveSettingsGeneralSelection { delta: -1 });
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsGeneralSelection { delta: -1 },
+            );
             return;
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            dispatch_manager(state, ManagerMessage::MoveSettingsGeneralSelection { delta: 1 });
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsGeneralSelection { delta: 1 },
+            );
             return;
         }
         KeyCode::Char(' ') => {
@@ -1978,10 +1992,9 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
             .or_else(|| settings.trust.error.take());
         let exit = std::mem::take(&mut settings.mounts.exit_requested);
         if let Some(msg) = error {
-            settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
-                "Settings error",
-                msg,
-            ));
+            settings.error_popup = Some(
+                crate::console::widgets::error_popup::ErrorPopupState::new("Settings error", msg),
+            );
         }
         settings.mounts.refresh_mount_info_cache();
         exit

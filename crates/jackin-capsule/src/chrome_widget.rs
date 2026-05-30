@@ -15,10 +15,7 @@ use ratatui::{
 
 use crate::layout::Tab;
 
-use jackin_tui::{
-    PHOSPHOR_GREEN, PHOSPHOR_DARK, WHITE,
-    theme::{color as tc},
-};
+use jackin_tui::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE, theme::color as tc};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -34,7 +31,7 @@ pub struct StatusBarWidget<'a> {
 }
 
 const BRAND_TEXT: &str = "▓▓▓▓ ";
-const BRAND_BG_COLOR: Color = Color::Rgb(0, 255, 65);  // PHOSPHOR_GREEN
+const BRAND_BG_COLOR: Color = Color::Rgb(0, 255, 65); // PHOSPHOR_GREEN
 const BRAND_FG_COLOR: Color = Color::Black;
 
 impl Widget for StatusBarWidget<'_> {
@@ -70,8 +67,7 @@ impl Widget for StatusBarWidget<'_> {
             } else {
                 spans.push(Span::styled(
                     format!(" {label} "),
-                    Style::default()
-                        .fg(tc(PHOSPHOR_GREEN)),
+                    Style::default().fg(tc(PHOSPHOR_GREEN)),
                 ));
             }
         }
@@ -82,7 +78,11 @@ impl Widget for StatusBarWidget<'_> {
 
         // Row 1: underline separator
         if area.height > 1 {
-            let row1 = Rect { y: area.y + 1, height: 1, ..area };
+            let row1 = Rect {
+                y: area.y + 1,
+                height: 1,
+                ..area
+            };
             let line = "━".repeat(area.width as usize);
             ratatui::widgets::Paragraph::new(Span::styled(
                 line,
@@ -111,10 +111,7 @@ impl Widget for PaneBorderWidget {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(border_style)
-            .title(Span::styled(
-                format!(" {} ", self.title),
-                border_style,
-            ));
+            .title(Span::styled(format!(" {} ", self.title), border_style));
         block.render(area, buf);
     }
 }
@@ -149,12 +146,18 @@ mod tests {
     fn status_bar_renders_without_tabs() {
         let backend = TestBackend::new(80, 2);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| {
-            frame.render_widget(
-                StatusBarWidget { tabs: &[], active_tab: 0, cols: 80 },
-                frame.area(),
-            );
-        }).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    StatusBarWidget {
+                        tabs: &[],
+                        active_tab: 0,
+                        cols: 80,
+                    },
+                    frame.area(),
+                );
+            })
+            .unwrap();
         let buf = terminal.backend().buffer();
         // Brand pill should appear in row 0
         let row0: String = (0..5).map(|x| buf[(x, 0)].symbol().to_string()).collect();
@@ -165,9 +168,11 @@ mod tests {
     fn dialog_backdrop_fills_with_black() {
         let backend = TestBackend::new(10, 5);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| {
-            frame.render_widget(DialogBackdrop, frame.area());
-        }).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(DialogBackdrop, frame.area());
+            })
+            .unwrap();
         let buf = terminal.backend().buffer();
         assert_eq!(buf[(0, 0)].bg, Color::Black);
         assert_eq!(buf[(9, 4)].bg, Color::Black);
@@ -177,12 +182,17 @@ mod tests {
     fn pane_border_renders_border() {
         let backend = TestBackend::new(20, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| {
-            frame.render_widget(
-                PaneBorderWidget { title: "shell".into(), focused: true },
-                frame.area(),
-            );
-        }).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    PaneBorderWidget {
+                        title: "shell".into(),
+                        focused: true,
+                    },
+                    frame.area(),
+                );
+            })
+            .unwrap();
         let buf = terminal.backend().buffer();
         // Top-left corner should be a border character
         let tl = buf[(0, 0)].symbol();

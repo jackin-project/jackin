@@ -216,18 +216,14 @@ impl Multiplexer {
             self.update_pointer_shape_for_mouse(*row, *col, *button);
         }
         match event {
-            InputEvent::OpenPalette => {
-                self.apply_action(Action::OpenPalette)
-            }
+            InputEvent::OpenPalette => self.apply_action(Action::OpenPalette),
             InputEvent::PrefixCommand(cmd) => {
                 // While a dialog is open the prefix gesture's payload
                 // must not reach the focused pane — operator's intent
                 // is to act on the dialog, not the agent underneath.
                 self.apply_action(Action::Prefix(cmd))
             }
-            InputEvent::ResizePane(dir) => {
-                self.apply_action(Action::ResizePane(dir))
-            }
+            InputEvent::ResizePane(dir) => self.apply_action(Action::ResizePane(dir)),
             InputEvent::FocusIn | InputEvent::FocusOut => {
                 // Forward only when the focused agent actually
                 // requested focus events (`?1004h`) — shells and

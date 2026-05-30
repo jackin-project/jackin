@@ -34,11 +34,7 @@ pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
     super::max_line_width(&lines)
 }
 
-pub(super) fn render_settings(
-    frame: &mut Frame,
-    state: &SettingsState<'_>,
-    op_available: bool,
-) {
+pub(super) fn render_settings(frame: &mut Frame, state: &SettingsState<'_>, op_available: bool) {
     let area = frame.area();
     let footer = settings_footer_items(state, op_available);
     let footer_h = footer_height(&footer, area.width).max(1);
@@ -134,11 +130,7 @@ fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn render_mounts_tab(
-    frame: &mut Frame,
-    state: &SettingsState<'_>,
-    area: ratatui::layout::Rect,
-) {
+fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let mut lines = global_mount_lines(
         &state.mounts.pending,
         Some(state.mounts.selected),

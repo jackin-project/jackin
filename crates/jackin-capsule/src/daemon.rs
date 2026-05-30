@@ -13,15 +13,15 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Instant;
 #[cfg(test)]
 use std::path::Path;
+use std::path::PathBuf;
 #[cfg(test)]
 use std::process::Command;
+use std::sync::Arc;
 #[cfg(test)]
 use std::sync::Mutex;
+use std::time::Instant;
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
@@ -32,16 +32,20 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::action::Action;
-use crate::branch_context_bar::{
-    BRANCH_CONTEXT_BAR_ROWS, BranchContextBarHit, branch_context_bar_hit,
-    render_branch_context_bar,
+use crate::attach_protocol::{
+    AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
+    initial_spawn_request, perform_handshake, spawn_request_label,
 };
 #[cfg(test)]
 use crate::branch_context_bar::{
     BRANCH_CONTEXT_BAR_HOVER_BG, BRANCH_CONTEXT_BAR_HOVER_FG, branch_context_bar_layout,
 };
-use crate::git_context::{
-    WorkdirContext, git_current_context, resolve_default_branch, start_git_context_watcher,
+use crate::branch_context_bar::{
+    BRANCH_CONTEXT_BAR_ROWS, BranchContextBarHit, branch_context_bar_hit, render_branch_context_bar,
+};
+use crate::dialog::{
+    ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
+    PickerIntent, PullRequestStatus, SplitDirection,
 };
 #[cfg(test)]
 use crate::git_context::{
@@ -49,41 +53,36 @@ use crate::git_context::{
     read_context_from_git_metadata, read_git_ref_oid, read_packed_git_ref_oid,
     with_packed_refs_cache,
 };
-use crate::selection::{SelectionState, paint_selection_highlight, selection_text};
-use crate::title::{
-    append_osc_window_title, capitalize, compose_outer_terminal_title, display_title,
-    session_agent_label,
-};
-use crate::dialog::{
-    ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
-    PickerIntent, PullRequestStatus, SplitDirection,
+use crate::git_context::{
+    WorkdirContext, git_current_context, resolve_default_branch, start_git_context_watcher,
 };
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
-use crate::mux_mode::MuxMode;
-use crate::protocol::attach::{
-    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
-};
-use crate::protocol::control::{AgentState, SessionInfo};
-use crate::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, draw_scrollbar, fill_screen};
-use crate::session::{
-    BranchName, GitContext, Oid, PullRequestInfo, PullRequestLookupOutcome,
-    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
-};
-use crate::pr_context::gh_pull_request_info;
 use crate::mouse_protocol::{
     encode_mouse_for_protocol, encode_wheel_cursor_fallback, is_wheel_button,
     mouse_event_encoding_for_session, pane_wheel_cursor_fallback_reason,
 };
 #[cfg(test)]
 use crate::mouse_protocol::{mouse_event_allowed_for_mode, push_xterm_mouse_number};
-use crate::attach_protocol::{
-    AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
-    initial_spawn_request, perform_handshake, spawn_request_label,
+use crate::mux_mode::MuxMode;
+use crate::pr_context::gh_pull_request_info;
+use crate::protocol::attach::{
+    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
+};
+use crate::protocol::control::{AgentState, SessionInfo};
+use crate::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, draw_scrollbar, fill_screen};
+use crate::selection::{SelectionState, paint_selection_highlight, selection_text};
+use crate::session::{
+    BranchName, GitContext, Oid, PullRequestInfo, PullRequestLookupOutcome,
+    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
+use crate::title::{
+    append_osc_window_title, capitalize, compose_outer_terminal_title, display_title,
+    session_agent_label,
+};
 
 mod compositor;
 mod input_dispatch;
@@ -523,9 +522,9 @@ impl Multiplexer {
             workdir,
             workdir_context,
             zai_key,
-            ratatui_terminal: ratatui::Terminal::new(
-                crate::socket_backend::SocketBackend::new(cols, rows),
-            )
+            ratatui_terminal: ratatui::Terminal::new(crate::socket_backend::SocketBackend::new(
+                cols, rows,
+            ))
             .expect("SocketBackend::new never fails"),
         }
     }
@@ -2859,10 +2858,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             let events = mux.input_parser.parse(&bytes);
             for event in events {
                 let mode = mux.mux_mode();
-                crate::cdebug!(
-                    "  → InputEvent::{:?} mode={mode:?}",
-                    event,
-                );
+                crate::cdebug!("  → InputEvent::{:?} mode={mode:?}", event,);
                 if let Some(redraw) = mux.handle_input(event) {
                     mux.send_output(redraw);
                 }
@@ -2919,7 +2915,6 @@ const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 const fn hovered_menu(target: Option<HoverTarget>) -> bool {
     matches!(target, Some(HoverTarget::Menu))
 }
-
 
 fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
     match cmd {

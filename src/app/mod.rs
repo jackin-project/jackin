@@ -2281,13 +2281,8 @@ impl console::InstanceActionHandler for ConsoleInPlaceHandler {
                 }
                 console::ConsoleInstanceAction::Purge => {
                     runtime::eject_role(&self.paths, container, &docker).await?;
-                    runtime::purge_container_state(
-                        &self.paths,
-                        container,
-                        &docker,
-                        &mut runner,
-                    )
-                    .await
+                    runtime::purge_container_state(&self.paths, container, &docker, &mut runner)
+                        .await
                 }
                 _ => Ok(()),
             }

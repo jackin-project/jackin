@@ -109,9 +109,7 @@ pub(super) fn handle_editor_key(
                 );
                 return Ok(InputOutcome::Continue);
             }
-            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J')
-                if editor.tab_bar_focused =>
-            {
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') if editor.tab_bar_focused => {
                 dispatch_manager(state, ManagerMessage::FocusEditorContent);
                 return Ok(InputOutcome::Continue);
             }
@@ -1110,7 +1108,10 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Continue => {}
             }
         }
-        Modal::SourcePicker { state: source, env_key } => {
+        Modal::SourcePicker {
+            state: source,
+            env_key,
+        } => {
             use crate::console::widgets::source_picker::SourceChoice;
             use crate::console::widgets::text_input::TextInputState;
             match source.handle_key(key) {

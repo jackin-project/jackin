@@ -101,7 +101,10 @@ mod tests {
 
         let buf = terminal.backend().buffer();
         let row0: String = (0..20).map(|x| buf[(x, 0)].symbol().to_string()).collect();
-        assert!(row0.starts_with("hello world"), "expected text in buffer: {row0:?}");
+        assert!(
+            row0.starts_with("hello world"),
+            "expected text in buffer: {row0:?}"
+        );
     }
 
     #[test]

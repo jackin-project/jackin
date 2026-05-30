@@ -205,10 +205,7 @@ impl Backend for SocketBackend {
         Ok(Position { x: 0, y: 0 })
     }
 
-    fn set_cursor_position<P: Into<Position>>(
-        &mut self,
-        position: P,
-    ) -> Result<(), Self::Error> {
+    fn set_cursor_position<P: Into<Position>>(&mut self, position: P) -> Result<(), Self::Error> {
         let pos = position.into();
         let row = pos.y + 1;
         let col = pos.x + 1;
@@ -286,7 +283,10 @@ mod tests {
         // Each character gets its own cursor-positioning sequence; verify
         // both letters appear in the output.
         let text = String::from_utf8_lossy(&output);
-        assert!(text.contains('h') && text.contains('i'), "expected 'h' and 'i' in output: {text:?}");
+        assert!(
+            text.contains('h') && text.contains('i'),
+            "expected 'h' and 'i' in output: {text:?}"
+        );
     }
 
     #[test]

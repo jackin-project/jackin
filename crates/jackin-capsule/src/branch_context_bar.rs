@@ -9,8 +9,7 @@ pub const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
 pub(crate) const BRANCH_CONTEXT_BAR_BG: &str = jackin_tui::ansi::rgb_bg(jackin_tui::WHITE);
 pub(crate) const BRANCH_CONTEXT_BAR_HOVER_BG: &str = "\x1b[48;2;225;245;255m";
 pub(crate) const BRANCH_CONTEXT_BAR_FG: &str = jackin_tui::ansi::rgb_fg(jackin_tui::BLACK);
-pub(crate) const BRANCH_CONTEXT_BAR_LINK_FG: &str =
-    jackin_tui::ansi::rgb_fg(jackin_tui::LINK_BLUE);
+pub(crate) const BRANCH_CONTEXT_BAR_LINK_FG: &str = jackin_tui::ansi::rgb_fg(jackin_tui::LINK_BLUE);
 pub(crate) const BRANCH_CONTEXT_BAR_HOVER_FG: &str = "\x1b[38;2;0;55;140m";
 pub(crate) const BRANCH_CONTEXT_BAR_BOLD: &str = jackin_tui::ansi::BOLD;
 

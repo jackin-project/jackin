@@ -1,6 +1,3 @@
-use super::{
-    ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
-};
 use super::manager;
 use super::prompts::{
     console_location_debug, dispatch_and_prompt_launch, invalidate_op_cache_for_ref,
@@ -8,10 +5,13 @@ use super::prompts::{
 };
 use super::state::build_workspace_choice;
 use super::terminal::{
-    MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, resume_console_terminal,
-    suspend_console_terminal, TerminalSession,
+    MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, resume_console_terminal,
+    suspend_console_terminal,
 };
 use super::widgets;
+use super::{
+    ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
+};
 
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -268,7 +268,12 @@ pub async fn run_console<H: InstanceActionHandler>(
             // When ready, continue the save without blocking the reactor.
             if let Some((drift_check, detection)) = ms.poll_pending_drift_check() {
                 let _ = manager::input::save::continue_save_after_drift_check(
-                    ms, &mut config, paths, cwd, drift_check, detection,
+                    ms,
+                    &mut config,
+                    paths,
+                    cwd,
+                    drift_check,
+                    detection,
                 );
             }
         }

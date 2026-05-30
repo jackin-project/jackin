@@ -64,9 +64,7 @@ pub(crate) fn enable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> st
     out.flush()
 }
 
-pub(crate) fn disable_console_mouse_capture<W: std::io::Write>(
-    out: &mut W,
-) -> std::io::Result<()> {
+pub(crate) fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
     // Disable the exact modes we enable, plus ?1003l defensively in case
     // an older build or another library enabled any-event tracking.
     out.write_all(b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")?;
@@ -163,9 +161,7 @@ pub(crate) fn suspend_console_terminal(stdout: &mut std::io::Stdout) {
 /// Re-enter raw-mode + alt-screen after a [`suspend_console_terminal`]
 /// detour, mirroring `run_console`'s initial setup so the TUI resumes
 /// where it left off.
-pub(crate) fn resume_console_terminal(
-    stdout: &mut std::io::Stdout,
-) -> anyhow::Result<()> {
+pub(crate) fn resume_console_terminal(stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
     crate::tui::begin_debug_buffering();
     crossterm::terminal::enable_raw_mode()?;
     stdout.execute(crossterm::terminal::EnterAlternateScreen)?;

@@ -2,11 +2,11 @@
 //! `ConfirmSave` preview modal, and `ConfigEditor`-driven writes.
 #![allow(clippy::items_after_test_module)]
 
+use super::super::message::{ManagerMessage, update_manager};
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
     PendingDriftCheck,
 };
-use super::super::message::{ManagerMessage, update_manager};
 use crate::config::AppConfig;
 use crate::config::editor::EnvScope;
 use crate::paths::JackinPaths;
@@ -344,13 +344,12 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                     })();
                     let _ = tx.send(result);
                 });
-                editor.pending_drift_check =
-                    Some(super::super::state::PendingDriftCheck {
-                        rx,
-                        plan: plan.clone(),
-                        exit_on_success,
-                        original_name: original_name.clone(),
-                    });
+                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck {
+                    rx,
+                    plan: plan.clone(),
+                    exit_on_success,
+                    original_name: original_name.clone(),
+                });
                 editor.modal = Some(super::super::state::Modal::StatusPopup {
                     state: crate::console::widgets::status_popup::StatusPopupState::new(
                         "Saving",

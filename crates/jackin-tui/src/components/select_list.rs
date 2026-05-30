@@ -72,7 +72,11 @@ impl SelectListState {
     }
 
     pub fn select_index(&mut self, index: usize) {
-        if let Some(row) = self.filtered.iter().position(|candidate| *candidate == index) {
+        if let Some(row) = self
+            .filtered
+            .iter()
+            .position(|candidate| *candidate == index)
+        {
             self.selected = Some(row);
         }
     }

@@ -16,11 +16,10 @@ pub mod scroll;
 pub mod theme;
 
 pub use geometry::{
-    FixedPrefixSegment, HintSpan, TabCell, TAB_GAP,
-    agent_display_name, display_cols, fixed_prefix_scroll_segments,
-    hint_row_cols, is_terminal_control_char, lay_out_tabs,
-    leading_space_cols, padded_line_display_cols, sanitize_terminal_title,
-    shorten_home, tab_at_column, take_display_cols,
+    FixedPrefixSegment, HintSpan, TAB_GAP, TabCell, agent_display_name, display_cols,
+    fixed_prefix_scroll_segments, hint_row_cols, is_terminal_control_char, lay_out_tabs,
+    leading_space_cols, padded_line_display_cols, sanitize_terminal_title, shorten_home,
+    tab_at_column, take_display_cols,
 };
 
 /// Outcome of a modal or component event-handling cycle.

@@ -6,8 +6,8 @@
 
 pub(crate) use jackin_tui::ModalOutcome;
 pub(crate) use jackin_tui::theme::{
-    DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN,
-    TAB_BG_INACTIVE_HOVER, WHITE,
+    DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER,
+    WHITE,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;

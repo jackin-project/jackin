@@ -54,8 +54,7 @@ impl MountInfoCache {
     pub(crate) fn github_web_url(&self, src: &str) -> Option<String> {
         match self.inspect_cached(src)? {
             crate::console::manager::mount_info::MountKind::Git {
-                origin:
-                    Some(crate::console::manager::mount_info::GitOrigin::Github { web_url, .. }),
+                origin: Some(crate::console::manager::mount_info::GitOrigin::Github { web_url, .. }),
                 ..
             } => Some(web_url),
             crate::console::manager::mount_info::MountKind::Missing
@@ -256,9 +255,8 @@ pub struct ManagerState<'a> {
     /// rebuild path walks every container directory.
     instances_last_refresh: Option<std::time::Instant>,
     instances_refresh_generation: u64,
-    instances_refresh_rx: Option<
-        tokio::sync::oneshot::Receiver<(u64, Result<InstanceRefreshSnapshot, String>)>,
-    >,
+    instances_refresh_rx:
+        Option<tokio::sync::oneshot::Receiver<(u64, Result<InstanceRefreshSnapshot, String>)>>,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.
@@ -1179,7 +1177,7 @@ impl SettingsEnvState<'_> {
             .min(settings_env_flat_row_count(self).saturating_sub(1));
         self.modal = None;
         self.modal_parents.clear();
-        
+
         self.pending_picker_target = None;
         self.pending_picker_value = None;
         self.unmasked_rows.clear();
@@ -1232,7 +1230,6 @@ impl<'a> SettingsEnvState<'a> {
     /// fully unwinds, clear the env-key + picker-value scratch slots
     /// so a later commit cannot accidentally target a stale (scope, key).
     fn drop_modal_scratch(&mut self) {
-        
         self.pending_picker_value = None;
     }
 }
@@ -2235,7 +2232,12 @@ impl ManagerState<'_> {
     /// ownership of the `PendingDriftCheck` so the caller can continue the
     /// save flow. Returns `None` when the check is still running or there is
     /// no pending check.
-    pub(crate) fn poll_pending_drift_check(&mut self) -> Option<(PendingDriftCheck, anyhow::Result<crate::config::DriftDetection>)> {
+    pub(crate) fn poll_pending_drift_check(
+        &mut self,
+    ) -> Option<(
+        PendingDriftCheck,
+        anyhow::Result<crate::config::DriftDetection>,
+    )> {
         let ManagerStage::Editor(editor) = &mut self.stage else {
             return None;
         };
@@ -2555,7 +2557,6 @@ impl<'a> EditorState<'a> {
     /// later unrelated commit cannot pick up stale (scope, key) and
     /// write a secret to the wrong target.
     fn drop_modal_scratch(&mut self) {
-        
         self.pending_picker_value = None;
     }
 }

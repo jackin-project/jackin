@@ -81,15 +81,20 @@ impl Multiplexer {
         let pane_titles: Vec<(u64, String)> = panes
             .iter()
             .filter_map(|pane| {
-                self.sessions.get(&pane.id).map(|s| (pane.id, display_title(s)))
+                self.sessions
+                    .get(&pane.id)
+                    .map(|s| (pane.id, display_title(s)))
             })
             .collect();
 
         let sessions = &self.sessions;
-        let status_bar = StatusBarWidget { tabs, active_tab, cols: term_cols };
+        let status_bar = StatusBarWidget {
+            tabs,
+            active_tab,
+            cols: term_cols,
+        };
 
         let result = self.ratatui_terminal.draw(|frame| {
-
             // Status bar: rows 0-1 (STATUS_BAR_ROWS = 2)
             let status_area = RatatuiRect {
                 x: 0,

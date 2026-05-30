@@ -234,10 +234,6 @@ fn render_input_value(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) 
     Paragraph::new(Line::from(spans)).render(area, buf);
 }
 
-pub fn render_text_input(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    state: &TextInputState<'_>,
-) {
+pub fn render_text_input(frame: &mut ratatui::Frame<'_>, area: Rect, state: &TextInputState<'_>) {
     frame.render_widget(TextInput::new(state), area);
 }

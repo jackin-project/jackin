@@ -265,10 +265,7 @@ fn check_svgs(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         let committed = fs::read_to_string(&path)?;
         let rendered = jackin_tui::lookbook::render_story_to_svg(story);
         if committed != rendered {
-            failures.push(format!(
-                "generated preview is stale: {}",
-                path.display()
-            ));
+            failures.push(format!("generated preview is stale: {}", path.display()));
         }
     }
 

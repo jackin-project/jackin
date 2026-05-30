@@ -10,14 +10,13 @@ use jackin_tui::components::{
     ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
     confirm_width_pct, render_confirm_dialog, render_error_dialog, render_hint_bar,
     render_scrollable_block, render_select_list, render_status_footer, render_text_input,
-    viewport_height, viewport_width,
-    required_height as error_dialog_required_height,
+    required_height as error_dialog_required_height, viewport_height, viewport_width,
 };
+use jackin_tui::runtime::{NoEffect, UpdateResult};
 use jackin_tui::theme::{
     DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
     PHOSPHOR_GREEN, WHITE,
 };
-use jackin_tui::runtime::{NoEffect, UpdateResult};
 use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};

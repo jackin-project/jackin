@@ -37,11 +37,7 @@ pub const fn effective_offset(content_len: usize, viewport: usize, offset: u16) 
     scroll::effective_offset_u16(content_len, viewport, offset)
 }
 
-pub const fn clamp_scroll_offset(
-    content_len: usize,
-    viewport: usize,
-    offset: &mut u16,
-) -> u16 {
+pub const fn clamp_scroll_offset(content_len: usize, viewport: usize, offset: &mut u16) -> u16 {
     scroll::clamp_offset_u16(content_len, viewport, offset)
 }
 
@@ -140,13 +136,9 @@ pub fn render_line_with_fixed_prefix_scroll(
     }
 
     for (text, style, base_col) in styled_spans {
-        for segment in fixed_prefix_scroll_segments(
-            &text,
-            base_col,
-            fixed_prefix_cols,
-            scroll_x,
-            width,
-        ) {
+        for segment in
+            fixed_prefix_scroll_segments(&text, base_col, fixed_prefix_cols, scroll_x, width)
+        {
             frame.buffer_mut().set_string(
                 area.x + segment.target_col as u16,
                 area.y + row,
@@ -172,9 +164,7 @@ pub fn max_line_width(lines: &[Line<'_>]) -> usize {
     // wide, so content_width must reflect it to keep the scrollbar range correct.
     lines
         .iter()
-        .map(|line| {
-            padded_line_display_cols(line.spans.iter().map(|span| span.content.as_ref()))
-        })
+        .map(|line| padded_line_display_cols(line.spans.iter().map(|span| span.content.as_ref())))
         .max()
         .unwrap_or(0)
 }
@@ -428,8 +418,9 @@ mod tests {
     use super::{
         apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset,
         cursor_follow_offset, render_line_with_fixed_prefix_scroll, render_scrollable_block,
-        render_scrollable_block_at, render_selected_lines_in_area, render_vertical_scrollbar_in_area,
-        scrollbar_offset_for_track_position, scrollbar_thumb_geometry,
+        render_scrollable_block_at, render_selected_lines_in_area,
+        render_vertical_scrollbar_in_area, scrollbar_offset_for_track_position,
+        scrollbar_thumb_geometry,
     };
     use crate::theme::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_GREEN};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Style, text::Line};

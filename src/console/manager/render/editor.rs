@@ -209,11 +209,19 @@ pub(in crate::console::manager) fn prepare_editor_tab_for_area(
             &state.pending.mounts,
             &state.mount_info_cache,
         );
-        super::clamp_scroll_x(content_width, viewport_w, &mut state.workspace_mounts_scroll_x);
+        super::clamp_scroll_x(
+            content_width,
+            viewport_w,
+            &mut state.workspace_mounts_scroll_x,
+        );
     } else {
         super::clamp_scroll_x(state.tab_content_width, viewport_w, &mut state.tab_scroll_x);
     }
-    super::clamp_scroll_x(state.tab_content_height, viewport_h, &mut state.tab_scroll_y);
+    super::clamp_scroll_x(
+        state.tab_content_height,
+        viewport_h,
+        &mut state.tab_scroll_y,
+    );
 }
 
 fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
@@ -678,12 +686,7 @@ fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     lines
 }
 
-fn render_roles_tab(
-    frame: &mut Frame,
-    area: Rect,
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) {
+fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let lines = roles_tab_lines(state, config);
     super::render_scrollable_block_at(
         frame,
@@ -1031,12 +1034,7 @@ pub(in crate::console::manager) fn eligible_agents_for_override(
 
 // Linear match per row kind reads better than scattered helpers.
 #[allow(clippy::too_many_lines)]
-fn render_secrets_tab(
-    frame: &mut Frame,
-    area: Rect,
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) {
+fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let lines = secrets_tab_lines(area, state, config);
     super::render_scrollable_block_at(
         frame,
@@ -1353,8 +1351,7 @@ fn auth_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'stat
     let max_idx = rows.len().saturating_sub(1);
     let selected = cursor.min(max_idx);
 
-    rows
-        .iter()
+    rows.iter()
         .enumerate()
         .map(|(i, r)| render_auth_row(i == selected, r, &synthesized, &workspace_name))
         .collect()

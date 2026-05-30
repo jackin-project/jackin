@@ -14,8 +14,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 use std::{
-    fs,
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -363,20 +362,38 @@ fn story_panel_focused(frame: &mut Frame<'_>, area: Rect) {
     frame.render_widget(
         Paragraph::new(vec![
             Line::from(vec![
-                Span::styled("Name: ", Style::default().fg(WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Name: ",
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("jackin-core", Style::default().fg(PHOSPHOR_GREEN)),
             ]),
             Line::from(vec![
-                Span::styled("Role: ", Style::default().fg(WHITE).add_modifier(Modifier::BOLD)),
-                Span::styled("github.com/jackin-project/roles/rust", Style::default().fg(PHOSPHOR_GREEN)),
+                Span::styled(
+                    "Role: ",
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "github.com/jackin-project/roles/rust",
+                    Style::default().fg(PHOSPHOR_GREEN),
+                ),
             ]),
             Line::from(vec![
-                Span::styled("Agent: ", Style::default().fg(WHITE).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Agent: ",
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("codex", Style::default().fg(PHOSPHOR_GREEN)),
             ]),
             Line::from(vec![
-                Span::styled("Mounts: ", Style::default().fg(WHITE).add_modifier(Modifier::BOLD)),
-                Span::styled("repo rw, ~/.config/gh ro", Style::default().fg(PHOSPHOR_DIM)),
+                Span::styled(
+                    "Mounts: ",
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "repo rw, ~/.config/gh ro",
+                    Style::default().fg(PHOSPHOR_DIM),
+                ),
             ]),
         ]),
         inner,
@@ -410,15 +427,14 @@ fn story_tab_strip(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_confirm_default(frame: &mut Frame<'_>, area: Rect) {
-    let state = ConfirmState::new("Delete workspace \"jackin-core\"?\nThis removes the saved workspace entry.");
+    let state = ConfirmState::new(
+        "Delete workspace \"jackin-core\"?\nThis removes the saved workspace entry.",
+    );
     render_confirm_dialog(frame, area, &state);
 }
 
 fn story_confirm_role_trust(frame: &mut Frame<'_>, area: Rect) {
-    let state = ConfirmState::role_trust(
-        "rust",
-        "https://github.com/jackin-project/roles",
-    );
+    let state = ConfirmState::role_trust("rust", "https://github.com/jackin-project/roles");
     render_confirm_dialog(frame, area, &state);
 }
 
@@ -476,15 +492,24 @@ fn story_select_list_agent_picker(frame: &mut Frame<'_>, area: Rect) {
     state.select_index(1);
     let context = [
         Line::from(vec![
-            Span::styled("Workspace: ", Style::default().fg(WHITE).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Workspace: ",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("jackin-core", Style::default().fg(PHOSPHOR_GREEN)),
         ]),
         Line::from(vec![
-            Span::styled("Role: ", Style::default().fg(WHITE).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Role: ",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("rust", Style::default().fg(PHOSPHOR_GREEN)),
         ]),
     ];
-    frame.render_widget(SelectList::new(&state, "Choose agent").context(&context), area);
+    frame.render_widget(
+        SelectList::new(&state, "Choose agent").context(&context),
+        area,
+    );
 }
 
 fn story_scrollable_panel_mounts(frame: &mut Frame<'_>, area: Rect) {

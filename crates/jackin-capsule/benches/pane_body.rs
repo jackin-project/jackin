@@ -149,7 +149,10 @@ fn bench_pane_body(c: &mut Criterion) {
     ));
 
     group.bench_with_input(
-        BenchmarkId::new("custom_widget_ratatui", format!("{}x{}", BENCH_COLS, BENCH_ROWS)),
+        BenchmarkId::new(
+            "custom_widget_ratatui",
+            format!("{}x{}", BENCH_COLS, BENCH_ROWS),
+        ),
         &screen,
         |b, screen| {
             b.iter(|| {
@@ -163,7 +166,10 @@ fn bench_pane_body(c: &mut Criterion) {
     );
 
     group.bench_with_input(
-        BenchmarkId::new("raw_ansi_baseline", format!("{}x{}", BENCH_COLS, BENCH_ROWS)),
+        BenchmarkId::new(
+            "raw_ansi_baseline",
+            format!("{}x{}", BENCH_COLS, BENCH_ROWS),
+        ),
         &screen,
         |b, screen| {
             b.iter(|| {
