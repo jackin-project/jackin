@@ -13,7 +13,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::console::widgets::confirm::{self, ConfirmState};
-use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::text_input::{self, TextInputState};
 use crate::console::widgets::{
@@ -21,7 +20,10 @@ use crate::console::widgets::{
     PHOSPHOR_GREEN, WHITE,
 };
 use crate::diagnostics::RunDiagnostics;
-use jackin_tui::components::{render_hint_bar, render_status_footer};
+use jackin_tui::components::{
+    ErrorPopupState, render_error_dialog, render_hint_bar, render_status_footer,
+    required_height as error_dialog_required_height,
+};
 use jackin_tui::{HintSpan, ModalOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -2089,7 +2091,7 @@ fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
 
 fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-    error_popup::render(frame, error_popup_rect(box_area, state), state);
+    render_error_dialog(frame, error_popup_rect(box_area, state), state);
     render_hint_bar(frame, hint_area, ERROR_POPUP_HINT);
 }
 
@@ -2136,7 +2138,7 @@ fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
 
 fn error_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
     let width = (area.width.saturating_mul(3) / 4).clamp(40, area.width.max(40));
-    let height = error_popup::required_height(state, width.saturating_sub(2), area.height);
+    let height = error_dialog_required_height(state, width.saturating_sub(2), area.height);
     centered_rect(width, height, area)
 }
 
