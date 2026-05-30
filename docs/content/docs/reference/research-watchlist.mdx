@@ -1,0 +1,71 @@
+---
+title: "Research Watchlist"
+---
+
+This page is the contributor-facing index of external projects, papers, product docs, and implementation references that jackin' keeps revisiting when designing roadmap items. It is not an endorsement list and it is not a dependency list. It is a reminder to verify prior art before inventing a local shape, and to record the snapshot date when a roadmap item borrows an idea.
+
+Use this page before implementation work that touches agent orchestration, runtime status, containment, credentials, desktop surfaces, or automation. Re-check the relevant upstream source, docs, license, and recent issues; then summarize the parts that influenced the jackin' design in the specific roadmap item or PR. Do not copy incompatible source, and do not assume a project snapshot from an older roadmap page is still current.
+
+## Agent Runtime Status And Terminal Observability
+
+| Reference | Watch for | Where it informs jackin' |
+|---|---|---|
+| [Herdr](https://github.com/ogulcancelik/herdr) / [docs](https://herdr.dev/docs/agents/) | Foreground process detection, current-screen state detection, socket status reports, attention roll-up, `done` until viewed, and issue tracker edge cases around stale reports. | [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) and [jackin' Capsule](/reference/jackin-capsule/). |
+| [multicode](https://github.com/graemerocher/multicode) | Codex app-server status, OpenCode SSE/session status, descendant session roll-up, cooperative state files, GitHub/task queue surfaces, and Apple container experiments. | Agent runtime status, [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/), [Autonomous task queue](/reference/roadmap/autonomous-task-queue/), [GitHub link tracking](/reference/roadmap/github-link-tracking/), and [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/). |
+| [CCManager](https://github.com/kbwo/ccmanager) | `xterm/headless` visible-screen classifiers, Claude idle debounce, prompt-box-region parsing, approval-state handling, fixture strategy, and fast polling trade-offs. | Agent runtime status screen-detector tests and anti-flicker behavior. |
+| [Agent Session Manager](https://github.com/izll/agent-session-manager) | `tmux capture-pane` parsing, spinner detection, followed-window roll-up, waiting-over-busy priority, and wide-character/line-cleanup details. | Status roll-up and regression fixtures for terminal-text classifiers. |
+| [WezTerm Agent Deck](https://github.com/Eric162/wezterm-agent-deck) | Foreground process lookup in terminal panes, child process fallback, pane-title fallback, recent-line priority, notification TTLs, and rate limiting. | Process identity fallback, cache TTLs, and attention notification policy. |
+| [ccmux](https://ccmux.ai/) | `needs_input` transitions, keep-awake/sleep-inhibit behavior, prompt counts, real tmux/PTY e2e tests, and the limits of quiet-pane classifiers for non-Claude agents. | Agent attention prompts, idle cleanup, and status-to-operational-effect mapping. |
+| [TUICommander](https://tuicommander.com/docs/user-guide/ai-agents.html) | Foreground process polling, status-line markers, session-binding environment variables, shell wrappers, terminal activity state machines, subtask counters, and completion deferral. | Parent/child agent roll-up, reporter launch environment, and completion safety. |
+| [Codemux agent status](https://docs.codemux.org/agent-status) and [tmux-agent-status](https://github.com/samleeney/tmux-agent-status) | Hook-driven lifecycle events, local status files, sidebar summaries, done-until-viewed UX, and hook-over-process authority. | Container-local hook reporters and acknowledgement semantics. |
+| [agent-deck](https://github.com/asheshgoplani/agent-deck), [claudeye](https://docs.rs/crate/claudeye/0.6.0), and [Codeman](https://github.com/Ark0N/Codeman) | Transition notifications, hook freshness windows, scratch config ownership, done sentinels, health scores, circuit breakers, AI idle-check fallbacks, and terminal classifier variants. | Adjacent ideas for status evidence, failure handling, stuck diagnostics, and notification throttling. |
+| [Zylos cursor-readiness research](https://zylos.ai/research/2026-04-01-ai-agent-input-ready-detection-cursor-vs-regex) | Cursor-position readiness probes, output-stability windows, and regex failure modes. | Input-ready and stuck-detection fallback design. |
+| [VS Code terminal shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) and [Windows Terminal shell integration](https://learn.microsoft.com/en-us/windows/terminal/tutorials/shell-integration) | Prompt/command OSC markers, command-finished events, cwd reporting, and shell integration fallback semantics. | Shell prompt/execution boundaries inside Capsule PTYs. |
+| [Warp](https://www.warp.dev/) | Agent-in-terminal product shape, interactive command handoff, and terminal-first UX direction. | Product boundary for visible foreground agents instead of hidden workers. |
+| [Zellij](https://zellij.dev/), [Ghostty](https://ghostty.org/), and [vt100](https://docs.rs/vt100/) | Multiplexer UX, terminal parser behavior, pane rendering, and screen-state representation. | Capsule multiplexer design and screen detector substrate. |
+
+## Agent Workflow And Fleet Orchestration
+
+| Reference | Watch for | Where it informs jackin' |
+|---|---|---|
+| [Orca](https://orcahq.ai/) and the [Orca research item](/reference/roadmap/orca-research/) | Agent development environment concepts, workspace/task handoff, and fleet orchestration UX. | Agent Orchestrator Research Program and fleet-phase roadmap items. |
+| [Conductor](https://conductor.build/), [Contrabass](https://contrabass.dev/), and [agtx](https://github.com/fynnfluegge/agtx) | Multi-agent task routing, workspace grouping, and terminal/session control surfaces. | Agent workflow orchestration and console agent session control. |
+| [Forge MCP](https://github.com/antinomyhq/forge) and [Forge Terminal MCP](https://forgemcp.dev/) | MCP-driven agent operations, terminal mediation, and command/action bridges. | Custom operator tools and task-source abstraction. |
+| MCO/Hive, Emdash, Vibe Kanban, Sandcastle, worktrunk, workmux, par, Optio, Sculptor, Handler.dev, Helmor, OpenClaw Code Agent, RuFlo, Ruah/Bernstein, Switchboard, and GitHub Agentic Workflows | Queue models, PR/task lifecycle, delegation semantics, agent fleets, and project-board-style operator surfaces. | [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) and [Autonomous task queue](/reference/roadmap/autonomous-task-queue/). Re-resolve project URLs from the roadmap item before use because this group changes quickly. |
+| [Agent Client Protocol](https://agentclientprotocol.com/) | Runtime-neutral agent/session protocol ideas and ecosystem convergence. | Future cross-runtime control contracts and custom agent integration. |
+
+## Isolation, Security, And Runtime Backends
+
+| Reference | Watch for | Where it informs jackin' |
+|---|---|---|
+| [Hazmat](https://github.com/dredozubov/hazmat) | Dedicated user isolation, seatbelt/firewall tiers, integration capability rules, Docker boundary analysis, harnesses, and threat matrix structure. | [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/), [Container credential exposure](/reference/roadmap/container-credential-exposure/), and sandboxing roadmap items. |
+| [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) | Branch-mode worktrees, signed commits, hypervisor isolation, credential boundaries, and sandbox lifecycle. | [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/), [Per-mount isolation](/guides/workspaces/#per-mount-isolation), and Docker runtime hardening work. |
+| [OrbStack](https://orbstack.dev/) isolated machines and related issue threads | Fast local VM/container ergonomics, isolated Docker engines, and macOS backend constraints. | [OrbStack isolated machine backend](/reference/roadmap/orbstack-isolated-machine-backend/) and selectable sandbox backends. |
+| [smolvm](https://github.com/smol-machines/smolvm), smol-machines SDK, and [libkrun](https://github.com/containers/libkrun) | Lightweight VM backend feasibility, filesystem/network constraints, and Rust integration risk. | [smolvm backend research](/reference/roadmap/smolvm-backend-research/) and future microVM backend design. |
+| [Zerobox](https://github.com/afshinm/zerobox) and OpenAI Codex CLI sandboxing behavior | Process-level sandbox controls, command mediation, and host/guest trust boundaries. | [Process-level sandboxing](/reference/roadmap/process-level-sandboxing/) and command-execution safety design. |
+| Claude Code devcontainer guidance and Docker runtime/security docs | Baseline devcontainer patterns, Docker hardening knobs, network/credential limits, and explicit non-goals. | [Devcontainer parity](/reference/roadmap/devcontainer-parity/), [network egress policy](/reference/roadmap/network-egress-policy/), and Docker runtime hardening. |
+
+## Desktop, Accounts, And Operator Surfaces
+
+| Reference | Watch for | Where it informs jackin' |
+|---|---|---|
+| CodexBar, OpenUsage, RepoBar, and GitHub pull inbox tools | Menu-bar account surfaces, usage counters, repo/PR notifications, and lightweight background status. | [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) and token/cost telemetry. |
+| Apple Human Interface Guidelines, menu bar guidance, and Liquid Glass guidance | Native macOS menu bar behavior, status-item constraints, and visual-system expectations. | Desktop Agent Hub UX constraints. |
+| Microsoft APM | Native authentication/account management patterns for agent platforms. | [Native APM role support](/reference/roadmap/native-apm-role-support/) and authentication UX. |
+
+## Supporting Infrastructure And Documentation Tools
+
+| Reference | Watch for | Where it informs jackin' |
+|---|---|---|
+| [1Password CLI](https://developer.1password.com/docs/cli/), [Doppler](https://docs.doppler.com/), and [Vault Agent](https://developer.hashicorp.com/vault/docs/agent-and-proxy/agent) | Secret injection patterns, env templating, lease/refresh semantics, and credential sidecar trade-offs. | [Container credential exposure](/reference/roadmap/container-credential-exposure/) and credential-source pattern work. |
+| [rumdl](https://github.com/rvben/rumdl) | Fast Markdown linting, rule coverage, and docs CI ergonomics. | [Docs markdown linting](/reference/roadmap/docs-markdown-linting/). |
+| [zot](https://zotregistry.dev/) | Local registry/cache behavior and OCI distribution mechanics. | [Workspace registry cache](/reference/roadmap/workspace-registry-cache/). |
+| Git `interpret-trailers` and GitHub co-authored-by docs | Trailer parsing, attribution conventions, and generated commit metadata. | [Public attribution and project growth](/reference/roadmap/public-attribution-and-growth/). |
+
+## Maintenance Rules
+
+- Add a project here when at least two roadmap items keep referring to it, or when one roadmap item depends on repeated verification of that project's design.
+- Keep implementation details in the specific roadmap item. This page should say what to watch and where it matters, not duplicate every research note.
+- Record snapshot dates in the roadmap item or PR description when a design decision depends on a specific upstream behavior.
+- Prefer primary sources: repository source, official docs, release notes, and issue discussions. Blog posts are useful context but should not be the only evidence for an implementation detail.
+- Re-check licenses before using source-level ideas. AGPL and proprietary sources can inform product shape, but code for jackin' must be written independently.
