@@ -99,6 +99,17 @@ impl TerminalSession {
         Ok(screen)
     }
 
+    /// Returns true while this session owns the host terminal.
+    ///
+    /// This is the typed alternative to `crate::tui::host_screen_owned()` for
+    /// callers that have a reference to the session. Subsystems without access
+    /// (docker, operator_env) still fall back to the global flag for now; the
+    /// full migration to typed ownership is tracked in Phase 5.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        crate::tui::host_screen_owned()
+    }
+
     /// Drop to the cooked primary screen for the duration of `f`, then restore
     /// the full-screen session. Used for the rare interim prompts that sit
     /// between the console and the loading cockpit (sensitive-mount confirm,
