@@ -94,8 +94,14 @@ pub(crate) fn prepare_for_render(
 ) {
     state.cached_term_size = area;
     match &mut state.stage {
-        ManagerStage::Editor(editor) => clamp_editor_scroll_for_frame(area, editor),
+        ManagerStage::Editor(editor) => {
+            let footer = editor::editor_footer_items(editor, config, state.op_available);
+            editor.cached_footer_h = footer_height(&footer, area.width).max(1);
+            clamp_editor_scroll_for_frame(area, editor);
+        }
         ManagerStage::Settings(settings) => {
+            let footer = global_mounts::settings_footer_items(settings, state.op_available);
+            settings.cached_footer_h = footer_height(&footer, area.width).max(1);
             clamp_global_mounts_scroll_for_frame(area, &mut settings.mounts);
         }
         ManagerStage::List => {

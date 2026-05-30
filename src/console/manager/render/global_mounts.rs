@@ -39,25 +39,9 @@ pub(super) fn render_settings(
     state: &mut SettingsState<'_>,
     op_available: bool,
 ) {
-    use super::modal::{
-        settings_auth_modal_footer_items, settings_env_modal_footer_items,
-        settings_mounts_modal_footer_items,
-    };
     let area = frame.area();
-    // When a modal is open, show its keys in the footer (the "behind" keys are unreachable).
-    // Check in priority order: auth modal > env modal > mounts modal > no modal.
-    let footer = if state.auth.modal.is_some() {
-        settings_auth_modal_footer_items(&state.auth)
-    } else if let Some(modal) = &state.env.modal {
-        settings_env_modal_footer_items(modal)
-    } else if let Some(modal) = &state.mounts.modal {
-        settings_mounts_modal_footer_items(modal)
-    } else {
-        footer_items(state, op_available)
-    };
+    let footer = settings_footer_items(state, op_available);
     let footer_h = footer_height(&footer, area.width).max(1);
-    // Cache for mouse hit-testing so it subtracts the same dynamic footer.
-    state.cached_footer_h = footer_h;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -89,6 +73,27 @@ pub(super) fn render_settings(
     }
 
     render_footer(frame, chunks[3], &footer);
+}
+
+pub(super) fn settings_footer_items(
+    state: &SettingsState<'_>,
+    op_available: bool,
+) -> Vec<HintSpan<'static>> {
+    use super::modal::{
+        settings_auth_modal_footer_items, settings_env_modal_footer_items,
+        settings_mounts_modal_footer_items,
+    };
+    // When a modal is open, show its keys in the footer (the "behind" keys are unreachable).
+    // Check in priority order: auth modal > env modal > mounts modal > no modal.
+    if state.auth.modal.is_some() {
+        settings_auth_modal_footer_items(&state.auth)
+    } else if let Some(modal) = &state.env.modal {
+        settings_env_modal_footer_items(modal)
+    } else if let Some(modal) = &state.mounts.modal {
+        settings_mounts_modal_footer_items(modal)
+    } else {
+        footer_items(state, op_available)
+    }
 }
 
 fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
