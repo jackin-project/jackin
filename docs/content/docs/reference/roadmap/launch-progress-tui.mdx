@@ -252,7 +252,7 @@ The exact Rust shape can differ, but the boundary should exist. Renderers then b
 | Rich TUI renderer | Interactive TTY with `TERM` not `dumb`, no CI signal, and at least an 80x24 viewport | Full-screen ratatui launch surface with bounded rain, stage list, identity panel, footer, and error dialog. Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and comparable terminals should land here without an allowlist. |
 | Test renderer | Unit/integration tests | Captures events for assertions without terminal I/O. |
 
-This also gives future console integration a clean transition: `jackin console` can tear down the manager, run the shared launch progress renderer, then open the Capsule hardline without duplicating the launch UI.
+This also gives future console integration a clean transition: `jackin console` swaps from the manager view to the shared launch progress renderer **within one owned terminal session** — a view swap, not a teardown-and-relaunch — then opens the Capsule hardline without duplicating the launch UI. The session-ownership refactor that makes this continuous is owned by [TUI architecture — Ratatui application patterns](/reference/roadmap/tui-architecture/); this item owns the renderer and its events.
 
 ## Parallelization plan
 
@@ -293,7 +293,7 @@ Build the ratatui launch renderer using console-compatible palette, layout, foot
 
 ### Phase 5 — Console integration
 
-Make console-triggered launches use the same renderer as `jackin load`. The console should select workspace/role/agent, then the shared launch progress surface owns terminal feedback until the Capsule hardline opens.
+Make console-triggered launches use the same renderer as `jackin load`. The console selects workspace/role/agent, then swaps to the shared launch progress surface **within the single owned terminal session** — a view swap, not a teardown — until the Capsule hardline opens. The one-session backbone is owned by [TUI architecture — Ratatui application patterns](/reference/roadmap/tui-architecture/) Phase 5; coordinate the two.
 
 ### Phase 6 — Parallel launch execution
 
