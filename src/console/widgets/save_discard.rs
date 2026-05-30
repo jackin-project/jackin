@@ -66,12 +66,12 @@ impl SaveDiscardState {
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
+    style::{Modifier, Style},
+    text::Span,
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_DARK, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     let block = Block::default()
@@ -104,43 +104,19 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
         chunks[0],
     );
 
-    // Buttons — focused row highlights on white; unfocused stays flush
-    // with the modal background so only the focused choice pops.
-    let focused_style = Style::default()
-        .bg(WHITE)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-
-    let save_style = if state.focus == SaveDiscardFocus::Save {
-        focused_style
-    } else {
-        unfocused_style
+    let items = [
+        jackin_tui::components::ButtonStripItem::new("Save"),
+        jackin_tui::components::ButtonStripItem::new("Discard"),
+        jackin_tui::components::ButtonStripItem::new("Cancel"),
+    ];
+    let focused = match state.focus {
+        SaveDiscardFocus::Save => 0,
+        SaveDiscardFocus::Discard => 1,
+        SaveDiscardFocus::Cancel => 2,
     };
-    let discard_style = if state.focus == SaveDiscardFocus::Discard {
-        focused_style
-    } else {
-        unfocused_style
-    };
-    let cancel_style = if state.focus == SaveDiscardFocus::Cancel {
-        focused_style
-    } else {
-        unfocused_style
-    };
-
-    let button_line = Line::from(vec![
-        Span::styled("  Save  ", save_style),
-        Span::raw("    "),
-        Span::styled("  Discard  ", discard_style),
-        Span::raw("    "),
-        Span::styled("  Cancel  ", cancel_style),
-    ]);
-    frame.render_widget(
-        Paragraph::new(button_line).alignment(Alignment::Center),
-        chunks[2],
-    );
+    jackin_tui::components::ButtonStrip::new(&items)
+        .focused(focused)
+        .render(frame, chunks[2]);
 }
 
 #[cfg(test)]

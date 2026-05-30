@@ -167,7 +167,7 @@ The same audit found concrete places where a component library would pay off imm
 | Runtime imports console widgets | <RepoFile path="src/runtime/progress.rs" /> uses console widget modules for launch UI | move reused widgets into `jackin-tui`; runtime imports the design crate only |
 | Capsule raw ANSI copies dialog chrome | <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> has its own `render_box`, filter input, row, hint row, confirm, and picker code | share models/tokens first; replace renderer once capsule has a Ratatui frame |
 | Multiple picker implementations | host role/github/workdir pickers, launch select list, capsule palette/agent/split pickers | one generic picker primitive plus app-specific row adapters |
-| Multiple button-strip styles | confirm-save and scope picker now consume `ButtonStrip`; save/discard, source picker, agent choices, mount choices, and capsule menus still carry local strips | Continue routing button rows through `ButtonStrip` until no surface declares focused/unfocused button styles locally |
+| Multiple button-strip styles | host confirm, confirm-save, scope, source, mount-destination, and save/discard buttons now consume `ButtonStrip`; capsule menus still carry raw-ANSI strips until Ratatui lands | Continue routing remaining button rows through `ButtonStrip` until no surface declares focused/unfocused button styles locally |
 | Render mutates state | scroll clamping and geometry cache writes happen during draw | components expose `layout_snapshot`/`Geometry` outputs from update or post-render measurement, not hidden mutation in view |
 
 ### Proposed `jackin-tui` package layout
@@ -681,7 +681,7 @@ The audit's patterns, grouped by atomic layer. This is the seed inventory the lo
 | `TextInput` | single-line entry | band bg `INPUT_BG_DIM`; text `GREEN`; inverse caret; red border on duplicate | normal / invalid |
 | `FilterInput` | type-to-filter row | `"Filter: "` `DIM`; empty = 20×`░`; caret `█` | empty / typing |
 | `ListRow` | selectable item | selected = `▸ ` + `GREEN`; unselected color is a **drift point** (host `WHITE` vs capsule `GREEN`) | selected / idle |
-| `ButtonStrip` | 2–3 buttons | focused = `WHITE` bg / black fg / bold; unfocused = `GREEN+bold`; gap 4 | `jackin_tui::components::button_strip`; confirm, confirm-save, and scope picker consume it |
+| `ButtonStrip` | 2–3 buttons | focused = `WHITE` bg / black fg / bold; unfocused = `GREEN+bold`; disabled = dark/dim; gap 4 | `jackin_tui::components::button_strip`; host confirm, confirm-save, scope, source, mount-destination, and save/discard consume it |
 
 **Components (organisms):**
 

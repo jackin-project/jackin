@@ -70,12 +70,12 @@ impl SourcePickerState {
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
+    style::{Modifier, Style},
+    text::Span,
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_DARK, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
     let title = format!(" Source for {} ", state.key);
@@ -99,43 +99,30 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
         ])
         .split(inner);
 
-    let focused_style = Style::default()
-        .bg(WHITE)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-    let disabled_style = Style::default()
-        .fg(PHOSPHOR_DARK)
-        .add_modifier(Modifier::DIM);
-
-    let plain_style = if state.focused == SourceChoice::Plain {
-        focused_style
-    } else {
-        unfocused_style
+    let items = [
+        jackin_tui::components::ButtonStripItem::new("Plain text"),
+        if state.op_available {
+            jackin_tui::components::ButtonStripItem::new("1Password")
+        } else {
+            jackin_tui::components::ButtonStripItem::disabled("1Password")
+        },
+    ];
+    let focused = match state.focused {
+        SourceChoice::Plain => 0,
+        SourceChoice::Op => 1,
     };
-    let op_style = if !state.op_available {
-        disabled_style
-    } else if state.focused == SourceChoice::Op {
-        focused_style
-    } else {
-        unfocused_style
-    };
-
-    let button_line = Line::from(vec![
-        Span::styled("  Plain text  ", plain_style),
-        Span::raw("    "),
-        Span::styled("  1Password  ", op_style),
-    ]);
-    frame.render_widget(
-        Paragraph::new(button_line).alignment(Alignment::Center),
-        chunks[1],
-    );
+    jackin_tui::components::ButtonStrip::new(&items)
+        .focused(focused)
+        .render(frame, chunks[1]);
 
     if !state.op_available {
         frame.render_widget(
-            Paragraph::new(Span::styled("(install op CLI to enable)", disabled_style))
+            Paragraph::new(Span::styled(
+                "(install op CLI to enable)",
+                Style::default()
+                    .fg(PHOSPHOR_DARK)
+                    .add_modifier(Modifier::DIM),
+            ))
                 .alignment(Alignment::Center),
             chunks[2],
         );

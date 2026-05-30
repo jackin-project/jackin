@@ -9,12 +9,12 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
+    style::{Modifier, Style},
+    text::Span,
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::{ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, WHITE};
 
 /// Outcome of the mount-destination modal.
 ///
@@ -129,43 +129,19 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
         chunks[1],
     );
 
-    // Buttons — focused choice highlights on white; unfocused stays
-    // flush with the modal background so only the focused choice pops.
-    let focused_style = Style::default()
-        .bg(WHITE)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-
-    let ok_style = if state.focus == MountDstFocus::SamePath {
-        focused_style
-    } else {
-        unfocused_style
+    let items = [
+        jackin_tui::components::ButtonStripItem::new("Mount at same path"),
+        jackin_tui::components::ButtonStripItem::new("Edit destination"),
+        jackin_tui::components::ButtonStripItem::new("Cancel"),
+    ];
+    let focused = match state.focus {
+        MountDstFocus::SamePath => 0,
+        MountDstFocus::Edit => 1,
+        MountDstFocus::Cancel => 2,
     };
-    let edit_style = if state.focus == MountDstFocus::Edit {
-        focused_style
-    } else {
-        unfocused_style
-    };
-    let cancel_style = if state.focus == MountDstFocus::Cancel {
-        focused_style
-    } else {
-        unfocused_style
-    };
-
-    let button_line = Line::from(vec![
-        Span::styled("  Mount at same path  ", ok_style),
-        Span::raw("    "),
-        Span::styled("  Edit destination  ", edit_style),
-        Span::raw("    "),
-        Span::styled("  Cancel  ", cancel_style),
-    ]);
-    frame.render_widget(
-        Paragraph::new(button_line).alignment(Alignment::Center),
-        chunks[3],
-    );
+    jackin_tui::components::ButtonStrip::new(&items)
+        .focused(focused)
+        .render(frame, chunks[3]);
 }
 
 #[cfg(test)]

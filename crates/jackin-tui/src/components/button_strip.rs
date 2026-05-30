@@ -8,7 +8,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ButtonStripItem<'a> {
@@ -96,7 +96,9 @@ pub fn button_strip_line(
 #[must_use]
 pub fn button_style(focused: bool, disabled: bool) -> Style {
     if disabled {
-        return Style::default().fg(PHOSPHOR_DIM);
+        return Style::default()
+            .fg(PHOSPHOR_DARK)
+            .add_modifier(Modifier::DIM);
     }
     if focused {
         Style::default()
