@@ -86,6 +86,35 @@ pub(super) fn cursor_scroll_for_panel(
     follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
 }
 
+pub(crate) fn prepare_for_render(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    area: Rect,
+) {
+    state.cached_term_size = area;
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => clamp_editor_scroll_for_frame(area, editor),
+        ManagerStage::Settings(settings) => {
+            clamp_global_mounts_scroll_for_frame(area, &mut settings.mounts);
+        }
+        ManagerStage::List => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(2),
+                    Constraint::Min(10),
+                    Constraint::Length(2),
+                ])
+                .split(area);
+            clamp_list_scroll_for_area(chunks[1], state, config, cwd);
+        }
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn render(
     frame: &mut Frame,
@@ -94,12 +123,9 @@ pub fn render(
     cwd: &std::path::Path,
 ) {
     let area = frame.area();
-    state.cached_term_size = area;
     if let ManagerStage::Editor(editor) = &mut state.stage {
-        clamp_editor_scroll_for_frame(area, editor);
         editor::render_editor(frame, editor, config, state.op_available);
     } else if let ManagerStage::Settings(settings) = &mut state.stage {
-        clamp_global_mounts_scroll_for_frame(area, &mut settings.mounts);
         global_mounts::render_settings(frame, settings, state.op_available);
     } else {
         let chunks = Layout::default()
@@ -114,7 +140,6 @@ pub fn render(
         render_header(frame, chunks[0], "workspaces");
 
         if matches!(&state.stage, ManagerStage::List) {
-            clamp_list_scroll_for_area(chunks[1], state, config, cwd);
             list::render_list_body(frame, chunks[1], state, config, cwd);
         }
 

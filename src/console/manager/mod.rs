@@ -13,5 +13,6 @@ pub mod state;
 
 pub use input::{InputOutcome, handle_key};
 pub(crate) use message::{ManagerMessage, update_manager};
+pub(crate) use render::prepare_for_render;
 pub use render::render;
 pub use state::{ManagerStage, ManagerState};

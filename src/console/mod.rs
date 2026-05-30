@@ -975,6 +975,8 @@ pub async fn run_console(
         }
 
         if let ConsoleStage::Manager(ms) = &mut state.stage {
+            let area: ratatui::layout::Rect = terminal.size()?.into();
+            manager::prepare_for_render(ms, &config, cwd, area);
             let confirm_state = state.quit_confirm.as_ref();
             terminal.draw(|frame| {
                 manager::render(frame, ms, &config, cwd);
