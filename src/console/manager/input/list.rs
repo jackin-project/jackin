@@ -650,21 +650,21 @@ pub(super) fn handle_new_session_picker(
         ModalOutcome::Commit(agent) => {
             let container = container.clone();
             if providers.is_empty() || agent != crate::agent::Agent::Claude {
-                state.inline_new_session_picker = None;
+                dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
                 InputOutcome::InstanceAction {
                     container,
                     action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
                 }
             } else {
                 let providers = providers.clone();
-                state.inline_new_session_picker = None;
+                dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
                 state.inline_provider_picker =
                     Some(ProviderPickerState::new(container, agent, providers));
                 InputOutcome::Continue
             }
         }
         ModalOutcome::Cancel => {
-            state.inline_new_session_picker = None;
+            dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
             InputOutcome::Continue
         }
         ModalOutcome::Continue => InputOutcome::Continue,

@@ -151,6 +151,7 @@ pub(crate) enum ManagerMessage {
         message: String,
     },
     DismissListModal,
+    DismissInlineSessionPicker,
 }
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
@@ -306,6 +307,9 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::DismissListModal => {
             state.list_modal = None;
+        }
+        ManagerMessage::DismissInlineSessionPicker => {
+            state.inline_new_session_picker = None;
         }
     }
     UpdateResult::redraw()
