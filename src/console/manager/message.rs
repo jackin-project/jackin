@@ -7,6 +7,7 @@
 use super::state::{
     EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, SettingsTab,
 };
+use super::render::global_mounts::{settings_env_flat_rows, SettingsEnvRow};
 use jackin_tui::runtime::Dirty;
 use ratatui::layout::Rect;
 
@@ -41,6 +42,11 @@ pub enum ManagerMessage {
         content_width: usize,
     },
     MoveSettingsGlobalMountsSelection {
+        delta: isize,
+        term: Rect,
+        footer_h: u16,
+    },
+    MoveSettingsEnvSelection {
         delta: isize,
         term: Rect,
         footer_h: u16,
@@ -102,6 +108,11 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             term,
             footer_h,
         } => move_settings_global_mounts_selection(state, delta, term, footer_h),
+        ManagerMessage::MoveSettingsEnvSelection {
+            delta,
+            term,
+            footer_h,
+        } => move_settings_env_selection(state, delta, term, footer_h),
         ManagerMessage::MoveSettingsTrustSelection {
             delta,
             term,
@@ -274,6 +285,61 @@ fn move_settings_global_mounts_selection(
         term,
         footer_h,
     );
+}
+
+fn move_settings_env_selection(
+    state: &mut ManagerState<'_>,
+    delta: isize,
+    term: Rect,
+    footer_h: u16,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    let rows = settings_env_flat_rows(settings);
+    let max = rows.len().saturating_sub(1);
+    let candidate = if delta.is_negative() {
+        settings.env.selected.saturating_sub(delta.unsigned_abs())
+    } else {
+        settings.env.selected.saturating_add(delta as usize).min(max)
+    };
+    settings.env.selected = if delta.is_negative() {
+        step_settings_env_cursor_up(&rows, candidate)
+    } else {
+        step_settings_env_cursor_down(&rows, candidate, max)
+    };
+    settings.env.scroll_y = super::render::cursor_scroll_for_panel(
+        settings.env.selected,
+        settings.env.scroll_y,
+        term,
+        footer_h,
+    );
+}
+
+fn step_settings_env_cursor_down(rows: &[SettingsEnvRow], candidate: usize, max: usize) -> usize {
+    let mut idx = candidate;
+    while idx <= max {
+        match rows.get(idx) {
+            Some(SettingsEnvRow::SectionSpacer) => idx += 1,
+            _ => return idx,
+        }
+    }
+    candidate
+}
+
+fn step_settings_env_cursor_up(rows: &[SettingsEnvRow], candidate: usize) -> usize {
+    let mut idx = candidate;
+    loop {
+        match rows.get(idx) {
+            Some(SettingsEnvRow::SectionSpacer) => {
+                if idx == 0 {
+                    return 0;
+                }
+                idx -= 1;
+            }
+            _ => return idx,
+        }
+    }
 }
 
 fn move_settings_trust_selection(
@@ -667,6 +733,41 @@ mod tests {
             panic!("expected settings stage");
         };
         assert_eq!(settings.mounts.selected, settings.mounts.pending.len());
+    }
+
+    #[test]
+    fn move_settings_env_selection_skips_section_spacers() {
+        let mut state = state_with_saved_count(0);
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings
+            .env
+            .pending
+            .env
+            .insert("ALPHA".into(), crate::operator_env::EnvValue::Plain("one".into()));
+        settings
+            .env
+            .pending
+            .env
+            .insert("BETA".into(), crate::operator_env::EnvValue::Plain("two".into()));
+        settings.env.selected = 1;
+        state.stage = ManagerStage::Settings(settings);
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::MoveSettingsEnvSelection {
+                    delta: 1,
+                    term: Rect::new(0, 0, 80, 24),
+                    footer_h: 1,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.env.selected, 3);
     }
 
     #[test]

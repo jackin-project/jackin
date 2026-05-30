@@ -251,6 +251,37 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let op_cache = state.op_cache.clone();
     let op_available = state.op_available;
+    let term_size = state.cached_term_size;
+    let ManagerStage::Settings(settings) = &state.stage else {
+        return;
+    };
+    let footer_h = settings.cached_footer_h;
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsEnvSelection {
+                    delta: -1,
+                    term: term_size,
+                    footer_h,
+                },
+            );
+            return;
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsEnvSelection {
+                    delta: 1,
+                    term: term_size,
+                    footer_h,
+                },
+            );
+            return;
+        }
+        _ => {}
+    }
+
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
@@ -261,29 +292,6 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             } else {
                 state.stage = ManagerStage::List;
             }
-        }
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            let rows = settings_env_flat_rows(settings);
-            settings.env.selected =
-                step_settings_env_cursor_up(&rows, settings.env.selected.saturating_sub(1));
-            settings.env.scroll_y = super::super::render::cursor_scroll_for_panel(
-                settings.env.selected,
-                settings.env.scroll_y,
-                state.cached_term_size,
-                settings.cached_footer_h,
-            );
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            let rows = settings_env_flat_rows(settings);
-            let max = rows.len().saturating_sub(1);
-            let candidate = (settings.env.selected + 1).min(max);
-            settings.env.selected = step_settings_env_cursor_down(&rows, candidate, max);
-            settings.env.scroll_y = super::super::render::cursor_scroll_for_panel(
-                settings.env.selected,
-                settings.env.scroll_y,
-                state.cached_term_size,
-                settings.cached_footer_h,
-            );
         }
         KeyCode::Char('a' | 'A') => {
             open_settings_env_add_modal(settings);
@@ -319,32 +327,6 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             }
         }
         _ => {}
-    }
-}
-
-fn step_settings_env_cursor_down(rows: &[SettingsEnvRow], candidate: usize, max: usize) -> usize {
-    let mut idx = candidate;
-    while idx <= max {
-        match rows.get(idx) {
-            Some(SettingsEnvRow::SectionSpacer) => idx += 1,
-            _ => return idx,
-        }
-    }
-    candidate
-}
-
-fn step_settings_env_cursor_up(rows: &[SettingsEnvRow], candidate: usize) -> usize {
-    let mut idx = candidate;
-    loop {
-        match rows.get(idx) {
-            Some(SettingsEnvRow::SectionSpacer) => {
-                if idx == 0 {
-                    return 0;
-                }
-                idx -= 1;
-            }
-            _ => return idx,
-        }
     }
 }
 
