@@ -86,7 +86,8 @@ pub(super) fn cursor_scroll_for_panel(
     follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
 }
 
-pub(crate) fn prepare_for_render(
+#[doc(hidden)]
+pub fn prepare_for_render(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
