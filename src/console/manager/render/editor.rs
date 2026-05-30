@@ -981,9 +981,13 @@ fn resolve_panel_mode(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode => {
-            // `kind.agent()` returns `Some` for runtime agent kinds; the
-            // GitHub arm below means the unwrap is unreachable here.
-            let agent = kind.agent().expect("runtime auth kinds map to an Agent");
+            // kind.agent() returns Some for all runtime agent kinds; this
+            // arm only matches runtime kinds, so None is structurally
+            // unreachable. Degrade silently to Ignore rather than
+            // panicking on the render path.
+            let Some(agent) = kind.agent() else {
+                return AuthMode::Ignore;
+            };
             let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
             AuthMode::from_auth_forward(mode)
         }
