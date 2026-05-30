@@ -3,7 +3,7 @@
 Quick navigation for AI agents and human contributors working in this
 repository. **The canonical, detailed module map lives in the docs**
 ([`reference/codebase-map`](https://jackin.tailrocks.com/reference/codebase-map/),
-served from `docs/src/content/docs/reference/codebase-map.mdx`). This
+served from `docs/content/docs/reference/codebase-map.mdx`). This
 file is the short pointer that agents land on first; it covers the
 **multi-repo ecosystem** and the per-PR **code ↔ docs contract**, and
 sends you to the docs for everything else.
@@ -21,7 +21,7 @@ the configuration model, etc. — go to the docs:
 
 | Question | Page |
 |---|---|
-| "Where does the code for X live?" | [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/) (mirrored at `docs/src/content/docs/reference/codebase-map.mdx`) |
+| "Where does the code for X live?" | [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/) (mirrored at `docs/content/docs/reference/codebase-map.mdx`) |
 | "How does jackin' orchestrate containers?" | [Architecture](https://jackin.tailrocks.com/reference/architecture/) |
 | "How do instance identity, restore, and parallel sessions work?" | [Runtime Instance Model](https://jackin.tailrocks.com/reference/runtime-instance-model/) |
 | "What does `~/.config/jackin/config.toml` look like?" | [Configuration File](https://jackin.tailrocks.com/reference/configuration/) |
@@ -85,7 +85,7 @@ change, so it never falls behind.
 
 ## Documentation site (`docs/`)
 
-Astro Starlight site. **Lives alongside source code today** — update
+Fumadocs site on TanStack Start and Vite. **Lives alongside source code today** — update
 docs in the same commit as code changes (see roadmap item
 [Move documentation to a separate repository](https://jackin.tailrocks.com/reference/roadmap/docs-separate-repository/)
 for the longer-term discussion).
@@ -113,8 +113,7 @@ The site sidebar is split by **three audiences**:
   Roadmap. This is where on-disk layouts, internal mechanisms, and
   Rust-level detail live.
 
-Slugs are stable across the audience split — the audience
-distinction is enforced in `docs/astro.config.ts`, not in URLs.
+Slugs are stable across the audience split — parenthesized content group directories keep audience organization out of URLs.
 
 ## Docker (`docker/`)
 
@@ -149,7 +148,7 @@ PR for the listed area:
 
 | Code change in | Update docs in |
 |---|---|
-| `src/cli/**` (command flags or help text) | `docs/src/content/docs/commands/<cmd>.mdx` |
+| `src/cli/**` (command flags or help text) | `docs/content/docs/commands/<cmd>.mdx` |
 | `src/workspace/**` (mount logic) | `docs/.../guides/workspaces.mdx`, `docs/.../guides/mounts.mdx` |
 | `src/config/**` (config format) | `docs/.../reference/configuration.mdx` |
 | `src/runtime/**` (container lifecycle) | `docs/.../reference/architecture.mdx`, `docs/.../reference/runtime-instance-model.mdx` |

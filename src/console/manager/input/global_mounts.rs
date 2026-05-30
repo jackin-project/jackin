@@ -1,7 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::super::render::apply_scroll_delta;
-use super::super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
+use super::super::render::global_mounts::{
+    SettingsEnvRow, global_mounts_content_width, settings_env_flat_rows, trust_content_width,
+};
 use super::super::state::{
     AuthFormFocus, AuthFormReturnPath, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft,
     GlobalMountModal, GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal,
@@ -13,6 +14,7 @@ use crate::console::widgets::auth_panel::{AuthForm, CredentialInput};
 use crate::console::widgets::confirm::ConfirmState;
 use crate::console::widgets::file_browser::FileBrowserState;
 use crate::console::widgets::role_picker::RolePickerState;
+use crate::console::widgets::scrollable::apply_term_width_scroll_delta;
 use crate::console::widgets::text_input::TextInputState;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
@@ -114,6 +116,8 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     };
     let is_dirty = settings.is_dirty();
     let footer_h = settings.cached_footer_h;
+    let term_width = state.cached_term_size.width;
+    let content_width = global_mounts_content_width(&settings.mounts.pending);
     let global = &mut settings.mounts;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
@@ -124,10 +128,10 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             }
         }
         KeyCode::Char('h' | 'H') => {
-            apply_scroll_delta(&mut global.scroll_x, -8);
+            apply_term_width_scroll_delta(&mut global.scroll_x, -8, term_width, content_width);
         }
         KeyCode::Char('l' | 'L') => {
-            apply_scroll_delta(&mut global.scroll_x, 8);
+            apply_term_width_scroll_delta(&mut global.scroll_x, 8, term_width, content_width);
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             global.selected = global.selected.saturating_sub(1);
@@ -934,10 +938,12 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 }
 
 fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
+    let term_width = state.cached_term_size.width;
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
     let footer_h = settings.cached_footer_h;
+    let content_width = trust_content_width(settings);
     let trust = &mut settings.trust;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
@@ -966,10 +972,10 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             );
         }
         KeyCode::Char('h' | 'H') => {
-            apply_scroll_delta(&mut trust.scroll_x, -8);
+            apply_term_width_scroll_delta(&mut trust.scroll_x, -8, term_width, content_width);
         }
         KeyCode::Char('l' | 'L') => {
-            apply_scroll_delta(&mut trust.scroll_x, 8);
+            apply_term_width_scroll_delta(&mut trust.scroll_x, 8, term_width, content_width);
         }
         // Space is the W3C toggle key (checkbox/switch pattern). Enter is for actions.
         KeyCode::Char(' ') => {

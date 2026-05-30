@@ -19,6 +19,9 @@ exclude = [
   # ccmux is reachable in browsers and search crawlers, but lychee reports it
   # as network-unreachable in some environments.
   "https://ccmux\\.ai/",
+  # Imbue's Sculptor page is public but has failed as network-unreachable from
+  # GitHub Actions while passing local link checks.
+  "https://imbue\\.com/sculptor/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

@@ -20,7 +20,11 @@
 /// click-region maths.
 use std::io::Write as _;
 
-use jackin_tui::{TAB_GAP, TabCell, lay_out_tabs};
+use jackin_tui::{
+    BLACK, BORDER_GRAY, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_GAP, TabCell, WHITE,
+    ansi::{BOLD, RESET, rgb_bg, rgb_fg},
+    lay_out_tabs,
+};
 
 use crate::layout::Tab;
 
@@ -38,25 +42,24 @@ use crate::protocol::AgentState;
 const JACKIN_CONTAINER_NAME_ENV: &str = "JACKIN_CONTAINER_NAME";
 const JACKIN_INSTANCE_ID_ENV: &str = "JACKIN_INSTANCE_ID";
 
-const BRAND_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
-const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
-const BRAND_BOLD: &str = "\x1b[1m";
+const BRAND_BG: &str = rgb_bg(PHOSPHOR_GREEN);
+const BRAND_FG: &str = rgb_fg(BLACK);
+const BRAND_BOLD: &str = BOLD;
 
 // Tab-cell backgrounds live in `jackin-tui` (TAB_BG_*) so the console tab
 // strips and this status bar can't drift; emitted here via `ansi::bg`.
-const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const TAB_FG_ACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE on graphite
-const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const TAB_FG_INACTIVE: &str = rgb_fg(WHITE);
+const TAB_FG_ACTIVE: &str = rgb_fg(WHITE);
+const TAB_UNDERLINE_FG: &str = rgb_fg(WHITE);
 const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waiting for operator"
 
-const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
+const HINT_FG: &str = rgb_fg(PHOSPHOR_DIM);
 const BUTTON_BG_IDLE: &str = "\x1b[48;2;18;70;130m"; // restrained blue
 const BUTTON_BG_IDLE_HOVER: &str = "\x1b[48;2;32;92;158m"; // hover lift
-const BUTTON_FG_IDLE: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const BUTTON_FG_IDLE: &str = rgb_fg(WHITE);
 const BUTTON_BG_AWAITING: &str = "\x1b[48;2;96;180;255m"; // active blue
 const BUTTON_BG_AWAITING_HOVER: &str = "\x1b[48;2;132;202;255m"; // active hover lift
-const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
-use jackin_tui::ansi::{BOLD, RESET};
+const BUTTON_FG_AWAITING: &str = rgb_fg(BLACK);
 
 const BRAND_TEXT: &str = " jackin' ";
 const BRAND_PAD_COLS: u16 = 1; // single space between brand pill and first tab
@@ -427,8 +430,8 @@ fn tab_display_label(name: &str) -> String {
 /// not compete with the focused pane. Title text in the top border
 /// stays bright white when the pane is focused so the operator can
 /// locate the keystroke target at a glance.
-const BORDER_ACTIVE: &str = "\x1b[38;2;0;255;65m"; // jackin_tui::PHOSPHOR_GREEN
-const BORDER_INACTIVE: &str = "\x1b[38;2;80;80;80m"; // jackin_tui::BORDER_GRAY (80,80,80)
+const BORDER_ACTIVE: &str = rgb_fg(PHOSPHOR_GREEN);
+const BORDER_INACTIVE: &str = rgb_fg(BORDER_GRAY);
 const TITLE_ACTIVE: &str = "\x1b[1;38;2;255;255;255m"; // bright white, bold
 const TITLE_INACTIVE: &str = "\x1b[38;2;160;160;160m"; // mid gray
 

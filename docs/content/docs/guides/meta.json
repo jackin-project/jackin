@@ -1,0 +1,13 @@
+{
+  "title": "Operator Guide",
+  "pages": [
+    "workspaces",
+    "mounts",
+    "parallel-agents",
+    "environment-variables",
+    "authentication",
+    "tmux",
+    "security-model",
+    "comparison"
+  ]
+}

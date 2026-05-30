@@ -10,8 +10,6 @@ use crate::tui;
 use crate::version_check;
 use anyhow::Context;
 use fs2::FileExt;
-use owo_colors::OwoColorize;
-use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use super::attach::wait_for_dind;
@@ -21,15 +19,13 @@ use super::attach::{
 };
 use super::cleanup::gc_orphaned_resources;
 use super::discovery::list_running_agent_names;
-use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
-use super::image::build_agent_image;
+use super::identity::{GitIdentity, load_git_identity, load_host_identity};
+use super::image::{build_agent_image, prepare_runtime_binaries};
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
     image_name, image_name_for_branch,
 };
-use super::repo_cache::{
-    RepoResolveOptions, confirm_repo_removal_interactive, resolve_agent_repo_with,
-};
+use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 use super::universe::ExitClaim;
 use crate::docker_client::DockerApi;
 
@@ -57,9 +53,9 @@ pub struct LoadOptions {
     pub host_env: Option<std::collections::BTreeMap<String, String>>,
 
     /// CLI override for the agent. `None` defers to (in order) workspace
-    /// `default_agent`, the role's single supported agent, or an
-    /// interactive prompt when stdin is a TTY. A non-interactive launch
-    /// against a multi-agent role with no resolved choice is an error.
+    /// `default_agent`, the role's single supported agent, or a rich launch
+    /// dialog. A launch against a multi-agent role with no resolved choice is
+    /// an error when the rich dialog is unavailable.
     pub agent: Option<crate::agent::Agent>,
 
     /// When set, resolve this branch of the role repo instead of the default
@@ -161,8 +157,6 @@ impl StepCounter {
         if let Some(progress) = &mut self.progress {
             progress.stage_started(stage, text);
             progress.settle_stage_visual().await;
-        } else {
-            tui::step_quiet(self.current, text);
         }
     }
 
@@ -186,20 +180,66 @@ impl StepCounter {
     }
 }
 
-fn release_rich_progress_for_plain_io(steps: &mut StepCounter, reason: &str) {
-    if !crate::tui::rich_surface_active() {
-        return;
+struct LaunchEnvPrompter<'a> {
+    progress: Option<std::cell::RefCell<&'a mut super::progress::LaunchProgress>>,
+}
+
+impl<'a> LaunchEnvPrompter<'a> {
+    fn new(progress: Option<&'a mut super::progress::LaunchProgress>) -> Self {
+        Self {
+            progress: progress.map(std::cell::RefCell::new),
+        }
     }
-    if let Some(run) = crate::diagnostics::active_run() {
-        run.compact("launch_prompt", reason);
+}
+
+impl crate::env_resolver::EnvPrompter for LaunchEnvPrompter<'_> {
+    fn prompt_text(
+        &self,
+        title: &str,
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        if let Some(progress) = &self.progress {
+            return progress.borrow_mut().prompt_text(title, default, skippable);
+        }
+        anyhow::bail!("manifest env text prompt requires the rich launch dialog")
     }
-    steps.finish_progress();
+
+    fn prompt_select(
+        &self,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        if let Some(progress) = &self.progress {
+            return progress
+                .borrow_mut()
+                .prompt_select(title, options, default, skippable);
+        }
+        anyhow::bail!("manifest env select prompt requires the rich launch dialog")
+    }
+}
+
+fn sensitive_mount_prompt(sensitive: &[crate::workspace::SensitiveMount]) -> String {
+    let mut lines = vec![
+        "Sensitive host paths are mounted into this role container.".to_string(),
+        "Continue only if this role should see these credentials.".to_string(),
+        String::new(),
+    ];
+    for hit in sensitive {
+        lines.push(format!("{} — {}", hit.src, hit.reason));
+    }
+    lines.push(String::new());
+    lines.push("Continue with these mounts?".to_string());
+    lines.join("\n")
 }
 
 fn stage_for_step_text(text: &str) -> super::progress::LaunchStage {
     match text {
         "Resolving role identity" => super::progress::LaunchStage::Role,
-        "Building Docker image" => super::progress::LaunchStage::DerivedImage,
+        "Preparing runtime binaries" => super::progress::LaunchStage::AgentBinaries,
+        "Preparing derived image" => super::progress::LaunchStage::DerivedImage,
         "Starting Docker-in-Docker" => super::progress::LaunchStage::Sidecar,
         "Launching role" => super::progress::LaunchStage::Capsule,
         _ => super::progress::LaunchStage::Identity,
@@ -213,6 +253,7 @@ const fn completion_label(stage: super::progress::LaunchStage) -> &'static str {
         }
         super::progress::LaunchStage::Role => "trusted source",
         super::progress::LaunchStage::Construct => "online",
+        super::progress::LaunchStage::AgentBinaries => "cached",
         super::progress::LaunchStage::DerivedImage | super::progress::LaunchStage::Capsule => {
             "ready"
         }
@@ -502,130 +543,6 @@ fn seed_codex_project_trust(
     std::fs::write(&config_path, doc.to_string())
         .with_context(|| format!("writing Codex config at {}", config_path.display()))?;
     Ok(())
-}
-
-// ── Role source trust ───────────────────────────────────────────────────
-
-/// Branch-specific trust confirmation. Aborts when stdin is not a terminal
-/// or the operator declines.
-///
-/// Even when a role is already trusted, an unmerged branch contains unreviewed
-/// code. The operator trusted the *default* branch, not this PR. A malicious
-/// contributor could craft a branch whose Dockerfile runs arbitrary commands
-/// during the image build on the operator's machine.
-///
-/// This gate always fires when `--role-branch` is set, regardless of the
-/// role's `trusted` state in config. It is intentionally separate from
-/// `confirm_agent_trust` so the two gates compose: loading an *untrusted*
-/// role on a branch requires confirming both.
-fn confirm_branch_trust(
-    selector: &RoleSelector,
-    source: &crate::config::RoleSource,
-    branch: &str,
-) -> anyhow::Result<()> {
-    if !std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "role \"{selector}\" is being loaded from unmerged branch \"{branch}\".\n\
-             Branch builds require interactive confirmation — run the command in a terminal."
-        );
-    }
-
-    print_trust_banner(
-        "!! Unreviewed branch — verify before proceeding !!",
-        selector,
-        source,
-    );
-    eprintln!("  branch: {}", branch.yellow().bold());
-    eprintln!();
-    eprintln!(
-        "  {}",
-        "This branch has not been merged to the default branch.".bold()
-    );
-    eprintln!("  Its Dockerfile and scripts may differ from the trusted main branch.");
-    eprintln!("  A malicious contributor could introduce harmful code that runs");
-    eprintln!("  on your machine during the image build.");
-    eprintln!();
-    eprintln!(
-        "  {}",
-        "Review the branch diff in the role repository before continuing.".dimmed()
-    );
-    eprintln!();
-
-    confirm_trust_or_bail(
-        &format!("Have you reviewed branch \"{branch}\" and verified it is safe to build?"),
-        &format!(
-            "branch \"{branch}\" not confirmed — aborting.\n\
-             Review the Dockerfile and scripts on that branch before loading it."
-        ),
-    )
-}
-
-/// Shared red headline + role/source identity for the two trust prompts. Each
-/// caller prints its own explanation body and confirmation prompt after this.
-fn print_trust_banner(heading: &str, selector: &RoleSelector, source: &crate::config::RoleSource) {
-    eprintln!();
-    eprintln!("{}", heading.red().bold());
-    eprintln!();
-    eprintln!("  role:   {}", selector.to_string().bold());
-    eprintln!("  source: {}", source.git.yellow());
-}
-
-/// Final yes/no trust gate. Defaults to "no"; declining aborts with `abort`.
-fn confirm_trust_or_bail(prompt: &str, abort: &str) -> anyhow::Result<()> {
-    let confirmed = dialoguer::Confirm::new()
-        .with_prompt(prompt)
-        .default(false)
-        .interact()?;
-    if !confirmed {
-        anyhow::bail!("{abort}");
-    }
-    Ok(())
-}
-
-fn confirm_agent_trust(
-    selector: &RoleSelector,
-    source: &crate::config::RoleSource,
-) -> anyhow::Result<()> {
-    if !std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "untrusted role source \"{selector}\" from {}\n\
-             Trust it first: `jackin config trust grant {selector}`, or add `trusted = true` in config.toml.",
-            source.git,
-        );
-    }
-
-    print_trust_banner("!! Untrusted role source !!", selector, source);
-    eprintln!();
-    eprintln!(
-        "  {}",
-        "jackin' has never loaded this role before. Trusting it means:".bold()
-    );
-    eprintln!(
-        "    {} Its {} will be executed during the image build",
-        "-".dimmed(),
-        "Dockerfile".bold()
-    );
-    eprintln!(
-        "    {} Arbitrary commands in that Dockerfile will run {}",
-        "-".dimmed(),
-        "on your machine".bold()
-    );
-    eprintln!(
-        "    {} The role will have access to your {}",
-        "-".dimmed(),
-        "mounted workspace files".bold()
-    );
-    eprintln!();
-    eprintln!("  {}", "Review the repository before trusting it.".dimmed());
-    eprintln!();
-
-    confirm_trust_or_bail(
-        "Do you trust this role source and want to proceed?",
-        &format!(
-            "role source \"{selector}\" not trusted — aborting.\n\
-             To trust it later, run `jackin config trust grant {selector}` or try loading again."
-        ),
-    )
 }
 
 struct LaunchContext<'a> {
@@ -1391,10 +1308,12 @@ fn pull_git_sources_with_git(
         pulls.push((
             src.clone(),
             std::thread::spawn(move || {
-                match std::process::Command::new(git_program)
+                let mut command = std::process::Command::new(git_program);
+                command
                     .args(["-C", &src, "pull"])
-                    .output()
-                {
+                    .env("GIT_TERMINAL_PROMPT", "0")
+                    .stdin(std::process::Stdio::null());
+                match command.output() {
                     Ok(out) if out.status.success() => GitPullResult::Success {
                         src,
                         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -1503,8 +1422,8 @@ pub fn load_role<'a>(
         docker,
         runner,
         opts,
-        confirm_agent_trust,
-        confirm_branch_trust,
+        |_, _| anyhow::bail!("role trust prompt requires the rich launch dialog"),
+        |_, _, _| anyhow::bail!("branch trust prompt requires the rich launch dialog"),
     ))
 }
 
@@ -1565,8 +1484,12 @@ async fn load_role_with(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
-    confirm_trust: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
-    confirm_branch: impl FnOnce(&RoleSelector, &crate::config::RoleSource, &str) -> anyhow::Result<()>,
+    confirm_trust_for_test: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
+    confirm_branch_for_test: impl FnOnce(
+        &RoleSelector,
+        &crate::config::RoleSource,
+        &str,
+    ) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     // Pre-launch garbage collection is independent from host identity probes.
     let ((), (git, host)) = tokio::join!(gc_orphaned_resources(docker), async {
@@ -1610,6 +1533,19 @@ async fn load_role_with(
         });
         progress.stage_done(super::progress::LaunchStage::Identity, "resolved operator");
         steps.start_progress(progress);
+    }
+
+    let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
+    if !sensitive.is_empty() {
+        let prompt = sensitive_mount_prompt(&sensitive);
+        let confirmed = if let Some(progress) = steps.progress_mut() {
+            progress.confirm_prompt(prompt)?
+        } else {
+            anyhow::bail!("sensitive mount confirmation requires the rich launch dialog")
+        };
+        if !confirmed {
+            anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+        }
     }
 
     if workspace.git_pull_on_entry {
@@ -1665,11 +1601,11 @@ async fn load_role_with(
     steps.next("Resolving role identity").await;
 
     let mut confirm_repo_removal = || {
-        release_rich_progress_for_plain_io(
-            &mut steps,
-            "plain cached-repo recovery prompt required",
-        );
-        confirm_repo_removal_interactive()
+        if let Some(progress) = steps.progress_mut() {
+            return progress
+                .confirm_prompt("Remove the cached repo and re-clone from the configured source?");
+        }
+        anyhow::bail!("cached repo recovery prompt requires the rich launch dialog")
     };
     let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
         paths,
@@ -1685,8 +1621,18 @@ async fn load_role_with(
     let newly_trusted = if source.trusted {
         false
     } else {
-        release_rich_progress_for_plain_io(&mut steps, "plain trust prompt required");
-        confirm_trust(selector, &source)?;
+        let confirmed = if let Some(progress) = steps.progress_mut() {
+            progress.confirm_role_trust(selector.key(), source.git.clone())?
+        } else {
+            confirm_trust_for_test(selector, &source)?;
+            true
+        };
+        if !confirmed {
+            anyhow::bail!(
+                "role source \"{selector}\" not trusted — aborting.\n\
+                 To trust it later, run `jackin config trust grant {selector}` or try loading again."
+            );
+        }
         // Mutate the in-memory copy so callers downstream see the trust
         // without a reload; persist via editor below.
         if let Some(entry) = config.roles.get_mut(&selector.key()) {
@@ -1716,28 +1662,12 @@ async fn load_role_with(
                 .iter()
                 .map(|a| a.slug().to_string())
                 .collect();
-            if let Some(progress) = steps.progress_mut()
-                && let Some(selection) =
-                    progress.select_choice("Choose launch agent", labels.clone())?
-            {
-                supported_agents[selection]
-            } else if std::io::stdin().is_terminal() {
-                release_rich_progress_for_plain_io(
-                    &mut steps,
-                    "plain multi-agent role prompt required",
-                );
-                let selection = dialoguer::Select::new()
-                    .with_prompt(format!(
-                        "Role \"{}\" supports multiple agents. Choose one",
-                        selector.key()
-                    ))
-                    .items(&labels)
-                    .default(0)
-                    .interact()?;
+            if let Some(progress) = steps.progress_mut() {
+                let selection = progress.select_choice("Choose launch agent", labels)?;
                 supported_agents[selection]
             } else {
                 anyhow::bail!(
-                    "role \"{}\" supports multiple agents ({:?}); pass --agent or set the workspace `default_agent` for non-interactive launches",
+                    "role \"{}\" supports multiple agents ({:?}); load requires the rich launch dialog for agent selection, or pass --agent / set workspace `default_agent`",
                     selector.key(),
                     supported_agents
                         .iter()
@@ -1751,7 +1681,7 @@ async fn load_role_with(
             selector.key()
         ),
         None => anyhow::bail!(
-            "role \"{}\" supports multiple agents ({:?}); pass --agent or set the workspace `default_agent` for non-interactive launches",
+            "role \"{}\" supports multiple agents ({:?}); pass --agent, set workspace `default_agent`, or use the rich launch dialog",
             selector.key(),
             supported_agents
                 .iter()
@@ -1764,12 +1694,23 @@ async fn load_role_with(
     // Branch trust gate: fires even for already-trusted roles because the
     // operator trusted the default branch, not this unreviewed PR branch.
     if let Some(branch) = opts.role_branch.as_deref() {
-        release_rich_progress_for_plain_io(&mut steps, "plain branch trust prompt required");
-        confirm_branch(selector, &source, branch)?;
-    }
-
-    if steps.progress.is_none() {
-        tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
+        let prompt = format!(
+            "Role `{selector}` is being loaded from unmerged branch `{branch}`.\n\
+             Its Dockerfile and scripts may differ from the trusted main branch.\n\
+             Have you reviewed the branch diff and verified it is safe to build?"
+        );
+        let confirmed = if let Some(progress) = steps.progress_mut() {
+            progress.confirm_prompt(prompt)?
+        } else {
+            confirm_branch_for_test(selector, &source, branch)?;
+            true
+        };
+        if !confirmed {
+            anyhow::bail!(
+                "branch \"{branch}\" not confirmed — aborting.\n\
+                 Review the Dockerfile and scripts on that branch before loading it."
+            );
+        }
     }
 
     let role_key = selector.key();
@@ -1845,15 +1786,6 @@ async fn load_role_with(
         || image_name(selector),
         |b| image_name_for_branch(selector, b),
     );
-    let config_rows = build_config_rows(
-        &agent_display_name,
-        &container_name,
-        workspace,
-        &git,
-        &image_tag,
-        runner,
-    )
-    .await;
     if let Some(progress) = steps.progress_mut() {
         progress.update_identity(super::progress::LaunchIdentity {
             role: agent_display_name.clone(),
@@ -1865,10 +1797,6 @@ async fn load_role_with(
             container: Some(container_name.clone()),
         });
         progress.stage_done(super::progress::LaunchStage::Role, "trusted source");
-    } else {
-        eprintln!();
-        tui::print_config_table(&config_rows);
-        eprintln!();
     }
 
     if let Some(progress) = steps.progress_mut() {
@@ -1878,25 +1806,10 @@ async fn load_role_with(
         );
     }
 
-    // Resolve env vars (interactive prompts happen here, before build)
-    let manifest_resolved = if validated_repo.manifest.env.is_empty() {
-        crate::env_resolver::ResolvedEnv { vars: vec![] }
-    } else {
-        if validated_repo
-            .manifest
-            .env
-            .values()
-            .any(|decl| decl.interactive)
-        {
-            release_rich_progress_for_plain_io(&mut steps, "plain manifest env prompt required");
-        }
-        let prompter = crate::terminal_prompter::TerminalPrompter;
-        crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
-    };
-
     // Resolve operator env layers (global / role / workspace /
-    // workspace × role). op:// refs shell out to `op`; $NAME refs
-    // read the host env. Failures are aggregated into a single error.
+    // workspace × role) before manifest env. Operator-provided values
+    // preseed matching manifest variables, so a configured value does
+    // not ask the operator the same question again.
     //
     // The operator env resolver takes two injection seams:
     //   * `op_runner`  — resolves `op://...` references (production:
@@ -1936,6 +1849,18 @@ async fn load_role_with(
         )?
     };
 
+    // Resolve env vars (interactive prompts happen here, before build)
+    let manifest_resolved = if validated_repo.manifest.env.is_empty() {
+        crate::env_resolver::ResolvedEnv { vars: vec![] }
+    } else {
+        let prompter = LaunchEnvPrompter::new(steps.progress_mut());
+        crate::env_resolver::resolve_env_with_overrides(
+            &validated_repo.manifest.env,
+            &prompter,
+            &operator_env,
+        )?
+    };
+
     // Overlay the operator env map on top of the manifest env: operator
     // wins on conflicts (so a workspace-scoped `OPERATOR_TOKEN` overrides
     // a manifest default, which is the whole point of letting operators
@@ -1971,32 +1896,18 @@ async fn load_role_with(
     }
 
     let load_result: anyhow::Result<String> = async {
-        // Step 2: Build Docker image
+        // Step 2: Prepare runtime assets and build the derived image.
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
             let img = image_name(selector);
-            let needs_update = match agent {
-                crate::agent::Agent::Claude => {
-                    version_check::needs_claude_update(paths, &img, runner).await
-                }
-                crate::agent::Agent::Opencode => {
-                    version_check::needs_opencode_update(paths, &img, runner).await
-                }
-                _ => false,
-            };
+            let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
             if needs_update {
-                let name = match agent {
-                    crate::agent::Agent::Claude => "Claude",
-                    crate::agent::Agent::Opencode => "OpenCode",
-                    _ => unreachable!(),
-                };
+                let name = agent.slug();
                 if let Some(progress) = steps.progress_mut() {
                     progress.stage_progress(
                         super::progress::LaunchStage::DerivedImage,
                         format!("{name} update available; refreshing agent layer"),
                     );
-                } else {
-                    eprintln!("        {name} update available — refreshing agent layer");
                 }
             }
             needs_update
@@ -2008,26 +1919,51 @@ async fn load_role_with(
             );
             progress.stage_done(super::progress::LaunchStage::Construct, "online");
         }
-        steps.next("Building Docker image").await;
-        let image_build = build_agent_image(
-            paths,
-            selector,
-            &cached_repo,
-            &validated_repo,
-            &host,
-            agent,
-            rebuild,
-            agent_update,
-            opts.debug,
-            opts.role_branch.as_deref(),
-            docker,
-            runner,
-            repo_lock,
-        );
-        let image = if let Some(progress) = steps.progress_mut() {
-            progress.while_waiting(image_build).await?
+        steps.next("Preparing runtime binaries").await;
+        let runtime_binaries = if let Some(progress) = steps.progress_mut() {
+            prepare_runtime_binaries(paths, &validated_repo, Some(progress)).await?
         } else {
-            image_build.await?
+            prepare_runtime_binaries(paths, &validated_repo, None).await?
+        };
+        steps.next("Preparing derived image").await;
+        let image = if let Some(progress) = steps.progress_mut() {
+            build_agent_image(
+                paths,
+                selector,
+                &cached_repo,
+                &validated_repo,
+                &host,
+                agent,
+                runtime_binaries,
+                rebuild,
+                agent_update,
+                opts.debug,
+                opts.role_branch.as_deref(),
+                docker,
+                runner,
+                repo_lock,
+                Some(progress),
+            )
+            .await?
+        } else {
+            build_agent_image(
+                paths,
+                selector,
+                &cached_repo,
+                &validated_repo,
+                &host,
+                agent,
+                runtime_binaries,
+                rebuild,
+                agent_update,
+                opts.debug,
+                opts.role_branch.as_deref(),
+                docker,
+                runner,
+                repo_lock,
+                None,
+            )
+            .await?
         };
 
         let container_state = paths.data_dir.join(&container_name);
@@ -2156,7 +2092,7 @@ async fn load_role_with(
         let resolve_supported_mode = |a: crate::agent::Agent| {
             crate::config::resolve_mode(config, a, workspace_name_str, &role_key)
         };
-        let (state, auth_outcome) = RoleState::prepare(
+        let (state, _auth_outcome) = RoleState::prepare(
             paths,
             &container_name,
             &validated_repo.manifest,
@@ -2167,44 +2103,8 @@ async fn load_role_with(
         )?;
         seed_codex_project_trust(&state, workspace)?;
 
-        // Diagnostic line: surface the active auth mode and, for token
-        // mode, the source reference of CLAUDE_CODE_OAUTH_TOKEN drawn
-        // from the operator env config's raw declaration (the op://
-        // reference or $NAME ref as written). Resolved values are never
-        // printed.
-        // Resolve the credential source-reference once per launch and
-        // gate it on a non-empty resolved value, so a layer that
-        // contributed an empty/whitespace string is not advertised as
-        // the source. The raw lookup is the operator-typed declaration
-        // (`op://...`, `$VAR`, literal); the env-var name is the
-        // fallback when the resolver tracked the value but no raw
-        // declaration string is recorded.
-        let resolved_source: Option<String> =
-            agent.required_env_var(auth_mode).and_then(|env_var| {
-                let raw = crate::operator_env::lookup_operator_env_raw(
-                    config,
-                    Some(&role_key),
-                    workspace_name.as_deref(),
-                    env_var,
-                );
-                let has_value = resolved_env
-                    .vars
-                    .iter()
-                    .any(|(k, v)| k == env_var && !v.trim().is_empty());
-                has_value.then(|| raw.unwrap_or_else(|| env_var.to_string()))
-            });
-
-        if agent == crate::agent::Agent::Codex {
-            if steps.progress.is_none() {
-                tui::codex_auth_notice(
-                    resolved_source.as_deref(),
-                    (auth_mode, auth_outcome).into(),
-                );
-            } else if let Some(run) = crate::diagnostics::active_run() {
-                run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
-            }
-        } else {
-            let expiry_days = workspace_name
+        if agent != crate::agent::Agent::Codex {
+            let _expiry_days = workspace_name
                 .as_deref()
                 .filter(|_| auth_mode == crate::config::AuthForwardMode::OAuthToken)
                 .and_then(|ws| {
@@ -2218,24 +2118,14 @@ async fn load_role_with(
                             );
                             if let Some(run) = crate::diagnostics::active_run() {
                                 run.compact("auth", &message);
-                            } else {
-                                eprintln!("{message}");
                             }
                             None
                         }
                     }
                 });
-            if steps.progress.is_none() {
-                tui::auth_mode_notice(
-                    agent,
-                    &auth_mode.to_string(),
-                    resolved_source.as_deref(),
-                    expiry_days,
-                );
-                tui::agent_outcome_notice(agent, auth_mode, auth_outcome);
-            } else if let Some(run) = crate::diagnostics::active_run() {
-                run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
-            }
+        }
+        if let Some(run) = crate::diagnostics::active_run() {
+            run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
         }
 
         // GitHub auth summary line — agent-neutral. The breadcrumb walks
@@ -2250,9 +2140,7 @@ async fn load_role_with(
                 || gh_token_key.to_string(),
                 |value| auth_token_source_reference(gh_token_key, Some(value.as_display_str())),
             );
-            if steps.progress.is_none() {
-                tui::github_auth_notice(&state.gh_provision_outcome, Some(&token_breadcrumb));
-            } else if let Some(run) = crate::diagnostics::active_run() {
+            if let Some(run) = crate::diagnostics::active_run() {
                 run.compact(
                     "github_auth",
                     &format!("resolved GitHub auth from {token_breadcrumb}"),
@@ -2266,7 +2154,7 @@ async fn load_role_with(
         // per-container state directory exists) and BEFORE the docker run
         // command is assembled (so the docker `-v` flags reflect the
         // per-mount bind sources).
-        let interactive = std::io::stdin().is_terminal();
+        let interactive = true;
         let workspace_label = workspace.label.as_str();
         crate::debug_log!(
             "isolation",
@@ -2355,8 +2243,6 @@ async fn load_role_with(
                 );
                 if let Some(run) = crate::diagnostics::active_run() {
                     run.compact("status", &message);
-                } else {
-                    eprintln!("{message}");
                 }
             }
             cleanup.run(docker).await;
@@ -2377,12 +2263,12 @@ async fn load_role_with(
 
         // Finalize per-mount isolation worktrees BEFORE the container teardown
         // decision below: clean exits without dirty/unpushed state get their
-        // worktrees swept; dirty state is preserved (with an interactive prompt
-        // when stdin is a TTY). A `ReturnToAgent` choice restarts + re-attaches
-        // the container exactly once so the operator can address the dirty
-        // state inside the role, then the safe cleanup is retried.
-        let interactive_finalize = std::io::stdin().is_terminal();
-        let mut prompt = crate::isolation::finalize::StdinPrompt;
+        // worktrees swept; dirty state is preserved through the rich cleanup
+        // dialog. A `ReturnToAgent` choice restarts + re-attaches the container
+        // exactly once so the operator can address the dirty state inside the
+        // role, then the safe cleanup is retried.
+        let interactive_finalize = true;
+        let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
         let outcome = inspect_attach_outcome(docker, &container_name).await?;
         write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
         let mut decision = crate::isolation::finalize::finalize_foreground_session(
@@ -2573,6 +2459,7 @@ async fn load_role_with(
                     .stage_failed(super::progress::LaunchFailure {
                         title: launch_failure_title(failed_stage, &error, run.as_deref()),
                         summary: short_launch_diagnosis(failed_stage, &error, run.as_deref()),
+                        detail: Some(format!("{error:#}")),
                         next_step: None,
                         stage: failed_stage,
                         diagnostics_path: None,
@@ -2809,8 +2696,8 @@ async fn resolve_restore_candidate(
     }
 
     // One dialog for every stale-state decision — same-role candidates and
-    // related-role candidates alike — so the operator always sees the rich
-    // forced-choice picker inside the TUI, never a divergent stdin prompt.
+    // related-role candidates alike — so the operator sees a single rich
+    // forced-choice picker inside the TUI.
     present_restore_choice(
         progress,
         paths,
@@ -2823,8 +2710,8 @@ async fn resolve_restore_candidate(
 
 /// Present the stale-instance decision. "Start fresh" is always the
 /// default first option; recoverable instances follow. The rich launch
-/// surface renders it as a forced-choice picker (no cancel); other
-/// surfaces fall back to the stdin prompt. The operator must pick.
+/// surface renders it as a forced-choice picker (no cancel). The operator
+/// must pick.
 fn present_restore_choice(
     progress: Option<&mut super::progress::LaunchProgress>,
     paths: &JackinPaths,
@@ -2846,15 +2733,16 @@ fn present_restore_choice(
         )
     }));
 
-    let choice = match progress {
-        Some(progress) => {
-            match progress.select_choice("Unfinished jackin instances", labels.clone())? {
-                Some(index) => index,
-                None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
-            }
-        }
-        None => stdin_restore_choice(workspace_label, role_key, &candidates, &labels)?,
+    let Some(progress) = progress else {
+        let hint = candidates.first().map_or_else(
+            || format!("role `{role_key}`"),
+            |manifest| format!("`jackin hardline {}`", manifest.container_base),
+        );
+        anyhow::bail!(
+            "unfinished jackin instances exist for workspace `{workspace_label}` and role `{role_key}` but the rich launch dialog is unavailable; run {hint} to inspect or recover, or purge stale instances before a fresh load"
+        );
     };
+    let choice = progress.select_choice("Unfinished jackin instances", labels)?;
 
     if choice == 0 {
         supersede_restore_candidates(paths, candidates)?;
@@ -2866,31 +2754,6 @@ fn present_restore_choice(
     } else {
         recover_related_restore_candidate(&related[choice - 1 - candidates.len()])
     }
-}
-
-/// Plain stdin fallback for the stale-instance decision when no rich
-/// surface owns the screen. Bails when stdin is not interactive — the
-/// decision cannot be made non-interactively.
-fn stdin_restore_choice(
-    workspace_label: &str,
-    role_key: &str,
-    candidates: &[InstanceManifest],
-    labels: &[String],
-) -> anyhow::Result<usize> {
-    if !std::io::stdin().is_terminal() {
-        let hint = candidates.first().map_or_else(
-            || format!("role `{role_key}`"),
-            |manifest| format!("`jackin hardline {}`", manifest.container_base),
-        );
-        anyhow::bail!(
-            "unfinished jackin instances exist for workspace `{workspace_label}` but stdin is not interactive; run {hint} to inspect or recover, or purge stale instances before a fresh load"
-        );
-    }
-    let option_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
-    tui::prompt_choice(
-        &format!("Unfinished jackin instances exist for workspace `{workspace_label}`."),
-        &option_refs,
-    )
 }
 
 #[derive(Debug)]
@@ -3746,13 +3609,6 @@ fn build_env_layer_states(
     ]
 }
 
-/// Return a printable source reference for the credential env var
-/// `env_var` (e.g. `"CLAUDE_CODE_OAUTH_TOKEN"`, `"ANTHROPIC_API_KEY"`)
-/// given the raw (unresolved) declaration value from the operator env
-/// config (e.g. `"Private/Claude/security/auth token"` or
-/// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY ← value"` form
-/// consumed by `tui::auth_mode_notice`. When `raw` is `None` or the
-/// display string is empty, falls back to the bare env-var name.
 /// Append `KEY=value` to `env_strings` when `value` is `Some` and
 /// non-empty. Centralizes the "skip the env push when the value is
 /// missing or blank" check used by every optional env injection.
@@ -3799,6 +3655,12 @@ fn append_no_proxy_host(value: &str, host: &str) -> String {
     }
 }
 
+/// Printable source reference for the credential env var `env_var` (e.g.
+/// `"CLAUDE_CODE_OAUTH_TOKEN"`, `"ANTHROPIC_API_KEY"`) given the raw
+/// (unresolved) declaration value from the operator env config (e.g.
+/// `"Private/Claude/security/auth token"` or `"$CLAUDE_CODE_OAUTH_TOKEN"`).
+/// Produces the `"KEY ← value"` form; falls back to the bare env-var name
+/// when `raw` is `None` or empty.
 fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     match raw {
         None | Some("") => env_var.to_string(),
@@ -3892,6 +3754,28 @@ mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
     use crate::config::AppConfig;
+
+    #[test]
+    fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
+        let sensitive = vec![
+            crate::workspace::SensitiveMount {
+                src: "/home/op/.ssh".to_string(),
+                reason: "SSH private keys".to_string(),
+            },
+            crate::workspace::SensitiveMount {
+                src: "/home/op/.aws".to_string(),
+                reason: "AWS credentials".to_string(),
+            },
+        ];
+        let prompt = sensitive_mount_prompt(&sensitive);
+        // Every flagged path and its reason must reach the operator — a
+        // dropped hit would silently hide a credential exposure.
+        for hit in &sensitive {
+            assert!(prompt.contains(&hit.src), "missing src in: {prompt}");
+            assert!(prompt.contains(&hit.reason), "missing reason in: {prompt}");
+        }
+        assert!(prompt.contains("Continue with these mounts?"));
+    }
     use crate::isolation::MountIsolation;
     use crate::isolation::materialize::{
         MaterializedMount, MaterializedWorkspace, WorktreeAuxMounts,
@@ -5273,32 +5157,6 @@ plugins = []
     }
 
     #[tokio::test]
-    async fn trust_gate_rejects_untrusted_agent_in_non_interactive_context() {
-        let selector = RoleSelector::new(Some("evil-org"), "backdoor");
-        let source = crate::config::RoleSource {
-            git: "https://github.com/evil-org/jackin-backdoor.git".to_string(),
-            trusted: false,
-            env: std::collections::BTreeMap::new(),
-        };
-
-        let error = confirm_agent_trust(&selector, &source).unwrap_err();
-        let message = error.to_string();
-
-        assert!(
-            message.contains("untrusted role source"),
-            "expected 'untrusted role source' in: {message}"
-        );
-        assert!(
-            message.contains("evil-org/backdoor"),
-            "expected role selector in error: {message}"
-        );
-        assert!(
-            message.contains("evil-org/jackin-backdoor.git"),
-            "expected git URL in error: {message}"
-        );
-    }
-
-    #[tokio::test]
     async fn restore_role_source_override_uses_manifest_source_without_mutating_config() {
         let selector = RoleSelector::new(None, "agent-smith");
         let mut config = AppConfig::default();
@@ -5917,7 +5775,7 @@ trusted = true
     }
 
     #[tokio::test]
-    async fn load_agent_bails_non_interactively_on_multi_agent_role_without_default() {
+    async fn load_agent_bails_when_multi_agent_choice_has_no_rich_dialog() {
         let mut f = load_agent_fixture(MULTI_AGENT_MANIFEST);
         let error = load_role(
             &f.paths,
@@ -5938,6 +5796,34 @@ trusted = true
         assert!(
             rendered.contains("pass --agent") || rendered.contains("default_agent"),
             "error must name the operator-actionable fix: {rendered}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_agent_bails_when_sensitive_mount_has_no_rich_dialog() {
+        let mut f = load_agent_fixture(CODEX_ONLY_MANIFEST);
+        f.workspace.mounts.push(crate::workspace::MountConfig {
+            src: "/home/operator/.ssh".to_string(),
+            dst: "/host/ssh".to_string(),
+            readonly: true,
+            isolation: crate::isolation::MountIsolation::Shared,
+        });
+
+        let error = load_role(
+            &f.paths,
+            &mut f.config,
+            &f.selector,
+            &f.workspace,
+            &f.docker,
+            &mut f.runner,
+            &LoadOptions::default(),
+        )
+        .await
+        .expect_err("sensitive mount confirmation must require the rich launch dialog");
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains("sensitive mount confirmation requires the rich launch dialog"),
+            "error should explain the rich dialog requirement: {rendered}"
         );
     }
 
@@ -6340,11 +6226,20 @@ plugins = []
         assert!(build_call.contains("--build-arg JACKIN_HOST_UID="));
         assert!(build_call.contains("--build-arg JACKIN_HOST_GID="));
 
+        let build_run_index = runner
+            .run_recorded
+            .iter()
+            .position(|call| call.contains("docker build "))
+            .unwrap();
+        let build_opts = &runner.run_options[build_run_index];
+        assert!(build_opts.capture_stdout);
+        assert!(build_opts.capture_stderr);
+        assert!(build_opts.null_stdin);
+        assert!(build_opts.tee_to_build_log);
         assert!(
-            runner
-                .run_recorded
-                .iter()
-                .any(|call| call.contains("docker build "))
+            build_opts
+                .extra_env
+                .contains(&("BUILDKIT_PROGRESS".to_string(), "plain".to_string()))
         );
     }
 
@@ -8516,7 +8411,7 @@ plugins = []
     }
 
     #[tokio::test]
-    async fn restore_candidate_blocks_noninteractive_fresh_load() {
+    async fn restore_candidate_requires_rich_dialog_for_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
@@ -8529,14 +8424,15 @@ plugins = []
         manifest
             .write(&paths.data_dir.join(container_name))
             .unwrap();
-        // inspect_container_state → NotFound → candidate available (stdin not interactive → error)
+        // inspect_container_state -> NotFound -> candidate available, but no
+        // rich progress dialog is available in this direct unit-test call.
         let docker = crate::docker_client::FakeDockerClient::default();
 
         let error = resolve_workspace_restore(&paths, "agent-smith", &docker)
             .await
             .unwrap_err();
 
-        assert!(error.to_string().contains("not interactive"));
+        assert!(error.to_string().contains("rich launch dialog"));
         assert!(error.to_string().contains(container_name));
     }
 
@@ -8598,7 +8494,7 @@ plugins = []
     }
 
     #[tokio::test]
-    async fn related_restore_candidate_blocks_noninteractive_fresh_load() {
+    async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-thearchitect";
@@ -8609,19 +8505,19 @@ plugins = []
             crate::agent::Agent::Claude,
         );
         write_indexed_manifest(&paths, &manifest);
-        // inspect → NotFound → matching but different role → stdin not interactive → error
+        // inspect -> NotFound -> matching but different role, but no rich
+        // progress dialog is available in this direct unit-test call.
         let docker = crate::docker_client::FakeDockerClient::default();
 
         let error = resolve_workspace_restore(&paths, "agent-smith", &docker)
             .await
             .unwrap_err();
 
-        // The related-only case now flows through the unified restore dialog,
-        // which on a non-interactive stdin bails rather than silently starting
-        // fresh.
+        // The related-only case flows through the unified rich restore dialog
+        // instead of silently starting fresh.
         let message = error.to_string();
         assert!(
-            message.contains("stdin is not interactive"),
+            message.contains("rich launch dialog"),
             "unexpected error: {message}"
         );
         assert!(message.contains("agent-smith"), "{message}");

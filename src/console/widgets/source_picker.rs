@@ -75,18 +75,16 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
-    let phosphor = Color::Rgb(0, 255, 65);
-    let phosphor_dark = Color::Rgb(0, 80, 18);
-    let white = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
+pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
     let title = format!(" Source for {} ", state.key);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(phosphor_dark))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             title,
-            Style::default().fg(white).add_modifier(Modifier::BOLD),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -102,12 +100,14 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
         .split(inner);
 
     let focused_style = Style::default()
-        .bg(white)
+        .bg(WHITE)
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default().fg(phosphor).add_modifier(Modifier::BOLD);
+    let unfocused_style = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
     let disabled_style = Style::default()
-        .fg(phosphor_dark)
+        .fg(PHOSPHOR_DARK)
         .add_modifier(Modifier::DIM);
 
     let plain_style = if state.focused == SourceChoice::Plain {

@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::super::super::widgets::{
     ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
 };
-use super::super::render::apply_scroll_delta;
+use super::super::render::apply_scroll_delta_unclamped;
 use super::super::state::{
     EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
     ProviderPickerState, SettingsState,
@@ -21,7 +21,7 @@ pub(super) fn handle_list_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
     _paths: &JackinPaths,
-    _cwd: &std::path::Path,
+    cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     // Preview-pane navigation mode: the operator dropped focus into
@@ -64,15 +64,18 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Char('h' | 'H') => {
             scroll_list_horizontal(state, -8);
+            clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('l' | 'L') => {
             scroll_list_horizontal(state, 8);
+            clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             if state.list_scroll_focus.is_some() {
                 scroll_focused_mount_block_vertical(state, -3);
+                clamp_list_scroll_after_key(state, config, cwd);
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
@@ -88,6 +91,7 @@ pub(super) fn handle_list_key(
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             if state.list_scroll_focus.is_some() {
                 scroll_focused_mount_block_vertical(state, 3);
+                clamp_list_scroll_after_key(state, config, cwd);
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
@@ -234,6 +238,21 @@ pub(super) fn handle_list_key(
         }
         _ => Ok(InputOutcome::Continue),
     }
+}
+
+fn clamp_list_scroll_after_key(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) {
+    let area = state.cached_term_size;
+    let body = ratatui::layout::Rect {
+        x: 0,
+        y: 2,
+        width: area.width,
+        height: area.height.saturating_sub(4),
+    };
+    super::super::render::clamp_list_scroll_for_area(body, state, config, cwd);
 }
 
 fn handle_tree_right(state: &mut ManagerState<'_>) {
@@ -752,7 +771,7 @@ pub(super) fn handle_launch_provider_picker(
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
     if state.list_names_focused {
-        apply_scroll_delta(&mut state.list_names_scroll_x, delta);
+        apply_scroll_delta_unclamped(&mut state.list_names_scroll_x, delta);
     } else {
         scroll_focused_mount_block(state, delta);
     }
@@ -763,7 +782,7 @@ const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
         return;
     };
     let value = state.list_scroll_x_mut(focus);
-    apply_scroll_delta(value, delta);
+    apply_scroll_delta_unclamped(value, delta);
 }
 
 const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
@@ -771,7 +790,7 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
         return;
     };
     let value = state.list_scroll_y_mut(focus);
-    apply_scroll_delta(value, delta);
+    apply_scroll_delta_unclamped(value, delta);
 }
 
 #[cfg(test)]
@@ -1513,7 +1532,7 @@ mod tests {
     }
 
     #[test]
-    fn down_key_with_focused_block_scrolls_vertically_not_selection() {
+    fn down_key_with_focused_block_clamps_vertical_scroll_without_selection_move() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -1539,9 +1558,9 @@ mod tests {
             state.selected, 0,
             "selection must not change while block focused"
         );
-        assert!(
-            state.list_mounts_scroll_y > 0,
-            "block must have scrolled vertically"
+        assert_eq!(
+            state.list_mounts_scroll_y, 0,
+            "non-overflowing block stays clamped"
         );
     }
 

@@ -83,6 +83,12 @@ impl SelectListState {
             .and_then(|row| self.filtered.get(row).copied())
     }
 
+    pub fn select_index(&mut self, index: usize) {
+        if let Some(row) = self.filtered.iter().position(|i| *i == index) {
+            self.list_state.select(Some(row));
+        }
+    }
+
     /// Commit on `Enter`, narrow on typing, navigate on arrows. `Esc`
     /// yields `Cancel`; force-decision callers ignore it.
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<usize> {
@@ -120,16 +126,26 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders},
+    widgets::{Block, Borders, Paragraph},
 };
 
 use super::scrollable::render_selected_lines_in_area;
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
-/// Render the picker into `area` with `title` in the top border. Hint
-/// text is the caller's responsibility (it belongs in the screen footer,
-/// never inside the dialog).
-pub fn render(frame: &mut Frame, area: Rect, state: &SelectListState, title: &str) {
+/// Render the picker into `area` with `title` in the top border.
+///
+/// `context` is an optional block of descriptive lines rendered between the
+/// filter row and the list (empty for the plain picker); callers that need to
+/// explain the choice — e.g. the worktree-cleanup prompt — pass summary lines
+/// here. Hint text is the caller's responsibility (it belongs in the screen
+/// footer, never inside the dialog).
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    state: &SelectListState,
+    title: &str,
+    context: &[Line<'_>],
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
@@ -141,16 +157,31 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SelectListState, title: &st
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
+    let mut constraints = vec![
+        Constraint::Length(1), // filter row, glued to the top border
+        Constraint::Length(1), // spacer
+    ];
+    if !context.is_empty() {
+        constraints.push(Constraint::Length(
+            u16::try_from(context.len()).unwrap_or(u16::MAX),
+        ));
+        constraints.push(Constraint::Length(1)); // spacer below context
+    }
+    constraints.push(Constraint::Min(1)); // list
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // filter row, glued to the top border
-            Constraint::Length(1), // spacer
-            Constraint::Min(1),    // list
-        ])
+        .constraints(constraints)
         .split(inner);
 
     super::render_filter_row(frame, rows[0], &state.filter);
+
+    // The list is always the final constraint; the context block, when
+    // present, occupies row index 2. Deriving the list area from the last
+    // split keeps it correct if more sections are added above.
+    let list_area = *rows.last().expect("layout always includes the list row");
+    if !context.is_empty() {
+        frame.render_widget(Paragraph::new(context.to_vec()), rows[2]);
+    }
 
     let lines: Vec<Line> = state
         .filtered
@@ -172,7 +203,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SelectListState, title: &st
             )])
         })
         .collect();
-    render_selected_lines_in_area(frame, rows[2], lines, state.list_state.selected);
+    render_selected_lines_in_area(frame, list_area, lines, state.list_state.selected);
 }
 
 #[cfg(test)]
@@ -232,6 +263,27 @@ mod tests {
     }
 
     #[test]
+    fn select_index_positions_cursor_on_original_index() {
+        let mut s = sample();
+        s.select_index(2);
+        assert_eq!(s.selected_index(), Some(2));
+    }
+
+    #[test]
+    fn select_index_maps_through_active_filter_and_noops_off_set() {
+        let mut s = sample();
+        // Narrow to the two "Restore …" rows (original indices 1 and 2).
+        for ch in "restore".chars() {
+            s.handle_key(key(KeyCode::Char(ch)));
+        }
+        s.select_index(2);
+        assert_eq!(s.selected_index(), Some(2));
+        // Index 0 is filtered out → select_index is a no-op, cursor holds.
+        s.select_index(0);
+        assert_eq!(s.selected_index(), Some(2));
+    }
+
+    #[test]
     fn backspace_restores_filtered_set() {
         let mut s = sample();
         s.handle_key(key(KeyCode::Char('z')));
@@ -270,11 +322,23 @@ mod tests {
     }
 
     fn dump(state: &SelectListState, w: u16, h: u16) -> String {
+        dump_with_context(state, w, h, &[])
+    }
+
+    fn dump_with_context(state: &SelectListState, w: u16, h: u16, context: &[Line<'_>]) -> String {
         use ratatui::{Terminal, backend::TestBackend};
         let backend = TestBackend::new(w, h);
         let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| render(f, Rect::new(0, 0, w, h), state, "Unfinished instances"))
-            .unwrap();
+        term.draw(|f| {
+            render(
+                f,
+                Rect::new(0, 0, w, h),
+                state,
+                "Unfinished instances",
+                context,
+            );
+        })
+        .unwrap();
         let buf = term.backend().buffer();
         let mut out = String::new();
         for y in 0..buf.area.height {
@@ -305,6 +369,23 @@ mod tests {
         assert!(
             frame.contains("Start fresh"),
             "first item missing:\n{frame}"
+        );
+    }
+
+    #[test]
+    fn renders_context_block_above_list() {
+        let context = [Line::from("Container has uncommitted changes.")];
+        let frame = dump_with_context(&sample(), 60, 14, &context);
+        assert!(
+            frame.contains("Container has uncommitted changes."),
+            "context block missing:\n{frame}"
+        );
+        // Context sits between the filter row and the options, not in place
+        // of them: the picker still renders its items and cursor.
+        assert!(frame.contains("Start fresh"), "item missing:\n{frame}");
+        assert!(
+            frame.contains('\u{25b8}'),
+            "cursor marker missing:\n{frame}"
         );
     }
 }

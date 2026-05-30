@@ -13,9 +13,11 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
+#[cfg(target_os = "linux")]
+use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Instant, SystemTime};
 
@@ -28,6 +30,8 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
+#[cfg(target_os = "linux")]
+use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 use portable_pty::CommandBuilder;
 
 use crate::dialog::{
@@ -170,16 +174,18 @@ pub struct Multiplexer {
     /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
     /// was set at launch time; drives the provider picker for supported agents.
     zai_key: Option<String>,
-    /// Cached at construction; tool availability and `origin/HEAD`
-    /// cannot change while the daemon is alive, and re-probing on
-    /// the 1Hz state tick would shell out for a stable verdict.
+    /// Cached at construction for the hot polling path. The only
+    /// mutation after that is `gh_available` flipping false → true when
+    /// a background PR lookup succeeds, so a startup PATH /
+    /// tool-availability race does not freeze PR discovery for the
+    /// daemon lifetime.
     workdir_context: WorkdirContext,
 }
 
-/// One-shot resolution of workdir + tool facts. The daemon never
-/// re-probes; if `git` or `gh` is installed mid-session the operator
-/// must restart the container to pick it up (a non-event for an
-/// orchestrator that already discards containers per launch).
+/// One-shot resolution of workdir + tool facts. `gh_available` may
+/// flip from false to true when a background PR lookup succeeds (so a
+/// startup PATH race doesn't freeze the feature for the daemon
+/// lifetime); the other fields are never re-probed.
 struct WorkdirContext {
     is_git_repo: bool,
     git_available: bool,
@@ -248,31 +254,51 @@ impl WorkdirContext {
 
 /// Probe `name --version` once at construction. Stdin/stdout/stderr
 /// are nulled so a misbehaving subprocess cannot leak output into the
-/// daemon's logs and cannot block on stdin. A `false` verdict
-/// short-circuits all later lookup spawns for the duration of the
-/// daemon process.
+/// daemon's logs and cannot block on stdin. As PID 1, Capsule has a
+/// SIGCHLD zombie reaper that can win the race against Rust's
+/// `Child::try_wait`; `ECHILD` after a successful spawn still proves
+/// the executable exists, so treat it as available instead of freezing
+/// the feature off for the daemon lifetime.
 fn command_in_path(name: &str) -> bool {
     let mut cmd = Command::new(name);
     cmd.arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    match cmd.status() {
-        Ok(status) if status.success() => true,
-        Ok(status) => {
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            crate::clog!(
+                "command_in_path[{name}]: spawn failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
+                e.raw_os_error()
+            );
+            return false;
+        }
+    };
+    let label = format!("command_in_path[{name}]");
+    match wait_child_with_timeout(&mut child, &label, GIT_CONTEXT_COMMAND_TIMEOUT) {
+        WaitOutcome::Exited(status) if status.success() => true,
+        WaitOutcome::Exited(status) => {
             crate::cdebug!(
                 "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
                 status.code()
             );
             false
         }
-        Err(e) => {
+        WaitOutcome::Reaped => {
             crate::clog!(
-                "command_in_path[{name}]: spawn failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
+                "command_in_path[{name}]: child was reaped before status collection; treating as available"
+            );
+            true
+        }
+        WaitOutcome::Failed(e) => {
+            crate::clog!(
+                "command_in_path[{name}]: try_wait failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
                 e.raw_os_error()
             );
             false
         }
+        WaitOutcome::TimedOut => false,
     }
 }
 
@@ -539,11 +565,10 @@ const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::
 /// the constant keeps the content-row math and renderer in sync; if
 /// the bar ever grows to two rows the change happens in one place.
 const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
-/// 100 ms keeps the branch bar inside the "immediate" threshold after
-/// `git checkout`. The hot path is a direct `.git/HEAD` read (including
-/// worktree-style `.git` files), so this does not put `git` subprocesses
-/// on the normal render path.
-const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// One second is quick enough for operator-visible title/chrome updates after
+/// `git checkout` while avoiding a 10Hz daemon wake-up just to inspect local
+/// branch state.
+const GIT_BRANCH_CONTEXT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// 60 s keeps the CI-status freshness within one PR turn while
 /// staying well under `gh`'s default secondary-rate-limit budget.
 /// The bar is operator-facing chrome, not a live feed.
@@ -861,15 +886,24 @@ impl Multiplexer {
     }
 
     fn maybe_spawn_git_branch_context_lookup(&mut self, now: Instant) {
+        self.spawn_git_branch_context_lookup(now, true);
+    }
+
+    fn force_spawn_git_branch_context_lookup(&mut self, now: Instant) {
+        self.spawn_git_branch_context_lookup(now, false);
+    }
+
+    fn spawn_git_branch_context_lookup(&mut self, now: Instant, respect_cooldown: bool) {
         if !self.workdir_context.git_available && !self.workdir_context.is_git_repo {
             return;
         }
         if self.git_branch_lookup.in_flight {
             return;
         }
-        if self
-            .git_branch_lookup
-            .cooldown_active(now, GIT_BRANCH_CONTEXT_POLL_INTERVAL)
+        if respect_cooldown
+            && self
+                .git_branch_lookup
+                .cooldown_active(now, GIT_BRANCH_CONTEXT_POLL_INTERVAL)
         {
             return;
         }
@@ -898,12 +932,6 @@ impl Multiplexer {
         now: Instant,
         mode: PullRequestLookupMode,
     ) -> bool {
-        if !self.workdir_context.gh_available {
-            if mode == PullRequestLookupMode::ForceRefresh {
-                crate::cdebug!("pull-request-context: force-refresh skipped: gh unavailable");
-            }
-            return false;
-        }
         if self.pull_request_lookup.in_flight {
             if mode == PullRequestLookupMode::ForceRefresh {
                 crate::cdebug!(
@@ -912,6 +940,14 @@ impl Multiplexer {
                 );
             }
             return false;
+        }
+        if !self.workdir_context.gh_available {
+            if mode == PullRequestLookupMode::RespectCache {
+                return false;
+            }
+            crate::clog!(
+                "pull-request-context: force-refresh scheduling lookup despite startup gh unavailable"
+            );
         }
         let Some(branch) = self.pull_request_context_branch.clone() else {
             if mode == PullRequestLookupMode::ForceRefresh {
@@ -973,12 +1009,30 @@ impl Multiplexer {
         E: FnOnce(T) -> SessionEvent + Send + 'static,
     {
         let event_tx = self.event_tx.clone();
-        std::thread::spawn(move || {
+        let emit = move || {
             let value = work();
             if event_tx.send(to_event(value)).is_err() {
                 crate::clog!("{label}: event channel closed before result reached main loop");
             }
-        });
+        };
+        // Fire-and-forget worker — no `await`, no tokio context needed.
+        // Inside the daemon's `#[tokio::main]` we still route through
+        // `spawn_blocking` so the runtime accounts for blocking work;
+        // outside one (unit tests, ad-hoc tools) a plain OS thread
+        // avoids spinning up a second runtime.
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn_blocking(emit);
+            }
+            Err(_) => {
+                if let Err(e) = std::thread::Builder::new()
+                    .name(format!("capsule-blocking[{label}]"))
+                    .spawn(emit)
+                {
+                    crate::clog!("{label}: failed to spawn blocking worker thread: {e}");
+                }
+            }
+        }
     }
 
     fn apply_git_branch_context_loaded(
@@ -1101,7 +1155,13 @@ impl Multiplexer {
         // for a full minute after every blip. Preserve the previous
         // cached value; the next state-ticker tick retries.
         let pull_request = match outcome {
-            PullRequestLookupOutcome::Resolved(pr) => pr,
+            PullRequestLookupOutcome::Resolved(pr) => {
+                if !self.workdir_context.gh_available {
+                    crate::clog!("pull-request-context: gh lookup succeeded after startup miss");
+                    self.workdir_context.gh_available = true;
+                }
+                pr
+            }
             PullRequestLookupOutcome::TransientFailure => {
                 return loading_changed;
             }
@@ -2940,7 +3000,7 @@ impl Multiplexer {
     fn append_outer_terminal_title(&mut self, buf: &mut Vec<u8>) {
         let title = compose_outer_terminal_title(
             &self.workdir,
-            self.pull_request_context_branch.as_deref(),
+            self.context_bar_branch(),
             self.pull_request_context.as_deref(),
         );
         if self.last_outer_terminal_title.as_deref() == Some(title.as_str()) {
@@ -2962,7 +3022,12 @@ impl Multiplexer {
         // stays hidden from the `?25l` above (append_cursor_state
         // no-ops while a dialog is open).
         if self.dialog_open() {
-            fill_screen(&mut buf, self.term_rows, self.term_cols, (0, 0, 0));
+            fill_screen(
+                &mut buf,
+                self.term_rows,
+                self.term_cols,
+                jackin_tui::DIALOG_BACKDROP,
+            );
             if let Some(dialog) = self.dialog_top() {
                 let github = self.github_context_view();
                 dialog.render_with_hover(
@@ -3417,6 +3482,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let initial_spawn =
         initial_spawn_request(&initial_agent, launch_config.initial_provider.as_ref());
     let mut mux = Multiplexer::new(rows, cols, launch_config);
+    start_git_context_watcher(mux.workdir.clone(), mux.event_tx.clone());
     // Defer the first pane until the first attach Hello has supplied
     // real outer-terminal dimensions. Later panes already spawn after
     // attach-time resize; routing the first pane through the same
@@ -3741,6 +3807,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             drain_and_exit(&mut mux).await;
                             return Ok(());
                         }
+                    }
+                    SessionEvent::GitBranchContextRefreshRequested => {
+                        mux.force_spawn_git_branch_context_lookup(Instant::now());
                     }
                     SessionEvent::GitBranchContextLoaded {
                         request_id,
@@ -4360,12 +4429,12 @@ fn append_osc_window_title(buf: &mut Vec<u8>, title: &str) {
     buf.extend_from_slice(b"\x1b\\");
 }
 
-const BRANCH_CONTEXT_BAR_BG: &str = "\x1b[48;2;255;255;255m";
+const BRANCH_CONTEXT_BAR_BG: &str = jackin_tui::ansi::rgb_bg(jackin_tui::WHITE);
 const BRANCH_CONTEXT_BAR_HOVER_BG: &str = "\x1b[48;2;225;245;255m";
-const BRANCH_CONTEXT_BAR_FG: &str = "\x1b[38;2;0;0;0m";
-const BRANCH_CONTEXT_BAR_LINK_FG: &str = "\x1b[38;2;0;80;180m";
+const BRANCH_CONTEXT_BAR_FG: &str = jackin_tui::ansi::rgb_fg(jackin_tui::BLACK);
+const BRANCH_CONTEXT_BAR_LINK_FG: &str = jackin_tui::ansi::rgb_fg(jackin_tui::LINK_BLUE);
 const BRANCH_CONTEXT_BAR_HOVER_FG: &str = "\x1b[38;2;0;55;140m";
-const BRANCH_CONTEXT_BAR_BOLD: &str = "\x1b[1m";
+const BRANCH_CONTEXT_BAR_BOLD: &str = jackin_tui::ansi::BOLD;
 use jackin_tui::ansi::RESET;
 
 #[allow(clippy::too_many_arguments)]
@@ -4618,6 +4687,144 @@ use jackin_tui::{display_cols, take_display_cols};
 
 const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
+#[cfg(target_os = "linux")]
+const GIT_CONTEXT_WATCH_MASK: AddWatchFlags = AddWatchFlags::IN_CLOSE_WRITE
+    .union(AddWatchFlags::IN_MOVED_TO)
+    .union(AddWatchFlags::IN_CREATE)
+    .union(AddWatchFlags::IN_ATTRIB)
+    .union(AddWatchFlags::IN_DELETE_SELF)
+    .union(AddWatchFlags::IN_MOVE_SELF);
+
+#[cfg(target_os = "linux")]
+fn start_git_context_watcher(workdir: PathBuf, event_tx: mpsc::UnboundedSender<SessionEvent>) {
+    let Some(git_dir) = git_dir_for_watch(&workdir) else {
+        crate::cdebug!(
+            "git-context-watch: no git metadata dir for {}; relying on periodic poll",
+            workdir.display()
+        );
+        return;
+    };
+    let builder = std::thread::Builder::new().name("git-context-watch".to_string());
+    if let Err(err) = builder.spawn(move || watch_git_head_changes(git_dir, event_tx)) {
+        crate::clog!(
+            "git-context-watch: failed to spawn watcher thread: {err}; relying on periodic poll"
+        );
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn start_git_context_watcher(_workdir: PathBuf, _event_tx: mpsc::UnboundedSender<SessionEvent>) {}
+
+#[cfg(target_os = "linux")]
+fn git_dir_for_watch(workdir: &Path) -> Option<PathBuf> {
+    git_metadata_dirs(workdir)
+        .map(|metadata| metadata.git_dir)
+        .or_else(|| {
+            let raw = git_capture_at_workdir(workdir, &["rev-parse", "--git-dir"])?;
+            let path = PathBuf::from(raw);
+            Some(if path.is_absolute() {
+                path
+            } else {
+                workdir.join(path)
+            })
+        })
+}
+
+#[cfg(target_os = "linux")]
+fn watch_git_head_changes(git_dir: PathBuf, event_tx: mpsc::UnboundedSender<SessionEvent>) {
+    let instance = match Inotify::init(InitFlags::IN_CLOEXEC) {
+        Ok(instance) => instance,
+        Err(err) => {
+            crate::clog!(
+                "git-context-watch: inotify init failed for {}: {err}; relying on periodic poll",
+                git_dir.display()
+            );
+            return;
+        }
+    };
+    if let Err(err) = instance.add_watch(git_dir.as_path(), GIT_CONTEXT_WATCH_MASK) {
+        crate::clog!(
+            "git-context-watch: add_watch failed for {}: {err}; relying on periodic poll",
+            git_dir.display()
+        );
+        return;
+    }
+    crate::cdebug!("git-context-watch: watching {}", git_dir.display());
+    loop {
+        let events = match instance.read_events() {
+            Ok(events) => events,
+            Err(err) => {
+                crate::clog!(
+                    "git-context-watch: read_events failed for {}: {err}; relying on periodic poll",
+                    git_dir.display()
+                );
+                return;
+            }
+        };
+        let changed = events.iter().any(|event| {
+            event.mask.intersects(
+                AddWatchFlags::IN_Q_OVERFLOW
+                    | AddWatchFlags::IN_DELETE_SELF
+                    | AddWatchFlags::IN_MOVE_SELF,
+            ) || event.name.as_deref() == Some(OsStr::new("HEAD"))
+        });
+        if changed
+            && event_tx
+                .send(SessionEvent::GitBranchContextRefreshRequested)
+                .is_err()
+        {
+            return;
+        }
+    }
+}
+
+const COMMAND_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+/// Outcome of polling a spawned `Child` to completion with a deadline.
+/// Callers translate this into their own result/Option/bool shape.
+enum WaitOutcome {
+    Exited(std::process::ExitStatus),
+    /// The kernel reaped the child out from under us (PID 1's zombie
+    /// reaper inside Capsule, or a sibling thread's `waitpid`). The
+    /// exit status is lost; callers that captured stdout/stderr should
+    /// trust those pipes, and presence-probes can treat the spawn
+    /// itself as proof the executable exists.
+    Reaped,
+    /// Timed out before the child finished. The helper has already
+    /// attempted `kill()` + `wait()` (best-effort) before returning.
+    TimedOut,
+    /// `try_wait` itself returned a non-`ECHILD` error.
+    Failed(std::io::Error),
+}
+
+/// Poll `child.try_wait()` at `COMMAND_PROBE_POLL_INTERVAL` until it
+/// finishes, the kernel reaps it, the deadline fires, or `try_wait`
+/// itself errors. `label` is only used in the "kill after timeout
+/// failed" log so the line names the program that lingered.
+fn wait_child_with_timeout(child: &mut Child, label: &str, timeout: Duration) -> WaitOutcome {
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return WaitOutcome::Exited(status),
+            Ok(None) => {}
+            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+                return WaitOutcome::Reaped;
+            }
+            Err(e) => return WaitOutcome::Failed(e),
+        }
+        if started.elapsed() >= timeout {
+            if let Err(e) = child.kill() {
+                crate::clog!(
+                    "{label}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
+                    e.raw_os_error()
+                );
+            }
+            let _ = child.wait();
+            return WaitOutcome::TimedOut;
+        }
+        std::thread::sleep(COMMAND_PROBE_POLL_INTERVAL);
+    }
+}
 
 fn git_current_context(workdir: &Path) -> GitContext {
     // Try the cheap path first: read `.git/HEAD` and parse the symref.
@@ -4671,39 +4878,17 @@ fn git_context_from_subprocess(workdir: &Path) -> GitContext {
 }
 
 fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContext> {
-    let git_path = workdir.join(".git");
-    // common_git_dir is only meaningful for worktrees (`.git` is a file
-    // pointing at `.git/worktrees/<name>/`). For a normal checkout
-    // (`.git` is the real dir), there is no `commondir` file and the
-    // `is_worktree` flag stays false — saves a per-poll ENOENT stat.
-    let (git_dir, is_worktree) = if git_path.is_dir() {
-        (git_path, false)
-    } else {
-        let git_file =
-            crate::util::read_text_bounded(".git", &git_path, GIT_METADATA_FILE_MAX_BYTES)?;
-        let Some(suffix) = git_file.trim().strip_prefix("gitdir:") else {
-            cdebug_malformed_git_file(".git", &git_path, &git_file);
-            return None;
-        };
-        let git_dir = PathBuf::from(suffix.trim());
-        let resolved = if git_dir.is_absolute() {
-            git_dir
-        } else {
-            workdir.join(git_dir)
-        };
-        (resolved, true)
-    };
-    let common_git_dir = if is_worktree {
-        common_git_dir(&git_dir, GIT_METADATA_FILE_MAX_BYTES)
-    } else {
-        None
-    };
-    let head_path = git_dir.join("HEAD");
+    let metadata = git_metadata_dirs(workdir)?;
+    let head_path = metadata.git_dir.join("HEAD");
     let head =
         crate::util::read_text_bounded(".git/HEAD", &head_path, GIT_METADATA_FILE_MAX_BYTES)?;
     let trimmed = head.trim();
     if let Some(ref_name) = trimmed.strip_prefix("ref: ") {
-        let oid = read_git_ref_oid(&git_dir, common_git_dir.as_deref(), ref_name);
+        let oid = read_git_ref_oid(
+            &metadata.git_dir,
+            metadata.common_git_dir.as_deref(),
+            ref_name,
+        );
         return Some(match BranchName::parse(ref_name) {
             // `ref:` pointing outside `refs/heads/` (e.g. refs/remotes/origin/HEAD)
             // is treated as detached for our chrome purposes — we have no branch
@@ -4718,6 +4903,37 @@ fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContext> {
             cdebug_malformed_git_file(".git/HEAD", &head_path, trimmed);
             GitContext::Absent
         }
+    })
+}
+
+struct GitMetadataDirs {
+    git_dir: PathBuf,
+    common_git_dir: Option<PathBuf>,
+}
+
+fn git_metadata_dirs(workdir: &Path) -> Option<GitMetadataDirs> {
+    let git_path = workdir.join(".git");
+    if git_path.is_dir() {
+        return Some(GitMetadataDirs {
+            git_dir: git_path,
+            common_git_dir: None,
+        });
+    }
+    let git_file = crate::util::read_text_bounded(".git", &git_path, GIT_METADATA_FILE_MAX_BYTES)?;
+    let Some(suffix) = git_file.trim().strip_prefix("gitdir:") else {
+        cdebug_malformed_git_file(".git", &git_path, &git_file);
+        return None;
+    };
+    let git_dir = PathBuf::from(suffix.trim());
+    let git_dir = if git_dir.is_absolute() {
+        git_dir
+    } else {
+        workdir.join(git_dir)
+    };
+    let common_git_dir = common_git_dir(&git_dir, GIT_METADATA_FILE_MAX_BYTES);
+    Some(GitMetadataDirs {
+        git_dir,
+        common_git_dir,
     })
 }
 
@@ -5180,51 +5396,30 @@ fn run_command_capturing_output(
     let stderr_label: &'static str = "stderr";
     let stdout_reader = read_pipe_bounded(program.clone(), stdout_label, stdout, 64 * 1024);
     let stderr_reader = read_pipe_bounded(program.clone(), stderr_label, stderr, 4 * 1024);
-    let started = Instant::now();
-    let status_success: Option<bool>;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                status_success = Some(
-                    status
-                        .code()
-                        .is_some_and(|code| accepted_statuses.contains(&code)),
-                );
-                break;
-            }
-            Ok(None) => {}
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                // PID 1 / sibling waitpid reaped the child; trust the
-                // stdout pipe. Stderr is still read for the caller's
-                // diagnostic context.
-                status_success = None;
-                break;
-            }
-            Err(e) => {
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return Err(LookupError::Failed(format!(
-                    "{program}: try_wait failed: {e} (errno={:?})",
-                    e.raw_os_error()
-                )));
-            }
-        }
-        if started.elapsed() >= timeout {
-            if let Err(e) = child.kill() {
-                crate::clog!(
-                    "{program}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
-                    e.raw_os_error()
-                );
-            }
-            let _ = child.wait();
+    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &program, timeout)
+    {
+        WaitOutcome::Exited(status) => Some(
+            status
+                .code()
+                .is_some_and(|code| accepted_statuses.contains(&code)),
+        ),
+        WaitOutcome::Reaped => None,
+        WaitOutcome::TimedOut => {
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
             return Err(LookupError::Failed(format!(
                 "{program}: timed out after {timeout:?}"
             )));
         }
-        std::thread::sleep(Duration::from_millis(25));
-    }
+        WaitOutcome::Failed(e) => {
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(LookupError::Failed(format!(
+                "{program}: try_wait failed: {e} (errno={:?})",
+                e.raw_os_error()
+            )));
+        }
+    };
     let stdout_bytes = stdout_reader
         .join()
         .map_err(|_| LookupError::Failed(format!("{program}: stdout reader panicked")))?
@@ -5316,54 +5511,35 @@ fn command_stdout_trimmed_with_timeout_and_statuses(
         stdout.read_to_end(&mut bytes)?;
         Ok(bytes)
     });
-    let started = Instant::now();
-    let status_success: Option<bool>;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let accepted = status
-                    .code()
-                    .is_some_and(|code| accepted_statuses.contains(&code));
-                status_success = Some(accepted);
-                break;
-            }
-            Ok(None) => {}
-            // The kernel reaped the child out from under us — either
-            // PID 1's zombie reaper inside the daemon or a sibling
-            // thread's waitpid. The exit status is lost; trust the
-            // stdout pipe (callers like the Container info dialog
-            // would otherwise show empty fields for healthy git/gh
-            // commands). Non-ECHILD errnos are surfaced.
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                status_success = None;
-                break;
-            }
-            Err(e) => {
-                crate::clog!(
-                    "command try_wait failed ({:?}): {e} (errno={:?})",
-                    command.get_program(),
-                    e.raw_os_error()
-                );
-                let _ = stdout_reader.join();
-                return None;
-            }
-        }
-        if started.elapsed() >= timeout {
-            if let Err(e) = child.kill() {
-                crate::clog!(
-                    "command timeout ({timeout:?}): child.kill() failed: {e} (errno={:?}); child may linger",
-                    e.raw_os_error()
-                );
-            }
-            let _ = child.wait();
-            // Joining the reader is bounded: kill() closed the pipe,
-            // so read_to_end returns quickly. Without the join the
-            // OS-thread is leaked across every timeout firing.
+    let label = format!("{:?}", command.get_program());
+    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
+        WaitOutcome::Exited(status) => Some(
+            status
+                .code()
+                .is_some_and(|code| accepted_statuses.contains(&code)),
+        ),
+        // Status is lost; trust the stdout pipe (callers like the
+        // Container info dialog would otherwise show empty fields for
+        // healthy git/gh commands).
+        WaitOutcome::Reaped => None,
+        WaitOutcome::TimedOut => {
+            // Joining the reader is bounded: kill() (inside the helper)
+            // closed the pipe, so read_to_end returns quickly. Without
+            // the join the OS-thread is leaked across every timeout
+            // firing.
             let _ = stdout_reader.join();
             return None;
         }
-        std::thread::sleep(Duration::from_millis(25));
-    }
+        WaitOutcome::Failed(e) => {
+            crate::clog!(
+                "command try_wait failed ({:?}): {e} (errno={:?})",
+                command.get_program(),
+                e.raw_os_error()
+            );
+            let _ = stdout_reader.join();
+            return None;
+        }
+    };
     if status_success == Some(false) {
         crate::cdebug!(
             "command exited non-accepted status ({:?}); stderr was nulled so reason is unavailable",
@@ -5908,6 +6084,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn full_frame_updates_outer_terminal_title_on_branch_switch() {
+        let mut mux = single_pane_tab_mux();
+        mux.workdir = PathBuf::from("/workspace/jackin");
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/a"));
+
+        let first =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            first.contains("\x1b]2;jackin · feat/a\x1b\\"),
+            "first non-default branch should set title: {first:?}"
+        );
+
+        mux.pull_request_context_branch = Some(branch("feat/b"));
+        let switched =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            switched.contains("\x1b]2;jackin · feat/b\x1b\\"),
+            "branch switch should refresh title: {switched:?}"
+        );
+
+        mux.pull_request_context_branch = Some(branch("main"));
+        let default_branch =
+            String::from_utf8_lossy(&mux.compose_full_frame(FullRedrawReason::ExplicitRedraw))
+                .to_string();
+        assert!(
+            default_branch.contains("\x1b]2;jackin\x1b\\"),
+            "default branch should fall back to workspace-only title: {default_branch:?}"
+        );
+        assert!(
+            !default_branch.contains("jackin · main"),
+            "default branch name should not be propagated into title: {default_branch:?}"
+        );
+    }
+
     fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
         test_session_with_agent(rows, cols, Some("codex".to_string()))
     }
@@ -5930,8 +6144,13 @@ mod tests {
 
     fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
         let rendered = String::from_utf8_lossy(frame);
+        let focused_scroll_fg = format!(
+            "{}{}",
+            jackin_tui::ansi::RESET,
+            jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_GREEN)
+        );
         assert!(
-            rendered.contains("\x1b[0;38;2;0;255;65m"),
+            rendered.contains(&focused_scroll_fg),
             "focused {context} should use green chrome"
         );
         assert!(
@@ -6131,7 +6350,7 @@ mod tests {
                     .to_string();
 
             assert!(
-                frame.contains("\x1b[0;48;2;0;0;0m"),
+                frame.contains(jackin_tui::ansi::reset_rgb_bg(jackin_tui::DIALOG_BACKDROP)),
                 "{context} should paint an opaque black backdrop: {frame:?}"
             );
             assert!(
@@ -6139,11 +6358,17 @@ mod tests {
                 "{context} should hide the top status brand pill behind the dialog: {frame:?}"
             );
             assert!(
-                !frame.contains("\x1b[38;2;80;80;80m┌"),
+                !frame.contains(&format!(
+                    "{}┌",
+                    jackin_tui::ansi::rgb_fg(jackin_tui::BORDER_GRAY)
+                )),
                 "{context} should hide inactive pane borders behind the dialog: {frame:?}"
             );
             assert!(
-                !frame.contains("\x1b[38;2;0;255;65m┌"),
+                !frame.contains(&format!(
+                    "{}┌",
+                    jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_GREEN)
+                )),
                 "{context} should hide the active pane border behind the dialog: {frame:?}"
             );
         }
@@ -6868,6 +7093,86 @@ mod tests {
             mux.pull_request_lookup.request_id,
             id_before.wrapping_add(1),
             "force-spawn must bump request_id"
+        );
+    }
+
+    #[test]
+    fn open_github_context_dialog_force_spawns_when_startup_missed_gh() {
+        let mut mux = test_mux(24, 100);
+        mux.workdir_context.gh_available = false;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        let id_before = mux.pull_request_lookup.request_id;
+
+        mux.open_github_context_dialog(Instant::now());
+
+        assert!(
+            mux.pull_request_lookup.in_flight,
+            "manual refresh must schedule a background lookup even when startup marked gh unavailable"
+        );
+        assert_eq!(
+            mux.pull_request_lookup.request_id,
+            id_before.wrapping_add(1),
+            "manual refresh should not need a synchronous gh availability probe"
+        );
+        assert!(
+            !mux.workdir_context.gh_available,
+            "gh availability flips only after the background lookup succeeds"
+        );
+    }
+
+    #[test]
+    fn background_pull_request_success_marks_gh_available_after_startup_miss() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.workdir_context.gh_available = false;
+        mux.workdir_context.is_git_repo = true;
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_lookup.request_id = 7;
+        mux.pull_request_lookup.in_flight = true;
+
+        let changed = mux.apply_pull_request_context_loaded(
+            7,
+            Some(branch("feat/x")),
+            None,
+            PullRequestLookupOutcome::Resolved(Some(Arc::new(pull_request_fixture(436)))),
+            now,
+        );
+
+        assert!(changed);
+        assert!(
+            mux.workdir_context.gh_available,
+            "successful background gh lookup should unblock later conservative refreshes"
+        );
+    }
+
+    #[test]
+    fn open_github_context_dialog_bypasses_fresh_no_pr_cache() {
+        let mut mux = test_mux(24, 100);
+        let now = Instant::now();
+        mux.workdir_context.gh_available = true;
+        mux.workdir_context.is_git_repo = true;
+        mux.workdir_context.default_branch = Some("main".to_string());
+        mux.pull_request_context_branch = Some(branch("feat/x"));
+        mux.pull_request_context_cache.insert(
+            branch("feat/x"),
+            PullRequestContextCacheEntry {
+                checked_at: now,
+                head: None,
+                pull_request: None,
+            },
+        );
+
+        mux.open_github_context_dialog(now);
+
+        assert!(
+            mux.pull_request_lookup.in_flight,
+            "manual dialog open must refresh even when a recent background lookup saw no PR"
+        );
+        assert!(
+            mux.pull_request_context_loading(),
+            "dialog should show resolving while the forced refresh is in flight"
         );
     }
 

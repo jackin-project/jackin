@@ -174,10 +174,10 @@ impl ConnectionChoice {
                 "active Docker context uses SSH transport ({host}); this jackin build cannot mirror SSH Docker contexts for Bollard API calls"
             ),
             UnsupportedReason::TlsTransport => format!(
-                "active Docker context uses TLS transport ({host}); this jackin build cannot mirror TLS Docker contexts for Bollard API calls"
+                "active Docker context uses TLS transport ({host}); jackin reads TLS material from DOCKER_TLS_VERIFY and DOCKER_CERT_PATH, not from a Docker context"
             ),
             UnsupportedReason::ContextTlsMaterial => format!(
-                "active Docker context for {host} includes TLS settings; this jackin build cannot mirror Docker context TLS material for Bollard API calls"
+                "active Docker context for {host} includes TLS settings; jackin reads TLS material from DOCKER_TLS_VERIFY and DOCKER_CERT_PATH, not from a Docker context"
             ),
             UnsupportedReason::UnsupportedUri => {
                 format!("active Docker context uses unsupported Docker host URI {host}")
@@ -231,8 +231,7 @@ impl DockerContextEndpoint {
     }
 }
 
-const OVERRIDE_HINT: &str =
-    "Set DOCKER_HOST to a unix:// or tcp:// endpoint reachable without TLS to override.";
+const OVERRIDE_HINT: &str = "Set DOCKER_HOST to a unix:// socket, a plain tcp:// endpoint, or a TLS tcp:// endpoint with DOCKER_TLS_VERIFY and DOCKER_CERT_PATH set, to override.";
 
 fn context_host_supported_without_extra_settings(host: &str) -> bool {
     host.starts_with("unix://")
@@ -1045,6 +1044,13 @@ impl DockerApi for FakeDockerClient {
 mod tests {
     use super::*;
 
+    // Compile-time guard: bollard's `connect_with_ssl_defaults` exists only
+    // when its TLS feature (`aws-lc-rs`) is enabled. Dropping the feature from
+    // Cargo.toml stops this compiling — turning the otherwise-silent "plain
+    // HTTP to a `tcp://…:2376` TLS daemon → 400" runtime failure into a
+    // build-time error.
+    const _: fn() -> Result<Docker, bollard::errors::Error> = Docker::connect_with_ssl_defaults;
+
     #[test]
     fn choose_connection_env_only_returns_defaults() {
         assert_eq!(choose_connection(true, None), ConnectionChoice::Defaults);
@@ -1187,7 +1193,7 @@ mod tests {
         assert!(msg.contains("SSH transport"));
         assert!(msg.contains("ssh://me@docker-host"));
         assert!(msg.ends_with(
-            ". Set DOCKER_HOST to a unix:// or tcp:// endpoint reachable without TLS to override."
+            ". Set DOCKER_HOST to a unix:// socket, a plain tcp:// endpoint, or a TLS tcp:// endpoint with DOCKER_TLS_VERIFY and DOCKER_CERT_PATH set, to override."
         ));
     }
 

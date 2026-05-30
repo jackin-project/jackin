@@ -12,9 +12,12 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use crate::console::widgets::confirm::{self, ConfirmState};
 use crate::console::widgets::select_list::{self, SelectListState};
+use crate::console::widgets::text_input::{self, TextInputState};
 use crate::console::widgets::{
-    DANGER_RED, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+    DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK,
+    PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
 };
 use crate::diagnostics::RunDiagnostics;
 use jackin_tui::HintSpan;
@@ -25,6 +28,7 @@ pub enum LaunchStage {
     Role,
     Credentials,
     Construct,
+    AgentBinaries,
     DerivedImage,
     Workspace,
     Network,
@@ -34,11 +38,12 @@ pub enum LaunchStage {
 }
 
 impl LaunchStage {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Identity,
         Self::Role,
         Self::Credentials,
         Self::Construct,
+        Self::AgentBinaries,
         Self::DerivedImage,
         Self::Workspace,
         Self::Network,
@@ -53,6 +58,7 @@ impl LaunchStage {
             Self::Role => "role",
             Self::Credentials => "credentials",
             Self::Construct => "construct",
+            Self::AgentBinaries => "agent binaries",
             Self::DerivedImage => "derived image",
             Self::Workspace => "workspace",
             Self::Network => "network",
@@ -71,30 +77,6 @@ pub enum StageStatus {
     Skipped,
     Failed,
     Blocked,
-}
-
-impl StageStatus {
-    const fn marker(self) -> &'static str {
-        match self {
-            Self::Queued => "○",
-            Self::Running => "◐",
-            Self::Done => "●",
-            Self::Skipped => "◇",
-            Self::Failed => "×",
-            Self::Blocked => "!",
-        }
-    }
-
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Running => "running",
-            Self::Done => "done",
-            Self::Skipped => "skipped",
-            Self::Failed => "failed",
-            Self::Blocked => "blocked",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -150,7 +132,7 @@ struct LaunchView {
     build_log_open: bool,
     /// Lines scrolled up from the tail of the build log (0 = follow the
     /// newest output).
-    build_log_scroll: usize,
+    build_log_scroll: jackin_tui::scroll::TailScroll,
     /// Pointer is hovering the clickable footer activity (which opens the
     /// build-log overlay). Lifts the activity to the link colour.
     build_log_hover: bool,
@@ -172,6 +154,7 @@ enum FailureCopyTarget {
 pub struct LaunchFailure {
     pub title: String,
     pub summary: String,
+    pub detail: Option<String>,
     pub next_step: Option<String>,
     pub stage: LaunchStage,
     pub diagnostics_path: Option<PathBuf>,
@@ -196,9 +179,6 @@ pub struct LaunchProgress {
 
 enum Renderer {
     Rich(RichDriver),
-    Compact {
-        interactive: bool,
-    },
     /// Rich surface torn down at the handoff; inert (no draws, no diagnostics
     /// trailer) so the interactive capsule attach owns the terminal alone.
     Done,
@@ -247,6 +227,14 @@ impl RichDriver {
                             if !rr.no_motion {
                                 v.frame = v.frame.wrapping_add(1);
                             }
+                            if v.build_log_open {
+                                let area = crossterm::terminal::size()
+                                    .ok()
+                                    .map(|(width, height)| Rect::new(0, 0, width, height))
+                                    .unwrap_or_default();
+                                let filled = build_log_scroll_filled(area);
+                                v.build_log_scroll.clamp(filled);
+                            }
                             v.clone()
                         }
                         Err(_) => continue,
@@ -279,7 +267,7 @@ fn initial_view() -> LaunchView {
         failure_ack: false,
         frame: 0,
         build_log_open: false,
-        build_log_scroll: 0,
+        build_log_scroll: jackin_tui::scroll::TailScroll::default(),
         build_log_hover: false,
         label_transition: None,
         failure_copy_hover: None,
@@ -289,19 +277,14 @@ fn initial_view() -> LaunchView {
 
 impl LaunchProgress {
     pub fn new(diagnostics: Arc<RunDiagnostics>, no_motion: bool) -> anyhow::Result<Self> {
+        require_rich_terminal()?;
         let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
-        let renderer = if rich_terminal_supported() {
-            let rich = RichRenderer::enter(no_motion)?;
-            Renderer::Rich(RichDriver::spawn(
-                rich,
-                view.clone(),
-                diagnostics.run_id().to_string(),
-            ))
-        } else {
-            Renderer::Compact {
-                interactive: std::io::stderr().is_terminal(),
-            }
-        };
+        let rich = RichRenderer::enter(no_motion)?;
+        let renderer = Renderer::Rich(RichDriver::spawn(
+            rich,
+            view.clone(),
+            diagnostics.run_id().to_string(),
+        ));
         Ok(Self {
             diagnostics,
             renderer,
@@ -354,7 +337,6 @@ impl LaunchProgress {
         });
         self.diagnostics
             .stage("stage_started", stage.label(), &detail, None);
-        self.compact_line(stage, StageStatus::Running, &detail);
     }
 
     pub fn stage_progress(&mut self, stage: LaunchStage, detail: impl Into<String>) {
@@ -372,7 +354,6 @@ impl LaunchProgress {
         self.with_view(|v| update_stage(v, stage, StageStatus::Done, &detail));
         self.diagnostics
             .stage("stage_done", stage.label(), &detail, None);
-        self.compact_line(stage, StageStatus::Done, &detail);
     }
 
     pub fn stage_skipped(&mut self, stage: LaunchStage, reason: impl Into<String>) {
@@ -380,13 +361,13 @@ impl LaunchProgress {
         self.with_view(|v| update_stage(v, stage, StageStatus::Skipped, &reason));
         self.diagnostics
             .stage("stage_skipped", stage.label(), &reason, None);
-        self.compact_line(stage, StageStatus::Skipped, &reason);
     }
 
     pub async fn stage_failed(&mut self, mut failure: LaunchFailure) {
         let stage = failure.stage;
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
+        let detail = failure.detail.clone();
         failure.diagnostics_path = Some(self.diagnostics.path().to_path_buf());
         if failure.command_output_path.is_none() {
             let docker_output = self.diagnostics.command_output_path("docker-build");
@@ -406,7 +387,7 @@ impl LaunchProgress {
             "stage_failed",
             stage.label(),
             &summary,
-            next_step.as_deref(),
+            detail.as_deref().or(next_step.as_deref()),
         );
         // On a rich surface the render task draws the failure popup and owns the
         // terminal's input; poll for the operator's Enter/Esc dismiss. Yielding
@@ -432,7 +413,7 @@ impl LaunchProgress {
     ///
     /// Fast Docker/cache paths can otherwise advance from one stage to the next
     /// before the 33ms render tick observes the intermediate state, making the
-    /// progress rail appear to skip labels. Compact/test renderers do not draw
+    /// progress rail appear to skip labels. Test renderers do not draw
     /// asynchronously, so they should not pay this delay.
     pub async fn settle_stage_visual(&self) {
         if matches!(self.renderer, Renderer::Rich(_)) {
@@ -442,7 +423,7 @@ impl LaunchProgress {
 
     /// Stop the render task and release the rich surface before the interactive
     /// handoff, so the capsule attach owns the terminal alone. Idempotent;
-    /// no-op for the compact and test renderers.
+    /// no-op for the test renderer.
     pub fn finish(&mut self) {
         use std::sync::atomic::Ordering;
         if let Renderer::Rich(driver) = &mut self.renderer {
@@ -459,46 +440,70 @@ impl LaunchProgress {
         }
     }
 
-    fn compact_line(&self, stage: LaunchStage, status: StageStatus, detail: &str) {
-        if let Renderer::Compact { interactive } = &self.renderer {
-            let marker = status.marker();
-            let label = stage.label();
-            if *interactive {
-                eprintln!("  {marker} {label:<13} {detail}");
-            } else if detail.is_empty() {
-                eprintln!("{label}: {}", status.label());
-            } else {
-                eprintln!("{label}: {} \u{2014} {detail}", status.label());
-            }
-        }
-    }
-
-    /// Present a forced-choice picker over `items` and return the chosen
-    /// index. Returns `Ok(None)` when no rich surface is active, so the
-    /// caller can fall back to the plain stdin prompt. The picker cannot
-    /// be cancelled — the operator must commit one of the options.
-    pub fn select_choice(
+    /// Reclaim the rich renderer from the background render task and run a
+    /// modal dialog against it. The task try-locks per frame, so it simply
+    /// skips frames while the modal holds the lock. Bails when the launch is
+    /// not driving the rich surface — `what` names the dialog in that error.
+    fn with_rich_renderer<T>(
         &mut self,
-        title: &str,
-        items: Vec<String>,
-    ) -> anyhow::Result<Option<usize>> {
-        let run_id = self.diagnostics.run_id().to_string();
+        what: &str,
+        f: impl FnOnce(&mut RichRenderer) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
         if let Renderer::Rich(driver) = &mut self.renderer {
-            // Reclaim the renderer from the render task for the modal picker.
-            // The task try-locks, so it simply skips frames while we hold it.
             let mut renderer = driver
                 .renderer
                 .lock()
                 .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
-            let view = self
-                .view
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch view mutex poisoned"))?
-                .clone();
-            renderer.select(&view, &run_id, title, items).map(Some)
+            f(&mut renderer)
         } else {
-            Ok(None)
+            anyhow::bail!("{what} requires the rich launch dialog")
         }
+    }
+
+    /// Present a forced-choice picker over `items` and return the chosen
+    /// index. The picker cannot be cancelled — the operator must commit one
+    /// of the options.
+    pub fn select_choice(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+        self.with_rich_renderer("launch choice", |renderer| renderer.select(title, items))
+    }
+
+    pub fn prompt_text(
+        &mut self,
+        title: &str,
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        self.with_rich_renderer("manifest env text prompt", |renderer| {
+            renderer.prompt_text(title, default.unwrap_or_default(), skippable)
+        })
+    }
+
+    pub fn prompt_select(
+        &mut self,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        self.with_rich_renderer("manifest env select prompt", |renderer| {
+            renderer.prompt_select(title, options, default, skippable)
+        })
+    }
+
+    pub fn confirm_prompt(&mut self, prompt: impl Into<String>) -> anyhow::Result<bool> {
+        self.with_rich_renderer("launch confirmation", |renderer| {
+            renderer.confirm(ConfirmState::new(prompt))
+        })
+    }
+
+    pub fn confirm_role_trust(
+        &mut self,
+        role: impl Into<String>,
+        repository: impl Into<String>,
+    ) -> anyhow::Result<bool> {
+        self.with_rich_renderer("role trust prompt", |renderer| {
+            renderer.confirm(ConfirmState::role_trust(role, repository))
+        })
     }
 
     #[allow(clippy::unused_self)]
@@ -510,6 +515,31 @@ impl LaunchProgress {
         // awaited work no longer needs to interleave a draw — just await it.
         future.await
     }
+}
+
+pub fn prelaunch_select_choice(
+    no_motion: bool,
+    title: &str,
+    items: Vec<String>,
+) -> anyhow::Result<usize> {
+    require_rich_terminal()?;
+    let mut renderer = RichRenderer::enter(no_motion)?;
+    renderer.select(title, items)
+}
+
+/// Standalone forced-choice picker with a `context` block above the options.
+///
+/// For callers that run after the launch progress surface has been torn down
+/// — the post-attach worktree-cleanup prompt. Enters its own rich surface (or
+/// draws into the host guard's screen when one is active); the caller is
+/// responsible for gating on terminal capability before calling.
+pub fn standalone_select_with_context(
+    title: &str,
+    context: &[Line<'_>],
+    items: Vec<String>,
+) -> anyhow::Result<usize> {
+    let mut renderer = RichRenderer::enter(false)?;
+    renderer.select_with_context(title, context, items)
 }
 
 fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, detail: &str) {
@@ -530,6 +560,27 @@ fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, 
 
 const BUILD_LOG_SCROLL_STEP: usize = 3;
 const BUILD_LOG_PAGE_STEP: usize = 10;
+
+fn build_log_scroll_filled(area: Rect) -> usize {
+    let box_area = Rect {
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let viewport_w = crate::console::widgets::scrollable::viewport_width(box_area);
+    let viewport_h = crate::console::widgets::scrollable::viewport_height(box_area);
+    let raw = crate::runtime::build_log::snapshot();
+    let line_count = if raw.is_empty() {
+        1
+    } else {
+        wrap_build_log_lines(raw, viewport_w).len()
+    };
+    jackin_tui::scroll::max_offset(line_count, viewport_h)
+}
+
+fn scroll_build_log(view: &mut LaunchView, area: Rect, delta: isize) {
+    let filled = build_log_scroll_filled(area);
+    view.build_log_scroll.scroll_by(filled, delta);
+}
 
 /// Whether `(col, row)` falls on the footer activity text ("Building Docker
 /// image…"). The footer is the last terminal row; the activity is left-aligned
@@ -618,7 +669,7 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
                         && hit_activity(&v, m.column, m.row)
                     {
                         v.build_log_open = true;
-                        v.build_log_scroll = 0;
+                        v.build_log_scroll = jackin_tui::scroll::TailScroll::default();
                         // Overlay now covers the activity; clear its hover lift
                         // and drop the hand pointer.
                         v.build_log_hover = false;
@@ -647,10 +698,10 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
                     }
                 }
                 MouseEventKind::ScrollUp if v.build_log_open => {
-                    v.build_log_scroll = v.build_log_scroll.saturating_add(BUILD_LOG_SCROLL_STEP);
+                    scroll_build_log(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
                 }
                 MouseEventKind::ScrollDown if v.build_log_open => {
-                    v.build_log_scroll = v.build_log_scroll.saturating_sub(BUILD_LOG_SCROLL_STEP);
+                    scroll_build_log(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
                 }
                 _ => {}
             },
@@ -667,13 +718,13 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
                 KeyCode::Esc | KeyCode::Char('q') => v.build_log_open = false,
-                KeyCode::Up => v.build_log_scroll = v.build_log_scroll.saturating_add(1),
-                KeyCode::Down => v.build_log_scroll = v.build_log_scroll.saturating_sub(1),
+                KeyCode::Up => scroll_build_log(&mut v, area, 1),
+                KeyCode::Down => scroll_build_log(&mut v, area, -1),
                 KeyCode::PageUp => {
-                    v.build_log_scroll = v.build_log_scroll.saturating_add(BUILD_LOG_PAGE_STEP);
+                    scroll_build_log(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
                 }
                 KeyCode::PageDown => {
-                    v.build_log_scroll = v.build_log_scroll.saturating_sub(BUILD_LOG_PAGE_STEP);
+                    scroll_build_log(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
                 }
                 _ => {}
             },
@@ -691,10 +742,6 @@ impl Drop for LaunchProgress {
         if let Renderer::Rich(driver) = &self.renderer {
             driver.stop.store(true, Ordering::Relaxed);
             crate::tui::set_rich_surface_active(false);
-        }
-        // Non-rich launches print the run-id trailer on completion.
-        if matches!(self.renderer, Renderer::Compact { .. }) {
-            eprintln!("diagnostics: run {}", self.run_id());
         }
     }
 }
@@ -762,42 +809,57 @@ impl RichRenderer {
             .context("rendering launch progress TUI")
     }
 
-    /// Run a forced-choice picker over the dimmed launch frame. Enables
-    /// raw mode for the duration so key events arrive un-buffered, and
-    /// restores it on every exit path. `Ctrl-C` aborts the launch.
-    fn select(
+    /// Run a modal dialog loop with raw mode held for its duration so key
+    /// events arrive un-buffered, restoring it on every exit path. The host
+    /// guard already holds raw mode for the whole flow; only toggle it when
+    /// this renderer is running standalone. `Ctrl-C` aborts the launch.
+    fn with_raw_mode<T>(
         &mut self,
-        view: &LaunchView,
-        run_id: &str,
-        title: &str,
-        items: Vec<String>,
-    ) -> anyhow::Result<usize> {
-        // The host guard already holds raw mode for the whole flow; only
-        // toggle it when this renderer is running standalone.
+        context: &'static str,
+        f: impl FnOnce(&mut Self) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
         let owns_raw = !crate::tui::host_screen_owned();
         if owns_raw {
-            crossterm::terminal::enable_raw_mode()
-                .context("entering raw mode for launch picker")?;
+            crossterm::terminal::enable_raw_mode().context(context)?;
         }
-        let outcome = self.select_loop(view, run_id, title, items);
+        let outcome = f(self);
         if owns_raw {
             let _ = crossterm::terminal::disable_raw_mode();
         }
         outcome
     }
 
+    /// Present a forced-choice picker over the dimmed launch frame.
+    fn select(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+        self.with_raw_mode("entering raw mode for launch picker", |renderer| {
+            renderer.select_loop(title, &[], items)
+        })
+    }
+
+    /// Forced-choice picker with a descriptive `context` block above the
+    /// options. Used by the standalone post-attach cleanup prompt.
+    fn select_with_context(
+        &mut self,
+        title: &str,
+        context: &[Line<'_>],
+        items: Vec<String>,
+    ) -> anyhow::Result<usize> {
+        self.with_raw_mode("entering raw mode for cleanup picker", |renderer| {
+            renderer.select_loop(title, context, items)
+        })
+    }
+
     fn select_loop(
         &mut self,
-        view: &LaunchView,
-        run_id: &str,
         title: &str,
+        context: &[Line<'_>],
         items: Vec<String>,
     ) -> anyhow::Result<usize> {
         use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let mut picker = SelectListState::new(items);
         loop {
             self.terminal
-                .draw(|frame| draw_select(frame, view, run_id, title, &picker))
+                .draw(|frame| draw_select(frame, title, context, &picker))
                 .context("rendering launch picker")?;
             if let Event::Key(key) =
                 crossterm::event::read().context("reading launch picker input")?
@@ -811,6 +873,145 @@ impl RichRenderer {
                 // Esc reports Cancel; ignored here so the choice is forced.
                 if let ModalOutcome::Commit(index) = picker.handle_key(key) {
                     return Ok(index);
+                }
+            }
+        }
+    }
+
+    fn prompt_text(
+        &mut self,
+        title: &str,
+        initial: &str,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        self.with_raw_mode("entering raw mode for launch env prompt", |renderer| {
+            renderer.prompt_text_loop(title, initial, skippable)
+        })
+    }
+
+    fn prompt_text_loop(
+        &mut self,
+        title: &str,
+        initial: &str,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let mut input = if skippable {
+            TextInputState::new_allow_empty(title, initial)
+        } else {
+            TextInputState::new(title, initial)
+        };
+        loop {
+            self.terminal
+                .draw(|frame| draw_text_prompt(frame, &input, skippable))
+                .context("rendering launch env text prompt")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch env prompt input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match input.handle_key(key) {
+                    ModalOutcome::Commit(value) if value.is_empty() && skippable => {
+                        return Ok(crate::env_resolver::PromptResult::Skipped);
+                    }
+                    ModalOutcome::Commit(value) => {
+                        return Ok(crate::env_resolver::PromptResult::Value(value));
+                    }
+                    ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
+                    ModalOutcome::Continue => {}
+                }
+            }
+        }
+    }
+
+    fn prompt_select(
+        &mut self,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        self.with_raw_mode("entering raw mode for launch env select", |renderer| {
+            renderer.prompt_select_loop(title, options, default, skippable)
+        })
+    }
+
+    fn prompt_select_loop(
+        &mut self,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let mut items = options.to_vec();
+        if skippable {
+            items.push("(skip)".to_string());
+        }
+        let mut picker = SelectListState::new(items);
+        if let Some(default) = default
+            && let Some(index) = options.iter().position(|option| option == default)
+        {
+            picker.select_index(index);
+        }
+        loop {
+            self.terminal
+                .draw(|frame| draw_select(frame, title, &[], &picker))
+                .context("rendering launch env select prompt")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch env select input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match picker.handle_key(key) {
+                    ModalOutcome::Commit(index) if skippable && index == options.len() => {
+                        return Ok(crate::env_resolver::PromptResult::Skipped);
+                    }
+                    ModalOutcome::Commit(index) => {
+                        return Ok(crate::env_resolver::PromptResult::Value(
+                            options[index].clone(),
+                        ));
+                    }
+                    ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
+                    ModalOutcome::Continue => {}
+                }
+            }
+        }
+    }
+
+    fn confirm(&mut self, mut state: ConfirmState) -> anyhow::Result<bool> {
+        self.with_raw_mode("entering raw mode for launch confirmation", |renderer| {
+            renderer.confirm_loop(&mut state)
+        })
+    }
+
+    fn confirm_loop(&mut self, state: &mut ConfirmState) -> anyhow::Result<bool> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        loop {
+            self.terminal
+                .draw(|frame| draw_confirm(frame, state))
+                .context("rendering launch confirmation")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch confirmation input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match state.handle_key(key) {
+                    ModalOutcome::Commit(confirmed) => return Ok(confirmed),
+                    ModalOutcome::Cancel => return Ok(false),
+                    ModalOutcome::Continue => {}
                 }
             }
         }
@@ -831,7 +1032,10 @@ impl Drop for RichRenderer {
 }
 
 pub(crate) fn rich_terminal_supported() -> bool {
-    if !std::io::stdout().is_terminal() || !std::io::stderr().is_terminal() {
+    if !std::io::stdin().is_terminal()
+        || !std::io::stdout().is_terminal()
+        || !std::io::stderr().is_terminal()
+    {
         return false;
     }
     if std::env::var_os("CI").is_some() {
@@ -843,14 +1047,29 @@ pub(crate) fn rich_terminal_supported() -> bool {
     crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
 }
 
+/// Bail with the canonical rich-terminal requirement message unless the
+/// current terminal can host the launch surface. Both `LaunchProgress::new`
+/// and the pre-launch `prelaunch_select_choice` picker gate through this so
+/// the message cannot drift between them.
+pub(crate) fn require_rich_terminal() -> anyhow::Result<()> {
+    if !rich_terminal_supported() {
+        anyhow::bail!(
+            "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
+        );
+    }
+    Ok(())
+}
+
 const STAGE_PULSE_PERIOD: usize = 12;
 const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
 const LABEL_GAP: usize = 4;
+const LABEL_SIDE_OVERHANG: usize = 12;
+const LABEL_EDGE_FADE_WIDTH: usize = 24;
 const LABEL_SLIDE_FRAMES: usize = 12;
 const PROGRESS_RAIL_WIDTH: usize =
     LaunchStage::ALL.len() * BLOCK_WIDTH + (LaunchStage::ALL.len() - 1) * BLOCK_GAP;
-const LABEL_VIEW_WIDTH: usize = PROGRESS_RAIL_WIDTH + LABEL_GAP;
+const LABEL_VIEW_WIDTH: usize = PROGRESS_RAIL_WIDTH + LABEL_SIDE_OVERHANG * 2;
 
 fn render_launch_frame(
     frame: &mut Frame<'_>,
@@ -1158,14 +1377,15 @@ fn labels_line(view: &LaunchView, frozen: bool, width: usize) -> Line<'static> {
     let start = center as isize - (width / 2) as isize;
     let cells = (0..width).map(|x| {
         let index = start + x as isize;
-        if index >= 0 {
+        let cell = if index >= 0 {
             strip
                 .get(index as usize)
                 .copied()
                 .unwrap_or_else(blank_label_cell)
         } else {
             blank_label_cell()
-        }
+        };
+        faded_label_cell(cell, label_edge_fade_factor(x, width))
     });
     Line::from(coalesce_cells(cells.map(|cell| (cell.ch, cell.style))))
 }
@@ -1222,6 +1442,36 @@ fn blank_label_cell() -> LabelCell {
         ch: ' ',
         style: Style::default(),
     }
+}
+
+fn label_edge_fade_factor(index: usize, width: usize) -> f32 {
+    let fade_width = LABEL_EDGE_FADE_WIDTH.min(width / 2).max(1);
+    let edge_distance = index.min(width.saturating_sub(1).saturating_sub(index));
+    if edge_distance >= fade_width {
+        return 1.0;
+    }
+
+    let ratio = ((edge_distance + 1) as f32 / fade_width as f32).clamp(0.0, 1.0);
+    ratio * ratio * 2.0f32.mul_add(-ratio, 3.0)
+}
+
+fn faded_color(color: Color, factor: f32) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => {
+            let factor = factor.clamp(0.0, 1.0);
+            let scale = |c: u8| (f32::from(c) * factor) as u8;
+            Color::Rgb(scale(r), scale(g), scale(b))
+        }
+        other => other,
+    }
+}
+
+fn faded_label_cell(cell: LabelCell, factor: f32) -> LabelCell {
+    let mut style = cell.style;
+    if let Some(fg) = style.fg {
+        style.fg = Some(faded_color(fg, factor));
+    }
+    LabelCell { style, ..cell }
 }
 
 fn animated_label_center(view: &LaunchView, centers: &[usize]) -> Option<usize> {
@@ -1607,17 +1857,15 @@ const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
 /// continuation rows carry a visible prefix so wrapped Docker output remains
 /// easy to distinguish from separate log lines. The key hint renders in the
 /// bottom footer row, never inside the box (TUI design rule).
-fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
-    use crate::console::widgets::scrollable::{render_scrollable_block, viewport_height};
-
-    // Opaque black backdrop fully hides the cockpit behind the overlay (same
-    // solid look as the capsule modals).
+/// Paint the shared solid dialog backdrop over `area` (capsule modal
+/// convention — hide the cockpit, never dim it) and split off the bottom row
+/// for the footer hint. Returns `(box_area, hint_area)` so every launch dialog
+/// centers its box and renders its hint the same way.
+fn dialog_backdrop(frame: &mut Frame<'_>, area: Rect) -> (Rect, Rect) {
     frame.render_widget(
-        Block::default().style(Style::default().bg(Color::Black)),
+        Block::default().style(Style::default().bg(DIALOG_BACKDROP)),
         area,
     );
-
-    // Bottom row is the footer hint; the bordered box takes the rest.
     let box_area = Rect {
         height: area.height.saturating_sub(1),
         ..area
@@ -1627,6 +1875,13 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
         height: 1,
         ..area
     };
+    (box_area, hint_area)
+}
+
+fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
+    use crate::console::widgets::scrollable::{render_scrollable_block, viewport_height};
+
+    let (box_area, hint_area) = dialog_backdrop(frame, area);
 
     let title = if crate::runtime::build_log::is_active() {
         " Docker build · building… "
@@ -1648,12 +1903,10 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     };
 
     // `build_log_scroll` counts lines up from the tail (0 = follow newest).
-    // Convert to the shared block's top-offset; render_scrollable_block clamps
-    // and paints the green scrollbar only when the content overflows.
+    // Convert through the shared tail adapter to the block's top-offset.
     let viewport_h = viewport_height(box_area);
-    let max_top = lines.len().saturating_sub(viewport_h);
-    let mut scroll_y =
-        u16::try_from(max_top.saturating_sub(view.build_log_scroll)).unwrap_or(u16::MAX);
+    let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines.len(), viewport_h))
+        .unwrap_or(u16::MAX);
     let mut scroll_x = 0u16;
     render_scrollable_block(
         frame,
@@ -1682,7 +1935,7 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
         return vec![Line::from(String::new())];
     }
 
-    let default_style = Style::default().fg(Color::Gray).bg(Color::Black);
+    let default_style = Style::default().fg(Color::Gray).bg(DIALOG_SURFACE);
     let spans = crate::ansi_text::styled_spans(line.trim_end(), default_style);
     wrap_build_log_spans(spans, width)
 }
@@ -1748,67 +2001,117 @@ fn push_wrapped_build_line(
             0,
             Span::styled(
                 BUILD_LOG_WRAP_PREFIX,
-                Style::default().fg(PHOSPHOR_DIM).bg(Color::Black),
+                Style::default().fg(PHOSPHOR_DIM).bg(DIALOG_SURFACE),
             ),
         );
     }
     lines.push(Line::from(spans));
 }
 
-fn draw_select(
-    frame: &mut Frame<'_>,
-    view: &LaunchView,
-    run_id: &str,
-    title: &str,
-    picker: &SelectListState,
-) {
-    let area = frame.area();
-    render_launch_frame(frame, view, run_id, true, None);
-    dim_buffer(frame, area);
-    select_list::render(frame, picker_rect(area, picker), picker, title);
-    render_picker_hints(frame, area);
+fn draw_select(frame: &mut Frame<'_>, title: &str, context: &[Line<'_>], picker: &SelectListState) {
+    let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+    select_list::render(
+        frame,
+        picker_rect(box_area, picker, context),
+        picker,
+        title,
+        context,
+    );
+    crate::console::widgets::hints::render(frame, hint_area, PICKER_HINT);
 }
 
-/// Knock every cell behind the dialog back to a dim phosphor so the
-/// modal reads as the foreground surface (matches the console modal-dim
-/// rule). Runs after the frame is drawn and before the picker overlay.
-fn dim_buffer(frame: &mut Frame<'_>, area: Rect) {
-    let dark = Style::reset().fg(PHOSPHOR_DARK);
-    let buf = frame.buffer_mut();
-    for y in area.top()..area.bottom() {
-        for x in area.left()..area.right() {
-            buf[(x, y)].set_style(dark);
-        }
-    }
+fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable: bool) {
+    let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+    text_input::render(frame, text_prompt_rect(box_area), input);
+    crate::console::widgets::hints::render(frame, hint_area, text_prompt_hint(skippable));
 }
 
-fn picker_rect(area: Rect, picker: &SelectListState) -> Rect {
-    // Interior: filter row + spacer + one row per item, plus two borders.
+fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
+    let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+    confirm::render(frame, confirm_rect(box_area, state), state);
+    crate::console::widgets::hints::render(frame, hint_area, CONFIRM_HINT);
+}
+
+fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Rect {
+    // Interior: filter row + spacer + one row per item, plus two borders; a
+    // non-empty context block adds its line count plus a spacer.
+    let context_rows = u16::try_from(context.len()).unwrap_or(u16::MAX);
+    let context_extra = if context_rows > 0 {
+        context_rows.saturating_add(1)
+    } else {
+        0
+    };
     let rows = u16::try_from(picker.len())
         .unwrap_or(u16::MAX)
-        .saturating_add(4);
+        .saturating_add(4)
+        .saturating_add(context_extra);
     let height = rows.clamp(6, area.height.saturating_sub(2).max(6));
     let min_w = 40.min(area.width);
     let max_w = (area.width.saturating_mul(4) / 5).max(min_w);
+    let context_w = context
+        .iter()
+        .map(|line| u16::try_from(line.width()).unwrap_or(u16::MAX))
+        .max()
+        .unwrap_or(0);
     let width = picker
         .max_label_width()
+        .max(context_w)
         .saturating_add(6)
         .clamp(min_w, max_w);
     centered_rect(width, height, area)
 }
 
-fn render_picker_hints(frame: &mut Frame<'_>, area: Rect) {
-    if area.height == 0 {
-        return;
-    }
-    let row = Rect {
-        x: area.x,
-        y: area.bottom().saturating_sub(1),
-        width: area.width,
-        height: 1,
-    };
-    crate::console::widgets::hints::render(frame, row, PICKER_HINT);
+fn text_prompt_rect(area: Rect) -> Rect {
+    let min_w = 50.min(area.width);
+    let width = (area.width.saturating_mul(3) / 5).clamp(min_w, area.width.max(min_w));
+    centered_rect(width, 5, area)
 }
+
+fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
+    let width = area.width.saturating_mul(confirm::width_pct(state)) / 100;
+    let height = confirm::required_height(state);
+    centered_rect(width, height, area)
+}
+
+/// Footer-hint keys for the launch text prompt. `skippable` adds the
+/// leave-empty-to-skip group; both share the rest of the vocabulary.
+const fn text_prompt_hint(skippable: bool) -> &'static [HintSpan<'static>] {
+    if skippable {
+        TEXT_PROMPT_SKIP_HINT
+    } else {
+        TEXT_PROMPT_HINT
+    }
+}
+
+const TEXT_PROMPT_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("save"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("cancel"),
+];
+
+const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("save"),
+    HintSpan::GroupSep,
+    HintSpan::Key("empty"),
+    HintSpan::Text("skip"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("cancel"),
+];
+
+const CONFIRM_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Y"),
+    HintSpan::Text("yes"),
+    HintSpan::GroupSep,
+    HintSpan::Key("N/Esc"),
+    HintSpan::Text("no"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Tab"),
+    HintSpan::Text("focus"),
+];
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let w = width.min(area.width.saturating_sub(2));
@@ -1836,6 +2139,7 @@ mod tests {
         LaunchFailure {
             title: "boom".to_string(),
             summary: "it failed".to_string(),
+            detail: None,
             next_step: None,
             stage: LaunchStage::Network,
             diagnostics_path: None,
@@ -1844,19 +2148,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stage_failed_does_not_block_on_non_rich_renderer() {
-        // The Rich path waits for an operator Enter/Esc dismiss; the Test/Compact
-        // path must return immediately, or a non-TTY / CI launch would hang
-        // forever on the first failure.
+    async fn stage_failed_does_not_block_on_test_renderer() {
+        // The Rich path waits for an operator Enter/Esc dismiss. The test
+        // renderer returns immediately so failure-state tests do not hang.
         let mut progress = LaunchProgress::for_test(test_diagnostics());
         tokio::time::timeout(
             std::time::Duration::from_millis(500),
             progress.stage_failed(dummy_failure()),
         )
         .await
-        .expect("stage_failed must not block on a non-rich renderer");
+        .expect("stage_failed must not block on the test renderer");
         assert!(progress.view.lock().unwrap().failure.is_some());
         assert!(!progress.view.lock().unwrap().failure_ack);
+    }
+
+    #[tokio::test]
+    async fn stage_failed_writes_full_detail_to_diagnostics() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+        let mut progress = LaunchProgress::for_test(run.clone());
+
+        progress
+            .stage_failed(LaunchFailure {
+                title: "Launch failed".to_string(),
+                summary: "preparing kimi binary".to_string(),
+                detail: Some(
+                    "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds"
+                        .to_string(),
+                ),
+                next_step: None,
+                stage: LaunchStage::DerivedImage,
+                diagnostics_path: None,
+                command_output_path: None,
+            })
+            .await;
+
+        let body = std::fs::read_to_string(run.path()).unwrap();
+        let events = body
+            .lines()
+            .map(serde_json::from_str::<serde_json::Value>)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let event = events
+            .iter()
+            .find(|event| {
+                event.get("kind").and_then(serde_json::Value::as_str) == Some("stage_failed")
+            })
+            .unwrap();
+
+        assert_eq!(
+            event.get("message").and_then(serde_json::Value::as_str),
+            Some("preparing kimi binary"),
+        );
+        assert_eq!(
+            event.get("detail").and_then(serde_json::Value::as_str),
+            Some(
+                "preparing kimi binary: resolving latest kimi binary: https://code.kimi.com/kimi-code/latest failed: curl: (28) Connection timed out after 30001 milliseconds"
+            ),
+        );
     }
 
     #[tokio::test]
@@ -1871,14 +2221,70 @@ mod tests {
     }
 
     #[test]
-    fn select_choice_returns_none_on_non_rich_renderer() {
-        // No picker without a rich surface; the caller falls back to the plain
-        // stdin prompt, so this must be Ok(None) — not Err, not a default index.
+    fn select_choice_errors_without_rich_renderer() {
         let mut progress = LaunchProgress::for_test(test_diagnostics());
-        let choice = progress
+        let error = progress
             .select_choice("pick", vec!["a".into(), "b".into()])
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("requires the rich launch dialog")
+        );
+    }
+
+    #[test]
+    fn env_prompts_error_without_rich_renderer() {
+        let mut progress = LaunchProgress::for_test(test_diagnostics());
+
+        assert!(
+            progress
+                .prompt_text("API key", None, true)
+                .unwrap_err()
+                .to_string()
+                .contains("requires the rich launch dialog")
+        );
+        assert!(
+            progress
+                .prompt_select("Project", &["web".to_string()], None, false)
+                .unwrap_err()
+                .to_string()
+                .contains("requires the rich launch dialog")
+        );
+    }
+
+    #[test]
+    fn text_prompt_dialog_renders_prompt_and_default() {
+        let backend = TestBackend::new(90, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let input = TextInputState::new("Branch name", "main");
+
+        terminal
+            .draw(|frame| draw_text_prompt(frame, &input, false))
             .unwrap();
-        assert!(choice.is_none());
+
+        let rendered = format!("{:?}", terminal.backend().buffer());
+        assert!(rendered.contains("Branch name"), "{rendered}");
+        assert!(rendered.contains("main"), "{rendered}");
+        assert!(rendered.contains("Enter"), "{rendered}");
+    }
+
+    #[test]
+    fn confirm_dialog_renders_role_trust_details() {
+        let backend = TestBackend::new(100, 26);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let state = ConfirmState::role_trust(
+            "acme/agent-jones",
+            "https://github.com/acme/jackin-agent-jones.git",
+        );
+
+        terminal.draw(|frame| draw_confirm(frame, &state)).unwrap();
+
+        let rendered = format!("{:?}", terminal.backend().buffer());
+        assert!(rendered.contains("Trust role source"), "{rendered}");
+        assert!(rendered.contains("acme/agent-jones"), "{rendered}");
+        assert!(rendered.contains("jackin-agent-jones"), "{rendered}");
+        assert!(rendered.contains('Y'), "{rendered}");
     }
 
     #[test]
@@ -1911,6 +2317,7 @@ mod tests {
                 "role",
                 "credentials",
                 "construct",
+                "agent binaries",
                 "derived image",
                 "workspace",
                 "network",
@@ -2016,6 +2423,12 @@ mod tests {
         );
         update_stage(
             &mut view,
+            LaunchStage::AgentBinaries,
+            StageStatus::Done,
+            "cached",
+        );
+        update_stage(
+            &mut view,
             LaunchStage::DerivedImage,
             StageStatus::Running,
             "building",
@@ -2023,8 +2436,9 @@ mod tests {
 
         let statuses = display_stage_statuses(&view);
         assert_eq!(
-            &statuses[..5],
+            &statuses[..6],
             &[
+                StageStatus::Done,
                 StageStatus::Done,
                 StageStatus::Done,
                 StageStatus::Done,
@@ -2104,13 +2518,31 @@ mod tests {
             .iter()
             .map(|span| &*span.content)
             .collect::<String>();
-        assert_eq!(rendered.chars().count(), LABEL_VIEW_WIDTH);
-        assert!(rendered.contains("construct"), "{rendered:?}");
-        assert!(rendered.contains("credentials"), "{rendered:?}");
-        assert!(rendered.contains("derived image"), "{rendered:?}");
-        assert!(
-            !rendered.contains("identity"),
-            "far labels should stay outside the clipped label viewport: {rendered:?}"
+        let rendered_width = rendered.chars().count();
+        assert_eq!(rendered_width, LABEL_VIEW_WIDTH);
+        assert!(rendered_width > PROGRESS_RAIL_WIDTH);
+        assert!(rendered.contains("credentials"), "{rendered}");
+        assert!(rendered.contains("construct"), "{rendered}");
+        assert!(rendered.contains("agent binaries"), "{rendered}");
+    }
+
+    #[test]
+    fn label_edge_fade_factor_is_lower_at_the_edges() {
+        let width = 24;
+        let center = label_edge_fade_factor(width / 2, width);
+        let left = label_edge_fade_factor(0, width);
+        let right = label_edge_fade_factor(width - 1, width);
+
+        assert!(center > 0.95, "center should stay nearly full brightness");
+        assert!(left < 0.1, "left edge should almost disappear");
+        assert!(right < 0.1, "right edge should almost disappear");
+    }
+
+    #[test]
+    fn faded_color_scales_rgb_channels() {
+        assert_eq!(
+            faded_color(Color::Rgb(100, 200, 50), 0.5),
+            Color::Rgb(50, 100, 25)
         );
     }
 
@@ -2158,6 +2590,7 @@ mod tests {
 
     #[test]
     fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
+        let _guard = crate::runtime::build_log::TEST_LOCK.lock().unwrap();
         crate::runtime::build_log::begin();
         crate::runtime::build_log::push_line(
             "#4 FROM docker.io/projectjackin/jackin-the-architect:latest@sha256:08d62f4027f941d8f5ee1742b6b0ba9e8a3e276ab7626967b0e1de27917a0e94",
@@ -2174,7 +2607,7 @@ mod tests {
             failure_ack: false,
             frame: 0,
             build_log_open: true,
-            build_log_scroll: 0,
+            build_log_scroll: jackin_tui::scroll::TailScroll::default(),
             build_log_hover: false,
             label_transition: None,
             failure_copy_hover: None,
@@ -2195,6 +2628,39 @@ mod tests {
             horizontal_scroll_cells, 0,
             "wrapped lines should fit the viewport and avoid horizontal scrollbar"
         );
+    }
+
+    #[test]
+    fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
+        let _guard = crate::runtime::build_log::TEST_LOCK.lock().unwrap();
+        crate::runtime::build_log::begin();
+        for idx in 0..20 {
+            crate::runtime::build_log::push_line(&format!("line {idx:02}"));
+        }
+        crate::runtime::build_log::end();
+
+        let area = Rect::new(0, 0, 40, 8);
+        let filled = build_log_scroll_filled(area);
+        assert!(filled > 1);
+        let mut view = LaunchView {
+            identity: None,
+            stages: Vec::new(),
+            status: String::new(),
+            failure: None,
+            failure_ack: false,
+            frame: 0,
+            build_log_open: true,
+            build_log_scroll: jackin_tui::scroll::TailScroll::new(usize::MAX),
+            build_log_hover: false,
+            label_transition: None,
+            failure_copy_hover: None,
+            failure_copied: None,
+        };
+
+        scroll_build_log(&mut view, area, -1);
+
+        assert_eq!(view.build_log_scroll.offset(), filled - 1);
+        assert_eq!(view.build_log_scroll.to_top_offset(20, 5), 1);
     }
 
     #[test]
@@ -2232,7 +2698,7 @@ mod tests {
             failure_ack: false,
             frame: 0,
             build_log_open: false,
-            build_log_scroll: 0,
+            build_log_scroll: jackin_tui::scroll::TailScroll::default(),
             build_log_hover: false,
             label_transition: None,
             failure_copy_hover: None,
@@ -2251,6 +2717,7 @@ mod tests {
         view.failure = Some(LaunchFailure {
             title: "Docker unavailable".to_string(),
             summary: "docker daemon is not responding".to_string(),
+            detail: None,
             next_step: Some("Start Docker and run the command again.".to_string()),
             stage: LaunchStage::Network,
             diagnostics_path: None,
@@ -2271,6 +2738,7 @@ mod tests {
         LaunchFailure {
             title: "Docker build failed".to_string(),
             summary: "Building the Docker container failed.".to_string(),
+            detail: None,
             next_step: None,
             stage: LaunchStage::DerivedImage,
             diagnostics_path: Some(PathBuf::from("/jk/run/x.jsonl")),

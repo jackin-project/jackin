@@ -1,0 +1,12 @@
+{
+  "title": "Agent runtimes & authentication",
+  "defaultOpen": false,
+  "pages": [
+    "../multi-runtime-support",
+    "../native-apm-role-support",
+    "../claude-auth-strategy",
+    "../workspace-claude-token-setup",
+    "../github-cli-auth-strategy",
+    "../onepassword-integration"
+  ]
+}

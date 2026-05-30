@@ -1,0 +1,8 @@
+{
+  "title": "Phase 3 — Future",
+  "defaultOpen": false,
+  "pages": [
+    "../../cargo-workspace-split",
+    "../../rustdoc-json-fumadocs"
+  ]
+}
