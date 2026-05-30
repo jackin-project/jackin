@@ -79,6 +79,10 @@ use crate::mouse_protocol::{
 };
 #[cfg(test)]
 use crate::mouse_protocol::{mouse_event_allowed_for_mode, push_xterm_mouse_number};
+use crate::attach_protocol::{
+    AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
+    initial_spawn_request, perform_handshake, spawn_request_label,
+};
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
@@ -115,20 +119,20 @@ pub struct Multiplexer {
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
-    attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    pub(crate) attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
     /// Latched true on the first `send_to_client` after `attached_out`
     /// was set: once the receiver drops mid-attach, every subsequent
     /// frame send into the same channel will also fail. Without this
     /// latch the per-tick redraw + per-PTY output + per-OSC repaint
     /// would write one `clog!` line each, swamping `multiplexer.log`.
     /// Cleared whenever `attached_out` is reassigned (next attach).
-    attached_out_dead_logged: bool,
+    pub(crate) attached_out_dead_logged: bool,
     /// JoinHandle of the spawned `handle_attach_client` task for the
     /// currently-attached client. Tracked so a takeover (second `Hello`)
     /// can abort the old task's reader loop — without the abort, the
     /// old client's stale Input / Resize / Detach frames keep flowing
     /// into the shared `cmd_tx` until its socket finally closes.
-    attached_task: Option<tokio::task::JoinHandle<()>>,
+    pub(crate) attached_task: Option<tokio::task::JoinHandle<()>>,
     /// Records the previous tab-cell click so a second click on the
     /// same tab within `DOUBLE_CLICK_WINDOW` is treated as a
     /// double-click (open the rename modal).
@@ -3865,263 +3869,6 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 s.send_input(b"\x1b[O");
             }
         }
-    }
-}
-
-/// A validated attach handshake produced by `perform_handshake`. The
-/// main loop applies these — `client_permit` is kept alive until the
-/// spawned persistent attach task drops it.
-struct AttachHandshake {
-    stream: UnixStream,
-    rows: u16,
-    cols: u16,
-    spawn: Option<SpawnRequest>,
-    env: Vec<(String, String)>,
-    terminal: ClientTerminal,
-    /// `Some(session_id)` when the client (typically the host
-    /// console picking out of the snapshot preview) wants the daemon
-    /// to focus a specific pane before forwarding content. The main
-    /// loop calls `Multiplexer::focus_session_globally` on receipt.
-    /// Unknown ids are silently ignored — see the daemon arm.
-    focus_session: Option<u64>,
-    client_permit: tokio::sync::OwnedSemaphorePermit,
-}
-
-/// Per-connection handshake task. Reads the first byte, routes
-/// control-channel requests inline (one-shot reply, closes the
-/// socket), and forwards validated attach Hellos back to the main
-/// loop via `handshake_tx`. Owning the slow `read_exact` here keeps a
-/// silent or slow client from stalling the daemon's main `select!`.
-async fn perform_handshake(
-    mut stream: UnixStream,
-    client_permit: tokio::sync::OwnedSemaphorePermit,
-    handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
-    sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
-    tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
-    active_tab: u32,
-) {
-    // Bound the handshake reads. A client that opens the socket and
-    // never sends a byte otherwise holds the `OwnedSemaphorePermit`
-    // forever — sixteen silent peers would starve the
-    // `MAX_CONCURRENT_CLIENTS` cap and lock out legitimate attaches.
-    const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-
-    let mut first = [0u8; 1];
-    match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut first)).await {
-        Ok(Ok(_)) => {}
-        Ok(Err(e)) => {
-            crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
-            drop(client_permit);
-            return;
-        }
-        Err(_) => {
-            crate::clog!(
-                "attach: handshake first byte not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
-            );
-            drop(client_permit);
-            return;
-        }
-    }
-    if first[0] == 0x00 {
-        // Control channel — one-shot length-prefixed JSON. The
-        // sessions snapshot is captured at accept time in the main
-        // loop; mildly stale (microseconds) for the host CLI's
-        // informational `status` query.
-        socket::handle_control_request(
-            stream,
-            first[0],
-            sessions_snapshot,
-            tabs_snapshot,
-            active_tab,
-        )
-        .await;
-        drop(client_permit);
-        return;
-    }
-    let initial_frame = match tokio::time::timeout(
-        HANDSHAKE_TIMEOUT,
-        read_client_frame(&mut stream, first[0]),
-    )
-    .await
-    {
-        Ok(Ok(Some(frame))) => frame,
-        Ok(Ok(None)) => {
-            crate::clog!("attach: handshake EOF before initial frame");
-            drop(client_permit);
-            return;
-        }
-        Ok(Err(e)) => {
-            crate::clog!("attach: handshake frame decode failed: {e}");
-            drop(client_permit);
-            return;
-        }
-        Err(_) => {
-            crate::clog!(
-                "attach: handshake Hello frame not received within {HANDSHAKE_TIMEOUT:?}; dropping connection"
-            );
-            drop(client_permit);
-            return;
-        }
-    };
-    let ClientFrame::Hello {
-        rows,
-        cols,
-        spawn,
-        env,
-        terminal,
-        focus_session,
-    } = initial_frame
-    else {
-        crate::clog!("attach: rejected client whose first frame was not Hello: {initial_frame:?}");
-        drop(client_permit);
-        return;
-    };
-    let handshake = AttachHandshake {
-        stream,
-        rows,
-        cols,
-        spawn,
-        env,
-        terminal,
-        focus_session,
-        client_permit,
-    };
-    if handshake_tx.send(handshake).is_err() {
-        crate::clog!("attach: handshake channel closed; daemon shutting down");
-    }
-}
-
-async fn drain_and_exit(mux: &mut Multiplexer) {
-    detach_client(mux).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
-}
-
-const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
-
-fn send_attached_shutdown(mux: &mut Multiplexer, context: &str) -> bool {
-    let Some(tx) = mux.attached_out.take() else {
-        return false;
-    };
-    if tx.send(encode_server(ServerFrame::Shutdown)).is_err() {
-        crate::clog!("{context}: client receiver already dropped; Shutdown frame not delivered");
-    }
-    true
-}
-
-/// Centralised detach for the currently-attached client. Take-then-
-/// send-then-wait-then-abort, in that order, so a takeover/cancel race never
-/// leaves `attached_task = Some` with a dead `attached_out`: take the
-/// out-channel sender first (so the next frame queue allocation does
-/// not race with the old receiver), send Shutdown best-effort, give
-/// the attach task a brief writer-side drain window, then
-/// abort the attach task so its reader stops pushing into the shared
-/// `cmd_tx`. Used by SIGTERM / SIGINT shutdown, explicit detach, and
-/// `drain_and_exit`.
-async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
-    let had_sender = send_attached_shutdown(mux, context);
-    // The latch is paired with the sender's lifetime: clearing
-    // `attached_out` invalidates the previous attach, so the next
-    // assignment (in the takeover branch of `run_daemon`) starts from
-    // a clean state regardless of which code path reassigns it.
-    mux.attached_out_dead_logged = false;
-    if had_sender {
-        tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
-    }
-    if let Some(handle) = mux.attached_task.take() {
-        handle.abort();
-    }
-}
-
-fn initial_spawn_request(
-    initial_agent: &str,
-    initial_provider: Option<&jackin_protocol::InitialProvider>,
-) -> SpawnRequest {
-    if initial_agent.is_empty() {
-        SpawnRequest::Shell
-    } else if let Some(provider) = initial_provider {
-        SpawnRequest::AgentWithProvider {
-            slug: initial_agent.to_string(),
-            provider_label: provider.label.clone(),
-        }
-    } else {
-        SpawnRequest::Agent(initial_agent.to_string())
-    }
-}
-
-fn spawn_request_label(request: &SpawnRequest) -> String {
-    match request {
-        SpawnRequest::Agent(agent) => format!("agent {agent:?}"),
-        SpawnRequest::AgentWithProvider {
-            slug,
-            provider_label,
-        } => {
-            format!("agent {slug:?} (provider: {provider_label})")
-        }
-        SpawnRequest::Shell => "shell".to_string(),
-    }
-}
-
-async fn detach_client(mux: &mut Multiplexer) {
-    detach_attached_task(mux, "detach_client").await;
-}
-
-/// Per-client connection handler: bidirectional bridge between the
-/// socket and the main daemon loop. Reads `ClientFrame`s off the
-/// socket and pushes them through `cmd_tx`; writes any bytes
-/// received on `out_rx` back to the socket. Exits on any I/O error
-/// or when either channel closes (which happens during takeover —
-/// `attached_task.abort()` ends this task before its socket sees EOF).
-async fn handle_attach_client(
-    mut stream: UnixStream,
-    mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
-    cmd_tx: mpsc::UnboundedSender<ClientFrame>,
-) {
-    let mut tag = [0u8; 1];
-    loop {
-        tokio::select! {
-            result = stream.read_exact(&mut tag) => {
-                if let Err(e) = result {
-                    crate::clog!("attach client: socket read failed: {e}");
-                    break;
-                }
-                let frame = match read_client_frame(&mut stream, tag[0]).await {
-                    Ok(Some(frame)) => frame,
-                    Ok(None) => {
-                        crate::clog!("attach client: EOF mid-frame (tag={:#04x})", tag[0]);
-                        break;
-                    }
-                    Err(e) => {
-                        crate::clog!(
-                            "attach client: frame decode failed (tag={:#04x}): {e}",
-                            tag[0]
-                        );
-                        break;
-                    }
-                };
-                if cmd_tx.send(frame).is_err() {
-                    crate::clog!("attach client: cmd_tx closed; daemon shutting down");
-                    return;
-                }
-            }
-            Some(bytes) = out_rx.recv() => {
-                if let Err(e) = stream.write_all(&bytes).await {
-                    crate::clog!("attach client: socket write failed: {e}");
-                    break;
-                }
-            }
-        }
-    }
-    // Signal the main loop that this client is gone so it can clear
-    // `attached_out` / `attached_task` — without this, subsequent
-    // `send_to_client` calls silently drop into the closed channel
-    // and the daemon keeps treating the dead socket as live. If the
-    // main loop is already shutting down the send fails; log so the
-    // exact symptom this comment warns against does not happen
-    // silently if the cmd_tx side is the one that died first.
-    if cmd_tx.send(ClientFrame::Detach).is_err() {
-        crate::clog!(
-            "attach client: cmd_tx closed before synthetic Detach could fire; main loop is already tearing down"
-        );
     }
 }
 
