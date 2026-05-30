@@ -155,6 +155,7 @@ pub(crate) enum ManagerMessage {
     DismissInlineRolePicker,
     DismissInlineAgentPicker,
     DismissInlineProviderPicker,
+    DismissLaunchProviderPicker,
 }
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
@@ -322,6 +323,9 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::DismissInlineProviderPicker => {
             state.inline_provider_picker = None;
+        }
+        ManagerMessage::DismissLaunchProviderPicker => {
+            state.launch_provider_picker = None;
         }
     }
     UpdateResult::redraw()

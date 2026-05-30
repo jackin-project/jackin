@@ -739,7 +739,7 @@ pub(super) fn handle_launch_provider_picker(
             }
         }
         KeyCode::Esc => {
-            state.launch_provider_picker = None;
+            dispatch_manager(state, ManagerMessage::DismissLaunchProviderPicker);
             InputOutcome::Continue
         }
         _ => InputOutcome::Continue,
