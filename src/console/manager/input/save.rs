@@ -2502,7 +2502,7 @@ mod tests {
 pub(super) fn build_settings_save_lines(
     settings: &super::super::state::SettingsState<'_>,
 ) -> Vec<ratatui::text::Line<'static>> {
-    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
 
     let heading = Style::default()
@@ -2510,7 +2510,7 @@ pub(super) fn build_settings_save_lines(
         .add_modifier(Modifier::BOLD);
     let add_style = Style::default().fg(crate::console::widgets::PHOSPHOR_GREEN);
     let remove_style = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
-    let sep_style = Style::default().fg(Color::Rgb(0, 50, 12));
+    let sep_style = Style::default().fg(crate::console::widgets::PHOSPHOR_DARK);
 
     let mut out: Vec<Line<'static>> = Vec::new();
 

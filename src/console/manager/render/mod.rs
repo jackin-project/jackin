@@ -34,10 +34,7 @@ pub(super) use crate::console::widgets::scrollable::{
 pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
-/// Distinct accent for live-state surfaces (instances, sessions).
-/// Cyan contrasts clearly with the phosphor-green config panels.
-pub(super) const CYAN: ratatui::style::Color = ratatui::style::Color::Rgb(0, 180, 180);
-pub(super) const CYAN_DIM: ratatui::style::Color = ratatui::style::Color::Rgb(0, 120, 120);
+pub(super) use jackin_tui::theme::{CYAN, CYAN_DIM};
 
 // ── Footer hints ───────────────────────────────────────────────────
 //

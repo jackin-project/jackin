@@ -120,6 +120,21 @@ pub const BORDER_GRAY: Rgb = Rgb::new(80, 80, 80);
 /// the launch cockpit.
 pub const DANGER_RED: Rgb = Rgb::new(255, 94, 122);
 
+/// Live / active state indicator (cyan). Shared between the editor's
+/// running-instance status badge and any other "this is live" cue.
+pub const CYAN: Rgb = Rgb::new(0, 180, 180);
+
+/// Dimmed cyan for secondary live-state text.
+pub const CYAN_DIM: Rgb = Rgb::new(0, 120, 120);
+
+/// Light-green accent used for permitted-action role markers and similar
+/// affirmative highlights.
+pub const ACTION_ACCENT: Rgb = Rgb::new(180, 255, 180);
+
+/// Amber-yellow accent used for disclosure indicators (expandable
+/// sections, role-trust prompts, and similar expand/collapse cues).
+pub const DISCLOSURE_ACCENT: Rgb = Rgb::new(255, 208, 102);
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.

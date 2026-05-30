@@ -28,8 +28,7 @@ use jackin_tui::HintSpan;
 
 // ── Editor stage ────────────────────────────────────────────────────
 
-const ACTION_ACCENT: Color = Color::Rgb(180, 255, 180);
-const DISCLOSURE_ACCENT: Color = Color::Rgb(255, 208, 102);
+use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT};
 
 pub(in crate::console::manager) fn action_row_style(selected: bool) -> Style {
     let style = Style::default().fg(ACTION_ACCENT);
@@ -178,7 +177,7 @@ pub fn render_editor(
         };
         let banner = Paragraph::new(format!("✗ {err}")).style(
             Style::default()
-                .fg(Color::Rgb(255, 94, 122))
+                .fg(crate::console::widgets::DANGER_RED)
                 .add_modifier(Modifier::BOLD),
         );
         frame.render_widget(ratatui::widgets::Clear, banner_area);
@@ -723,7 +722,7 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
         status_spans.push(Span::styled(
             format!("   ({allowed_count} of {total} allowed)"),
             Style::default()
-                .fg(Color::Rgb(180, 255, 180))
+                .fg(ACTION_ACCENT)
                 .add_modifier(Modifier::ITALIC),
         ));
     }
