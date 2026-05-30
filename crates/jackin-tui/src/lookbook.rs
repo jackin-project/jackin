@@ -15,7 +15,8 @@ use ratatui::{
 
 use crate::components::{
     ButtonStrip, ButtonStripItem, ConfirmState, ErrorPopupState, Panel, PanelFocus,
-    TabStrip, render_confirm_dialog, render_error_dialog,
+    SaveDiscardState, StatusPopupState, TabStrip, render_confirm_dialog, render_error_dialog,
+    render_save_discard_dialog, render_status_popup,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -75,6 +76,20 @@ pub fn stories() -> Vec<Story> {
             54,
             9,
             story_error_default,
+        ),
+        Story::new(
+            "save-discard/default",
+            "Save/discard dialog",
+            54,
+            7,
+            story_save_discard_default,
+        ),
+        Story::new(
+            "status-popup/default",
+            "Status popup",
+            48,
+            7,
+            story_status_popup_default,
         ),
     ]
 }
@@ -243,4 +258,14 @@ fn story_confirm_default(frame: &mut Frame<'_>, area: Rect) {
 fn story_error_default(frame: &mut Frame<'_>, area: Rect) {
     let state = ErrorPopupState::new("Launch failed", "Derived image build failed.");
     render_error_dialog(frame, area, &state);
+}
+
+fn story_save_discard_default(frame: &mut Frame<'_>, area: Rect) {
+    let state = SaveDiscardState::new("Save changes before leaving?");
+    render_save_discard_dialog(frame, area, &state);
+}
+
+fn story_status_popup_default(frame: &mut Frame<'_>, area: Rect) {
+    let state = StatusPopupState::new("Loading role", "Resolving role source...");
+    render_status_popup(frame, area, &state);
 }

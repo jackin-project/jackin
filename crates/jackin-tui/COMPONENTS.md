@@ -3,9 +3,10 @@
 This inventory tracks repeatable terminal UI patterns, their current owner, call sites, and maturity. New TUI work should name the existing component it uses or add a row before introducing a new repeated pattern.
 
 Renderable component stories live in `crates/jackin-tui/src/lookbook.rs`. The
-first story set covers `Panel`, `ButtonStrip`, `TabStrip`, `ConfirmDialog`, and
-`ErrorDialog`. Run `cargo run -p jackin-tui --bin tui-lookbook -- target/tui-lookbook`
-to render those stories from the real `TestBackend` buffers into SVG previews.
+first story set covers `Panel`, `ButtonStrip`, `TabStrip`, `ConfirmDialog`,
+`ErrorDialog`, `SaveDiscardDialog`, and `StatusPopup`. Run
+`cargo run -p jackin-tui --bin tui-lookbook -- target/tui-lookbook` to render
+those stories from the real `TestBackend` buffers into SVG previews.
 
 | Component / pattern | Owner | Current call sites | Maturity | Notes |
 |---|---|---|---|---|
