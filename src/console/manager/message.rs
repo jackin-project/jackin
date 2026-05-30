@@ -7,7 +7,7 @@
 use super::auth_kind::AuthKind;
 use super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
 use super::state::{
-    CreatePreludeState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
+    CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
     ManagerListRow, ManagerStage, ManagerState, MountScrollFocus, SecretsScopeTag, SettingsState,
     SettingsTab,
 };
@@ -144,6 +144,8 @@ pub(crate) enum ManagerMessage {
     ScrollFocusedListBlockVertical(i16),
     SetListScrollFocus(Option<MountScrollFocus>),
     SetListNamesFocused(bool),
+    SetDragState(Option<DragState>),
+    SetListSplitPct(u16),
 }
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
@@ -282,6 +284,12 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::SetListNamesFocused(focused) => {
             state.list_names_focused = focused;
+        }
+        ManagerMessage::SetDragState(drag) => {
+            state.drag_state = drag;
+        }
+        ManagerMessage::SetListSplitPct(pct) => {
+            state.list_split_pct = pct;
         }
     }
     UpdateResult::redraw()

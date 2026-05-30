@@ -193,10 +193,13 @@ pub fn handle_mouse_with_config(
             // drag, never a row select. Even if the seam happens to overlap
             // a valid row position, the resize affordance takes precedence.
             if near_seam(mouse.column, seam_x) {
-                state.drag_state = Some(DragState {
-                    anchor_pct: state.list_split_pct,
-                    anchor_x: mouse.column,
-                });
+                dispatch_manager(
+                    state,
+                    ManagerMessage::SetDragState(Some(DragState {
+                        anchor_pct: state.list_split_pct,
+                        anchor_x: mouse.column,
+                    })),
+                );
                 return;
             }
             // Otherwise, treat as click-to-select if the click lands inside
@@ -210,11 +213,11 @@ pub fn handle_mouse_with_config(
         MouseEventKind::Drag(MouseButton::Left) => {
             if let Some(anchor) = state.drag_state {
                 let new_pct = pct_from_drag(anchor, mouse.column, term_size.width);
-                state.list_split_pct = clamp_split(new_pct);
+                dispatch_manager(state, ManagerMessage::SetListSplitPct(clamp_split(new_pct)));
             }
         }
         MouseEventKind::Up(MouseButton::Left) => {
-            state.drag_state = None;
+            dispatch_manager(state, ManagerMessage::SetDragState(None));
         }
         _ => {}
     }
