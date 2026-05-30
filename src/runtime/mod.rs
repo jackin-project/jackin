@@ -51,7 +51,6 @@ pub(crate) async fn register_agent_repo(
     git_url: &str,
     runner: &mut impl crate::docker::CommandRunner,
     debug: bool,
-    persist_registration: impl FnOnce() -> anyhow::Result<()>,
 ) -> anyhow::Result<(crate::repo::CachedRepo, crate::repo::ValidatedRoleRepo)> {
     self::repo_cache::register_agent_repo(
         paths,
@@ -59,7 +58,6 @@ pub(crate) async fn register_agent_repo(
         git_url,
         runner,
         debug,
-        persist_registration,
     )
     .await
 }

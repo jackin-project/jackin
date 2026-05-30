@@ -1717,10 +1717,100 @@ fn apply_role_input(
     paths: &JackinPaths,
     value: &str,
 ) {
-    let mut runner = crate::docker::ShellRunner {
-        debug: crate::tui::is_debug_mode(),
+    let raw = value.trim();
+    crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
+    let selector = match crate::selector::RoleSelector::parse(raw) {
+        Ok(selector) => selector,
+        Err(e) => {
+            crate::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
+            let err = anyhow::Error::new(e);
+            open_role_resolution_error(editor, raw, None, &err);
+            return;
+        }
     };
-    apply_role_input_with_runner(editor, config, paths, value, &mut runner);
+    crate::debug_log!("role", "parsed role selector: {selector}");
+
+    let key = selector.key();
+    let result = (|| -> anyhow::Result<crate::config::RoleSource> {
+        let source = candidate_role_source(config, &selector)?;
+        crate::debug_log!(
+            "role",
+            "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
+            git = source.git.as_str(),
+            trusted = source.trusted
+        );
+        let source_to_register = source.clone();
+        let selector = selector.clone();
+        let thread_paths = paths.clone();
+        let git_url = source.git.clone();
+        let key = key.clone();
+        crate::debug_log!(
+            "role",
+            "registering role repo for key={key:?} git={git:?}",
+            git = source.git.as_str()
+        );
+        let registration = std::thread::spawn(move || -> anyhow::Result<()> {
+            let mut runner = crate::docker::ShellRunner {
+                debug: crate::tui::is_debug_mode(),
+            };
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .context("building tokio runtime for role registration")?;
+            rt.block_on(crate::runtime::register_agent_repo(
+                &thread_paths,
+                &selector,
+                &git_url,
+                &mut runner,
+                crate::tui::is_debug_mode(),
+            ))?;
+            Ok(())
+        })
+        .join()
+        .map_err(|_| anyhow::anyhow!("role loader panicked: role loader thread panicked"))?;
+        registration?;
+        persist_role_source_registration(config, paths, &key, &source_to_register)?;
+        crate::debug_log!(
+            "role",
+            "role repo registration completed for key={key:?} git={git:?}",
+            git = source.git.as_str()
+        );
+        Ok(source)
+    })();
+
+    match result {
+        Ok(source) if source.trusted => {
+            crate::debug_log!("role", "role source is trusted; adding key={key:?} directly to the workspace");
+            add_role_to_workspace_editor(editor, config, &key);
+        }
+        Ok(source) => {
+            crate::debug_log!(
+                "role",
+                "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
+                git = source.git.as_str()
+            );
+            open_role_trust_confirm(editor, key, source);
+        }
+        Err(e) => {
+            crate::debug_log!(
+                "role",
+                "role loader failed for key={key:?} raw={raw:?}: {e:?}"
+            );
+            let err_text = e.to_string();
+            if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
+                open_role_input_error(
+                    editor,
+                    &format!(
+                        "Could not load role {raw:?}.\n\nThe role loader hit an internal \
+                         error while registering the repository.\n\n{panic_message}"
+                    ),
+                );
+                return;
+            }
+            let source = candidate_role_source(config, &selector).ok();
+            open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
+        }
+    }
 }
 
 fn apply_role_input_with_runner(
@@ -1753,36 +1843,24 @@ fn apply_role_input_with_runner(
             trusted = source.trusted
         );
         let source_to_register = source.clone();
-        // register_agent_repo is async; drive it on a new current-thread runtime
-        // so the TUI's sync event loop can block until it's done.
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .context("building tokio runtime for role registration")?;
         crate::debug_log!(
             "role",
             "registering role repo for key={key:?} git={git:?}",
             git = source.git.as_str()
         );
         let registration = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .context("building tokio runtime for role registration")?;
             rt.block_on(crate::runtime::register_agent_repo(
-                paths,
-                &selector,
-                &source.git,
-                runner,
-                crate::tui::is_debug_mode(),
-                || persist_role_source_registration(config, paths, &key, &source_to_register),
-            ))
+                paths, &selector, &source.git, runner, crate::tui::is_debug_mode(),
+            ))?;
+            persist_role_source_registration(config, paths, &key, &source_to_register)?;
+            Ok::<_, anyhow::Error>(())
         }));
         match registration {
-            Ok(Ok((_cached_repo, _validated_repo))) => {
-                crate::debug_log!(
-                    "role",
-                    "role repo registration completed for key={key:?} git={git:?}",
-                    git = source.git.as_str()
-                );
-            }
-            Ok(Err(e)) => return Err(e),
+            Ok(result) => result?,
             Err(payload) => {
                 let panic_message = panic_payload_message(payload.as_ref());
                 crate::debug_log!(
@@ -1792,6 +1870,11 @@ fn apply_role_input_with_runner(
                 return Err(anyhow::anyhow!("role loader panicked: {panic_message}"));
             }
         }
+        crate::debug_log!(
+            "role",
+            "role repo registration completed for key={key:?} git={git:?}",
+            git = source.git.as_str()
+        );
         Ok(source)
     })();
 
