@@ -20,8 +20,8 @@ use super::super::render::{
     scroll_viewport_width, scrollbar_offset_for_track_position, vertical_scrollbar_area,
 };
 use super::super::state::{
-    DragState, EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, Modal,
-    MountScrollFocus, SettingsTab, clamp_split,
+    DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
+    SettingsTab, clamp_split,
 };
 
 /// Minimum terminal width (in columns) at which the list/details seam is
@@ -367,7 +367,7 @@ fn settings_trust_row_at(
 }
 
 fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
+    let ManagerStage::Editor(editor) = &state.stage else {
         return false;
     };
     if editor.modal.is_some() {
@@ -378,17 +378,7 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
         return false;
     };
 
-    let was_secrets = editor.active_tab == EditorTab::Secrets;
-    editor.active_tab = tab;
-    editor.active_field = FieldFocus::Row(0);
-    editor.workspace_mounts_scroll_focused = false;
-    if editor.active_tab != EditorTab::Auth {
-        editor.auth_selected_kind = None;
-    }
-    if was_secrets && editor.active_tab != EditorTab::Secrets {
-        editor.unmasked_rows.clear();
-        editor.secrets_expanded.clear();
-    }
+    dispatch_manager(state, ManagerMessage::SelectEditorTab(tab));
     true
 }
 
@@ -441,7 +431,7 @@ fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
 }
 
 fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
-    let ManagerStage::Settings(settings) = &mut state.stage else {
+    let ManagerStage::Settings(settings) = &state.stage else {
         return false;
     };
     if settings.mounts.modal.is_some() || settings.env.modal.is_some() {
@@ -451,7 +441,7 @@ fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> b
     let Some(tab) = settings_tab_at(mouse) else {
         return false;
     };
-    settings.active_tab = tab;
+    dispatch_manager(state, ManagerMessage::SelectSettingsTab(tab));
     true
 }
 
@@ -467,7 +457,7 @@ fn try_select_settings_trust_row(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let ManagerStage::Settings(settings) = &mut state.stage else {
+    let ManagerStage::Settings(settings) = &state.stage else {
         return false;
     };
     if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
@@ -485,9 +475,10 @@ fn try_select_settings_trust_row(
     if let Some(row) = line.checked_sub(1)
         && row < settings.trust.pending.len()
     {
-        settings.trust.selected = row;
+        dispatch_manager(state, ManagerMessage::SelectSettingsTrustRow(row));
+    } else {
+        dispatch_manager(state, ManagerMessage::SelectSettingsTrustRow(usize::MAX));
     }
-    settings.trust.scroll_focused = true;
     true
 }
 
@@ -522,14 +513,13 @@ fn try_select_editor_mount_row(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
+    let ManagerStage::Editor(editor) = &state.stage else {
         return false;
     };
     let Some(index) = editor_mount_index_at(editor, mouse, term_size) else {
         return false;
     };
-    editor.active_field = FieldFocus::Row(index);
-    editor.workspace_mounts_scroll_focused = true;
+    dispatch_manager(state, ManagerMessage::SelectEditorMountRow(index));
     true
 }
 

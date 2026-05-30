@@ -34,7 +34,11 @@ pub enum ManagerMessage {
         term_width: u16,
         content_width: usize,
     },
+    SelectEditorMountRow(usize),
+    SelectEditorTab(EditorTab),
     SelectListRow(usize),
+    SelectSettingsTab(SettingsTab),
+    SelectSettingsTrustRow(usize),
     ScrollEditorWorkspaceMountsHorizontal {
         delta: i16,
         term_width: u16,
@@ -135,7 +139,11 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             term_width,
             content_width,
         } => scroll_editor_tab_horizontal(state, delta, term_width, content_width),
+        ManagerMessage::SelectEditorMountRow(row) => select_editor_mount_row(state, row),
+        ManagerMessage::SelectEditorTab(tab) => select_editor_tab(state, tab),
         ManagerMessage::SelectListRow(row) => select_list_row(state, row),
+        ManagerMessage::SelectSettingsTab(tab) => select_settings_tab(state, tab),
+        ManagerMessage::SelectSettingsTrustRow(row) => select_settings_trust_row(state, row),
         ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
             delta,
             term_width,
@@ -763,6 +771,48 @@ fn select_list_row(state: &mut ManagerState<'_>, selected: usize) {
     }
 }
 
+fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    let was_secrets = editor.active_tab == EditorTab::Secrets;
+    editor.active_tab = tab;
+    editor.active_field = FieldFocus::Row(0);
+    editor.workspace_mounts_scroll_focused = false;
+    if editor.active_tab != EditorTab::Auth {
+        editor.auth_selected_kind = None;
+    }
+    if was_secrets && editor.active_tab != EditorTab::Secrets {
+        editor.unmasked_rows.clear();
+        editor.secrets_expanded.clear();
+    }
+}
+
+fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    editor.active_field = FieldFocus::Row(row);
+    editor.workspace_mounts_scroll_focused = true;
+}
+
+fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    settings.active_tab = tab;
+}
+
+fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    if row < settings.trust.pending.len() {
+        settings.trust.selected = row;
+    }
+    settings.trust.scroll_focused = true;
+}
+
 fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize) {
     let len = state.flattened_preview_panes(container).len();
     if len == 0 {
@@ -851,6 +901,48 @@ mod tests {
 
         assert_eq!(state.selected, 1);
         assert_eq!(state.list_mounts_scroll_x, 0);
+    }
+
+    #[test]
+    fn mouse_selection_messages_update_tabs_and_rows() {
+        let mut state = state_with_saved_count(0);
+        let mut editor = EditorState::new_edit(
+            "workspace".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        editor.active_tab = EditorTab::Secrets;
+        editor.secrets_expanded.insert("smith".into());
+        editor.unmasked_rows.insert((
+            crate::console::manager::state::SecretsScopeTag::Workspace,
+            "TOKEN".into(),
+        ));
+        state.stage = ManagerStage::Editor(editor);
+
+        assert!(update_manager(&mut state, ManagerMessage::SelectEditorTab(EditorTab::Mounts)).is_dirty());
+        assert!(update_manager(&mut state, ManagerMessage::SelectEditorMountRow(2)).is_dirty());
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.active_tab, EditorTab::Mounts);
+        assert_eq!(editor.active_field, FieldFocus::Row(2));
+        assert!(editor.workspace_mounts_scroll_focused);
+        assert!(editor.secrets_expanded.is_empty());
+        assert!(editor.unmasked_rows.is_empty());
+
+        state.stage =
+            ManagerStage::Settings(SettingsState::from_config(&crate::config::AppConfig::default()));
+        assert!(
+            update_manager(&mut state, ManagerMessage::SelectSettingsTab(SettingsTab::Trust))
+                .is_dirty()
+        );
+        assert!(update_manager(&mut state, ManagerMessage::SelectSettingsTrustRow(0)).is_dirty());
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.active_tab, SettingsTab::Trust);
+        assert!(settings.trust.scroll_focused);
     }
 
     #[test]
