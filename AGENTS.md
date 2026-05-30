@@ -37,7 +37,7 @@ jackin' has no released version — it is a proof-of-concept. **Breaking changes
 2. A migration step in the corresponding registry (`CONFIG_MIGRATIONS`, `WORKSPACE_MIGRATIONS`, `MANIFEST_MIGRATIONS`).
 3. A new fixture directory under `tests/fixtures/migrations/<file-kind>/from-<predecessor-version>/` containing `meta.toml`, `before.toml`, and `after.toml`. The fixture harness in `tests/migration_fixtures.rs` walks every supported `from_version` on every CI run and asserts that the migrated output (a) parses successfully against the current serde schema, (b) carries the declared `target_version` stamp, and (c) that `after.toml` itself parses and carries the same stamp. This guarantees a delayed operator landing on the current version after several bumps can still load their config — the chain is the regression guard.
 4. Re-bake of every existing fixture's `after.toml` so it walks through the new step too. The fixture for the oldest supported `from_version` is the load-bearing test for users delayed by months — its diff is the proof the new chain is composable.
-5. A new entry at the top of the **Timeline** section in `docs/src/content/docs/reference/schema-versions.mdx` with date, predecessor, fixture link, summary, and a before/after example.
+5. A new entry at the top of the **Timeline** section in `docs/content/docs/reference/schema-versions.mdx` with date, predecessor, fixture link, summary, and a before/after example.
 
 A non-additive change (renamed field, removed field, type change, added enum variant, restructured table) without these five artifacts is incomplete; reviewers block merge until they appear or the change is reshaped to be additive (new optional field with a serde default). Operator config and per-workspace files migrate automatically during `AppConfig::load_or_init` at startup; role authors migrate local manifests on a desktop with `jackin role migrate <role-repo-path>`, while CI and Renovate-style automation migrate manifests with the small standalone `jackin-role migrate <role-repo-path>` binary.
 
@@ -57,7 +57,7 @@ This is non-negotiable across schemas, design proposals, roadmap items, runtime 
 - Running `gh auth setup-git` on the host as part of a `jackin` command. The container can run it; the host stays untouched.
 - Editing `~/.gitconfig`, `~/.ssh/config`, or any user dotfile during a launch, refresh, or "fix it for me" path. Suggest the change in the launch summary; do not apply it.
 - Force-pushing, fetching, pulling, or pruning on the host's git repo as a side effect of provisioning. The only host-side git commands the CLI runs today are the ones the operator explicitly opted into (`git_pull_on_entry`, `worktree add` under `isolation = "worktree"`), and those stay scoped to the workspace's mounted repos.
-- Writing the host's `~/.config/gh/hosts.yml` from the container's in-session `gh auth login`. In-container token rotation must not flow back to the host without an explicit operator-controlled bidirectional-sync opt-in (tracked under the [GitHub CLI auth strategy](docs/src/content/docs/reference/roadmap/github-cli-auth-strategy.mdx) follow-ups).
+- Writing the host's `~/.config/gh/hosts.yml` from the container's in-session `gh auth login`. In-container token rotation must not flow back to the host without an explicit operator-controlled bidirectional-sync opt-in (tracked under the [GitHub CLI auth strategy](docs/content/docs/reference/roadmap/github-cli-auth-strategy.mdx) follow-ups).
 
 **Read paths against the host are fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up the host's git user.email — all read-only. The forbidden direction is host-side *writes* triggered by jackin' without explicit operator opt-in.
 
@@ -176,7 +176,7 @@ When the first release is being cut, the operator will explicitly ask for the ch
 
 ## Roadmap freshness (agent-only)
 
-Before marking any PR ready to land, and again whenever the operator asks to merge a PR, check whether the change ships, advances, defers, or invalidates anything under `docs/src/content/docs/reference/roadmap/`. If yes, update the roadmap item's `**Status**`, related files, and implementation notes in the same PR, then update `docs/src/content/docs/reference/roadmap.mdx` so the item appears only in the correct overview section.
+Before marking any PR ready to land, and again whenever the operator asks to merge a PR, check whether the change ships, advances, defers, or invalidates anything under `docs/content/docs/reference/roadmap/`. If yes, update the roadmap item's `**Status**`, related files, and implementation notes in the same PR, then update `docs/content/docs/reference/roadmap/index.mdx` so the item appears only in the correct overview section.
 
 Do this check even when the PR is mostly code, tests, CI, or rule changes. The roadmap is an operator-facing source of truth, not a retrospective cleanup task. A feature that lands without moving its roadmap item leaves stale planning docs behind and should be treated as an incomplete PR. If a merge request reveals stale roadmap state, stop before merging, update the roadmap and PR description, and only then continue with normal merge verification.
 
@@ -339,7 +339,7 @@ All rules for the `jackin-capsule` smoke-test mandate — the eval one-shot buil
 
 ## TUI design decisions (agent-only)
 
-All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/src/content/docs/reference/tui-design-decisions.mdx`](docs/src/content/docs/reference/tui-design-decisions.mdx).
+All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, visible progress/status for long-running work, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/content/docs/reference/tui-design-decisions.mdx`](docs/content/docs/reference/tui-design-decisions.mdx).
 
 **Read that document before implementing any TUI change.** When a new decision is made (operator explains what should change and why), add it there immediately, not here.
 

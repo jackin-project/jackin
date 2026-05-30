@@ -187,23 +187,16 @@ async fn resolve_agent_repo(
 ///
 /// Two paths:
 /// 1. Cache hit (`.git` already exists): delegate to
-///    `resolve_agent_repo_with` which fetch+merges, then run
-///    `persist_registration` if validation passes.
+///    `resolve_agent_repo_with` which fetch+merges.
 /// 2. Cache miss: clone into a temp dir under `data_dir`, validate,
-///    `rename` into the cache, then run `persist_registration`. Rename
-///    happens before persist so a failed rename leaves the role
-///    *un-registered* (clean state) rather than registered without an
-///    on-disk repo (broken state).
-///
-/// `persist_registration` is the single commit point — it must be
-/// idempotent so retries after a transient failure are safe.
+///    `rename` into the cache, then return the validated repo so the
+///    caller can persist registration once the install succeeds.
 pub(super) async fn register_agent_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
     debug: bool,
-    persist_registration: impl FnOnce() -> anyhow::Result<()>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo)> {
     let normalized = normalize_github_url(git_url);
     let git_url = normalized.as_str();
@@ -219,7 +212,6 @@ pub(super) async fn register_agent_repo(
             || Ok(false),
         )
         .await?;
-        persist_registration()?;
         return Ok((cached_repo, validated_repo));
     }
 
@@ -286,12 +278,6 @@ pub(super) async fn register_agent_repo(
     std::fs::rename(&temp_repo, &cached_repo.repo_dir).with_context(|| {
         format!(
             "failed to install role repository at {}",
-            cached_repo.repo_dir.display()
-        )
-    })?;
-    persist_registration().with_context(|| {
-        format!(
-            "role repo installed at {} but registration could not be persisted",
             cached_repo.repo_dir.display()
         )
     })?;
@@ -1105,17 +1091,12 @@ plugins = []
             }),
         ));
 
-        let persist_called = std::cell::Cell::new(false);
         let err = register_agent_repo(
             &paths,
             &selector,
             "https://github.com/example/agent-broken.git",
             &mut runner,
             false,
-            || {
-                persist_called.set(true);
-                Ok(())
-            },
         )
         .await
         .unwrap_err();
@@ -1126,10 +1107,6 @@ plugins = []
             "expected RepoError::InvalidRoleRepo, got {err:?}"
         );
         assert!(
-            !persist_called.get(),
-            "persist must not run on validate failure"
-        );
-        assert!(
             !cached_dir.exists(),
             "cache slot must remain empty when validate fails: {}",
             cached_dir.display()
@@ -1137,15 +1114,13 @@ plugins = []
     }
 
     #[tokio::test]
-    async fn register_agent_repo_aborts_when_persist_registration_fails() {
-        // Persist runs after rename, so a persist failure leaves the
-        // cache populated but registration un-persisted. Verify the
-        // error surfaces with the diagnostic context that points the
-        // operator at the inconsistency.
+    async fn register_agent_repo_installs_valid_repo_into_cache() {
+        // The repo helper clones and validates into the cache, leaving
+        // persistence to the caller.
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
-        let selector = RoleSelector::new(None, "agent-persist-fail");
+        let selector = RoleSelector::new(None, "agent-persist-ok");
         let cached_dir = CachedRepo::new(&paths, &selector).repo_dir;
 
         let data_dir = paths.data_dir.clone();
@@ -1155,25 +1130,18 @@ plugins = []
             Box::new(move || seed_valid_role_repo(&first_temp_role_repo(&data_dir))),
         ));
 
-        let err = register_agent_repo(
+        let _repo = register_agent_repo(
             &paths,
             &selector,
-            "https://github.com/example/agent-persist-fail.git",
+            "https://github.com/example/agent-persist-ok.git",
             &mut runner,
             false,
-            || anyhow::bail!("simulated config write failure"),
         )
         .await
-        .unwrap_err();
-
-        let chain = format!("{err:?}");
-        assert!(
-            chain.contains("registration could not be persisted"),
-            "error chain must surface persist failure: {chain}"
-        );
+        .expect("repo registration should succeed");
         assert!(
             cached_dir.join(".git").is_dir(),
-            "cache must be populated before persist runs (rename-then-persist invariant)",
+            "cache must be populated after successful registration",
         );
     }
 
@@ -1197,7 +1165,6 @@ plugins = []
             "https://github.com/example/agent-stale.git",
             &mut runner,
             false,
-            || Ok(()),
         )
         .await
         .unwrap_err();
