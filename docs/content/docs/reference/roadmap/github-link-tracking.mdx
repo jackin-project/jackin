@@ -9,7 +9,7 @@ title: "GitHub Link Tracking & Live Status"
 Once the agent has emitted `<jackin:issue>` or `<jackin:pr>` tags via the
 [agent tag protocol](/reference/roadmap/agent-tag-protocol/), the operator
 wants to see their *live* state: is the issue still open? Did the PR get
-approved? Did CI go green? Today jackin' has no GitHub status awareness at
+approved? Did CI go green? Today jackin❯ has no GitHub status awareness at
 all — the operator switches to a browser tab to check.
 
 Polling GitHub for every link on every console redraw would burn the rate
@@ -25,7 +25,7 @@ states change rarely vs frequently.
   task whose PR was rejected") without re-implementing GitHub polling
   inside the queue.
 - It's the lowest-risk way to introduce a third-party network dependency
-  (Octocrab) into jackin' runtime — the surface is narrow (read-only
+  (Octocrab) into jackin❯ runtime — the surface is narrow (read-only
   status fetches) and the failure mode is obvious (status cell shows "?").
 
 ## Inspiration in multicode
@@ -138,7 +138,7 @@ icons, with hover/select revealing details. Clicking opens via the
   flow covers the 95% case.
 - GitHub Enterprise host support beyond the standard
   `https://github.com/<owner>/<repo>` URL pattern. multicode supports it;
-  jackin' V1 should too if cost is low (Octocrab handles GHE clients
+  jackin❯ V1 should too if cost is low (Octocrab handles GHE clients
   with one extra config line). Confirm in design.
 - PR review summary text (who approved, what comments). Just state in V1.
 - Cross-link aggregation ("show me all open PRs across all instances").
@@ -149,12 +149,12 @@ icons, with hover/select revealing details. Clicking opens via the
 ## Open Questions
 
 - **Per-instance cache vs operator-global.** Per-instance matches
-  jackin' existing data layout but means a link tracked by two
+  jackin❯ existing data layout but means a link tracked by two
   instances gets fetched twice. Recommended default: *per-instance for
   V1*; revisit if rate-limit pressure shows up.
 - **Token scope guidance.** What's the minimum-privilege token the docs
   should recommend? `public_repo` works for public-only; private repos
-  need `repo`. multicode docs are clear on this; jackin' docs should
+  need `repo`. multicode docs are clear on this; jackin❯ docs should
   match.
 - **GitHub App alternative.** Long-term, a GitHub App (with
   per-installation tokens) is more durable than a PAT. Defer the design

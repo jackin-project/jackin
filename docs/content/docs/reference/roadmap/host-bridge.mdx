@@ -7,16 +7,16 @@ title: "Host Bridge — Secrets and Approved Host Actions"
 
 ## Problem
 
-jackin' isolates agent containers from the host on purpose. That's the whole security model. But hard isolation creates two operational pain points the operator runs into often:
+jackin❯ isolates agent containers from the host on purpose. That's the whole security model. But hard isolation creates two operational pain points the operator runs into often:
 
 1. **An agent needs a secret for one command, mid-session.** The credential wasn't on the operator's pre-launch env-var allowlist (it's a one-off — a database password the operator has in 1Password, an SSH passphrase for a single push, an API key for a tool the agent is about to invoke). Today the operator's choices are bad: stop the agent, edit the workspace env vars, restart the container, lose the agent's working state — or paste the secret into the agent's prompt and let the agent see the raw value forever.
-2. **An agent needs to do something only the host can do.** Examples: read a TouchID-protected Keychain entry, sign a release with the host's GPG key (which jackin' deliberately doesn't forward), invoke a CLI that's licensed only on the host, run `gh pr merge` against a repo whose write token lives in the host's Keychain. Today the operator has to leave the agent's flow, run the command themselves, paste the output back. Every interruption costs flow.
+2. **An agent needs to do something only the host can do.** Examples: read a TouchID-protected Keychain entry, sign a release with the host's GPG key (which jackin❯ deliberately doesn't forward), invoke a CLI that's licensed only on the host, run `gh pr merge` against a repo whose write token lives in the host's Keychain. Today the operator has to leave the agent's flow, run the command themselves, paste the output back. Every interruption costs flow.
 
 Both look like the same shape from the operator's seat: *"the agent needs a single piece of host help, and I want to authorize it without tearing down the session."*
 
-This roadmap item proposes a **host bridge** — a small request/approval channel between agents inside containers and the operator on the host, hosted by the [jackin' daemon](/reference/roadmap/jackin-daemon/). Agents request a secret value or a host command; the operator gets a host-side prompt (touch confirmation, biometric, password); on approval the daemon does the work; the agent receives back exactly what it asked for and nothing more.
+This roadmap item proposes a **host bridge** — a small request/approval channel between agents inside containers and the operator on the host, hosted by the [jackin❯ daemon](/reference/roadmap/jackin-daemon/). Agents request a secret value or a host command; the operator gets a host-side prompt (touch confirmation, biometric, password); on approval the daemon does the work; the agent receives back exactly what it asked for and nothing more.
 
-The daemon owns the policy, audit log, and execution path. The jackin' Desktop
+The daemon owns the policy, audit log, and execution path. The jackin❯ Desktop
 Agent Hub is the preferred native macOS surface for viewing pending requests and
 audit state once it exists; agents still talk to the daemon, not directly to the
 app.
@@ -27,7 +27,7 @@ The bridge serves two distinct flows that share a transport, an approval surface
 
 ### Flow 1 — secret-on-demand
 
-The agent inside the container realizes it needs a secret it doesn't have. It calls a tool on a jackin'-provided MCP server:
+The agent inside the container realizes it needs a secret it doesn't have. It calls a tool on a jackin❯-provided MCP server:
 
 ```
 secret.request(name: "POSTGRES_PROD_PASSWORD", scope: "single-command", reason: "running pg_dump")
@@ -88,7 +88,7 @@ The host-side prompt is the load-bearing part of this design. It must be:
 - **Auditable.** Every prompt + response (approved / denied / timed out) lands in the daemon's audit log with timestamp, workspace, role, agent, request payload (with secrets redacted), and the operator's response. Reviewable via `jackin audit` (subcommand to be designed).
 - **Time-bounded.** Prompts expire after a configurable window (default 30s). Expiry counts as deny. The agent receives a structured "operator did not approve in time" error.
 - **Visually distinct.** The prompt is a system-modal notification or native
-  Desktop approval surface, not a TUI overlay — agent presence in jackin'
+  Desktop approval surface, not a TUI overlay — agent presence in jackin❯
   console must not block another agent's approval prompt from reaching the
   operator.
 
@@ -96,11 +96,11 @@ Per-platform implementation:
 
 - **macOS.** `LocalAuthentication` framework — TouchID where available, falls back to login password. Wrapped by a small Swift helper bundled with the daemon.
 - **Linux.** `polkit` for the password / fingerprint flow on systems with PAM-fingerprint configured. Falls back to a sudo-style terminal password prompt for headless setups.
-- **Windows.** Out of scope until jackin' supports Windows hosts.
+- **Windows.** Out of scope until jackin❯ supports Windows hosts.
 
 ## Threat model
 
-This feature widens the attack surface jackin' presents to a malicious agent. The threat model has to be explicit before the implementation lands.
+This feature widens the attack surface jackin❯ presents to a malicious agent. The threat model has to be explicit before the implementation lands.
 
 ### What a malicious agent can do today (without this feature)
 
@@ -130,7 +130,7 @@ This feature widens the attack surface jackin' presents to a malicious agent. Th
 
 ## How the agent expresses requests
 
-Same shape as [agent attention prompts](/reference/roadmap/agent-attention-prompts/): a jackin'-bundled MCP server, auto-registered at container launch, exposes the `secret.*` and `host.*` tool families. The agent runtime's tool-use loop calls these tools when the agent decides it needs a secret or a host command; jackin' bundles the MCP server, registers it in each agent's MCP config — extending the registration pattern <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime — and never asks the operator to wire it manually.
+Same shape as [agent attention prompts](/reference/roadmap/agent-attention-prompts/): a jackin❯-bundled MCP server, auto-registered at container launch, exposes the `secret.*` and `host.*` tool families. The agent runtime's tool-use loop calls these tools when the agent decides it needs a secret or a host command; jackin❯ bundles the MCP server, registers it in each agent's MCP config — extending the registration pattern <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime — and never asks the operator to wire it manually.
 
 Tool surface (initial cut):
 
@@ -143,12 +143,12 @@ Tool surface (initial cut):
 
 Same shape as the other reactive features that depend on it. The bridge needs:
 
-- A long-running host process that the container's MCP server can call (per-container Unix domain socket through the bind-mount channel — see [jackin' daemon](/reference/roadmap/jackin-daemon/) for the channel design).
+- A long-running host process that the container's MCP server can call (per-container Unix domain socket through the bind-mount channel — see [jackin❯ daemon](/reference/roadmap/jackin-daemon/) for the channel design).
 - A host-side process that has integrity to display approval prompts the operator trusts.
 - A central audit log that survives across CLI invocations and individual container lifetimes.
 - A policy engine (allowlist / blocklist / `disabled`) configured per workspace and queryable from the MCP server.
 
-None of these can run from a CLI that exits between commands. The daemon's lifecycle, install, security posture, and control-socket transport are decided in the [jackin' daemon](/reference/roadmap/jackin-daemon/) item; this feature is one adapter against that base.
+None of these can run from a CLI that exits between commands. The daemon's lifecycle, install, security posture, and control-socket transport are decided in the [jackin❯ daemon](/reference/roadmap/jackin-daemon/) item; this feature is one adapter against that base.
 
 ## Host-side effects
 
@@ -221,20 +221,20 @@ When two agents in two containers both need the same secret, does the operator h
 
 ### Cross-host
 
-When jackin' grows to remote agent-host architectures (Kubernetes phase, see the [Why jackin'](/getting-started/why/) page), the bridge needs to reach the operator wherever they are. Out of scope for this item; revisit when remote-agent work lands.
+When jackin❯ grows to remote agent-host architectures (Kubernetes phase, see the [Why jackin❯](/getting-started/why/) page), the bridge needs to reach the operator wherever they are. Out of scope for this item; revisit when remote-agent work lands.
 
 ## Why this matters
 
-The pitch of jackin' is *"running many agents safely is a productivity win."* The single biggest threat to that pitch is friction: every time the operator has to leave the agent's flow to do a host-side action, the agent stalls and the operator's flow breaks. Moving from *"stop the agent, do the host thing yourself, paste back"* to *"agent asks, you press TouchID, agent continues"* is the difference between agents being a sometime-help and agents being a workflow.
+The pitch of jackin❯ is *"running many agents safely is a productivity win."* The single biggest threat to that pitch is friction: every time the operator has to leave the agent's flow to do a host-side action, the agent stalls and the operator's flow breaks. Moving from *"stop the agent, do the host thing yourself, paste back"* to *"agent asks, you press TouchID, agent continues"* is the difference between agents being a sometime-help and agents being a workflow.
 
 The mechanism is also the right escape valve for the *"help, I forgot to set up X before launching"* class of problems. Without it, every gap in pre-launch config is a session-restart penalty. With it, the operator unblocks the agent in three seconds and the work continues.
 
 ## Related work
 
-- [jackin' daemon](/reference/roadmap/jackin-daemon/) — host-side process this feature plugs into. Phase 1 daemon must ship before this adapter can.
+- [jackin❯ daemon](/reference/roadmap/jackin-daemon/) — host-side process this feature plugs into. Phase 1 daemon must ship before this adapter can.
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — sibling feature plugging into the same daemon; sets the precedent for per-axis adapters.
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — sibling MCP-server feature using the same auto-registration pattern; both flow through the daemon.
-- [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — native macOS surface that should eventually show host-bridge approvals and audit entries while keeping daemon policy/execution as the source of truth.
+- [jackin❯ Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — native macOS surface that should eventually show host-bridge approvals and audit entries while keeping daemon policy/execution as the source of truth.
 - [Container credential exposure — beyond env injection](/reference/roadmap/container-credential-exposure/) — captures the broader trade-off between today's `docker run -e` env injection and the daemon-mediated `secret.request` flow this item proposes; together they replace env-resident tokens with on-demand handles.
 - [Credential proxy](/reference/roadmap/) — earlier-roadmap idea about proxy-based credential injection without storing tokens inside containers; this item is the operator-mediated counterpart for secrets the operator wants to vet per use.
 - <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The bridge MCP server registers through the same code path.

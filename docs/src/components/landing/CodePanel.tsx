@@ -9,7 +9,8 @@ interface Line {
 const scripts: Record<string, Line[]> = {
   load: [
     { cls: 'c',      text: '# Load an isolated agent into your current project\n' },
-    { cls: 'prompt', text: '$ ' },
+    { cls: 'cmd',    text: 'j' },
+    { cls: 'prompt', text: '❯ ' },
     { cls: 'cmd',    text: 'jackin ' },
     { cls: 'k',      text: 'load' },
     { cls: 'cmd',    text: ' agent-smith\n' },
@@ -25,7 +26,8 @@ const scripts: Record<string, Line[]> = {
   ],
   hardline: [
     { cls: 'c',      text: '# Reattach to a running agent session\n' },
-    { cls: 'prompt', text: '$ ' },
+    { cls: 'cmd',    text: 'j' },
+    { cls: 'prompt', text: '❯ ' },
     { cls: 'cmd',    text: 'jackin ' },
     { cls: 'k',      text: 'hardline' },
     { cls: 'cmd',    text: ' agent-smith\n' },
@@ -37,7 +39,8 @@ const scripts: Record<string, Line[]> = {
   ],
   eject: [
     { cls: 'c',      text: '# Stop an agent cleanly (state persists)\n' },
-    { cls: 'prompt', text: '$ ' },
+    { cls: 'cmd',    text: 'j' },
+    { cls: 'prompt', text: '❯ ' },
     { cls: 'cmd',    text: 'jackin ' },
     { cls: 'k',      text: 'eject' },
     { cls: 'cmd',    text: ' agent-smith\n' },

@@ -1,0 +1,80 @@
+---
+title: "Brand Identity"
+description: Canonical mark, color, typography, prompt, and asset rules for jackin❯
+---
+
+# Brand Identity
+
+jackin❯ uses a terminal-native mark: lowercase monospace text plus a green prompt chevron.
+
+## Text Forms
+
+There are four valid brand text forms:
+
+| Form | Use |
+|---|---|
+| `jackin❯` | Primary product and project name in rich text |
+| `j❯` | Compact prompt, favicon, app icon, and monogram surfaces |
+| `jackin>` | Plaintext fallback when `❯` cannot render |
+| `j>` | Compact plaintext fallback when `❯` cannot render |
+
+Literal commands, binaries, crates, packages, environment variables, config keys, file paths, labels, selectors, URLs, and code identifiers stay `jackin` where the operator must type or match that exact value.
+
+## Logo Lockup
+
+Logo artwork uses:
+
+```text
+jackin❯
+by tailrocks
+```
+
+Use the byline on logos, banners, cards, README artwork, social cards, splash surfaces, and generated assets. Do not append `by tailrocks` to ordinary prose, command examples, package names, or code identifiers.
+
+## Color
+
+| Token | Hex | Use |
+|---|---:|---|
+| Bright chevron green | `#5CF07A` | Canonical chevron color on dark and light logo surfaces |
+| Muted accent | `#1D9E75` | UI accent when pure phosphor is too strong |
+| Logo white | `#FFFFFF` | Letters on dark logo surfaces |
+| Dark canvas | `#0A0A0A` | Default dark brand background |
+| Logo black | `#0A0A0A` | Letters on light logo surfaces |
+
+The `jackin` letters or `j` are white on dark backgrounds and black on light backgrounds. The chevron is always `#5CF07A` where styling is available. Do not recolor the whole mark as one color.
+
+## Type
+
+The mark uses one monospace face and one weight. The docs and generated assets use JetBrains Mono Medium with this fallback chain:
+
+```css
+"JetBrains Mono", "Berkeley Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace
+```
+
+Supporting prose uses Inter or the system sans-serif stack.
+
+## Terminal Prompt
+
+jackin❯-owned shells use `j❯` as the prompt sigil. Role-container shells get this through the shared Starship config baked into the construct image:
+
+```text
+j❯
+codex j❯
+claude j❯
+```
+
+The `j` uses the terminal foreground. The chevron uses `#5CF07A` when the prompt renderer supports color.
+
+## Assets
+
+Committed brand assets live under `docs/public/`:
+
+| Asset | Source |
+|---|---|
+| `favicon.svg` / `favicon.ico` | `j❯` monogram |
+| `apple-touch-icon.png` | `j❯` monogram, 180 px |
+| `icon-192.png` / `icon-512.png` | PWA monogram icons |
+| `og-image.png` / `og-image-github.png` | dark social cards with the full lockup |
+| `readme-hero.svg` / `readme-hero.png` | static README hero banner |
+
+Regenerate icons with `bun run gen-icons` from `docs/`. Regenerate social and README images with `bun run gen-og`.

@@ -8,7 +8,7 @@ title: "Task Source Abstraction"
 
 The autonomous-queue idea (next leaf) needs *something to dispatch*. Hardcoding
 "GitHub issues" as the only source — multicode's choice — works for that
-project's Micronaut workflow, but locks jackin' into a single integration. The
+project's Micronaut workflow, but locks jackin❯ into a single integration. The
 cost of designing a small abstraction up front is low; the cost of retrofitting
 one is high.
 
@@ -18,11 +18,11 @@ all see tasks through the trait.
 
 ## Why It Matters
 
-- jackin' positioning is "one tool for everyone" — a queue that only ingests
+- jackin❯ positioning is "one tool for everyone" — a queue that only ingests
   GitHub issues is not that tool.
 - Internal teams that use Linear, JIRA, plain text files, or a stdin pipe of
   prompts are exactly the population the program is targeting. They should be
-  able to plug in without forking jackin'.
+  able to plug in without forking jackin❯.
 - The trait is small. Defining it now and implementing GitHub against it is
   perhaps 10% more work than implementing GitHub directly, and it preserves
   the design optionality for free.
@@ -31,7 +31,7 @@ all see tasks through the trait.
 
 **Sources**:
 - README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) (closest — describes the GitHub-issue scanner that this leaf generalizes)
-- *No abstraction in multicode* — this leaf proposes a `TaskSource` trait jackin'-side; multicode hardcodes GitHub. Source code: [`lib/src/manager.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/manager.rs) is where their queue logic lives.
+- *No abstraction in multicode* — this leaf proposes a `TaskSource` trait jackin❯-side; multicode hardcodes GitHub. Source code: [`lib/src/manager.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/manager.rs) is where their queue logic lives.
 
 multicode's autonomous-issue-scanning has no abstraction — it talks directly
 to GitHub via Octocrab and turns issues into queued workspaces. Their
@@ -48,7 +48,7 @@ Each workspace can be assigned to a GitHub repo; the scanner finds open
 issues and queues them.
 
 What's right: per-workspace assignment, scan cadence, parallelism cap.
-What's wrong for jackin': "issues" as the universal noun.
+What's wrong for jackin❯: "issues" as the universal noun.
 
 ## Recommended Shape
 
@@ -189,7 +189,7 @@ CREATE TABLE tasks (
 ## Defer
 
 - Linear / JIRA / Slack / Asana sources. Document the trait so
-  third-party crates can implement them; keep jackin' core lean.
+  third-party crates can implement them; keep jackin❯ core lean.
 - Multi-source queues with priority. V1: one source per workspace, FIFO
   within a source.
 - Source `report()` callbacks. The trait has the seam; no V1

@@ -8,7 +8,7 @@ description: Control which directories agents can access and how
 
 Mounts are the primary mechanism for giving agents access to your files. When you mount a directory, it appears inside the agent's container at the path you specify. Without a mount, the agent simply can't see that directory.
 
-This is the core of jackin' security model: **agents can only access what you explicitly mount.**
+This is the core of jackin❯ security model: **agents can only access what you explicitly mount.**
 
 <Aside type="tip">
 Workspace mounts are managed through `jackin workspace …` flags or
@@ -123,23 +123,23 @@ jackin config mount remove gradle-cache
 
 In the console, press `G` from the workspace list to open **Global config → Global mounts**. That screen lists every global mount with its name, source, destination, mode, scope, and source type. It supports adding mounts, editing source and destination, toggling read-only mode, changing scope, renaming, and removing mounts. Changes stay pending until you explicitly save the global config; workspace screens never write global mounts.
 
-Workspace views show global mounts separately from workspace mounts. When jackin' can determine the selected role for a workspace, role-scoped global mounts are included in the global section. When multiple roles are possible, workspace views explain that the selected role affects global mount visibility.
+Workspace views show global mounts separately from workspace mounts. When jackin❯ can determine the selected role for a workspace, role-scoped global mounts are included in the global section. When multiple roles are possible, workspace views explain that the selected role affects global mount visibility.
 
 ## Mount precedence
 
-When multiple mount sources are resolved, jackin' combines them in this order:
+When multiple mount sources are resolved, jackin❯ combines them in this order:
 
 1. **Global mounts** (from `jackin config mount`)
 2. **Workspace mounts** (from `jackin workspace create`)
 3. **Load-time mounts** (from `jackin load --mount`)
 
 <Aside type="caution">
-If two mounts target the same container destination, jackin' stops with an error. It does not silently let the later mount win. This is deliberate because mounts are part of the security boundary.
+If two mounts target the same container destination, jackin❯ stops with an error. It does not silently let the later mount win. This is deliberate because mounts are part of the security boundary.
 </Aside>
 
 ## Redundant mounts
 
-A saved workspace never contains two mounts where one already exposes the other's host subtree at the same container location. If you add a mount that strictly covers an existing one, jackin' detects the redundancy:
+A saved workspace never contains two mounts where one already exposes the other's host subtree at the same container location. If you add a mount that strictly covers an existing one, jackin❯ detects the redundancy:
 
 - `jackin workspace create` automatically removes the redundant mount and prints a summary.
 - `jackin workspace edit` prompts before collapsing — see the [`workspace edit` docs](/commands/workspace/#mount-collapse) for the prompt and the `--yes` / `--prune` flags.
@@ -155,8 +155,8 @@ Workspace mounts can be marked **isolated** so that each container gets its own 
 | Value | Behavior |
 |---|---|
 | `shared` (default) | Host path bind-mounted as-is. |
-| `worktree` | jackin' creates a per-container `git worktree` from the host repo. The container sees its own checkout and scratch branch; refs are shared with the host repo. |
-| `clone` | jackin' creates a per-container `git clone --local` from the host repo's current branch. The container has its own `.git/` and independent refs; when the host repo has an `origin`, pushes from the container publish to that remote. |
+| `worktree` | jackin❯ creates a per-container `git worktree` from the host repo. The container sees its own checkout and scratch branch; refs are shared with the host repo. |
+| `clone` | jackin❯ creates a per-container `git clone --local` from the host repo's current branch. The container has its own `.git/` and independent refs; when the host repo has an `origin`, pushes from the container publish to that remote. |
 
 Set isolation per mount with `--mount-isolation <dst>=<type>` on `jackin workspace create` and `jackin workspace edit`. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation) in the workspaces guide for the full validation rules and recommended patterns.
 
@@ -169,7 +169,7 @@ global mounts is rejected.
 
 ## Sensitive path warnings
 
-jackin' detects when a mount source matches a known sensitive directory and warns before proceeding:
+jackin❯ detects when a mount source matches a known sensitive directory and warns before proceeding:
 
 - `~/.ssh` — SSH keys and configuration
 - `~/.aws` — AWS credentials and configuration
@@ -181,7 +181,7 @@ jackin' detects when a mount source matches a known sensitive directory and warn
 When a sensitive path is detected, you'll see a warning explaining the risk and must confirm before the mount is applied. This applies to all mount types — load-time, workspace, and global mounts.
 
 <Aside type="caution">
-The warning defaults to "no". If stdin is not a terminal (e.g. in a script), jackin' aborts rather than silently mounting sensitive paths.
+The warning defaults to "no". If stdin is not a terminal (e.g. in a script), jackin❯ aborts rather than silently mounting sensitive paths.
 </Aside>
 
 ## Best practices

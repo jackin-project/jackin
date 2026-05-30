@@ -2,13 +2,14 @@
 import { DigitalRain } from './DigitalRain';
 import { HeroContent } from './HeroContent';
 import { ThemeToggle } from './ThemeToggle';
+import { BrandMark } from '../brand/BrandMark';
 
 export function HeroStage() {
   return (
     <section className="landing-hero-stage">
       <DigitalRain opacity={0.32} />
       <nav className="landing-topnav">
-        <div className="landing-logo">jackin<span className="tick">'</span></div>
+        <BrandMark className="landing-logo" />
         <div className="landing-nav-right">
           <a className="landing-star" href="/getting-started/why">
             <svg className="landing-star-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

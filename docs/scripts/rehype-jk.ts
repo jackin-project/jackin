@@ -1,21 +1,13 @@
 import { visit, SKIP } from 'unist-util-visit'
 import type { Element, Root, Text } from 'hast'
 
-// Tag every prose mention of the jackin' project name (and the
-// possessive form) with a brand-styled span so the name picks up
-// --jk-brand in both light and dark modes. Styling lives in
-// src/styles/docs-theme.css under the .jk-name selector.
-//
-// SmartyPants in the markdown pipeline rewrites the straight ASCII
-// apostrophe (U+0027) into the typographic right single quotation
-// mark (U+2019) before the rehype stage runs, so the regex has to
-// accept both forms. The trailing `s` is optional to cover the
-// possessive `jackin's`.
+// Tag prose mentions of the brand wordmark with a split-colour span.
+// Styling lives in src/styles/docs-theme.css under .jk-name.
 //
 // Skip inside <code> and <pre>: command lines and code blocks
 // already render in monospace and shouldn't double up. Stay out
 // of <style> and <script> for safety.
-const NAME_PATTERN = /jackin['’](?:s)?/g
+const NAME_PATTERN = /jackin❯/g
 const SKIPPED_TAGS = new Set(['code', 'pre', 'style', 'script'])
 
 export default function rehypeJk() {
@@ -27,7 +19,7 @@ export default function rehypeJk() {
 
       const value = node.value
       if (!value) return
-      if (!value.includes("jackin'") && !value.includes('jackin’')) return
+      if (!value.includes('jackin❯')) return
 
       const parts: Array<Text | Element> = []
       let last = 0
@@ -41,7 +33,10 @@ export default function rehypeJk() {
           type: 'element',
           tagName: 'span',
           properties: { className: ['jk-name'] },
-          children: [{ type: 'text', value: match[0] }],
+          children: [
+            { type: 'element', tagName: 'span', properties: { className: ['jk-name__text'] }, children: [{ type: 'text', value: 'jackin' }] },
+            { type: 'element', tagName: 'span', properties: { className: ['jk-name__chevron'] }, children: [{ type: 'text', value: '❯' }] },
+          ],
         })
         last = match.index + match[0].length
       }

@@ -6,14 +6,14 @@ title: "Declarative Resource Limits per Agent"
 
 ## Problem
 
-jackin' runs every agent in a Docker container with whatever resource
+jackin❯ runs every agent in a Docker container with whatever resource
 allocation the host gives it. On a developer laptop, six parallel agents can
 each spawn a `cargo build`, exhaust memory, OOM-kill the desktop, or starve
 each other for CPU. There's no operator-facing control for this today; the
 operator's only knob is "launch fewer agents."
 
 Docker exposes the right primitives (`--memory`, `--cpus`, `--ulimit
-nofile=N`, plus `--memory-reservation` for soft limits), but jackin' doesn't
+nofile=N`, plus `--memory-reservation` for soft limits), but jackin❯ doesn't
 plumb any of them through.
 
 multicode addresses this directly with three declarative fields:

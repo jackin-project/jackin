@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="jackin❯ by tailrocks">
+  <rect width="1280" height="640" fill="#0a0a0a"/>
+  <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22" font-weight="600" fill="#5cf07a" opacity="0.26">
+    <text x="42" y="70">j a c k i n ❯ │ ┆ j ❯ │ ┇ j a c k i n ❯ │ ┆ j ❯</text>
+    <text x="118" y="138">┆ j ❯ │ j a c k i n ❯ ┇ │ j ❯ │ j a c k i n ❯</text>
+    <text x="78" y="514">j ❯ │ ┇ j a c k i n ❯ │ ┆ j ❯ │ j a c k i n ❯</text>
+    <text x="172" y="582">│ j a c k i n ❯ ┆ j ❯ │ ┇ j a c k i n ❯ │</text>
+  </g>
+  <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
+    <text x="580" y="322" font-size="138" font-weight="600" fill="#ffffff">jackin</text>
+    <path d="M836 214 916 292 836 370" fill="none" stroke="#5cf07a" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+    <text x="640" y="374" font-size="26" font-weight="500" fill="#9ca8a1">by tailrocks</text>
+  </g>
+</svg>

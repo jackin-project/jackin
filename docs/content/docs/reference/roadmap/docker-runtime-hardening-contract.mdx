@@ -6,9 +6,9 @@ title: "Docker Runtime Hardening Contract"
 
 ## Problem
 
-jackin' is intentionally Docker-first today. That choice is still correct for the current product shape: local operator-controlled agents, explicit mounts, agent state that survives reconnects, and a Docker-compatible development environment that most role authors already understand.
+jackin❯ is intentionally Docker-first today. That choice is still correct for the current product shape: local operator-controlled agents, explicit mounts, agent state that survives reconnects, and a Docker-compatible development environment that most role authors already understand.
 
-The weakness is not "Docker exists." The weakness is that the current jackin' Docker runtime does not yet expose a precise hardening contract. Operators see "container isolation" but do not get a structured answer to:
+The weakness is not "Docker exists." The weakness is that the current jackin❯ Docker runtime does not yet expose a precise hardening contract. Operators see "container isolation" but do not get a structured answer to:
 
 - which Docker security controls were requested
 - which controls the selected host can actually enforce
@@ -26,13 +26,13 @@ The current model is coherent but broad:
 - connect the role container to the DinD sidecar over TLS
 - keep the host Docker socket out of the agent container
 
-That is already better than a normal development container with the host Docker socket mounted. But it is not the same thing as a hardened sandbox. This roadmap item defines the Docker-side hardening path before jackin' adds any new backend family.
+That is already better than a normal development container with the host Docker socket mounted. But it is not the same thing as a hardened sandbox. This roadmap item defines the Docker-side hardening path before jackin❯ adds any new backend family.
 
 ## Thesis
 
 The next security step should be:
 
-> Keep Docker as the default runtime, but make Docker launches managed by jackin'
+> Keep Docker as the default runtime, but make Docker launches managed by jackin❯
 > run under an explicit, auditable hardening contract.
 
 This is different from:
@@ -42,7 +42,7 @@ This is different from:
 - forking Docker or owning a custom runtime
 - silently changing host Docker, host firewall, or host config
 
-Docker remains the packaging and execution substrate. jackin' becomes the policy layer that chooses, applies, reports, and tests a safe Docker posture.
+Docker remains the packaging and execution substrate. jackin❯ becomes the policy layer that chooses, applies, reports, and tests a safe Docker posture.
 
 ## Source Material
 
@@ -56,9 +56,9 @@ This design depends on Docker primitives that exist today:
   - the CLI surface for capabilities, `--security-opt`, `no-new-privileges`, read-only root filesystems, tmpfs mounts, networking, and ulimits.
 - [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)
   - memory, CPU, swap, and related cgroup controls.
-- [Docker daemon attack surface](https://docs.docker.com/engine/security/) - daemon control is privileged enough to mount host paths and create powerful containers, so jackin' must keep the host socket out of agent reach.
+- [Docker daemon attack surface](https://docs.docker.com/engine/security/) - daemon control is privileged enough to mount host paths and create powerful containers, so jackin❯ must keep the host socket out of agent reach.
 
-Existing jackin' roadmap items folded into this contract:
+Existing jackin❯ roadmap items folded into this contract:
 
 - [Network egress policy](/reference/roadmap/network-egress-policy/) - outbound policy and enforcement-quality reporting.
 - [Declarative resource limits](/reference/roadmap/declarative-resource-limits/)
@@ -73,7 +73,7 @@ Concrete Docker upstream references collected during the May 2026 research pass:
 - Docker default masked `/proc` and `/sys` paths (from `moby/moby/oci/defaults.go`): masked = `/proc/asound`, `/proc/acpi`, `/proc/kcore`, `/proc/keys`, `/proc/latency_stats`, `/proc/timer_list`, `/proc/timer_stats`, `/proc/sched_debug`, `/proc/scsi`, `/sys/firmware`, `/sys/devices/virtual/powercap`; read-only = `/proc/bus`, `/proc/fs`, `/proc/irq`, `/proc/sys`, `/proc/sysrq-trigger`. `--security-opt systempaths=unconfined` lifts both lists (per `docs.docker.com/reference/cli/docker/container/run/`).
 - Docker rootless storage drivers (per `docs.docker.com/engine/security/rootless/`): `overlay2` (kernel 5.11+), `fuse-overlayfs` (4.18+), `btrfs`, `vfs`. AppArmor, overlay networks, and SCTP port exposure are explicitly unsupported in rootless mode.
 - `dind` image TLS posture (per Docker Hub `_/docker` image docs): from 18.09+ the dind variants auto-generate `ca/`, `server/`, `client/` cert directories in `DOCKER_TLS_CERTDIR`. No rotation/revocation tooling shipped upstream; an operator-built PKI is the only path beyond first launch.
-- `docker sandbox` (Docker Sandboxes) CLI surface as of May 2026 (per `docs.docker.com/reference/cli/docker/sandbox/`): `create`, `exec`, `inspect`, `ls`, `network`, `reset`, `rm`, `run`, `save`, `stop`, `version`. No documented events stream, no `--format json`, no per-sandbox stdout/log hooks. Not yet a viable programmatic backend for jackin'.
+- `docker sandbox` (Docker Sandboxes) CLI surface as of May 2026 (per `docs.docker.com/reference/cli/docker/sandbox/`): `create`, `exec`, `inspect`, `ls`, `network`, `reset`, `rm`, `run`, `save`, `stop`, `version`. No documented events stream, no `--format json`, no per-sandbox stdout/log hooks. Not yet a viable programmatic backend for jackin❯.
 
 ## Non-Goals
 
@@ -112,7 +112,7 @@ A read of the launch path on the docs/docker-hardening-orbstack-backend branch (
 | Telemetry hook | <RepoFile path="src/tui/mod.rs" /> | `debug_log!(category, …)` macro, gated on `JACKIN_DEBUG=1`. There is no separate `clog!` macro yet; the hard-rule two-tier model in <RepoFile path="AGENTS.md" /> is met today through `debug_log!` alone. Any "profile chosen", "capability dropped", "AppArmor unavailable", etc. lines should emit through `debug_log!("launch", …)` until/unless a `clog!` tier is added. |
 | Backend selection CLI | (none) | No `--backend`, no `--docker-profile`, no `--sandbox-mode` flag exists today. This whole contract is the first introduction of those flags. |
 
-The pattern is consistent: jackin' inherits Docker defaults end-to-end. That is the starting baseline for every profile below — `compat` is "what already runs".
+The pattern is consistent: jackin❯ inherits Docker defaults end-to-end. That is the starting baseline for every profile below — `compat` is "what already runs".
 
 The gaps:
 
@@ -120,7 +120,7 @@ The gaps:
 |---|---|
 | Privileged DinD | The sidecar still needs broad privileges today. A DinD compromise has higher blast radius than the role container alone. |
 | No named security profile | Operators cannot choose "maximum compatibility" versus "harden this launch." |
-| No capability policy | Docker defaults are implicit. jackin' does not yet drop capabilities according to role needs. |
+| No capability policy | Docker defaults are implicit. jackin❯ does not yet drop capabilities according to role needs. |
 | No read-only root contract | The role image filesystem is currently mutable during the session. |
 | No resource budget by default | Parallel agents can exhaust CPU, memory, PID count, or file descriptors. |
 | Open egress by default | Agents can exfiltrate anything they can read from mounted paths or credentials. |
@@ -206,11 +206,11 @@ Expected controls:
 | Control | Contract |
 |---|---|
 | DinD | Disabled by default unless the role explicitly requires Docker workflows. If enabled, prefer rootless DinD or a non-privileged alternative. |
-| Capabilities | Start from `--cap-drop=ALL`, then add back the validated jackin' minimum (see Capability Minimum Set below): `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `SETFCAP`, `KILL`. Add `NET_RAW` only behind an opt-in `network.allow_raw_sockets`. Drop `MKNOD`, `SYS_CHROOT`, `SETPCAP`, `NET_BIND_SERVICE`, `AUDIT_WRITE` from the Docker default. Drop more once role-specific tests confirm. |
+| Capabilities | Start from `--cap-drop=ALL`, then add back the validated jackin❯ minimum (see Capability Minimum Set below): `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `SETFCAP`, `KILL`. Add `NET_RAW` only behind an opt-in `network.allow_raw_sockets`. Drop `MKNOD`, `SYS_CHROOT`, `SETPCAP`, `NET_BIND_SERVICE`, `AUDIT_WRITE` from the Docker default. Drop more once role-specific tests confirm. |
 | Seccomp | Docker default at minimum; custom profile research allowed only after compatibility data exists. |
 | AppArmor/SELinux | Required where available; launch fails or downgrades with explicit operator confirmation if unavailable. |
 | `no-new-privileges` | Required. |
-| Root filesystem | `--read-only` with explicit tmpfs/write mounts (see Read-Only Root Tmpfs Preset below): `/tmp`, `/run`, `/var/run`, `/var/tmp`, `/var/cache`, `/var/log`, `/var/lib/apt/lists`, `/var/cache/apt/archives`, `/var/lib/dpkg`, `$HOME/.cache`, `/jackin/run`, plus jackin'-owned state mounts. |
+| Root filesystem | `--read-only` with explicit tmpfs/write mounts (see Read-Only Root Tmpfs Preset below): `/tmp`, `/run`, `/var/run`, `/var/tmp`, `/var/cache`, `/var/log`, `/var/lib/apt/lists`, `/var/cache/apt/archives`, `/var/lib/dpkg`, `$HOME/.cache`, `/jackin/run`, plus jackin❯-owned state mounts. |
 | User | Non-root role process required. |
 | Network | Egress policy required: deny or allowlist. If not enforceable, fail before launch unless operator downgrades. |
 | Resource limits | Memory, CPU, PID, and nofile limits required from role defaults, workspace defaults, or CLI overrides. |
@@ -258,7 +258,7 @@ This is the first profile that can meaningfully support "safe-ish read-only agen
 
 ### Capability Minimum Set
 
-Docker's 14-cap default is the upper bound. The validated jackin' starting set, derived from common role workflows during the May 2026 research pass, is:
+Docker's 14-cap default is the upper bound. The validated jackin❯ starting set, derived from common role workflows during the May 2026 research pass, is:
 
 | Capability | Why needed | Worflows it unblocks |
 |---|---|---|
@@ -271,13 +271,13 @@ Docker's 14-cap default is the upper bound. The validated jackin' starting set, 
 | `CAP_SETFCAP` | Set file caps | `apt`/`dpkg` (sets file caps on installed binaries) |
 | `CAP_KILL` | Signal other procs | shells, process supervisors, `bash -c "cmd & wait"` |
 
-Drop from Docker default in the jackin' starting set:
+Drop from Docker default in the jackin❯ starting set:
 
 | Capability | Reason to drop |
 |---|---|
-| `CAP_MKNOD` | Role containers do not create device nodes; jackin' provides `/dev` via Docker defaults. |
+| `CAP_MKNOD` | Role containers do not create device nodes; jackin❯ provides `/dev` via Docker defaults. |
 | `CAP_NET_RAW` | Allows raw socket creation (`ping`, `tcpdump`). Modern Linux exposes ICMP via `ping_group_range` sysctl without raw sockets. Keep behind an opt-in `network.allow_raw_sockets = true` for roles that need `tcpdump`/`nmap`. |
-| `CAP_SETPCAP` | Allows changing other procs' caps. Not needed once jackin' itself sets the cap set at exec. |
+| `CAP_SETPCAP` | Allows changing other procs' caps. Not needed once jackin❯ itself sets the cap set at exec. |
 | `CAP_NET_BIND_SERVICE` | Allows binding privileged ports (`<1024`). Role containers should bind unprivileged ports inside the container; host port mapping is unaffected. |
 | `CAP_SYS_CHROOT` | `chroot()` calls. Not needed for normal role workflows. |
 | `CAP_AUDIT_WRITE` | Write to kernel audit log. Not needed; reduces audit-stream noise. |
@@ -308,14 +308,14 @@ Each path becomes a `--tmpfs <path>:rw,nosuid,nodev,size=<sized>` flag. Sizes ne
 
 Paths that should NOT be tmpfs even under `hardened`:
 
-- jackin'-owned persistent state mounts (under `/jackin/state/` and any agent-home state) — these are explicit volume mounts, not tmpfs.
+- jackin❯-owned persistent state mounts (under `/jackin/state/` and any agent-home state) — these are explicit volume mounts, not tmpfs.
 - Workspace mounts — these are bind mounts from the host, not tmpfs.
 
 Under `locked` the inventory is smaller because the agent is not expected to install packages: `/tmp`, `/run`, `/var/run`, `/jackin/run` only.
 
 ### Cgroup Detection
 
-Resource limits translate differently across cgroups v1 and v2. Detection at jackin' launch time:
+Resource limits translate differently across cgroups v1 and v2. Detection at jackin❯ launch time:
 
 ```sh
 # v2 if cgroup2fs; v1/hybrid if tmpfs
@@ -323,7 +323,7 @@ stat -fc %T /sys/fs/cgroup/
 # or: read /proc/self/cgroup — v2 has a single line starting "0::/..."
 ```
 
-| jackin' contract | cgroup v2 mapping | cgroup v1 mapping |
+| jackin❯ contract | cgroup v2 mapping | cgroup v1 mapping |
 |---|---|---|
 | `memory_high` | `--memory-reservation` → `memory.high` (soft throttle, no OOM-kill) | not supported; downgrade to `--memory-reservation` → `memory.soft_limit_in_bytes` and warn that throttling differs |
 | `memory_max` | `--memory` → `memory.max` | `--memory` → `memory.limit_in_bytes` |
@@ -335,7 +335,7 @@ stat -fc %T /sys/fs/cgroup/
 
 ## DinD Hardening Track
 
-DinD is the highest-priority Docker-specific risk because jackin' keeps Docker available inside the agent environment.
+DinD is the highest-priority Docker-specific risk because jackin❯ keeps Docker available inside the agent environment.
 
 ### Phase A — make the current DinD contract explicit
 
@@ -344,7 +344,7 @@ DinD is the highest-priority Docker-specific risk because jackin' keeps Docker a
 - Keep the host Docker socket blocked from the role container.
 - Add regression tests that fail if the host socket is mounted into either the role container or the DinD sidecar by accident.
 
-DinD TLS reality check (May 2026): the upstream `_/docker` image generates `ca/`, `server/`, `client/` cert directories under `DOCKER_TLS_CERTDIR` on first boot. Docker ships no rotation, no revocation, and no CA-management tooling — `docs.docker.com/engine/security/protect-access/` explicitly warns "Using TLS and managing a CA is an advanced topic" and gives no guidance beyond that. jackin' inherits a per-launch self-signed CA today and never rotates. If a DinD client cert leaks (e.g. via `docker inspect` on a misconfigured role), the leaker has full daemon control inside the sidecar — and with `--privileged` the sidecar has kernel access to the outer host. Phase A scope:
+DinD TLS reality check (May 2026): the upstream `_/docker` image generates `ca/`, `server/`, `client/` cert directories under `DOCKER_TLS_CERTDIR` on first boot. Docker ships no rotation, no revocation, and no CA-management tooling — `docs.docker.com/engine/security/protect-access/` explicitly warns "Using TLS and managing a CA is an advanced topic" and gives no guidance beyond that. jackin❯ inherits a per-launch self-signed CA today and never rotates. If a DinD client cert leaks (e.g. via `docker inspect` on a misconfigured role), the leaker has full daemon control inside the sidecar — and with `--privileged` the sidecar has kernel access to the outer host. Phase A scope:
 
 - regenerate certs on every launch (already true today; document it)
 - store cert volume under `/jackin/run/<instance>/dind-certs/` per the container path convention so `purge` removes them
@@ -384,9 +384,9 @@ Sysbox is a Linux-only container runtime that can run Docker-in-Docker style wor
 
 Research questions:
 
-- Can jackin' select Sysbox only for the DinD sidecar?
+- Can jackin❯ select Sysbox only for the DinD sidecar?
 - Does it require host runtime installation that violates the "never mutate host silently" rule?
-- Does it work with the selected Docker contexts jackin' supports?
+- Does it work with the selected Docker contexts jackin❯ supports?
 - Is it useful enough if it cannot work on macOS?
 
 Decision rule:
@@ -453,14 +453,14 @@ Profiles should separate three filesystem concepts:
 
 - host mounts, controlled by workspace/global mount config
 - role container root filesystem, created from the role image
-- jackin'-owned runtime/state paths inside the container
+- jackin❯-owned runtime/state paths inside the container
 
 Rules:
 
 - Host mounts remain explicit. No profile may add host mounts silently.
 - `:ro` host mounts stay the primary read-only guarantee.
 - `hardened` and `locked` should use read-only role root filesystems.
-- Writable paths for jackin'-owned runtime state must remain under `/jackin/`.
+- Writable paths for jackin❯-owned runtime state must remain under `/jackin/`.
 - Temporary writable paths must be explicit tmpfs mounts.
 - Persisted agent state must remain easy to purge and visible in the session contract.
 
@@ -532,7 +532,7 @@ The output must be factual. If a host cannot enforce AppArmor, rootless Docker d
 
 ## Compatibility Test Matrix
 
-Before any profile becomes a default, test it against common jackin' workflows:
+Before any profile becomes a default, test it against common jackin❯ workflows:
 
 | Workflow | `compat` | `standard` | `hardened` | `locked` |
 |---|---|---|---|---|
@@ -646,7 +646,7 @@ These need answers before Phase 1 code work begins:
 
 1. **Test fixture matrix.** Which exact agent runtimes + workflows are the acceptance set? (claude-code, codex, amp, kimi, opencode × `apt install build-essential`, `npm install <pkg-with-native-deps>`, `pip install <wheel>`, `cargo build`, `git clone+push`, `docker build` in-DinD, Compose, Testcontainers, `gh pr create`). Without this, "validate the cap set" has no objective answer.
 2. **`min_profile` field shape.** Role manifest needs a way to say "I need at least `compat`" or "I am `locked`-compatible". Open: enum vs ordered list vs constraint expression. Lowest-friction choice: an ordered enum field, default `standard`.
-3. **AppArmor on macOS launch contract.** What exact text does jackin' print under `standard` when running on Docker Desktop or OrbStack? Current code does not know which backend Docker is using; needs a probe (`docker info | grep "Operating System"`) at launch.
+3. **AppArmor on macOS launch contract.** What exact text does jackin❯ print under `standard` when running on Docker Desktop or OrbStack? Current code does not know which backend Docker is using; needs a probe (`docker info | grep "Operating System"`) at launch.
 4. **Sysbox host-install policy.** Sysbox needs a host-side runtime registration that violates the "never mutate host silently" rule. Either operator-confirmed opt-in install or hard-skip on hosts without Sysbox. Decide which before Phase C.
 
 ## Risks and Design Traps

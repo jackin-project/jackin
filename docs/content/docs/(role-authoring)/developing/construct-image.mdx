@@ -9,7 +9,7 @@ top half — *what is in the `construct`*, *what tools come for free*,
 *how to extend it from a role's `Dockerfile`*. **Contributors**
 (internals-facing) read the lower half — *how to build, validate,
 and publish the `construct` image itself* (`just construct-build`,
-CI workflow, advanced publish rehearsal). Operators using jackin'
+CI workflow, advanced publish rehearsal). Operators using jackin❯
 as a product do not need to read either half; `jackin load` pulls
 and updates the `construct` automatically.
 </Aside>
@@ -57,7 +57,7 @@ The construct is built on **Debian Trixie** and includes:
 | `mise` | Polyglot language version manager |
 | Docker CLI + Compose | Container operations via DinD |
 | GitHub CLI (`gh`) | Repository, PR, and issue operations |
-| Starship prompt | Informative terminal prompt |
+| Starship prompt | Shared zsh/fish prompt with the `j❯` sigil and canonical green chevron |
 
 ### User environment
 
@@ -66,13 +66,13 @@ The construct creates an `agent` user with:
 - Zsh as the default shell, with fish available as an opt-in alternative (`fish` from zsh, or `sudo chsh -s /usr/bin/fish agent` to change the login shell)
 - Passwordless sudo access
 - Oh My Zsh sourced with `ZSH_THEME=""` so the git plugin, autosuggestions plugin, and OSC 0/2 + OSC 7 title hooks are active without competing with Starship for the prompt
-- Starship prompt configured for both zsh and fish so the prompt surface stays the same when switching shells
+- Starship prompt configured for both zsh and fish so the prompt surface stays the same when switching shells: `j❯` by default, with the active `JACKIN_AGENT` prefix when an agent session sets it
 - Pane border title (`user@host:cwd`) emitted via OSC 0/2 on every prompt — the jackin-capsule multiplexer reads it and renders it as the pane title (the same mechanism zellij uses)
 - mise shims in `$PATH` for both shells
 
 ## How it's built
 
-The construct source starts at <RepoFile path="docker/construct/Dockerfile" /> in the jackin' repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl" /> at the repo root, and the supported command wrapper is <RepoFile path="Justfile" /> at the repo root.
+The construct source starts at <RepoFile path="docker/construct/Dockerfile" /> in the jackin❯ repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl" /> at the repo root, and the supported command wrapper is <RepoFile path="Justfile" /> at the repo root.
 
 <RepoFile path="docker/construct/versions.env" /> remains the source of truth for the pinned `tirith`, `shellfirm`, and `MISE_VERSION` build args used by <RepoFile path="docker/construct/Dockerfile" />. `mise` is installed from the official rolling apt repository during the Docker build; pinning the apt package version gives Buildx a stable cache key, and Renovate bumps invalidate the mise install layer when upstream publishes a new package.
 
@@ -99,7 +99,7 @@ just construct-build-local
 export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
 ```
 
-With `JACKIN_CONSTRUCT_IMAGE` set, jackin' validates role Dockerfiles against the canonical image name as usual (role repos reference a versioned construct tag such as `projectjackin/construct:0.3-trixie`), but substitutes your local image at derived-build time so `docker build` uses `jackin-local/construct:trixie` as the actual base.
+With `JACKIN_CONSTRUCT_IMAGE` set, jackin❯ validates role Dockerfiles against the canonical image name as usual (role repos reference a versioned construct tag such as `projectjackin/construct:0.3-trixie`), but substitutes your local image at derived-build time so `docker build` uses `jackin-local/construct:trixie` as the actual base.
 
 Use `just construct-inspect` to print the fully resolved Bake config without building the image.
 
@@ -145,15 +145,15 @@ The published tags are:
 
 ## The derived image layer
 
-When you load an agent, jackin' doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
+When you load an agent, jackin❯ doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
 
 1. **User remapping** — adjusts the `agent` user's UID/GID to match your host user
-2. **Agent installation** — copies jackin's cached agent binaries for every agent declared in the role manifest
+2. **Agent installation** — copies jackin❯ cached agent binaries for every agent declared in the role manifest
 3. **Plugin installation** — any Claude plugins declared in the role manifest
 4. **Runtime entrypoint + setup bridge** — the script delegates deterministic setup to `jackin-capsule runtime-setup`, then keeps the shell-native work: sourcing role hooks and `exec`-ing the selected agent. The Rust setup path handles one-time container git/GitHub initialization, the shared git trailer hook, durable agent-home seeding, auth handoff refreshes, and Claude MCP registration. It wires up GitHub if `gh` is already authenticated; it does not perform `gh auth login`, so an unauthenticated `gh` is left alone with a notice.
 
 <Aside type="note">
-Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Before the build, jackin' resolves the latest agent binary metadata and stores downloaded binaries under its host cache. Passing `--rebuild` invalidates agent installation layers; unchanged versions are copied from the local cache instead of downloaded again.
+Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Before the build, jackin❯ resolves the latest agent binary metadata and stores downloaded binaries under its host cache. Passing `--rebuild` invalidates agent installation layers; unchanged versions are copied from the local cache instead of downloaded again.
 </Aside>
 ## Extending the construct
 

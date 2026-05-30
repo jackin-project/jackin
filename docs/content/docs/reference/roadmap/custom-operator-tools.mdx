@@ -10,7 +10,7 @@ Different teams want different operator-side actions: "run my repo's lint
 script against the agent's worktree", "open my org's issue tracker URL for
 the active issue", "snapshot the agent's data dir before a risky test",
 "slack the team that the agent finished". Today the only way to express
-these is to wrap jackin' in shell aliases or external scripts.
+these is to wrap jackin❯ in shell aliases or external scripts.
 
 multicode addresses this with a `[[tool]]` array: each entry is a hotkey
 that runs a command (or prompts for input and runs a command) when pressed
@@ -19,9 +19,9 @@ else is operator-defined.
 
 ## Why It Matters
 
-- It's the difference between jackin' being a *fixed* operator surface and
+- It's the difference between jackin❯ being a *fixed* operator surface and
   an *extensible* one. The latter is what teams need to standardize on
-  jackin' instead of building custom CLI wrappers.
+  jackin❯ instead of building custom CLI wrappers.
 - It pairs cleanly with [agent runtime
   status](/reference/roadmap/agent-runtime-status/) and [tag
   protocol](/reference/roadmap/agent-tag-protocol/): the captured tags
@@ -103,13 +103,13 @@ visible).
 
 ### Reserved keys
 
-jackin' existing reserved keystrokes (the navigation set in the
+jackin❯ existing reserved keystrokes (the navigation set in the
 console, plus quit/exile/eject) are off-limits. Tool config validation
 errors at config load if a custom tool collides with a reserved key.
 
 ### Substitution
 
-When the tool fires, jackin' resolves `{X}` placeholders against the
+When the tool fires, jackin❯ resolves `{X}` placeholders against the
 selected workspace's runtime state:
 
 - `{instance}` — container name

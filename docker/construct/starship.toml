@@ -1,0 +1,24 @@
+format = "$env_var$directory$git_branch$git_status$character"
+add_newline = false
+
+[env_var.JACKIN_AGENT]
+format = "[$env_value ](white)"
+
+[character]
+success_symbol = "[j](white)[❯](bold #5CF07A)"
+error_symbol = "[j](white)[❯](bold #5CF07A)"
+vimcmd_symbol = "[j](white)[❯](bold #5CF07A)"
+
+[directory]
+style = "cyan"
+truncation_length = 3
+truncate_to_repo = false
+format = "[$path]($style) "
+
+[git_branch]
+style = "purple"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+style = "yellow"
+format = "[$all_status$ahead_behind]($style) "

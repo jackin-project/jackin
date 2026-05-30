@@ -25,7 +25,7 @@ jackin config mount add <NAME> --src <PATH> --dst <PATH> [OPTIONS]
 
 Register a new global mount.
 
-If a global mount resolves to the same container destination as a workspace mount or load-time mount, jackin' raises a conflict error at load time instead of silently overriding one of them.
+If a global mount resolves to the same container destination as a workspace mount or load-time mount, jackin❯ raises a conflict error at load time instead of silently overriding one of them.
 
 | Option | Description |
 |---|---|
@@ -127,7 +127,7 @@ jackin config auth show
 
 Manage operator env vars at global and per-role scope.
 
-Values are stored verbatim — whatever you type is what jackin' resolves at launch time. No editor-side validation of key names or value shape. `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work.
+Values are stored verbatim — whatever you type is what jackin❯ resolves at launch time. No editor-side validation of key names or value shape. `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work.
 
 Without `--role`, writes and reads target the **global** scope (applies to every agent launch). With `--role <SELECTOR>`, they target the **per-role** scope (applies only when that role is loaded). The role selector is not pre-validated — the value is recorded even if the role is not registered.
 

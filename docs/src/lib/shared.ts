@@ -1,5 +1,5 @@
 export const site = {
-  name: "jackin'",
+  name: 'jackin❯',
   origin: 'https://jackin.tailrocks.com',
   description:
     "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",

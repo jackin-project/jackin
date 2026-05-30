@@ -1,20 +1,20 @@
 ---
 title: Core Concepts
-description: The mental model behind jackin' — operators, agents, roles, constructs, and workspaces
+description: The mental model behind jackin❯ — operators, agents, roles, constructs, and workspaces
 ---
 
 <EarlyDevelopmentNotice />
 
 ## The operator
 
-**You are the operator.** You sit outside every container and control what gets loaded into each one. In jackin', you decide:
+**You are the operator.** You sit outside every container and control what gets loaded into each one. In jackin❯, you decide:
 
 - Which agent to load
 - Which directories to mount (and whether they're read-only)
 - Which workspace configuration to use
 - When to eject (stop) an agent
 
-The operator never enters the container. You drive jackin' from your host machine through two surfaces: the **operator console** (`jackin console`) — an interactive TUI that is the simplest and most-used way to work day-to-day — and the **CLI** (`jackin load`, `jackin workspace`, …) for advanced, scripted, or non-interactive flows.
+The operator never enters the container. You drive jackin❯ from your host machine through two surfaces: the **operator console** (`jackin console`) — an interactive TUI that is the simplest and most-used way to work day-to-day — and the **CLI** (`jackin load`, `jackin workspace`, …) for advanced, scripted, or non-interactive flows.
 
 ## Agents
 
@@ -31,7 +31,7 @@ An **agent** is an AI coding runtime (`Claude Code`, `Codex`, `Amp`, `Kimi`, or 
 An agent **role** is a reusable tool profile for creating agent containers. It's defined by a `GitHub` repository that contains a `Dockerfile` and a manifest file. For example:
 
 - `agent-smith` — the default role
-- `the-architect` — an agent with the full Rust toolchain (used for jackin' development)
+- `the-architect` — an agent with the full Rust toolchain (used for jackin❯ development)
 - `chainargos/backend-engineer` — a namespaced role for backend work in the chainargos organization
 
 The name `agent-smith` is just a project-specific example. In practice, role names can reflect the job they are designed for:
@@ -42,7 +42,7 @@ The name `agent-smith` is just a project-specific example. In practice, role nam
 - `docs-writer`
 - `security-reviewer`
 
-When you run `jackin load agent-smith`, jackin' clones the `jackin-agent-smith` repository, builds a `Docker` image from it, and launches a container.
+When you run `jackin load agent-smith`, jackin❯ clones the `jackin-agent-smith` repository, builds a `Docker` image from it, and launches a container.
 
 Think of a role as answering: "What kind of agent is this?"
 
@@ -59,9 +59,9 @@ A single role can have multiple running **instances**. Each instance is a separa
 
 An instance can also contain more than one **agent session** when the role supports multiple runtimes. For example, you can start `Claude Code` to implement a change, then start `Codex` inside the same running instance to review the same branch and run tests. For day-to-day workflows, see [Parallel Agents](/guides/parallel-agents/).
 
-### The jackin' Capsule
+### The jackin❯ Capsule
 
-Every running instance has a **jackin' Capsule** inside it. The Capsule is the small control process that starts first in the container and stays there while the instance is alive.
+Every running instance has a **jackin❯ Capsule** inside it. The Capsule is the small control process that starts first in the container and stays there while the instance is alive.
 
 From an operator's point of view, the Capsule is what makes a running instance feel like a persistent agent workspace instead of a one-shot `docker run`:
 
@@ -69,9 +69,9 @@ From an operator's point of view, the Capsule is what makes a running instance f
 - It keeps agent sessions running after your terminal disconnects, so closing a terminal tab detaches from the instance instead of killing the agent.
 - It lets you reconnect with `jackin hardline`, start another agent tab with `jackin hardline --new`, or open a shell tab with `jackin hardline --shell`.
 - It reports live session inventory back to `jackin console` and `jackin hardline --inspect`, including which agent tabs exist and which one is focused.
-- It performs container-local setup before an agent starts, such as preparing the durable agent home and applying the auth handoff that jackin' already decided at launch.
+- It performs container-local setup before an agent starts, such as preparing the durable agent home and applying the auth handoff that jackin❯ already decided at launch.
 
-The visible result is the two-line jackin' chrome at the top of an attached terminal. The first line identifies the session and tabs; the second line shows the running instance identity and opens **Container info** when clicked. The rest of the terminal belongs to the focused agent or shell pane. Agent shortcuts, editors, full-screen TUIs, bracketed paste, mouse reporting, wheel scrolling, and normal terminal output still go to the focused pane unless the Capsule UI is explicitly active. Normal-screen panes use jackin' scrollback and scroll chrome only when terminal history exists, including rows preserved before normal-screen clear/redraw; empty-history wheel gestures stay local to jackin' instead of becoming prompt cursor keys. Full-screen TUIs that opt into mouse reporting receive pane-local mouse events.
+The visible result is the two-line jackin❯ chrome at the top of an attached terminal. The first line identifies the session and tabs; the second line shows the running instance identity and opens **Container info** when clicked. The rest of the terminal belongs to the focused agent or shell pane. Agent shortcuts, editors, full-screen TUIs, bracketed paste, mouse reporting, wheel scrolling, and normal terminal output still go to the focused pane unless the Capsule UI is explicitly active. Normal-screen panes use jackin❯ scrollback and scroll chrome only when terminal history exists, including rows preserved before normal-screen clear/redraw; empty-history wheel gestures stay local to jackin❯ instead of becoming prompt cursor keys. Full-screen TUIs that opt into mouse reporting receive pane-local mouse events.
 
 That means one running instance can hold a small working room:
 
@@ -82,7 +82,7 @@ That means one running instance can hold a small working room:
 
 All of those tabs share the same mounted files, branch, role tooling, forwarded credentials, and private Docker-in-Docker sidecar. They do **not** share conversation context: each agent runtime still owns its own prompt history and state.
 
-The Capsule is not another agent and it is not a separate container. It is jackin'-owned runtime plumbing inside the role container. You normally interact with it through `jackin load`, `jackin console`, and `jackin hardline`, not by running `jackin-capsule` yourself.
+The Capsule is not another agent and it is not a separate container. It is jackin❯-owned runtime plumbing inside the role container. You normally interact with it through `jackin load`, `jackin console`, and `jackin hardline`, not by running `jackin-capsule` yourself.
 
 ## The construct
 
@@ -152,7 +152,7 @@ To wipe an agent's persisted state and start fresh, run `jackin purge <role>`.
 
 ## Putting it all together
 
-When you run `jackin load agent-smith ~/Projects/my-app`, jackin' takes care of every step needed to launch a usable agent — from your point of view, that looks like:
+When you run `jackin load agent-smith ~/Projects/my-app`, jackin❯ takes care of every step needed to launch a usable agent — from your point of view, that looks like:
 
 1. **Pick the role** — fetch and validate the role repo.
 2. **Build the agent image** — extending the `construct` with the role's tools and the agent runtime. Subsequent loads reuse `Docker`'s layer cache.

@@ -1,10 +1,10 @@
 ---
 title: Claude Code
-description: How jackin' forwards your Claude Code login into agent containers
+description: How jackin❯ forwards your Claude Code login into agent containers
 ---
 
 
-Claude Code authenticates via a credentials file on your host machine. On macOS it uses the Keychain; on Linux it writes to `~/.claude/.credentials.json`. In `sync` mode (the default), jackin' copies your host login into the container on every launch — Claude Code inside the container picks up the same account and model access you have locally.
+Claude Code authenticates via a credentials file on your host machine. On macOS it uses the Keychain; on Linux it writes to `~/.claude/.credentials.json`. In `sync` mode (the default), jackin❯ copies your host login into the container on every launch — Claude Code inside the container picks up the same account and model access you have locally.
 
 ## Logging in on the host
 
@@ -14,7 +14,7 @@ Before sync can forward anything, you need a working Claude Code login on your h
 claude login
 ```
 
-Follow the browser-based OAuth flow. Once it completes, `claude` is ready on your host and jackin' will forward that login into every container launch.
+Follow the browser-based OAuth flow. Once it completes, `claude` is ready on your host and jackin❯ will forward that login into every container launch.
 
 <Aside type="tip">
 To verify the host login is active, run `claude` briefly on the host — if it starts a session without prompting for credentials, you're good.
@@ -22,7 +22,7 @@ To verify the host login is active, run `claude` briefly on the host — if it s
 
 ## Runtime trust prompts
 
-jackin' launches Claude Code with its bypass-permissions warning already accepted inside the container, so workspace-backed launches do not stop on Claude Code's trust or bypass warning dialogs. This applies only inside the jackin' container runtime; jackin' does not mark host directories trusted or write to your host Claude Code settings.
+jackin❯ launches Claude Code with its bypass-permissions warning already accepted inside the container, so workspace-backed launches do not stop on Claude Code's trust or bypass warning dialogs. This applies only inside the jackin❯ container runtime; jackin❯ does not mark host directories trusted or write to your host Claude Code settings.
 
 ## Subscription
 
@@ -30,15 +30,15 @@ Claude Code is included with an Anthropic Max plan subscription, or you can use 
 
 **[Get an Anthropic subscription](https://www.anthropic.com/pricing)**
 
-A Max plan subscription gives you a fixed monthly rate with generous usage included — typically much cheaper than pay-as-you-go API credits for heavy agent use. If you run agents regularly through jackin', a subscription is usually the more cost-effective option.
+A Max plan subscription gives you a fixed monthly rate with generous usage included — typically much cheaper than pay-as-you-go API credits for heavy agent use. If you run agents regularly through jackin❯, a subscription is usually the more cost-effective option.
 
-The plan you have on the host is the one the container sees — jackin' forwards the same credentials, so model access and rate limits travel with them.
+The plan you have on the host is the one the container sees — jackin❯ forwards the same credentials, so model access and rate limits travel with them.
 
 ## Alternative providers
 
-Claude Code sessions can also run against Anthropic-compatible providers. [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) is the provider jackin' supports today; once you configure a `ZAI_API_KEY` in jackin' Auth settings, Claude Code launches can choose Z.AI instead of Anthropic.
+Claude Code sessions can also run against Anthropic-compatible providers. [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) is the provider jackin❯ supports today; once you configure a `ZAI_API_KEY` in jackin❯ Auth settings, Claude Code launches can choose Z.AI instead of Anthropic.
 
-Z.AI works with Claude Code because Claude Code already honors Anthropic-compatible endpoint settings. jackin' keeps that provider setup inside its own Auth settings and the selected container process, so you do not edit host Claude Code settings to use Z.AI through jackin'.
+Z.AI works with Claude Code because Claude Code already honors Anthropic-compatible endpoint settings. jackin❯ keeps that provider setup inside its own Auth settings and the selected container process, so you do not edit host Claude Code settings to use Z.AI through jackin❯.
 
 For subscription, API-key, and provider-picker details, see [Z.AI authentication](/guides/authentication/zai/). Z.AI is a provider choice at session launch time; it does not change the Claude Code auth modes below.
 
@@ -55,7 +55,7 @@ See [Agent Authentication](/guides/authentication/agents/) for what each mode do
 
 ### oauth_token (Claude Code only)
 
-`oauth_token` is a Claude-specific mode designed for long-lived and concurrent jackin' sessions. Instead of forwarding the host's credentials file, jackin' injects a long-lived OAuth token into the container's process environment.
+`oauth_token` is a Claude-specific mode designed for long-lived and concurrent jackin❯ sessions. Instead of forwarding the host's credentials file, jackin❯ injects a long-lived OAuth token into the container's process environment.
 
 The recommended setup path:
 

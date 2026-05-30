@@ -1,10 +1,10 @@
 ---
 title: Kimi
-description: How jackin' forwards your Kimi login into agent containers
+description: How jackin❯ forwards your Kimi login into agent containers
 ---
 
 
-Kimi authenticates from `~/.kimi-code` on your host. In `sync` mode (the default), jackin' copies the minimum Kimi state needed to make the container use the same account and model access you have on the host.
+Kimi authenticates from `~/.kimi-code` on your host. In `sync` mode (the default), jackin❯ copies the minimum Kimi state needed to make the container use the same account and model access you have on the host.
 
 ## Logging in on the host
 
@@ -20,19 +20,19 @@ Then verify that Kimi can start from the host shell:
 kimi --version
 ```
 
-Kimi writes its host-side state under `~/.kimi-code`. jackin' reads these files when `sync` is active:
+Kimi writes its host-side state under `~/.kimi-code`. jackin❯ reads these files when `sync` is active:
 
-| Host path | How jackin' uses it |
+| Host path | How jackin❯ uses it |
 |---|---|
 | `~/.kimi-code/config.toml` | Copied into the container's `/home/agent/.kimi-code/config.toml` before Kimi starts. This is not the OAuth token store, but Kimi's login flow writes the OAuth-backed provider, model, and service references here. A newly generated default config is empty and would not know which logged-in provider to use. |
 | `~/.kimi-code/credentials/` | Copied into the container's `/home/agent/.kimi-code/credentials/` before Kimi starts. This directory contains the OAuth token files. |
 | `~/.kimi-code/device_id` | Copied into the container's `/home/agent/.kimi-code/device_id` before Kimi starts. Kimi includes this device id in OAuth/device headers. |
 
-jackin' reads those host files but does not write back to them. If Kimi rotates or creates auth state inside the container, that state stays in jackin-managed instance storage for that container.
+jackin❯ reads those host files but does not write back to them. If Kimi rotates or creates auth state inside the container, that state stays in jackin-managed instance storage for that container.
 
 ## Runtime trust prompts
 
-jackin' launches Kimi with `--yolo`, so workspace-backed launches auto-approve Kimi actions instead of stopping on approval prompts. This applies only inside the jackin' container runtime; jackin' does not write Kimi settings on the host.
+jackin❯ launches Kimi with `--yolo`, so workspace-backed launches auto-approve Kimi actions instead of stopping on approval prompts. This applies only inside the jackin❯ container runtime; jackin❯ does not write Kimi settings on the host.
 
 ## Models
 
@@ -43,7 +43,7 @@ Role authors can set a Kimi model in `jackin.role.toml`:
 model = "kimi-k2"
 ```
 
-When a model is set, jackin' passes it to Kimi with `--model` at launch time. If the role omits a model, Kimi uses its own default model selection.
+When a model is set, jackin❯ passes it to Kimi with `--model` at launch time. If the role omits a model, Kimi uses its own default model selection.
 
 ## Modes available
 
@@ -54,7 +54,7 @@ When a model is set, jackin' passes it to Kimi with `--model` at launch time. If
 | `oauth_token` | No — rejected at config time |
 | `ignore` | Yes — no forwarding |
 
-In `api_key` mode, jackin' removes any previously synced Kimi files from the auth handoff state and launches Kimi with `KIMI_API_KEY` from your operator env vars. In `ignore` mode, jackin' removes the handoff state and forwards nothing.
+In `api_key` mode, jackin❯ removes any previously synced Kimi files from the auth handoff state and launches Kimi with `KIMI_API_KEY` from your operator env vars. In `ignore` mode, jackin❯ removes the handoff state and forwards nothing.
 
 See [Agent Authentication](/guides/authentication/agents/) for what each mode does and how to switch between them.
 

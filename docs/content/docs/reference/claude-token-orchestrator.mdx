@@ -192,7 +192,7 @@ The `--reuse` setup path does **not** write a stamp. jackin did not mint the tok
 2. If the slot holds an `op://` reference, resolve through `op read`. The resolution failure is wrapped with the resolved path so the operator's terminal output matches what they see in 1P.
 3. SHA-256-prefix the resolved value and emit it in the report so the operator can confirm the slot points at the item they expect.
 
-Doctor is the right tool to run after the launch banner says "API Error: 401 Unauthorized": doctor will return `Ok` if the slot plumbs cleanly, which means the token itself is invalid upstream (rotated externally, manually revoked); doctor will return `Err` if jackin' wiring is the problem.
+Doctor is the right tool to run after the launch banner says "API Error: 401 Unauthorized": doctor will return `Ok` if the slot plumbs cleanly, which means the token itself is invalid upstream (rotated externally, manually revoked); doctor will return `Err` if jackin❯ wiring is the problem.
 
 ## Test injection seams
 

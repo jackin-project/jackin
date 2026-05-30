@@ -8,14 +8,14 @@ This page is **for role authors** — a step-by-step walkthrough of
 creating your own role repository. Role authoring is a normal
 user-facing activity (a developer building a backend-engineer,
 docs-writer, or security-reviewer role with their preferred
-toolchain and plugins) — you do not need to know how jackin' is
+toolchain and plugins) — you do not need to know how jackin❯ is
 implemented to follow it. If you only want to *load* existing
 roles, see the [Operator Guide](/guides/workspaces/) instead.
 </Aside>
 
 ## Overview
 
-Creating a custom agent lets you define a specialized environment for a specific type of work. A Rust agent includes the Rust toolchain. A Python data science agent includes Jupyter, pandas, and scipy. You define the tools — jackin' handles the rest.
+Creating a custom agent lets you define a specialized environment for a specific type of work. A Rust agent includes the Rust toolchain. A Python data science agent includes Jupyter, pandas, and scipy. You define the tools — jackin❯ handles the rest.
 
 ## Step by step
 
@@ -27,7 +27,7 @@ Creating a custom agent lets you define a specialized environment for a specific
    cd "$HOME/Projects/chainargos/jackin-rustacean"
    ```
 
-   The generated repository includes a minimal manifest, Dockerfile, README, ignore files, and a validation workflow. jackin' lowercases the selector, so `ChainArgos/Rustacean` becomes `chainargos/rustacean`.
+   The generated repository includes a minimal manifest, Dockerfile, README, ignore files, and a validation workflow. jackin❯ lowercases the selector, so `ChainArgos/Rustacean` becomes `chainargos/rustacean`.
 
 2. **Edit the Dockerfile**
 
@@ -220,7 +220,7 @@ The fastest way to test is to load it:
 jackin load your-agent-name --rebuild
 ```
 
-The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and refreshing agent install layers. Agent binaries are resolved and cached by jackin' on the host, so unchanged versions are copied into the build context instead of downloaded again. If jackin' cannot reach an agent's release metadata service but already has an executable cached for that agent, launch continues with the cached binary and records a warning in the diagnostics run.
+The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and refreshing agent install layers. Agent binaries are resolved and cached by jackin❯ on the host, so unchanged versions are copied into the build context instead of downloaded again. If jackin❯ cannot reach an agent's release metadata service but already has an executable cached for that agent, launch continues with the cached binary and records a warning in the diagnostics run.
 
 Use `--debug` to see raw Docker output if something goes wrong:
 
@@ -273,18 +273,18 @@ The recommended flow when reviewing someone else's role-repo PR:
 ### Testing your changes from a fork
 
 If you do not have write access to the upstream role repo, the
-standard fork-and-PR flow works without any extra jackin' configuration.
+standard fork-and-PR flow works without any extra jackin❯ configuration.
 On your **own** fork:
 
 1. Push the branch to your fork.
-2. Point jackin' at your fork as the role's source. The cleanest way
+2. Point jackin❯ at your fork as the role's source. The cleanest way
    is to give the role a namespaced selector that matches your fork
    (for example `your-org/your-role` resolving to
-   `https://github.com/your-org/jackin-your-role.git`); jackin'
+   `https://github.com/your-org/jackin-your-role.git`); jackin❯
    resolves the source from the selector. If you want the role's
    short name (`your-role`) to load from your fork instead of the
    upstream, use `jackin config trust grant <selector>` and any
-   selector-source helpers your jackin' release exposes — see the
+   selector-source helpers your jackin❯ release exposes — see the
    [Configuration File](/reference/configuration/) internals
    reference if you need the on-disk schema.
 3. Run `jackin load <role> --role-branch <branch> --rebuild`.
@@ -297,6 +297,6 @@ On your **own** fork:
 | Agent | Purpose | Repository |
 |---|---|---|
 | **Agent Smith** | Default general-purpose agent | [jackin-project/jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) |
-| **The Architect** | Rust development (used for jackin' itself) | [jackin-project/jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) |
+| **The Architect** | Rust development (used for jackin❯ itself) | [jackin-project/jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) |
 
 These repos are good starting points when creating your own agent. Agent Smith is intentionally minimal, while The Architect shows a more involved setup with Rust tooling and build dependencies.

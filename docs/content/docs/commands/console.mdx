@@ -4,7 +4,7 @@ description: "Interactive operator console"
 ---
 
 <Aside type="tip">
-The operator console is the **simplest and most convenient way to use jackin'** day-to-day, and the surface most operators stay on. The CLI is for the **advanced and very specific cases**: scripted one-liners, niche flags, automation, and behaviours the console deliberately does not expose.
+The operator console is the **simplest and most convenient way to use jackin❯** day-to-day, and the surface most operators stay on. The CLI is for the **advanced and very specific cases**: scripted one-liners, niche flags, automation, and behaviours the console deliberately does not expose.
 
 Today the console covers launching agents (the `load` flow), managing workspaces (`workspace`), editing per-workspace auth and env tables (`config` for those scopes), managing operator-level config through Settings, and common recovery actions for visible instances including shell access and new-session actions via `x` and `a`. The remaining CLI subcommands — `eject`, `exile`, and niche flags — are **not in the console yet** and live on the CLI for now; they will land in the console as the TUI grows feature by feature. There is no feature parity by design: niche flags continue to land on the CLI first.
 
@@ -21,7 +21,7 @@ Opens the operator console — an interactive terminal UI for picking a workspac
 
 Running `jackin` with no subcommand opens the same console when stdout is attached to an interactive terminal. On non-interactive shells (piped output, CI, very small terminals) bare `jackin` silently prints top-level help instead. `jackin console` makes the intent explicit and errors out when the terminal cannot host the TUI.
 
-The console is always the full experience and has no flags to scale it back: launches show the rich progress cockpit, and boundary rain follows the global jackin' instance lifecycle. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and plays on console entry when no jackin-managed role containers are running. The outro is also two screens — the decelerating warp, then the closing logo/time-in-construct caption — and plays only when the foreground session exits and no role containers remain. Starting or leaving a second concurrent instance does not play either boundary ritual because the operator is already inside the construct. `--debug` writes detailed evidence to the run diagnostics artifact instead of turning the screen into raw logs. Lower-level [`jackin load`](/commands/load/) uses the same rich launch cockpit.
+The console is always the full experience and has no flags to scale it back: launches show the rich progress cockpit, and boundary rain follows the global jackin❯ instance lifecycle. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and plays on console entry when no jackin-managed role containers are running. The outro is also two screens — the decelerating warp, then the closing logo/time-in-construct caption — and plays only when the foreground session exits and no role containers remain. Starting or leaving a second concurrent instance does not play either boundary ritual because the operator is already inside the construct. `--debug` writes detailed evidence to the run diagnostics artifact instead of turning the screen into raw logs. Lower-level [`jackin load`](/commands/load/) uses the same rich launch cockpit.
 
 For local visual QA, contributors can force boundary rituals with env vars rather than CLI flags; see [Launch Progress Surface](/reference/tui-design-decisions/#launch-progress-surface).
 
@@ -49,7 +49,7 @@ Every editor surface is reachable from the workspace manager list — you don't 
 
 ## When to reach for the CLI instead
 
-`jackin console` is the simplified, intuitive TUI for everyday workspace launches. [`jackin load`](/commands/load/) is the full-surface CLI — together with its neighbours (`hardline`, `eject`, `exile`, `purge`, `workspace`, `config`) it exposes every flag and capability jackin' offers.
+`jackin console` is the simplified, intuitive TUI for everyday workspace launches. [`jackin load`](/commands/load/) is the full-surface CLI — together with its neighbours (`hardline`, `eject`, `exile`, `purge`, `workspace`, `config`) it exposes every flag and capability jackin❯ offers.
 
 The console intentionally stays narrower. **New niche flags and detail-level options land on the CLI first, and sometimes exclusively.** The console surfaces only what fits into an intuitive flow — treat it as a fast path for the common cases, not as a visual alias for the CLI.
 
@@ -59,11 +59,11 @@ The console intentionally stays narrower. **New niche flags and detail-level opt
 | **Best for** | Exploring options, first-time setup, day-to-day launches | Scripting, repeatable workflows, feature-specific flags |
 | **Workspace selection** | Interactive picker | Explicit argument |
 | **Agent selection** | Interactive picker | Explicit argument |
-| **Feature surface** | Simplified — common flows only | Complete — every flag jackin' exposes |
+| **Feature surface** | Simplified — common flows only | Complete — every flag jackin❯ exposes |
 | **Where new niche flags land** | Rarely | First, and sometimes exclusively |
 
 For a deeper operator workflow around fresh instances versus multiple agent sessions inside one running instance, see [Parallel Agents](/guides/parallel-agents/).
 
 ## Running inside tmux
 
-If you run `jackin console` from within a tmux session on your host, your host tmux needs a small amount of configuration for agents to receive the correct keyboard and terminal experience — specifically `extended-keys always` so that Shift+Enter is not collapsed to plain Enter before it reaches the agent. (The container itself no longer uses tmux — agent sessions run inside an in-container multiplexer managed by jackin'.) See [Running inside tmux](/guides/tmux/) for the required host-side settings and an explanation of each one.
+If you run `jackin console` from within a tmux session on your host, your host tmux needs a small amount of configuration for agents to receive the correct keyboard and terminal experience — specifically `extended-keys always` so that Shift+Enter is not collapsed to plain Enter before it reaches the agent. (The container itself no longer uses tmux — agent sessions run inside an in-container multiplexer managed by jackin❯.) See [Running inside tmux](/guides/tmux/) for the required host-side settings and an explanation of each one.
