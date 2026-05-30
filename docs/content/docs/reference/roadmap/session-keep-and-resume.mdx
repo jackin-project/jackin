@@ -15,6 +15,8 @@ Two narrower problems compound it:
 - **There is no "keep to resume" outcome for a clean session.** Preservation only triggers when an isolated mount has uncommitted or unpushed Git state. A clean session you simply want to continue tomorrow has no button.
 - **The exit prompt that does exist is hard to read on degraded terminals.** The rich worktree-cleanup dialog now renders unconditionally (the plain-text fallback was removed), so a too-small or `TERM=dumb` terminal shows an unreadable surface for both the choice and its error popup.
 
+The mirror-image failure is just as damaging: a clean exit **leaves the per-instance data directory and its index entry behind forever.** `LoadCleanup::run` in <RepoFile path="src/runtime/launch.rs" /> removes the container, DinD sidecar, certs volume, and network, but never touches `~/.jackin/data/<container>/`, and it deliberately calls `keep_socket_dir()` so even the socket directory lingers. The instance is stamped `clean_exited` in `~/.jackin/data/instances.json` but the row is never removed. The result, observed live, is a data directory holding a dozen `jk-…-jackin-thearchitect/` folders and an `instances.json` still listing seven `clean_exited` instances whose containers are long gone, plus orphaned `.lock` siblings and stray `*.repo.lock` files. Every launch leaks; nothing reaps unless the operator remembers to run `jackin prune instances` by hand. A terminal outcome must clean up after itself — change the status, delete the filesystem state, and drop the index row — in the same exit path, not in a command the operator has to know exists.
+
 The fix is the flow the operator described: a clear, rich exit decision — keep this to resume, or clean it up — governed by a per-workspace policy, and a rich resume-or-new choice at the next launch that rebinds the same persisted instance so the conversation, plugins, and isolated worktree come back as they were.
 
 ## Goals
@@ -50,6 +52,10 @@ Findings from auditing the exit/restore path and the in-flight rich-dialog chang
 | F6 | Low | The non-interactive preserve path only `eprintln!`s; nothing records whether the operator *wanted* to keep versus jackin' merely *could not ask*. |
 | F7 | Low | The rich cleanup dialog renders unconditionally (`enter_dialog` skips the capability check) with no plain-text degrade; on a `<80×24` or `TERM=dumb` terminal both the choice and its error popup are unreadable. The popup's own render failure is swallowed (`let _ =`) with no `clog!`. |
 | F8 | Trivial | <RepoFile path="src/isolation/finalize.rs" /> cites a `worktree-cleanup-assessment.mdx` doc that does not exist; fold the policy table into this item or an internals page and fix the reference. |
+| F9 | High | A terminal exit leaks its data directory: `LoadCleanup::run` removes Docker resources but never `~/.jackin/data/<container>/`, so every clean exit accumulates a `jk-…/` folder. Reaping only ever happens if the operator runs `jackin prune instances` manually. |
+| F10 | High | The instance index row is never removed on a terminal outcome — `clean_exited` instances linger in `instances.json` indefinitely, so the index grows without bound and stale rows misrepresent what state still exists. |
+| F11 | Medium | Even the explicit purge path leaks the sibling `jk-…​.lock` file (orphaned locks with no matching directory are visible on disk), and unrelated `*.repo.lock` detritus is never swept. |
+| F12 | Medium | Stale `active` rows: instances whose container was removed externally keep `status: active` in the index, so neither prune nor restore treats them correctly — the index is never reconciled against live Docker state. |
 
 ## Proposed flow
 
@@ -111,14 +117,39 @@ The verify-and-acknowledge step is the same logic on both edges (discarding on e
 - The operator sees the concrete evidence — the `git status` file list and the list of branches ahead of their upstream — not just a count, and acknowledges it before jackin' reuses or discards the tree.
 - `clone` assessment must be specified and tested in its own right (F4), not inherited implicitly from worktree semantics.
 
+## Data-directory and index lifecycle (garbage collection)
+
+A terminal outcome must leave nothing behind; a kept outcome must leave exactly the data needed to resume. This is the inverse guarantee to "keep," and it is non-negotiable — the absence of it is the second half of the operator's instability.
+
+The required invariant, in order, whenever a session ends with **clean exit** (`ask` policy, nothing dirty), an explicit **clean up now**, or the **`clean`** policy:
+
+<Steps>
+
+1. Stamp the instance's terminal status in the manifest and index (so a crash mid-cleanup leaves an honest record).
+2. Remove the per-instance filesystem state: `~/.jackin/data/<container>/`, its sibling `<container>.lock`, and the socket directory `~/.jackin/sockets/<container>/`.
+3. Remove the instance's row from `~/.jackin/data/instances.json`.
+
+</Steps>
+
+Only **keep / resume-later** outcomes retain the directory and the index row (with a restorable status). Nothing else should ever leave a `jk-…/` folder or an index row on disk.
+
+<Aside type="tip">
+The mechanism already exists and must be reused, not reimplemented. `prune_instances` in <RepoFile path="src/runtime/cleanup.rs" /> already reaps `CleanExited | Superseded | FailedSetup | Purged` by calling `purge_container_filesystem` (removes the data directory) and `InstanceIndex::remove_many` (drops the index rows). The defect is purely that this runs only as the manual `jackin prune instances` command and is never invoked from the exit path. The fix is to call that same removal inline on a terminal outcome — per the project's reuse-before-writing rule, extend/route through the existing purge helpers rather than adding a parallel teardown in `LoadCleanup::run`.
+</Aside>
+
+Two supporting sweeps close the long tail:
+
+- **Lock and detritus reaping (F11).** Removing a data directory must also remove its `<container>.lock` sibling, and a launch-time sweep should drop orphaned `jk-…​.lock` files with no matching directory and stray `*.repo.lock` leftovers.
+- **Index reconciliation (F12).** On launch (or on a `jackin prune instances` run), reconcile each `active` row against live Docker state: an instance whose container no longer exists is downgraded to its true terminal status, which makes it eligible for the same reaping path instead of lingering as a false `active`.
+
 ## Phases
 
 - **Phase 0 — Exit-dialog hardening (this PR's area).** Restore a plain-text degrade when the terminal cannot render the rich surface, `clog!` the swallowed popup failure, and de-flicker the double alt-screen enter (F7).
-- **Phase 1 — Status model.** Make "keep to resume" a real `FinalizeDecision` outcome; promote kept instances (including clean ones) to a restore candidate; stop auto-deleting the worktree when the operator keeps (F1, F2). `instance.json` is **not** a versioned schema, so a new `InstanceStatus` variant needs no migration.
+- **Phase 1 — Status model and terminal cleanup.** Make "keep to resume" a real `FinalizeDecision` outcome; promote kept instances (including clean ones) to a restore candidate; stop auto-deleting the worktree when the operator keeps (F1, F2). Wire the terminal-outcome cleanup into the exit path so a clean/clean-up/`clean` exit removes the data directory, sibling lock, socket directory, and the `instances.json` row by routing through the existing `purge_container_filesystem` / `InstanceIndex::remove_many` helpers (F9, F10, F11). `instance.json` and the index are **not** versioned schemas, so a new `InstanceStatus` variant needs no migration.
 - **Phase 2 — Rich exit cockpit.** Move the exit decision onto the launch-progress surface; show dirty/unpushed detail with acknowledge (F3, F5, F6).
 - **Phase 3 — Per-workspace policy.** Add the `ask` / `keep` / `clean` setting with its full workspace-schema migration set and the `--keep` / `--clean` overrides.
 - **Phase 4 — Resume-or-new at launch.** Surface restorable sessions when selecting an agent; rebind the same instance; wire the verify-and-acknowledge step into re-materialisation.
-- **Phase 5 — Clone parity, tests, docs.** Specify and test clone assessment (F4); update [Parallel Agents](/guides/parallel-agents/) (operator), [Runtime Instance Model](/reference/runtime-instance-model/) (contributor), and [TUI Design Decisions](/reference/tui-design-decisions/); fix the stale doc reference (F8).
+- **Phase 5 — Clone parity, GC sweeps, tests, docs.** Specify and test clone assessment (F4); add the launch-time lock/detritus reaping and index reconciliation sweeps (F11, F12); update [Parallel Agents](/guides/parallel-agents/) (operator), [Runtime Instance Model](/reference/runtime-instance-model/) (contributor), and [TUI Design Decisions](/reference/tui-design-decisions/); fix the stale doc reference (F8).
 
 ## Open questions
 
