@@ -47,6 +47,19 @@ pub struct InitialProvider {
 /// Z.AI's Anthropic-compatible API base URL.
 pub const ZAI_BASE_URL: &str = "https://api.z.ai/api/anthropic";
 
+/// Z.AI default model mapping: Opus tier → GLM-5.1.
+pub const ZAI_DEFAULT_OPUS_MODEL: &str = "glm-5.1";
+
+/// Z.AI default model mapping: Sonnet tier → GLM-5-Turbo.
+pub const ZAI_DEFAULT_SONNET_MODEL: &str = "glm-5-turbo";
+
+/// Z.AI default model mapping: Haiku tier → GLM-4.5-Air.
+pub const ZAI_DEFAULT_HAIKU_MODEL: &str = "glm-4.5-air";
+
+/// Z.AI recommended API timeout (50 minutes) for long-running agent
+/// operations through the proxy.
+pub const ZAI_API_TIMEOUT_MS: &str = "3000000";
+
 /// API provider a Claude-compatible agent can be routed through. The
 /// single source of truth for provider labels, endpoints, and env
 /// redirection — the host console, the wire (`InitialProvider` /
@@ -85,20 +98,38 @@ impl Provider {
     }
 
     /// Env overrides that redirect the agent to this provider. Anthropic
-    /// needs none. Z.AI always sets the base URL and, when `token` is a
-    /// non-empty value, the auth token; callers without the resolved key
-    /// (the host launch path) pass `None` and the daemon backfills the
-    /// token from the container's `ZAI_API_KEY`.
+    /// needs none. Z.AI sets the base URL, auth token (when present),
+    /// model mapping vars (so Claude Code maps its internal model tiers
+    /// to the correct GLM names), a generous API timeout, and a flag to
+    /// suppress non-essential Anthropic telemetry that would fail through
+    /// the proxy.
     #[must_use]
     pub fn env_overrides(self, token: Option<&str>) -> Vec<(String, String)> {
         match self {
             Provider::Anthropic => Vec::new(),
             Provider::Zai => {
-                let mut env = Vec::with_capacity(2);
+                let mut env = Vec::with_capacity(7);
                 if let Some(token) = token.filter(|value| !value.is_empty()) {
                     env.push(("ANTHROPIC_AUTH_TOKEN".to_string(), token.to_string()));
                 }
                 env.push(("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()));
+                env.push((
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
+                    ZAI_DEFAULT_OPUS_MODEL.to_string(),
+                ));
+                env.push((
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+                    ZAI_DEFAULT_SONNET_MODEL.to_string(),
+                ));
+                env.push((
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
+                    ZAI_DEFAULT_HAIKU_MODEL.to_string(),
+                ));
+                env.push(("API_TIMEOUT_MS".to_string(), ZAI_API_TIMEOUT_MS.to_string()));
+                env.push((
+                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
+                    "1".to_string(),
+                ));
                 env
             }
         }
@@ -177,14 +208,50 @@ mod provider_tests {
             vec![
                 ("ANTHROPIC_AUTH_TOKEN".to_string(), "tok".to_string()),
                 ("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()),
+                (
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
+                    ZAI_DEFAULT_OPUS_MODEL.to_string()
+                ),
+                (
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+                    ZAI_DEFAULT_SONNET_MODEL.to_string()
+                ),
+                (
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
+                    ZAI_DEFAULT_HAIKU_MODEL.to_string()
+                ),
+                ("API_TIMEOUT_MS".to_string(), ZAI_API_TIMEOUT_MS.to_string()),
+                (
+                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
+                    "1".to_string()
+                ),
             ]
         );
         // None and empty both mean "daemon backfills the token from env":
-        // emit the base-url redirect but no token entry.
+        // emit the base-url redirect and model mapping but no token entry.
         for absent in [None, Some("")] {
             assert_eq!(
                 Provider::Zai.env_overrides(absent),
-                vec![("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string())]
+                vec![
+                    ("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()),
+                    (
+                        "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
+                        ZAI_DEFAULT_OPUS_MODEL.to_string()
+                    ),
+                    (
+                        "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+                        ZAI_DEFAULT_SONNET_MODEL.to_string()
+                    ),
+                    (
+                        "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
+                        ZAI_DEFAULT_HAIKU_MODEL.to_string()
+                    ),
+                    ("API_TIMEOUT_MS".to_string(), ZAI_API_TIMEOUT_MS.to_string()),
+                    (
+                        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
+                        "1".to_string()
+                    ),
+                ]
             );
         }
     }
@@ -196,6 +263,7 @@ mod provider_tests {
             vec![Provider::Anthropic, Provider::Zai]
         );
         assert!(Provider::available_for("claude", false).is_empty());
+        assert!(Provider::available_for("opencode", true).is_empty());
         assert!(Provider::available_for("codex", true).is_empty());
     }
 }
