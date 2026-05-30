@@ -8,9 +8,10 @@ use anyhow::{Context, Result};
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 const CACHE_TTL: std::time::Duration = std::time::Duration::from_hours(1);
+const KIMI_BASE_URL: &str = "https://cdn.kimi.com/kimi-code";
 
 #[derive(Debug, Clone)]
 pub struct AgentBinary {
@@ -31,9 +32,22 @@ pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRe
     if let Some(cached) = read_cached_release(paths, agent) {
         return Some(cached);
     }
-    let release = resolve_latest_release(agent).await.ok()?;
-    persist_release_cache(paths, &release);
-    Some(release)
+    match resolve_latest_release(agent).await {
+        Ok(release) => {
+            persist_release_cache(paths, &release);
+            Some(release)
+        }
+        Err(error) => {
+            record(
+                "warning",
+                &format!(
+                    "{} latest version lookup failed; using cached metadata if available: {error:#}",
+                    agent.slug()
+                ),
+            );
+            newest_cached_executable_release(paths, agent).map(|(_, release, _)| release)
+        }
+    }
 }
 
 pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<AgentBinary> {
@@ -65,15 +79,30 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         "agent_binary_resolve_started",
         &format!("{} latest release", agent.slug()),
     );
-    let release = resolve_latest_release(agent)
-        .await
-        .with_context(|| format!("resolving latest {} binary", agent.slug()))
-        .inspect_err(|error| {
+    let release = match resolve_latest_release(agent).await {
+        Ok(release) => release,
+        Err(error) => {
+            if let Some((_, fallback_release, fallback_path)) =
+                newest_cached_executable_release(paths, agent)
+            {
+                record(
+                    "warning",
+                    &format!(
+                        "{} latest version lookup failed; using cached {} binary at {}: {error:#}",
+                        agent.slug(),
+                        fallback_release.version,
+                        fallback_path.display()
+                    ),
+                );
+                return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
+            }
             record(
                 "agent_binary_failed",
                 &format!("{} resolve failed: {error:#}", agent.slug()),
             );
-        })?;
+            return Err(error).with_context(|| format!("resolving latest {} binary", agent.slug()));
+        }
+    };
     record(
         "agent_binary_resolved",
         &format!("{} {} from {}", agent.slug(), release.version, release.url),
@@ -210,7 +239,7 @@ async fn resolve_amp() -> Result<AgentRelease> {
 }
 
 async fn resolve_kimi() -> Result<AgentRelease> {
-    let base = "https://code.kimi.com/kimi-code";
+    let base = KIMI_BASE_URL;
     let version = fetch_text(&format!("{base}/latest"))
         .await?
         .trim()
@@ -476,6 +505,10 @@ fn version_metadata_path(paths: &JackinPaths, release: &AgentRelease) -> PathBuf
     cached_binary_path(paths, release).with_file_name("metadata.json")
 }
 
+fn read_release_file(path: &Path) -> Option<AgentRelease> {
+    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+}
+
 fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
     let path = metadata_cache_path(paths, agent);
     let metadata = std::fs::metadata(&path).ok()?;
@@ -483,7 +516,34 @@ fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease
     if std::time::SystemTime::now().duration_since(modified).ok()? >= CACHE_TTL {
         return None;
     }
-    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+    read_release_file(&path)
+}
+
+fn newest_cached_executable_release(
+    paths: &JackinPaths,
+    agent: Agent,
+) -> Option<(SystemTime, AgentRelease, PathBuf)> {
+    let root = paths.cache_dir.join("agent-binaries").join(agent.slug());
+    let arch_dir_name = format!("linux-{}", container_arch());
+    let mut candidates = Vec::new();
+    for version_entry in std::fs::read_dir(root).ok()?.flatten() {
+        let metadata_path = version_entry
+            .path()
+            .join(&arch_dir_name)
+            .join("metadata.json");
+        let Some(release) = read_release_file(&metadata_path).filter(|release| {
+            release.agent == agent && is_executable_file(&cached_binary_path(paths, release))
+        }) else {
+            continue;
+        };
+        let binary_path = cached_binary_path(paths, &release);
+        let modified = std::fs::metadata(&binary_path)
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        candidates.push((modified, release, binary_path));
+    }
+    candidates.sort_by_key(|(modified, _, _)| std::cmp::Reverse(*modified));
+    candidates.into_iter().next()
 }
 
 fn write_cached_release(paths: &JackinPaths, release: &AgentRelease) -> Result<()> {
@@ -649,10 +709,14 @@ mod tests {
     }
 
     fn release_fixture() -> AgentRelease {
+        release_fixture_for(Agent::Claude, "1.2.3")
+    }
+
+    fn release_fixture_for(agent: Agent, version: &str) -> AgentRelease {
         AgentRelease {
-            agent: Agent::Claude,
-            version: "1.2.3".to_string(),
-            url: "https://example.test/claude".to_string(),
+            agent,
+            version: version.to_string(),
+            url: format!("https://example.test/{}", agent.slug()),
             checksum: Some("abc".to_string()),
             archive_member: None,
         }
@@ -685,6 +749,73 @@ mod tests {
         let stale = std::time::SystemTime::now() - Duration::from_hours(2);
         filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(stale)).unwrap();
         assert!(read_cached_release(&paths, Agent::Claude).is_none());
+    }
+
+    #[test]
+    fn newest_cached_executable_release_reads_stale_version_sidecars() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        let older = release_fixture();
+        let newer = AgentRelease {
+            version: "1.2.4".to_string(),
+            url: "https://example.test/claude-newer".to_string(),
+            ..release_fixture()
+        };
+
+        write_version_release(&paths, &older).unwrap();
+        write_version_release(&paths, &newer).unwrap();
+        let older_binary = cached_binary_path(&paths, &older);
+        let newer_binary = cached_binary_path(&paths, &newer);
+        std::fs::write(&older_binary, b"older").unwrap();
+        std::fs::write(&newer_binary, b"newer").unwrap();
+        chmod_executable(&older_binary).unwrap();
+        chmod_executable(&newer_binary).unwrap();
+        filetime::set_file_mtime(
+            &older_binary,
+            filetime::FileTime::from_system_time(SystemTime::now() - Duration::from_secs(60)),
+        )
+        .unwrap();
+
+        let (_, release, path) =
+            newest_cached_executable_release(&paths, Agent::Claude).expect("cached fallback");
+        assert_eq!(release.version, newer.version);
+        assert_eq!(path, newer_binary);
+    }
+
+    #[test]
+    fn newest_cached_executable_release_works_for_every_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+
+        for &agent in Agent::ALL {
+            let release = release_fixture_for(agent, "9.9.9");
+            write_version_release(&paths, &release).unwrap();
+            let binary = cached_binary_path(&paths, &release);
+            std::fs::write(&binary, agent.slug()).unwrap();
+            chmod_executable(&binary).unwrap();
+
+            let (_, got, path) =
+                newest_cached_executable_release(&paths, agent).expect("cached fallback");
+            assert_eq!(got.agent, agent);
+            assert_eq!(got.version, release.version);
+            assert_eq!(path, binary);
+        }
+    }
+
+    #[test]
+    fn newest_cached_executable_release_ignores_non_executable_sidecars() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        let release = release_fixture();
+        write_version_release(&paths, &release).unwrap();
+        std::fs::write(cached_binary_path(&paths, &release), b"not executable").unwrap();
+
+        assert!(newest_cached_executable_release(&paths, Agent::Claude).is_none());
+    }
+
+    #[test]
+    fn kimi_resolver_uses_cdn_urls() {
+        assert_eq!(KIMI_BASE_URL, "https://cdn.kimi.com/kimi-code");
     }
 
     #[test]
