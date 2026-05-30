@@ -83,7 +83,7 @@ impl FinalizerPrompt for RichCleanupPrompt {
         worktree_path: &str,
         reason: PreservedReason,
     ) -> anyhow::Result<usize> {
-        rich_cleanup_prompt(container, worktree_path, reason)
+        Ok(rich_cleanup_prompt(container, worktree_path, reason))
     }
 }
 
@@ -92,11 +92,7 @@ impl FinalizerPrompt for RichCleanupPrompt {
 /// same backdrop, centering, hints, and key handling as every other launch
 /// dialog. Returns the option index: 0 = return to role, 1 = preserve,
 /// 2 = force-delete.
-fn rich_cleanup_prompt(
-    container: &str,
-    worktree_path: &str,
-    reason: PreservedReason,
-) -> anyhow::Result<usize> {
+fn rich_cleanup_prompt(container: &str, worktree_path: &str, reason: PreservedReason) -> usize {
     use crate::console::widgets::{LINK_BLUE, PHOSPHOR_DIM, WHITE};
 
     let reason_line = match reason {
@@ -129,7 +125,7 @@ fn rich_cleanup_prompt(
         &context,
         options,
     ) {
-        Ok(choice) => Ok(choice),
+        Ok(choice) => choice,
         Err(err) => {
             let reason_str = match reason {
                 PreservedReason::Dirty => "uncommitted changes",
@@ -142,7 +138,7 @@ fn rich_cleanup_prompt(
                 "Isolated Worktree Error",
                 &message,
             );
-            Ok(1)
+            1
         }
     }
 }

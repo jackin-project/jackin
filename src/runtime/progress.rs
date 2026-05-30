@@ -1061,7 +1061,7 @@ impl RichRenderer {
                 match state.handle_key(key) {
                     ModalOutcome::Cancel => return Ok(()),
                     ModalOutcome::Continue => {}
-                    ModalOutcome::Commit(_) => unreachable!("error popup never commits"),
+                    ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
                 }
             }
         }
@@ -2146,10 +2146,8 @@ const CONFIRM_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("focus"),
 ];
 
-const ERROR_POPUP_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter/Esc"),
-    HintSpan::Text("dismiss"),
-];
+const ERROR_POPUP_HINT: &[HintSpan<'static>] =
+    &[HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")];
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let w = width.min(area.width.saturating_sub(2));
@@ -2331,11 +2329,16 @@ mod tests {
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         let state = ErrorPopupState::new("Cleanup failed", "could not render the cleanup dialog");
 
-        terminal.draw(|frame| draw_error_popup(frame, &state)).unwrap();
+        terminal
+            .draw(|frame| draw_error_popup(frame, &state))
+            .unwrap();
 
         let rendered = format!("{:?}", terminal.backend().buffer());
         assert!(rendered.contains("Cleanup failed"), "{rendered}");
-        assert!(rendered.contains("could not render the cleanup dialog"), "{rendered}");
+        assert!(
+            rendered.contains("could not render the cleanup dialog"),
+            "{rendered}"
+        );
         assert!(rendered.contains("dismiss"), "{rendered}");
     }
 
