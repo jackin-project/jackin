@@ -43,11 +43,18 @@ unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 jackin-tui = { path = "../jackin-tui" }
 ratatui = { version = "0.30", features = ["unstable-widget-ref"] }
+# tui-term was evaluated for pane-body rendering (see ADR-004) but is
+# incompatible with our vt100 fork. The custom cell widget approach is used instead.
 
 [build-dependencies]
 jackin-build-meta = { path = "../jackin-build-meta" }
 
+[[bench]]
+name = "pane_body"
+harness = false
+
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "=3.27.0"
 
 [lints.rust]

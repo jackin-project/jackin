@@ -1,0 +1,63 @@
+---
+title: "ADR-004: Capsule pane-body rendering mechanism"
+---
+
+**Status**: Accepted  
+**Date**: 2026-05-30  
+**Deciders**: Operator + agent
+
+## Context
+
+The capsule multiplexer renders in-container terminal sessions (pane bodies) using a hand-rolled ANSI diff path (`PaneBodyCache`). As part of the TUI architecture roadmap, the capsule is moving to render chrome through Ratatui via a custom `SocketBackend`. The pane-body rendering requires a separate decision: how should `vt100::Screen` content be rendered into a Ratatui `Buffer`?
+
+Two approaches were evaluated:
+
+### Option A: tui-term
+
+The [`tui-term`](https://docs.rs/tui-term/) crate provides a `PseudoTerminal` widget that renders a `vt100::Screen` into a Ratatui `Buffer` by implementing the `Screen` trait.
+
+**Incompatibility discovered during evaluation**: tui-term 0.3.4 implements `Screen` for the crates.io `vt100::Screen` type. jackin-capsule uses a git fork (`donbeave/vt100-rust`) that adds `set_window_title`, `copy_to_clipboard`, `unhandled_csi`, and `set_window_icon_name` — hooks the multiplexer needs and that upstream has not yet merged. The different crate identities mean the tui-term `Screen` impl does not apply to the fork's `Screen` type at the Rust type level. Using tui-term would require either:
+1. Upstreaming the fork's patches to `doy/vt100-rust` and waiting for them to merge, or
+2. Maintaining a second `vt100` dependency (upstream + fork) with complicated re-exports.
+
+Both paths add friction and maintenance burden with no current timeline.
+
+### Option B: Custom cell widget
+
+A thin `Widget` impl that blits `vt100::Screen` cells directly into the Ratatui `Buffer`. No third-party dependency beyond Ratatui itself. Fully compatible with the vt100 fork today. A single file, ~30 lines of production code, using the same `vt100::Color` → `ratatui::style::Color` conversion the existing socket backend already handles.
+
+## Decision
+
+**Choose Option B (custom cell widget).**
+
+The tui-term incompatibility is a blocking constraint, not a preference. Option B delivers the same end state — pane bodies rendered inside the Ratatui `Buffer`, enabling `Buffer::diff` to handle the screen diff — with less dependency risk and no upstream coordination requirement.
+
+## Benchmark evidence
+
+The benchmark at <RepoFile path="crates/jackin-capsule/benches/pane_body.rs" /> compared the custom widget approach against the existing raw-ANSI baseline at 200 × 50 columns/rows (a representative full-screen pane):
+
+| Approach | Mean time (µs) | Throughput (Melem/s) |
+|---|---|---|
+| Custom widget (Ratatui) | 378 µs | 26.4 Melems/s |
+| Raw-ANSI baseline (current) | 118 µs | 85.1 Melems/s |
+
+The custom widget is ~3× slower than the raw-ANSI baseline. This overhead is acceptable because:
+
+1. **Ratatui's Buffer::diff eliminates redundant terminal writes**: the raw-ANSI baseline sends every changed character as a cursor-positioned escape sequence on every diff frame, while Ratatui tracks which cells changed between frames and only emits minimal output. At steady state (no changes), the Ratatui path emits nothing; the raw-ANSI path still scans the whole screen.
+
+2. **378 µs is well inside the 60 Hz budget**: the capsule targets a 16.7 ms frame budget. Even if pane rendering dominates, 378 µs leaves >97% of the frame budget for chrome, dialog, and I/O.
+
+3. **The benchmark covers a full 200 × 50 render**: real pane bodies are dirtier on input events and clean on idle; the amortized cost per operator keystroke is much lower than the per-frame number suggests.
+
+## Consequences
+
+- The custom cell widget approach (`CustomPaneBlit`) will be implemented as a standalone `Widget` in `crates/jackin-capsule/src/` (likely `pane_widget.rs`).
+- The existing `PaneBodyCache` row-diff path will be retired once the Ratatui frame lands for the full compositor.
+- tui-term will not be added as a dependency. If upstream vt100 gains the required hooks and tui-term compatibility is restored, this decision should be revisited.
+- The `tui-term = "0.3.4"` dependency added during evaluation will be removed from <RepoFile path="crates/jackin-capsule/Cargo.toml" />.
+
+## Run the benchmark
+
+```sh
+cargo bench -p jackin-capsule --bench pane_body
+```

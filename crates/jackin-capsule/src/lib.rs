@@ -20,6 +20,7 @@ pub mod protocol;
 pub mod render;
 pub mod runtime_setup;
 pub mod session;
+pub mod pane_widget;
 pub mod selection;
 pub mod socket;
 
