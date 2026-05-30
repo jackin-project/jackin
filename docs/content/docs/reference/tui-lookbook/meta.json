@@ -1,0 +1,13 @@
+{
+  "title": "TUI Lookbook",
+  "pages": [
+    "index",
+    "panel",
+    "button-strip",
+    "tab-strip",
+    "confirm-dialog",
+    "error-dialog",
+    "save-discard-dialog",
+    "status-popup"
+  ]
+}
