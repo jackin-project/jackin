@@ -185,7 +185,6 @@ fn bench_socket_backend_output(c: &mut Criterion) {
     use jackin_capsule::socket_backend::SocketBackend;
     use ratatui::Terminal;
     use ratatui::layout::Rect;
-    use ratatui::widgets::Widget as _;
 
     let parser = make_test_parser();
     let screen = parser.screen().clone();
