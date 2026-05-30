@@ -17,7 +17,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Lookbook: 14 stories, real `TestBackend`-backed SVG previews, CI drift check; `unstable-widget-ref` feature removed.
 - `insta` snapshot tests for 4 key render paths.
 
-**Open (Phase 5):** Full typed session spine — replacing `host_screen_owned` / `rich_surface_active` global atomics with explicit `TerminalSession` references threaded through `runtime/image.rs`, `runtime/attach.rs`, and `runtime/progress.rs`. `TerminalSession` already provides the typed ownership layer and manages the globals; the remaining work is eliminating the global reads from subsystems that currently call `crate::tui::host_screen_owned()` directly instead of receiving a reference.
+**Open (Phase 5):** Typed session spine further cleanup — `run_console` now accepts `parent_session: Option<&TerminalSession>` and uses `is_active()` instead of the global for its own screen-ownership decision. The `host_screen_owned` global still serves as the ambient query mechanism for subsystems that don't receive a session reference (`runtime/attach.rs` for `JACKIN_HOST_ALT_SCREEN`, `runtime/progress.rs`, `tui/animation.rs`, `docker.rs`, `operator_env.rs`). `TerminalSession` owns the terminal lifecycle and manages the global; eliminating the global entirely requires threading the reference through the full launch stack.
 
 ## Goal
 
