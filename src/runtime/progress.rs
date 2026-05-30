@@ -13,6 +13,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::console::widgets::confirm::{self, ConfirmState};
+use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::text_input::{self, TextInputState};
 use crate::console::widgets::{
@@ -531,15 +532,21 @@ pub fn prelaunch_select_choice(
 ///
 /// For callers that run after the launch progress surface has been torn down
 /// — the post-attach worktree-cleanup prompt. Enters its own rich surface (or
-/// draws into the host guard's screen when one is active); the caller is
-/// responsible for gating on terminal capability before calling.
+/// draws into the host guard's screen when one is active).
 pub fn standalone_select_with_context(
     title: &str,
     context: &[Line<'_>],
     items: Vec<String>,
 ) -> anyhow::Result<usize> {
-    let mut renderer = RichRenderer::enter(false)?;
+    let mut renderer = RichRenderer::enter_dialog(false)?;
     renderer.select_with_context(title, context, items)
+}
+
+/// Standalone error popup for launch-adjacent failures that need operator
+/// acknowledgement in the same rich surface.
+pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> {
+    let mut renderer = RichRenderer::enter_dialog(false)?;
+    renderer.error_popup(title, message)
 }
 
 fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, detail: &str) {
@@ -756,7 +763,11 @@ struct RichRenderer {
 }
 
 impl RichRenderer {
-    fn enter(no_motion: bool) -> anyhow::Result<Self> {
+    fn enter_with_check(
+        no_motion: bool,
+        terminal_check: impl FnOnce() -> anyhow::Result<()>,
+    ) -> anyhow::Result<Self> {
+        terminal_check()?;
         let mut stdout = std::io::stdout();
         // When the launch flow's host guard already owns the alternate screen,
         // draw into it; only enter it ourselves when running standalone.
@@ -779,6 +790,14 @@ impl RichRenderer {
             no_motion,
             rain: None,
         })
+    }
+
+    fn enter(no_motion: bool) -> anyhow::Result<Self> {
+        Self::enter_with_check(no_motion, require_rich_terminal)
+    }
+
+    fn enter_dialog(no_motion: bool) -> anyhow::Result<Self> {
+        Self::enter_with_check(no_motion, || Ok(()))
     }
 
     fn render(&mut self, view: &LaunchView, run_id: &str) -> anyhow::Result<()> {
@@ -846,6 +865,12 @@ impl RichRenderer {
     ) -> anyhow::Result<usize> {
         self.with_raw_mode("entering raw mode for cleanup picker", |renderer| {
             renderer.select_loop(title, context, items)
+        })
+    }
+
+    fn error_popup(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
+        self.with_raw_mode("entering raw mode for error popup", |renderer| {
+            renderer.error_popup_loop(title, message)
         })
     }
 
@@ -1016,6 +1041,31 @@ impl RichRenderer {
             }
         }
     }
+
+    fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let state = ErrorPopupState::new(title, message);
+        loop {
+            self.terminal
+                .draw(|frame| draw_error_popup(frame, &state))
+                .context("rendering launch error popup")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading error popup input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match state.handle_key(key) {
+                    ModalOutcome::Cancel => return Ok(()),
+                    ModalOutcome::Continue => {}
+                    ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
+                }
+            }
+        }
+    }
 }
 
 impl Drop for RichRenderer {
@@ -1032,19 +1082,7 @@ impl Drop for RichRenderer {
 }
 
 pub(crate) fn rich_terminal_supported() -> bool {
-    if !std::io::stdin().is_terminal()
-        || !std::io::stdout().is_terminal()
-        || !std::io::stderr().is_terminal()
-    {
-        return false;
-    }
-    if std::env::var_os("CI").is_some() {
-        return false;
-    }
-    if std::env::var("TERM").is_ok_and(|term| term == "dumb") {
-        return false;
-    }
-    crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
+    terminal_supports_rich_surface(true)
 }
 
 /// Bail with the canonical rich-terminal requirement message unless the
@@ -1058,6 +1096,22 @@ pub(crate) fn require_rich_terminal() -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+fn terminal_supports_rich_surface(require_stderr: bool) -> bool {
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+        return false;
+    }
+    if require_stderr && !std::io::stderr().is_terminal() {
+        return false;
+    }
+    if std::env::var_os("CI").is_some() {
+        return false;
+    }
+    if std::env::var("TERM").is_ok_and(|term| term == "dumb") {
+        return false;
+    }
+    crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
 }
 
 const STAGE_PULSE_PERIOD: usize = 12;
@@ -2032,6 +2086,12 @@ fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     crate::console::widgets::hints::render(frame, hint_area, CONFIRM_HINT);
 }
 
+fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
+    let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+    error_popup::render(frame, error_popup_rect(box_area, state), state);
+    crate::console::widgets::hints::render(frame, hint_area, ERROR_POPUP_HINT);
+}
+
 fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Rect {
     // Interior: filter row + spacer + one row per item, plus two borders; a
     // non-empty context block adds its line count plus a spacer.
@@ -2070,6 +2130,12 @@ fn text_prompt_rect(area: Rect) -> Rect {
 fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
     let width = area.width.saturating_mul(confirm::width_pct(state)) / 100;
     let height = confirm::required_height(state);
+    centered_rect(width, height, area)
+}
+
+fn error_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
+    let width = (area.width.saturating_mul(3) / 4).clamp(40, area.width.max(40));
+    let height = error_popup::required_height(state, width.saturating_sub(2), area.height);
     centered_rect(width, height, area)
 }
 
@@ -2112,6 +2178,9 @@ const CONFIRM_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Tab"),
     HintSpan::Text("focus"),
 ];
+
+const ERROR_POPUP_HINT: &[HintSpan<'static>] =
+    &[HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")];
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let w = width.min(area.width.saturating_sub(2));
@@ -2285,6 +2354,25 @@ mod tests {
         assert!(rendered.contains("acme/agent-jones"), "{rendered}");
         assert!(rendered.contains("jackin-agent-jones"), "{rendered}");
         assert!(rendered.contains('Y'), "{rendered}");
+    }
+
+    #[test]
+    fn error_popup_dialog_renders_title_and_message() {
+        let backend = TestBackend::new(100, 26);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let state = ErrorPopupState::new("Cleanup failed", "could not render the cleanup dialog");
+
+        terminal
+            .draw(|frame| draw_error_popup(frame, &state))
+            .unwrap();
+
+        let rendered = format!("{:?}", terminal.backend().buffer());
+        assert!(rendered.contains("Cleanup failed"), "{rendered}");
+        assert!(
+            rendered.contains("could not render the cleanup dialog"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("dismiss"), "{rendered}");
     }
 
     #[test]
