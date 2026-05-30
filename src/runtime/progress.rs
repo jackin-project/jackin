@@ -2540,14 +2540,10 @@ mod tests {
 
     #[test]
     fn faded_color_scales_rgb_channels() {
-        let faded = faded_color(PHOSPHOR_GREEN, 0.5);
-        let Color::Rgb(r, g, b) = faded else {
-            panic!("expected rgb color");
-        };
-        let Color::Rgb(or, og, ob) = PHOSPHOR_GREEN else {
-            panic!("expected rgb color");
-        };
-        assert!(r < or && g < og && b < ob, "RGB channels should be dimmed");
+        assert_eq!(
+            faded_color(Color::Rgb(100, 200, 50), 0.5),
+            Color::Rgb(50, 100, 25)
+        );
     }
 
     #[test]
