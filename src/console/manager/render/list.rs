@@ -22,7 +22,7 @@ use crate::config::AppConfig;
 pub(super) fn render_list_body(
     frame: &mut Frame,
     area: Rect,
-    state: &mut ManagerState<'_>,
+    state: &ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
@@ -273,7 +273,7 @@ fn render_list_names_block(
     area: Rect,
     lines: Vec<Line<'static>>,
     content_width: usize,
-    state: &mut ManagerState<'_>,
+    state: &ManagerState<'_>,
 ) {
     let content_height = lines.len();
     let viewport_w = super::scroll_viewport_width(area);
@@ -290,7 +290,6 @@ fn render_list_names_block(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    super::clamp_scroll_x(content_width, viewport_w, &mut state.list_names_scroll_x);
     let visible_rows = usize::from(inner.height).min(content_height);
     for (row_idx, line) in lines.into_iter().take(visible_rows).enumerate() {
         render_list_name_line(
@@ -937,7 +936,7 @@ fn render_sidebar_body(
     layout: &SidebarLayout,
     inputs: &SidebarInputs<'_>,
     config: &AppConfig,
-    state: &mut ManagerState<'_>,
+    state: &ManagerState<'_>,
 ) {
     if let Some(area) = layout.instances {
         render_compact_instances_summary(
@@ -954,8 +953,8 @@ fn render_sidebar_body(
         layout.mounts,
         inputs.mounts,
         &inputs.mount_info_cache,
-        &mut state.list_mounts_scroll_x,
-        &mut state.list_mounts_scroll_y,
+        state.list_mounts_scroll_x,
+        state.list_mounts_scroll_y,
         ws_focused,
     );
     if layout.global.is_some() || layout.role_global.is_some() {
@@ -967,8 +966,8 @@ fn render_sidebar_body(
                 area,
                 " Global mounts ",
                 &global_rows,
-                &mut state.list_global_mounts_scroll_x,
-                &mut state.list_global_mounts_scroll_y,
+                state.list_global_mounts_scroll_x,
+                state.list_global_mounts_scroll_y,
                 global_focused == Some(MountScrollFocus::Global),
             );
         }
@@ -979,8 +978,8 @@ fn render_sidebar_body(
                 area,
                 &title,
                 &role_global_rows,
-                &mut state.list_role_global_mounts_scroll_x,
-                &mut state.list_role_global_mounts_scroll_y,
+                state.list_role_global_mounts_scroll_x,
+                state.list_role_global_mounts_scroll_y,
                 global_focused == Some(MountScrollFocus::RoleGlobal),
             );
         }
@@ -995,8 +994,8 @@ fn render_sidebar_body(
             area,
             inputs.ws_config,
             config,
-            &mut state.list_roles_scroll_x,
-            &mut state.list_roles_scroll_y,
+            state.list_roles_scroll_x,
+            state.list_roles_scroll_y,
             roles_focused,
         );
     }
@@ -1008,7 +1007,7 @@ fn render_details_pane(
     _ws_idx: usize,
     ws: &WorkspaceSummary,
     config: &AppConfig,
-    state: &mut ManagerState<'_>,
+    state: &ManagerState<'_>,
 ) {
     let inputs = sidebar_inputs_for_workspace(ws, config, state);
     let layout = compute_sidebar_layout(area, &inputs);
@@ -1137,7 +1136,7 @@ fn render_current_dir_details_pane(
     area: Rect,
     cwd: &std::path::Path,
     config: &AppConfig,
-    state: &mut ManagerState<'_>,
+    state: &ManagerState<'_>,
 ) {
     let cwd_str = cwd.display().to_string();
     let mounts = [crate::workspace::MountConfig {
@@ -1456,8 +1455,8 @@ fn render_mounts_subpanel(
     area: Rect,
     mounts: &[crate::workspace::MountConfig],
     cache: &MountInfoCache,
-    scroll_x: &mut u16,
-    scroll_y: &mut u16,
+    scroll_x: u16,
+    scroll_y: u16,
     focused: bool,
 ) {
     let mut lines: Vec<Line> = Vec::new();
@@ -1473,7 +1472,7 @@ fn render_mounts_subpanel(
         lines.push(render_mount_header(path_w));
         lines.extend(render_mount_lines(&rows, path_w));
     }
-    super::render_scrollable_block(
+    super::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -1489,8 +1488,8 @@ fn render_global_mount_rows_section(
     area: Rect,
     title: &str,
     rows: &[&crate::config::GlobalMountRow],
-    scroll_x: &mut u16,
-    scroll_y: &mut u16,
+    scroll_x: u16,
+    scroll_y: u16,
     focused: bool,
 ) {
     let mut lines = Vec::new();
@@ -1509,7 +1508,7 @@ fn render_global_mount_rows_section(
         lines.push(render_global_mount_header(path_w));
         lines.extend(render_global_mount_lines(&display_rows, path_w));
     }
-    super::render_scrollable_block(frame, area, lines, scroll_x, scroll_y, focused, Some(title));
+    super::render_scrollable_block_at(frame, area, lines, scroll_x, scroll_y, focused, Some(title));
 }
 
 /// One row in the flat Environments preview list.
@@ -1660,7 +1659,7 @@ fn render_agents_subpanel(
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) {
-    render_agents_subpanel_scrollable(frame, area, ws_config, config, &mut 0, &mut 0, false);
+    render_agents_subpanel_scrollable(frame, area, ws_config, config, 0, 0, false);
 }
 
 fn render_agents_subpanel_scrollable(
@@ -1668,8 +1667,8 @@ fn render_agents_subpanel_scrollable(
     area: Rect,
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
-    scroll_x: &mut u16,
-    scroll_y: &mut u16,
+    scroll_x: u16,
+    scroll_y: u16,
     focused: bool,
 ) {
     let allowed = ws_config.map_or(&[][..], |w| w.allowed_roles.as_slice());
@@ -1721,7 +1720,7 @@ fn render_agents_subpanel_scrollable(
         }
         lines.push(Line::from(spans));
     }
-    super::render_scrollable_block(
+    super::render_scrollable_block_at(
         frame,
         area,
         lines,
@@ -1806,13 +1805,19 @@ mod list_name_scroll_tests {
 
         let backend = TestBackend::new(70, 24);
         let mut terminal = Terminal::new(backend).unwrap();
+        super::super::clamp_list_scroll_for_area(
+            Rect::new(0, 0, 70, 24),
+            &mut state,
+            &config,
+            tmp.path(),
+        );
 
         terminal
             .draw(|frame| {
                 render_list_body(
                     frame,
                     Rect::new(0, 0, 70, 24),
-                    &mut state,
+                    &state,
                     &config,
                     tmp.path(),
                 );
@@ -2334,8 +2339,8 @@ mod subpanel_padding_tests {
                 Rect::new(0, 0, 40, 4),
                 &[],
                 &cache,
-                &mut 0,
-                &mut 0,
+                0,
+                0,
                 false,
             );
         })

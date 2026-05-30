@@ -29,7 +29,7 @@ pub(in crate::console::manager) use crate::console::widgets::scrollable::{
 };
 pub(super) use crate::console::widgets::scrollable::{
     line_width, max_line_width, render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll,
-    render_scrollable_block, render_scrollable_block_at, render_vertical_scrollbar,
+    render_scrollable_block_at, render_vertical_scrollbar,
 };
 pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
@@ -166,14 +166,14 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
 #[allow(clippy::too_many_lines)]
 pub fn render(
     frame: &mut Frame,
-    state: &mut ManagerState<'_>,
+    state: &ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
     let area = frame.area();
-    if let ManagerStage::Editor(editor) = &mut state.stage {
+    if let ManagerStage::Editor(editor) = &state.stage {
         editor::render_editor(frame, editor, config, state.op_available);
-    } else if let ManagerStage::Settings(settings) = &mut state.stage {
+    } else if let ManagerStage::Settings(settings) = &state.stage {
         global_mounts::render_settings(frame, settings, state.op_available);
     } else {
         let chunks = Layout::default()
