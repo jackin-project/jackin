@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and the lookbook remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and the lookbook remain open.
 
 ## Goal
 
@@ -566,7 +566,7 @@ The async-first principle becomes actionable as a concrete list. Every site belo
 
 The launch cockpit now has a background render task in <RepoFile path="src/runtime/progress.rs" />. It ticks every ~33 ms, snapshots a shared `LaunchView`, drains cockpit-local input, and draws the Ratatui frame while <RepoFile path="src/runtime/launch.rs" /> awaits Docker/network/workspace futures. `LaunchProgress::while_waiting` is now deliberately a thin await wrapper because the renderer no longer needs each launch step to interleave drawing manually. That means the old "wrap every step in a select loop" plan is stale.
 
-The remaining migration target is different: fold the cockpit's parallel mini-app into the same app-level message/effect architecture as the console. Launch stage mutations become messages; forced-choice pickers and failure acknowledgement become effects/input states; the background render task becomes the shared animation-tick source instead of a launch-only thread. Any synchronous work that still runs before `LaunchProgress::new`, between stage mutations, or during rich-surface input handling must move behind effects so the cockpit and future shared session stay responsive.
+The remaining migration target is different: fold the cockpit's parallel mini-app into the same app-level message/effect architecture as the console. Launch stage mutations now have an initial `LaunchMessage` boundary in <RepoFile path="src/runtime/progress.rs" />; forced-choice pickers and failure acknowledgement still need to become effects/input states, and the background render task still needs to become the shared animation-tick source instead of a launch-only thread. Any synchronous work that still runs before `LaunchProgress::new`, between stage mutations, or during rich-surface input handling must move behind effects so the cockpit and future shared session stay responsive.
 
 **Synchronous `std::thread::sleep` on render-adjacent paths** — each should become `tokio::time::sleep`, an interval tick, or move off the render task:
 
@@ -781,7 +781,7 @@ The phases below describe the long-range order. For `/goal` execution, use slice
 | Host pure-view pass | host message boundary | Remove `&mut` and I/O from one renderer family at a time | The renderer under migration accepts immutable model/UI state and cannot stat the filesystem or mutate scroll geometry during draw. |
 | Host async refresh | host message boundary | Move one blocking refresh source at a time (`mount_info`, instances, 1Password, snapshot fan-out) behind effects/subscriptions | Slow work reports back as messages; redraw/input remain live while the work runs. |
 | Shared primitive extraction | token/geometry promotion | Promote one primitive (`HintBar`, `ButtonStrip`, `ScrollablePanel`, `TabStrip`, etc.) into `jackin-tui` | Host/launch use the shared primitive; snapshots prove unchanged output. |
-| Launch consolidation | host message boundary, shared primitives | Replace launch-private widget/runtime seams with app messages/effects and `jackin-tui` components | `src/runtime` no longer imports `src/console/widgets`; launch stage updates are messages/effects. |
+| Launch consolidation | host message boundary, shared primitives | Replace launch-private widget/runtime seams with app messages/effects and `jackin-tui` components | `src/runtime` no longer imports `src/console/widgets`; launch stage updates are messages, with picker/failure effects still pending. |
 | Terminal session spine | host message boundary, launch consolidation | Replace global rich-surface/host-screen coordination with typed `TerminalSession` ownership | Console → launch → capsule still handoffs cleanly; diagnostics/debug routing and panic-safe restore still work. |
 | Capsule action/mode split | none | `MuxMode`, generalized `Action`, daemon module split, dispatch/dialog tests | Input dispatch is testable without a live PTY and invalid mode combinations are unrepresentable. |
 | Capsule Ratatui frame | capsule action/mode split, shared primitives | Custom Ratatui backend over attach socket; chrome/dialogs/pickers rendered as shared widgets | Raw ANSI chrome copies are deleted; pane-body rendering remains the only measured choice. |

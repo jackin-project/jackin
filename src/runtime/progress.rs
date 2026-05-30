@@ -165,6 +165,19 @@ pub struct LaunchFailure {
     pub command_output_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+enum LaunchMessage {
+    Started(LaunchIdentity),
+    IdentityUpdated(LaunchIdentity),
+    StageStatus {
+        stage: LaunchStage,
+        status: StageStatus,
+        detail: String,
+        set_activity: bool,
+    },
+    StageFailed(LaunchFailure),
+}
+
 #[derive(Debug, Clone, Copy)]
 struct StageLabelTransition {
     from: usize,
@@ -279,6 +292,40 @@ fn initial_view() -> LaunchView {
     }
 }
 
+fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) {
+    match msg {
+        LaunchMessage::Started(identity) => {
+            let preposition = identity.target_kind.launch_preposition();
+            view.status = format!("loading {} {preposition}", identity.role);
+            view.identity = Some(identity);
+        }
+        LaunchMessage::IdentityUpdated(identity) => {
+            view.identity = Some(identity);
+        }
+        LaunchMessage::StageStatus {
+            stage,
+            status,
+            detail,
+            set_activity,
+        } => {
+            update_stage(view, stage, status, &detail);
+            if set_activity {
+                view.status = detail;
+            }
+        }
+        LaunchMessage::StageFailed(failure) => {
+            let stage = failure.stage;
+            let summary = failure.summary.clone();
+            update_stage(view, stage, StageStatus::Failed, &summary);
+            view.status = summary;
+            view.failure_ack = false;
+            view.failure_copy_hover = None;
+            view.failure_copied = None;
+            view.failure = Some(failure);
+        }
+    }
+}
+
 impl LaunchProgress {
     pub fn new(diagnostics: Arc<RunDiagnostics>, no_motion: bool) -> anyhow::Result<Self> {
         require_rich_terminal()?;
@@ -317,12 +364,12 @@ impl LaunchProgress {
         }
     }
 
+    fn update_view(&self, msg: LaunchMessage) {
+        self.with_view(|view| update_launch_view(view, msg));
+    }
+
     pub fn started(&mut self, identity: LaunchIdentity) {
-        let preposition = identity.target_kind.launch_preposition();
-        self.with_view(|v| {
-            v.status = format!("loading {} {preposition}", identity.role);
-            v.identity = Some(identity);
-        });
+        self.update_view(LaunchMessage::Started(identity));
         self.diagnostics.compact(
             "launch_started",
             &format!("diagnostics: run {}", self.run_id()),
@@ -330,14 +377,16 @@ impl LaunchProgress {
     }
 
     pub fn update_identity(&mut self, identity: LaunchIdentity) {
-        self.with_view(|v| v.identity = Some(identity));
+        self.update_view(LaunchMessage::IdentityUpdated(identity));
     }
 
     pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
         let detail = detail.into();
-        self.with_view(|v| {
-            update_stage(v, stage, StageStatus::Running, &detail);
-            v.status.clone_from(&detail);
+        self.update_view(LaunchMessage::StageStatus {
+            stage,
+            status: StageStatus::Running,
+            detail: detail.clone(),
+            set_activity: true,
         });
         self.diagnostics
             .stage("stage_started", stage.label(), &detail, None);
@@ -345,9 +394,11 @@ impl LaunchProgress {
 
     pub fn stage_progress(&mut self, stage: LaunchStage, detail: impl Into<String>) {
         let detail = detail.into();
-        self.with_view(|v| {
-            update_stage(v, stage, StageStatus::Running, &detail);
-            v.status.clone_from(&detail);
+        self.update_view(LaunchMessage::StageStatus {
+            stage,
+            status: StageStatus::Running,
+            detail: detail.clone(),
+            set_activity: true,
         });
         self.diagnostics
             .stage("stage_progress", stage.label(), &detail, None);
@@ -355,14 +406,24 @@ impl LaunchProgress {
 
     pub fn stage_done(&mut self, stage: LaunchStage, detail: impl Into<String>) {
         let detail = detail.into();
-        self.with_view(|v| update_stage(v, stage, StageStatus::Done, &detail));
+        self.update_view(LaunchMessage::StageStatus {
+            stage,
+            status: StageStatus::Done,
+            detail: detail.clone(),
+            set_activity: false,
+        });
         self.diagnostics
             .stage("stage_done", stage.label(), &detail, None);
     }
 
     pub fn stage_skipped(&mut self, stage: LaunchStage, reason: impl Into<String>) {
         let reason = reason.into();
-        self.with_view(|v| update_stage(v, stage, StageStatus::Skipped, &reason));
+        self.update_view(LaunchMessage::StageStatus {
+            stage,
+            status: StageStatus::Skipped,
+            detail: reason.clone(),
+            set_activity: false,
+        });
         self.diagnostics
             .stage("stage_skipped", stage.label(), &reason, None);
     }
@@ -379,14 +440,7 @@ impl LaunchProgress {
                 failure.command_output_path = Some(docker_output);
             }
         }
-        self.with_view(|v| {
-            update_stage(v, stage, StageStatus::Failed, &summary);
-            v.status.clone_from(&summary);
-            v.failure_ack = false;
-            v.failure_copy_hover = None;
-            v.failure_copied = None;
-            v.failure = Some(failure);
-        });
+        self.update_view(LaunchMessage::StageFailed(failure));
         self.diagnostics.stage(
             "stage_failed",
             stage.label(),
