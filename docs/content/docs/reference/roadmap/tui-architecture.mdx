@@ -151,7 +151,7 @@ The codebase is not starting from zero. The useful shape already exists in fragm
 | <RepoFile path="src/console/widgets/confirm.rs" />, <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | confirm dialog, default focus, button strip | one `ConfirmDialog` with `severity`, `body`, `default_focus`, and `trust_variant` props |
 | <RepoFile path="src/console/widgets/text_input.rs" />, <RepoFile path="crates/jackin-tui/src/lib.rs" /> | text-entry model plus rendered dialog | consolidate on `TextField` + Ratatui `TextInputDialog`; retire `ratatui-textarea` unless a feature gap remains |
 | <RepoFile path="src/console/widgets/scrollable.rs" /> | scroll math, selected-line render helpers, proportional scrollbars | `ScrollablePanel`, `Scrollbar`, and shared clamp/update helpers |
-| <RepoFile path="src/console/widgets/hints.rs" />, <RepoFile path="src/console/widgets/status_bar.rs" />, <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> | footer hints, status bars, tab/chrome tokens | `HintBar`, `StatusFooter`, `TabStrip`, `BrandHeader` |
+| <RepoFile path="src/console/widgets/hints.rs" />, <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" />, <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> | footer hints, status bars, tab/chrome tokens | `HintBar`, `StatusFooter`, `TabStrip`, `BrandHeader` |
 | <RepoFile path="src/console/widgets/error_popup.rs" />, <RepoFile path="src/runtime/progress.rs" /> | error popup already reused by launch, but through console internals | move to `jackin-tui::components::ErrorDialog` |
 | <RepoFile path="src/console/widgets/file_browser/mod.rs" />, <RepoFile path="src/console/widgets/op_picker/mod.rs" />, <RepoFile path="src/console/widgets/auth_panel/mod.rs" /> | larger composed flows built from list, text input, status, footer, and modal primitives | keep app/domain state local; replace private drawing with shared primitives |
 
@@ -356,7 +356,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 | <RepoFile path="src/console/manager/input/mouse.rs" /> | ~2,200 | Mouse handling, seam-drag, scroll-focus |
 | <RepoFile path="src/console/widgets/scrollable.rs" /> | ~800 | `render_scrollable_block`, the one shared scrollable component, and all scroll math |
 | <RepoFile path="src/console/widgets/select_list.rs" /> | ~300 | Host Ratatui picker reused by launch progress, but still lives under `src/console/widgets` |
-| <RepoFile path="src/console/widgets/status_bar.rs" /> · <RepoFile path="src/console/widgets/hints.rs" /> | ~470 combined | Host footer/status primitives now reused by launch progress, proving the component seam but in the wrong crate |
+| <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" /> · <RepoFile path="src/console/widgets/hints.rs" /> | ~470 combined | Host footer/status primitives now reused by launch progress, proving the component seam; `StatusFooter` has moved into the shared crate while `hints.rs` remains a console compatibility facade |
 
 ### Anti-patterns vs. Ratatui best practice
 

@@ -1,17 +1,32 @@
-//! Shared TUI palette and tab-strip pattern used by both jackin's
-//! ratatui-based console (`src/console/`) and the in-container
-//! multiplexer (`crates/jackin-capsule/`). The two consumers
-//! produce different output formats — ratatui `Color` widgets vs
-//! raw ANSI bytes — so this crate keeps the cross-cutting bits at
-//! the lowest common denominator: plain RGB triples for colours and
-//! a struct describing a single tab cell. Each consumer adapts the
-//! struct to its own renderer.
+//! Shared TUI tokens, models, and components used by jackin's
+//! terminal surfaces.
 //!
-//! Adding direct renderer-specific code here would force a
-//! dependency choice (ratatui vs raw ANSI) that doesn't belong in a
-//! shared crate. Keep the surface narrow.
+//! Backend-neutral types such as RGB tokens, tab-cell layout, hint
+//! spans, text-field state, and scroll metrics stay at the crate
+//! root or in small helper modules. Ratatui components live under
+//! [`components`], with color adapters in [`theme`]. Surface crates
+//! own domain state and compose these pieces instead of re-declaring
+//! palette values or reimplementing visual primitives.
 
+pub mod components;
 pub mod scroll;
+pub mod theme;
+
+/// Outcome of a modal or component event-handling cycle.
+///
+/// Surface-specific state machines use this to decide whether to keep a
+/// component open, commit its value, or cancel the interaction. Keeping the
+/// type in `jackin-tui` lets host, launch, and capsule components share the
+/// same update contract without depending on one surface's widget module.
+#[derive(Debug, Clone)]
+pub enum ModalOutcome<T> {
+    /// User is still interacting with the component.
+    Continue,
+    /// User committed with this value.
+    Commit(T),
+    /// User cancelled the interaction.
+    Cancel,
+}
 
 /// Three-byte RGB triple. Constructors below are the canonical
 /// phosphor palette used everywhere a jackin TUI surface needs to

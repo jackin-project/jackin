@@ -17,11 +17,12 @@ use crate::console::widgets::error_popup::{self, ErrorPopupState};
 use crate::console::widgets::select_list::{self, SelectListState};
 use crate::console::widgets::text_input::{self, TextInputState};
 use crate::console::widgets::{
-    DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, ModalOutcome, PHOSPHOR_DARK,
-    PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+    DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
+    PHOSPHOR_GREEN, WHITE,
 };
 use crate::diagnostics::RunDiagnostics;
-use jackin_tui::HintSpan;
+use jackin_tui::components::{render_hint_bar, render_status_footer};
+use jackin_tui::{HintSpan, ModalOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum LaunchStage {
@@ -1599,7 +1600,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &
     // gradually with the rain rather than popping in.
     #[allow(clippy::cast_precision_loss)]
     let alpha = (view.frame as f32 / 30.0).min(1.0);
-    crate::console::widgets::status_bar::render(
+    render_status_footer(
         frame,
         area,
         &format_activity(&view.status),
@@ -1869,7 +1870,7 @@ fn render_failure_popup(
         width: area.width,
         height: 1,
     };
-    crate::console::widgets::hints::render(frame, hint_row, FAILURE_HINT);
+    render_hint_bar(frame, hint_row, FAILURE_HINT);
 }
 
 /// Footer-hint keys for the launch failure popup (dismiss only).
@@ -1972,7 +1973,7 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
         Some(title),
     );
 
-    crate::console::widgets::hints::render(frame, hint_area, BUILD_LOG_HINT);
+    render_hint_bar(frame, hint_area, BUILD_LOG_HINT);
 }
 
 const BUILD_LOG_WRAP_PREFIX: &str = "↳ ";
@@ -2071,25 +2072,25 @@ fn draw_select(frame: &mut Frame<'_>, title: &str, context: &[Line<'_>], picker:
         title,
         context,
     );
-    crate::console::widgets::hints::render(frame, hint_area, PICKER_HINT);
+    render_hint_bar(frame, hint_area, PICKER_HINT);
 }
 
 fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable: bool) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     text_input::render(frame, text_prompt_rect(box_area), input);
-    crate::console::widgets::hints::render(frame, hint_area, text_prompt_hint(skippable));
+    render_hint_bar(frame, hint_area, text_prompt_hint(skippable));
 }
 
 fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     confirm::render(frame, confirm_rect(box_area, state), state);
-    crate::console::widgets::hints::render(frame, hint_area, CONFIRM_HINT);
+    render_hint_bar(frame, hint_area, CONFIRM_HINT);
 }
 
 fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     error_popup::render(frame, error_popup_rect(box_area, state), state);
-    crate::console::widgets::hints::render(frame, hint_area, ERROR_POPUP_HINT);
+    render_hint_bar(frame, hint_area, ERROR_POPUP_HINT);
 }
 
 fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Rect {

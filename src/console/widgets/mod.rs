@@ -7,137 +7,20 @@
 //! exposes only a single shared `dir_style`). All are consumed by both
 //! the manager (PR 2) and the Secrets tab (PR 3).
 
-use jackin_tui as tui_palette;
+pub(crate) use jackin_tui::ModalOutcome;
+pub(crate) use jackin_tui::theme::{
+    DANGER_RED, DIALOG_BACKDROP, DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, DIALOG_SURFACE,
+    INPUT_BG_DIM, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE,
+    TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER, WHITE,
+};
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::layout::Rect;
 
-/// Canonical phosphor-green palette used across every TUI surface.
-/// Sourced from the shared `jackin-tui` crate so the console TUI and
-/// the in-container multiplexer can't drift apart.
-pub(crate) const PHOSPHOR_GREEN: Color = Color::Rgb(
-    tui_palette::PHOSPHOR_GREEN.r,
-    tui_palette::PHOSPHOR_GREEN.g,
-    tui_palette::PHOSPHOR_GREEN.b,
-);
-pub(crate) const PHOSPHOR_DIM: Color = Color::Rgb(
-    tui_palette::PHOSPHOR_DIM.r,
-    tui_palette::PHOSPHOR_DIM.g,
-    tui_palette::PHOSPHOR_DIM.b,
-);
-pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(
-    tui_palette::PHOSPHOR_DARK.r,
-    tui_palette::PHOSPHOR_DARK.g,
-    tui_palette::PHOSPHOR_DARK.b,
-);
-pub(crate) const INPUT_BG_DIM: Color = Color::Rgb(
-    tui_palette::INPUT_BG_DIM.r,
-    tui_palette::INPUT_BG_DIM.g,
-    tui_palette::INPUT_BG_DIM.b,
-);
-pub(crate) const DIALOG_BACKDROP: Color = Color::Rgb(
-    tui_palette::DIALOG_BACKDROP.r,
-    tui_palette::DIALOG_BACKDROP.g,
-    tui_palette::DIALOG_BACKDROP.b,
-);
-pub(crate) const DIALOG_SURFACE: Color = Color::Rgb(
-    tui_palette::DIALOG_SURFACE.r,
-    tui_palette::DIALOG_SURFACE.g,
-    tui_palette::DIALOG_SURFACE.b,
-);
-pub(crate) const DIALOG_SCROLL_THUMB: Color = Color::Rgb(
-    tui_palette::DIALOG_SCROLL_THUMB.r,
-    tui_palette::DIALOG_SCROLL_THUMB.g,
-    tui_palette::DIALOG_SCROLL_THUMB.b,
-);
-pub(crate) const DIALOG_SCROLL_TRACK: Color = Color::Rgb(
-    tui_palette::DIALOG_SCROLL_TRACK.r,
-    tui_palette::DIALOG_SCROLL_TRACK.g,
-    tui_palette::DIALOG_SCROLL_TRACK.b,
-);
-pub(crate) const WHITE: Color = Color::Rgb(
-    tui_palette::WHITE.r,
-    tui_palette::WHITE.g,
-    tui_palette::WHITE.b,
-);
-
-/// Tab-cell backgrounds, shared with the in-container multiplexer status
-/// bar via `jackin-tui` so the console tab strips (workspace editor,
-/// settings) and the multiplexer render identical tab chrome.
-pub(crate) const TAB_BG_INACTIVE: Color = Color::Rgb(
-    tui_palette::TAB_BG_INACTIVE.r,
-    tui_palette::TAB_BG_INACTIVE.g,
-    tui_palette::TAB_BG_INACTIVE.b,
-);
-pub(crate) const TAB_BG_ACTIVE: Color = Color::Rgb(
-    tui_palette::TAB_BG_ACTIVE.r,
-    tui_palette::TAB_BG_ACTIVE.g,
-    tui_palette::TAB_BG_ACTIVE.b,
-);
-pub(crate) const TAB_BG_INACTIVE_HOVER: Color = Color::Rgb(
-    tui_palette::TAB_BG_INACTIVE_HOVER.r,
-    tui_palette::TAB_BG_INACTIVE_HOVER.g,
-    tui_palette::TAB_BG_INACTIVE_HOVER.b,
-);
-pub(crate) const TAB_BG_ACTIVE_HOVER: Color = Color::Rgb(
-    tui_palette::TAB_BG_ACTIVE_HOVER.r,
-    tui_palette::TAB_BG_ACTIVE_HOVER.g,
-    tui_palette::TAB_BG_ACTIVE_HOVER.b,
-);
-
-/// Clickable-id foreground on the white bottom status bar, shared with the
-/// in-container multiplexer via `jackin-tui`.
-pub(crate) const LINK_BLUE: Color = Color::Rgb(
-    tui_palette::LINK_BLUE.r,
-    tui_palette::LINK_BLUE.g,
-    tui_palette::LINK_BLUE.b,
-);
-
-/// Burnt orange marking debug-mode chrome (the run-id chip), shared via
-/// `jackin-tui`.
-pub(crate) const DEBUG_AMBER: Color = Color::Rgb(
-    tui_palette::DEBUG_AMBER.r,
-    tui_palette::DEBUG_AMBER.g,
-    tui_palette::DEBUG_AMBER.b,
-);
-
-/// Error/danger accent (failed stages, error-popup borders, invalid input),
-/// shared via `jackin-tui`.
-pub(crate) const DANGER_RED: Color = Color::Rgb(
-    tui_palette::DANGER_RED.r,
-    tui_palette::DANGER_RED.g,
-    tui_palette::DANGER_RED.b,
-);
-
-/// The ` jackin' ` brand pill followed by ` · <label>`. Shared by every
-/// top-level TUI screen (workspace list, settings, editor, launch
-/// progress) so the logo is byte-identical and never shifts position or
-/// colour as the operator transitions between screens. The pill matches
-/// the in-container multiplexer status-bar brand pill (`statusbar.rs`).
-pub(crate) fn brand_header_line(label: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(
-            " jackin' ",
-            Style::default()
-                .bg(PHOSPHOR_GREEN)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
-        Span::styled(label.to_string(), Style::default().fg(PHOSPHOR_DIM)),
-    ])
-}
-
-/// Render [`brand_header_line`] left-aligned at the top of `area`. `area`
+/// Render the shared brand header left-aligned at the top of `area`. `area`
 /// is normally two rows tall (brand row + one spacer) so the body below
 /// sits one clear line under the logo.
 pub(crate) fn render_brand_header(frame: &mut Frame, area: Rect, label: &str) {
-    frame.render_widget(
-        Paragraph::new(brand_header_line(label)).alignment(Alignment::Left),
-        area,
-    );
+    jackin_tui::components::render_brand_header(frame, area, label);
 }
 
 /// The canonical `Filter: ░░░█` input row drawn directly under a list modal's
@@ -145,24 +28,7 @@ pub(crate) fn render_brand_header(frame: &mut Frame, area: Rect, label: &str) {
 /// blinking `█` cursor otherwise. Shared by every filterable list modal (the
 /// op-picker drill-down, the generic `select_list`) so the row is identical.
 pub(crate) fn render_filter_row(frame: &mut Frame, area: Rect, filter: &str) {
-    let line = if filter.is_empty() {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled(filter.to_string(), Style::default().fg(WHITE)),
-            Span::styled(
-                "\u{2588}",
-                Style::default()
-                    .fg(WHITE)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ])
-    };
-    frame.render_widget(Paragraph::new(line), area);
+    jackin_tui::components::render_filter_input(frame, area, filter);
 }
 
 /// Braille spinner animation shared across all modal loading panels.
@@ -185,23 +51,9 @@ pub mod scope_picker;
 pub mod scrollable;
 pub mod select_list;
 pub mod source_picker;
-pub mod status_bar;
 pub mod status_popup;
 pub mod text_input;
 pub mod workdir_pick;
-
-/// Outcome of a modal's event-handling cycle. Passed back to the
-/// manager state machine to decide whether to close the modal, commit
-/// its value, or keep it open.
-#[derive(Debug, Clone)]
-pub enum ModalOutcome<T> {
-    /// User is still interacting with the modal — keep rendering.
-    Continue,
-    /// User committed with this value (e.g. Enter in text input).
-    Commit(T),
-    /// User cancelled (Esc).
-    Cancel,
-}
 
 /// Wrap-around cursor move for any list-style picker. `delta` is `-1`
 /// for Up, `+1` for Down. No-op when `count == 0`.
