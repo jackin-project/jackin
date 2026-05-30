@@ -67,6 +67,13 @@ pub enum ManagerMessage {
         delta: isize,
         focus_tab_bar: bool,
     },
+    MoveEditorFieldSelection {
+        delta: isize,
+        max_row: usize,
+        skipped_rows: Vec<usize>,
+        term: Rect,
+        footer_h: u16,
+    },
     MoveSettingsTab {
         delta: isize,
         focus_tab_bar: bool,
@@ -148,6 +155,13 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             delta,
             focus_tab_bar,
         } => move_editor_tab(state, delta, focus_tab_bar),
+        ManagerMessage::MoveEditorFieldSelection {
+            delta,
+            max_row,
+            skipped_rows,
+            term,
+            footer_h,
+        } => move_editor_field_selection(state, delta, max_row, &skipped_rows, term, footer_h),
         ManagerMessage::MoveSettingsTab {
             delta,
             focus_tab_bar,
@@ -249,6 +263,59 @@ fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bo
     if was_secrets {
         editor.unmasked_rows.clear();
         editor.secrets_expanded.clear();
+    }
+}
+
+fn move_editor_field_selection(
+    state: &mut ManagerState<'_>,
+    delta: isize,
+    max_row: usize,
+    skipped_rows: &[usize],
+    term: Rect,
+    footer_h: u16,
+) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    let FieldFocus::Row(row) = editor.active_field;
+    let candidate = if delta.is_negative() {
+        row.saturating_sub(delta.unsigned_abs())
+    } else {
+        row.saturating_add(delta as usize).min(max_row)
+    };
+    let next = if delta.is_negative() {
+        step_cursor_up(skipped_rows, candidate)
+    } else {
+        step_cursor_down(skipped_rows, candidate, max_row)
+    };
+    editor.active_field = FieldFocus::Row(next);
+    editor.tab_scroll_y =
+        super::render::cursor_scroll_for_panel(next, editor.tab_scroll_y, term, footer_h);
+}
+
+fn step_cursor_down(skipped_rows: &[usize], candidate: usize, max_row: usize) -> usize {
+    let mut idx = candidate;
+    while idx <= max_row {
+        if skipped_rows.contains(&idx) {
+            idx += 1;
+        } else {
+            return idx;
+        }
+    }
+    candidate
+}
+
+fn step_cursor_up(skipped_rows: &[usize], candidate: usize) -> usize {
+    let mut idx = candidate;
+    loop {
+        if skipped_rows.contains(&idx) {
+            if idx == 0 {
+                return 0;
+            }
+            idx -= 1;
+        } else {
+            return idx;
+        }
     }
 }
 
@@ -811,6 +878,36 @@ mod tests {
         };
         assert!(editor.secrets_expanded.contains("smith"));
         assert!(editor.auth_expanded.contains("smith"));
+    }
+
+    #[test]
+    fn move_editor_field_selection_skips_rows_and_scrolls() {
+        let mut state = state_with_saved_count(0);
+        let mut editor = EditorState::new_edit(
+            "workspace".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        editor.active_field = FieldFocus::Row(1);
+        state.stage = ManagerStage::Editor(editor);
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::MoveEditorFieldSelection {
+                    delta: 1,
+                    max_row: 4,
+                    skipped_rows: vec![2],
+                    term: Rect::new(0, 0, 80, 24),
+                    footer_h: 1,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.active_field, FieldFocus::Row(3));
     }
 
     #[test]

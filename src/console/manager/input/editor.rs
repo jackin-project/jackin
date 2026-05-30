@@ -86,6 +86,7 @@ pub(super) fn handle_editor_key(
     let op_cache = state.op_cache.clone();
     let op_available = state.op_available;
     let term_width = state.cached_term_size.width;
+    let term_size = state.cached_term_size;
 
     if let ManagerStage::Editor(editor) = &state.stage {
         match key.code {
@@ -169,6 +170,34 @@ pub(super) fn handle_editor_key(
                         delta: 8,
                         term_width,
                         content_width: editor.tab_content_width,
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+                let (max_row, skipped_rows) = editor_selection_bounds(editor, config);
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveEditorFieldSelection {
+                        delta: -1,
+                        max_row,
+                        skipped_rows,
+                        term: term_size,
+                        footer_h: editor.cached_footer_h,
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                let (max_row, skipped_rows) = editor_selection_bounds(editor, config);
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveEditorFieldSelection {
+                        delta: 1,
+                        max_row,
+                        skipped_rows,
+                        term: term_size,
+                        footer_h: editor.cached_footer_h,
                     },
                 );
                 return Ok(InputOutcome::Continue);
@@ -260,55 +289,6 @@ pub(super) fn handle_editor_key(
     };
 
     match key.code {
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            let FieldFocus::Row(n) = editor.active_field;
-            let candidate = n.saturating_sub(1);
-            // Skip Secrets-tab spacer rows so the cursor never lands
-            // on a blank line.
-            let next = if editor.active_tab == EditorTab::Secrets {
-                let rows = secrets_flat_rows(editor);
-                step_secrets_cursor_up(&rows, candidate)
-            } else if editor.active_tab == EditorTab::Auth {
-                let rows = super::super::render::editor::auth_flat_rows(editor, config);
-                step_auth_cursor_up(&rows, candidate)
-            } else {
-                candidate
-            };
-            editor.active_field = FieldFocus::Row(next);
-            editor.tab_scroll_y = super::super::render::cursor_scroll_for_panel(
-                next,
-                editor.tab_scroll_y,
-                state.cached_term_size,
-                editor.cached_footer_h,
-            );
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            let FieldFocus::Row(n) = editor.active_field;
-            if editor.active_tab == EditorTab::Secrets {
-                let rows = secrets_flat_rows(editor);
-                let max = rows.len().saturating_sub(1);
-                let candidate = (n + 1).min(max);
-                editor.active_field =
-                    FieldFocus::Row(step_secrets_cursor_down(&rows, candidate, max));
-            } else {
-                let max = max_row_for_tab(editor, config);
-                let candidate = (n + 1).min(max);
-                if editor.active_tab == EditorTab::Auth {
-                    let rows = super::super::render::editor::auth_flat_rows(editor, config);
-                    editor.active_field =
-                        FieldFocus::Row(step_auth_cursor_down(&rows, candidate, max));
-                } else {
-                    editor.active_field = FieldFocus::Row(candidate);
-                }
-            }
-            let FieldFocus::Row(new_cursor) = editor.active_field;
-            editor.tab_scroll_y = super::super::render::cursor_scroll_for_panel(
-                new_cursor,
-                editor.tab_scroll_y,
-                state.cached_term_size,
-                editor.cached_footer_h,
-            );
-        }
         KeyCode::Enter => match editor.active_tab {
             EditorTab::General => open_editor_field_modal(editor),
             EditorTab::Mounts => {
@@ -489,6 +469,34 @@ pub(super) fn handle_editor_key(
     Ok(InputOutcome::Continue)
 }
 
+fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usize, Vec<usize>) {
+    match editor.active_tab {
+        EditorTab::Secrets => {
+            let rows = secrets_flat_rows(editor);
+            let skipped_rows = rows
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, row)| matches!(row, SecretsRow::SectionSpacer).then_some(idx))
+                .collect::<Vec<_>>();
+            (rows.len().saturating_sub(1), skipped_rows)
+        }
+        EditorTab::Auth => {
+            let rows = super::super::render::editor::auth_flat_rows(editor, config);
+            let skipped_rows = rows
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, row)| {
+                    matches!(row, super::super::render::editor::AuthRow::Spacer).then_some(idx)
+                })
+                .collect::<Vec<_>>();
+            (max_row_for_tab(editor, config), skipped_rows)
+        }
+        EditorTab::General | EditorTab::Mounts | EditorTab::Roles => {
+            (max_row_for_tab(editor, config), Vec::new())
+        }
+    }
+}
+
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
     match editor.active_tab {
         // 0=Name, 1=Working dir, 2=Keep awake
@@ -501,76 +509,6 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         EditorTab::Secrets => 0,
         EditorTab::Auth => {
             super::super::render::editor::auth_row_count(editor, config).saturating_sub(1)
-        }
-    }
-}
-
-/// Walks forward past spacer rows. Defensive fallback to `candidate`
-/// if every row through `max` is a spacer (currently impossible).
-fn step_secrets_cursor_down(
-    rows: &[super::super::render::editor::SecretsRow],
-    candidate: usize,
-    max: usize,
-) -> usize {
-    use super::super::render::editor::SecretsRow;
-    let mut idx = candidate;
-    while idx <= max {
-        match rows.get(idx) {
-            Some(SecretsRow::SectionSpacer) => idx += 1,
-            _ => return idx,
-        }
-    }
-    candidate
-}
-
-/// Walks backward past spacers; index 0 is always focusable.
-fn step_secrets_cursor_up(
-    rows: &[super::super::render::editor::SecretsRow],
-    candidate: usize,
-) -> usize {
-    use super::super::render::editor::SecretsRow;
-    let mut idx = candidate;
-    loop {
-        match rows.get(idx) {
-            Some(SecretsRow::SectionSpacer) => {
-                if idx == 0 {
-                    return 0;
-                }
-                idx -= 1;
-            }
-            _ => return idx,
-        }
-    }
-}
-
-fn step_auth_cursor_down(
-    rows: &[super::super::render::editor::AuthRow],
-    candidate: usize,
-    max: usize,
-) -> usize {
-    use super::super::render::editor::AuthRow;
-    let mut idx = candidate;
-    while idx <= max {
-        match rows.get(idx) {
-            Some(AuthRow::Spacer) => idx += 1,
-            _ => return idx,
-        }
-    }
-    candidate
-}
-
-fn step_auth_cursor_up(rows: &[super::super::render::editor::AuthRow], candidate: usize) -> usize {
-    use super::super::render::editor::AuthRow;
-    let mut idx = candidate;
-    loop {
-        match rows.get(idx) {
-            Some(AuthRow::Spacer) => {
-                if idx == 0 {
-                    return 0;
-                }
-                idx -= 1;
-            }
-            _ => return idx,
         }
     }
 }
