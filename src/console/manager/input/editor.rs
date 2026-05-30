@@ -1764,14 +1764,34 @@ fn apply_role_input_with_runner(
             "registering role repo for key={key:?} git={git:?}",
             git = source.git.as_str()
         );
-        rt.block_on(crate::runtime::register_agent_repo(
-            paths,
-            &selector,
-            &source.git,
-            runner,
-            crate::tui::is_debug_mode(),
-            || persist_role_source_registration(config, paths, &key, &source_to_register),
-        ))?;
+        let registration = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            rt.block_on(crate::runtime::register_agent_repo(
+                paths,
+                &selector,
+                &source.git,
+                runner,
+                crate::tui::is_debug_mode(),
+                || persist_role_source_registration(config, paths, &key, &source_to_register),
+            ))
+        }));
+        match registration {
+            Ok(Ok((_cached_repo, _validated_repo))) => {
+                crate::debug_log!(
+                    "role",
+                    "role repo registration completed for key={key:?} git={git:?}",
+                    git = source.git.as_str()
+                );
+            }
+            Ok(Err(e)) => return Err(e),
+            Err(payload) => {
+                let panic_message = panic_payload_message(payload.as_ref());
+                crate::debug_log!(
+                    "role",
+                    "role repo registration panicked for key={key:?} raw={raw:?}: {panic_message}"
+                );
+                return Err(anyhow::anyhow!("role loader panicked: {panic_message}"));
+            }
+        }
         Ok(source)
     })();
 
@@ -1793,6 +1813,17 @@ fn apply_role_input_with_runner(
                 "role",
                 "role loader failed for key={key:?} raw={raw:?}: {e:?}"
             );
+            let err_text = e.to_string();
+            if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
+                open_role_input_error(
+                    editor,
+                    &format!(
+                        "Could not load role {raw:?}.\n\nThe role loader hit an internal \
+                         error while registering the repository.\n\n{panic_message}"
+                    ),
+                );
+                return;
+            }
             let source = candidate_role_source(config, &selector).ok();
             open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
         }
@@ -1865,6 +1896,16 @@ fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
             message,
         ),
     });
+}
+
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        return (*message).to_string();
+    }
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return message.clone();
+    }
+    "role loader panicked with a non-string payload".to_string()
 }
 
 /// Translate a runtime role-resolution error into the operator-facing
@@ -3177,6 +3218,49 @@ plugins = []
         assert!(
             config.roles.is_empty(),
             "invalid selector must not mutate config"
+        );
+    }
+
+    #[test]
+    fn role_input_panic_in_registration_is_converted_to_error_popup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = config_with_agents(&["agent-smith"]);
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        let mut runner = crate::runtime::FakeRunner::default();
+        runner.side_effects.push((
+            "git clone".to_string(),
+            Box::new(|| panic!("test panic while cloning role repo")),
+        ));
+
+        apply_role_input_with_runner(
+            &mut editor,
+            &mut config,
+            &paths,
+            "the-architect2",
+            &mut runner,
+        );
+
+        match &editor.modal {
+            Some(Modal::ErrorPopup { state }) => {
+                assert_eq!(state.title, "Load role failed");
+                assert!(state.message.contains("Could not load role"));
+                assert!(
+                    state
+                        .message
+                        .contains("test panic while cloning role repo"),
+                    "panic payload should be visible in the error dialog:\n{}",
+                    state.message
+                );
+            }
+            other => panic!("expected ErrorPopup for registration panic; got {other:?}"),
+        }
+        assert!(
+            !config.roles.contains_key("the-architect2"),
+            "panic must not register the role source"
         );
     }
 
