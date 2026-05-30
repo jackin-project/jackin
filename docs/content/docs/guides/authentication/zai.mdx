@@ -1,12 +1,12 @@
 ---
 title: Z.AI (GLM Coding Plan)
-description: Use Z.AI's Anthropic-compatible endpoint as an alternative provider for Claude Code and OpenCode sessions
+description: Use Z.AI's Anthropic-compatible endpoint as an alternative provider for Claude Code sessions
 ---
 
 
-[Z.AI's GLM Coding Plan](https://z.ai/subscribe) provides an Anthropic-compatible API endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code and OpenCode work against it without modification — jackin' injects the redirect at session-spawn time.
+[Z.AI's GLM Coding Plan](https://z.ai/subscribe) provides an Anthropic-compatible API endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
 
-When `ZAI_API_KEY` is configured, opening a new Claude or OpenCode tab presents a two-item provider picker — **Anthropic** or **Z.AI** — immediately after you select the agent. Single-provider operators (no `ZAI_API_KEY`) see no change: the picker is skipped and the session opens directly.
+When `ZAI_API_KEY` is configured, opening a new Claude tab presents a two-item provider picker — **Anthropic** or **Z.AI** — immediately after you select the agent. Single-provider operators (no `ZAI_API_KEY`) see no change: the picker is skipped and the session opens directly.
 
 <Aside type="tip">
 Z.AI is configured in the **Auth** tab of `jackin console`, not by hand-editing any config file.
@@ -18,7 +18,7 @@ Z.AI is configured in the **Auth** tab of `jackin console`, not by hand-editing 
 2. After the plan is active, open the [Z.AI API Keys](https://z.ai/manage-apikey/apikey-list) page and create an API key.
 3. Keep that key private. In jackin', store it as `ZAI_API_KEY` through the Auth settings below; do not paste it into Claude Code's host settings.
 
-Z.AI's own Claude Code setup writes `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` into Claude Code configuration. jackin' deliberately does not mutate your host Claude settings. Instead, the Z.AI key you save in jackin' Auth settings makes Z.AI appear as an Anthropic-compatible provider choice for Claude Code and OpenCode launches, and jackin' injects the redirect variables only into the agent process that selected Z.AI.
+Z.AI's own Claude Code setup writes `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` into Claude Code configuration. jackin' deliberately does not mutate your host Claude settings. Instead, the Z.AI key you save in jackin' Auth settings makes Z.AI appear as an Anthropic-compatible provider choice for Claude Code launches, and jackin' injects the redirect variables only into the agent process that selected Z.AI.
 
 ## Configure your Z.AI API key in jackin'
 
@@ -36,7 +36,7 @@ To remove Z.AI, open the same row, cycle the mode back to **Ignore**, and save. 
 
 With `ZAI_API_KEY` configured:
 
-**At workspace launch** — launch a workspace and choose the Claude or OpenCode agent. Before the container starts, a provider picker appears:
+**At workspace launch** — launch a workspace and choose the Claude agent. Before the container starts, a provider picker appears:
 
 ```
 ▸ Anthropic
@@ -45,7 +45,7 @@ With `ZAI_API_KEY` configured:
 
 Use arrow keys and `Enter` to pick. `Escape` cancels back to the agent picker.
 
-**In the multiplexer** — press `N` inside a running container (the same `N` key that opens a new agent tab). When you pick Claude or OpenCode, the same provider picker appears if both providers are available. Provider choice for an already-running container happens here, not from the console container row — only the running container's own session knows which key it was started with.
+**In the multiplexer** — press `N` inside a running container (the same `N` key that opens a new agent tab). When you pick Claude, the same provider picker appears if both providers are available. Provider choice for an already-running container happens here, not from the console container row — only the running container's own session knows which key it was started with.
 
 ## Tab labels
 
@@ -55,7 +55,6 @@ When both Anthropic and Z.AI are configured in the same container, the tab strip
 |---|---|
 | Anthropic | `Claude (Anthropic)` |
 | Z.AI | `Claude (Z.AI)` |
-| Z.AI (OpenCode) | `OpenCode (Z.AI)` |
 
 When only one provider is configured, the bare `Claude` label is used — no suffix added for single-provider containers.
 

@@ -135,14 +135,13 @@ impl Provider {
         }
     }
 
-    /// Providers selectable for `agent_slug`. Z.AI is offered for Claude
-    /// (Anthropic-compatible endpoint) and OpenCode (native Z.AI provider
-    /// support) when a key is available; every other case has one implicit
-    /// provider and returns an empty list, which callers read as "no picker
-    /// step".
+    /// Providers selectable for `agent_slug`. Z.AI is offered only for
+    /// Claude (its endpoint is Anthropic-compatible) and only when a key
+    /// is available; every other case has one implicit provider and
+    /// returns an empty list, which callers read as "no picker step".
     #[must_use]
     pub fn available_for(agent_slug: &str, zai_key_available: bool) -> Vec<Provider> {
-        if zai_key_available && matches!(agent_slug, "claude" | "opencode") {
+        if agent_slug == "claude" && zai_key_available {
             vec![Provider::Anthropic, Provider::Zai]
         } else {
             Vec::new()
@@ -258,17 +257,13 @@ mod provider_tests {
     }
 
     #[test]
-    fn available_for_offers_zai_only_to_claude_and_opencode_with_key() {
+    fn available_for_offers_zai_only_to_claude_with_key() {
         assert_eq!(
             Provider::available_for("claude", true),
             vec![Provider::Anthropic, Provider::Zai]
         );
-        assert_eq!(
-            Provider::available_for("opencode", true),
-            vec![Provider::Anthropic, Provider::Zai]
-        );
         assert!(Provider::available_for("claude", false).is_empty());
-        assert!(Provider::available_for("opencode", false).is_empty());
+        assert!(Provider::available_for("opencode", true).is_empty());
         assert!(Provider::available_for("codex", true).is_empty());
     }
 }
