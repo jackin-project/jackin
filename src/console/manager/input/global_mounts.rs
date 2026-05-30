@@ -15,7 +15,6 @@ use crate::console::widgets::auth_panel::{AuthForm, CredentialInput};
 use crate::console::widgets::confirm::ConfirmState;
 use crate::console::widgets::file_browser::FileBrowserState;
 use crate::console::widgets::role_picker::RolePickerState;
-use crate::console::widgets::scrollable::apply_term_width_scroll_delta;
 use crate::console::widgets::text_input::TextInputState;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
@@ -139,13 +138,64 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     }
 
+    let ManagerStage::Settings(settings) = &state.stage else {
+        return;
+    };
+    let term_width = state.cached_term_size.width;
+    let content_width = global_mounts_content_width(&settings.mounts.pending);
+    let footer_h = settings.cached_footer_h;
+    match key.code {
+        KeyCode::Char('h' | 'H') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
+                    delta: -8,
+                    term_width,
+                    content_width,
+                },
+            );
+            return;
+        }
+        KeyCode::Char('l' | 'L') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
+                    delta: 8,
+                    term_width,
+                    content_width,
+                },
+            );
+            return;
+        }
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsGlobalMountsSelection {
+                    delta: -1,
+                    term: state.cached_term_size,
+                    footer_h,
+                },
+            );
+            return;
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsGlobalMountsSelection {
+                    delta: 1,
+                    term: state.cached_term_size,
+                    footer_h,
+                },
+            );
+            return;
+        }
+        _ => {}
+    }
+
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
     let is_dirty = settings.is_dirty();
-    let footer_h = settings.cached_footer_h;
-    let term_width = state.cached_term_size.width;
-    let content_width = global_mounts_content_width(&settings.mounts.pending);
     let global = &mut settings.mounts;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
@@ -154,31 +204,6 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             } else {
                 state.stage = ManagerStage::List;
             }
-        }
-        KeyCode::Char('h' | 'H') => {
-            apply_term_width_scroll_delta(&mut global.scroll_x, -8, term_width, content_width);
-        }
-        KeyCode::Char('l' | 'L') => {
-            apply_term_width_scroll_delta(&mut global.scroll_x, 8, term_width, content_width);
-        }
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            global.selected = global.selected.saturating_sub(1);
-            global.scroll_y = super::super::render::cursor_scroll_for_panel(
-                global.selected,
-                global.scroll_y,
-                state.cached_term_size,
-                footer_h,
-            );
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            let max = global.pending.len();
-            global.selected = (global.selected + 1).min(max);
-            global.scroll_y = super::super::render::cursor_scroll_for_panel(
-                global.selected,
-                global.scroll_y,
-                state.cached_term_size,
-                footer_h,
-            );
         }
         KeyCode::Enter if global.selected == global.pending.len() => {
             open_global_mount_scope_picker(global);
@@ -966,12 +991,64 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 }
 
 fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
-    let term_width = state.cached_term_size.width;
-    let ManagerStage::Settings(settings) = &mut state.stage else {
+    let term_size = state.cached_term_size;
+    let term_width = term_size.width;
+    let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
     let footer_h = settings.cached_footer_h;
     let content_width = trust_content_width(settings);
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsTrustSelection {
+                    delta: -1,
+                    term: term_size,
+                    footer_h,
+                },
+            );
+            return;
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsTrustSelection {
+                    delta: 1,
+                    term: term_size,
+                    footer_h,
+                },
+            );
+            return;
+        }
+        KeyCode::Char('h' | 'H') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::ScrollSettingsTrustHorizontal {
+                    delta: -8,
+                    term_width,
+                    content_width,
+                },
+            );
+            return;
+        }
+        KeyCode::Char('l' | 'L') => {
+            dispatch_manager(
+                state,
+                ManagerMessage::ScrollSettingsTrustHorizontal {
+                    delta: 8,
+                    term_width,
+                    content_width,
+                },
+            );
+            return;
+        }
+        _ => {}
+    }
+
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
     let trust = &mut settings.trust;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
@@ -980,30 +1057,6 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             } else {
                 state.stage = ManagerStage::List;
             }
-        }
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            trust.selected = trust.selected.saturating_sub(1);
-            trust.scroll_y = super::super::render::cursor_scroll_for_panel(
-                trust.selected,
-                trust.scroll_y,
-                state.cached_term_size,
-                footer_h,
-            );
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            trust.selected = (trust.selected + 1).min(trust.pending.len().saturating_sub(1));
-            trust.scroll_y = super::super::render::cursor_scroll_for_panel(
-                trust.selected,
-                trust.scroll_y,
-                state.cached_term_size,
-                footer_h,
-            );
-        }
-        KeyCode::Char('h' | 'H') => {
-            apply_term_width_scroll_delta(&mut trust.scroll_x, -8, term_width, content_width);
-        }
-        KeyCode::Char('l' | 'L') => {
-            apply_term_width_scroll_delta(&mut trust.scroll_x, 8, term_width, content_width);
         }
         // Space is the W3C toggle key (checkbox/switch pattern). Enter is for actions.
         KeyCode::Char(' ') => {

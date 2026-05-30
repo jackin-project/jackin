@@ -8,6 +8,7 @@ use super::state::{
     EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, SettingsTab,
 };
 use jackin_tui::runtime::Dirty;
+use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManagerMessage {
@@ -28,6 +29,26 @@ pub enum ManagerMessage {
         delta: i16,
         term_width: u16,
         content_width: usize,
+    },
+    ScrollSettingsGlobalMountsHorizontal {
+        delta: i16,
+        term_width: u16,
+        content_width: usize,
+    },
+    ScrollSettingsTrustHorizontal {
+        delta: i16,
+        term_width: u16,
+        content_width: usize,
+    },
+    MoveSettingsGlobalMountsSelection {
+        delta: isize,
+        term: Rect,
+        footer_h: u16,
+    },
+    MoveSettingsTrustSelection {
+        delta: isize,
+        term: Rect,
+        footer_h: u16,
     },
     MoveEditorTab {
         delta: isize,
@@ -66,6 +87,26 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             term_width,
             content_width,
         } => scroll_editor_workspace_mounts_horizontal(state, delta, term_width, content_width),
+        ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
+            delta,
+            term_width,
+            content_width,
+        } => scroll_settings_global_mounts_horizontal(state, delta, term_width, content_width),
+        ManagerMessage::ScrollSettingsTrustHorizontal {
+            delta,
+            term_width,
+            content_width,
+        } => scroll_settings_trust_horizontal(state, delta, term_width, content_width),
+        ManagerMessage::MoveSettingsGlobalMountsSelection {
+            delta,
+            term,
+            footer_h,
+        } => move_settings_global_mounts_selection(state, delta, term, footer_h),
+        ManagerMessage::MoveSettingsTrustSelection {
+            delta,
+            term,
+            footer_h,
+        } => move_settings_trust_selection(state, delta, term, footer_h),
         ManagerMessage::MoveEditorTab {
             delta,
             focus_tab_bar,
@@ -168,6 +209,100 @@ fn scroll_editor_workspace_mounts_horizontal(
         delta,
         term_width,
         content_width,
+    );
+}
+
+fn scroll_settings_global_mounts_horizontal(
+    state: &mut ManagerState<'_>,
+    delta: i16,
+    term_width: u16,
+    content_width: usize,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    jackin_tui::components::apply_term_width_scroll_delta(
+        &mut settings.mounts.scroll_x,
+        delta,
+        term_width,
+        content_width,
+    );
+}
+
+fn scroll_settings_trust_horizontal(
+    state: &mut ManagerState<'_>,
+    delta: i16,
+    term_width: u16,
+    content_width: usize,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    jackin_tui::components::apply_term_width_scroll_delta(
+        &mut settings.trust.scroll_x,
+        delta,
+        term_width,
+        content_width,
+    );
+}
+
+fn move_settings_global_mounts_selection(
+    state: &mut ManagerState<'_>,
+    delta: isize,
+    term: Rect,
+    footer_h: u16,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    let max = settings.mounts.pending.len();
+    settings.mounts.selected = if delta.is_negative() {
+        settings
+            .mounts
+            .selected
+            .saturating_sub(delta.unsigned_abs())
+    } else {
+        settings
+            .mounts
+            .selected
+            .saturating_add(delta as usize)
+            .min(max)
+    };
+    settings.mounts.scroll_y = super::render::cursor_scroll_for_panel(
+        settings.mounts.selected,
+        settings.mounts.scroll_y,
+        term,
+        footer_h,
+    );
+}
+
+fn move_settings_trust_selection(
+    state: &mut ManagerState<'_>,
+    delta: isize,
+    term: Rect,
+    footer_h: u16,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    let max = settings.trust.pending.len().saturating_sub(1);
+    settings.trust.selected = if delta.is_negative() {
+        settings
+            .trust
+            .selected
+            .saturating_sub(delta.unsigned_abs())
+    } else {
+        settings
+            .trust
+            .selected
+            .saturating_add(delta as usize)
+            .min(max)
+    };
+    settings.trust.scroll_y = super::render::cursor_scroll_for_panel(
+        settings.trust.selected,
+        settings.trust.scroll_y,
+        term,
+        footer_h,
     );
 }
 
@@ -474,5 +609,135 @@ mod tests {
         };
         assert!(editor.workspace_mounts_scroll_focused);
         assert_eq!(editor.workspace_mounts_scroll_x, 8);
+    }
+
+    #[test]
+    fn scroll_settings_global_mounts_updates_offset() {
+        let mut state = state_with_saved_count(0);
+        state.stage =
+            ManagerStage::Settings(SettingsState::from_config(&crate::config::AppConfig::default()));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
+                    delta: 8,
+                    term_width: 10,
+                    content_width: 40,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.mounts.scroll_x, 8);
+    }
+
+    #[test]
+    fn move_settings_global_mounts_selection_clamps_to_add_row() {
+        let mut state = state_with_saved_count(0);
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings.mounts.pending.push(crate::config::GlobalMountRow {
+            scope: None,
+            name: "cache".into(),
+            mount: crate::workspace::MountConfig {
+                src: "/tmp/cache".into(),
+                dst: "/home/agent/.cache".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        });
+        state.stage = ManagerStage::Settings(settings);
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::MoveSettingsGlobalMountsSelection {
+                    delta: 99,
+                    term: Rect::new(0, 0, 80, 24),
+                    footer_h: 1,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.mounts.selected, settings.mounts.pending.len());
+    }
+
+    #[test]
+    fn scroll_settings_trust_updates_offset() {
+        let mut state = state_with_saved_count(0);
+        let mut config = crate::config::AppConfig::default();
+        config.roles.insert(
+            "chainargos/agent-smith".into(),
+            crate::config::RoleSource {
+                git: "https://github.com/chainargos/agent-smith".into(),
+                trusted: true,
+                ..crate::config::RoleSource::default()
+            },
+        );
+        state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::ScrollSettingsTrustHorizontal {
+                    delta: 8,
+                    term_width: 10,
+                    content_width: 40,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.trust.scroll_x, 8);
+    }
+
+    #[test]
+    fn move_settings_trust_selection_clamps_to_role_rows() {
+        let mut state = state_with_saved_count(0);
+        let mut config = crate::config::AppConfig::default();
+        config.roles.insert(
+            "chainargos/agent-a".into(),
+            crate::config::RoleSource {
+                git: "https://github.com/chainargos/agent-a".into(),
+                trusted: false,
+                ..crate::config::RoleSource::default()
+            },
+        );
+        config.roles.insert(
+            "chainargos/agent-b".into(),
+            crate::config::RoleSource {
+                git: "https://github.com/chainargos/agent-b".into(),
+                trusted: true,
+                ..crate::config::RoleSource::default()
+            },
+        );
+        state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::MoveSettingsTrustSelection {
+                    delta: 99,
+                    term: Rect::new(0, 0, 80, 24),
+                    footer_h: 1,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.trust.selected, settings.trust.pending.len() - 1);
     }
 }
