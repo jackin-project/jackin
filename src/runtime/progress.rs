@@ -1064,7 +1064,7 @@ const STAGE_PULSE_PERIOD: usize = 12;
 const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
 const LABEL_GAP: usize = 4;
-const LABEL_EDGE_FADE_WIDTH: usize = 6;
+const LABEL_EDGE_FADE_WIDTH: usize = 12;
 const LABEL_SLIDE_FRAMES: usize = 12;
 const PROGRESS_RAIL_WIDTH: usize =
     LaunchStage::ALL.len() * BLOCK_WIDTH + (LaunchStage::ALL.len() - 1) * BLOCK_GAP;
@@ -1450,8 +1450,9 @@ fn label_edge_fade_factor(index: usize, width: usize) -> f32 {
         return 1.0;
     }
 
-    let ratio = (edge_distance + 1) as f32 / fade_width as f32;
-    0.25 + 0.75 * ratio
+    let ratio = ((edge_distance + 1) as f32 / fade_width as f32).clamp(0.0, 1.0);
+    let smooth = ratio * ratio * (3.0 - 2.0 * ratio);
+    0.02 + 0.98 * smooth
 }
 
 fn faded_color(color: Color, factor: f32) -> Color {
@@ -2527,11 +2528,9 @@ mod tests {
         let left = label_edge_fade_factor(0, width);
         let right = label_edge_fade_factor(width - 1, width);
 
-        assert!(left < center, "left edge should be dimmer than the center");
-        assert!(
-            right < center,
-            "right edge should be dimmer than the center"
-        );
+        assert!(center > 0.95, "center should stay nearly full brightness");
+        assert!(left < 0.1, "left edge should almost disappear");
+        assert!(right < 0.1, "right edge should almost disappear");
     }
 
     #[test]
