@@ -146,6 +146,11 @@ pub(crate) enum ManagerMessage {
     SetListNamesFocused(bool),
     SetDragState(Option<DragState>),
     SetListSplitPct(u16),
+    OpenListErrorPopup {
+        title: String,
+        message: String,
+    },
+    DismissListModal,
 }
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
@@ -290,6 +295,17 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::SetListSplitPct(pct) => {
             state.list_split_pct = pct;
+        }
+        ManagerMessage::OpenListErrorPopup { title, message } => {
+            state.list_modal = Some(super::state::Modal::ErrorPopup {
+                state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                    title,
+                    message,
+                ),
+            });
+        }
+        ManagerMessage::DismissListModal => {
+            state.list_modal = None;
         }
     }
     UpdateResult::redraw()

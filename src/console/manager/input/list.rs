@@ -148,12 +148,14 @@ pub(super) fn handle_list_key(
                     let providers = Vec::new();
                     state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
-                    state.list_modal = Some(Modal::ErrorPopup {
-                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                            "Instance unavailable",
-                            "Instance no longer active; list refreshes automatically.",
-                        ),
-                    });
+                    dispatch_manager(
+                        state,
+                        ManagerMessage::OpenListErrorPopup {
+                            title: "Instance unavailable".into(),
+                            message: "Instance no longer active; list refreshes automatically."
+                                .into(),
+                        },
+                    );
                 }
             } else {
                 let mut prelude = CreatePreludeState::new();
@@ -252,12 +254,13 @@ fn instance_action_outcome(
     empty_message: &str,
 ) -> InputOutcome {
     let Some(container) = selected_instance_container(state, action) else {
-        state.list_modal = Some(Modal::ErrorPopup {
-            state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                "No instance",
-                empty_message,
-            ),
-        });
+        dispatch_manager(
+            state,
+            ManagerMessage::OpenListErrorPopup {
+                title: "No instance".into(),
+                message: empty_message.into(),
+            },
+        );
         return InputOutcome::Continue;
     };
     InputOutcome::InstanceAction { container, action }
@@ -271,12 +274,13 @@ fn instance_action_outcome(
 /// pattern at `handle_list_key` line 158.
 fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
     let Some(container) = selected_instance_container(state, ConsoleInstanceAction::Purge) else {
-        state.list_modal = Some(Modal::ErrorPopup {
-            state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                "No instance",
-                "No purgeable instance for this workspace.",
-            ),
-        });
+        dispatch_manager(
+            state,
+            ManagerMessage::OpenListErrorPopup {
+                title: "No instance".into(),
+                message: "No purgeable instance for this workspace.".into(),
+            },
+        );
         return InputOutcome::Continue;
     };
     let label = state
@@ -504,12 +508,13 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
         0 => {}
         1 => {
             if let Err(e) = open::that_detached(&choices[0].url) {
-                state.list_modal = Some(Modal::ErrorPopup {
-                    state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                        "Failed to open URL",
-                        format!("{e}"),
-                    ),
-                });
+                dispatch_manager(
+                    state,
+                    ManagerMessage::OpenListErrorPopup {
+                        title: "Failed to open URL".into(),
+                        message: format!("{e}"),
+                    },
+                );
             }
         }
         _ => {
@@ -528,43 +533,44 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
     match modal {
         Modal::GithubPicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(url) => {
-                state.list_modal = None;
+                dispatch_manager(state, ManagerMessage::DismissListModal);
                 if let Err(e) = open::that_detached(&url) {
-                    state.list_modal = Some(Modal::ErrorPopup {
-                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                            "Failed to open URL",
-                            format!("{e}"),
-                        ),
-                    });
+                    dispatch_manager(
+                        state,
+                        ManagerMessage::OpenListErrorPopup {
+                            title: "Failed to open URL".into(),
+                            message: format!("{e}"),
+                        },
+                    );
                 }
                 InputOutcome::Continue
             }
             ModalOutcome::Cancel => {
-                state.list_modal = None;
+                dispatch_manager(state, ManagerMessage::DismissListModal);
                 InputOutcome::Continue
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
         Modal::RolePicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
-                state.list_modal = None;
+                dispatch_manager(state, ManagerMessage::DismissListModal);
                 InputOutcome::LaunchWithAgent(role)
             }
             ModalOutcome::Cancel => {
-                state.list_modal = None;
+                dispatch_manager(state, ManagerMessage::DismissListModal);
                 InputOutcome::Continue
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
         Modal::ErrorPopup { state: popup } => match popup.handle_key(key) {
             ModalOutcome::Commit(()) | ModalOutcome::Cancel => {
-                state.list_modal = None;
+                dispatch_manager(state, ManagerMessage::DismissListModal);
                 InputOutcome::Continue
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
         _ => {
-            state.list_modal = None;
+            dispatch_manager(state, ManagerMessage::DismissListModal);
             InputOutcome::Continue
         }
     }
