@@ -198,7 +198,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             };
 
             let Some(outcome) =
-                console::run_console(config, &paths, &cwd, &mut in_place, &mut runner).await?
+                console::run_console(config, &paths, &cwd, &mut in_place, &mut runner, Some(&screen)).await?
             else {
                 if let Some((docker, claim)) = &console_entry {
                     runtime::release_entry_if_idle(&paths, docker, claim).await;

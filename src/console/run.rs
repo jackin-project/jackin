@@ -100,6 +100,9 @@ pub async fn run_console<H: InstanceActionHandler>(
     cwd: &std::path::Path,
     action_handler: &mut H,
     runner: &mut impl crate::docker::CommandRunner,
+    // Outer session guard — draws into the inherited screen when `Some`,
+    // or owns its own `TerminalSession` when `None` (standalone console).
+    parent_session: Option<&super::TerminalSession>,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
@@ -111,7 +114,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
     // lifetime of the console (standalone `jackin console` with no launch).
-    let owned_screen = if crate::tui::host_screen_owned() {
+    let owned_screen = if parent_session.is_some_and(TerminalSession::is_active) {
         None
     } else {
         Some(TerminalSession::enter()?)
