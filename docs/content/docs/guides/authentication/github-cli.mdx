@@ -4,7 +4,7 @@ description: Forward the host's GitHub CLI login (or a scoped token) into agent 
 ---
 
 
-This page is the operator surface for `GitHub CLI` (`gh`) auth forwarding. For the broader pattern jackin' applies across every auth axis, see the [Authentication overview](/guides/authentication/).
+This page is the operator surface for `GitHub CLI` (`gh`) auth forwarding. For the broader pattern jackin❯ applies across every auth axis, see the [Authentication overview](/guides/authentication/).
 
 `gh` auth follows the same three-mode shape as agent auth (`sync` / `token` / `ignore`) at the same three scopes (global default, per-workspace, per-(workspace × role)). One difference: `gh` forwarding has no agent dimension — the same `gh` login is shared by every agent in the container, because `gh` itself doesn't care which runtime is calling it.
 
@@ -87,10 +87,10 @@ broken and I should fix it before trusting the container's auth"*.
 
 ## Host machine is never modified
 
-`gh` auth forwarding follows jackin' repo-wide
+`gh` auth forwarding follows jackin❯ repo-wide
 [*never mutate the host*](/getting-started/design-principles/#never-mutate-the-host-machine-silently)
 rule. The `SSH→HTTPS` git rewrite, the `gh` credential helper, and
-forwarded `hosts.yml` all live inside the container or in jackin'
+forwarded `hosts.yml` all live inside the container or in jackin❯
 own state directory — your `~/.gitconfig`, your host repo's
 `.git/config`, and your `~/.config/gh/` are read but never written.
 The container-level git rewrite and credential-helper setup run once
@@ -99,6 +99,6 @@ container state while still receiving their own agent environment.
 
 ## See also
 
-- [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin' applies across every auth axis.
+- [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin❯ applies across every auth axis.
 - [Agent Authentication](/guides/authentication/agents/) — parallel flow for `Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` agent auth.
 - [Environment Variables](/guides/environment-variables/) — how the operator env-vars model supplies `GH_TOKEN` for the `token` mode.

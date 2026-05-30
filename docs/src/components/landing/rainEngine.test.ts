@@ -11,9 +11,9 @@ test('ageToColor returns pale green for age 1-2', () => {
   expect(ageToColor(2)).toBe('rgb(180,255,180)');
 });
 
-test('ageToColor returns PHOSPHOR_GREEN for age 3-5', () => {
-  expect(ageToColor(3)).toBe('rgb(0,255,65)');
-  expect(ageToColor(5)).toBe('rgb(0,255,65)');
+test('ageToColor returns canonical chevron green for age 3-5', () => {
+  expect(ageToColor(3)).toBe('rgb(92,240,122)');
+  expect(ageToColor(5)).toBe('rgb(92,240,122)');
 });
 
 test('ageToColor returns null for dead cells (age > 24)', () => {

@@ -6,7 +6,7 @@ title: "Ephemeral Mount Modes (`tmpfs`, `ephemeral`)"
 
 ## Problem
 
-jackin' [per-mount isolation](/guides/workspaces/#per-mount-isolation)
+jackin❯ [per-mount isolation](/guides/workspaces/#per-mount-isolation)
 vocabulary is `shared | worktree | clone`. These modes describe **git
 semantics** for the mounted path. They don't
 cover a different axis the operator also cares about: **storage kind**.
@@ -35,18 +35,18 @@ each other's caches and to keeping host state clean.
 ## Why It Matters
 
 - **Parallel agents share host caches today.** Two agents both running
-  `gradle build` race on `~/.gradle/daemon` because jackin' has no way
+  `gradle build` race on `~/.gradle/daemon` because jackin❯ has no way
   to declare "this directory is per-instance, not host-shared".
 - **Toolchain hygiene matters at scale.** With the [autonomous task
   queue](/reference/roadmap/autonomous-task-queue/) in place, an agent
   fleet runs hundreds of builds a day. Each one should start with a
   clean per-instance scratch space; today, they don't.
 - **`/tmp` should default to tmpfs.** Many roles bake
-  configuration assuming `/tmp` is fast and ephemeral. jackin' default
+  configuration assuming `/tmp` is fast and ephemeral. jackin❯ default
   `/tmp` is the container's own filesystem — fine for correctness, but
   larger and slower than necessary.
 - This is the **only mount-mode gap** found in the verification pass
-  comparing jackin' against multicode's `[isolation]` block. Closing it
+  comparing jackin❯ against multicode's `[isolation]` block. Closing it
   brings the mount surface to parity.
 
 ## Inspiration in multicode

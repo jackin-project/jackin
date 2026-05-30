@@ -97,7 +97,7 @@ or `jackin console --debug` for console-side changes. Do not repeat the eval her
 
 Inside the container, the operator must verify:
 
-- Row 0 status bar is visible: `jackin'  [<agent-name>]`
+- Row 0 status bar is visible: `jackin❯  [<agent-name>]`
 - Agent TUI starts and renders correctly below the status bar
 - `Ctrl+\` opens the command palette (override with `JACKIN_PALETTE_KEY`)
 - Mouse clicks, arrow keys, and paste reach the agent unmodified

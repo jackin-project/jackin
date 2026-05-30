@@ -3,14 +3,14 @@ title: Codebase Map
 description: Where the source lives, how the modules fit together, and where to start reading
 ---
 
-This page is a **contributor's map** of the jackin' source tree. It is
-written for people who want to understand how jackin' is built, debug
+This page is a **contributor's map** of the jackin❯ source tree. It is
+written for people who want to understand how jackin❯ is built, debug
 its internals, or work on the project itself. If you only want to *use*
-jackin', start at [Concepts](/getting-started/concepts/) and the
+jackin❯, start at [Concepts](/getting-started/concepts/) and the
 [Operator Guide](/guides/workspaces/) — you do not need this page.
 
 <Aside type="note">
-**This page is the canonical module map for jackin'.** When module
+**This page is the canonical module map for jackin❯.** When module
 structure changes, this page is updated in the same PR — see the
 "Code ↔ Docs Cross-Reference" table in <RepoFile path="PROJECT_STRUCTURE.md" />.
 `PROJECT_STRUCTURE.md` itself is a short, agent-facing pointer that
@@ -22,12 +22,12 @@ sends readers here for the actual module-level detail.
 
 | Path | What lives there |
 |---|---|
-| `src/` | Rust CLI binary — every command jackin' implements |
+| `src/` | Rust CLI binary — every command jackin❯ implements |
 | `docker/construct/` | Source for the shared base Docker image (`projectjackin/construct:trixie`) |
 | <RepoFile path="docker/runtime/entrypoint.sh" /> | Lightweight shell bridge injected into every derived image at `/jackin/runtime/entrypoint.sh`; it calls Rust runtime setup, sources role hooks, and execs the selected agent |
 | <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | In-container Rust setup for git/GitHub initialization, trailer hook installation, agent home seeding, auth handoff copies, and Claude MCP registration |
 | `docs/` | This documentation site (Fumadocs on TanStack Start) |
-| `.github/workflows/` | CI for jackin', the construct image, and the docs site |
+| `.github/workflows/` | CI for jackin❯, the construct image, and the docs site |
 | `tests/` | End-to-end and integration tests |
 
 ## Where to start reading

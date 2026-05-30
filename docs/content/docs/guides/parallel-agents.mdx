@@ -3,7 +3,7 @@ title: Parallel Agents
 description: Run multiple agent sessions in one isolated role instance, or launch separate isolated instances side by side
 ---
 
-jackin' gives you two different ways to run agents in parallel:
+jackin❯ gives you two different ways to run agents in parallel:
 
 - **Separate instances** — each `jackin load` creates a new isolated container with its own Docker-in-Docker sidecar and agent home. Mounted project files are shared or isolated according to the workspace mount mode.
 - **Multiple sessions in one instance** — `jackin hardline --new` starts another agent process inside an already-running instance, sharing the same container state: mounted files, branch, tools, credentials, environment, and Docker-in-Docker sidecar.

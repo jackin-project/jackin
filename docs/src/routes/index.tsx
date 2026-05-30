@@ -2,9 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Landing } from '@/components/landing/Landing'
 import { site } from '@/lib/shared'
 
-const title = "jackin' - Jack your AI coding agents in"
+const title = "jackin❯ - Jack your AI coding agents in"
 const ogImage = `${site.origin}/og-image.png`
-const ogAlt = "jackin' - jack your AI coding agents in: isolated worlds, scoped access, full autonomy"
+const ogAlt = "jackin❯ - jack your AI coding agents in: isolated worlds, scoped access, full autonomy"
 
 const softwareApplication = {
   '@context': 'https://schema.org',
