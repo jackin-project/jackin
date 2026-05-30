@@ -375,6 +375,26 @@ pub fn render_scrollable_block(
     let content_height = lines.len();
     let viewport_w = viewport_width(area);
     let viewport_h = viewport_height(area);
+    let eff_x = effective_offset(content_width, viewport_w, *scroll_x);
+    let eff_y = effective_offset(content_height, viewport_h, *scroll_y);
+    *scroll_x = eff_x;
+    *scroll_y = eff_y;
+    render_scrollable_block_at(frame, area, lines, eff_x, eff_y, focused, title);
+}
+
+pub fn render_scrollable_block_at(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'_>>,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+    title: Option<&str>,
+) {
+    let content_width = max_line_width(&lines);
+    let content_height = lines.len();
+    let viewport_w = viewport_width(area);
+    let viewport_h = viewport_height(area);
     // Green border signals "you can scroll here". A focused but non-scrollable block
     // uses the default border so it doesn't imply scroll capability it doesn't have.
     let has_scroll =
@@ -390,10 +410,8 @@ pub fn render_scrollable_block(
     if let Some(title) = title {
         panel = panel.title(title);
     }
-    let eff_x = effective_offset(content_width, viewport_w, *scroll_x);
-    let eff_y = effective_offset(content_height, viewport_h, *scroll_y);
-    *scroll_x = eff_x;
-    *scroll_y = eff_y;
+    let eff_x = effective_offset(content_width, viewport_w, scroll_x);
+    let eff_y = effective_offset(content_height, viewport_h, scroll_y);
     frame.render_widget(
         Paragraph::new(add_trailing_padding(lines))
             .block(panel.block())
@@ -410,7 +428,7 @@ mod tests {
     use super::{
         apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset,
         cursor_follow_offset, render_line_with_fixed_prefix_scroll, render_scrollable_block,
-        render_selected_lines_in_area, render_vertical_scrollbar_in_area,
+        render_scrollable_block_at, render_selected_lines_in_area, render_vertical_scrollbar_in_area,
         scrollbar_offset_for_track_position, scrollbar_thumb_geometry,
     };
     use crate::theme::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_GREEN};
@@ -489,6 +507,34 @@ mod tests {
 
         assert_eq!(effective, 40);
         assert_eq!(scroll_x, 40);
+    }
+
+    #[test]
+    fn render_scrollable_block_at_clamps_without_mutating_offsets() {
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let scroll_x = 400;
+        let scroll_y = 400;
+        let lines = (0..20)
+            .map(|idx| Line::from(format!("row-{idx:02}-long-content")))
+            .collect::<Vec<_>>();
+
+        terminal
+            .draw(|frame| {
+                render_scrollable_block_at(
+                    frame,
+                    Rect::new(0, 0, 20, 5),
+                    lines,
+                    scroll_x,
+                    scroll_y,
+                    true,
+                    None,
+                );
+            })
+            .unwrap();
+
+        assert_eq!(scroll_x, 400);
+        assert_eq!(scroll_y, 400);
     }
 
     #[test]

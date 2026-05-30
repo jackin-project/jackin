@@ -29,7 +29,7 @@ pub(in crate::console::manager) use crate::console::widgets::scrollable::{
 };
 pub(super) use crate::console::widgets::scrollable::{
     line_width, max_line_width, render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll,
-    render_scrollable_block, render_vertical_scrollbar,
+    render_scrollable_block, render_scrollable_block_at, render_vertical_scrollbar,
 };
 pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,

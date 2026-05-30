@@ -36,7 +36,7 @@ pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
 
 pub(super) fn render_settings(
     frame: &mut Frame,
-    state: &mut SettingsState<'_>,
+    state: &SettingsState<'_>,
     op_available: bool,
 ) {
     let area = frame.area();
@@ -98,9 +98,7 @@ pub(super) fn settings_footer_items(
 
 fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let lines = general_lines(state);
-    let mut sx = 0u16;
-    let mut sy = 0u16;
-    super::render_scrollable_block(frame, area, lines, &mut sx, &mut sy, false, None);
+    super::render_scrollable_block_at(frame, area, lines, 0, 0, false, None);
 }
 
 fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
@@ -138,7 +136,7 @@ fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
 
 fn render_mounts_tab(
     frame: &mut Frame,
-    state: &mut SettingsState<'_>,
+    state: &SettingsState<'_>,
     area: ratatui::layout::Rect,
 ) {
     let mut lines = global_mount_lines(
@@ -154,18 +152,18 @@ fn render_mounts_tab(
             Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
-    super::render_scrollable_block(
+    super::render_scrollable_block_at(
         frame,
         area,
         lines,
-        &mut state.mounts.scroll_x,
-        &mut state.mounts.scroll_y,
+        state.mounts.scroll_x,
+        state.mounts.scroll_y,
         state.mounts.scroll_focused,
         None,
     );
 }
 
-fn render_env_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatui::layout::Rect) {
+fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let mut lines = env_lines(state, area.width);
     if let Some(err) = &state.env.error {
         lines.push(Line::from(""));
@@ -174,19 +172,18 @@ fn render_env_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatu
             Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
-    let mut no_scroll_x = 0u16;
-    super::render_scrollable_block(
+    super::render_scrollable_block_at(
         frame,
         area,
         lines,
-        &mut no_scroll_x,
-        &mut state.env.scroll_y,
+        0,
+        state.env.scroll_y,
         state.env.scroll_focused,
         None,
     );
 }
 
-fn render_auth_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatui::layout::Rect) {
+fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let title = state.auth.selected_kind.map(|k| format!(" {} ", k.label()));
     let mut lines = auth_lines(state);
     if let Some(err) = &state.auth.error {
@@ -196,19 +193,18 @@ fn render_auth_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratat
             Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
-    let mut no_scroll_x = 0u16;
-    super::render_scrollable_block(
+    super::render_scrollable_block_at(
         frame,
         area,
         lines,
-        &mut no_scroll_x,
-        &mut state.auth.scroll_y,
+        0,
+        state.auth.scroll_y,
         state.auth.scroll_focused,
         title.as_deref(),
     );
 }
 
-fn render_trust_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatui::layout::Rect) {
+fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let mut lines = trust_lines(state);
     if let Some(err) = &state.trust.error {
         lines.push(Line::from(""));
@@ -217,12 +213,12 @@ fn render_trust_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: rata
             Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
-    super::render_scrollable_block(
+    super::render_scrollable_block_at(
         frame,
         area,
         lines,
-        &mut state.trust.scroll_x,
-        &mut state.trust.scroll_y,
+        state.trust.scroll_x,
+        state.trust.scroll_y,
         state.trust.scroll_focused,
         None,
     );
