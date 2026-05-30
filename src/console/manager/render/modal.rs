@@ -127,7 +127,16 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
     centered_rect_fixed(outer, pct_w, height_rows)
 }
 
-pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
+pub(super) fn prepare_modal(outer: ratatui::layout::Rect, modal: &mut Modal<'_>) {
+    let modal_area = modal_outer_rect(modal, outer);
+    match modal {
+        Modal::OpPicker { state } => state.tick(),
+        Modal::ConfirmSave { state } => confirm_save::prepare_for_render(modal_area, state),
+        _ => {}
+    }
+}
+
+pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     let area = frame.area();
     let modal_area = modal_outer_rect(modal, area);
     match modal {
@@ -144,9 +153,6 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
         Modal::ErrorPopup { state } => error_popup::render(frame, modal_area, state),
         Modal::StatusPopup { state } => status_popup::render(frame, modal_area, state),
         Modal::OpPicker { state } => {
-            // Advance the spinner and drain pending loads — picker
-            // has no other clock.
-            state.tick();
             op_picker::render::render(frame, modal_area, state);
         }
         Modal::RolePicker { state }

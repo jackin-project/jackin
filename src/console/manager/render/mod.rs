@@ -119,6 +119,48 @@ pub(crate) fn prepare_for_render(
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
+    prepare_visible_modal(area, state);
+}
+
+fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
+    if let Some(modal) = &mut state.list_modal {
+        modal::prepare_modal(area, modal);
+    }
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            if let Some(modal) = &mut editor.modal {
+                modal::prepare_modal(area, modal);
+            }
+        }
+        ManagerStage::CreatePrelude(prelude) => {
+            if let Some(modal) = &mut prelude.modal {
+                modal::prepare_modal(area, modal);
+            }
+        }
+        ManagerStage::Settings(settings) => {
+            if let Some(super::state::GlobalMountModal::PreviewSave { state }) =
+                &mut settings.mounts.modal
+            {
+                use crate::console::widgets::confirm_save;
+                let height = confirm_save::required_height(state).min(area.height);
+                let modal_area = centered_rect_fixed(area, 80, height);
+                confirm_save::prepare_for_render(modal_area, state);
+            }
+            if let Some(super::state::SettingsEnvModal::OpPicker { state }) =
+                &mut settings.env.modal
+            {
+                state.tick();
+            }
+            if let Some(super::state::SettingsAuthModal::OpPicker { state }) =
+                &mut settings.auth.modal
+            {
+                state.tick();
+            }
+        }
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -371,18 +413,18 @@ pub fn render(
     // modals.
     let is_list_stage = matches!(state.stage, ManagerStage::List);
     if is_list_stage {
-        if let Some(modal) = &mut state.list_modal {
+        if let Some(modal) = &state.list_modal {
             modal::render_modal(frame, modal);
         }
     } else {
-        match &mut state.stage {
+        match &state.stage {
             ManagerStage::Editor(editor) => {
-                if let Some(modal) = &mut editor.modal {
+                if let Some(modal) = &editor.modal {
                     modal::render_modal(frame, modal);
                 }
             }
             ManagerStage::CreatePrelude(prelude) => {
-                if let Some(modal) = &mut prelude.modal {
+                if let Some(modal) = &prelude.modal {
                     modal::render_modal(frame, modal);
                 }
             }
@@ -418,11 +460,11 @@ pub fn render(
                     );
                     let popup_area = centered_rect_fixed(area, 60, h);
                     crate::console::widgets::error_popup::render(frame, popup_area, popup);
-                } else if let Some(modal) = &mut settings.mounts.modal {
+                } else if let Some(modal) = &settings.mounts.modal {
                     global_mounts::render_global_mount_modal(frame, modal);
-                } else if let Some(modal) = &mut settings.env.modal {
+                } else if let Some(modal) = &settings.env.modal {
                     global_mounts::render_settings_env_modal(frame, modal);
-                } else if let Some(modal) = &mut settings.auth.modal {
+                } else if let Some(modal) = &settings.auth.modal {
                     global_mounts::render_settings_auth_modal(frame, modal);
                 }
             }

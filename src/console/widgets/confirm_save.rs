@@ -125,7 +125,19 @@ pub fn required_height(state: &ConfirmSaveState) -> u16 {
     lines.saturating_add(5)
 }
 
-pub fn render(frame: &mut Frame, area: Rect, state: &mut ConfirmSaveState) {
+pub fn prepare_for_render(area: Rect, state: &mut ConfirmSaveState) {
+    let inner = Block::default().borders(Borders::ALL).inner(area);
+    let content_rows = inner.height.saturating_sub(3); // blank, blank, buttons
+    let content_rows = content_rows.saturating_sub(1); // bottom-of-content blank
+    state.preview_rows = content_rows;
+    clamp_scroll_offset(
+        state.lines.len(),
+        usize::from(state.preview_rows),
+        &mut state.scroll_offset,
+    );
+}
+
+pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
@@ -167,12 +179,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ConfirmSaveState) {
         ])
         .split(inner);
 
-    state.preview_rows = chunks[1].height;
-    clamp_scroll_offset(
-        state.lines.len(),
-        usize::from(chunks[1].height),
-        &mut state.scroll_offset,
-    );
     render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
 
     let items = [

@@ -817,7 +817,7 @@ fn trust_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     lines
 }
 
-pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &mut GlobalMountModal<'_>) {
+pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountModal<'_>) {
     match modal {
         GlobalMountModal::Text { state, .. } => {
             let area = super::modal::text_input_rect(frame.area());
@@ -852,7 +852,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &mut GlobalMou
     }
 }
 
-pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &mut SettingsEnvModal<'_>) {
+pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvModal<'_>) {
     match modal {
         SettingsEnvModal::Text { state, .. } => {
             let area = super::modal::text_input_rect(frame.area());
@@ -881,7 +881,7 @@ pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &mut SettingsE
     }
 }
 
-pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &mut SettingsAuthModal<'_>) {
+pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuthModal<'_>) {
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
             let area = super::modal::auth_form_rect(frame.area(), state);
