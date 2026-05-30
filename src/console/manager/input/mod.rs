@@ -30,6 +30,17 @@ pub fn poll_background_loads(
     }
 }
 
+fn refresh_active_mount_info(state: &ManagerState<'_>) {
+    match &state.stage {
+        ManagerStage::Editor(editor) => editor.refresh_mount_info_cache(),
+        ManagerStage::Settings(settings) => settings.mounts.refresh_mount_info_cache(),
+        ManagerStage::List
+        | ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
+    }
+}
+
 // Re-exported for the `run_console` token-generate loop, which re-mounts
 // the settings auth form after a mint (the `global_mounts` module is
 // `pub(super)`, so the loop reaches the helpers through this seam).
@@ -124,6 +135,7 @@ pub fn handle_key(
         && editor.modal.is_some()
     {
         editor::handle_editor_modal(editor, key, op_available, op_cache, config, paths);
+        refresh_active_mount_info(state);
 
         // Drain the ConfirmSave → commit signal FIRST. The modal handler
         // only closes the modal and stashes the plan; this outer layer
@@ -280,6 +292,7 @@ pub fn handle_key(
                     let mut editor = EditorState::new_create();
                     editor.pending = ws;
                     editor.pending_name = Some(name);
+                    editor.refresh_mount_info_cache();
                     state.stage = ManagerStage::Editor(editor);
                 }
                 PreludeStatus::Cancelled => {
@@ -319,7 +332,7 @@ pub fn handle_key(
         ManagerStage::ConfirmInstancePurge { .. } => StageDis::ConfirmInstancePurge,
     };
 
-    match dis {
+    let outcome = match dis {
         StageDis::List => list::handle_list_key(state, config, paths, cwd, key),
         StageDis::Editor => editor::handle_editor_key(state, config, paths, cwd, key),
         StageDis::Settings => {
@@ -330,7 +343,9 @@ pub fn handle_key(
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
         StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),
         StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
-    }
+    };
+    refresh_active_mount_info(state);
+    outcome
 }
 
 fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {

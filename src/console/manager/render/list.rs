@@ -543,6 +543,7 @@ pub(super) fn mount_display_paths(
 #[cfg(test)]
 pub(super) fn format_mount_rows(mounts: &[crate::workspace::MountConfig]) -> Vec<MountDisplayRow> {
     let cache = MountInfoCache::default();
+    cache.refresh_mounts(mounts);
     format_mount_rows_with_cache(mounts, &cache)
 }
 
@@ -667,6 +668,7 @@ pub(in crate::console::manager) fn workspace_mounts_content_width(
     mounts: &[crate::workspace::MountConfig],
 ) -> usize {
     let cache = MountInfoCache::default();
+    cache.refresh_mounts(mounts);
     workspace_mounts_content_width_with_cache(mounts, &cache)
 }
 
@@ -689,13 +691,6 @@ pub(in crate::console::manager) fn workspace_mounts_content_height(
         .map(|m| if m.src == m.dst { 1 } else { 2 })
         .sum::<usize>()
         .max(1)
-}
-
-pub(in crate::console::manager) fn global_mounts_content_width(
-    mounts: &[crate::workspace::MountConfig],
-) -> usize {
-    let cache = MountInfoCache::default();
-    global_mounts_content_width_with_cache(mounts, &cache)
 }
 
 pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
@@ -834,12 +829,18 @@ pub(in crate::console::manager) fn compute_sidebar_scroll_areas(
                 width: area.width,
                 height: 0,
             }),
-            content_width: global_mounts_content_width_from_rows(&global_rows),
+            content_width: global_mounts_content_width_from_rows(
+                &global_rows,
+                &inputs.mount_info_cache,
+            ),
             content_height: global_mounts_content_height_from_rows(&global_rows),
         },
         role_global: layout.role_global.map(|area| SidebarScrollArea {
             area,
-            content_width: global_mounts_content_width_from_rows(&role_global_rows),
+            content_width: global_mounts_content_width_from_rows(
+                &role_global_rows,
+                &inputs.mount_info_cache,
+            ),
             content_height: global_mounts_content_height_from_rows(&role_global_rows),
         }),
         roles: layout.roles.map(|area| SidebarScrollArea {
@@ -1059,10 +1060,13 @@ fn split_global_mount_rows(
     rows.iter().partition(|row| row.scope.is_none())
 }
 
-fn global_mounts_content_width_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
+fn global_mounts_content_width_from_rows(
+    rows: &[&crate::config::GlobalMountRow],
+    cache: &MountInfoCache,
+) -> usize {
     let mounts: Vec<crate::workspace::MountConfig> =
         rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_width(&mounts)
+    global_mounts_content_width_with_cache(&mounts, cache)
 }
 
 fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
@@ -1489,7 +1493,9 @@ fn render_global_mount_rows_section(
     } else {
         let mounts: Vec<crate::workspace::MountConfig> =
             rows.iter().map(|row| row.mount.clone()).collect();
-        let display_rows = format_mount_rows_with_cache(&mounts, &MountInfoCache::default());
+        let cache = MountInfoCache::default();
+        cache.refresh_mounts(&mounts);
+        let display_rows = format_mount_rows_with_cache(&mounts, &cache);
         let path_w = mount_path_width(&display_rows);
         lines.push(render_global_mount_header(path_w));
         lines.extend(render_global_mount_lines(&display_rows, path_w));

@@ -22,6 +22,14 @@ pub(in crate::console::manager) fn global_mounts_content_width(
     rows: &[crate::config::GlobalMountRow],
 ) -> usize {
     let cache = MountInfoCache::default();
+    cache.refresh_global_rows(rows);
+    global_mounts_content_width_with_cache(rows, &cache)
+}
+
+pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
+    rows: &[crate::config::GlobalMountRow],
+    cache: &MountInfoCache,
+) -> usize {
     let lines = global_mount_lines(rows, None, false, &cache);
     super::max_line_width(&lines)
 }

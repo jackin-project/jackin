@@ -1992,6 +1992,7 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
             msg,
         ));
     }
+    settings.mounts.refresh_mount_info_cache();
     if exit {
         state.stage = ManagerStage::List;
     }

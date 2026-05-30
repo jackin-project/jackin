@@ -25,23 +25,34 @@ pub struct MountInfoCache {
 }
 
 impl MountInfoCache {
-    pub(crate) fn inspect(&self, src: &str) -> crate::console::manager::mount_info::MountKind {
-        if let Some(kind) = self.entries.borrow().get(src).cloned() {
-            return kind;
-        }
+    pub(crate) fn refresh_src(&self, src: &str) {
         let kind = crate::console::manager::mount_info::inspect(src);
-        self.entries
-            .borrow_mut()
-            .insert(src.to_string(), kind.clone());
-        kind
+        self.entries.borrow_mut().insert(src.to_string(), kind);
+    }
+
+    pub(crate) fn refresh_mounts(&self, mounts: &[crate::workspace::MountConfig]) {
+        for mount in mounts {
+            self.refresh_src(&mount.src);
+        }
+    }
+
+    pub(crate) fn refresh_global_rows(&self, rows: &[crate::config::GlobalMountRow]) {
+        for row in rows {
+            self.refresh_src(&row.mount.src);
+        }
+    }
+
+    fn inspect_cached(&self, src: &str) -> Option<crate::console::manager::mount_info::MountKind> {
+        self.entries.borrow().get(src).cloned()
     }
 
     pub(crate) fn label(&self, src: &str) -> String {
-        self.inspect(src).label()
+        self.inspect_cached(src)
+            .map_or_else(|| "unknown".to_string(), |kind| kind.label())
     }
 
     pub(crate) fn github_web_url(&self, src: &str) -> Option<String> {
-        match self.inspect(src) {
+        match self.inspect_cached(src)? {
             crate::console::manager::mount_info::MountKind::Git {
                 origin:
                     Some(crate::console::manager::mount_info::GitOrigin::Github { web_url, .. }),
@@ -863,7 +874,7 @@ impl EditorSaveFlow {
 impl GlobalMountsState<'_> {
     pub fn from_config(config: &AppConfig) -> Self {
         let rows = config.list_mount_rows();
-        Self {
+        let state = Self {
             selected: 0,
             pending: rows.clone(),
             original: rows,
@@ -876,7 +887,9 @@ impl GlobalMountsState<'_> {
             scroll_y: 0,
             scroll_focused: false,
             exit_requested: false,
-        }
+        };
+        state.refresh_mount_info_cache();
+        state
     }
 
     #[must_use]
@@ -887,11 +900,16 @@ impl GlobalMountsState<'_> {
     pub fn discard(&mut self) {
         self.pending = self.original.clone();
         self.mount_info_cache.clear();
+        self.refresh_mount_info_cache();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
         self.modal = None;
         self.modal_parents.clear();
         self.error = None;
+    }
+
+    pub(crate) fn refresh_mount_info_cache(&self) {
+        self.mount_info_cache.refresh_global_rows(&self.pending);
     }
 
     pub fn save_to_config(
@@ -1745,7 +1763,7 @@ impl ManagerState<'_> {
         );
         let selected = selected_row.to_screen_index(saved_count).unwrap_or(0);
 
-        Self {
+        let state = Self {
             stage: ManagerStage::List,
             workspaces,
             instances: Vec::new(),
@@ -1790,7 +1808,18 @@ impl ManagerState<'_> {
             instance_snapshots: HashMap::new(),
             preview_focused: false,
             preview_pane_cursor: HashMap::new(),
+        };
+        state.refresh_mount_info_cache(config);
+        state
+    }
+
+    pub(crate) fn refresh_mount_info_cache(&self, config: &AppConfig) {
+        self.mount_info_cache.refresh_src(&self.current_dir);
+        for workspace in config.workspaces.values() {
+            self.mount_info_cache.refresh_mounts(&workspace.mounts);
         }
+        let global_rows = config.list_mount_rows();
+        self.mount_info_cache.refresh_global_rows(&global_rows);
     }
 
     // ── Tree navigation helpers ────────────────────────────────────
@@ -2380,7 +2409,7 @@ impl<'a> EditorState<'a> {
 
 impl EditorState<'_> {
     pub fn new_edit(name: String, ws: WorkspaceConfig) -> Self {
-        Self {
+        let state = Self {
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
             tab_bar_focused: true,
@@ -2414,12 +2443,14 @@ impl EditorState<'_> {
             pending_token_generate: None,
             pending_role_load: None,
             cached_footer_h: 1,
-        }
+        };
+        state.refresh_mount_info_cache();
+        state
     }
 
     pub fn new_create() -> Self {
         let empty = WorkspaceConfig::default();
-        Self {
+        let state = Self {
             mode: EditorMode::Create,
             active_tab: EditorTab::General,
             tab_bar_focused: true,
@@ -2453,7 +2484,13 @@ impl EditorState<'_> {
             pending_token_generate: None,
             pending_role_load: None,
             cached_footer_h: 1,
-        }
+        };
+        state.refresh_mount_info_cache();
+        state
+    }
+
+    pub(crate) fn refresh_mount_info_cache(&self) {
+        self.mount_info_cache.refresh_mounts(&self.pending.mounts);
     }
 
     pub fn is_dirty(&self) -> bool {

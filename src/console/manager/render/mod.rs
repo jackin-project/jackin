@@ -418,7 +418,10 @@ fn clamp_editor_scroll_for_frame(area: Rect, editor: &mut super::state::EditorSt
         ])
         .split(area);
     clamp_scroll_x(
-        list::workspace_mounts_content_width(&editor.pending.mounts),
+        list::workspace_mounts_content_width_with_cache(
+            &editor.pending.mounts,
+            &editor.mount_info_cache,
+        ),
         scroll_viewport_width(chunks[2]),
         &mut editor.workspace_mounts_scroll_x,
     );
@@ -438,7 +441,10 @@ fn clamp_global_mounts_scroll_for_frame(
         ])
         .split(area);
     clamp_scroll_x(
-        global_mounts::global_mounts_content_width(&global.pending),
+        global_mounts::global_mounts_content_width_with_cache(
+            &global.pending,
+            &global.mount_info_cache,
+        ),
         scroll_viewport_width(chunks[2]),
         &mut global.scroll_x,
     );
