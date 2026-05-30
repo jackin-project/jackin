@@ -85,6 +85,7 @@ use crate::title::{
 };
 
 mod compositor;
+mod dialog_mgmt;
 mod input_dispatch;
 
 struct SessionLaunch {
@@ -669,112 +670,6 @@ impl Multiplexer {
         env
     }
 
-    /// Top of the dialog stack — `Some` when a dialog is visible.
-    /// Use this instead of inspecting `dialog_stack` directly so the
-    /// "is a dialog open" check stays in one place.
-    fn dialog_top(&self) -> Option<&Dialog> {
-        self.dialog_stack.last()
-    }
-
-    fn dialog_top_mut(&mut self) -> Option<&mut Dialog> {
-        self.dialog_stack.last_mut()
-    }
-
-    /// `true` when at least one dialog is on the stack.
-    fn dialog_open(&self) -> bool {
-        !self.dialog_stack.is_empty()
-    }
-
-    fn mux_mode(&self) -> MuxMode {
-        if self.dialog_open() {
-            MuxMode::Dialog
-        } else if self.drag.is_some() {
-            MuxMode::Drag
-        } else if self.selection.is_some() {
-            MuxMode::Select
-        } else if self.input_parser.is_awaiting_prefix() {
-            MuxMode::PrefixAwait
-        } else {
-            MuxMode::Normal
-        }
-    }
-
-    fn dialog_captures_input(&self) -> bool {
-        matches!(self.mux_mode(), MuxMode::Dialog)
-    }
-
-    /// Push a new dialog on top of the current one. The previous
-    /// dialog stays underneath waiting for an Esc-pop to surface it
-    /// again — the standard sub-dialog opening path (Menu → New tab
-    /// pushes AgentPicker on top of Menu, not a replacement).
-    fn dialog_push(&mut self, d: Dialog) {
-        self.dialog_copy_feedback_deadline = None;
-        self.dialog_stack.push(d);
-    }
-
-    fn open_container_info_dialog(&mut self) {
-        let focused_agent = self
-            .active_focused_id()
-            .and_then(|id| self.sessions.get(&id))
-            .and_then(|s| s.agent.clone());
-        let container_name = self.status_bar.container_name().to_string();
-        self.dialog_push(Dialog::ContainerInfo {
-            container_name,
-            role: self.status_bar.role().to_string(),
-            focused_agent,
-            workdir: self.workdir.to_string_lossy().into_owned(),
-            copied: false,
-        });
-    }
-
-    fn open_github_context_dialog(&mut self, now: Instant) {
-        self.dialog_push(Dialog::GitHubContext { copied: false });
-        // Dialog overlay frame is composed by the caller; spawn-or-not
-        // does not gate the visible state. The return value names
-        // whether a worker was kicked off (consumed only by tests).
-        let _spawned = self.force_spawn_pull_request_context_lookup(now);
-    }
-
-    fn github_context_view(&self) -> GithubContextView<'_> {
-        let status = match self.pull_request_context.as_deref() {
-            Some(pr) => PullRequestStatus::Loaded(pr),
-            None if self.pull_request_context_loading() => PullRequestStatus::Resolving,
-            None => PullRequestStatus::Idle,
-        };
-        GithubContextView {
-            branch: self.pull_request_context_branch.as_deref(),
-            status,
-        }
-    }
-
-    /// Single `&mut self.dialog_stack` borrow alongside a
-    /// `GithubContextView` snapshot. NLL can split the borrow only when
-    /// the immutable field reads and the mutable `dialog_stack` access
-    /// live in the same function — open-coding both at every dispatch
-    /// site triggers the borrow checker. Returns `None` when no dialog
-    /// is on the stack.
-    fn dispatch_to_dialog_top<F, R>(&mut self, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut Dialog, Option<&GithubContextView<'_>>) -> R,
-    {
-        // Inline `pull_request_status` instead of calling the helper so
-        // the compiler splits the borrow into `pull_request_context*`
-        // (immutable) and `dialog_stack` (mutable) — disjoint fields
-        // that NLL accepts only through direct field access.
-        let loading = self.pull_request_context_loading();
-        let status = match self.pull_request_context.as_deref() {
-            Some(pr) => PullRequestStatus::Loaded(pr),
-            None if loading => PullRequestStatus::Resolving,
-            None => PullRequestStatus::Idle,
-        };
-        let view = GithubContextView {
-            branch: self.pull_request_context_branch.as_deref(),
-            status,
-        };
-        let dialog = self.dialog_stack.last_mut()?;
-        Some(f(dialog, Some(&view)))
-    }
-
     fn pull_request_context_loading(&self) -> bool {
         let Some(branch) = self.pull_request_context_branch.as_deref() else {
             return false;
@@ -1169,27 +1064,6 @@ impl Multiplexer {
     /// the stack. The Esc handler uses this for back-navigation:
     /// popping a sub-dialog exposes its parent again rather than
     /// dismissing the whole flow.
-    fn dialog_pop_one(&mut self) -> Option<Dialog> {
-        let popped = self.dialog_stack.pop();
-        if !self
-            .dialog_stack
-            .last()
-            .is_some_and(Dialog::has_copy_feedback)
-        {
-            self.dialog_copy_feedback_deadline = None;
-        }
-        popped
-    }
-
-    /// Clear every dialog on the stack — used by action paths that
-    /// finish the flow (`SpawnAgent` after picking an agent,
-    /// destructive confirmations after they fire, etc.) so the
-    /// operator returns straight to the focused pane.
-    fn dialog_clear(&mut self) {
-        self.dialog_stack.clear();
-        self.dialog_copy_feedback_deadline = None;
-    }
-
     fn active_tab_pane_count(&self) -> usize {
         self.tabs
             .get(self.active_tab)
@@ -1241,13 +1115,6 @@ impl Multiplexer {
             self.active_tab = idx;
             self.synthesise_focus_swap(prev, self.active_focused_id());
         }
-    }
-
-    /// Drop saved gesture state when the pane geometry it referenced
-    /// is about to change. Cheaper than per-motion re-validation.
-    fn cancel_drag(&mut self) {
-        self.drag = None;
-        self.selection = None;
     }
 
     fn close_focused_tab(&mut self) {
@@ -1922,18 +1789,6 @@ impl Multiplexer {
 
     fn has_pending_render(&self) -> bool {
         self.pending_full_redraw.is_some() || !self.dirty_panes.is_empty()
-    }
-
-    fn expire_dialog_copy_feedback(&mut self, now: Instant) -> bool {
-        let Some(deadline) = self.dialog_copy_feedback_deadline else {
-            return false;
-        };
-        if now < deadline {
-            return false;
-        }
-        self.dialog_copy_feedback_deadline = None;
-        self.dialog_top_mut()
-            .is_some_and(Dialog::clear_copy_feedback)
     }
 
     fn visible_panes(&self) -> Vec<VisiblePane> {
