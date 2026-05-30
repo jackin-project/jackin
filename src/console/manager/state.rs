@@ -255,6 +255,10 @@ pub struct ManagerState<'a> {
     /// state on disk can't change at the 20 Hz render cadence and the
     /// rebuild path walks every container directory.
     instances_last_refresh: Option<std::time::Instant>,
+    instances_refresh_generation: u64,
+    instances_refresh_rx: Option<
+        std::sync::mpsc::Receiver<(u64, Result<InstanceRefreshSnapshot, String>)>,
+    >,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.
@@ -345,6 +349,14 @@ pub enum ManagerStage<'a> {
         label: String,
         state: ConfirmState,
     },
+}
+
+#[derive(Debug)]
+struct InstanceRefreshSnapshot {
+    instances: Vec<crate::instance::InstanceIndexEntry>,
+    sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
+    session_errors: HashSet<String>,
+    snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
 }
 
 #[derive(Debug)]
@@ -1431,7 +1443,7 @@ pub enum EditorTab {
     Auth,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldFocus {
     Row(usize),
 }
@@ -1800,6 +1812,8 @@ impl ManagerState<'_> {
                 height: 24,
             },
             instances_last_refresh: None,
+            instances_refresh_generation: 0,
+            instances_refresh_rx: None,
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
             current_dir_expanded: false,
@@ -2170,93 +2184,102 @@ impl ManagerState<'_> {
             return;
         }
         self.instances_last_refresh = Some(now);
-        match crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir) {
-            Ok(index) => {
-                self.instances = index.instances;
-                self.instances_last_error = None;
-                // Load recorded sessions for each active/running instance.
-                // These come from persisted manifests and may not reflect live
-                // multiplexer state, but provide useful context without Docker exec.
-                self.instance_sessions.clear();
-                self.instance_session_errors.clear();
-                self.instance_snapshots.clear();
-                let mut snapshot_targets: Vec<String> = Vec::new();
-                for entry in &self.instances {
-                    if matches!(
-                        entry.status,
-                        crate::instance::InstanceStatus::Active
-                            | crate::instance::InstanceStatus::Running
-                    ) {
-                        let state_dir = paths.data_dir.join(&entry.container_base);
-                        match crate::instance::InstanceManifest::read(&state_dir) {
-                            Ok(manifest) if !manifest.sessions.is_empty() => {
-                                self.instance_sessions
-                                    .insert(entry.container_base.clone(), manifest.sessions);
-                            }
-                            Ok(_) => {}
-                            Err(e) => {
-                                crate::debug_log!(
-                                    "console",
-                                    "manifest read failed for {}: {e:#}",
-                                    entry.container_base
-                                );
-                                self.instance_session_errors
-                                    .insert(entry.container_base.clone());
-                            }
-                        }
-                        snapshot_targets.push(entry.container_base.clone());
-                    }
-                }
-                let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
-                for (container, result) in snapshot_results {
+        match load_instance_refresh_snapshot(paths) {
+            Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
+            Err(error) => self.apply_instance_refresh_error(error),
+        }
+    }
+
+    pub fn poll_instance_refresh(&mut self, paths: &crate::paths::JackinPaths) {
+        self.drain_instance_refresh();
+        self.spawn_instance_refresh_if_due(paths);
+    }
+
+    fn spawn_instance_refresh_if_due(&mut self, paths: &crate::paths::JackinPaths) {
+        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+        if self.instances_refresh_rx.is_some() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        if let Some(last) = self.instances_last_refresh
+            && now.duration_since(last) < REFRESH_INTERVAL
+        {
+            return;
+        }
+        self.instances_last_refresh = Some(now);
+        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        let generation = self.instances_refresh_generation;
+        let paths = paths.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = load_instance_refresh_snapshot(&paths);
+            let _ = tx.send((generation, result));
+        });
+        self.instances_refresh_rx = Some(rx);
+    }
+
+    fn drain_instance_refresh(&mut self) {
+        let Some(rx) = self.instances_refresh_rx.take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok((generation, result)) => {
+                if generation == self.instances_refresh_generation {
                     match result {
-                        Ok(Some(snapshot)) => {
-                            self.instance_snapshots.insert(container, snapshot);
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            crate::debug_log!(
-                                "console",
-                                "snapshot fetch failed for {container}: {e:#}"
-                            );
-                        }
+                        Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
+                        Err(error) => self.apply_instance_refresh_error(error),
                     }
                 }
-                // Evict preview cursors keyed on containers that no
-                // longer have a live snapshot — otherwise the map
-                // accumulates indefinitely across container churn.
-                self.preview_pane_cursor
-                    .retain(|key, _| self.instance_snapshots.contains_key(key));
-                // Clamp `selected` after a refresh in case an instance row
-                // that was selected has disappeared.
-                let max = self.row_count().saturating_sub(1);
-                self.selected = self.selected.min(max);
             }
-            Err(error) => {
-                self.instances.clear();
-                self.instance_sessions.clear();
-                self.instance_session_errors.clear();
-                self.expanded_workspaces.clear();
-                // Mirror the Ok-branch cleanup of the snapshot-derived
-                // surfaces — without this they accumulate stale entries
-                // keyed by container_base that no longer appears in
-                // the index, and `current_dir_expanded` latched against
-                // an empty instance list drifts the row count.
-                self.instance_snapshots.clear();
-                self.preview_pane_cursor.clear();
-                self.current_dir_expanded = false;
-                self.preview_focused = false;
-                let message = format!("instance index error: {error}");
-                if self.instances_last_error.as_deref() != Some(&message) {
-                    self.list_modal = Some(Modal::ErrorPopup {
-                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                            "Instance index error",
-                            &message,
-                        ),
-                    });
-                    self.instances_last_error = Some(message);
-                }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                self.instances_refresh_rx = Some(rx);
             }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.apply_instance_refresh_error("instance refresh worker disconnected".into());
+            }
+        }
+    }
+
+    fn apply_instance_refresh_snapshot(&mut self, snapshot: InstanceRefreshSnapshot) {
+        self.instances = snapshot.instances;
+        self.instance_sessions = snapshot.sessions;
+        self.instance_session_errors = snapshot.session_errors;
+        self.instance_snapshots = snapshot.snapshots;
+        self.instances_last_error = None;
+        // Evict preview cursors keyed on containers that no longer have
+        // a live snapshot, otherwise the map accumulates indefinitely
+        // across container churn.
+        self.preview_pane_cursor
+            .retain(|key, _| self.instance_snapshots.contains_key(key));
+        // Clamp `selected` after a refresh in case an instance row that
+        // was selected has disappeared.
+        let max = self.row_count().saturating_sub(1);
+        self.selected = self.selected.min(max);
+    }
+
+    fn apply_instance_refresh_error(&mut self, error: String) {
+        self.instances.clear();
+        self.instance_sessions.clear();
+        self.instance_session_errors.clear();
+        self.expanded_workspaces.clear();
+        // Mirror the Ok-branch cleanup of the snapshot-derived
+        // surfaces — without this they accumulate stale entries keyed
+        // by container_base that no longer appears in the index, and
+        // `current_dir_expanded` latched against an empty instance list
+        // drifts the row count.
+        self.instance_snapshots.clear();
+        self.preview_pane_cursor.clear();
+        self.current_dir_expanded = false;
+        self.preview_focused = false;
+        let message = format!("instance index error: {error}");
+        if self.instances_last_error.as_deref() != Some(&message) {
+            self.list_modal = Some(Modal::ErrorPopup {
+                state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                    "Instance index error",
+                    &message,
+                ),
+            });
+            self.instances_last_error = Some(message);
         }
     }
 
@@ -2264,15 +2287,19 @@ impl ManagerState<'_> {
     /// the throttle interval. Use after an action mutates the on-disk
     /// instance index (Stop/Purge) so the next list draw reflects the new
     /// state immediately instead of waiting up to `REFRESH_INTERVAL`.
-    pub const fn force_refresh_instances(&mut self) {
+    pub fn force_refresh_instances(&mut self) {
         self.instances_last_refresh = None;
+        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        self.instances_refresh_rx = None;
     }
 
     /// Test helper: force the next `refresh_instances` call to hit disk
     /// regardless of the throttle interval.
     #[cfg(test)]
-    pub const fn force_refresh_instances_for_test(&mut self) {
+    pub fn force_refresh_instances_for_test(&mut self) {
         self.instances_last_refresh = None;
+        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        self.instances_refresh_rx = None;
     }
 
     /// Drained from the outer event loop every tick so picker results
@@ -2298,6 +2325,61 @@ impl ManagerState<'_> {
             state.poll_load();
         }
     }
+}
+
+fn load_instance_refresh_snapshot(
+    paths: &crate::paths::JackinPaths,
+) -> Result<InstanceRefreshSnapshot, String> {
+    let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
+        .map_err(|error| error.to_string())?;
+    let mut sessions = HashMap::new();
+    let mut session_errors = HashSet::new();
+    let mut snapshot_targets: Vec<String> = Vec::new();
+
+    for entry in &index.instances {
+        if matches!(
+            entry.status,
+            crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
+        ) {
+            let state_dir = paths.data_dir.join(&entry.container_base);
+            match crate::instance::InstanceManifest::read(&state_dir) {
+                Ok(manifest) if !manifest.sessions.is_empty() => {
+                    sessions.insert(entry.container_base.clone(), manifest.sessions);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    crate::debug_log!(
+                        "console",
+                        "manifest read failed for {}: {e:#}",
+                        entry.container_base
+                    );
+                    session_errors.insert(entry.container_base.clone());
+                }
+            }
+            snapshot_targets.push(entry.container_base.clone());
+        }
+    }
+
+    let mut snapshots = HashMap::new();
+    let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
+    for (container, result) in snapshot_results {
+        match result {
+            Ok(Some(snapshot)) => {
+                snapshots.insert(container, snapshot);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                crate::debug_log!("console", "snapshot fetch failed for {container}: {e:#}");
+            }
+        }
+    }
+
+    Ok(InstanceRefreshSnapshot {
+        instances: index.instances,
+        sessions,
+        session_errors,
+        snapshots,
+    })
 }
 
 /// Fan-out snapshot fetches in parallel so the render thread's

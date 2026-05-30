@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary returning the shared `UpdateResult`, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus dirty-exit and status popups and a small `Dirty` / `UpdateResult` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components and the `tui-lookbook` binary emits SVG previews from real `TestBackend` buffers into the [TUI Lookbook](/reference/tui-lookbook/) with per-component pages and a CI drift check, host list navigation/tree/preview/editor/settings-tab state, mouse list/tab/content-row selection, editor cursor/scroll/auth-kind/header/toggle state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, visible mount rows use a pre-refreshed `MountInfoCache` instead of re-reading `.git` metadata from render, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide typed effects, typed terminal session ownership, capsule Ratatui rendering, and complete component coverage remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary returning the shared `UpdateResult`, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus dirty-exit and status popups and a small `Dirty` / `UpdateResult` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components and the `tui-lookbook` binary emits SVG previews from real `TestBackend` buffers into the [TUI Lookbook](/reference/tui-lookbook/) with per-component pages and a CI drift check, host list navigation/tree/preview/editor/settings-tab state, mouse list/tab/content-row selection, editor cursor/scroll/auth-kind/header/toggle state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, visible mount rows use a pre-refreshed `MountInfoCache` instead of re-reading `.git` metadata from render, instance index/manifest/snapshot refresh now runs through a worker-thread result poll instead of blocking the draw loop, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide typed effects, typed terminal session ownership, capsule Ratatui rendering, and complete component coverage remain open.
 
 ## Goal
 
@@ -366,7 +366,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 3. **The view is not pure.** Render functions take `&mut state`. `render_scrollable_block` clamps `scroll_x`/`scroll_y` in place every frame; the editor tab renderers write `tab_content_width`/`tab_content_height` back into `EditorState` so the mouse handler can later read them. "Draw" mutates observable state, which couples render output to input handling and is the root of a class of stale-geometry scroll bugs.
 
-4. **Filesystem I/O and instance refresh on the event loop.** Visible mount rows now read only cached `MountInfoCache` facts during render, with synchronous refreshes moved to state construction and input/update paths, but those refreshes are not yet typed background messages. `refresh_instances` still does blocking index/manifest reads and a per-container socket fan-out on the event-loop thread (self-throttled to 500 ms, but still blocking the draw when it fires).
+4. **Filesystem I/O on the event loop.** Visible mount rows now read only cached `MountInfoCache` facts during render, with synchronous refreshes moved to state construction and input/update paths, but those refreshes are not yet typed background messages. Instance index/manifest reads and the per-container snapshot fan-out now run on a worker thread and report back through a polled result channel, but the remaining worker boundary is still ad hoc rather than a typed `ManagerMessage` / effect.
 
 5. **Unconditional full-frame redraw.** The loop draws every tick regardless of whether anything changed. No dirty flag, no skipped frames.
 
@@ -504,7 +504,7 @@ The practical test is simple: while a long image build, instance refresh, git/PR
 | Pure `view` (no `&mut`, no I/O) | Violated — `&mut state`, scroll-clamp + FS reads in draw | Violated — render writes ANSI + diffs in the compose path on the loop |
 | State decomposed (domain / UI / ephemeral) | Violated — god-structs mix all three | Violated — one `Multiplexer` god-struct |
 | Reusable `StatefulWidget` components | Absent — free `fn(frame, &mut state)` | Absent — raw ANSI free functions |
-| I/O off the loop thread | Violated — `mount_info::inspect`, `refresh_instances` block draw | Mostly OK — PTY/git use background tasks; some `std::thread` vs `spawn_blocking` inconsistency |
+| I/O off the loop thread | Partial — instance index/manifest/snapshot refresh uses a worker-thread result channel and mount rows do not inspect during render; `mount_info::inspect` still refreshes synchronously on state/input paths | Mostly OK — PTY/git use background tasks; some `std::thread` vs `spawn_blocking` inconsistency |
 | Explicit mode state machine | Partial — focus/modal flags scattered | Partial — `MuxMode` exists, but some state is still derived from scattered fields |
 | Framework buffer diff | OK — Ratatui owns it | Violated — `PaneBodyCache` re-implements `Buffer::diff` |
 | Render regression tests | Medium-grained `TestBackend`, no snapshots | None for the compositor/dispatch |
@@ -558,8 +558,8 @@ The async-first principle becomes actionable as a concrete list. Every site belo
 | Site | What blocks | Target |
 |---|---|---|
 | `mount_info::inspect` (<RepoFile path="src/console/manager/mount_info.rs" />) | visible mount rows read only cached facts during render, but cache refresh still runs synchronously on state construction/input paths | typed `MountFacts`, refreshed by a background `MountInspected` message |
-| `refresh_instances` (<RepoFile path="src/console/manager/state.rs" />) | blocking index/manifest reads + per-container socket fan-out (self-throttled to 500 ms, still blocks the draw when it fires) | background task → `InstancesRefreshed` message |
-| 1Password loads / snapshot fan-out | synchronous `OpRunner` + socket calls invoked from input handlers | background task → result message |
+| instance refresh (<RepoFile path="src/console/manager/state.rs" />) | index/manifest reads + per-container socket fan-out now run on a worker thread and are polled back into state; this is still a bespoke channel, not a typed effect/message | typed background task → `InstancesRefreshed` message |
+| 1Password loads | synchronous `OpRunner` calls invoked from input handlers | background task → result message |
 | `event::poll(50 ms)` loop | wakes 20×/s even when idle; full-frame redraw every tick | `tokio::select!` over an `EventStream` + the `Message` channel; dirty/animation-tick redraw |
 
 **Launch flow — the cockpit render cadence:**
@@ -591,7 +591,7 @@ Introduce the Model/Update/View seam without changing behavior:
 
 3. **Pure view.** Convert renderers to `fn(frame, area, &Model, &UiState)` with no `&mut` and no I/O. Move scroll clamping into `update` (on resize / scroll messages). Replace per-frame `mount_info::inspect` with a cached `MountFacts` map refreshed by a background `MountInspected` message.
 
-4. **Background I/O → channel.** Move instance refresh, 1Password loads, snapshot fan-out, and mount inspection onto background tasks that send `Message`s. `run_console` is already an `async fn`, so the target loop is a `tokio::select!` over a crossterm `EventStream` and the background `Message` channel — replacing today's synchronous `event::poll(50 ms)` — so the draw never blocks on disk/socket work and no longer wakes 20×/s just to spin. (Fallback if `EventStream` proves awkward: a dedicated input thread feeding the same `Message` channel via `std::sync::mpsc`.)
+4. **Background I/O → channel.** Move the remaining bespoke/background work into typed effects: instance refresh already runs on a worker-thread result channel, but still needs an `InstancesRefreshed` message; 1Password loads and mount inspection still need to move behind result messages. `run_console` is already an `async fn`, so the target loop is a `tokio::select!` over a crossterm `EventStream` and the background `Message` channel — replacing today's synchronous `event::poll(50 ms)` — so the draw never blocks on disk/socket work and no longer wakes 20×/s just to spin. (Fallback if `EventStream` proves awkward: a dedicated input thread feeding the same `Message` channel via `std::sync::mpsc`.)
 
 5. **`StatefulWidget` components.** Extract the list, the editor (per tab), settings, and the modal family into components implementing the Ratatui widget traits, each with its own `State`. This is where the [Split `input/editor.rs`](/reference/roadmap/split-input-editor/) and [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) work should land — the splits target component boundaries, not arbitrary smaller files.
 
@@ -779,7 +779,7 @@ The phases below describe the long-range order. For `/goal` execution, use slice
 | Token/geometry promotion | snapshot baseline | Move palette, spacing, glyph, tab, scrollbar, centering, and text-measurement helpers into `jackin-tui` | Product code imports semantic tokens/helpers; new `Color::Rgb(...)` and raw ANSI chrome literals disappear from touched code. |
 | Host message boundary | snapshot baseline | `Message` plus central `update` around one host-console path, then expanded across keys/mouse/resize/focus | State changes flow through messages; tests can drive update without a terminal. |
 | Host pure-view pass | host message boundary | Remove `&mut` and I/O from one renderer family at a time | The renderer under migration accepts immutable model/UI state and cannot stat the filesystem or mutate scroll geometry during draw. |
-| Host async refresh | host message boundary | Move one blocking refresh source at a time (`mount_info`, instances, 1Password, snapshot fan-out) behind effects/subscriptions | Slow work reports back as messages; redraw/input remain live while the work runs. |
+| Host async refresh | host message boundary | Move one blocking refresh source at a time (`mount_info`, the instance-refresh worker result, 1Password) behind effects/subscriptions | Slow work reports back as messages; redraw/input remain live while the work runs. |
 | Shared primitive extraction | token/geometry promotion | Promote one primitive (`HintBar`, `ButtonStrip`, `ScrollablePanel`, `TabStrip`, etc.) into `jackin-tui` | Host/launch use the shared primitive; snapshots prove unchanged output. |
 | Launch consolidation | host message boundary, shared primitives | Replace launch-private widget/runtime seams with app messages/effects and `jackin-tui` components | `src/runtime` no longer imports `src/console/widgets`; launch stage updates are messages, with picker/failure effects still pending. |
 | Terminal session spine | host message boundary, launch consolidation | Replace global rich-surface/host-screen coordination with typed `TerminalSession` ownership | Console → launch → capsule still handoffs cleanly; diagnostics/debug routing and panic-safe restore still work. |
@@ -806,7 +806,7 @@ Remove `&mut` and I/O from renderers. Move scroll clamping into `update`. Visibl
 
 ### Phase 3 — Host: background I/O
 
-Move instance refresh, 1Password loads, snapshot fan-out, and mount inspection onto background tasks that send `Message`s. The draw never blocks.
+Move the remaining refresh/load paths onto background tasks that send `Message`s. Instance refresh no longer blocks draw, but it still reports through a bespoke worker channel; promote that result to `ManagerMessage` alongside 1Password loads and mount inspection.
 
 ### Phase 4 — Host: components + modal-stack convergence
 

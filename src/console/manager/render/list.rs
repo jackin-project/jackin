@@ -704,6 +704,15 @@ pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
     super::max_line_width(&lines)
 }
 
+#[cfg(test)]
+pub(in crate::console::manager) fn global_mounts_content_width(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    let cache = MountInfoCache::default();
+    cache.refresh_mounts(mounts);
+    global_mounts_content_width_with_cache(mounts, &cache)
+}
+
 /// Shared inputs for the right-pane sidebar. Saved-workspace rows and the
 /// synthetic "Current directory" row both build one of these and feed it
 /// through `compute_sidebar_layout` → `render_sidebar_body` so the panel
@@ -2223,7 +2232,7 @@ mod subpanel_padding_tests {
         render_general_subpanel, render_mounts_subpanel,
     };
     use crate::config::AppConfig;
-    use crate::console::manager::state::WorkspaceSummary;
+    use crate::console::manager::state::{MountInfoCache, WorkspaceSummary};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -2319,7 +2328,16 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(40, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[], &mut 0, &mut 0, false);
+            let cache = MountInfoCache::default();
+            render_mounts_subpanel(
+                f,
+                Rect::new(0, 0, 40, 4),
+                &[],
+                &cache,
+                &mut 0,
+                &mut 0,
+                false,
+            );
         })
         .unwrap();
         let mounts_col = first_content_indent(&term).expect("mounts has content");

@@ -866,6 +866,7 @@ mod tests {
         EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, MountScrollFocus,
         SettingsState, SettingsTab,
     };
+    use ratatui::layout::Rect;
 
     fn state_with_saved_count(count: usize) -> ManagerState<'static> {
         let tmp = tempfile::tempdir().unwrap();

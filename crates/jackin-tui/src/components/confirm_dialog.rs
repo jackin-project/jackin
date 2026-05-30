@@ -72,6 +72,16 @@ impl ConfirmState {
         }
     }
 
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> &ConfirmKind {
+        &self.kind
+    }
+
     pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<bool> {
         match key.code {
             KeyCode::Char('y' | 'Y') => ModalOutcome::Commit(true),

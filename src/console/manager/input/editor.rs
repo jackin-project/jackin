@@ -833,6 +833,37 @@ fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
     }
 }
 
+#[cfg(test)]
+fn step_auth_cursor_down(
+    rows: &[super::super::render::editor::AuthRow],
+    mut candidate: usize,
+    max_row: usize,
+) -> usize {
+    while matches!(
+        rows.get(candidate),
+        Some(super::super::render::editor::AuthRow::Spacer)
+    ) && candidate < max_row
+    {
+        candidate += 1;
+    }
+    candidate
+}
+
+#[cfg(test)]
+fn step_auth_cursor_up(
+    rows: &[super::super::render::editor::AuthRow],
+    mut candidate: usize,
+) -> usize {
+    while matches!(
+        rows.get(candidate),
+        Some(super::super::render::editor::AuthRow::Spacer)
+    ) && candidate > 0
+    {
+        candidate -= 1;
+    }
+    candidate
+}
+
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub(super) fn handle_editor_modal(
     editor: &mut EditorState<'_>,
@@ -2918,11 +2949,11 @@ plugins = []
 
         match &editor.modal {
             Some(Modal::Confirm { target, state }) => {
-                assert_eq!(state.title, "Trust role source");
+                assert_eq!(state.title(), "Trust role source");
                 let crate::console::widgets::confirm::ConfirmKind::RoleTrust { role, repository } =
-                    &state.kind
+                    state.kind()
                 else {
-                    panic!("expected RoleTrust kind, got {:?}", state.kind);
+                    panic!("expected RoleTrust kind, got {:?}", state.kind());
                 };
                 assert_eq!(role, "chainargos/agent-brown");
                 assert_eq!(
@@ -3037,7 +3068,7 @@ plugins = []
         );
         match &editor.modal {
             Some(Modal::Confirm { target, state }) => {
-                assert_eq!(state.title, "Trust role source");
+                assert_eq!(state.title(), "Trust role source");
                 match target {
                     ConfirmTarget::TrustRoleSource { key, source } => {
                         assert_eq!(key, "chainargos/agent-brown");
