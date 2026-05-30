@@ -29,6 +29,7 @@ pub(crate) enum ManagerMessage {
     ExitPreview,
     ExpandSelectedTree,
     ClearSettingsAuthKind,
+    DismissSettingsErrorPopup,
     EnterSettingsAuthKind,
     ScrollEditorTabHorizontal {
         delta: i16,
@@ -140,6 +141,7 @@ pub(crate) fn update_manager(
         ManagerMessage::ExitPreview => state.preview_focused = false,
         ManagerMessage::ExpandSelectedTree => expand_selected_tree(state),
         ManagerMessage::ClearSettingsAuthKind => clear_settings_auth_kind(state),
+        ManagerMessage::DismissSettingsErrorPopup => dismiss_settings_error_popup(state),
         ManagerMessage::EnterSettingsAuthKind => enter_settings_auth_kind(state),
         ManagerMessage::ScrollEditorTabHorizontal {
             delta,
@@ -275,6 +277,14 @@ fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
     };
     settings.auth.selected_kind = None;
     settings.auth.selected = 0;
+}
+
+fn dismiss_settings_error_popup(state: &mut ManagerState<'_>) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    settings.error_popup = None;
+    settings.auth.restore_pending_auth_form();
 }
 
 fn enter_settings_auth_kind(state: &mut ManagerState<'_>) {
@@ -867,10 +877,14 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
 #[cfg(test)]
 mod tests {
     use super::{ManagerMessage, update_manager};
+    use crate::console::manager::auth_kind::AuthKind;
     use crate::console::manager::state::{
-        EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, MountScrollFocus,
-        SettingsState, SettingsTab,
+        AuthFormFocus, AuthFormReturnPath, AuthFormTarget, EditorState, EditorTab, FieldFocus,
+        ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
+        SettingsTab,
     };
+    use crate::console::widgets::auth_panel::AuthForm;
+    use crate::console::widgets::error_popup::ErrorPopupState;
     use ratatui::layout::Rect;
 
     fn state_with_saved_count(count: usize) -> ManagerState<'static> {
@@ -1253,6 +1267,47 @@ mod tests {
         };
         assert_eq!(settings.auth.selected, 0);
         assert!(settings.auth.selected_kind.is_none());
+    }
+
+    #[test]
+    fn dismiss_settings_error_popup_restores_pending_auth_form() {
+        let mut state = state_with_saved_count(0);
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings.error_popup = Some(ErrorPopupState::new("Token mint failed", "op item missing"));
+        settings.auth.pending_auth_form_return = Some(AuthFormReturnPath {
+            target: AuthFormTarget::Workspace {
+                kind: AuthKind::Claude,
+            },
+            state: Box::new(AuthForm::new(AuthKind::Claude)),
+            focus: AuthFormFocus::Save,
+            literal_buffer: "token".into(),
+        });
+        state.stage = ManagerStage::Settings(settings);
+
+        assert!(update_manager(&mut state, ManagerMessage::DismissSettingsErrorPopup).is_dirty());
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(settings.error_popup.is_none());
+        assert!(settings.auth.pending_auth_form_return.is_none());
+        let Some(SettingsAuthModal::AuthForm {
+            target,
+            focus,
+            literal_buffer,
+            ..
+        }) = settings.auth.modal
+        else {
+            panic!("expected auth form to be restored");
+        };
+        assert_eq!(
+            target,
+            AuthFormTarget::Workspace {
+                kind: AuthKind::Claude
+            }
+        );
+        assert_eq!(focus, AuthFormFocus::Save);
+        assert_eq!(literal_buffer, "token");
     }
 
     #[test]

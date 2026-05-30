@@ -749,31 +749,8 @@ fn cycle_auth_form_mode(form: &mut AuthForm) {
     form.set_mode(next);
 }
 
-/// Public seam for the settings error-popup dismiss in `input/mod.rs`:
-/// re-mount the stashed auth form after a token-generate mint failure so
-/// the operator lands back on the Edit-auth dialog (parallel to the
-/// editor's `Modal::ErrorPopup` recovery).
-pub(super) fn restore_settings_auth_form_after_error(
-    auth: &mut super::super::state::SettingsAuthState,
-) {
-    restore_settings_auth_form(auth);
-}
-
 fn restore_settings_auth_form(auth: &mut super::super::state::SettingsAuthState) {
-    if let Some(AuthFormReturnPath {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    }) = auth.pending_auth_form_return.take()
-    {
-        auth.modal = Some(SettingsAuthModal::AuthForm {
-            target,
-            state,
-            focus,
-            literal_buffer,
-        });
-    }
+    auth.restore_pending_auth_form();
 }
 
 /// Lift the stashed settings auth form, apply a literal credential, and

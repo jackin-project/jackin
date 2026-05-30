@@ -1321,6 +1321,23 @@ impl SettingsAuthState {
         self.generating_token = false;
         self.error = None;
     }
+
+    pub fn restore_pending_auth_form(&mut self) {
+        if let Some(AuthFormReturnPath {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        }) = self.pending_auth_form_return.take()
+        {
+            self.modal = Some(SettingsAuthModal::AuthForm {
+                target,
+                state,
+                focus,
+                literal_buffer,
+            });
+        }
+    }
 }
 
 impl SettingsTrustState {

@@ -13,6 +13,7 @@ pub(super) mod save;
 use crossterm::event::KeyEvent;
 
 use super::super::widgets::ModalOutcome;
+use super::message::{ManagerMessage, update_manager};
 use super::state::{EditorSaveFlow, EditorState, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -205,15 +206,7 @@ pub fn handle_key(
             )
         });
         if dismiss {
-            settings.error_popup = None;
-            // A token-generate mint failure surfaces through this popup
-            // while the auth form is stashed in `pending_auth_form_return`
-            // (the `g`/`G` trigger detached it). Restore it on dismiss so
-            // the operator lands back on the Edit-auth dialog, parallel to
-            // the editor's `Modal::ErrorPopup` recovery.
-            if settings.auth.pending_auth_form_return.is_some() {
-                global_mounts::restore_settings_auth_form_after_error(&mut settings.auth);
-            }
+            let _ = update_manager(state, ManagerMessage::DismissSettingsErrorPopup);
         }
         return Ok(InputOutcome::Continue);
     }
