@@ -212,12 +212,13 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     };
     let is_dirty = settings.is_dirty();
     let global = &mut settings.mounts;
+    let mut return_to_list = false;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
             if is_dirty {
                 global.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
             } else {
-                state.stage = ManagerStage::List;
+                return_to_list = true;
             }
         }
         KeyCode::Enter if global.selected == global.pending.len() => {
@@ -247,6 +248,9 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         KeyCode::Char('2') => open_edit_text(state, GlobalMountTextTarget::Destination),
         KeyCode::Char('3') => open_edit_text(state, GlobalMountTextTarget::Scope),
         _ => {}
+    }
+    if return_to_list {
+        dispatch_manager(state, ManagerMessage::ReturnToList);
     }
 }
 
@@ -287,12 +291,13 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
+    let mut return_to_list = false;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
             if settings.is_dirty() {
                 settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
             } else {
-                state.stage = ManagerStage::List;
+                return_to_list = true;
             }
         }
         KeyCode::Char('a' | 'A') => {
@@ -330,6 +335,9 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         }
         _ => {}
     }
+    if return_to_list {
+        dispatch_manager(state, ManagerMessage::ReturnToList);
+    }
 }
 
 fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
@@ -359,12 +367,13 @@ fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
+    let mut return_to_list = false;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
             if settings.is_dirty() {
                 settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
             } else {
-                state.stage = ManagerStage::List;
+                return_to_list = true;
             }
         }
         KeyCode::Enter => {
@@ -374,6 +383,9 @@ fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             open_settings_save_preview(settings);
         }
         _ => {}
+    }
+    if return_to_list {
+        dispatch_manager(state, ManagerMessage::ReturnToList);
     }
 }
 
@@ -927,18 +939,22 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
+    let mut return_to_list = false;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
             if settings.is_dirty() {
                 settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
             } else {
-                state.stage = ManagerStage::List;
+                return_to_list = true;
             }
         }
         KeyCode::Char('s' | 'S') => {
             open_settings_save_preview(settings);
         }
         _ => {}
+    }
+    if return_to_list {
+        dispatch_manager(state, ManagerMessage::ReturnToList);
     }
 }
 
@@ -1005,18 +1021,22 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
+    let mut return_to_list = false;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
             if settings.is_dirty() {
                 settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
             } else {
-                state.stage = ManagerStage::List;
+                return_to_list = true;
             }
         }
         KeyCode::Char('s' | 'S') => {
             open_settings_save_preview(settings);
         }
         _ => {}
+    }
+    if return_to_list {
+        dispatch_manager(state, ManagerMessage::ReturnToList);
     }
 }
 
@@ -1950,28 +1970,31 @@ fn set_settings_env_value_typed(
 /// Promote any pending error from a settings sub-tab to `settings.error_popup`,
 /// pop back to the workspace list when a handler set `exit_requested`.
 pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return;
+    let exit = {
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            return;
+        };
+        // Each tab dispatches to exactly one sub-handler per keypress, so at
+        // most one error field is set at a time — `or_else` laziness is safe.
+        let error = settings
+            .mounts
+            .error
+            .take()
+            .or_else(|| settings.env.error.take())
+            .or_else(|| settings.auth.error.take())
+            .or_else(|| settings.trust.error.take());
+        let exit = std::mem::take(&mut settings.mounts.exit_requested);
+        if let Some(msg) = error {
+            settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+                "Settings error",
+                msg,
+            ));
+        }
+        settings.mounts.refresh_mount_info_cache();
+        exit
     };
-    // Each tab dispatches to exactly one sub-handler per keypress, so at
-    // most one error field is set at a time — `or_else` laziness is safe.
-    let error = settings
-        .mounts
-        .error
-        .take()
-        .or_else(|| settings.env.error.take())
-        .or_else(|| settings.auth.error.take())
-        .or_else(|| settings.trust.error.take());
-    let exit = std::mem::take(&mut settings.mounts.exit_requested);
-    if let Some(msg) = error {
-        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
-            "Settings error",
-            msg,
-        ));
-    }
-    settings.mounts.refresh_mount_info_cache();
     if exit {
-        state.stage = ManagerStage::List;
+        dispatch_manager(state, ManagerMessage::ReturnToList);
     }
 }
 
