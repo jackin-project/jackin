@@ -1,17 +1,14 @@
 //! Reusable widgets for the workspace manager TUI.
 //!
-//! Two of the widgets wrap ratatui ecosystem crates (`ratatui-textarea`,
-//! `tui-widget-list`). The rest are hand-rolled — `FileBrowser` was
-//! originally built on `ratatui-explorer` but was rewritten in-house so
-//! git-repo rows can carry a distinct trailing suffix (the library
-//! exposes only a single shared `dir_style`). All are consumed by both
-//! the manager (PR 2) and the Secrets tab (PR 3).
+//! Shared TUI components are promoted into `jackin-tui`; this module keeps
+//! host-console facades and still-local widgets while the architecture
+//! migration proceeds.
 
 pub(crate) use jackin_tui::ModalOutcome;
 pub(crate) use jackin_tui::theme::{
     DANGER_RED, DIALOG_BACKDROP, DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, DIALOG_SURFACE,
-    INPUT_BG_DIM, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE,
-    TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER, WHITE,
+    LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER,
+    TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;

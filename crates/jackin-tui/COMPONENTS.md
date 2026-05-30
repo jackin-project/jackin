@@ -9,7 +9,7 @@ This inventory tracks repeatable terminal UI patterns, their current owner, call
 | `StatusFooter` | `jackin_tui::components::status_footer` | Launch progress footer | 3 — shared Ratatui widget | Replaces the former console-only `status_bar` helper; capsule bottom bar still has raw ANSI chrome. |
 | `BrandHeader` | `jackin_tui::components::brand_header` | Console brand-header facade | 3 — shared Ratatui widget | Capsule status bar has a raw ANSI brand pill until its chrome moves to Ratatui. |
 | `FilterInput` | `jackin_tui::components::filter_input` | Console select-list facade | 3 — shared Ratatui widget | Next picker extraction should consume this directly rather than drawing filter rows locally. |
-| `TextField` | `jackin_tui::TextField` | Console text input, capsule rename dialog | 2 — shared model | Ratatui text-input dialog rendering still needs promotion into `components`. |
+| `TextField` / `TextInput` | `jackin_tui::TextField`, `jackin_tui::components::text_input` | Console text input, launch text prompt, capsule rename dialog model | 3 — shared Ratatui widget | Capsule still uses the shared model through raw ANSI until its Ratatui frame lands. |
 | `TabCell` / tab layout | `jackin_tui` root | Console tab strips, capsule status bar | 2 — shared model | Ratatui `TabStrip` component still needs promotion. |
 | Scroll metrics | `jackin_tui::scroll` | Console scrollable blocks, launch build-log overlay, capsule scroll math | 2 — shared model | Ratatui `ScrollablePanel` component still needs promotion. |
 | `ModalOutcome` | `jackin_tui::ModalOutcome` | Console widgets, launch forced-choice prompts | 2 — shared update contract | Event vocabulary is shared; modal components are still per-surface. |

@@ -6,6 +6,7 @@ pub mod filter_input;
 pub mod hint_bar;
 pub mod select_list;
 pub mod status_footer;
+pub mod text_input;
 
 pub use brand_header::{BrandHeader, brand_header_line, render_brand_header};
 pub use error_dialog::{ErrorPopupState, estimated_message_rows, render_error_dialog, required_height};
@@ -15,3 +16,4 @@ pub use hint_bar::{
 };
 pub use select_list::{SelectList, SelectListState, render_select_list};
 pub use status_footer::{StatusFooter, render_status_footer};
+pub use text_input::{BorderStyle, TextInput, TextInputState, render_text_input};

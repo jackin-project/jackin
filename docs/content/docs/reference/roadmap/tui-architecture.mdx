@@ -341,7 +341,7 @@ Critical-path dependencies:
 
 ## Current state — host operator console
 
-The host console lives under `src/console/` (~28K lines of the production tree) and is built on `ratatui` 0.30 (with the `unstable-widget-ref` feature enabled), `crossterm` 0.29, and `ratatui-textarea` 0.9.
+The host console lives under `src/console/` (~28K lines of the production tree) and is built on `ratatui` 0.30 (with the `unstable-widget-ref` feature enabled) and `crossterm` 0.29. Text entry is now backed by the shared `TextField` / `TextInput` path in <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> rather than `ratatui-textarea`.
 
 ### Module map (the load-bearing files)
 

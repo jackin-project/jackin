@@ -468,6 +468,36 @@ impl TextField {
         self.cursor
     }
 
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        self.cursor = self.value[..self.cursor]
+            .char_indices()
+            .next_back()
+            .map(|(index, _)| index)
+            .unwrap_or(0);
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        if self.cursor >= self.value.len() {
+            return;
+        }
+        let next = self.value[self.cursor..]
+            .chars()
+            .next()
+            .map_or(self.value.len(), |ch| self.cursor + ch.len_utf8());
+        self.cursor = next.min(self.value.len());
+    }
+
+    pub fn move_cursor_to_start(&mut self) {
+        self.cursor = 0;
+    }
+
+    pub fn move_cursor_to_end(&mut self) {
+        self.cursor = self.value.len();
+    }
+
     pub fn len_chars(&self) -> usize {
         self.value.chars().count()
     }
@@ -505,6 +535,17 @@ impl TextField {
             .unwrap_or(0);
         self.value.replace_range(prev_char_start..self.cursor, "");
         self.cursor = prev_char_start;
+    }
+
+    pub fn delete_char(&mut self) {
+        if self.cursor >= self.value.len() {
+            return;
+        }
+        let next = self.value[self.cursor..]
+            .chars()
+            .next()
+            .map_or(self.value.len(), |ch| self.cursor + ch.len_utf8());
+        self.value.replace_range(self.cursor..next, "");
     }
 
     /// True when the trimmed value matches `forbidden` (non-empty).

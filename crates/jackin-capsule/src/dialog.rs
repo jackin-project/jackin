@@ -126,8 +126,7 @@ pub enum Dialog {
     /// Text-input modal opened when the operator double-clicks a tab.
     /// `tab_idx` records which tab to rename. `input` reuses the
     /// shared `jackin_tui::TextField` so the buffer + cursor + max
-    /// length live in the same place the console TUI will pull from
-    /// when its modal stack switches off ratatui_textarea. Enter
+    /// length live in the same place as the console TUI text input. Enter
     /// commits; Esc cancels; empty input clears any previous custom
     /// label so the tab returns to auto-naming.
     RenameTab {

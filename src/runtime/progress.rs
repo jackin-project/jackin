@@ -7,8 +7,9 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::components::{
-    ErrorPopupState, SelectListState, render_error_dialog, render_hint_bar, render_select_list,
-    render_status_footer, required_height as error_dialog_required_height,
+    ErrorPopupState, SelectListState, TextInputState, render_error_dialog, render_hint_bar,
+    render_select_list, render_status_footer, render_text_input,
+    required_height as error_dialog_required_height,
 };
 use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
@@ -18,7 +19,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::console::widgets::confirm::{self, ConfirmState};
-use crate::console::widgets::text_input::{self, TextInputState};
 use crate::console::widgets::{
     DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
     PHOSPHOR_GREEN, WHITE,
@@ -2078,7 +2078,7 @@ fn draw_select(frame: &mut Frame<'_>, title: &str, context: &[Line<'_>], picker:
 
 fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable: bool) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-    text_input::render(frame, text_prompt_rect(box_area), input);
+    render_text_input(frame, text_prompt_rect(box_area), input);
     render_hint_bar(frame, hint_area, text_prompt_hint(skippable));
 }
 
