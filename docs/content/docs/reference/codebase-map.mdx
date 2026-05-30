@@ -156,14 +156,9 @@ The interactive console lives in `src/console/`:
   `WorkspaceChoice`.
 - <RepoFile path="src/console/preview.rs" /> — workspace preview and
   detail lines.
-- `src/console/manager/` — the workspace-manager TUI subsystem.
-- `src/console/widgets/` — host-console adapters and still-local modal
-  widgets. Shared tokens and promoted components live in
-  <RepoFile path="crates/jackin-tui/src/components.rs" /> and are tracked in
-  <RepoFile path="crates/jackin-tui/COMPONENTS.md" />.
-- <RepoFile path="crates/jackin-tui/src/runtime.rs" /> — small shared
-  runtime contracts such as `Dirty`, used by host and launch update
-  functions while the fuller message/effect split proceeds.
+- `src/console/manager/` — the workspace-manager TUI subsystem. The message boundary lives in <RepoFile path="src/console/manager/message.rs" /> (`ManagerMessage` enum + `update_manager`); render functions are pure (immutable model) and live under `src/console/manager/render/`; input handlers under `src/console/manager/input/` translate terminal events into `ManagerMessage` variants.
+- `src/console/widgets/` — host-console adapters and still-local modal widgets. Shared tokens and promoted components live in <RepoFile path="crates/jackin-tui/src/components.rs" />.
+- <RepoFile path="crates/jackin-tui/src/runtime.rs" /> — small shared runtime contracts such as `Dirty` and `UpdateResult`, used by host and launch update functions.
 - <RepoFile path="crates/jackin-tui/src/lookbook.rs" /> — renderable
   component stories used by the `tui-lookbook` generator to produce the
   [TUI Lookbook](/reference/tui-lookbook/) SVG previews.
@@ -172,10 +167,7 @@ The interactive console lives in `src/console/`:
   capsule still consumes the shared tab layout model through raw ANSI
   until its Ratatui frame lands.
 
-Capsule input-mode ownership starts in <RepoFile path="crates/jackin-capsule/src/mux_mode.rs" />,
-and dispatch actions start in <RepoFile path="crates/jackin-capsule/src/action.rs" />; the large
-<RepoFile path="crates/jackin-capsule/src/daemon.rs" /> file still owns most dispatch and rendering
-while the TUI architecture split proceeds.
+Capsule input-mode ownership is in <RepoFile path="crates/jackin-capsule/src/mux_mode.rs" />, dispatch actions in <RepoFile path="crates/jackin-capsule/src/action.rs" />, git-context utilities in <RepoFile path="crates/jackin-capsule/src/git_context.rs" />, and process/command utilities in <RepoFile path="crates/jackin-capsule/src/util.rs" />. <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> still owns most dispatch and rendering while the full Ratatui frame migration proceeds.
 
 General terminal-UI helpers (palette, intro/outro animation, prompt
 helpers) are split out into `src/tui/`.
