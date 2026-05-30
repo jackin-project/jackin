@@ -19,6 +19,17 @@ use crate::paths::JackinPaths;
 
 pub use mouse::{clickable_at, handle_mouse, handle_mouse_with_config};
 
+pub fn poll_background_loads(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+) {
+    state.poll_picker_loads();
+    if let ManagerStage::Editor(editor) = &mut state.stage {
+        editor::poll_role_load(editor, config, paths);
+    }
+}
+
 // Re-exported for the `run_console` token-generate loop, which re-mounts
 // the settings auth form after a mint (the `global_mounts` module is
 // `pub(super)`, so the loop reaches the helpers through this seam).

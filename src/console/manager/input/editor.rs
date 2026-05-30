@@ -12,7 +12,8 @@ use super::super::render::editor::{SecretsRow, secrets_flat_rows};
 use super::super::render::list::workspace_mounts_content_width;
 use super::super::state::{
     ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget,
+    FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsScopeTag,
+    TextInputTarget,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -1124,6 +1125,7 @@ pub(super) fn handle_editor_modal(
             }
             ModalOutcome::Continue => {}
         },
+        Modal::StatusPopup { .. } => {}
         Modal::ScopePicker { state: scope_state } => {
             use crate::console::widgets::scope_picker::ScopeChoice;
             match scope_state.handle_key(key) {
@@ -1731,7 +1733,11 @@ fn apply_role_input(
     crate::debug_log!("role", "parsed role selector: {selector}");
 
     let key = selector.key();
-    let result = (|| -> anyhow::Result<crate::config::RoleSource> {
+    let result = (|| -> anyhow::Result<(
+        String,
+        crate::config::RoleSource,
+        std::sync::mpsc::Receiver<anyhow::Result<()>>,
+    )> {
         let source = candidate_role_source(config, &selector)?;
         crate::debug_log!(
             "role",
@@ -1739,57 +1745,56 @@ fn apply_role_input(
             git = source.git.as_str(),
             trusted = source.trusted
         );
-        let source_to_register = source.clone();
         let selector = selector.clone();
         let thread_paths = paths.clone();
         let git_url = source.git.clone();
-        let key = key.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
         crate::debug_log!(
             "role",
             "registering role repo for key={key:?} git={git:?}",
             git = source.git.as_str()
         );
-        let registration = std::thread::spawn(move || -> anyhow::Result<()> {
+        std::thread::spawn(move || {
             let mut runner = crate::docker::ShellRunner {
                 debug: crate::tui::is_debug_mode(),
             };
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .context("building tokio runtime for role registration")?;
-            rt.block_on(crate::runtime::register_agent_repo(
-                &thread_paths,
-                &selector,
-                &git_url,
-                &mut runner,
-                crate::tui::is_debug_mode(),
-            ))?;
-            Ok(())
-        })
-        .join()
-        .map_err(|_| anyhow::anyhow!("role loader panicked: role loader thread panicked"))?;
-        registration?;
-        persist_role_source_registration(config, paths, &key, &source_to_register)?;
-        crate::debug_log!(
-            "role",
-            "role repo registration completed for key={key:?} git={git:?}",
-            git = source.git.as_str()
-        );
-        Ok(source)
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .context("building tokio runtime for role registration")?;
+                rt.block_on(crate::runtime::register_agent_repo(
+                    &thread_paths,
+                    &selector,
+                    &git_url,
+                    &mut runner,
+                    crate::tui::is_debug_mode(),
+                ))?;
+                Ok::<_, anyhow::Error>(())
+            }))
+            .unwrap_or_else(|payload| {
+                let panic_message = panic_payload_message(payload.as_ref());
+                Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
+            });
+            let _ = tx.send(result);
+        });
+        Ok((key.clone(), source, rx))
     })();
 
     match result {
-        Ok(source) if source.trusted => {
-            crate::debug_log!("role", "role source is trusted; adding key={key:?} directly to the workspace");
-            add_role_to_workspace_editor(editor, config, &key);
-        }
-        Ok(source) => {
-            crate::debug_log!(
-                "role",
-                "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
-                git = source.git.as_str()
-            );
-            open_role_trust_confirm(editor, key, source);
+        Ok((key, source, rx)) => {
+            editor.pending_role_load = Some(PendingRoleLoad {
+                raw: raw.to_string(),
+                key: key.clone(),
+                source,
+                rx,
+            });
+            editor.modal = Some(Modal::StatusPopup {
+                state: crate::console::widgets::status_popup::StatusPopupState::new(
+                    "Loading role",
+                    format!("Loading role {key}"),
+                ),
+            });
         }
         Err(e) => {
             crate::debug_log!(
@@ -1809,6 +1814,90 @@ fn apply_role_input(
             }
             let source = candidate_role_source(config, &selector).ok();
             open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
+        }
+    }
+}
+
+pub(super) fn poll_role_load(
+    editor: &mut EditorState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+) {
+    let Some(load) = editor.pending_role_load.as_ref() else {
+        return;
+    };
+    let result = match load.rx.try_recv() {
+        Ok(result) => result,
+        Err(std::sync::mpsc::TryRecvError::Empty) => return,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            Err(anyhow::anyhow!("role loader worker disconnected"))
+        }
+    };
+    let load = editor
+        .pending_role_load
+        .take()
+        .expect("pending role load checked above");
+    match result {
+        Ok(()) => {
+            if let Err(e) = persist_role_source_registration(config, paths, &load.key, &load.source)
+            {
+                crate::debug_log!(
+                    "role",
+                    "role loader failed for key={key:?} raw={raw:?}: {e:?}",
+                    key = load.key,
+                    raw = load.raw
+                );
+                open_role_resolution_error(
+                    editor,
+                    &load.raw,
+                    Some(&load.source.git),
+                    &e.context("role repository loaded, but registration could not be persisted"),
+                );
+                return;
+            }
+            crate::debug_log!(
+                "role",
+                "role repo registration completed for key={key:?} git={git:?}",
+                key = load.key,
+                git = load.source.git.as_str()
+            );
+            if load.source.trusted {
+                crate::debug_log!(
+                    "role",
+                    "role source is trusted; adding key={key:?} directly to the workspace",
+                    key = load.key
+                );
+                add_role_to_workspace_editor(editor, config, &load.key);
+            } else {
+                crate::debug_log!(
+                    "role",
+                    "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
+                    key = load.key,
+                    git = load.source.git.as_str()
+                );
+                open_role_trust_confirm(editor, load.key, load.source);
+            }
+        }
+        Err(e) => {
+            crate::debug_log!(
+                "role",
+                "role loader failed for key={key:?} raw={raw:?}: {e:?}",
+                key = load.key,
+                raw = load.raw
+            );
+            let err_text = e.to_string();
+            if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
+                open_role_input_error(
+                    editor,
+                    &format!(
+                        "Could not load role {:?}.\n\nThe role loader hit an internal \
+                         error while registering the repository.\n\n{panic_message}",
+                        load.raw
+                    ),
+                );
+                return;
+            }
+            open_role_resolution_error(editor, &load.raw, Some(&load.source.git), &e);
         }
     }
 }
@@ -1854,7 +1943,11 @@ fn apply_role_input_with_runner(
                 .build()
                 .context("building tokio runtime for role registration")?;
             rt.block_on(crate::runtime::register_agent_repo(
-                paths, &selector, &source.git, runner, crate::tui::is_debug_mode(),
+                paths,
+                &selector,
+                &source.git,
+                runner,
+                crate::tui::is_debug_mode(),
             ))?;
             persist_role_source_registration(config, paths, &key, &source_to_register)?;
             Ok::<_, anyhow::Error>(())
@@ -1880,7 +1973,10 @@ fn apply_role_input_with_runner(
 
     match result {
         Ok(source) if source.trusted => {
-            crate::debug_log!("role", "role source is trusted; adding key={key:?} directly to the workspace");
+            crate::debug_log!(
+                "role",
+                "role source is trusted; adding key={key:?} directly to the workspace"
+            );
             add_role_to_workspace_editor(editor, config, &key);
         }
         Ok(source) => {
@@ -1938,7 +2034,10 @@ fn open_role_resolution_error(
     source_url: Option<&String>,
     err: &anyhow::Error,
 ) {
-    crate::debug_log!("role", "showing role-load error popup for raw={raw:?}: {err:?}");
+    crate::debug_log!(
+        "role",
+        "showing role-load error popup for raw={raw:?}: {err:?}"
+    );
     let message = source_url.map_or_else(
         || {
             format!(
@@ -2237,12 +2336,12 @@ mod tests {
     //! bindings, and mount-row readonly toggle.
     use super::super::super::state::{
         ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
-        ManagerState, Modal, SecretsScopeTag, TextInputTarget,
+        ManagerState, Modal, PendingRoleLoad, SecretsScopeTag, TextInputTarget,
     };
     use super::super::test_support::{key, mount};
     use super::{
         apply_file_browser_to_editor, apply_role_input_with_runner, apply_text_input_to_pending,
-        env_key_input_state, handle_editor_modal,
+        env_key_input_state, handle_editor_modal, poll_role_load,
     };
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
@@ -2977,6 +3076,67 @@ plugins = []
     }
 
     #[test]
+    fn role_load_poll_success_replaces_loading_popup_with_trust_prompt() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = config_with_agents(&["agent-smith"]);
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let source = crate::config::RoleSource {
+            git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
+            trusted: false,
+            ..Default::default()
+        };
+        editor.pending_role_load = Some(PendingRoleLoad {
+            raw: "chainargos/agent-brown".into(),
+            key: "chainargos/agent-brown".into(),
+            source,
+            rx,
+        });
+        editor.modal = Some(Modal::StatusPopup {
+            state: crate::console::widgets::status_popup::StatusPopupState::new(
+                "Loading role",
+                "Loading role chainargos/agent-brown",
+            ),
+        });
+        tx.send(Ok(())).unwrap();
+
+        poll_role_load(&mut editor, &mut config, &paths);
+
+        assert!(
+            editor.pending_role_load.is_none(),
+            "completed role load should clear pending state"
+        );
+        match &editor.modal {
+            Some(Modal::Confirm { target, state }) => {
+                assert_eq!(state.title, "Trust role source");
+                match target {
+                    ConfirmTarget::TrustRoleSource { key, source } => {
+                        assert_eq!(key, "chainargos/agent-brown");
+                        assert_eq!(
+                            source.git,
+                            "https://github.com/chainargos/jackin-agent-brown.git"
+                        );
+                        assert!(!source.trusted);
+                    }
+                    other => panic!("expected TrustRoleSource target; got {other:?}"),
+                }
+            }
+            other => panic!("expected trust Confirm modal; got {other:?}"),
+        }
+        assert!(
+            config
+                .roles
+                .get("chainargos/agent-brown")
+                .is_some_and(|source| !source.trusted),
+            "completed load should register the untrusted role source"
+        );
+    }
+
+    #[test]
     fn role_input_trust_decline_keeps_registered_role_untrusted() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
@@ -3332,9 +3492,7 @@ plugins = []
                 assert_eq!(state.title, "Load role failed");
                 assert!(state.message.contains("Could not load role"));
                 assert!(
-                    state
-                        .message
-                        .contains("test panic while cloning role repo"),
+                    state.message.contains("test panic while cloning role repo"),
                     "panic payload should be visible in the error dialog:\n{}",
                     state.message
                 );
@@ -3355,12 +3513,7 @@ plugins = []
         let config = AppConfig::default();
         let mut editor = EditorState::new_edit("ws".into(), empty_ws());
 
-        apply_text_input_to_pending(
-            &TextInputTarget::Role,
-            &mut editor,
-            "agent-smith",
-            false,
-        );
+        apply_text_input_to_pending(&TextInputTarget::Role, &mut editor, "agent-smith", false);
 
         match &editor.modal {
             Some(Modal::ErrorPopup { state }) => {
