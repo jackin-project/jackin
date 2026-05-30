@@ -110,14 +110,15 @@ impl ConsoleState {
             // — a single Enter shouldn't terminate the TUI.
             let name = choice.name;
             if let ConsoleStage::Manager(ms) = &mut self.stage {
-                ms.list_modal = Some(crate::console::manager::state::Modal::ErrorPopup {
-                    state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                        "No eligible roles",
-                        format!(
+                let _ = manager::update_manager(
+                    ms,
+                    manager::ManagerMessage::OpenListErrorPopup {
+                        title: "No eligible roles".into(),
+                        message: format!(
                             "Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
                         ),
-                    ),
-                });
+                    },
+                );
             }
             self.pending_launch = None;
             self.pending_launch_role = None;
@@ -579,12 +580,13 @@ fn show_role_resolution_error(
     error: &anyhow::Error,
 ) {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.list_modal = Some(manager::state::Modal::ErrorPopup {
-        state: widgets::error_popup::ErrorPopupState::new(
-            "Role resolution failed",
-            format!("Could not resolve {}.\n\n{error:#}", role.key()),
-        ),
-    });
+    let _ = manager::update_manager(
+        ms,
+        manager::ManagerMessage::OpenListErrorPopup {
+            title: "Role resolution failed".into(),
+            message: format!("Could not resolve {}.\n\n{error:#}", role.key()),
+        },
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1181,19 +1183,23 @@ pub async fn run_console(
                                 }
                                 let result = action_handler.run_in_place(&container, action);
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    ms.list_modal = None;
+                                    let _ = manager::update_manager(
+                                        ms,
+                                        manager::ManagerMessage::DismissListModal,
+                                    );
                                     if let Err(error) = result {
                                         let err_title = match action {
                                             ConsoleInstanceAction::Stop => "Stop failed",
                                             ConsoleInstanceAction::Purge => "Purge failed",
                                             _ => "Action failed",
                                         };
-                                        ms.list_modal = Some(manager::state::Modal::ErrorPopup {
-                                            state: widgets::error_popup::ErrorPopupState::new(
-                                                err_title,
-                                                format!("{error:#}"),
-                                            ),
-                                        });
+                                        let _ = manager::update_manager(
+                                            ms,
+                                            manager::ManagerMessage::OpenListErrorPopup {
+                                                title: err_title.into(),
+                                                message: format!("{error:#}"),
+                                            },
+                                        );
                                     }
                                     ms.force_refresh_instances();
                                 }
