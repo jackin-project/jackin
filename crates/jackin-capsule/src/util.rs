@@ -1,5 +1,7 @@
 use std::io::Read;
 use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 /// Cap reads against text metadata files so a corrupt or hostile file
 /// cannot pin daemon memory while parsing branch state or hostnames.
@@ -34,6 +36,142 @@ pub fn read_text_bounded(label: &'static str, path: &Path, max_bytes: u64) -> Op
         );
     }
     Some(buf)
+}
+
+const COMMAND_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+/// Outcome of polling a spawned `Child` to completion with a deadline.
+/// Callers translate this into their own result/Option/bool shape.
+pub(crate) enum WaitOutcome {
+    Exited(std::process::ExitStatus),
+    /// The kernel reaped the child out from under us (PID 1's zombie
+    /// reaper inside Capsule, or a sibling thread's `waitpid`). The
+    /// exit status is lost; callers that captured stdout/stderr should
+    /// trust those pipes, and presence-probes can treat the spawn
+    /// itself as proof the executable exists.
+    Reaped,
+    /// Timed out before the child finished. The helper has already
+    /// attempted `kill()` + `wait()` (best-effort) before returning.
+    TimedOut,
+    /// `try_wait` itself returned a non-`ECHILD` error.
+    Failed(std::io::Error),
+}
+
+/// Poll `child.try_wait()` at `COMMAND_PROBE_POLL_INTERVAL` until it
+/// finishes, the kernel reaps it, the deadline fires, or `try_wait`
+/// itself errors. `label` is only used in the "kill after timeout
+/// failed" log so the line names the program that lingered.
+pub(crate) fn wait_child_with_timeout(
+    child: &mut Child,
+    label: &str,
+    timeout: Duration,
+) -> WaitOutcome {
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return WaitOutcome::Exited(status),
+            Ok(None) => {}
+            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+                return WaitOutcome::Reaped;
+            }
+            Err(e) => return WaitOutcome::Failed(e),
+        }
+        if started.elapsed() >= timeout {
+            if let Err(e) = child.kill() {
+                crate::clog!(
+                    "{label}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
+                    e.raw_os_error()
+                );
+            }
+            let _ = child.wait();
+            return WaitOutcome::TimedOut;
+        }
+        std::thread::sleep(COMMAND_PROBE_POLL_INTERVAL);
+    }
+}
+
+pub(crate) fn command_stdout_trimmed_with_timeout(
+    command: &mut Command,
+    timeout: Duration,
+) -> Option<String> {
+    command_stdout_trimmed_with_timeout_and_statuses(command, timeout, &[0])
+}
+
+pub(crate) fn command_stdout_trimmed_with_timeout_and_statuses(
+    command: &mut Command,
+    timeout: Duration,
+    accepted_statuses: &[i32],
+) -> Option<String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            crate::clog!(
+                "command spawn failed ({:?}): {e} (errno={:?})",
+                command.get_program(),
+                e.raw_os_error()
+            );
+            return None;
+        }
+    };
+    let mut stdout = child.stdout.take()?;
+    let stdout_reader = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes)?;
+        Ok(bytes)
+    });
+    let label = format!("{:?}", command.get_program());
+    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
+        WaitOutcome::Exited(status) => Some(
+            status
+                .code()
+                .is_some_and(|code| accepted_statuses.contains(&code)),
+        ),
+        // Status is lost; trust the stdout pipe (callers like the
+        // Container info dialog would otherwise show empty fields for
+        // healthy git/gh commands).
+        WaitOutcome::Reaped => None,
+        WaitOutcome::TimedOut => {
+            // Joining the reader is bounded: kill() (inside the helper)
+            // closed the pipe, so read_to_end returns quickly. Without
+            // the join the OS-thread is leaked across every timeout
+            // firing.
+            let _ = stdout_reader.join();
+            return None;
+        }
+        WaitOutcome::Failed(e) => {
+            crate::clog!(
+                "command try_wait failed ({:?}): {e} (errno={:?})",
+                command.get_program(),
+                e.raw_os_error()
+            );
+            let _ = stdout_reader.join();
+            return None;
+        }
+    };
+    if status_success == Some(false) {
+        crate::cdebug!(
+            "command exited non-accepted status ({:?}); stderr was nulled so reason is unavailable",
+            command.get_program()
+        );
+        return None;
+    }
+    let stdout = match stdout_reader.join() {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(e)) => {
+            crate::clog!(
+                "command stdout read failed: {e} (errno={:?})",
+                e.raw_os_error()
+            );
+            return None;
+        }
+        Err(_) => {
+            crate::clog!("command stdout reader thread panicked");
+            return None;
+        }
+    };
+    let value = String::from_utf8_lossy(&stdout).trim().to_string();
+    if value.is_empty() { None } else { Some(value) }
 }
 
 #[cfg(test)]

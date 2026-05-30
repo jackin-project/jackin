@@ -6,6 +6,7 @@ pub mod client;
 pub mod config;
 pub mod daemon;
 pub mod dialog;
+pub mod git_context;
 pub mod input;
 pub mod layout;
 pub mod logging;

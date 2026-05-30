@@ -15,9 +15,8 @@
 use std::collections::{HashMap, HashSet};
 #[cfg(target_os = "linux")]
 use std::ffi::OsStr;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Instant, SystemTime};
 
@@ -35,6 +34,8 @@ use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 use portable_pty::CommandBuilder;
 
 use crate::action::Action;
+use crate::git_context::{WorkdirContext, git_capture_at_workdir, resolve_default_branch};
+use crate::util::{WaitOutcome, wait_child_with_timeout};
 use crate::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
     PickerIntent, PullRequestStatus, SplitDirection,
@@ -182,151 +183,6 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
-}
-
-/// One-shot resolution of workdir + tool facts. `gh_available` may
-/// flip from false to true when a background PR lookup succeeds (so a
-/// startup PATH race doesn't freeze the feature for the daemon
-/// lifetime); the other fields are never re-probed.
-struct WorkdirContext {
-    is_git_repo: bool,
-    git_available: bool,
-    gh_available: bool,
-    /// `origin/HEAD` resolved to a short branch name (`main`, `master`,
-    /// `trunk`, `develop`, …). `None` when the workdir is not a git
-    /// checkout, when `origin/HEAD` is not set, or when `git
-    /// symbolic-ref` fails. Falls back to a `main`/`master` literal
-    /// match for branches that look like defaults when this is `None`.
-    default_branch: Option<String>,
-}
-
-impl WorkdirContext {
-    fn resolve(workdir: &Path) -> Self {
-        let git_available = command_in_path("git");
-        let gh_available = command_in_path("gh");
-        // `.git` may be a regular directory (normal checkout) or a
-        // file containing `gitdir: …` (worktree / submodule).
-        // `try_exists` covers both. Keep this independent of the
-        // startup `git --version` probe: the hot branch path can read
-        // `.git/HEAD` directly, so a normal checkout can still update
-        // chrome even if the subprocess probe fails or runs before the
-        // shell has expanded PATH.
-        let git_metadata = workdir.join(".git");
-        let has_git_metadata = match git_metadata.try_exists() {
-            Ok(present) => present,
-            Err(e) => {
-                crate::clog!(
-                    "workdir-context: .git try_exists at {} failed: {e} (errno={:?}); treating as not-a-git-repo",
-                    git_metadata.display(),
-                    e.raw_os_error()
-                );
-                false
-            }
-        };
-        let is_git_repo =
-            has_git_metadata || (git_available && workdir_is_inside_git_tree(workdir));
-        let default_branch = if is_git_repo {
-            resolve_default_branch(workdir)
-        } else {
-            None
-        };
-        Self {
-            is_git_repo,
-            git_available,
-            gh_available,
-            default_branch,
-        }
-    }
-
-    /// True when `branch` is the repo's default branch (the chrome bar
-    /// stays hidden in that case). Falls back to a literal
-    /// `main`/`master`/empty match when `origin/HEAD` is not set so
-    /// freshly-cloned-but-not-`gh-repo-set-default`ed repos still
-    /// suppress the bar.
-    fn is_default_branch(&self, branch: &str) -> bool {
-        if branch.is_empty() {
-            return true;
-        }
-        if let Some(default) = self.default_branch.as_deref() {
-            return branch == default;
-        }
-        matches!(branch, "main" | "master")
-    }
-}
-
-/// Probe `name --version` once at construction. Stdin/stdout/stderr
-/// are nulled so a misbehaving subprocess cannot leak output into the
-/// daemon's logs and cannot block on stdin. As PID 1, Capsule has a
-/// SIGCHLD zombie reaper that can win the race against Rust's
-/// `Child::try_wait`; `ECHILD` after a successful spawn still proves
-/// the executable exists, so treat it as available instead of freezing
-/// the feature off for the daemon lifetime.
-fn command_in_path(name: &str) -> bool {
-    let mut cmd = Command::new(name);
-    cmd.arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let mut child = match cmd.spawn() {
-        Ok(child) => child,
-        Err(e) => {
-            crate::clog!(
-                "command_in_path[{name}]: spawn failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
-                e.raw_os_error()
-            );
-            return false;
-        }
-    };
-    let label = format!("command_in_path[{name}]");
-    match wait_child_with_timeout(&mut child, &label, GIT_CONTEXT_COMMAND_TIMEOUT) {
-        WaitOutcome::Exited(status) if status.success() => true,
-        WaitOutcome::Exited(status) => {
-            crate::cdebug!(
-                "command_in_path[{name}]: --version exited non-zero ({:?}); treating as unavailable",
-                status.code()
-            );
-            false
-        }
-        WaitOutcome::Reaped => {
-            crate::clog!(
-                "command_in_path[{name}]: child was reaped before status collection; treating as available"
-            );
-            true
-        }
-        WaitOutcome::Failed(e) => {
-            crate::clog!(
-                "command_in_path[{name}]: try_wait failed: {e} (errno={:?}); treating as unavailable for the daemon lifetime",
-                e.raw_os_error()
-            );
-            false
-        }
-        WaitOutcome::TimedOut => false,
-    }
-}
-
-/// Bounded by `GIT_CONTEXT_COMMAND_TIMEOUT` so a stalled `git`
-/// subprocess against a network-mounted `.git` cannot block the daemon.
-fn git_capture_at_workdir(workdir: &Path, args: &[&str]) -> Option<String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C").arg(workdir).args(args);
-    command_stdout_trimmed_with_timeout(&mut cmd, GIT_CONTEXT_COMMAND_TIMEOUT)
-}
-
-/// `git symbolic-ref --short refs/remotes/origin/HEAD` returns
-/// `origin/main` (or whatever the default branch is). Strip the
-/// `origin/` so it can compare directly against `git branch
-/// --show-current` output.
-fn resolve_default_branch(workdir: &Path) -> Option<String> {
-    let raw = git_capture_at_workdir(
-        workdir,
-        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-    )?;
-    raw.strip_prefix("origin/").map(|s| s.to_string())
-}
-
-fn workdir_is_inside_git_tree(workdir: &Path) -> bool {
-    git_capture_at_workdir(workdir, &["rev-parse", "--is-inside-work-tree"])
-        .is_some_and(|value| value == "true")
 }
 
 /// Three book-keeping fields for a background context lookup. They
@@ -4678,7 +4534,6 @@ fn branch_context_bar_hit(
 /// without each caller re-implementing the same guard.
 use jackin_tui::{display_cols, take_display_cols};
 
-const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
 #[cfg(target_os = "linux")]
 const GIT_CONTEXT_WATCH_MASK: AddWatchFlags = AddWatchFlags::IN_CLOSE_WRITE
@@ -4768,54 +4623,6 @@ fn watch_git_head_changes(git_dir: PathBuf, event_tx: mpsc::UnboundedSender<Sess
         {
             return;
         }
-    }
-}
-
-const COMMAND_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(25);
-
-/// Outcome of polling a spawned `Child` to completion with a deadline.
-/// Callers translate this into their own result/Option/bool shape.
-enum WaitOutcome {
-    Exited(std::process::ExitStatus),
-    /// The kernel reaped the child out from under us (PID 1's zombie
-    /// reaper inside Capsule, or a sibling thread's `waitpid`). The
-    /// exit status is lost; callers that captured stdout/stderr should
-    /// trust those pipes, and presence-probes can treat the spawn
-    /// itself as proof the executable exists.
-    Reaped,
-    /// Timed out before the child finished. The helper has already
-    /// attempted `kill()` + `wait()` (best-effort) before returning.
-    TimedOut,
-    /// `try_wait` itself returned a non-`ECHILD` error.
-    Failed(std::io::Error),
-}
-
-/// Poll `child.try_wait()` at `COMMAND_PROBE_POLL_INTERVAL` until it
-/// finishes, the kernel reaps it, the deadline fires, or `try_wait`
-/// itself errors. `label` is only used in the "kill after timeout
-/// failed" log so the line names the program that lingered.
-fn wait_child_with_timeout(child: &mut Child, label: &str, timeout: Duration) -> WaitOutcome {
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return WaitOutcome::Exited(status),
-            Ok(None) => {}
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                return WaitOutcome::Reaped;
-            }
-            Err(e) => return WaitOutcome::Failed(e),
-        }
-        if started.elapsed() >= timeout {
-            if let Err(e) = child.kill() {
-                crate::clog!(
-                    "{label}: timeout ({timeout:?}) and child.kill() failed: {e} (errno={:?})",
-                    e.raw_os_error()
-                );
-            }
-            let _ = child.wait();
-            return WaitOutcome::TimedOut;
-        }
-        std::thread::sleep(COMMAND_PROBE_POLL_INTERVAL);
     }
 }
 
@@ -5340,11 +5147,10 @@ fn gh_pull_request_checks(
 
 #[cfg(test)]
 fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
-    command_stdout_trimmed_with_timeout(command, GIT_CONTEXT_COMMAND_TIMEOUT)
-}
-
-fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration) -> Option<String> {
-    command_stdout_trimmed_with_timeout_and_statuses(command, timeout, &[0])
+    crate::util::command_stdout_trimmed_with_timeout(
+        command,
+        crate::git_context::GIT_CONTEXT_COMMAND_TIMEOUT,
+    )
 }
 
 /// Result-returning command runner that distinguishes success (returns
@@ -5479,83 +5285,6 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
         }
         Ok(bytes)
     })
-}
-
-fn command_stdout_trimmed_with_timeout_and_statuses(
-    command: &mut Command,
-    timeout: Duration,
-    accepted_statuses: &[i32],
-) -> Option<String> {
-    command.stdout(Stdio::piped()).stderr(Stdio::null());
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(e) => {
-            crate::clog!(
-                "command spawn failed ({:?}): {e} (errno={:?})",
-                command.get_program(),
-                e.raw_os_error()
-            );
-            return None;
-        }
-    };
-    let mut stdout = child.stdout.take()?;
-    let stdout_reader = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
-        let mut bytes = Vec::new();
-        stdout.read_to_end(&mut bytes)?;
-        Ok(bytes)
-    });
-    let label = format!("{:?}", command.get_program());
-    let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
-        WaitOutcome::Exited(status) => Some(
-            status
-                .code()
-                .is_some_and(|code| accepted_statuses.contains(&code)),
-        ),
-        // Status is lost; trust the stdout pipe (callers like the
-        // Container info dialog would otherwise show empty fields for
-        // healthy git/gh commands).
-        WaitOutcome::Reaped => None,
-        WaitOutcome::TimedOut => {
-            // Joining the reader is bounded: kill() (inside the helper)
-            // closed the pipe, so read_to_end returns quickly. Without
-            // the join the OS-thread is leaked across every timeout
-            // firing.
-            let _ = stdout_reader.join();
-            return None;
-        }
-        WaitOutcome::Failed(e) => {
-            crate::clog!(
-                "command try_wait failed ({:?}): {e} (errno={:?})",
-                command.get_program(),
-                e.raw_os_error()
-            );
-            let _ = stdout_reader.join();
-            return None;
-        }
-    };
-    if status_success == Some(false) {
-        crate::cdebug!(
-            "command exited non-accepted status ({:?}); stderr was nulled so reason is unavailable",
-            command.get_program()
-        );
-        return None;
-    }
-    let stdout = match stdout_reader.join() {
-        Ok(Ok(bytes)) => bytes,
-        Ok(Err(e)) => {
-            crate::clog!(
-                "command stdout read failed: {e} (errno={:?})",
-                e.raw_os_error()
-            );
-            return None;
-        }
-        Err(_) => {
-            crate::clog!("command stdout reader thread panicked");
-            return None;
-        }
-    };
-    let value = String::from_utf8_lossy(&stdout).trim().to_string();
-    if value.is_empty() { None } else { Some(value) }
 }
 
 fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
