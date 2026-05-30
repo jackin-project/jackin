@@ -1064,6 +1064,7 @@ const STAGE_PULSE_PERIOD: usize = 12;
 const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
 const LABEL_GAP: usize = 4;
+const LABEL_EDGE_FADE_WIDTH: usize = 6;
 const LABEL_SLIDE_FRAMES: usize = 12;
 const PROGRESS_RAIL_WIDTH: usize =
     LaunchStage::ALL.len() * BLOCK_WIDTH + (LaunchStage::ALL.len() - 1) * BLOCK_GAP;
@@ -1375,14 +1376,15 @@ fn labels_line(view: &LaunchView, frozen: bool, width: usize) -> Line<'static> {
     let start = center as isize - (width / 2) as isize;
     let cells = (0..width).map(|x| {
         let index = start + x as isize;
-        if index >= 0 {
+        let cell = if index >= 0 {
             strip
                 .get(index as usize)
                 .copied()
                 .unwrap_or_else(blank_label_cell)
         } else {
             blank_label_cell()
-        }
+        };
+        faded_label_cell(cell, label_edge_fade_factor(x, width))
     });
     Line::from(coalesce_cells(cells.map(|cell| (cell.ch, cell.style))))
 }
@@ -1439,6 +1441,36 @@ fn blank_label_cell() -> LabelCell {
         ch: ' ',
         style: Style::default(),
     }
+}
+
+fn label_edge_fade_factor(index: usize, width: usize) -> f32 {
+    let fade_width = LABEL_EDGE_FADE_WIDTH.min(width / 2).max(1);
+    let edge_distance = index.min(width.saturating_sub(1).saturating_sub(index));
+    if edge_distance >= fade_width {
+        return 1.0;
+    }
+
+    let ratio = (edge_distance + 1) as f32 / fade_width as f32;
+    0.25 + 0.75 * ratio
+}
+
+fn faded_color(color: Color, factor: f32) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => {
+            let factor = factor.clamp(0.0, 1.0);
+            let scale = |c: u8| (f32::from(c) * factor) as u8;
+            Color::Rgb(scale(r), scale(g), scale(b))
+        }
+        other => other,
+    }
+}
+
+fn faded_label_cell(cell: LabelCell, factor: f32) -> LabelCell {
+    let mut style = cell.style;
+    if let Some(fg) = style.fg {
+        style.fg = Some(faded_color(fg, factor));
+    }
+    LabelCell { style, ..cell }
 }
 
 fn animated_label_center(view: &LaunchView, centers: &[usize]) -> Option<usize> {
@@ -2486,6 +2518,32 @@ mod tests {
             .map(|span| &*span.content)
             .collect::<String>();
         assert_eq!(rendered, "    credentials    construct    agent binaries ");
+    }
+
+    #[test]
+    fn label_edge_fade_factor_is_lower_at_the_edges() {
+        let width = 24;
+        let center = label_edge_fade_factor(width / 2, width);
+        let left = label_edge_fade_factor(0, width);
+        let right = label_edge_fade_factor(width - 1, width);
+
+        assert!(left < center, "left edge should be dimmer than the center");
+        assert!(
+            right < center,
+            "right edge should be dimmer than the center"
+        );
+    }
+
+    #[test]
+    fn faded_color_scales_rgb_channels() {
+        let faded = faded_color(PHOSPHOR_GREEN, 0.5);
+        let Color::Rgb(r, g, b) = faded else {
+            panic!("expected rgb color");
+        };
+        let Color::Rgb(or, og, ob) = PHOSPHOR_GREEN else {
+            panic!("expected rgb color");
+        };
+        assert!(r < or && g < og && b < ob, "RGB channels should be dimmed");
     }
 
     #[test]
