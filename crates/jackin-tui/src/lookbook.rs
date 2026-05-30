@@ -7,7 +7,9 @@
 use ratatui::{
     Frame, Terminal,
     backend::TestBackend,
+    buffer::Buffer,
     layout::Rect,
+    style::Color,
     widgets::{Block, Borders},
 };
 
@@ -79,6 +81,31 @@ pub fn stories() -> Vec<Story> {
 
 #[must_use]
 pub fn render_story_to_text(story: Story) -> String {
+    let buffer = render_story_to_buffer(story);
+    let mut out = String::new();
+    for y in 0..story.height {
+        for x in 0..story.width {
+            out.push_str(buffer[(x, y)].symbol());
+        }
+        if y + 1 < story.height {
+            out.push('\n');
+        }
+    }
+    out
+}
+
+#[must_use]
+pub fn render_story_to_svg(story: Story) -> String {
+    let buffer = render_story_to_buffer(story);
+    buffer_to_svg(&buffer, story.title)
+}
+
+#[must_use]
+pub fn story_svg_filename(story: Story) -> String {
+    format!("{}.svg", story.id.replace('/', "-"))
+}
+
+fn render_story_to_buffer(story: Story) -> Buffer {
     let backend = TestBackend::new(story.width, story.height);
     let mut terminal = match Terminal::new(backend) {
         Ok(terminal) => terminal,
@@ -91,17 +118,86 @@ pub fn render_story_to_text(story: Story) -> String {
         Ok(_) => {}
         Err(error) => match error {},
     }
-    let buffer = terminal.backend().buffer();
+    terminal.backend().buffer().clone()
+}
+
+fn buffer_to_svg(buffer: &Buffer, title: &str) -> String {
+    const CELL_W: u16 = 9;
+    const CELL_H: u16 = 18;
+    const BASELINE: u16 = 14;
+
+    let area = buffer.area;
+    let width = area.width.saturating_mul(CELL_W);
+    let height = area.height.saturating_mul(CELL_H);
     let mut out = String::new();
-    for y in 0..story.height {
-        for x in 0..story.width {
-            out.push_str(buffer[(x, y)].symbol());
-        }
-        if y + 1 < story.height {
-            out.push('\n');
+    out.push_str(&format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{}">"##,
+        escape_xml(title)
+    ));
+    out.push_str(r##"<rect width="100%" height="100%" fill="#000000"/>"##);
+    out.push_str(r#"<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">"#);
+
+    for y in 0..area.height {
+        for x in 0..area.width {
+            let cell = &buffer[(x, y)];
+            let px = x.saturating_mul(CELL_W);
+            let py = y.saturating_mul(CELL_H);
+            let bg = color_to_css(cell.bg);
+            if bg != "#000000" {
+                out.push_str(&format!(
+                    r#"<rect x="{px}" y="{py}" width="{CELL_W}" height="{CELL_H}" fill="{bg}"/>"#
+                ));
+            }
+            let symbol = cell.symbol();
+            if !symbol.trim().is_empty() {
+                let fg = color_to_css(cell.fg);
+                let text_y = py.saturating_add(BASELINE);
+                out.push_str(&format!(
+                    r#"<text x="{px}" y="{text_y}" fill="{fg}">{}</text>"#,
+                    escape_xml(symbol)
+                ));
+            }
         }
     }
+    out.push_str("</g></svg>\n");
     out
+}
+
+fn color_to_css(color: Color) -> &'static str {
+    match color {
+        Color::Black => "#000000",
+        Color::Red => "#ff0000",
+        Color::Green => "#00ff41",
+        Color::Yellow => "#ffd85e",
+        Color::Blue => "#0050b4",
+        Color::Magenta => "#ff00ff",
+        Color::Cyan => "#00ffff",
+        Color::Gray | Color::DarkGray => "#808080",
+        Color::LightRed => "#ff5e7a",
+        Color::LightGreen => "#00ff41",
+        Color::LightYellow => "#ffd85e",
+        Color::LightBlue => "#7aa2ff",
+        Color::LightMagenta => "#ff7aff",
+        Color::LightCyan => "#7affff",
+        Color::White => "#ffffff",
+        Color::Rgb(0, 255, 65) => "#00ff41",
+        Color::Rgb(0, 140, 30) => "#008c1e",
+        Color::Rgb(0, 80, 18) => "#005012",
+        Color::Rgb(255, 94, 122) => "#ff5e7a",
+        Color::Rgb(255, 216, 94) => "#ffd85e",
+        Color::Rgb(0, 80, 180) => "#0050b4",
+        Color::Rgb(204, 92, 0) => "#cc5c00",
+        Color::Rgb(80, 80, 80) => "#505050",
+        Color::Rgb(_, _, _) | Color::Indexed(_) | Color::Reset => "#ffffff",
+    }
+}
+
+fn escape_xml(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn story_panel_focused(frame: &mut Frame<'_>, area: Rect) {

@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary returning the shared `UpdateResult`, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus dirty-exit and status popups and a small `Dirty` / `UpdateResult` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components, host list navigation/tree/preview/editor/settings-tab state, mouse list/tab/content-row selection, editor cursor/scroll/auth-kind/header/toggle state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide typed effects, typed terminal session ownership, capsule Ratatui rendering, and generated docs/SVG lookbook output remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary returning the shared `UpdateResult`, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus dirty-exit and status popups and a small `Dirty` / `UpdateResult` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components and the `tui-lookbook` binary emits SVG previews from real `TestBackend` buffers, host list navigation/tree/preview/editor/settings-tab state, mouse list/tab/content-row selection, editor cursor/scroll/auth-kind/header/toggle state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide typed effects, typed terminal session ownership, capsule Ratatui rendering, generated MDX lookbook pages, and CI lookbook drift checks remain open.
 
 ## Goal
 
@@ -786,7 +786,7 @@ The phases below describe the long-range order. For `/goal` execution, use slice
 | Capsule action/mode split | none | `MuxMode`, generalized `Action`, daemon module split, dispatch/dialog tests | Input dispatch is testable without a live PTY and invalid mode combinations are unrepresentable. |
 | Capsule Ratatui frame | capsule action/mode split, shared primitives | Custom Ratatui backend over attach socket; chrome/dialogs/pickers rendered as shared widgets | Raw ANSI chrome copies are deleted; pane-body rendering remains the only measured choice. |
 | Pane-body benchmark | capsule Ratatui frame | `tui-term` vs custom widget benchmark and ADR decision | ADR records the chosen pane-body path with throughput/allocation evidence. |
-| Lookbook | shared components, snapshot infrastructure | `tui-lookbook` generator plus MDX pages from real renders | Component previews are generated from widget code and CI catches drift. |
+| Lookbook | shared components, snapshot infrastructure | `tui-lookbook` generator plus MDX pages from real renders | The generator now emits SVG previews from widget code; MDX pages and CI drift checks remain. |
 
 Each slice should update this page's status notes if it changes scope, closes a risk, or invalidates a later slice. If a slice reveals a feature-sized behavior change, split that behavior into its own roadmap item instead of hiding it inside the architecture refactor.
 
@@ -826,7 +826,7 @@ Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high
 
 ### Phase 8 — Design-system lookbook
 
-Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, one MDX page per component following the story shape above, and CI regeneration so previews never drift. Reuses the [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) `TestBackend` infrastructure. Reconcile the host/capsule drift table as components consolidate into shared widgets.
+Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, one MDX page per component following the story shape above, and CI regeneration so previews never drift. The first generator lives at <RepoFile path="crates/jackin-tui/src/bin/tui-lookbook.rs" /> and renders <RepoFile path="crates/jackin-tui/src/lookbook.rs" /> stories from `TestBackend` buffers; MDX pages and CI drift checks still need to consume those SVGs. Reconcile the host/capsule drift table as components consolidate into shared widgets.
 
 ## Open questions & risks
 
