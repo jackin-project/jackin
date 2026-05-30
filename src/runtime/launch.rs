@@ -728,7 +728,7 @@ async fn launch_role_runtime(
     steps.done();
 
     if steps.progress.is_none() {
-        tui::print_deploying(agent_display_name);
+        tui::print_deploying(agent_display_name).await;
     }
 
     let class_label = format!("jackin.class={}", selector.key());

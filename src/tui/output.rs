@@ -13,7 +13,7 @@ pub fn step_fail(msg: &str) {
 
 // ── Deploying message ────────────────────────────────────────────────────
 
-pub fn print_deploying(role_name: &str) {
+pub async fn print_deploying(role_name: &str) {
     eprintln!();
     eprintln!(
         "  {}",
@@ -23,7 +23,7 @@ pub fn print_deploying(role_name: &str) {
     );
     eprintln!();
 
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     clear_screen();
 }
 
