@@ -129,7 +129,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
     // Message body — WHITE to keep readable against the red border.
     let paragraph = Paragraph::new(state.message.as_str())
         .style(Style::default().fg(WHITE))
-        .alignment(Alignment::Left)
+        .alignment(Alignment::Center)
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, chunks[1]);
 
@@ -248,6 +248,31 @@ mod tests {
         assert!(
             rendered.contains("repository not found"),
             "message should be visible in popup:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn render_message_is_centered() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+        let state = ErrorPopupState::new("Role not found", "not found");
+        let area = Rect::new(0, 0, 60, required_height(&state, 56, 25));
+        let backend = TestBackend::new(area.width, area.height);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| render(f, area, &state)).unwrap();
+
+        let buf = term.backend().buffer();
+        let mut first_message_x = None;
+        for x in 0..buf.area.width {
+            if buf[(x, 2)].symbol() == "n" {
+                first_message_x = Some(x);
+                break;
+            }
+        }
+
+        assert!(
+            first_message_x.is_some_and(|x| x > 20),
+            "short message should be centered in the popup:\n{buf:?}"
         );
     }
 }
