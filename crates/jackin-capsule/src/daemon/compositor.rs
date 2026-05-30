@@ -16,21 +16,23 @@ impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
         if let Some(reason) = self.pending_full_redraw.take() {
             self.dirty_panes.clear();
-            // Prefer the Ratatui compositor for full frames; fall back to the
-            // raw-ANSI path if it fails (e.g. during dialog rendering).
-            if let Some(ratatui_output) = self.compose_ratatui_frame() {
-                crate::cdebug!(
-                    "render: kind=full reason={} via=ratatui bytes={}",
-                    reason.as_str(),
-                    ratatui_output.len()
-                );
-                // Prepend the outer terminal title update (OSC 2) which the
-                // Ratatui frame doesn't handle — title output is plain bytes
-                // that don't need diffing.
-                let mut out = Vec::with_capacity(ratatui_output.len() + 64);
-                self.append_outer_terminal_title(&mut out);
-                out.extend_from_slice(&ratatui_output);
-                return out;
+            // Use the Ratatui compositor for full frames when no dialog is
+            // open — dialog rendering still uses the raw-ANSI path until
+            // dedicated Ratatui dialog widgets are added.
+            // When a dialog IS open, fall through to compose_full_frame so
+            // the full overlay (backdrop + dialog content) renders correctly.
+            if !self.dialog_open() {
+                if let Some(ratatui_output) = self.compose_ratatui_frame() {
+                    crate::cdebug!(
+                        "render: kind=full reason={} via=ratatui bytes={}",
+                        reason.as_str(),
+                        ratatui_output.len()
+                    );
+                    let mut out = Vec::with_capacity(ratatui_output.len() + 64);
+                    self.append_outer_terminal_title(&mut out);
+                    out.extend_from_slice(&ratatui_output);
+                    return out;
+                }
             }
             return self.compose_full_frame(reason);
         }
