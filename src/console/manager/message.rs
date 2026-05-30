@@ -7,7 +7,8 @@
 use super::auth_kind::AuthKind;
 use super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
 use super::state::{
-    EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, SettingsTab,
+    EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, SecretsScopeTag,
+    SettingsTab,
 };
 use jackin_tui::runtime::Dirty;
 use ratatui::layout::Rect;
@@ -97,6 +98,12 @@ pub enum ManagerMessage {
         expanded: bool,
     },
     ToggleSettingsGlobalMountReadonly,
+    ToggleEditorGeneralSelected,
+    ToggleEditorMountReadonlySelected,
+    ToggleEditorSecretMask {
+        scope: SecretsScopeTag,
+        key: String,
+    },
     ToggleSettingsGeneralSelected,
     ToggleSettingsTrustSelected,
     MoveListSelection(isize),
@@ -189,6 +196,13 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         }
         ManagerMessage::ToggleSettingsGlobalMountReadonly => {
             toggle_settings_global_mount_readonly(state);
+        }
+        ManagerMessage::ToggleEditorGeneralSelected => toggle_editor_general_selected(state),
+        ManagerMessage::ToggleEditorMountReadonlySelected => {
+            toggle_editor_mount_readonly_selected(state);
+        }
+        ManagerMessage::ToggleEditorSecretMask { scope, key } => {
+            toggle_editor_secret_mask(state, scope, key);
         }
         ManagerMessage::ToggleSettingsGeneralSelected => toggle_settings_general_selected(state),
         ManagerMessage::ToggleSettingsTrustSelected => toggle_settings_trust_selected(state),
@@ -390,6 +404,38 @@ fn set_editor_secrets_role_expanded(state: &mut ManagerState<'_>, role: String, 
         editor.secrets_expanded.insert(role);
     } else {
         editor.secrets_expanded.remove(&role);
+    }
+}
+
+fn toggle_editor_general_selected(state: &mut ManagerState<'_>) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    let FieldFocus::Row(row) = editor.active_field;
+    match row {
+        2 => editor.pending.keep_awake.enabled = !editor.pending.keep_awake.enabled,
+        3 => editor.pending.git_pull_on_entry = !editor.pending.git_pull_on_entry,
+        _ => {}
+    }
+}
+
+fn toggle_editor_mount_readonly_selected(state: &mut ManagerState<'_>) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    let FieldFocus::Row(row) = editor.active_field;
+    if let Some(mount) = editor.pending.mounts.get_mut(row) {
+        mount.readonly = !mount.readonly;
+    }
+}
+
+fn toggle_editor_secret_mask(state: &mut ManagerState<'_>, scope: SecretsScopeTag, key: String) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    let entry = (scope, key);
+    if !editor.unmasked_rows.remove(&entry) {
+        editor.unmasked_rows.insert(entry);
     }
 }
 
@@ -950,6 +996,57 @@ mod tests {
             panic!("expected editor stage");
         };
         assert_eq!(editor.active_field, FieldFocus::Row(3));
+    }
+
+    #[test]
+    fn editor_toggle_messages_update_selected_content() {
+        let mut state = state_with_saved_count(0);
+        let mut editor = EditorState::new_edit(
+            "workspace".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        editor.active_field = FieldFocus::Row(2);
+        editor.pending.keep_awake.enabled = false;
+        editor.pending.mounts.push(crate::workspace::MountConfig {
+            src: "/tmp/cache".into(),
+            dst: "/home/agent/.cache".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        });
+        state.stage = ManagerStage::Editor(editor);
+
+        assert!(update_manager(&mut state, ManagerMessage::ToggleEditorGeneralSelected).is_dirty());
+
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(editor.pending.keep_awake.enabled);
+        editor.active_field = FieldFocus::Row(0);
+
+        assert!(
+            update_manager(&mut state, ManagerMessage::ToggleEditorMountReadonlySelected)
+                .is_dirty()
+        );
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::ToggleEditorSecretMask {
+                    scope: crate::console::manager::state::SecretsScopeTag::Workspace,
+                    key: "TOKEN".into(),
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(editor.pending.mounts[0].readonly);
+        assert!(
+            editor
+                .unmasked_rows
+                .contains(&(crate::console::manager::state::SecretsScopeTag::Workspace, "TOKEN".into()))
+        );
     }
 
     #[test]

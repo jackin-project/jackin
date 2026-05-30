@@ -280,6 +280,23 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 }
             }
+            KeyCode::Char(' ') if editor.active_tab == EditorTab::General => {
+                dispatch_manager(state, ManagerMessage::ToggleEditorGeneralSelected);
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Char('r' | 'R') if editor.active_tab == EditorTab::Mounts => {
+                dispatch_manager(state, ManagerMessage::ToggleEditorMountReadonlySelected);
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Char('m' | 'M')
+                if editor.active_tab == EditorTab::Secrets
+                    && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
+            {
+                if let Some((scope, key)) = focused_unmask_key(editor) {
+                    dispatch_manager(state, ManagerMessage::ToggleEditorSecretMask { scope, key });
+                }
+                return Ok(InputOutcome::Continue);
+            }
             _ => {}
         }
     }
@@ -361,16 +378,6 @@ pub(super) fn handle_editor_key(
         KeyCode::Char(' ') if editor.active_tab == EditorTab::Roles => {
             toggle_agent_allowed_at_cursor(editor, config);
         }
-        KeyCode::Char(' ') if editor.active_tab == EditorTab::General => {
-            // Row 2 = keep_awake toggle, row 3 = git_pull_on_entry toggle.
-            // Other General rows ignore Space — Enter is the modal-opening key for them.
-            let FieldFocus::Row(n) = editor.active_field;
-            if n == 2 {
-                editor.pending.keep_awake.enabled = !editor.pending.keep_awake.enabled;
-            } else if n == 3 {
-                editor.pending.git_pull_on_entry = !editor.pending.git_pull_on_entry;
-            }
-        }
         KeyCode::Char('*') if editor.active_tab == EditorTab::Roles => {
             toggle_default_agent_at_cursor(editor, config);
         }
@@ -392,12 +399,6 @@ pub(super) fn handle_editor_key(
         //
         // SHIFT modifier tolerated for Caps-Lock parity (see prior
         // commits); Ctrl/Alt/Cmd still bypass the arm.
-        KeyCode::Char('m' | 'M')
-            if editor.active_tab == EditorTab::Secrets
-                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
-        {
-            toggle_focused_row_mask(editor);
-        }
         // P sits at row level (not inside the EnvValue modal) so it
         // doesn't collide with text input. SHIFT tolerated per the
         // `m|M` arm above.
@@ -419,12 +420,6 @@ pub(super) fn handle_editor_key(
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
             open_secrets_add_modal(editor);
-        }
-        KeyCode::Char('r' | 'R') if editor.active_tab == super::super::state::EditorTab::Mounts => {
-            let FieldFocus::Row(n) = editor.active_field;
-            if let Some(m) = editor.pending.mounts.get_mut(n) {
-                m.readonly = !m.readonly;
-            }
         }
         KeyCode::Char('i' | 'I') if editor.active_tab == super::super::state::EditorTab::Mounts => {
             // Cycle the per-mount isolation strategy on the highlighted row.
@@ -518,11 +513,11 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 }
 
 /// No-op on header/sentinel/op:// rows.
-fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
+fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, String)> {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
-        return;
+        return None;
     };
     let key = match row {
         SecretsRow::WorkspaceKeyRow(key) => {
@@ -533,7 +528,7 @@ fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
                 .get(&key)
                 .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
             {
-                return;
+                return None;
             }
             (SecretsScopeTag::Workspace, key)
         }
@@ -545,15 +540,13 @@ fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
                 .and_then(|o| o.env.get(&key))
                 .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
             {
-                return;
+                return None;
             }
             (SecretsScopeTag::Role(role), key)
         }
-        _ => return,
+        _ => return None,
     };
-    if !editor.unmasked_rows.remove(&key) {
-        editor.unmasked_rows.insert(key);
-    }
+    Some(key)
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
