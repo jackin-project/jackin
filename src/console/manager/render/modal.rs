@@ -160,7 +160,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         | Modal::AuthRolePicker { state } => {
             role_picker::render(frame, modal_area, state);
         }
-        Modal::SourcePicker { state } | Modal::AuthSourcePicker { state } => {
+        Modal::SourcePicker { state, .. } | Modal::AuthSourcePicker { state } => {
             source_picker::render(frame, modal_area, state);
         }
         Modal::ScopePicker { state } => scope_picker::render(frame, modal_area, state),

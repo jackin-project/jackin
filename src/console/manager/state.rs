@@ -751,9 +751,6 @@ pub struct EditorState<'a> {
     /// Widened from `Agent` to [`AuthKind`] so `Github` can sit on
     /// the panel without forcing a runtime `Agent::Github` variant.
     pub auth_selected_kind: Option<crate::console::manager::auth_kind::AuthKind>,
-    /// Scratch for the two-step add flow: set on `EnvKey` commit,
-    /// cleared on `EnvValue` commit/cancel.
-    pub pending_env_key: Option<(SecretsScopeTag, String)>,
     /// Stashed by `P` on a Secrets row so `OpPicker` knows where to
     /// write its `op://` path. `Some((scope, Some(key)))` replaces a
     /// row's value; `Some((scope, None))` opens the `EnvKey` modal
@@ -1182,7 +1179,7 @@ impl SettingsEnvState<'_> {
             .min(settings_env_flat_row_count(self).saturating_sub(1));
         self.modal = None;
         self.modal_parents.clear();
-        self.pending_env_key = None;
+        
         self.pending_picker_target = None;
         self.pending_picker_value = None;
         self.unmasked_rows.clear();
@@ -1235,7 +1232,7 @@ impl<'a> SettingsEnvState<'a> {
     /// fully unwinds, clear the env-key + picker-value scratch slots
     /// so a later commit cannot accidentally target a stale (scope, key).
     fn drop_modal_scratch(&mut self) {
-        self.pending_env_key = None;
+        
         self.pending_picker_value = None;
     }
 }
@@ -1543,6 +1540,11 @@ pub enum Modal<'a> {
     },
     SourcePicker {
         state: SourcePickerState,
+        /// Key context for the two-step env-add flow: scope + key name
+        /// typed in the preceding `EnvKey` TextInput. Replaces the
+        /// `pending_env_key` stash slot so the context travels with the
+        /// modal rather than in a separate field.
+        env_key: Option<(SecretsScopeTag, String)>,
     },
     AuthSourcePicker {
         state: SourcePickerState,
@@ -2553,7 +2555,7 @@ impl<'a> EditorState<'a> {
     /// later unrelated commit cannot pick up stale (scope, key) and
     /// write a secret to the wrong target.
     fn drop_modal_scratch(&mut self) {
-        self.pending_env_key = None;
+        
         self.pending_picker_value = None;
     }
 }
@@ -2578,7 +2580,6 @@ impl EditorState<'_> {
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
             auth_selected_kind: None,
-            pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
             workspace_mounts_scroll_x: 0,
@@ -2619,7 +2620,6 @@ impl EditorState<'_> {
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
             auth_selected_kind: None,
-            pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
             workspace_mounts_scroll_x: 0,

@@ -906,7 +906,7 @@ pub(super) fn handle_editor_modal(
                     // SourcePicker) still reading `pending_env_key`
                     // must see it intact.
                     if was_env_textinput && editor.modal.is_none() {
-                        editor.pending_env_key = None;
+                        // env_key context now in Modal::SourcePicker
                         editor.pending_picker_value = None;
                     }
                 }
@@ -1110,12 +1110,12 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Continue => {}
             }
         }
-        Modal::SourcePicker { state: source } => {
+        Modal::SourcePicker { state: source, env_key } => {
             use crate::console::widgets::source_picker::SourceChoice;
             use crate::console::widgets::text_input::TextInputState;
             match source.handle_key(key) {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
-                    let Some((scope, key)) = editor.pending_env_key.clone() else {
+                    let Some((scope, key)) = env_key.take() else {
                         editor.clear_modal_chain();
                         return;
                     };
@@ -1131,16 +1131,14 @@ pub(super) fn handle_editor_modal(
                     });
                 }
                 ModalOutcome::Commit(SourceChoice::Op) => {
-                    let Some((scope, key)) = editor.pending_env_key.clone() else {
+                    let Some((scope, key)) = env_key.take() else {
                         editor.clear_modal_chain();
                         return;
                     };
                     editor.pending_picker_target = Some((scope, Some(key)));
-                    // Clear pending_env_key — pending_picker_target
-                    // owns the (scope, key) pair now, and a stale
-                    // pending_env_key would confuse a later
-                    // sentinel-add commit.
-                    editor.pending_env_key = None;
+                    // The env_key context now lives in the modal; no separate
+                    // pending_env_key field to clear.
+                    // env_key context now in Modal::SourcePicker
                     editor.open_sub_modal(Modal::OpPicker {
                         state: Box::new(OpPickerState::new_with_cache(op_cache)),
                     });
@@ -1150,7 +1148,7 @@ pub(super) fn handle_editor_modal(
                     // the modal. Operator returns to the Secrets tab
                     // with no env entry added.
                     editor.pop_modal_chain();
-                    editor.pending_env_key = None;
+                    // env_key context now in Modal::SourcePicker
                     editor.pending_picker_value = None;
                 }
                 ModalOutcome::Continue => {}
@@ -1628,7 +1626,7 @@ pub(super) fn apply_text_input_to_pending(
             // "cannot be empty" label instead of committing.
             let trimmed = value.trim();
             if trimmed.is_empty() {
-                editor.pending_env_key = None;
+                // env_key context now in Modal::SourcePicker
                 let state =
                     env_key_input_state(editor, scope, "Key cannot be empty", String::new());
                 editor.modal = Some(Modal::TextInput {
@@ -1644,21 +1642,20 @@ pub(super) fn apply_text_input_to_pending(
             // key existed; both fields land here.
             if let Some(stashed) = editor.pending_picker_value.take() {
                 set_pending_env_value_typed(editor, scope, &key, stashed);
-                editor.pending_env_key = None;
+                // env_key context now in Modal::SourcePicker
                 editor.clear_modal_chain();
                 return;
             }
-            editor.pending_env_key = Some((scope.clone(), key.clone()));
             editor.open_sub_modal(Modal::SourcePicker {
                 state: crate::console::widgets::source_picker::SourcePickerState::new(
-                    key,
+                    key.clone(),
                     op_available,
                 ),
+                env_key: Some((scope.clone(), key)),
             });
         }
         TextInputTarget::EnvValue { scope, key } => {
             set_pending_env_value(editor, scope, key, value);
-            editor.pending_env_key = None;
             editor.clear_modal_chain();
         }
         TextInputTarget::AuthCredential => {
