@@ -19,6 +19,16 @@ pub enum ManagerMessage {
     FocusSettingsTabBar,
     ExitPreview,
     ExpandSelectedTree,
+    ScrollEditorTabHorizontal {
+        delta: i16,
+        term_width: u16,
+        content_width: usize,
+    },
+    ScrollEditorWorkspaceMountsHorizontal {
+        delta: i16,
+        term_width: u16,
+        content_width: usize,
+    },
     MoveEditorTab {
         delta: isize,
         focus_tab_bar: bool,
@@ -46,6 +56,16 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         ManagerMessage::FocusSettingsTabBar => set_settings_tab_bar_focus(state, true),
         ManagerMessage::ExitPreview => state.preview_focused = false,
         ManagerMessage::ExpandSelectedTree => expand_selected_tree(state),
+        ManagerMessage::ScrollEditorTabHorizontal {
+            delta,
+            term_width,
+            content_width,
+        } => scroll_editor_tab_horizontal(state, delta, term_width, content_width),
+        ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
+            delta,
+            term_width,
+            content_width,
+        } => scroll_editor_workspace_mounts_horizontal(state, delta, term_width, content_width),
         ManagerMessage::MoveEditorTab {
             delta,
             focus_tab_bar,
@@ -113,6 +133,42 @@ fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: 
         next_settings_tab(settings.active_tab)
     };
     settings.tab_bar_focused = focus_tab_bar;
+}
+
+fn scroll_editor_tab_horizontal(
+    state: &mut ManagerState<'_>,
+    delta: i16,
+    term_width: u16,
+    content_width: usize,
+) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    editor.tab_content_scroll_focused = true;
+    jackin_tui::components::apply_term_width_scroll_delta(
+        &mut editor.tab_scroll_x,
+        delta,
+        term_width,
+        content_width,
+    );
+}
+
+fn scroll_editor_workspace_mounts_horizontal(
+    state: &mut ManagerState<'_>,
+    delta: i16,
+    term_width: u16,
+    content_width: usize,
+) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    editor.workspace_mounts_scroll_focused = true;
+    jackin_tui::components::apply_term_width_scroll_delta(
+        &mut editor.workspace_mounts_scroll_x,
+        delta,
+        term_width,
+        content_width,
+    );
 }
 
 const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
@@ -364,5 +420,59 @@ mod tests {
         };
         assert_eq!(settings.active_tab, SettingsTab::General);
         assert!(settings.tab_bar_focused);
+    }
+
+    #[test]
+    fn scroll_editor_tab_marks_panel_focus_and_updates_offset() {
+        let mut state = state_with_saved_count(0);
+        state.stage = ManagerStage::Editor(EditorState::new_edit(
+            "workspace".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        ));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::ScrollEditorTabHorizontal {
+                    delta: 8,
+                    term_width: 10,
+                    content_width: 40,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(editor.tab_content_scroll_focused);
+        assert_eq!(editor.tab_scroll_x, 8);
+    }
+
+    #[test]
+    fn scroll_editor_workspace_mounts_marks_mounts_focus_and_updates_offset() {
+        let mut state = state_with_saved_count(0);
+        state.stage = ManagerStage::Editor(EditorState::new_edit(
+            "workspace".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        ));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
+                    delta: 8,
+                    term_width: 10,
+                    content_width: 40,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(editor.workspace_mounts_scroll_focused);
+        assert_eq!(editor.workspace_mounts_scroll_x, 8);
     }
 }

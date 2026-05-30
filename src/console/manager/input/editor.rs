@@ -18,7 +18,6 @@ use super::super::state::{
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
-use crate::console::widgets::scrollable::apply_term_width_scroll_delta;
 use crate::paths::JackinPaths;
 
 // Central keymap dispatch — table-like layout makes the keymap
@@ -135,6 +134,50 @@ pub(super) fn handle_editor_key(
                 dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
                 return Ok(InputOutcome::Continue);
             }
+            KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
+                        delta: -8,
+                        term_width,
+                        content_width: workspace_mounts_content_width(&editor.pending.mounts),
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
+                        delta: 8,
+                        term_width,
+                        content_width: workspace_mounts_content_width(&editor.pending.mounts),
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Char('h' | 'H') => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::ScrollEditorTabHorizontal {
+                        delta: -8,
+                        term_width,
+                        content_width: editor.tab_content_width,
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Char('l' | 'L') => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::ScrollEditorTabHorizontal {
+                        delta: 8,
+                        term_width,
+                        content_width: editor.tab_content_width,
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
             _ => {}
         }
     }
@@ -144,42 +187,6 @@ pub(super) fn handle_editor_key(
     };
 
     match key.code {
-        KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
-            editor.workspace_mounts_scroll_focused = true;
-            apply_term_width_scroll_delta(
-                &mut editor.workspace_mounts_scroll_x,
-                -8,
-                term_width,
-                workspace_mounts_content_width(&editor.pending.mounts),
-            );
-        }
-        KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
-            editor.workspace_mounts_scroll_focused = true;
-            apply_term_width_scroll_delta(
-                &mut editor.workspace_mounts_scroll_x,
-                8,
-                term_width,
-                workspace_mounts_content_width(&editor.pending.mounts),
-            );
-        }
-        KeyCode::Char('h' | 'H') => {
-            editor.tab_content_scroll_focused = true;
-            apply_term_width_scroll_delta(
-                &mut editor.tab_scroll_x,
-                -8,
-                term_width,
-                editor.tab_content_width,
-            );
-        }
-        KeyCode::Char('l' | 'L') => {
-            editor.tab_content_scroll_focused = true;
-            apply_term_width_scroll_delta(
-                &mut editor.tab_scroll_x,
-                8,
-                term_width,
-                editor.tab_content_width,
-            );
-        }
         // Right expands role headers in Secrets/Auth tabs; no-op everywhere else.
         // Left/Right are intra-area horizontal keys and must not cycle tabs.
         KeyCode::Right => {
