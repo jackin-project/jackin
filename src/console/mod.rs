@@ -420,11 +420,14 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
 /// [`crate::tui::host_screen_owned`] and skips its own enter/leave while this
 /// guard is alive; `Drop` restores the terminal exactly once, on every exit
 /// path.
-pub struct HostScreen {
+pub struct TerminalSession {
     _private: (),
 }
 
-impl HostScreen {
+/// Backward-compatible name while call sites migrate to `TerminalSession`.
+pub type HostScreen = TerminalSession;
+
+impl TerminalSession {
     /// Enter raw mode + the alternate screen + mouse capture and mark the
     /// screen owned. The caller holds the returned guard for the whole flow.
     pub fn enter() -> std::io::Result<Self> {
@@ -460,7 +463,7 @@ impl HostScreen {
     }
 }
 
-impl Drop for HostScreen {
+impl Drop for TerminalSession {
     fn drop(&mut self) {
         use crossterm::ExecutableCommand;
         let mut stdout = std::io::stdout();
@@ -829,7 +832,7 @@ pub async fn run_console(
     let owned_screen = if crate::tui::host_screen_owned() {
         None
     } else {
-        Some(HostScreen::enter()?)
+        Some(TerminalSession::enter()?)
     };
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;

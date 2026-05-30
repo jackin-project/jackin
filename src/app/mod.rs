@@ -188,7 +188,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             // → exit flow so transitions never flash back to the cooked
             // terminal. Sub-surfaces detect this and skip their own
             // enter/leave; the guard tears the terminal down once, on drop.
-            let screen = console::HostScreen::enter()?;
+            let screen = console::TerminalSession::enter()?;
 
             let mut console_entry = if let Ok(docker) = connect_docker() {
                 let claim = play_construct_intro_if_needed(&paths, &docker).await;

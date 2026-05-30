@@ -308,7 +308,7 @@ The [Codebase readability program](/reference/roadmap/codebase-readability/) is 
 - **TUI `//!` coverage and magic numbers** — the `tui/` module is at 0% `//!` coverage and <RepoFile path="src/tui/animation.rs" /> carries 12+ inline millisecond values; the timing tokens move into `jackin-tui` and the modules earn orientation docs as they are promoted.
 - **The snapshot-test net** — [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) is the shared prerequisite (Phase 0 here) and the readability program's Phase 2 safety net; it is one body of work, not two.
 
-**Stays with the readability program (everything outside the TUI):** the non-TUI file splits and DRY passes — <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/operator_env.rs" />, <RepoFile path="src/instance/auth.rs" /> (the 5 copy-pasted provision functions), <RepoFile path="src/config/editor.rs" />, <RepoFile path="src/isolation/materialize.rs" />, the CLI under `src/cli/`, the shared string constants (`MANIFEST_FILENAME`, `DOCKERFILE_NAME`, the construct `FROM` line), the agent match-arm dispatch dedup, the Docker-command dedup, and the test-infrastructure consolidation. The dispatch half of <RepoFile path="src/app/mod.rs" /> (the 1,239-line `fn run`) is a readability-program split; only the slice of `app/mod.rs` that owns the host terminal session (the `HostScreen` guard and the console → launch → attach handoff) is reshaped here.
+**Stays with the readability program (everything outside the TUI):** the non-TUI file splits and DRY passes — <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/operator_env.rs" />, <RepoFile path="src/instance/auth.rs" /> (the 5 copy-pasted provision functions), <RepoFile path="src/config/editor.rs" />, <RepoFile path="src/isolation/materialize.rs" />, the CLI under `src/cli/`, the shared string constants (`MANIFEST_FILENAME`, `DOCKERFILE_NAME`, the construct `FROM` line), the agent match-arm dispatch dedup, the Docker-command dedup, and the test-infrastructure consolidation. The dispatch half of <RepoFile path="src/app/mod.rs" /> (the 1,239-line `fn run`) is a readability-program split; only the slice of `app/mod.rs` that owns the host terminal session (the `TerminalSession` guard and the console → launch → attach handoff) is reshaped here.
 
 The practical result the operator asked for: by the time the readability program reaches its TUI rows, this item has already closed them — and this item never touches the CLI / config / instance / isolation duplication, which stays the readability program's job.
 
@@ -336,7 +336,7 @@ Critical-path dependencies:
 - **Phase 0 (snapshot tests) blocks every refactor phase** — without the regression net, no behavior-preserving claim is verifiable.
 - The host track (Phases 1–4) and the capsule track (Phases 6–7) are largely independent and can proceed in parallel.
 - The [file-split items](/reference/roadmap/split-input-editor/) land *against* the Phase 1/4 component seams, not before them — splitting first just produces smaller files that still mutate a god-struct.
-- Phase 5 (session-spine consolidation) depends on Phase 1 (the `Message` loop) and starts from the `HostScreen` / launch-cockpit / `JACKIN_HOST_ALT_SCREEN` behavior shipped by [Launch Progress TUI](/reference/roadmap/launch-progress-tui/), not from a blank slate.
+- Phase 5 (session-spine consolidation) depends on Phase 1 (the `Message` loop) and starts from the `TerminalSession` / launch-cockpit / `JACKIN_HOST_ALT_SCREEN` behavior shipped by [Launch Progress TUI](/reference/roadmap/launch-progress-tui/), not from a blank slate.
 - Capsule Ratatui (Phase 6) blocks full widget sharing (Phase 7) and the lookbook's capsule coverage (Phase 8).
 
 ## Current state — host operator console
@@ -402,13 +402,13 @@ The capsule now has the first pieces of the target in place: `Dialog::handle_key
 
 ## Current state — the console → launch → container flow
 
-The three surfaces are still built differently, but #452 removed the biggest product seam for the console-triggered launch path. `jackin console` now creates a `HostScreen` in <RepoFile path="src/app/mod.rs" /> before entering `run_console`; `run_console` detects that an outer guard owns the terminal and draws into it; `runtime::LaunchProgress` draws the cockpit into the same alternate screen; and `runtime::attach` passes `JACKIN_HOST_ALT_SCREEN=1` into the capsule client so the child skips its own alternate-screen enter/leave. The remaining problem is no longer the old plain-output launch premise; it is that the shipped continuity is implemented as several local contracts and globals instead of one TUI application architecture.
+The three surfaces are still built differently, but #452 removed the biggest product seam for the console-triggered launch path. `jackin console` now creates a `TerminalSession` in <RepoFile path="src/app/mod.rs" /> before entering `run_console`; `run_console` detects that an outer guard owns the terminal and draws into it; `runtime::LaunchProgress` draws the cockpit into the same alternate screen; and `runtime::attach` passes `JACKIN_HOST_ALT_SCREEN=1` into the capsule client so the child skips its own alternate-screen enter/leave. The remaining problem is no longer the old plain-output launch premise; it is that the shipped continuity is implemented as several local contracts and globals instead of one TUI application architecture.
 
 | Segment | Technology | Terminal state | Anchor |
 |---|---|---|---|
-| Console command wrapper | `HostScreen` guard + Ratatui | raw mode, host alternate screen, mouse capture | <RepoFile path="src/app/mod.rs" />, <RepoFile path="src/console/mod.rs" /> |
+| Console command wrapper | `TerminalSession` guard + Ratatui | raw mode, host alternate screen, mouse capture | <RepoFile path="src/app/mod.rs" />, <RepoFile path="src/console/mod.rs" /> |
 | Console manager | Ratatui, **stdout** | draws into the inherited host screen when present; standalone `run_console` still owns its own guard | `run_console` in <RepoFile path="src/console/mod.rs" /> |
-| Rare interim prompts | dialoguer / cooked terminal | `HostScreen::suspend` leaves and re-enters the alt screen for sensitive-mount confirm or agent choice | <RepoFile path="src/app/mod.rs" /> |
+| Rare interim prompts | dialoguer / cooked terminal | `TerminalSession::suspend` leaves and re-enters the alt screen for sensitive-mount confirm or agent choice | <RepoFile path="src/app/mod.rs" /> |
 | Launch progress | Ratatui rich cockpit with compact fallback | rich renderer draws into the inherited host screen; non-rich / non-interactive paths emit compact deterministic lines | <RepoFile path="src/runtime/progress.rs" />, <RepoFile path="src/runtime/launch.rs" /> |
 | → attach | `docker exec -it … /jackin/runtime/jackin-capsule` | host screen remains owned; env flag tells capsule client not to nest alt-screen | <RepoFile path="src/runtime/attach.rs" /> |
 | In-container client | raw byte relay | raw mode; skips its own alt-screen only when `JACKIN_HOST_ALT_SCREEN` is set | <RepoFile path="crates/jackin-capsule/src/client.rs" /> |
@@ -416,10 +416,10 @@ The three surfaces are still built differently, but #452 removed the biggest pro
 
 This is a real improvement and should be preserved. The architectural debt is what the improvement exposed:
 
-- `HostScreen` is a terminal-lifecycle guard, not an app session model. It coordinates sub-surfaces through `crate::tui::host_screen_owned()` and `set_rich_surface_active()` globals instead of typed ownership.
+- `TerminalSession` is currently a terminal-lifecycle guard, not a full app session model. It still coordinates sub-surfaces through `crate::tui::host_screen_owned()` and `set_rich_surface_active()` globals instead of typed ownership.
 - The launch cockpit has its own `LaunchView`, renderer task, picker loop, input drain, and failure modal rather than sharing the console's eventual `Message` / `update` / `Effect` loop.
 - The launch cockpit imports reusable pieces from `src/console/widgets`, so the first cross-surface reuse exists but lives below the wrong module boundary.
-- `jackin load` still creates the launch cockpit as a standalone rich surface; only the console path has the outer `HostScreen` that spans console → launch → attach.
+- `jackin load` still creates the launch cockpit as a standalone rich surface; only the console path has the outer `TerminalSession` that spans console → launch → attach.
 - The capsule render path is still independent raw ANSI. The host can preserve a single alt-screen across handoff, but the in-container UI is not yet part of the shared Ratatui component system.
 
 ## Ratatui application patterns (the target)
@@ -625,14 +625,14 @@ The one open question is the **pane-body** mechanism — the cells that mirror a
 
 ## Target architecture — one owned terminal session
 
-The first version of this exists now, so the target is no longer "move ownership up" in the abstract. The target is to formalize the shipped `HostScreen` / launch renderer / capsule handoff into one app-level TUI session spine:
+The first version of this exists now, so the target is no longer "move ownership up" in the abstract. The target is to formalize the shipped `TerminalSession` / launch renderer / capsule handoff into one app-level TUI session spine:
 
 - Keep the #452 behavior: the console manager renders into an outer host screen, the launch cockpit draws into that same screen, and the capsule handoff preserves the host alternate screen with `JACKIN_HOST_ALT_SCREEN` so the child does not enter a nested alt-screen.
 - Replace the global coordination flags (`host_screen_owned`, `rich_surface_active`) with typed session ownership: an `AppTuiSession`/`TerminalSession` object owns raw mode, alt-screen, mouse capture, debug buffering, rich-surface diagnostics routing, suspend/resume, and the handoff contract.
 - Make console and launch views siblings in one app model. "Operator picked a workspace" → "watching the launch cockpit" becomes a `Message`/`Effect` transition, not `run_console` returning an outcome to a separate launch mini-app.
 - Convert launch progress updates (`stage_started`, `stage_done`, failures, build-log overlay, forced-choice picker, failure acknowledgement) into the same message/effect vocabulary as the console. The existing background render task is preserved conceptually as the animation tick source, but it is not launch-private.
 - Move reusable launch widgets out of `src/console/widgets` and into <RepoFile path="crates/jackin-tui/Cargo.toml" />. Runtime code must not depend on console internals just to render a status bar, hint row, select list, scrollable build log, or error popup.
-- Keep the rare cooked prompts as explicit `SuspendForPrompt` effects. The current `HostScreen::suspend` behavior is useful, but the reason for leaving the rich surface should be typed and visible in the update loop.
+- Keep the rare cooked prompts as explicit `SuspendForPrompt` effects. The current `TerminalSession::suspend` behavior is useful, but the reason for leaving the rich surface should be typed and visible in the update loop.
 - Preserve panic-safe restore. The RAII guard remains the ultimate owner of terminal restoration; the refactor changes where ownership is modeled, not the guarantee that raw mode and alternate screen are restored on every exit path.
 
 This item now owns the consolidation of the shipped backbone. The [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) item owns the operator-facing launch cockpit and diagnostics behavior that already landed; this item owns making that behavior a reusable architecture rather than a special case.
@@ -814,7 +814,7 @@ Extract `StatefulWidget` components (list, editor-per-tab, settings, modals) int
 
 ### Phase 5 — App: one owned terminal session
 
-Consolidate the `HostScreen` behavior that [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) shipped into a typed app-level `TerminalSession`. The console manager and launch cockpit already share one host alternate screen on the console path; this phase removes the ad hoc globals and return-to-app handoff, models console and launch as sibling views in one app model, makes launch updates messages/effects, and moves the launch-used widgets from `src/console/widgets` into <RepoFile path="crates/jackin-tui/Cargo.toml" />. The visible behavior stays the same: console → launch → capsule remains continuous, with cooked prompts represented as explicit suspend effects.
+Consolidate the `TerminalSession` behavior that [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) shipped into a typed app-level session spine. The console manager and launch cockpit already share one host alternate screen on the console path; this phase removes the ad hoc globals and return-to-app handoff, models console and launch as sibling views in one app model, makes launch updates messages/effects, and moves the launch-used widgets from `src/console/widgets` into <RepoFile path="crates/jackin-tui/Cargo.toml" />. The visible behavior stays the same: console → launch → capsule remains continuous, with cooked prompts represented as explicit suspend effects.
 
 ### Phase 6 — Capsule: structural cleanup + Ratatui frame
 
