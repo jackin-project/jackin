@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::super::super::widgets::{
     ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
 };
-use super::super::render::apply_scroll_delta_unclamped;
+use super::super::message::{ManagerMessage, update_manager};
 use super::super::state::{
     EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
     ProviderPickerState, SettingsState,
@@ -63,44 +63,30 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('h' | 'H') => {
-            scroll_list_horizontal(state, -8);
+            update_manager(state, ManagerMessage::ScrollListHorizontal(-8));
             clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('l' | 'L') => {
-            scroll_list_horizontal(state, 8);
+            update_manager(state, ManagerMessage::ScrollListHorizontal(8));
             clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             if state.list_scroll_focus.is_some() {
-                scroll_focused_mount_block_vertical(state, -3);
+                update_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(-3));
                 clamp_list_scroll_after_key(state, config, cwd);
             } else {
-                state.inline_role_picker = None;
-                state.inline_agent_picker = None;
-                state.inline_new_session_picker = None;
-                let selected = state.selected.saturating_sub(1);
-                if selected != state.selected {
-                    state.reset_list_scroll();
-                    state.selected = selected;
-                }
+                update_manager(state, ManagerMessage::MoveListSelection(-1));
             }
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             if state.list_scroll_focus.is_some() {
-                scroll_focused_mount_block_vertical(state, 3);
+                update_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(3));
                 clamp_list_scroll_after_key(state, config, cwd);
             } else {
-                state.inline_role_picker = None;
-                state.inline_agent_picker = None;
-                state.inline_new_session_picker = None;
-                let selected = (state.selected + 1).min(state.row_count().saturating_sub(1));
-                if selected != state.selected {
-                    state.reset_list_scroll();
-                    state.selected = selected;
-                }
+                update_manager(state, ManagerMessage::MoveListSelection(1));
             }
             Ok(InputOutcome::Continue)
         }
@@ -608,11 +594,11 @@ pub(super) fn handle_inline_role_picker(
     };
     match key.code {
         KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            scroll_list_horizontal(state, -8);
+            update_manager(state, ManagerMessage::ScrollListHorizontal(-8));
             InputOutcome::Continue
         }
         KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            scroll_list_horizontal(state, 8);
+            update_manager(state, ManagerMessage::ScrollListHorizontal(8));
             InputOutcome::Continue
         }
         KeyCode::Char('q' | 'Q') => InputOutcome::ExitJackin,
@@ -639,11 +625,11 @@ pub(super) fn handle_inline_agent_picker(
     };
     match key.code {
         KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            scroll_list_horizontal(state, -8);
+            update_manager(state, ManagerMessage::ScrollListHorizontal(-8));
             InputOutcome::Continue
         }
         KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            scroll_list_horizontal(state, 8);
+            update_manager(state, ManagerMessage::ScrollListHorizontal(8));
             InputOutcome::Continue
         }
         _ => match picker.handle_key(key) {
@@ -767,30 +753,6 @@ pub(super) fn handle_launch_provider_picker(
         }
         _ => InputOutcome::Continue,
     }
-}
-
-const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
-    if state.list_names_focused {
-        apply_scroll_delta_unclamped(&mut state.list_names_scroll_x, delta);
-    } else {
-        scroll_focused_mount_block(state, delta);
-    }
-}
-
-const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
-    let Some(focus) = state.list_scroll_focus else {
-        return;
-    };
-    let value = state.list_scroll_x_mut(focus);
-    apply_scroll_delta_unclamped(value, delta);
-}
-
-const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
-    let Some(focus) = state.list_scroll_focus else {
-        return;
-    };
-    let value = state.list_scroll_y_mut(focus);
-    apply_scroll_delta_unclamped(value, delta);
 }
 
 #[cfg(test)]

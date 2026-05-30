@@ -22,9 +22,9 @@ pub(super) use modal::modal_outer_rect;
 pub use editor::render_editor;
 
 pub(in crate::console::manager) use crate::console::widgets::scrollable::{
-    apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset as clamp_scroll_x,
-    cursor_follow_offset, horizontal_scrollbar_area, is_scrollable,
-    max_offset as max_scroll_offset, scrollbar_offset_for_track_position, vertical_scrollbar_area,
+    apply_scroll_delta, clamp_scroll_offset as clamp_scroll_x, cursor_follow_offset,
+    horizontal_scrollbar_area, is_scrollable, max_offset as max_scroll_offset,
+    scrollbar_offset_for_track_position, vertical_scrollbar_area,
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
 pub(super) use crate::console::widgets::scrollable::{

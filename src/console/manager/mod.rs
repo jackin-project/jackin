@@ -6,10 +6,12 @@ pub mod auth_kind;
 mod create;
 mod github_mounts;
 pub mod input;
+pub mod message;
 pub mod mount_info;
 pub mod render;
 pub mod state;
 
 pub use input::{InputOutcome, handle_key};
+pub use message::{ManagerMessage, update_manager};
 pub use render::render;
 pub use state::{ManagerStage, ManagerState};
