@@ -9,6 +9,7 @@
     "configuration",
     "schema-versions",
     "codebase-map",
+    "tui-lookbook",
     "claude-token-orchestrator",
     "jackin-capsule",
     "multiplexer-design-rules",

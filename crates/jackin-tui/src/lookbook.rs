@@ -12,6 +12,11 @@ use ratatui::{
     style::Color,
     widgets::{Block, Borders},
 };
+use std::{
+    fs,
+    io,
+    path::{Path, PathBuf},
+};
 
 use crate::components::{
     ButtonStrip, ButtonStripItem, ConfirmState, ErrorPopupState, Panel, PanelFocus,
@@ -118,6 +123,18 @@ pub fn render_story_to_svg(story: Story) -> String {
 #[must_use]
 pub fn story_svg_filename(story: Story) -> String {
     format!("{}.svg", story.id.replace('/', "-"))
+}
+
+pub fn write_story_svgs(out_dir: impl AsRef<Path>) -> io::Result<Vec<PathBuf>> {
+    let out_dir = out_dir.as_ref();
+    fs::create_dir_all(out_dir)?;
+    let mut paths = Vec::new();
+    for story in stories() {
+        let path = out_dir.join(story_svg_filename(story));
+        fs::write(&path, render_story_to_svg(story))?;
+        paths.push(path);
+    }
+    Ok(paths)
 }
 
 fn render_story_to_buffer(story: Story) -> Buffer {
