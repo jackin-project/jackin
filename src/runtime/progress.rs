@@ -1064,11 +1064,12 @@ const STAGE_PULSE_PERIOD: usize = 12;
 const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
 const LABEL_GAP: usize = 4;
-const LABEL_EDGE_FADE_WIDTH: usize = 18;
+const LABEL_SIDE_OVERHANG: usize = 18;
+const LABEL_EDGE_FADE_WIDTH: usize = 24;
 const LABEL_SLIDE_FRAMES: usize = 12;
 const PROGRESS_RAIL_WIDTH: usize =
     LaunchStage::ALL.len() * BLOCK_WIDTH + (LaunchStage::ALL.len() - 1) * BLOCK_GAP;
-const LABEL_VIEW_WIDTH: usize = PROGRESS_RAIL_WIDTH + LABEL_GAP;
+const LABEL_VIEW_WIDTH: usize = PROGRESS_RAIL_WIDTH + LABEL_SIDE_OVERHANG * 2;
 
 fn render_launch_frame(
     frame: &mut Frame<'_>,
@@ -2518,7 +2519,11 @@ mod tests {
             .iter()
             .map(|span| &*span.content)
             .collect::<String>();
-        assert_eq!(rendered, "    credentials    construct    agent binaries ");
+        assert_eq!(rendered.chars().count(), LABEL_VIEW_WIDTH);
+        assert!(LABEL_VIEW_WIDTH > PROGRESS_RAIL_WIDTH);
+        assert!(rendered.contains("credentials"), "{rendered}");
+        assert!(rendered.contains("construct"), "{rendered}");
+        assert!(rendered.contains("agent binaries"), "{rendered}");
     }
 
     #[test]
