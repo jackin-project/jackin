@@ -829,9 +829,9 @@ dependencies = [
 
 [[package]]
 name = "fast-pull"
-version = "5.0.1"
+version = "5.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3902bbdb57e86a93603e1024391afb03578bb518c413bc9722639cadbcd35529"
+checksum = "4b3199115306cb7886bdddb98f6a53146a038b0182abab65673b4f0330e78f22"
 dependencies = [
  "bytes",
  "crossfire",
@@ -844,9 +844,9 @@ dependencies = [
 
 [[package]]
 name = "fast-steal"
-version = "6.5.3"
+version = "6.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91cbb43d51001d824d7b6debd2c456d9526ae835d8a5c402b58f2c57bd65aa2e"
+checksum = "dc3e008e5a35ef3636da9d82a4c8ef60748662c317254b99944e69dfe726fc21"
 dependencies = [
  "parking_lot",
  "portable-atomic",
