@@ -1009,9 +1009,9 @@ mod tests {
     use super::{ManagerMessage, update_manager};
     use crate::console::manager::auth_kind::AuthKind;
     use crate::console::manager::state::{
-        AuthFormFocus, AuthFormReturnPath, AuthFormTarget, CreatePreludeState, DragState,
-        EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, MountScrollFocus,
-        SettingsAuthModal, SettingsState, SettingsTab,
+        AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
+        FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
+        SettingsTab,
     };
     use crate::console::widgets::auth_panel::AuthForm;
     use crate::console::widgets::error_popup::ErrorPopupState;
@@ -1405,7 +1405,7 @@ mod tests {
         let mut state = state_with_saved_count(0);
         let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
         settings.error_popup = Some(ErrorPopupState::new("Token mint failed", "op item missing"));
-        settings.auth.pending_auth_form_return = Some(AuthFormReturnPath {
+        settings.auth.modal_parents.push(SettingsAuthModal::AuthForm {
             target: AuthFormTarget::Workspace {
                 kind: AuthKind::Claude,
             },
@@ -1421,7 +1421,7 @@ mod tests {
             panic!("expected settings stage");
         };
         assert!(settings.error_popup.is_none());
-        assert!(settings.auth.pending_auth_form_return.is_none());
+        assert!(settings.auth.modal_parents.is_empty());
         let Some(SettingsAuthModal::AuthForm {
             target,
             focus,

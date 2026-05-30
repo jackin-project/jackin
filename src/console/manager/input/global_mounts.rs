@@ -5,9 +5,9 @@ use super::super::render::global_mounts::{
     SettingsEnvRow, global_mounts_content_width, settings_env_flat_rows, trust_content_width,
 };
 use super::super::state::{
-    AuthFormFocus, AuthFormReturnPath, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft,
-    GlobalMountModal, GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal,
-    SettingsEnvConfirm, SettingsEnvModal, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
+    AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
+    GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
+    SettingsEnvModal, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
 };
 use crate::config::AppConfig;
 use crate::console::widgets::ModalOutcome;
@@ -460,7 +460,6 @@ pub(super) fn handle_settings_auth_modal(
             literal_buffer,
         } => {
             if key.code == KeyCode::Esc {
-                auth.pending_auth_form_return = None;
                 return;
             }
             // `g`/`G` at any focus mints a global Claude OAuth token. It
@@ -477,12 +476,9 @@ pub(super) fn handle_settings_auth_modal(
                 && state.mode == Some(crate::console::manager::auth_kind::AuthMode::OAuthToken)
             {
                 auth.generating_token = true;
-                auth.pending_auth_form_return = Some(AuthFormReturnPath {
-                    target: target.clone(),
-                    state: std::mem::replace(state, Box::new(AuthForm::new(state.kind))),
-                    focus: *focus,
-                    literal_buffer: literal_buffer.clone(),
-                });
+                // modal was taken from auth.modal at the start of this fn;
+                // push it directly to preserve the in-progress form state.
+                auth.modal_parents.push(modal);
                 auth.modal = Some(SettingsAuthModal::SourcePicker {
                     state: crate::console::widgets::source_picker::SourcePickerState::new(
                         "generated token".to_string(),
@@ -516,12 +512,7 @@ pub(super) fn handle_settings_auth_modal(
                             auth.modal = Some(modal);
                             return;
                         };
-                        auth.pending_auth_form_return = Some(AuthFormReturnPath {
-                            target: target.clone(),
-                            state: std::mem::replace(state, Box::new(AuthForm::new(state.kind))),
-                            focus: *focus,
-                            literal_buffer: literal_buffer.clone(),
-                        });
+                        auth.modal_parents.push(modal);
                         auth.modal = Some(SettingsAuthModal::SourcePicker {
                             state: crate::console::widgets::source_picker::SourcePickerState::new(
                                 env_var.to_string(),
@@ -622,10 +613,12 @@ pub(super) fn handle_settings_auth_modal(
             }
             match outcome {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
-                    let literal = auth
-                        .pending_auth_form_return
-                        .as_ref()
-                        .map(|return_path| return_path.literal_buffer.clone())
+                    let literal = auth.modal_parents.last()
+                        .and_then(|m| if let SettingsAuthModal::AuthForm { literal_buffer, .. } = m {
+                            Some(literal_buffer.clone())
+                        } else {
+                            None
+                        })
                         .unwrap_or_default();
                     auth.modal = Some(SettingsAuthModal::TextInput {
                         state: Box::new(TextInputState::new("Credential", literal)),
@@ -774,9 +767,9 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
     auth: &mut super::super::state::SettingsAuthState,
     value: &str,
 ) {
-    let Some(AuthFormReturnPath {
+    let Some(SettingsAuthModal::AuthForm {
         target, mut state, ..
-    }) = auth.pending_auth_form_return.take()
+    }) = auth.modal_parents.pop()
     else {
         crate::debug_log!(
             "auth",
@@ -816,12 +809,12 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
     op_ref: crate::operator_env::OpRef,
     runner: &R,
 ) {
-    let Some(AuthFormReturnPath {
+    let Some(SettingsAuthModal::AuthForm {
         target,
         mut state,
         focus,
         literal_buffer,
-    }) = auth.pending_auth_form_return.take()
+    }) = auth.modal_parents.pop()
     else {
         // Mirrors the editor twin's missing-stash breadcrumb: a minted
         // global token with no form to return to would otherwise vanish
@@ -847,7 +840,7 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
             // `try_commit_op_ref` mutates `state` only on Ok, so the
             // credential is untouched; re-stash so a later restore lands
             // the operator back on the form with the prior value.
-            auth.pending_auth_form_return = Some(AuthFormReturnPath {
+            auth.push_auth_modal(SettingsAuthModal::AuthForm {
                 target,
                 state,
                 focus,
@@ -2476,7 +2469,7 @@ mod tests {
             "generate must open the source picker as the first step"
         );
         assert!(
-            settings.auth.pending_auth_form_return.is_some(),
+            !settings.auth.modal_parents.is_empty(),
             "generate must stash the form so the post-mint re-mount can return to it; \
              generate vs. provide is disambiguated by the generate flag, not the stash"
         );
@@ -2533,7 +2526,7 @@ mod tests {
             true,
             op_cache,
         );
-        assert!(settings.auth.pending_auth_form_return.is_some());
+        assert!(!settings.auth.modal_parents.is_empty());
 
         // Simulate the loop's post-mint re-mount with the wired OpRef.
         let minted = OpRef {
@@ -2559,7 +2552,7 @@ mod tests {
             CredentialInput::OpRef(r) => assert_eq!(r, &minted),
             other => panic!("expected OpRef credential after mint; got {other:?}"),
         }
-        assert!(settings.auth.pending_auth_form_return.is_none());
+        assert!(settings.auth.modal_parents.is_empty());
         assert!(
             pending.is_none(),
             "the mint request was already drained by the loop; none re-queued"

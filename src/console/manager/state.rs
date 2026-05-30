@@ -561,7 +561,14 @@ pub struct SettingsAuthState {
     pub github_env: BTreeMap<String, crate::operator_env::EnvValue>,
     pub original_github_env: BTreeMap<String, crate::operator_env::EnvValue>,
     pub modal: Option<SettingsAuthModal<'static>>,
-    pub pending_auth_form_return: Option<AuthFormReturnPath>,
+    /// Parent modal chain for the auth sub-modal stack.
+    ///
+    /// When the auth form opens a sub-modal (SourcePicker, TextInput,
+    /// OpPicker), it pushes the current AuthForm modal here so Esc pops
+    /// back to it instead of requiring a separate stash slot. Mirrors the
+    /// same pattern used by GlobalMountsState, SettingsEnvState, and
+    /// EditorState.
+    pub modal_parents: Vec<SettingsAuthModal<'static>>,
     /// Set while the `g`/`G` generate action's Create-mode `OpPicker` is
     /// open, so its commit knows the pick is a token-generate (always
     /// global Claude) rather than a browse/provide pick.
@@ -1305,7 +1312,7 @@ impl SettingsAuthState {
                 .map(|github| github.env.clone())
                 .unwrap_or_default(),
             modal: None,
-            pending_auth_form_return: None,
+            modal_parents: Vec::new(),
             generating_token: false,
             error: None,
             scroll_y: 0,
@@ -1339,26 +1346,22 @@ impl SettingsAuthState {
         self.selected_kind = None;
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.modal = None;
-        self.pending_auth_form_return = None;
+        self.modal_parents.clear();
         self.generating_token = false;
         self.error = None;
     }
 
     pub fn restore_pending_auth_form(&mut self) {
-        if let Some(AuthFormReturnPath {
-            target,
-            state,
-            focus,
-            literal_buffer,
-        }) = self.pending_auth_form_return.take()
-        {
-            self.modal = Some(SettingsAuthModal::AuthForm {
-                target,
-                state,
-                focus,
-                literal_buffer,
-            });
+        self.modal = self.modal_parents.pop();
+    }
+
+    /// Push the current auth modal onto the parent stack so a sub-modal can
+    /// open without losing the auth form's in-progress state.
+    pub fn push_auth_modal(&mut self, sub_modal: SettingsAuthModal<'static>) {
+        if let Some(current) = self.modal.take() {
+            self.modal_parents.push(current);
         }
+        self.modal = Some(sub_modal);
     }
 }
 
