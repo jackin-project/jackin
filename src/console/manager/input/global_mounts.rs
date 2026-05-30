@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::super::message::{ManagerMessage, update_manager};
 use super::super::render::global_mounts::{
     SettingsEnvRow, global_mounts_content_width, settings_env_flat_rows, trust_content_width,
 };
@@ -25,7 +26,7 @@ const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
 const ADD_DRAFT_LOST: &str = "Add-mount draft was lost; press 'a' to start over.";
 
 pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
-    let ManagerStage::Settings(settings) = &mut state.stage else {
+    let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
 
@@ -34,21 +35,55 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     if settings.tab_bar_focused {
         match key.code {
             KeyCode::Left | KeyCode::BackTab => {
-                settings.active_tab = settings.active_tab.previous();
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveSettingsTab {
+                        delta: -1,
+                        focus_tab_bar: true,
+                    },
+                );
                 return;
             }
             KeyCode::Right => {
-                settings.active_tab = settings.active_tab.next();
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveSettingsTab {
+                        delta: 1,
+                        focus_tab_bar: true,
+                    },
+                );
                 return;
             }
             KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-                settings.tab_bar_focused = false;
+                dispatch_manager(state, ManagerMessage::FocusSettingsContent);
                 return;
             }
             _ => {}
         }
         // All other keys (S, Esc, etc.) fall through to content handling.
     }
+
+    match key.code {
+        KeyCode::Tab => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsTab {
+                    delta: 1,
+                    focus_tab_bar: true,
+                },
+            );
+            return;
+        }
+        KeyCode::BackTab => {
+            dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
+            return;
+        }
+        _ => {}
+    }
+
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
 
     match key.code {
         // Right on an Environments role header expands it; Right elsewhere is
@@ -74,17 +109,6 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             }
             return;
         }
-        // Tab from content returns to tab bar and advances to next tab.
-        KeyCode::Tab => {
-            settings.tab_bar_focused = true;
-            settings.active_tab = settings.active_tab.next();
-            return;
-        }
-        // BackTab from content returns focus to tab bar without changing tab.
-        KeyCode::BackTab => {
-            settings.tab_bar_focused = true;
-            return;
-        }
         _ => {}
     }
     match settings.active_tab {
@@ -94,6 +118,10 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         SettingsTab::Auth => handle_auth_key(state, key),
         SettingsTab::Trust => handle_trust_key(state, key),
     }
+}
+
+fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
+    let _dirty = update_manager(state, message);
 }
 
 fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {

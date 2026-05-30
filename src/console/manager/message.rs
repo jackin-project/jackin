@@ -4,7 +4,9 @@
 //! Input handlers should increasingly translate terminal events into these
 //! messages instead of mutating `ManagerState` inline.
 
-use super::state::{EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState};
+use super::state::{
+    EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, SettingsTab,
+};
 use jackin_tui::runtime::Dirty;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,9 +15,15 @@ pub enum ManagerMessage {
     EnterPreview,
     FocusEditorContent,
     FocusEditorTabBar,
+    FocusSettingsContent,
+    FocusSettingsTabBar,
     ExitPreview,
     ExpandSelectedTree,
     MoveEditorTab {
+        delta: isize,
+        focus_tab_bar: bool,
+    },
+    MoveSettingsTab {
         delta: isize,
         focus_tab_bar: bool,
     },
@@ -34,12 +42,18 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         ManagerMessage::EnterPreview => state.preview_focused = true,
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
+        ManagerMessage::FocusSettingsContent => set_settings_tab_bar_focus(state, false),
+        ManagerMessage::FocusSettingsTabBar => set_settings_tab_bar_focus(state, true),
         ManagerMessage::ExitPreview => state.preview_focused = false,
         ManagerMessage::ExpandSelectedTree => expand_selected_tree(state),
         ManagerMessage::MoveEditorTab {
             delta,
             focus_tab_bar,
         } => move_editor_tab(state, delta, focus_tab_bar),
+        ManagerMessage::MoveSettingsTab {
+            delta,
+            focus_tab_bar,
+        } => move_settings_tab(state, delta, focus_tab_bar),
         ManagerMessage::MoveListSelection(delta) => move_list_selection(state, delta),
         ManagerMessage::MovePreviewPane { container, delta } => {
             move_preview_pane(state, &container, delta);
@@ -57,6 +71,13 @@ fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
         return;
     };
     editor.tab_bar_focused = focused;
+}
+
+fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    settings.tab_bar_focused = focused;
 }
 
 fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
@@ -82,6 +103,18 @@ fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bo
     }
 }
 
+fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    settings.active_tab = if delta.is_negative() {
+        previous_settings_tab(settings.active_tab)
+    } else {
+        next_settings_tab(settings.active_tab)
+    };
+    settings.tab_bar_focused = focus_tab_bar;
+}
+
 const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
     match tab {
         EditorTab::General => EditorTab::Auth,
@@ -99,6 +132,26 @@ const fn next_editor_tab(tab: EditorTab) -> EditorTab {
         EditorTab::Roles => EditorTab::Secrets,
         EditorTab::Secrets => EditorTab::Auth,
         EditorTab::Auth => EditorTab::General,
+    }
+}
+
+const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
+    match tab {
+        SettingsTab::General => SettingsTab::Trust,
+        SettingsTab::Mounts => SettingsTab::General,
+        SettingsTab::Environments => SettingsTab::Mounts,
+        SettingsTab::Auth => SettingsTab::Environments,
+        SettingsTab::Trust => SettingsTab::Auth,
+    }
+}
+
+const fn next_settings_tab(tab: SettingsTab) -> SettingsTab {
+    match tab {
+        SettingsTab::General => SettingsTab::Mounts,
+        SettingsTab::Mounts => SettingsTab::Environments,
+        SettingsTab::Environments => SettingsTab::Auth,
+        SettingsTab::Auth => SettingsTab::Trust,
+        SettingsTab::Trust => SettingsTab::General,
     }
 }
 
@@ -194,6 +247,7 @@ mod tests {
     use super::{ManagerMessage, update_manager};
     use crate::console::manager::state::{
         EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, MountScrollFocus,
+        SettingsState, SettingsTab,
     };
 
     fn state_with_saved_count(count: usize) -> ManagerState<'static> {
@@ -284,5 +338,31 @@ mod tests {
         assert_eq!(editor.tab_scroll_x, 0);
         assert_eq!(editor.tab_scroll_y, 0);
         assert!(editor.secrets_expanded.is_empty());
+    }
+
+    #[test]
+    fn move_settings_tab_cycles_and_sets_focus() {
+        let mut state = state_with_saved_count(0);
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings.active_tab = SettingsTab::Trust;
+        settings.tab_bar_focused = false;
+        state.stage = ManagerStage::Settings(settings);
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::MoveSettingsTab {
+                    delta: 1,
+                    focus_tab_bar: true,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.active_tab, SettingsTab::General);
+        assert!(settings.tab_bar_focused);
     }
 }
