@@ -285,7 +285,7 @@ The runner can initially live in the host CLI process for foreground runs. Overn
 
 ### Capsule API prerequisites
 
-The current `status` and `snapshot` control calls are enough for display, but not enough for reliable workflow orchestration. The runner needs a typed control surface that can manipulate sessions without pretending terminal text is an API.
+The current `status` and `snapshot` control calls are enough for display, but not enough for reliable workflow orchestration. The runner needs a typed control surface that can manipulate sessions without pretending terminal text is an API. [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) owns the detailed read/wait/send/capture/tab/session API shape; this section names the subset the workflow runner depends on.
 
 | API | Needed for V1? | Purpose |
 |---|---|---|

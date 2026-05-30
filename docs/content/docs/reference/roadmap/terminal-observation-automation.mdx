@@ -88,6 +88,38 @@ jackin instance
   └─ capture text / JSON frame / screenshot / recording marker
 ```
 
+### Proposed API surface
+
+The API should model the things operators already see, not Docker internals. The stable resource hierarchy is: **instance → tab → pane/session**. A tab is the operator-visible workspace inside Capsule; a session is the PTY-backed agent or shell running in a pane. The API can start as CLI/control-channel calls and later be exposed through the daemon/MCP adapter without changing the vocabulary.
+
+| API family | Operations | Purpose |
+|---|---|---|
+| Instance discovery | `instance.list`, `instance.describe` | Find running or preserved Jackin instances and return instance id, workspace/role labels, supported agents, available providers, tab summary, and active tab. |
+| Tab control | `tab.list`, `tab.select`, `tab.create`, `tab.rename`, `tab.close` | Let automation and future UI tools switch between Capsule tabs, create a fresh tab, name it for a workflow phase, and close tabs when a run is done. `tab.select` changes Capsule focus; every other operation should also be able to target a tab by id without relying on focus. |
+| Session creation | `session.create` with `{ tab_id, kind, agent?, provider?, label?, prompt? }` | Start a new PTY-backed session in the target tab. `kind = agent` requires an agent slug and may include a provider choice; `kind = shell` creates a shell session and should be treated as the shell agent for API consistency. A starting prompt is optional and should be delivered after the session is ready, not pasted before the runtime has rendered its input box. |
+| Provider selection | `provider.list` and `session.create.provider` | Return the providers valid for a chosen agent in this instance, then let the caller choose explicitly. If omitted, Jackin applies the same default/last-used/provider-picker policy as the interactive console. The response must record the resolved provider so recordings and workflow evidence say whether Claude Code used Anthropic, Z.AI, or another future backend. |
+| Focus and attach | `session.focus`, `session.attach`, `session.detach` | Jump the operator or an automation client to the exact session/pane. Automation should not need focus for `send` or `read`, but focus changes are still first-class because the visible operator UI matters. |
+| Input | `session.send_text`, `session.send_keys`, `session.submit` | Send literal text, named keys, or text plus enter to a target session. `session.submit` is the high-level convenience for "put this in the agent input and send it"; lower-level key APIs still exist for TUIs, approval prompts, and shell sessions. |
+| Observation | `session.read_visible`, `session.read_frame`, `session.capture`, `session.record_start`, `session.record_stop` | Read visible rows, structured cells, artifact bundles, and recording state from the target session. These calls return evidence ids/revisions so a workflow can cite exactly what it saw. |
+| Waiting | `session.wait` | Wait for visible text/regex, effective runtime status, blocked/waiting details, explicit marker, screen revision, process exit, or timeout. The response should include the matched condition, session revision, status evidence, and whether the wait ended because the operator intervened. |
+| Event stream | `events.subscribe` | Stream tab/session lifecycle, output/screen revisions, effective status changes, blocked/done details, recording markers, and operator intervention events. This is the "listen to what is going on inside the agent" API; polling `read_visible` is only a fallback. |
+
+The minimum useful external flow should read like:
+
+```text
+instance = instance.describe("workspace-or-instance")
+tab = tab.create(instance.id, label: "implement terminal snapshot API")
+providers = provider.list(instance.id, agent: "claude")
+session = session.create(tab.id, kind: agent, agent: "claude", provider: providers.default)
+session.wait(session.id, status: "idle", visible: /How can I help|>/, timeout: 30s)
+session.submit(session.id, "Implement the roadmap item and run the docs checks")
+events.subscribe(instance.id, filter: { session_id: session.id })
+session.wait(session.id, status: "blocked|done", timeout: 30m)
+session.capture(session.id, out: "after-agent-response")
+```
+
+`blocked` and waiting details should not be invented by this API. They come from the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), which may use runtime hooks/APIs, foreground process evidence, visible-screen signals, and cursor/readiness probes. Terminal observation consumes that status and combines it with the visible screen and trace evidence so callers can both know **that** an agent is waiting and inspect **what** it is waiting on.
+
 ### Screen text and frame snapshots
 
 Add a control call that returns the current visible terminal state for a target session. The first version should return plain rows and enough metadata to identify the session, dimensions, revision, and cursor. A later version should add a structured frame with sparse styled cells.
@@ -201,9 +233,9 @@ Add internal helper methods that extract visible text rows from the current `vt1
 
 Extend the control protocol with a target-session text snapshot and a bounded wait-for-visible-text request. Add host-side CLI commands only after the protocol behavior is tested in Capsule. Return match evidence and timeout diagnostics.
 
-### Phase 2 — Input injection
+### Phase 2 — Tab/session create, select, and input injection
 
-Add named input tokens and literal text sending through the control channel. Reuse the same key-token parser in CLI and future automation scripts. Gate non-interactive/external callers behind explicit policy before exposing through daemon or MCP surfaces.
+Add tab selection/creation, session creation, provider resolution, named input tokens, literal text sending, and `submit` through the control channel. Reuse the same key-token parser in CLI and future automation scripts. Gate non-interactive/external callers behind explicit policy before exposing through daemon or MCP surfaces.
 
 ### Phase 3 — Structured frame schema
 
@@ -232,6 +264,8 @@ Add a tiny tape/expect-style runner for smoke tests and demos. Then expose the s
 | Should `asciinema/avt` replace `vt100`? | Not now. `avt` is attractive for offline replay and dump/diff APIs, but Jackin's live path depends on OSC/unhandled-CSI callback behavior. Revisit as part of the VT parser dependency strategy. |
 | Should waits be event-driven or polling? | Event-driven when waiting on status markers or session revisions; bounded polling is acceptable for visible-text regex in the first version if it wakes on PTY output rather than fixed tight loops. |
 | How does this interact with operator hijack? | Any automation should record when the operator attaches, types, pauses, or resumes. The terminal remains visible and hijackable; automation is a client of the session, not its owner. |
+| Is a shell an agent? | For API consistency, yes: represent shell sessions as `kind = shell` or a reserved shell agent with no provider. The operator-visible UI can still label it `Shell`; automation should not need a separate resource type. |
+| Who chooses providers when a session is created? | Interactive flows can keep the console provider picker. Automation should either pass an explicit provider or request the resolved default and record it in the session-create response. |
 
 ## Implementation notes
 
@@ -244,6 +278,8 @@ Add a tiny tape/expect-style runner for smoke tests and demos. Then expose the s
 ## Related roadmap items
 
 - [jackin' Capsule control plane](/reference/roadmap/jackin-capsule/) — existing in-container PTY multiplexer and the natural implementation point.
+- [Console agent session control](/reference/roadmap/console-agent-session-control/) — shipped operator UI for discovering instances, starting secondary sessions, opening shells, and attaching to panes; this API is the scriptable counterpart.
+- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — agent and provider choices in `session.create` must follow the same runtime/provider model as interactive launch.
 - [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — semantic state source consumed by waits, markers, recordings, and attention prompts.
 - [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) — future workflow runner that needs session read/wait/send primitives but should not own terminal parsing.
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — notifications should consume status events and may include snapshot evidence when appropriate.
