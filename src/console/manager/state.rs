@@ -805,10 +805,32 @@ pub struct EditorState<'a> {
     /// the outer console loop so the editor can keep rendering a loading
     /// dialog instead of blocking the TUI while git works.
     pub pending_role_load: Option<PendingRoleLoad>,
+    /// Isolation-drift check dispatched by the save flow. Holds the oneshot
+    /// receiver plus the save plan and flags needed to continue once the check
+    /// completes. The outer console loop polls this each tick so the reactor is
+    /// not blocked while the Docker/git check runs on the spawn_blocking pool.
+    pub pending_drift_check: Option<PendingDriftCheck>,
     /// Footer height (rows) the renderer last laid out, cached so mouse
     /// hit-testing subtracts the same dynamic footer the frame drew rather than
     /// a stale constant — otherwise clicks near the bottom mis-map.
     pub cached_footer_h: u16,
+}
+
+/// In-flight isolation-drift check for a save operation.
+pub struct PendingDriftCheck {
+    pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<crate::config::DriftDetection>>,
+    pub plan: PendingSaveCommit,
+    pub exit_on_success: bool,
+    pub original_name: String,
+}
+
+impl std::fmt::Debug for PendingDriftCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingDriftCheck")
+            .field("original_name", &self.original_name)
+            .field("exit_on_success", &self.exit_on_success)
+            .finish_non_exhaustive()
+    }
 }
 
 pub struct PendingRoleLoad {
@@ -2216,6 +2238,31 @@ impl ManagerState<'_> {
         result
     }
 
+    /// Poll the in-flight drift check started by a save operation.
+    ///
+    /// Returns `Some(check)` when the check has a result ready, taking
+    /// ownership of the `PendingDriftCheck` so the caller can continue the
+    /// save flow. Returns `None` when the check is still running or there is
+    /// no pending check.
+    pub(crate) fn poll_pending_drift_check(&mut self) -> Option<(PendingDriftCheck, anyhow::Result<crate::config::DriftDetection>)> {
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            return None;
+        };
+        let check = editor.pending_drift_check.as_mut()?;
+        let result = match check.rx.try_recv() {
+            Ok(result) => Some(result),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return None,
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                Some(Err(anyhow::anyhow!("drift check worker disconnected")))
+            }
+        };
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            unreachable!()
+        };
+        let check = editor.pending_drift_check.take().expect("polled above");
+        result.map(|r| (check, r))
+    }
+
     fn spawn_instance_refresh_if_due(&mut self, paths: &crate::paths::JackinPaths) {
         const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
         if self.instances_refresh_rx.is_some() {
@@ -2557,6 +2604,7 @@ impl EditorState<'_> {
             generating_token_target: None,
             pending_token_generate: None,
             pending_role_load: None,
+            pending_drift_check: None,
             cached_footer_h: 1,
         };
         state.refresh_mount_info_cache();
@@ -2598,6 +2646,7 @@ impl EditorState<'_> {
             generating_token_target: None,
             pending_token_generate: None,
             pending_role_load: None,
+            pending_drift_check: None,
             cached_footer_h: 1,
         };
         state.refresh_mount_info_cache();

@@ -4,12 +4,93 @@
 
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
+    PendingDriftCheck,
 };
 use super::super::message::{ManagerMessage, update_manager};
 use crate::config::AppConfig;
 use crate::config::editor::EnvScope;
 use crate::paths::JackinPaths;
 use anyhow::Context as _;
+
+/// Continue the editor save flow after an async drift check completes.
+///
+/// Called by the event loop when `poll_pending_drift_check` returns a result.
+/// Handles the drift result identically to the synchronous path in
+/// `commit_editor_save_with_runner`, then continues to the actual workspace
+/// write (or shows an error / deletion-confirm modal) without blocking the
+/// reactor.
+pub fn continue_save_after_drift_check(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    drift_check: PendingDriftCheck,
+    detection: anyhow::Result<crate::config::DriftDetection>,
+) -> anyhow::Result<()> {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return Ok(());
+    };
+
+    // Clear the "Checking..." status popup — results or errors replace it.
+    if matches!(editor.modal, Some(Modal::StatusPopup { .. })) {
+        editor.modal = None;
+    }
+
+    match detection {
+        Err(e) => {
+            open_save_error_popup(editor, &e.to_string());
+            return Ok(());
+        }
+        Ok(detection) => {
+            if !detection.running_containers.is_empty() {
+                let msg = format!(
+                    "Cannot save: {} container(s) are running with isolated state for an affected mount: {}; eject them first.",
+                    detection.running_containers.len(),
+                    detection.running_containers.join(", "),
+                );
+                open_save_error_popup(editor, &msg);
+                return Ok(());
+            }
+            if !detection.stopped_records.is_empty() {
+                let affected_containers: Vec<String> = detection
+                    .stopped_records
+                    .iter()
+                    .map(|r| r.container_name.clone())
+                    .collect();
+                let prompt = format!(
+                    "Edit affects preserved isolated state for {} stopped container(s):\n  {}\n\n\
+                     Delete the preserved state and save?",
+                    affected_containers.len(),
+                    affected_containers.join("\n  "),
+                );
+                editor.modal = Some(Modal::Confirm {
+                    target: super::super::state::ConfirmTarget::DeleteIsolatedAndSave {
+                        plan: drift_check.plan.clone(),
+                        exit_on_success: drift_check.exit_on_success,
+                        affected_containers,
+                    },
+                    state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+                });
+                editor.save_flow = EditorSaveFlow::Confirming {
+                    exit_on_success: drift_check.exit_on_success,
+                };
+                return Ok(());
+            }
+        }
+    }
+
+    // No drift detected — proceed with the workspace write.
+    commit_editor_save_with_runner::<crate::docker_client::BollardDockerClient>(
+        state,
+        config,
+        paths,
+        cwd,
+        drift_check.plan,
+        drift_check.exit_on_success,
+        &mut crate::docker::ShellRunner::default(),
+        None,
+    )
+}
 
 /// Phase 1: validate, plan, open `ConfirmSave`. Validation failures
 /// route to `EditorSaveFlow::Error` as an inline banner (popup is
@@ -239,24 +320,44 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                     docker,
                 ))
             } else {
+                // Production path: dispatch to tokio's blocking thread pool
+                // so the TUI reactor stays responsive while Docker/git runs.
+                // The event loop polls editor.pending_drift_check each tick
+                // and calls continue_save_after_drift_check when done.
                 let paths_clone = paths.clone();
                 let name = original_name.clone();
                 let mounts = prospective_mounts;
-                std::thread::spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .context("building tokio runtime for drift check")?;
-                    let docker = crate::docker_client::BollardDockerClient::connect()?;
-                    rt.block_on(crate::config::detect_workspace_edit_drift(
-                        &paths_clone,
-                        &name,
-                        &mounts,
-                        &docker,
-                    ))
-                })
-                .join()
-                .map_err(|_| anyhow::anyhow!("drift detection thread panicked"))?
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                tokio::task::spawn_blocking(move || {
+                    let result = (|| -> anyhow::Result<crate::config::DriftDetection> {
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .context("building tokio runtime for drift check")?;
+                        let docker = crate::docker_client::BollardDockerClient::connect()?;
+                        rt.block_on(crate::config::detect_workspace_edit_drift(
+                            &paths_clone,
+                            &name,
+                            &mounts,
+                            &docker,
+                        ))
+                    })();
+                    let _ = tx.send(result);
+                });
+                editor.pending_drift_check =
+                    Some(super::super::state::PendingDriftCheck {
+                        rx,
+                        plan: plan.clone(),
+                        exit_on_success,
+                        original_name: original_name.clone(),
+                    });
+                editor.modal = Some(super::super::state::Modal::StatusPopup {
+                    state: crate::console::widgets::status_popup::StatusPopupState::new(
+                        "Saving",
+                        "Checking isolation records...",
+                    ),
+                });
+                return Ok(());
             };
             match detect_result {
                 Err(e) => {

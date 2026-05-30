@@ -8,7 +8,7 @@ pub(super) mod global_mounts;
 pub(super) mod list;
 pub(super) mod mouse;
 pub(super) mod prelude;
-pub(super) mod save;
+pub mod save;
 
 use crossterm::event::KeyEvent;
 

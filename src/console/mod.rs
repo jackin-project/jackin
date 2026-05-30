@@ -981,6 +981,13 @@ pub async fn run_console(
                     manager::ManagerMessage::InstancesRefreshed(result),
                 );
             }
+            // Poll the async drift check started by a save operation.
+            // When ready, continue the save without blocking the reactor.
+            if let Some((drift_check, detection)) = ms.poll_pending_drift_check() {
+                let _ = manager::input::save::continue_save_after_drift_check(
+                    ms, &mut config, paths, cwd, drift_check, detection,
+                );
+            }
         }
 
         if let ConsoleStage::Manager(ms) = &mut state.stage {

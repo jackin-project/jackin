@@ -156,6 +156,16 @@ pub(crate) enum ManagerMessage {
     DismissInlineAgentPicker,
     DismissInlineProviderPicker,
     DismissLaunchProviderPicker,
+    /// Isolation-drift check completed on the spawn_blocking pool. The save
+    /// flow dispatched this check asynchronously so the TUI reactor stays live
+    /// while Docker/git is polled; the message carries the result plus enough
+    /// context to continue or abort the save.
+    DriftCheckCompleted {
+        result: anyhow::Result<crate::config::DriftDetection>,
+        plan: super::state::PendingSaveCommit,
+        exit_on_success: bool,
+        original_name: String,
+    },
 }
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
@@ -326,6 +336,16 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::DismissLaunchProviderPicker => {
             state.launch_provider_picker = None;
+        }
+        ManagerMessage::DriftCheckCompleted {
+            result: _,
+            plan: _,
+            exit_on_success: _,
+            original_name: _,
+        } => {
+            // Handled by the event loop via poll_pending_drift_check; reaching
+            // update_manager directly means the caller already processed the
+            // result inline. Nothing to do here.
         }
     }
     UpdateResult::redraw()
