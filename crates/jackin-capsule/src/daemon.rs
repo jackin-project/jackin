@@ -25,8 +25,6 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
@@ -64,7 +62,7 @@ use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
 use crate::mux_mode::MuxMode;
 use crate::protocol::attach::{
-    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server, read_client_frame,
+    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
 };
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, draw_scrollbar, fill_screen};
