@@ -1452,8 +1452,7 @@ fn label_edge_fade_factor(index: usize, width: usize) -> f32 {
     }
 
     let ratio = ((edge_distance + 1) as f32 / fade_width as f32).clamp(0.0, 1.0);
-    let smooth = ratio * ratio * (3.0 - 2.0 * ratio);
-    smooth
+    ratio * ratio * 2.0f32.mul_add(-ratio, 3.0)
 }
 
 fn faded_color(color: Color, factor: f32) -> Color {
@@ -2519,8 +2518,9 @@ mod tests {
             .iter()
             .map(|span| &*span.content)
             .collect::<String>();
-        assert_eq!(rendered.chars().count(), LABEL_VIEW_WIDTH);
-        assert!(LABEL_VIEW_WIDTH > PROGRESS_RAIL_WIDTH);
+        let rendered_width = rendered.chars().count();
+        assert_eq!(rendered_width, LABEL_VIEW_WIDTH);
+        assert!(rendered_width > PROGRESS_RAIL_WIDTH);
         assert!(rendered.contains("credentials"), "{rendered}");
         assert!(rendered.contains("construct"), "{rendered}");
         assert!(rendered.contains("agent binaries"), "{rendered}");
