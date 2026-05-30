@@ -8,6 +8,7 @@ use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
     workdir_pick::WorkdirPickState,
 };
+use super::super::message::{ManagerMessage, update_manager};
 use super::super::render::editor::{SecretsRow, secrets_flat_rows};
 use super::super::render::list::workspace_mounts_content_width;
 use super::super::state::{
@@ -92,6 +93,52 @@ pub(super) fn handle_editor_key(
     let op_available = state.op_available;
     let term_width = state.cached_term_size.width;
 
+    if let ManagerStage::Editor(editor) = &state.stage {
+        match key.code {
+            KeyCode::Left | KeyCode::BackTab if editor.tab_bar_focused => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveEditorTab {
+                        delta: -1,
+                        focus_tab_bar: true,
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Right if editor.tab_bar_focused => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveEditorTab {
+                        delta: 1,
+                        focus_tab_bar: true,
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J')
+                if editor.tab_bar_focused =>
+            {
+                dispatch_manager(state, ManagerMessage::FocusEditorContent);
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::Tab => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveEditorTab {
+                        delta: 1,
+                        focus_tab_bar: true,
+                    },
+                );
+                return Ok(InputOutcome::Continue);
+            }
+            KeyCode::BackTab => {
+                dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
+                return Ok(InputOutcome::Continue);
+            }
+            _ => {}
+        }
+    }
+
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(InputOutcome::Continue);
     };
@@ -132,74 +179,6 @@ pub(super) fn handle_editor_key(
                 term_width,
                 editor.tab_content_width,
             );
-        }
-        // W3C ARIA Tabs: Left/BackTab cycle backward, Right cycles forward when
-        // the tab bar has focus. Tab and Down enter the content area.
-        KeyCode::Left | KeyCode::BackTab if editor.tab_bar_focused => {
-            let was_secrets = editor.active_tab == EditorTab::Secrets;
-            editor.active_tab = match editor.active_tab {
-                EditorTab::General => EditorTab::Auth,
-                EditorTab::Mounts => EditorTab::General,
-                EditorTab::Roles => EditorTab::Mounts,
-                EditorTab::Secrets => EditorTab::Roles,
-                EditorTab::Auth => EditorTab::Secrets,
-            };
-            editor.active_field = FieldFocus::Row(0);
-            editor.tab_scroll_x = 0;
-            editor.tab_scroll_y = 0;
-            if editor.active_tab != EditorTab::Auth {
-                editor.auth_selected_kind = None;
-            }
-            if was_secrets {
-                reset_secrets_view(editor);
-            }
-        }
-        KeyCode::Right if editor.tab_bar_focused => {
-            let was_secrets = editor.active_tab == EditorTab::Secrets;
-            editor.active_tab = match editor.active_tab {
-                EditorTab::General => EditorTab::Mounts,
-                EditorTab::Mounts => EditorTab::Roles,
-                EditorTab::Roles => EditorTab::Secrets,
-                EditorTab::Secrets => EditorTab::Auth,
-                EditorTab::Auth => EditorTab::General,
-            };
-            editor.active_field = FieldFocus::Row(0);
-            editor.tab_scroll_x = 0;
-            editor.tab_scroll_y = 0;
-            if editor.active_tab != EditorTab::Auth {
-                editor.auth_selected_kind = None;
-            }
-            if was_secrets {
-                reset_secrets_view(editor);
-            }
-        }
-        KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') if editor.tab_bar_focused => {
-            editor.tab_bar_focused = false;
-        }
-        // Tab from content returns focus to tab bar and advances to next tab.
-        KeyCode::Tab => {
-            let was_secrets = editor.active_tab == EditorTab::Secrets;
-            editor.active_tab = match editor.active_tab {
-                EditorTab::General => EditorTab::Mounts,
-                EditorTab::Mounts => EditorTab::Roles,
-                EditorTab::Roles => EditorTab::Secrets,
-                EditorTab::Secrets => EditorTab::Auth,
-                EditorTab::Auth => EditorTab::General,
-            };
-            editor.tab_bar_focused = true;
-            editor.active_field = FieldFocus::Row(0);
-            editor.tab_scroll_x = 0;
-            editor.tab_scroll_y = 0;
-            if editor.active_tab != EditorTab::Auth {
-                editor.auth_selected_kind = None;
-            }
-            if was_secrets {
-                reset_secrets_view(editor);
-            }
-        }
-        // BackTab from content returns focus to tab bar without changing tab.
-        KeyCode::BackTab => {
-            editor.tab_bar_focused = true;
         }
         // Right expands role headers in Secrets/Auth tabs; no-op everywhere else.
         // Left/Right are intra-area horizontal keys and must not cycle tabs.
@@ -572,9 +551,8 @@ fn step_auth_cursor_up(rows: &[super::super::render::editor::AuthRow], candidate
     }
 }
 
-fn reset_secrets_view(editor: &mut EditorState<'_>) {
-    editor.unmasked_rows.clear();
-    editor.secrets_expanded.clear();
+fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
+    let _dirty = update_manager(state, message);
 }
 
 /// No-op on header/sentinel/op:// rows.

@@ -4,15 +4,21 @@
 //! Input handlers should increasingly translate terminal events into these
 //! messages instead of mutating `ManagerState` inline.
 
-use super::state::{ManagerListRow, ManagerState};
+use super::state::{EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState};
 use jackin_tui::runtime::Dirty;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManagerMessage {
     CollapseSelectedTree,
     EnterPreview,
+    FocusEditorContent,
+    FocusEditorTabBar,
     ExitPreview,
     ExpandSelectedTree,
+    MoveEditorTab {
+        delta: isize,
+        focus_tab_bar: bool,
+    },
     MoveListSelection(isize),
     MovePreviewPane {
         container: String,
@@ -26,8 +32,14 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
         ManagerMessage::EnterPreview => state.preview_focused = true,
+        ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
+        ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
         ManagerMessage::ExitPreview => state.preview_focused = false,
         ManagerMessage::ExpandSelectedTree => expand_selected_tree(state),
+        ManagerMessage::MoveEditorTab {
+            delta,
+            focus_tab_bar,
+        } => move_editor_tab(state, delta, focus_tab_bar),
         ManagerMessage::MoveListSelection(delta) => move_list_selection(state, delta),
         ManagerMessage::MovePreviewPane { container, delta } => {
             move_preview_pane(state, &container, delta);
@@ -38,6 +50,56 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         }
     }
     Dirty::Redraw
+}
+
+fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    editor.tab_bar_focused = focused;
+}
+
+fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    let was_secrets = editor.active_tab == EditorTab::Secrets;
+    editor.active_tab = if delta.is_negative() {
+        previous_editor_tab(editor.active_tab)
+    } else {
+        next_editor_tab(editor.active_tab)
+    };
+    editor.tab_bar_focused = focus_tab_bar;
+    editor.active_field = FieldFocus::Row(0);
+    editor.tab_scroll_x = 0;
+    editor.tab_scroll_y = 0;
+    if editor.active_tab != EditorTab::Auth {
+        editor.auth_selected_kind = None;
+    }
+    if was_secrets {
+        editor.unmasked_rows.clear();
+        editor.secrets_expanded.clear();
+    }
+}
+
+const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
+    match tab {
+        EditorTab::General => EditorTab::Auth,
+        EditorTab::Mounts => EditorTab::General,
+        EditorTab::Roles => EditorTab::Mounts,
+        EditorTab::Secrets => EditorTab::Roles,
+        EditorTab::Auth => EditorTab::Secrets,
+    }
+}
+
+const fn next_editor_tab(tab: EditorTab) -> EditorTab {
+    match tab {
+        EditorTab::General => EditorTab::Mounts,
+        EditorTab::Mounts => EditorTab::Roles,
+        EditorTab::Roles => EditorTab::Secrets,
+        EditorTab::Secrets => EditorTab::Auth,
+        EditorTab::Auth => EditorTab::General,
+    }
 }
 
 fn collapse_selected_tree(state: &mut ManagerState<'_>) {
@@ -130,7 +192,9 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
 #[cfg(test)]
 mod tests {
     use super::{ManagerMessage, update_manager};
-    use crate::console::manager::state::{ManagerState, MountScrollFocus};
+    use crate::console::manager::state::{
+        EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, MountScrollFocus,
+    };
 
     fn state_with_saved_count(count: usize) -> ManagerState<'static> {
         let tmp = tempfile::tempdir().unwrap();
@@ -183,5 +247,42 @@ mod tests {
 
         assert!(update_manager(&mut state, ManagerMessage::CollapseSelectedTree).is_dirty());
         assert!(!state.current_dir_expanded);
+    }
+
+    #[test]
+    fn move_editor_tab_resets_tab_local_view_state() {
+        let mut state = state_with_saved_count(0);
+        let mut editor = EditorState::new_edit(
+            "workspace".into(),
+            crate::workspace::WorkspaceConfig::default(),
+        );
+        editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
+        editor.active_field = FieldFocus::Row(7);
+        editor.tab_scroll_x = 4;
+        editor.tab_scroll_y = 5;
+        editor.secrets_expanded.insert("role".into());
+        state.stage = ManagerStage::Editor(editor);
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::MoveEditorTab {
+                    delta: 1,
+                    focus_tab_bar: true,
+                },
+            )
+            .is_dirty()
+        );
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.active_tab, EditorTab::Auth);
+        assert!(editor.tab_bar_focused);
+        assert_eq!(editor.active_field, FieldFocus::Row(0));
+        assert_eq!(editor.tab_scroll_x, 0);
+        assert_eq!(editor.tab_scroll_y, 0);
+        assert!(editor.secrets_expanded.is_empty());
     }
 }
