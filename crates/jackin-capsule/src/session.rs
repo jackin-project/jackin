@@ -51,6 +51,13 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     // operator picks an alternative provider in the AgentPicker flow.
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_BASE_URL",
+    // Z.AI model mapping so Claude Code maps its internal model tiers to GLM names.
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    // Z.AI operational env vars.
+    "API_TIMEOUT_MS",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
 ];
 
 /// Per-pane cap on the kitty-keyboard push depth. A buggy or hostile
