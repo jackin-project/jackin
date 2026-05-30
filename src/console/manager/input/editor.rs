@@ -1715,7 +1715,7 @@ pub(super) fn apply_text_input_to_pending(
 
 fn apply_role_input(
     editor: &mut EditorState<'_>,
-    config: &mut AppConfig,
+    config: &AppConfig,
     paths: &JackinPaths,
     value: &str,
 ) {
@@ -1902,6 +1902,7 @@ pub(super) fn poll_role_load(
     }
 }
 
+#[cfg(test)]
 fn apply_role_input_with_runner(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
