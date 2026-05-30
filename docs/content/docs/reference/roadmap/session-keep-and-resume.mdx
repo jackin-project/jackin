@@ -1,0 +1,134 @@
+---
+title: "Session Keep and Resume"
+---
+
+**Status**: Open — design proposal (Phase 2 — Live operator surface, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+
+## Problem
+
+When an operator leaves a jackin' session, the exit path silently discards more than the operator expects, and the next launch cannot bring them back. This is the concrete cause of the "sometimes I lose important context" instability operators report.
+
+Trace a normal clean exit (`Stopped/0`) today: <RepoFile path="src/isolation/finalize.rs" /> assesses each isolated mount, **auto-deletes** any worktree it judges safe (`force_cleanup_isolated`, no prompt), returns `FinalizeDecision::Cleaned`, the launcher tears the container down, and <RepoFile path="src/runtime/launch.rs" /> stamps the instance `InstanceStatus::CleanExited`. The per-instance agent home (`~/.jackin/data/<container>/home/.claude`, `.claude.json`, installed plugins, conversation history, every other runtime's home) is preserved on disk — but `CleanExited` is **not** a restore candidate (`is_restore_candidate()` in <RepoFile path="src/instance/manifest.rs" /> matches `Active | Running | Crashed | PreservedDirty | PreservedUnpushed | RestoreAvailable | FailedSetup`, never `CleanExited`). So the next `jackin load` / `jackin console` mints a fresh `instance_id`, a fresh container name, a fresh data directory, and an empty home. Yesterday's conversation is stranded on disk with no path back to it.
+
+Two narrower problems compound it:
+
+- **There is no "keep to resume" outcome for a clean session.** Preservation only triggers when an isolated mount has uncommitted or unpushed Git state. A clean session you simply want to continue tomorrow has no button.
+- **The exit prompt that does exist is hard to read on degraded terminals.** The rich worktree-cleanup dialog now renders unconditionally (the plain-text fallback was removed), so a too-small or `TERM=dumb` terminal shows an unreadable surface for both the choice and its error popup.
+
+The fix is the flow the operator described: a clear, rich exit decision — keep this to resume, or clean it up — governed by a per-workspace policy, and a rich resume-or-new choice at the next launch that rebinds the same persisted instance so the conversation, plugins, and isolated worktree come back as they were.
+
+## Goals
+
+- An interactive exit presents a legible, rich choice between **keep to resume later** and **clean up now**, with a graceful plain-text degrade when the terminal cannot render the rich surface.
+- A per-workspace **cleanup policy** controls the default: `ask` (today's behaviour — only interrupt on unfinished Git state, clean exits clean up automatically), `keep` (always retain, always resumable from the selection bar), and `clean` (always force-clean, no prompt). The product default is `ask`.
+- A kept instance becomes a first-class restore candidate, so the next time the operator selects that workspace + role + agent they are offered **resume previous session** vs **start new**.
+- Resuming rebinds the **same instance** — same `container_base`, same `~/.jackin/data/<container>/` — so home, plugins, auth, conversation, and the isolated worktree/clone return in place. A power-off or `docker rm` that removed the container but left the host data directory is fully recoverable.
+- Before reusing a clone or worktree mount on resume (and before discarding one on exit), the operator **sees the actual uncommitted files and unpushed branches** and acknowledges them. `shared` mounts are exempt — their data is the host's own and is never jackin-managed.
+
+## Background — most of the plumbing already exists
+
+This item is roughly 70% assembly of shipped infrastructure, not greenfield. What already exists:
+
+- **Durable per-instance host state.** `~/.jackin/data/<container>/` survives `docker rm`: `.jackin/instance.json` (the manifest), `.jackin/isolation.json` (mount records), `home/` (every agent runtime's home, including Claude plugins and `.claude.json`), the per-agent auth slots, and the materialised `git/worktree/` and `git/clone/` trees. See [Runtime Instance Model](/reference/runtime-instance-model/).
+- **A container-level restore flow.** `resolve_restore_candidate()` in <RepoFile path="src/runtime/launch.rs" /> already presents an **"Unfinished jackin instances"** picker (start-fresh vs restore a prior instance, plus related-role recovery), and `InstanceStatus::RestoreAvailable` + `mark_restore_available()` already model "container gone, host state survives." This shipped as **Unique container identity and restore**.
+- **Per-mount exit assessment.** `assess_cleanup()` runs `git status --porcelain`, `for-each-ref`, and `rev-list` against every isolation record and fails closed (preserve) on any ambiguity. The `PreservedDirty` / `PreservedUnpushed` distinction already drives per-reason wording.
+- **A rich dialog vocabulary.** <RepoFile path="src/runtime/progress.rs" /> already exposes `standalone_select_with_context`, `standalone_error_popup`, text prompts, confirms, and the launch cockpit surface the exit and resume dialogs should reuse rather than reinvent.
+
+The gap is the **status model** (clean exits orphan their home; "keep" is not an outcome), the **policy** (not configurable per workspace), and the **operator surface** (the exit/resume decisions are not framed as session continuity, and verification shows counts rather than content).
+
+## Current implementation review — flaws to address
+
+Findings from auditing the exit/restore path and the in-flight rich-dialog change. These are the concrete defects this item should close.
+
+| ID | Severity | Finding |
+|---|---|---|
+| F1 | High | Clean exit orphans context: `Stopped/0` → worktree auto-deleted → `CleanExited`, which `is_restore_candidate()` excludes, so the preserved home is unreachable on the next launch. **Root cause of lost context.** |
+| F2 | High | No "keep to resume" outcome exists for a clean session; preservation is gated entirely on dirty/unpushed Git state. |
+| F3 | Medium | The restore picker is framed as mess-recovery ("Unfinished jackin instances"), not session continuity ("resume yesterday"), and does not include kept-clean instances. |
+| F4 | Medium | `Clone`-mode mounts are assessed by worktree semantics incidentally (the record field is `worktree_path` but holds the clone dir too); there are no clone-specific tests, and `force_cleanup_clone` is `rm -rf` only. |
+| F5 | Medium | Verification surfaces a path plus "has uncommitted changes" — never the actual file list or unpushed branch list, and offers no acknowledge-the-detail step. |
+| F6 | Low | The non-interactive preserve path only `eprintln!`s; nothing records whether the operator *wanted* to keep versus jackin' merely *could not ask*. |
+| F7 | Low | The rich cleanup dialog renders unconditionally (`enter_dialog` skips the capability check) with no plain-text degrade; on a `<80×24` or `TERM=dumb` terminal both the choice and its error popup are unreadable. The popup's own render failure is swallowed (`let _ =`) with no `clog!`. |
+| F8 | Trivial | <RepoFile path="src/isolation/finalize.rs" /> cites a `worktree-cleanup-assessment.mdx` doc that does not exist; fold the policy table into this item or an internals page and fix the reference. |
+
+## Proposed flow
+
+### On exit
+
+<Steps>
+
+1. The foreground session ends. The launcher resolves the workspace's **cleanup policy** (`ask` / `keep` / `clean`).
+
+2. `clean` → run today's `Cleaned` teardown directly, no prompt. `keep` → skip straight to step 5 with "keep" preselected. `ask` → continue.
+
+3. Assess every isolated mount (`worktree` and `clone`; `shared` is skipped). If none is dirty or unpushed, exit normally and clean up automatically — `ask` does not interrupt a finished, clean session.
+
+4. If any mount has uncommitted files or unpushed branches, render a rich panel on the launch cockpit surface that **shows the detail** — the changed files and the ahead-of-upstream branches — and asks the operator to acknowledge.
+
+5. Present the decision: **Keep to resume later**, **Clean up now**, or **Return to agent** (restart + reattach, today's `ReturnToAgent`). "Keep" preserves the worktree/clone and the home, tears down only the container to free Docker resources, and marks the instance restorable. "Clean up" runs the existing force-delete path.
+
+</Steps>
+
+### On launch (selecting a role/agent for a workspace)
+
+<Steps>
+
+1. After the role/agent is chosen, resolve restorable instances for this `(workspace, role, agent)` — now including kept-clean instances, not only dirty/unpushed ones.
+
+2. If any exist, present a rich **Resume previous session vs Start new** choice in the selection surface, each resume candidate labelled with its date, agent, and a dirty/unpushed summary.
+
+3. **Resume** rebinds the same instance: re-create a container with the same `container_base` and the same `~/.jackin/data/<container>/`, so home, plugins, auth, and conversation return in place, and re-materialise the same worktree/clone — after the verify-and-acknowledge step below.
+
+4. **Start new** mints a fresh instance exactly as today. A `keep`-policy workspace always shows its kept instance here; this is the "always able to restart the previous session from the selection bar" guarantee.
+
+</Steps>
+
+## Per-workspace cleanup policy
+
+A new per-workspace setting selects the exit behaviour:
+
+| Policy | Behaviour |
+|---|---|
+| `ask` (default) | Clean exits clean up automatically; the operator is prompted only when an isolated mount has unfinished (dirty/unpushed) state. |
+| `keep` | Always retain the instance and its mounts; the workspace is always resumable from the selection bar. |
+| `clean` | Always force-clean on exit, no prompt. |
+
+<Aside type="caution">
+This setting lives in the per-workspace file (`~/.config/jackin/workspaces/<name>.toml`), which is a **versioned schema** (`CURRENT_WORKSPACE_VERSION`). The implementing PR must ship the full migration set per the project's pre-release schema rule: a version bump, a `WORKSPACE_MIGRATIONS` step in <RepoFile path="src/config/migrations.rs" />, a new `tests/fixtures/migrations/workspace/from-<predecessor>/` fixture, a re-bake of existing `after.toml` fixtures, and a Timeline entry in [Schema Versions](/reference/schema-versions/). One version bump for the whole PR.
+</Aside>
+
+One-shot CLI overrides (`--keep` / `--clean`) should mirror the existing `--git-pull` / `--no-git-pull` precedent so a single launch can deviate without editing the workspace file.
+
+## Restore model — reuse the same instance
+
+Resuming **reuses the same instance identity** rather than snapshotting into a fresh one: the recovered container is rebuilt against the original `container_base` and the surviving `~/.jackin/data/<container>/`. This is the simplest model, it matches the existing restore-candidate plumbing (`resolve_restore_candidate` / `mark_restore_available`), and it means the operator's conversation and plugins are the literal same files, not a copy. The immutable-snapshot alternative (mint a new id, copy home + worktree, keep the original frozen) is deliberately deferred to [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/), which targets a different problem (pre-launch host rollback) and a heavier disk/identity cost.
+
+## Mount verification on exit and restore
+
+The verify-and-acknowledge step is the same logic on both edges (discarding on exit, reusing on resume) and must be a single shared helper, not two parallel copies:
+
+- Only `worktree` and `clone` mounts are checked; `shared` is exempt because its working tree is the host's own directory and never jackin-managed.
+- The operator sees the concrete evidence — the `git status` file list and the list of branches ahead of their upstream — not just a count, and acknowledges it before jackin' reuses or discards the tree.
+- `clone` assessment must be specified and tested in its own right (F4), not inherited implicitly from worktree semantics.
+
+## Phases
+
+- **Phase 0 — Exit-dialog hardening (this PR's area).** Restore a plain-text degrade when the terminal cannot render the rich surface, `clog!` the swallowed popup failure, and de-flicker the double alt-screen enter (F7).
+- **Phase 1 — Status model.** Make "keep to resume" a real `FinalizeDecision` outcome; promote kept instances (including clean ones) to a restore candidate; stop auto-deleting the worktree when the operator keeps (F1, F2). `instance.json` is **not** a versioned schema, so a new `InstanceStatus` variant needs no migration.
+- **Phase 2 — Rich exit cockpit.** Move the exit decision onto the launch-progress surface; show dirty/unpushed detail with acknowledge (F3, F5, F6).
+- **Phase 3 — Per-workspace policy.** Add the `ask` / `keep` / `clean` setting with its full workspace-schema migration set and the `--keep` / `--clean` overrides.
+- **Phase 4 — Resume-or-new at launch.** Surface restorable sessions when selecting an agent; rebind the same instance; wire the verify-and-acknowledge step into re-materialisation.
+- **Phase 5 — Clone parity, tests, docs.** Specify and test clone assessment (F4); update [Parallel Agents](/guides/parallel-agents/) (operator), [Runtime Instance Model](/reference/runtime-instance-model/) (contributor), and [TUI Design Decisions](/reference/tui-design-decisions/); fix the stale doc reference (F8).
+
+## Open questions
+
+- Should a `keep`-policy workspace cap how many kept instances accumulate per `(workspace, role, agent)`, or prune the oldest automatically? Unbounded keeps could pile up data directories.
+- When resuming, should jackin' re-run `git_pull_on_entry` semantics against the reused worktree, or treat the preserved tree as authoritative and skip the pull?
+- Does "resume" reattach to the agent's prior in-container session (tmux/capsule continuity), or only restore the home and start a fresh agent process? The former overlaps [Console agent session control](/reference/roadmap/console-agent-session-control/) Phase 4 (session reconciliation) and should be scoped against it rather than duplicated.
+
+## Cross-references
+
+- [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — the rich surface the exit cockpit and resume picker render into.
+- [Console agent session control](/reference/roadmap/console-agent-session-control/) — instance discovery and the selection surface; Phase 4 session reconciliation is the in-container continuity counterpart.
+- [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) — the deferred immutable-snapshot recovery model.
+- [Runtime Instance Model](/reference/runtime-instance-model/) — the per-instance host layout this item rebinds on resume.
