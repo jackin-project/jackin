@@ -9,6 +9,7 @@ pub mod hint_bar;
 pub mod panel;
 pub mod save_discard_dialog;
 pub mod select_list;
+pub mod status_popup;
 pub mod scrollable_panel;
 pub mod status_footer;
 pub mod tab_strip;
@@ -30,6 +31,7 @@ pub use save_discard_dialog::{
     SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState, render_save_discard_dialog,
 };
 pub use select_list::{SelectList, SelectListState, render_select_list};
+pub use status_popup::{StatusPopupState, render_status_popup};
 pub use scrollable_panel::{
     apply_scroll_delta, apply_scroll_delta_unclamped, apply_term_width_scroll_delta,
     clamp_scroll_offset, cursor_follow_offset, effective_offset, horizontal_scrollbar_area,
