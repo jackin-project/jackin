@@ -2,6 +2,7 @@
 /// the protocol, prefix-key parser, VT round-trips, and status bar
 /// without spawning a PTY.
 pub mod action;
+pub mod branch_context_bar;
 pub mod client;
 pub mod config;
 pub mod daemon;
