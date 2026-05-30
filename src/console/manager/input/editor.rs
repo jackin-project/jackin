@@ -753,12 +753,17 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
 fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
     use super::super::super::widgets::text_input::TextInputState;
 
-    let trusted_roles = config
+    let trusted_roles: Vec<String> = config
         .roles
         .iter()
         .filter(|(_, source)| source.trusted)
         .map(|(key, _)| key.clone())
         .collect();
+    crate::debug_log!(
+        "role",
+        "opening role loader input; {trusted_roles_count} trusted role(s) are blocked by the duplicate guard",
+        trusted_roles_count = trusted_roles.len()
+    );
     let mut state = TextInputState::new_with_forbidden("Load role", "", trusted_roles);
     state.forbidden_label = "trusted role registry".into();
     editor.modal = Some(Modal::TextInput {
@@ -1656,6 +1661,7 @@ pub(super) fn apply_text_input_to_pending(
             editor.clear_modal_chain();
         }
         TextInputTarget::Role => {
+            crate::debug_log!("role", "role loader input committed: raw={value:?}");
             open_role_input_error(
                 editor,
                 "Role input was routed through the generic text-input handler.",
@@ -1725,18 +1731,27 @@ fn apply_role_input_with_runner(
     runner: &mut impl crate::docker::CommandRunner,
 ) {
     let raw = value.trim();
+    crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
     let selector = match crate::selector::RoleSelector::parse(raw) {
         Ok(selector) => selector,
         Err(e) => {
+            crate::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
             let err = anyhow::Error::new(e);
             open_role_resolution_error(editor, raw, None, &err);
             return;
         }
     };
+    crate::debug_log!("role", "parsed role selector: {selector}");
 
     let key = selector.key();
     let result = (|| -> anyhow::Result<crate::config::RoleSource> {
         let source = candidate_role_source(config, &selector)?;
+        crate::debug_log!(
+            "role",
+            "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
+            git = source.git.as_str(),
+            trusted = source.trusted
+        );
         let source_to_register = source.clone();
         // register_agent_repo is async; drive it on a new current-thread runtime
         // so the TUI's sync event loop can block until it's done.
@@ -1744,6 +1759,11 @@ fn apply_role_input_with_runner(
             .enable_all()
             .build()
             .context("building tokio runtime for role registration")?;
+        crate::debug_log!(
+            "role",
+            "registering role repo for key={key:?} git={git:?}",
+            git = source.git.as_str()
+        );
         rt.block_on(crate::runtime::register_agent_repo(
             paths,
             &selector,
@@ -1757,10 +1777,22 @@ fn apply_role_input_with_runner(
 
     match result {
         Ok(source) if source.trusted => {
+            crate::debug_log!("role", "role source is trusted; adding key={key:?} directly to the workspace");
             add_role_to_workspace_editor(editor, config, &key);
         }
-        Ok(source) => open_role_trust_confirm(editor, key, source),
+        Ok(source) => {
+            crate::debug_log!(
+                "role",
+                "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
+                git = source.git.as_str()
+            );
+            open_role_trust_confirm(editor, key, source);
+        }
         Err(e) => {
+            crate::debug_log!(
+                "role",
+                "role loader failed for key={key:?} raw={raw:?}: {e:?}"
+            );
             let source = candidate_role_source(config, &selector).ok();
             open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
         }
@@ -1792,7 +1824,7 @@ fn open_role_resolution_error(
     source_url: Option<&String>,
     err: &anyhow::Error,
 ) {
-    crate::debug_log!("role", "failed to resolve role {raw:?}: {err:?}");
+    crate::debug_log!("role", "showing role-load error popup for raw={raw:?}: {err:?}");
     let message = source_url.map_or_else(
         || {
             format!(
@@ -1826,6 +1858,7 @@ fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Di
 }
 
 fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
+    crate::debug_log!("role", "showing direct role-load error popup: {message}");
     editor.modal = Some(Modal::ErrorPopup {
         state: crate::console::widgets::error_popup::ErrorPopupState::new(
             "Load role failed",
