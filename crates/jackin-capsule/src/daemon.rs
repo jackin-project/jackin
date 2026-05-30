@@ -8493,4 +8493,58 @@ mod tests {
             "stderr detail should survive for logs: {err}"
         );
     }
+
+    // Action-boundary dispatch tests: drive apply_action directly without
+    // going through handle_input so the dispatch layer is testable without
+    // a live PTY or input parser in the loop.
+
+    #[test]
+    fn apply_action_dismiss_closes_top_dialog() {
+        let mut mux = single_pane_tab_mux();
+        mux.open_command_palette();
+        assert!(mux.dialog_open(), "palette should be open");
+
+        mux.apply_action(Action::Dialog(DialogAction::Dismiss));
+
+        assert!(!mux.dialog_open(), "dismiss should close the dialog");
+        assert_eq!(mux.mux_mode(), MuxMode::Normal);
+    }
+
+    #[test]
+    fn apply_action_open_palette_pushes_palette_dialog() {
+        let mut mux = single_pane_tab_mux();
+        assert!(!mux.dialog_open());
+
+        mux.apply_action(Action::OpenPalette);
+
+        assert!(
+            matches!(mux.dialog_top(), Some(Dialog::CommandPalette { .. })),
+            "OpenPalette should push CommandPalette dialog"
+        );
+        assert_eq!(mux.mux_mode(), MuxMode::Dialog);
+    }
+
+    #[test]
+    fn apply_action_dialog_consume_keeps_dialog_open() {
+        let mut mux = single_pane_tab_mux();
+        mux.open_command_palette();
+        assert!(mux.dialog_open());
+
+        // Consume should leave the dialog open (key was absorbed, no state change).
+        mux.apply_action(Action::Dialog(DialogAction::Consume));
+
+        assert!(mux.dialog_open(), "Consume must not close the dialog");
+    }
+
+    #[test]
+    fn apply_action_focus_report_does_not_open_dialog() {
+        let mut mux = single_pane_tab_mux();
+        assert!(!mux.dialog_open());
+
+        mux.apply_action(Action::FocusReport(true));
+        assert!(!mux.dialog_open());
+
+        mux.apply_action(Action::FocusReport(false));
+        assert!(!mux.dialog_open());
+    }
 }
