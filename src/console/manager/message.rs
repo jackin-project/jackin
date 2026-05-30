@@ -34,6 +34,7 @@ pub enum ManagerMessage {
         term_width: u16,
         content_width: usize,
     },
+    SelectListRow(usize),
     ScrollEditorWorkspaceMountsHorizontal {
         delta: i16,
         term_width: u16,
@@ -134,6 +135,7 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             term_width,
             content_width,
         } => scroll_editor_tab_horizontal(state, delta, term_width, content_width),
+        ManagerMessage::SelectListRow(row) => select_list_row(state, row),
         ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
             delta,
             term_width,
@@ -748,6 +750,19 @@ fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
     }
 }
 
+fn select_list_row(state: &mut ManagerState<'_>, selected: usize) {
+    state.inline_role_picker = None;
+    let selected = selected.min(state.row_count().saturating_sub(1));
+    if selected != state.selected {
+        state.reset_list_scroll();
+        state.selected = selected;
+        state.inline_agent_picker = None;
+        state.inline_new_session_picker = None;
+        state.inline_provider_picker = None;
+        state.launch_provider_picker = None;
+    }
+}
+
 fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize) {
     let len = state.flattened_preview_panes(container).len();
     if len == 0 {
@@ -824,6 +839,18 @@ mod tests {
         assert!(update_manager(&mut state, ManagerMessage::MoveListSelection(99)).is_dirty());
 
         assert_eq!(state.selected, state.row_count() - 1);
+    }
+
+    #[test]
+    fn select_list_row_resets_selection_local_state() {
+        let mut state = state_with_saved_count(2);
+        state.selected = 0;
+        state.list_mounts_scroll_x = 4;
+
+        assert!(update_manager(&mut state, ManagerMessage::SelectListRow(1)).is_dirty());
+
+        assert_eq!(state.selected, 1);
+        assert_eq!(state.list_mounts_scroll_x, 0);
     }
 
     #[test]

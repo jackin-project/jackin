@@ -5,6 +5,7 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::super::super::widgets::file_browser::FileBrowserState;
+use super::super::message::{ManagerMessage, update_manager};
 use super::super::render::global_mounts::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
     trust_content_width,
@@ -201,16 +202,8 @@ pub fn handle_mouse_with_config(
             // Otherwise, treat as click-to-select if the click lands inside
             // the list pane's content area (excluding borders).
             if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
-                state.inline_role_picker = None;
-                if let Some(selected) = state.index_of_row(row)
-                    && selected != state.selected
-                {
-                    state.reset_list_scroll();
-                    state.selected = selected;
-                    state.inline_agent_picker = None;
-                    state.inline_new_session_picker = None;
-                    state.inline_provider_picker = None;
-                    state.launch_provider_picker = None;
+                if let Some(selected) = state.index_of_row(row) {
+                    dispatch_manager(state, ManagerMessage::SelectListRow(selected));
                 }
             }
         }
@@ -225,6 +218,10 @@ pub fn handle_mouse_with_config(
         }
         _ => {}
     }
+}
+
+fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
+    let _dirty = update_manager(state, message);
 }
 
 /// Whether a left-click at the pointer would act on a clickable element.
