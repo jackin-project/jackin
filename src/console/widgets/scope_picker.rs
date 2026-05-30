@@ -65,13 +65,13 @@ impl ScopePickerState {
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::Span,
+    widgets::{Block, Borders},
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_DARK, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
     let block = Block::default()
@@ -85,30 +85,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    let focused_style = Style::default()
-        .bg(WHITE)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-
-    let all_style = if state.focused == ScopeChoice::AllAgents {
-        focused_style
-    } else {
-        unfocused_style
-    };
-    let specific_style = if state.focused == ScopeChoice::SpecificAgent {
-        focused_style
-    } else {
-        unfocused_style
-    };
-
-    let button_line = Line::from(vec![
-        Span::styled("  All roles  ", all_style),
-        Span::raw("    "),
-        Span::styled("  Specific role  ", specific_style),
-    ]);
     // inner area is 3 rows (5 outer − 2 border): blank, button, blank.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -118,10 +94,17 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
             Constraint::Length(1), // bottom blank
         ])
         .split(inner);
-    frame.render_widget(
-        Paragraph::new(button_line).alignment(Alignment::Center),
-        chunks[1],
-    );
+    let items = [
+        jackin_tui::components::ButtonStripItem::new("All roles"),
+        jackin_tui::components::ButtonStripItem::new("Specific role"),
+    ];
+    let focused = match state.focused {
+        ScopeChoice::AllAgents => 0,
+        ScopeChoice::SpecificAgent => 1,
+    };
+    jackin_tui::components::ButtonStrip::new(&items)
+        .focused(focused)
+        .render(frame, chunks[1]);
 }
 
 #[cfg(test)]

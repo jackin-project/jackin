@@ -9,10 +9,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 
 use super::ModalOutcome;
@@ -20,7 +20,7 @@ use super::ModalOutcome;
 use super::scrollable::{
     apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
 };
-use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_DARK, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveChoice {
@@ -175,35 +175,17 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ConfirmSaveState) {
     );
     render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
 
-    // Buttons — focused choice highlights on white.
-    let focused_style = Style::default()
-        .bg(WHITE)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-
-    let save_style = if matches!(state.focus, ConfirmSaveFocus::Save) {
-        focused_style
-    } else {
-        unfocused_style
+    let items = [
+        jackin_tui::components::ButtonStripItem::new("Save"),
+        jackin_tui::components::ButtonStripItem::new("Cancel"),
+    ];
+    let focused = match state.focus {
+        ConfirmSaveFocus::Save => 0,
+        ConfirmSaveFocus::Cancel => 1,
     };
-    let cancel_style = if matches!(state.focus, ConfirmSaveFocus::Cancel) {
-        focused_style
-    } else {
-        unfocused_style
-    };
-
-    let button_line = Line::from(vec![
-        Span::styled("  Save  ", save_style),
-        Span::raw("    "),
-        Span::styled("  Cancel  ", cancel_style),
-    ]);
-    frame.render_widget(
-        Paragraph::new(button_line).alignment(Alignment::Center),
-        chunks[3],
-    );
+    jackin_tui::components::ButtonStrip::new(&items)
+        .focused(focused)
+        .render(frame, chunks[3]);
 }
 
 #[cfg(test)]

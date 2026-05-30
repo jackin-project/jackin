@@ -18,6 +18,8 @@ use crate::{
     theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE},
 };
 
+use super::button_strip::{ButtonStrip, ButtonStripItem};
+
 const WARNING_YELLOW: Color = Color::Rgb(255, 216, 94);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,37 +248,12 @@ const fn inset(area: Rect, x: u16) -> Rect {
 }
 
 fn render_buttons(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
-    let yes_focused = matches!(state.focus, ConfirmFocus::Yes);
-    let no_focused = matches!(state.focus, ConfirmFocus::No);
-
-    let focused_style = Style::default()
-        .bg(WHITE)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-
-    let yes_btn_style = if yes_focused {
-        focused_style
-    } else {
-        unfocused_style
+    let items = [ButtonStripItem::new("Yes"), ButtonStripItem::new("No")];
+    let focused = match state.focus {
+        ConfirmFocus::Yes => 0,
+        ConfirmFocus::No => 1,
     };
-    let no_btn_style = if no_focused {
-        focused_style
-    } else {
-        unfocused_style
-    };
-
-    let button_line = Line::from(vec![
-        Span::styled("  Yes  ", yes_btn_style),
-        Span::raw("    "),
-        Span::styled("  No  ", no_btn_style),
-    ]);
-    frame.render_widget(
-        Paragraph::new(button_line).alignment(Alignment::Center),
-        area,
-    );
+    ButtonStrip::new(&items).focused(focused).render(frame, area);
 }
 
 #[cfg(test)]
