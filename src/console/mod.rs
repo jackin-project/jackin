@@ -77,11 +77,12 @@ impl ConsoleInstanceAction {
 
 /// Callback invoked for `runs_in_place` actions.
 ///
-/// The handler performs the docker work (eject, purge) and is expected to
-/// be blocking from the caller's perspective so the TUI loop can show a
-/// progress modal, run the op, then refresh.
+/// The handler performs the docker work (eject, purge). Making it async lets
+/// the caller `.await` the work on the existing runtime without building a
+/// separate runtime, so the reactor can service other tasks between awaits
+/// while Docker/git calls are in flight.
 pub trait InstanceActionHandler {
-    fn run_in_place(
+    async fn run_in_place(
         &mut self,
         container: &str,
         action: ConsoleInstanceAction,
@@ -811,11 +812,11 @@ fn launch_with_committed_agent(
 }
 
 #[allow(clippy::too_many_lines)]
-pub async fn run_console(
+pub async fn run_console<H: InstanceActionHandler>(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
-    action_handler: &mut dyn InstanceActionHandler,
+    action_handler: &mut H,
     runner: &mut impl crate::docker::CommandRunner,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
@@ -1188,7 +1189,7 @@ pub async fn run_console(
                                         manager::render(frame, ms, &config, cwd);
                                     })?;
                                 }
-                                let result = action_handler.run_in_place(&container, action);
+                                let result = action_handler.run_in_place(&container, action).await;
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
                                     let _ = manager::update_manager(
                                         ms,

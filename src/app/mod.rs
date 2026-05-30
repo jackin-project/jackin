@@ -2252,76 +2252,58 @@ fn resolve_new_session_agent(
     )
 }
 
-/// Bridge from the sync TUI loop to async docker work for Stop/Purge.
-/// Spawns an OS thread per call and builds a fresh current-thread runtime
-/// there so we don't have to nest tokio runtimes on the TUI thread.
+/// Bridge from the TUI event loop to async docker work for Stop/Purge.
+/// Now that `run_in_place` is async, the work runs directly on the
+/// existing Tokio runtime — no nested runtime or OS thread needed.
 struct ConsoleInPlaceHandler {
     paths: JackinPaths,
     debug: bool,
 }
 
 impl console::InstanceActionHandler for ConsoleInPlaceHandler {
-    fn run_in_place(
+    async fn run_in_place(
         &mut self,
         container: &str,
         action: console::ConsoleInstanceAction,
     ) -> anyhow::Result<()> {
-        let paths = self.paths.clone();
-        let debug = self.debug;
-        let container = container.to_string();
-        std::thread::scope(|s| {
-            let handle = s.spawn(move || -> anyhow::Result<()> {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .context("building tokio runtime for in-place docker work")?;
-                rt.block_on(async move {
-                    let docker = BollardDockerClient::connect()?;
-                    let mut runner = ShellRunner { debug };
-                    // Wrap the eject + post-condition work in an async
-                    // block so a partial failure still hits the
-                    // trailing reconcile + manifest-status update.
-                    // Without this, an eject that errored after
-                    // removing the last keep-awake container would
-                    // leave caffeinate asserted on the host and the
-                    // on-disk manifest stuck at Active/Running while
-                    // the container is half-gone.
-                    let result: anyhow::Result<()> = async {
-                        match action {
-                            console::ConsoleInstanceAction::Stop => {
-                                runtime::eject_role(&paths, &container, &docker).await
-                            }
-                            console::ConsoleInstanceAction::Purge => {
-                                runtime::eject_role(&paths, &container, &docker).await?;
-                                runtime::purge_container_state(
-                                    &paths,
-                                    &container,
-                                    &docker,
-                                    &mut runner,
-                                )
-                                .await
-                            }
-                            _ => Ok(()),
-                        }
-                    }
-                    .await;
-                    if matches!(action, console::ConsoleInstanceAction::Stop) {
-                        mark_instance_restore_available_after_stop(
-                            &paths,
-                            &container,
-                            &docker,
-                            result.is_ok(),
-                        )
-                        .await;
-                    }
-                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-                    result
-                })
-            });
-            handle
-                .join()
-                .map_err(|panic| anyhow::anyhow!("in-place action panicked: {panic:?}"))?
-        })
+        let docker = BollardDockerClient::connect()?;
+        let mut runner = ShellRunner { debug: self.debug };
+        // Wrap the eject + post-condition work in an async block so a
+        // partial failure still hits the trailing reconcile +
+        // manifest-status update. Without this, an eject that errored
+        // after removing the last keep-awake container would leave
+        // caffeinate asserted on the host and the on-disk manifest
+        // stuck at Active/Running while the container is half-gone.
+        let result: anyhow::Result<()> = async {
+            match action {
+                console::ConsoleInstanceAction::Stop => {
+                    runtime::eject_role(&self.paths, container, &docker).await
+                }
+                console::ConsoleInstanceAction::Purge => {
+                    runtime::eject_role(&self.paths, container, &docker).await?;
+                    runtime::purge_container_state(
+                        &self.paths,
+                        container,
+                        &docker,
+                        &mut runner,
+                    )
+                    .await
+                }
+                _ => Ok(()),
+            }
+        }
+        .await;
+        if matches!(action, console::ConsoleInstanceAction::Stop) {
+            mark_instance_restore_available_after_stop(
+                &self.paths,
+                container,
+                &docker,
+                result.is_ok(),
+            )
+            .await;
+        }
+        runtime::reconcile_keep_awake(&self.paths, &docker, &mut runner).await;
+        result
     }
 }
 
