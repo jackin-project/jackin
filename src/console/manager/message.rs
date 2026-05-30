@@ -152,6 +152,9 @@ pub(crate) enum ManagerMessage {
     },
     DismissListModal,
     DismissInlineSessionPicker,
+    DismissInlineRolePicker,
+    DismissInlineAgentPicker,
+    DismissInlineProviderPicker,
 }
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
@@ -310,6 +313,15 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::DismissInlineSessionPicker => {
             state.inline_new_session_picker = None;
+        }
+        ManagerMessage::DismissInlineRolePicker => {
+            state.inline_role_picker = None;
+        }
+        ManagerMessage::DismissInlineAgentPicker => {
+            state.inline_agent_picker = None;
+        }
+        ManagerMessage::DismissInlineProviderPicker => {
+            state.inline_provider_picker = None;
         }
     }
     UpdateResult::redraw()

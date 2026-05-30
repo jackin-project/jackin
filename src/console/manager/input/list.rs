@@ -595,11 +595,11 @@ pub(super) fn handle_inline_role_picker(
         KeyCode::Char('q' | 'Q') => InputOutcome::ExitJackin,
         _ => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
-                state.inline_role_picker = None;
+                dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
                 InputOutcome::LaunchWithAgent(role)
             }
             ModalOutcome::Cancel => {
-                state.inline_role_picker = None;
+                dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
                 InputOutcome::Continue
             }
             ModalOutcome::Continue => InputOutcome::Continue,
@@ -625,11 +625,11 @@ pub(super) fn handle_inline_agent_picker(
         }
         _ => match picker.handle_key(key) {
             ModalOutcome::Commit(agent) => {
-                state.inline_agent_picker = None;
+                dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
                 InputOutcome::LaunchWithRuntimeAgent(agent)
             }
             ModalOutcome::Cancel => {
-                state.inline_agent_picker = None;
+                dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
                 InputOutcome::Continue
             }
             ModalOutcome::Continue => InputOutcome::Continue,
@@ -696,7 +696,7 @@ pub(super) fn handle_inline_provider_picker(
             };
             let container = picker.context.clone();
             let agent = picker.agent;
-            state.inline_provider_picker = None;
+            dispatch_manager(state, ManagerMessage::DismissInlineProviderPicker);
             InputOutcome::NewSessionWithProvider {
                 container,
                 agent,
@@ -704,7 +704,7 @@ pub(super) fn handle_inline_provider_picker(
             }
         }
         KeyCode::Esc => {
-            state.inline_provider_picker = None;
+            dispatch_manager(state, ManagerMessage::DismissInlineProviderPicker);
             InputOutcome::Continue
         }
         _ => InputOutcome::Continue,
