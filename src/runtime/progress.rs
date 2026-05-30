@@ -17,7 +17,7 @@ use jackin_tui::theme::{
     DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
     PHOSPHOR_GREEN, WHITE,
 };
-use jackin_tui::runtime::Dirty;
+use jackin_tui::runtime::{NoEffect, UpdateResult};
 use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -293,7 +293,9 @@ fn initial_view() -> LaunchView {
     }
 }
 
-fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> Dirty {
+type LaunchUpdate = UpdateResult<NoEffect>;
+
+fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUpdate {
     match msg {
         LaunchMessage::Started(identity) => {
             let preposition = identity.target_kind.launch_preposition();
@@ -325,7 +327,7 @@ fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> Dirty {
             view.failure = Some(failure);
         }
     }
-    Dirty::Redraw
+    UpdateResult::redraw()
 }
 
 impl LaunchProgress {
