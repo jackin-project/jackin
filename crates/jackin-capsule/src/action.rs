@@ -14,5 +14,7 @@ pub enum Action {
     OpenPalette,
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),
+    FocusReport(bool),
+    PaneData(Vec<u8>),
     Dialog(DialogAction),
 }

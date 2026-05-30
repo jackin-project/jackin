@@ -1742,6 +1742,47 @@ impl Multiplexer {
                     Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
                 }
             }
+            Action::FocusReport(focused) => {
+                if self.dialog_captures_input() {
+                    return None;
+                }
+                let bytes = if focused {
+                    b"\x1b[I".as_ref()
+                } else {
+                    b"\x1b[O".as_ref()
+                };
+                if let Some(focused) = self.active_focused_id()
+                    && let Some(session) = self.sessions.get(&focused)
+                    && session.focus_events_enabled()
+                {
+                    session.send_input(bytes);
+                }
+                None
+            }
+            Action::PaneData(bytes) => {
+                let mut snapped = false;
+                let mut unblocked = false;
+                if let Some(focused) = self.active_focused_id()
+                    && let Some(session) = self.sessions.get_mut(&focused)
+                {
+                    if session.scrollback_offset != 0 {
+                        session.scroll_to_live();
+                        snapped = true;
+                    }
+                    unblocked = session.mark_operator_input();
+                    session.send_input(&bytes);
+                }
+                if snapped || unblocked {
+                    let reason = if snapped {
+                        FullRedrawReason::ScrollbackMovement
+                    } else {
+                        FullRedrawReason::ExplicitRedraw
+                    };
+                    Some(self.compose_full_frame(reason))
+                } else {
+                    None
+                }
+            }
             Action::Dialog(action) => Some(self.apply_dialog_action(action)),
         }
     }
@@ -2368,21 +2409,7 @@ impl Multiplexer {
                 // requested focus events (`?1004h`) — shells and
                 // pre-mount agents leave the mode off and would
                 // surface `[I` / `[O` as literal text at the prompt.
-                if self.dialog_captures_input() {
-                    return None;
-                }
-                let bytes = if matches!(event, InputEvent::FocusIn) {
-                    b"\x1b[I".as_ref()
-                } else {
-                    b"\x1b[O".as_ref()
-                };
-                if let Some(focused) = self.active_focused_id()
-                    && let Some(session) = self.sessions.get(&focused)
-                    && session.focus_events_enabled()
-                {
-                    session.send_input(bytes);
-                }
-                None
+                self.apply_action(Action::FocusReport(matches!(event, InputEvent::FocusIn)))
             }
             InputEvent::MousePress { col, row, button }
                 if self.dialog_captures_input() && button == 0 && !is_wheel_button(button) =>
@@ -2654,28 +2681,7 @@ impl Multiplexer {
                     // focused pane to the live tail. Matches the
                     // common multiplexer convention that "I'm typing
                     // again" implies "show me what's happening now."
-                    let mut snapped = false;
-                    let mut unblocked = false;
-                    if let Some(focused) = self.active_focused_id()
-                        && let Some(session) = self.sessions.get_mut(&focused)
-                    {
-                        if session.scrollback_offset != 0 {
-                            session.scroll_to_live();
-                            snapped = true;
-                        }
-                        unblocked = session.mark_operator_input();
-                        session.send_input(&bytes);
-                    }
-                    if snapped || unblocked {
-                        let reason = if snapped {
-                            FullRedrawReason::ScrollbackMovement
-                        } else {
-                            FullRedrawReason::ExplicitRedraw
-                        };
-                        Some(self.compose_full_frame(reason))
-                    } else {
-                        None
-                    }
+                    self.apply_action(Action::PaneData(bytes))
                 }
             }
         }

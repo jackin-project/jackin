@@ -500,7 +500,7 @@ The practical test is simple: while a long image build, instance refresh, git/PR
 
 | Ratatui best practice | Host console today | `jackin-capsule` today |
 |---|---|---|
-| `Message`/`Action` enum, central `update` | Partial — `ManagerMessage` wraps list selection, scroll, tree expand/collapse, and preview focus/cursor mutations and returns `jackin_tui::runtime::Dirty`; most handlers still mutate inline | Partial — `Action` wraps dialog/prefix/palette/resize paths; many mouse/data/session arms still mutate inline |
+| `Message`/`Action` enum, central `update` | Partial — `ManagerMessage` wraps list selection, scroll, tree expand/collapse, and preview focus/cursor mutations and returns `jackin_tui::runtime::Dirty`; most handlers still mutate inline | Partial — `Action` wraps dialog/prefix/palette/resize/focus-report/pane-data paths; many mouse/session arms still mutate inline |
 | Pure `view` (no `&mut`, no I/O) | Violated — `&mut state`, scroll-clamp + FS reads in draw | Violated — render writes ANSI + diffs in the compose path on the loop |
 | State decomposed (domain / UI / ephemeral) | Violated — god-structs mix all three | Violated — one `Multiplexer` god-struct |
 | Reusable `StatefulWidget` components | Absent — free `fn(frame, &mut state)` | Absent — raw ANSI free functions |
