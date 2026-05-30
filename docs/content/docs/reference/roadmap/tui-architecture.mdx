@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Open — design proposal (re-analyzed 2026-05-30 against the post-merge tree; this pass adds a performance-first / async-everywhere rationale, an explicit Rust-engineering checklist, and the two-binary shared-crate plan. No implementation for this item committed.)
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals, and the capsule dispatch layer has an initial `MuxMode` boundary. Host `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and the lookbook remain open.
 
 ## Goal
 
@@ -376,7 +376,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 8. **DRY drift from symmetric variants.** `sidebar_inputs_for_workspace` vs. `sidebar_inputs_for_current_dir` in <RepoFile path="src/console/manager/render/list.rs" /> are near-identical bodies; the same workspace-vs-current-dir distinction is repeated in `focused_block_still_scrollable`, `clamp_list_scroll_for_area`, and the mouse `update_scroll_focus` handler — four call sites that must stay in lock-step.
 
-9. **Component reuse is happening in the wrong layer.** The launch cockpit now reuses host console widgets such as `select_list`, `status_bar`, `hints`, `scrollable`, and `error_popup`, which is the right instinct. But the dependency direction is wrong: runtime launch code reaches sideways into `src/console/widgets` instead of every terminal surface consuming components from <RepoFile path="crates/jackin-tui/Cargo.toml" />. This is new evidence that `jackin-tui` must become the shared component crate, not just a token/helper crate.
+9. **Component reuse was happening in the wrong layer.** The launch cockpit used to import host console widgets such as `select_list`, `status_bar`, `hints`, `scrollable`, and `error_popup`. This branch is moving those pieces into <RepoFile path="crates/jackin-tui/Cargo.toml" /> so every terminal surface consumes the shared component crate instead of reaching sideways into `src/console/widgets`.
 
 ## Current state — `jackin-capsule` multiplexer
 
@@ -390,7 +390,7 @@ The in-container control plane (the [jackin' Capsule](/reference/roadmap/jackin-
 
 3. **A ~6,900-line god-struct.** `Multiplexer` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> owns rendering, input parsing, network I/O, git/PR context polling, session lifecycle, the dialog stack, and mouse drag/selection in one file and one compilation unit.
 
-4. **No top-level mode state machine.** "Which mode is the multiplexer in?" is answered by combining scattered booleans (`dialog_open()`, `drag.is_some()`, `selection.is_some()`, `input_parser.is_awaiting_prefix()`) at each call site. There is no `MuxMode` enum making invalid combinations unrepresentable — and at least one arm checks `dialog_open()` but not `drag.is_some()`, a latent bug class.
+4. **Top-level mode state is only partially extracted.** <RepoFile path="crates/jackin-capsule/src/mux_mode.rs" /> now names `Normal`, `PrefixAwait`, `Dialog`, `Drag`, and `Select`, and the daemon's debug/input gates start reading through it. The underlying dialog/drag/selection fields still live separately inside `Multiplexer`, so the next step is making the enum the owner rather than a derived adapter.
 
 5. **`compose_full_frame` vs. `compose_partial_frame` duplication** — ~160 lines of near-duplicate pane-loop / box-draw / scrollbar code that must be kept symmetric by hand.
 
@@ -505,7 +505,7 @@ The practical test is simple: while a long image build, instance refresh, git/PR
 | State decomposed (domain / UI / ephemeral) | Violated — god-structs mix all three | Violated — one `Multiplexer` god-struct |
 | Reusable `StatefulWidget` components | Absent — free `fn(frame, &mut state)` | Absent — raw ANSI free functions |
 | I/O off the loop thread | Violated — `mount_info::inspect`, `refresh_instances` block draw | Mostly OK — PTY/git use background tasks; some `std::thread` vs `spawn_blocking` inconsistency |
-| Explicit mode state machine | Partial — focus/modal flags scattered | Violated — no `MuxMode`, scattered booleans |
+| Explicit mode state machine | Partial — focus/modal flags scattered | Partial — `MuxMode` exists, but some state is still derived from scattered fields |
 | Framework buffer diff | OK — Ratatui owns it | Violated — `PaneBodyCache` re-implements `Buffer::diff` |
 | Render regression tests | Medium-grained `TestBackend`, no snapshots | None for the compositor/dispatch |
 
@@ -621,7 +621,7 @@ The one open question is the **pane-body** mechanism — the cells that mirror a
 | `tui-term` | render the `vt100::Screen` into the Ratatui `Buffer` via the pseudo-terminal widget | maximal reuse of Ratatui's buffer/diff; `tui-term` is self-described "work in progress" with a known per-cell allocation cost on high-throughput PTYs |
 | thin custom cell widget | a small `Widget` that blits the `vt100::Screen` into the `Buffer` directly | keeps the proven fast path while still living inside the Ratatui frame; a little custom code, no new dependency risk |
 
-**Resolve the pane-body question with a throughput spike** (a later phase) — both options keep the capsule fully inside a Ratatui frame, so chrome / dialog / picker reuse lands regardless. That benchmark is the only part of the capsule that stays a measurement question; everything else is decided. The shared widgets live in the existing <RepoFile path="crates/jackin-tui/Cargo.toml" /> crate (today Ratatui-free), which grows a Ratatui dependency to host them.
+**Resolve the pane-body question with a throughput spike** (a later phase) — both options keep the capsule fully inside a Ratatui frame, so chrome / dialog / picker reuse lands regardless. That benchmark is the only part of the capsule that stays a measurement question; everything else is decided. The shared widgets live in the existing <RepoFile path="crates/jackin-tui/Cargo.toml" /> crate, which now has Ratatui adapters for host/launch components while still exposing backend-neutral tokens for the capsule.
 
 ## Target architecture — one owned terminal session
 
@@ -639,7 +639,7 @@ This item now owns the consolidation of the shipped backbone. The [Launch Progre
 
 ## Shared design system & lookbook (`jackin-tui`)
 
-A shared crate already exists: <RepoFile path="crates/jackin-tui/Cargo.toml" />, and it is the seam between two otherwise separate binaries — the `jackin` host CLI (Ratatui + `crossterm`) and the `jackin-capsule` multiplexer (raw ANSI today). The crate is still **Ratatui-free**: <RepoFile path="crates/jackin-tui/src/lib.rs" /> holds the PHOSPHOR palette as `Rgb`, an `ansi` module (`fg` / `bg` / `move_to`, OSC 52 clipboard), `TextField` (a text-input model), `HintSpan` + `hint_row_cols`, `TabCell` + `lay_out_tabs`, and unicode-width helpers, while the merged <RepoFile path="crates/jackin-tui/src/scroll.rs" /> wraps the `tui-scrollbar` crate for thumb math and tail-relative scroll offsets. Its only dependencies are `base64`, `tui-scrollbar`, and `unicode-width`. The capsule consumes these types directly (emitting SGR bytes); the host console consumes only the **token layer** — <RepoFile path="src/console/widgets/mod.rs" /> wraps `jackin-tui`'s `Rgb` palette values into `ratatui::Color`. The `scroll.rs` addition is the exact pattern this whole item generalizes: a maintained crate (`tui-scrollbar`) wrapped once in `jackin-tui` and consumed by every surface, instead of the hand-rolled scroll math each surface used to carry.
+A shared crate already exists: <RepoFile path="crates/jackin-tui/Cargo.toml" />, and it is the seam between two otherwise separate binaries — the `jackin` host CLI (Ratatui + `crossterm`) and the `jackin-capsule` multiplexer (raw ANSI today). The crate now has two layers: <RepoFile path="crates/jackin-tui/src/lib.rs" /> keeps backend-neutral tokens/models (`Rgb`, ANSI helpers, `TextField`, `HintSpan`, `TabCell`, unicode-width helpers), while <RepoFile path="crates/jackin-tui/src/components.rs" /> exposes Ratatui adapters for shared host/launch components. The capsule still consumes the backend-neutral layer directly; host and launch consume the Ratatui component layer. The `scroll.rs` and `scrollable_panel.rs` split is the pattern this item generalizes: maintained math wrapped once in `jackin-tui` and consumed by every surface, instead of hand-rolled scroll behavior per surface.
 
 That token layer is the model to follow: one source of truth for the values, a thin per-surface conversion. The gap is that **every component above the token layer is reimplemented per surface or borrowed through the wrong module boundary** — the host has its own tab strip, scrollbar, text input, hint model, and confirm dialog; the launch cockpit imports host widgets directly from `src/console/widgets`; and the capsule hand-rolls each again in raw ANSI, kept in sync only by the procedural rules in [TUI Design Decisions](/reference/tui-design-decisions/). **Target: elevate `jackin-tui` into the canonical TUI design-component crate** every terminal surface consumes; the crate that already owns the tokens grows to own the components. Do not create a new crate.
 

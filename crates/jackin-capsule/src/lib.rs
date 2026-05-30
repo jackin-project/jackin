@@ -8,6 +8,7 @@ pub mod dialog;
 pub mod input;
 pub mod layout;
 pub mod logging;
+pub mod mux_mode;
 pub mod pid1;
 pub mod protocol;
 pub mod render;

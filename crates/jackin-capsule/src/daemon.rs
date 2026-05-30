@@ -40,6 +40,7 @@ use crate::dialog::{
 };
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
+use crate::mux_mode::MuxMode;
 use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server, read_client_frame,
 };
@@ -802,6 +803,24 @@ impl Multiplexer {
     /// `true` when at least one dialog is on the stack.
     fn dialog_open(&self) -> bool {
         !self.dialog_stack.is_empty()
+    }
+
+    fn mux_mode(&self) -> MuxMode {
+        if self.dialog_open() {
+            MuxMode::Dialog
+        } else if self.drag.is_some() {
+            MuxMode::Drag
+        } else if self.selection.is_some() {
+            MuxMode::Select
+        } else if self.input_parser.is_awaiting_prefix() {
+            MuxMode::PrefixAwait
+        } else {
+            MuxMode::Normal
+        }
+    }
+
+    fn dialog_captures_input(&self) -> bool {
+        matches!(self.mux_mode(), MuxMode::Dialog)
     }
 
     /// Push a new dialog on top of the current one. The previous
@@ -2307,7 +2326,7 @@ impl Multiplexer {
                 // than walking back with Esc). Operator opens fresh
                 // when the stack was empty.
                 self.cancel_drag();
-                if self.dialog_open() {
+                if self.dialog_captures_input() {
                     self.dialog_clear();
                 } else {
                     self.open_command_palette();
@@ -2318,13 +2337,13 @@ impl Multiplexer {
                 // While a dialog is open the prefix gesture's payload
                 // must not reach the focused pane — operator's intent
                 // is to act on the dialog, not the agent underneath.
-                if self.dialog_open() {
+                if self.dialog_captures_input() {
                     return None;
                 }
                 self.handle_prefix_command(cmd)
             }
             InputEvent::ResizePane(dir) => {
-                if self.dialog_open() {
+                if self.dialog_captures_input() {
                     return None;
                 }
                 self.resize_focused(dir);
@@ -2335,7 +2354,7 @@ impl Multiplexer {
                 // requested focus events (`?1004h`) — shells and
                 // pre-mount agents leave the mode off and would
                 // surface `[I` / `[O` as literal text at the prompt.
-                if self.dialog_open() {
+                if self.dialog_captures_input() {
                     return None;
                 }
                 let bytes = if matches!(event, InputEvent::FocusIn) {
@@ -2352,7 +2371,7 @@ impl Multiplexer {
                 None
             }
             InputEvent::MousePress { col, row, button }
-                if self.dialog_open() && button == 0 && !is_wheel_button(button) =>
+                if self.dialog_captures_input() && button == 0 && !is_wheel_button(button) =>
             {
                 // Mouse handling while a dialog overlay is up:
                 //   click on a row  → select + confirm
@@ -2375,13 +2394,13 @@ impl Multiplexer {
                     .expect("dialog presence checked");
                 Some(self.apply_dialog_action(action))
             }
-            InputEvent::MousePress { .. } if self.dialog_open() => {
+            InputEvent::MousePress { .. } if self.dialog_captures_input() => {
                 // Any non-wheel mouse event with the dialog up that
                 // did not land on a row is swallowed so it never
                 // reaches the agent underneath.
                 None
             }
-            InputEvent::MouseRelease { .. } if self.dialog_open() => {
+            InputEvent::MouseRelease { .. } if self.dialog_captures_input() => {
                 // Drop the release that pairs with a press the dialog
                 // already absorbed. Letting it through would surface
                 // the raw `\x1b[<...m` bytes at the focused pane's
@@ -3948,22 +3967,22 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             );
             let events = mux.input_parser.parse(&bytes);
             for event in events {
+                let mode = mux.mux_mode();
                 crate::cdebug!(
-                    "  → InputEvent::{:?} dialog_open={}",
+                    "  → InputEvent::{:?} mode={mode:?}",
                     event,
-                    mux.dialog_open()
                 );
                 if let Some(redraw) = mux.handle_input(event) {
                     mux.send_output(redraw);
                 }
             }
-            let mode = if mux.input_parser.is_awaiting_prefix() {
+            let prefix_mode = if matches!(mux.mux_mode(), MuxMode::PrefixAwait) {
                 crate::statusbar::PrefixMode::Awaiting
             } else {
                 crate::statusbar::PrefixMode::Idle
             };
-            if mux.status_bar.prefix_mode != mode {
-                mux.status_bar.set_prefix_mode(mode);
+            if mux.status_bar.prefix_mode != prefix_mode {
+                mux.status_bar.set_prefix_mode(prefix_mode);
                 let frame_data = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
                 mux.send_output(frame_data);
             }
@@ -3979,7 +3998,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             // the focused session actually asked for focus reports
             // (`?1004h`). Without the gate, normal-screen shells
             // surface `[I` as literal text at the prompt.
-            if !mux.dialog_open()
+            if !mux.dialog_captures_input()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
                 && s.focus_events_enabled()
@@ -3988,7 +4007,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             }
         }
         ClientFrame::FocusOut => {
-            if !mux.dialog_open()
+            if !mux.dialog_captures_input()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
                 && s.focus_events_enabled()
