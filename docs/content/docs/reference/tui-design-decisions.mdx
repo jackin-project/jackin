@@ -12,6 +12,22 @@ Every PR review that touches a TUI surface must verify the diff against this pag
 
 ---
 
+## Architecture — Model / Update / View
+
+The host console uses a Ratatui-style Model/Update/View separation. This is a **hard requirement** for every new TUI path: it is what makes the update layer testable, the render layer pure, and background I/O non-blocking.
+
+**Messages and central update.** Every state change that could be driven by a test goes through `ManagerMessage` and `update_manager` instead of mutating `ManagerState` inline in the event handler. Event handlers translate terminal input into messages; `update_manager` applies the message and returns `UpdateResult` carrying a dirty flag. Adding a new input path means adding a `ManagerMessage` variant and a match arm in `update_manager`.
+
+**Pure view.** Render functions take immutable model state (`&ManagerState`, `&EditorState`, `&SettingsState`). The only mutations allowed before `render` are geometry-prep calls (`prepare_for_render`) that run immediately before the draw and cache content geometry into the state. Nothing that runs inside `terminal.draw(...)` may write to the model, spawn background tasks, or perform I/O.
+
+**Background I/O through channels.** Long-running work (instance refresh, role loading, 1Password lookups) runs on background threads that communicate with the event loop through channels. The event loop polls those channels on each tick and routes the results through `ManagerMessage`. No blocking disk, socket, or subprocess call runs on the event-loop thread.
+
+**Async event loop.** The console event loop uses `crossterm::event::EventStream` + `tokio::select!` instead of `event::poll(50ms)`. This yields to the Tokio reactor between events so background tasks can advance. An `animation_tick` interval drives periodic redraws for spinners and other animated components.
+
+**Component library.** Repeated visual patterns live in `crates/jackin-tui/src/components/`. New screens compose existing components; they do not hand-roll a second panel, picker, confirm dialog, or hint bar. Every `jackin-tui` component has a lookbook story visible in the terminal browser (`tui-lookbook --terminal`) and a generated SVG in the docs site that must never drift from the real widget.
+
+---
+
 ## Navigation conventions
 
 jackin' TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else.
