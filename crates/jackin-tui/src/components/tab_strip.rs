@@ -121,15 +121,21 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect();
 
-        assert_eq!(text, "━━━━━━━━━        ");
+        assert_eq!(text, "━━━━━━━━━          ");
     }
 
     #[test]
     fn tab_strip_exposes_two_rows() {
         let labels = [("General", true), ("Mounts", false)];
+        let backend = ratatui::backend::TestBackend::new(24, 2);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
 
-        let paragraph = TabStrip::new(&labels).focused(true).paragraph();
+        terminal
+            .draw(|frame| TabStrip::new(&labels).focused(true).render(frame, frame.area()))
+            .unwrap();
 
-        assert_eq!(paragraph.line_count(80), 2);
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), " ");
+        assert_eq!(buffer[(0, 1)].symbol(), "━");
     }
 }
