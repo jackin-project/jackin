@@ -2908,6 +2908,22 @@ impl Multiplexer {
     fn compose_pending_frame(&mut self) -> Vec<u8> {
         if let Some(reason) = self.pending_full_redraw.take() {
             self.dirty_panes.clear();
+            // Prefer the Ratatui compositor for full frames; fall back to the
+            // raw-ANSI path if it fails (e.g. during dialog rendering).
+            if let Some(ratatui_output) = self.compose_ratatui_frame() {
+                crate::cdebug!(
+                    "render: kind=full reason={} via=ratatui bytes={}",
+                    reason.as_str(),
+                    ratatui_output.len()
+                );
+                // Prepend the outer terminal title update (OSC 2) which the
+                // Ratatui frame doesn't handle — title output is plain bytes
+                // that don't need diffing.
+                let mut out = Vec::with_capacity(ratatui_output.len() + 64);
+                self.append_outer_terminal_title(&mut out);
+                out.extend_from_slice(&ratatui_output);
+                return out;
+            }
             return self.compose_full_frame(reason);
         }
         let dirty_panes = std::mem::take(&mut self.dirty_panes);
@@ -2925,6 +2941,116 @@ impl Multiplexer {
         }
         append_osc_window_title(buf, &title);
         self.last_outer_terminal_title = Some(title);
+    }
+
+    /// Compose a full frame using the Ratatui `SocketBackend`.
+    ///
+    /// Renders chrome (status bar, pane bodies, pane borders) via the
+    /// `ratatui_terminal` double-buffer so only changed cells are sent over
+    /// the attach socket. This is the Ratatui-backed replacement for the
+    /// raw-ANSI `compose_full_frame`; currently used only for the non-dialog
+    /// case while dialog rendering remains on the raw-ANSI path.
+    ///
+    /// Returns the ANSI output to send to the attach client, or `None` if
+    /// the Ratatui terminal fails to draw (falls back to raw-ANSI).
+    fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
+        use crate::chrome_widget::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
+        use crate::pane_widget::PaneBodyWidget;
+        use crate::title::display_title;
+        use ratatui::layout::Rect;
+
+        let term_rows = self.term_rows;
+        let term_cols = self.term_cols;
+        let active_tab = self.active_tab;
+        let tabs = &self.tabs;
+        let panes = self.visible_panes();
+        let focused_id = self.active_focused_id();
+        let zoomed = self.active_zoomed_id().is_some();
+        let multi_pane = panes.len() > 1;
+        let dialog_open = self.dialog_open();
+
+        // Snapshot session display titles before the draw closure borrows self.
+        let pane_titles: Vec<(u64, String)> = panes
+            .iter()
+            .filter_map(|pane| {
+                self.sessions.get(&pane.id).map(|s| (pane.id, display_title(s)))
+            })
+            .collect();
+
+        let sessions = &self.sessions;
+        let status_bar = StatusBarWidget { tabs, active_tab, cols: term_cols };
+
+        let result = self.ratatui_terminal.draw(|frame| {
+
+            // Status bar: rows 0-1 (STATUS_BAR_ROWS = 2)
+            let status_area = Rect {
+                x: 0,
+                y: 0,
+                width: term_cols,
+                height: crate::statusbar::STATUS_BAR_ROWS,
+            };
+            frame.render_widget(status_bar, status_area);
+
+            if dialog_open {
+                // Dialog backdrop fills the content area.
+                let content_area = Rect {
+                    x: 0,
+                    y: crate::statusbar::STATUS_BAR_ROWS,
+                    width: term_cols,
+                    height: term_rows.saturating_sub(crate::statusbar::STATUS_BAR_ROWS),
+                };
+                frame.render_widget(DialogBackdrop, content_area);
+                // Dialog content itself is still rendered via raw ANSI in the
+                // caller; the backdrop here just fills the buffer correctly.
+                return;
+            }
+
+            // Pane bodies + borders
+            for pane in &panes {
+                let title = pane_titles
+                    .iter()
+                    .find(|(id, _)| *id == pane.id)
+                    .map(|(_, t)| t.as_str())
+                    .unwrap_or("");
+
+                let focused = Some(pane.id) == focused_id;
+                let highlight_focus = if zoomed { false } else { multi_pane };
+
+                // Pane border (outer rect)
+                let border_area = Rect {
+                    x: pane.outer.col,
+                    y: pane.outer.row,
+                    width: pane.outer.cols,
+                    height: pane.outer.rows,
+                };
+                frame.render_widget(
+                    PaneBorderWidget {
+                        title: title.to_string(),
+                        focused: focused && highlight_focus,
+                    },
+                    border_area,
+                );
+
+                // Pane body (inner rect)
+                if let Some(session) = sessions.get(&pane.id) {
+                    let body_area = Rect {
+                        x: pane.inner.col,
+                        y: pane.inner.row,
+                        width: pane.inner.cols,
+                        height: pane.inner.rows,
+                    };
+                    frame.render_widget(PaneBodyWidget::new(session.screen()), body_area);
+                }
+            }
+        });
+
+        match result {
+            Ok(_) => Some(self.ratatui_terminal.backend_mut().take_output()),
+            Err(e) => {
+                crate::clog!("compose_ratatui_frame: draw failed: {e}; falling back to raw ANSI");
+                None
+            }
+        }
     }
 
     fn compose_full_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
