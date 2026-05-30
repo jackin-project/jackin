@@ -4,22 +4,64 @@
 //! Input handlers should increasingly translate terminal events into these
 //! messages instead of mutating `ManagerState` inline.
 
-use super::state::ManagerState;
+use super::state::{ManagerListRow, ManagerState};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManagerMessage {
+    CollapseSelectedTree,
+    EnterPreview,
+    ExitPreview,
+    ExpandSelectedTree,
     MoveListSelection(isize),
+    MovePreviewPane {
+        container: String,
+        delta: isize,
+    },
     ScrollListHorizontal(i16),
     ScrollFocusedListBlockVertical(i16),
 }
 
 pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     match message {
+        ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
+        ManagerMessage::EnterPreview => state.preview_focused = true,
+        ManagerMessage::ExitPreview => state.preview_focused = false,
+        ManagerMessage::ExpandSelectedTree => expand_selected_tree(state),
         ManagerMessage::MoveListSelection(delta) => move_list_selection(state, delta),
+        ManagerMessage::MovePreviewPane { container, delta } => {
+            move_preview_pane(state, &container, delta);
+        }
         ManagerMessage::ScrollListHorizontal(delta) => scroll_list_horizontal(state, delta),
         ManagerMessage::ScrollFocusedListBlockVertical(delta) => {
             scroll_focused_mount_block_vertical(state, delta);
         }
+    }
+}
+
+fn collapse_selected_tree(state: &mut ManagerState<'_>) {
+    state.inline_new_session_picker = None;
+    match state.selected_row() {
+        ManagerListRow::SavedWorkspace(i) => {
+            state.collapse_workspace(i);
+        }
+        ManagerListRow::WorkspaceInstance(ws_idx, _) => {
+            state.collapse_workspace(ws_idx);
+        }
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+            state.collapse_current_dir();
+        }
+        ManagerListRow::NewWorkspace => {}
+    }
+}
+
+fn expand_selected_tree(state: &mut ManagerState<'_>) {
+    state.inline_new_session_picker = None;
+    match state.selected_row() {
+        ManagerListRow::SavedWorkspace(i) => state.expand_workspace(i),
+        ManagerListRow::CurrentDirectory => state.expand_current_dir(),
+        ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => {}
     }
 }
 
@@ -37,6 +79,26 @@ fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
         state.reset_list_scroll();
         state.selected = selected;
     }
+}
+
+fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize) {
+    let len = state.flattened_preview_panes(container).len();
+    if len == 0 {
+        state.preview_focused = false;
+        return;
+    }
+    let cursor = state
+        .preview_pane_cursor
+        .get(container)
+        .copied()
+        .unwrap_or(0)
+        .min(len - 1);
+    let next = if delta.is_negative() {
+        cursor.saturating_sub(delta.unsigned_abs())
+    } else {
+        cursor.saturating_add(delta as usize).min(len - 1)
+    };
+    state.preview_pane_cursor.insert(container.to_owned(), next);
 }
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
@@ -105,5 +167,16 @@ mod tests {
         );
 
         assert_eq!(state.list_mounts_scroll_y, 3);
+    }
+
+    #[test]
+    fn expand_and_collapse_selected_tree_updates_current_dir() {
+        let mut state = state_with_saved_count(1);
+
+        update_manager(&mut state, ManagerMessage::ExpandSelectedTree);
+        assert!(state.current_dir_expanded);
+
+        update_manager(&mut state, ManagerMessage::CollapseSelectedTree);
+        assert!(!state.current_dir_expanded);
     }
 }

@@ -45,7 +45,7 @@ pub(super) fn handle_list_key(
             selected_instance_container(state, ConsoleInstanceAction::Reconnect)
         && !state.flattened_preview_panes(&container).is_empty()
     {
-        state.preview_focused = true;
+        update_manager(state, ManagerMessage::EnterPreview);
         return Ok(InputOutcome::Continue);
     }
     match key.code {
@@ -53,13 +53,11 @@ pub(super) fn handle_list_key(
         // Left/Right arrows: tree expand/collapse.
         // h/l keep horizontal scroll so the details pane stays scrollable.
         KeyCode::Left => {
-            state.inline_new_session_picker = None;
-            handle_tree_left(state);
+            update_manager(state, ManagerMessage::CollapseSelectedTree);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Right => {
-            state.inline_new_session_picker = None;
-            handle_tree_right(state);
+            update_manager(state, ManagerMessage::ExpandSelectedTree);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('h' | 'H') => {
@@ -241,31 +239,6 @@ fn clamp_list_scroll_after_key(
     super::super::render::clamp_list_scroll_for_area(body, state, config, cwd);
 }
 
-fn handle_tree_right(state: &mut ManagerState<'_>) {
-    match state.selected_row() {
-        ManagerListRow::SavedWorkspace(i) => state.expand_workspace(i),
-        ManagerListRow::CurrentDirectory => state.expand_current_dir(),
-        _ => {}
-    }
-}
-
-/// `←`: collapse expanded workspace / cwd, or jump to parent row from an
-/// instance row.
-fn handle_tree_left(state: &mut ManagerState<'_>) {
-    match state.selected_row() {
-        ManagerListRow::SavedWorkspace(i) => {
-            state.collapse_workspace(i);
-        }
-        ManagerListRow::WorkspaceInstance(ws_idx, _) => {
-            state.collapse_workspace(ws_idx);
-        }
-        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
-            state.collapse_current_dir();
-        }
-        ManagerListRow::NewWorkspace => {}
-    }
-}
-
 fn instance_action_outcome(
     state: &mut ManagerState<'_>,
     action: ConsoleInstanceAction,
@@ -332,39 +305,48 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
         // Selection slid off an instance row while preview was open
         // (refresh purged the entry). Clear focus and let the next
         // input fall through to the workspace tree.
-        state.preview_focused = false;
+        update_manager(state, ManagerMessage::ExitPreview);
         return InputOutcome::Continue;
     };
     let panes = state.flattened_preview_panes(&container);
     if panes.is_empty() {
-        state.preview_focused = false;
+        update_manager(state, ManagerMessage::ExitPreview);
         return InputOutcome::Continue;
     }
-    let len = panes.len();
-    let mut cursor = state
+    let cursor = state
         .preview_pane_cursor
         .get(&container)
         .copied()
         .unwrap_or(0)
-        .min(len - 1);
+        .min(panes.len() - 1);
     match key.code {
         KeyCode::Esc | KeyCode::BackTab | KeyCode::Left => {
-            state.preview_focused = false;
+            update_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::Continue
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            cursor = cursor.saturating_sub(1);
-            state.preview_pane_cursor.insert(container, cursor);
+            update_manager(
+                state,
+                ManagerMessage::MovePreviewPane {
+                    container,
+                    delta: -1,
+                },
+            );
             InputOutcome::Continue
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            cursor = (cursor + 1).min(len - 1);
-            state.preview_pane_cursor.insert(container, cursor);
+            update_manager(
+                state,
+                ManagerMessage::MovePreviewPane {
+                    container,
+                    delta: 1,
+                },
+            );
             InputOutcome::Continue
         }
         KeyCode::Enter => {
             let (_, session_id) = panes[cursor];
-            state.preview_focused = false;
+            update_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::InstanceAction {
                 container,
                 action: ConsoleInstanceAction::ReconnectFocus(session_id),
