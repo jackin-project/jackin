@@ -1073,7 +1073,7 @@ pub(super) fn handle_editor_modal(
                 // re-mounted directly — restore it now so the operator
                 // lands back on the form with the prior credential
                 // unchanged, ready to retry through the source picker.
-                if editor.pending_auth_form_return.is_some() {
+                if !editor.modal_parents.is_empty() {
                     super::auth::restore_auth_form_after_op_picker_cancel(editor);
                 }
             }
@@ -1246,7 +1246,7 @@ pub(super) fn handle_editor_modal(
                     // dispatch: the auth form sets
                     // `pending_auth_form_return` exactly when it's the
                     // caller, so the two paths can never collide.
-                    if editor.pending_auth_form_return.is_some() {
+                    if !editor.modal_parents.is_empty() {
                         super::auth::apply_op_picker_to_auth_form(editor, op_ref);
                         return;
                     }
@@ -1280,7 +1280,7 @@ pub(super) fn handle_editor_modal(
                     // unchanged. Mirrors the Commit branch — the two
                     // callers (Secrets-tab `P`, auth-form Enter) are
                     // disambiguated by `pending_auth_form_return`.
-                    if editor.pending_auth_form_return.is_some() {
+                    if !editor.modal_parents.is_empty() {
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return;
                     }

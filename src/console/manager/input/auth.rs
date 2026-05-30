@@ -18,7 +18,7 @@ use super::super::super::widgets::role_picker::RolePickerState;
 use super::super::auth_kind::{AuthKind, AuthMode};
 use super::super::render::editor::resolve_auth_row_target;
 use super::super::state::{
-    AuthFormFocus, AuthFormReturnPath, AuthFormTarget, EditorState, FieldFocus, Modal,
+    AuthFormFocus, AuthFormTarget, EditorState, FieldFocus, Modal,
     TextInputTarget,
 };
 use crate::config::AppConfig;
@@ -373,7 +373,7 @@ pub(super) fn handle_auth_form_key(
     // commit/cancel) drains it explicitly; Esc must too.
     if key.code == KeyCode::Esc {
         editor.modal = None;
-        editor.pending_auth_form_return = None;
+        editor.modal_parents.clear();
         return true;
     }
 
@@ -471,7 +471,7 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
     // disambiguation is the `generating_token_target` marker, which the
     // source-picker / op-picker commit arms check first.
     editor.generating_token_target = Some(target.clone());
-    editor.pending_auth_form_return = Some(AuthFormReturnPath {
+    editor.modal_parents.push(Modal::AuthForm {
         target,
         state,
         focus,
@@ -545,7 +545,7 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
         return false;
     };
 
-    editor.pending_auth_form_return = Some(AuthFormReturnPath {
+    editor.modal_parents.push(Modal::AuthForm {
         target,
         state,
         focus,
@@ -585,12 +585,12 @@ fn log_missing_return_path(code: &'static str, fn_name: &'static str, suffix: &s
 /// focus pinned to `CredentialSource`, then mounts a `Modal::TextInput`
 /// pre-filled from the round-trip's literal buffer.
 pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_>) {
-    let Some(AuthFormReturnPath {
+    let Some(Modal::AuthForm {
         target,
         state,
         literal_buffer,
         ..
-    }) = editor.pending_auth_form_return.take()
+    }) = editor.modal_parents.pop()
     else {
         log_missing_return_path(
             AUTH_MISSING_PLAIN_SOURCE,
@@ -599,7 +599,8 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
         );
         return;
     };
-    editor.pending_auth_form_return = Some(AuthFormReturnPath {
+    // Re-push with focus pinned to CredentialSource for the TextInput round-trip.
+    editor.modal_parents.push(Modal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::CredentialSource,
@@ -617,9 +618,9 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
 /// re-mount target for the plain-text generate path in the
 /// `run_console` loop, hence the wider visibility.
 pub(in crate::console) fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) {
-    let Some(AuthFormReturnPath {
+    let Some(Modal::AuthForm {
         target, mut state, ..
-    }) = editor.pending_auth_form_return.take()
+    }) = editor.modal_parents.pop()
     else {
         log_missing_return_path(
             AUTH_MISSING_PLAIN_TEXT,
@@ -645,7 +646,7 @@ pub(super) fn open_op_picker_from_auth_source(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
 ) {
-    let Some(return_path) = editor.pending_auth_form_return.as_mut() else {
+    let Some(Modal::AuthForm { focus, .. }) = editor.modal_parents.last_mut() else {
         log_missing_return_path(
             AUTH_MISSING_OP_SOURCE,
             "open_op_picker_from_auth_source",
@@ -654,7 +655,7 @@ pub(super) fn open_op_picker_from_auth_source(
         editor.modal = None;
         return;
     };
-    return_path.focus = AuthFormFocus::CredentialSource;
+    *focus = AuthFormFocus::CredentialSource;
     editor.modal = Some(Modal::OpPicker {
         state: Box::new(OpPickerState::new_with_cache(op_cache)),
     });
@@ -687,12 +688,12 @@ pub(in crate::console) fn apply_op_picker_to_auth_form(
 /// the `OpPicker` or the literal `TextInput`. Both side modals share
 /// the same recovery shape, so the same helper handles both.
 pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<'_>) {
-    let Some(AuthFormReturnPath {
+    let Some(Modal::AuthForm {
         target,
         state,
         focus,
         literal_buffer,
-    }) = editor.pending_auth_form_return.take()
+    }) = editor.modal_parents.pop()
     else {
         log_missing_return_path(
             AUTH_MISSING_OP_CANCEL,
@@ -719,12 +720,12 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
 ) {
     use crate::console::widgets::error_popup::ErrorPopupState;
 
-    let Some(AuthFormReturnPath {
+    let Some(Modal::AuthForm {
         target,
         mut state,
         focus,
         literal_buffer,
-    }) = editor.pending_auth_form_return.take()
+    }) = editor.modal_parents.pop()
     else {
         log_missing_return_path(
             AUTH_MISSING_OP_COMMIT,
@@ -735,13 +736,9 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
     };
     let read_result = state.try_commit_op_ref(runner, op_ref);
     if let Err(e) = read_result {
-        // Mount the error popup directly and re-stash the form into
-        // `pending_auth_form_return` so the popup's dismiss handler
-        // (in `editor.rs`'s `Modal::ErrorPopup` branch) can re-mount
-        // the auth form via `restore_auth_form_after_op_picker_cancel`.
-        // The credential is left unchanged because `try_commit_op_ref`
-        // mutates `state` only on Ok (read-then-commit invariant).
-        editor.pending_auth_form_return = Some(AuthFormReturnPath {
+        // Re-push the form so the ErrorPopup dismiss handler can
+        // restore it via restore_auth_form_after_op_picker_cancel.
+        editor.modal_parents.push(Modal::AuthForm {
             target,
             state,
             focus,
@@ -1537,7 +1534,7 @@ mod tests {
             "auth form must hand off to OpPicker from the source picker"
         );
         assert!(
-            editor.pending_auth_form_return.is_some(),
+            !editor.modal_parents.is_empty(),
             "auth-form context must be stashed for the picker to return to"
         );
     }
@@ -1568,7 +1565,7 @@ mod tests {
             "generate must open the source picker as the first step"
         );
         assert!(
-            editor.pending_auth_form_return.is_some(),
+            !editor.modal_parents.is_empty(),
             "generate must stash the form so the post-mint re-mount can return to it; \
              generate vs. provide is disambiguated by the generate marker, not the stash"
         );
@@ -1615,7 +1612,7 @@ mod tests {
         assert!(closed, "generate must consume the keystroke");
         assert!(matches!(editor.modal, Some(Modal::AuthSourcePicker { .. })));
         assert!(
-            editor.pending_auth_form_return.is_some(),
+            !editor.modal_parents.is_empty(),
             "generate must stash the form for the post-mint re-mount"
         );
 
@@ -1645,7 +1642,7 @@ mod tests {
             "form must be commitable once the minted ref is applied"
         );
         assert!(
-            editor.pending_auth_form_return.is_none(),
+            editor.modal_parents.is_empty(),
             "stash must be drained on the re-mount"
         );
         // Persistence is deferred to Save: pending stays untouched.
@@ -1671,7 +1668,7 @@ mod tests {
         };
         form.set_mode(AuthMode::OAuthToken);
         drive_key(editor, key(KeyCode::Char('g')));
-        assert!(editor.pending_auth_form_return.is_some());
+        assert!(!editor.modal_parents.is_empty());
 
         // Simulate the loop's post-mint re-mount with the minted literal.
         apply_plain_text_to_auth_form(editor, "sk-ant-oat01-PLAIN");
@@ -1684,7 +1681,7 @@ mod tests {
             CredentialInput::Literal(s) => assert_eq!(s, "sk-ant-oat01-PLAIN"),
             other => panic!("expected literal credential after plain mint; got {other:?}"),
         }
-        assert!(editor.pending_auth_form_return.is_none());
+        assert!(editor.modal_parents.is_empty());
     }
 
     /// `g` is a no-op when the mode is not `oauth_token` (here ApiKey):
@@ -1766,7 +1763,7 @@ mod tests {
             "form must be commitable after picker supplies a non-empty OpRef"
         );
         assert!(
-            editor.pending_auth_form_return.is_none(),
+            editor.modal_parents.is_empty(),
             "stash must be drained on commit"
         );
     }
@@ -1810,7 +1807,7 @@ mod tests {
             "failed vault read must surface an error popup"
         );
         assert!(
-            editor.pending_auth_form_return.is_some(),
+            !editor.modal_parents.is_empty(),
             "form must be re-stashed so popup dismiss can restore it"
         );
 
@@ -1832,8 +1829,6 @@ mod tests {
     /// picker flows.
     #[test]
     fn auth_form_esc_clears_pending_auth_form_return() {
-        use crate::console::manager::state::AuthFormReturnPath;
-
         let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
@@ -1843,7 +1838,7 @@ mod tests {
         // because the picker swap takes the modal — the defensive
         // cleanup is for reentrancy / partial-flow bugs we don't want
         // to leak through Esc.)
-        editor.pending_auth_form_return = Some(AuthFormReturnPath {
+        editor.modal_parents.push(Modal::AuthForm {
             target: AuthFormTarget::Workspace {
                 kind: AuthKind::Claude,
             },
@@ -1860,7 +1855,7 @@ mod tests {
         assert!(closed, "Esc must close the auth form");
         assert!(editor.modal.is_none(), "modal must be dropped");
         assert!(
-            editor.pending_auth_form_return.is_none(),
+            editor.modal_parents.is_empty(),
             "Esc must drain pending_auth_form_return so future picker flows \
              don't inherit stale stash state"
         );

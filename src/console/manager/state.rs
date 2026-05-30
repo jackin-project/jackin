@@ -776,10 +776,6 @@ pub struct EditorState<'a> {
     /// Threading the auth-form context through this single field
     /// (rather than via a payload on each side variant) keeps the
     /// picker/text-input variants orthogonal to their caller, at the
-    /// cost of an invariant that only the side-modal handlers
-    /// touch this slot — see `AUTH00x` debug tags in
-    /// `input::auth` for the recovery path on stash desync.
-    pub pending_auth_form_return: Option<AuthFormReturnPath>,
     pub workspace_mounts_scroll_x: u16,
     pub workspace_mounts_scroll_focused: bool,
     /// Mounts-tab row the pointer is hovering (lifts its background like a
@@ -861,16 +857,6 @@ impl std::fmt::Debug for PendingRoleLoad {
 /// modal (`AuthSourcePicker`, `TextInput`, or `OpPicker`) commits or
 /// cancels.
 ///
-/// `state` and `literal_buffer` are stashed so a half-typed literal
-/// isn't lost when the operator detours through the source picker
-/// → text-input round trip and cancels back.
-#[derive(Debug)]
-pub struct AuthFormReturnPath {
-    pub target: AuthFormTarget,
-    pub state: Box<AuthForm>,
-    pub focus: AuthFormFocus,
-    pub literal_buffer: String,
-}
 
 /// Save cycle state machine.
 ///
@@ -2595,7 +2581,6 @@ impl EditorState<'_> {
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
-            pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
             hovered_mount_row: None,
@@ -2637,7 +2622,6 @@ impl EditorState<'_> {
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
-            pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
             hovered_mount_row: None,
