@@ -424,9 +424,6 @@ pub struct TerminalSession {
     _private: (),
 }
 
-/// Backward-compatible name while call sites migrate to `TerminalSession`.
-pub type HostScreen = TerminalSession;
-
 impl TerminalSession {
     /// Enter raw mode + the alternate screen + mouse capture and mark the
     /// screen owned. The caller holds the returned guard for the whole flow.
