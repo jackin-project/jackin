@@ -331,55 +331,47 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 }
 
 fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
+    let ManagerStage::Settings(settings) = &state.stage else {
+        return;
+    };
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if settings.auth.selected_kind.is_some() => {
+            dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
+            return;
+        }
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            dispatch_manager(state, ManagerMessage::MoveSettingsAuthSelection { delta: -1 });
+            return;
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            dispatch_manager(state, ManagerMessage::MoveSettingsAuthSelection { delta: 1 });
+            return;
+        }
+        KeyCode::Enter if settings.auth.selected_kind.is_none() => {
+            dispatch_manager(state, ManagerMessage::EnterSettingsAuthKind);
+            return;
+        }
+        _ => {}
+    }
+
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
-            if settings.auth.selected_kind.is_some() {
-                settings.auth.selected_kind = None;
-                settings.auth.selected = 0;
-            } else if settings.is_dirty() {
+            if settings.is_dirty() {
                 settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
             } else {
                 state.stage = ManagerStage::List;
             }
         }
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            settings.auth.selected = settings.auth.selected.saturating_sub(1);
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            let max = settings_auth_row_count(&settings.auth).saturating_sub(1);
-            settings.auth.selected = (settings.auth.selected + 1).min(max);
-        }
         KeyCode::Enter => {
-            if settings.auth.selected_kind.is_none() {
-                if let Some(row) = settings.auth.pending.get(settings.auth.selected) {
-                    settings.auth.selected_kind = Some(row.kind);
-                    settings.auth.selected = 0;
-                }
-            } else {
-                open_settings_auth_form(&mut settings.auth, &settings.env);
-            }
+            open_settings_auth_form(&mut settings.auth, &settings.env);
         }
         KeyCode::Char('s' | 'S') => {
             open_settings_save_preview(settings);
         }
         _ => {}
-    }
-}
-
-fn settings_auth_row_count(auth: &super::super::state::SettingsAuthState) -> usize {
-    let Some(kind) = auth.selected_kind else {
-        return auth.pending.len();
-    };
-    let Some(row) = auth.pending.iter().find(|row| row.kind == kind) else {
-        return 0;
-    };
-    if kind.required_env_var(row.mode).is_some() {
-        2
-    } else {
-        1
     }
 }
 
@@ -903,7 +895,7 @@ fn persist_settings_auth_form(
     }
     auth.selected = auth
         .selected
-        .min(settings_auth_row_count(auth).saturating_sub(1));
+        .min(auth.row_count().saturating_sub(1));
 }
 
 fn clear_settings_auth_kind(
@@ -937,6 +929,22 @@ fn clear_settings_auth_kind(
 }
 
 fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            dispatch_manager(state, ManagerMessage::MoveSettingsGeneralSelection { delta: -1 });
+            return;
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            dispatch_manager(state, ManagerMessage::MoveSettingsGeneralSelection { delta: 1 });
+            return;
+        }
+        KeyCode::Char(' ') => {
+            dispatch_manager(state, ManagerMessage::ToggleSettingsGeneralSelected);
+            return;
+        }
+        _ => {}
+    }
+
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
@@ -948,23 +956,6 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 state.stage = ManagerStage::List;
             }
         }
-        KeyCode::Up if settings.general.selected > 0 => {
-            settings.general.selected -= 1;
-        }
-        KeyCode::Down if settings.general.selected < 1 => {
-            settings.general.selected += 1;
-        }
-        // Space is the W3C toggle key (switch pattern).
-        KeyCode::Char(' ') => match settings.general.selected {
-            0 => {
-                settings.general.pending_coauthor_trailer =
-                    !settings.general.pending_coauthor_trailer;
-            }
-            1 => {
-                settings.general.pending_dco = !settings.general.pending_dco;
-            }
-            _ => {}
-        },
         KeyCode::Char('s' | 'S') => {
             open_settings_save_preview(settings);
         }

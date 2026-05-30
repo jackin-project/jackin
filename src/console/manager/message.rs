@@ -21,6 +21,8 @@ pub enum ManagerMessage {
     FocusSettingsTabBar,
     ExitPreview,
     ExpandSelectedTree,
+    ClearSettingsAuthKind,
+    EnterSettingsAuthKind,
     ScrollEditorTabHorizontal {
         delta: i16,
         term_width: u16,
@@ -64,6 +66,13 @@ pub enum ManagerMessage {
         delta: isize,
         focus_tab_bar: bool,
     },
+    MoveSettingsGeneralSelection {
+        delta: isize,
+    },
+    MoveSettingsAuthSelection {
+        delta: isize,
+    },
+    ToggleSettingsGeneralSelected,
     MoveListSelection(isize),
     MovePreviewPane {
         container: String,
@@ -83,6 +92,8 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         ManagerMessage::FocusSettingsTabBar => set_settings_tab_bar_focus(state, true),
         ManagerMessage::ExitPreview => state.preview_focused = false,
         ManagerMessage::ExpandSelectedTree => expand_selected_tree(state),
+        ManagerMessage::ClearSettingsAuthKind => clear_settings_auth_kind(state),
+        ManagerMessage::EnterSettingsAuthKind => enter_settings_auth_kind(state),
         ManagerMessage::ScrollEditorTabHorizontal {
             delta,
             term_width,
@@ -126,6 +137,13 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
             delta,
             focus_tab_bar,
         } => move_settings_tab(state, delta, focus_tab_bar),
+        ManagerMessage::MoveSettingsGeneralSelection { delta } => {
+            move_settings_general_selection(state, delta);
+        }
+        ManagerMessage::MoveSettingsAuthSelection { delta } => {
+            move_settings_auth_selection(state, delta);
+        }
+        ManagerMessage::ToggleSettingsGeneralSelected => toggle_settings_general_selected(state),
         ManagerMessage::MoveListSelection(delta) => move_list_selection(state, delta),
         ManagerMessage::MovePreviewPane { container, delta } => {
             move_preview_pane(state, &container, delta);
@@ -150,6 +168,24 @@ fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
         return;
     };
     settings.tab_bar_focused = focused;
+}
+
+fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    settings.auth.selected_kind = None;
+    settings.auth.selected = 0;
+}
+
+fn enter_settings_auth_kind(state: &mut ManagerState<'_>) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    if let Some(row) = settings.auth.pending.get(settings.auth.selected) {
+        settings.auth.selected_kind = Some(row.kind);
+        settings.auth.selected = 0;
+    }
 }
 
 fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
@@ -185,6 +221,45 @@ fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: 
         next_settings_tab(settings.active_tab)
     };
     settings.tab_bar_focused = focus_tab_bar;
+}
+
+fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    settings.general.selected = if delta.is_negative() {
+        settings.general.selected.saturating_sub(delta.unsigned_abs())
+    } else {
+        settings.general.selected.saturating_add(delta as usize).min(1)
+    };
+}
+
+fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    match settings.general.selected {
+        0 => {
+            settings.general.pending_coauthor_trailer =
+                !settings.general.pending_coauthor_trailer;
+        }
+        1 => {
+            settings.general.pending_dco = !settings.general.pending_dco;
+        }
+        _ => {}
+    }
+}
+
+fn move_settings_auth_selection(state: &mut ManagerState<'_>, delta: isize) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    let max = settings.auth.row_count().saturating_sub(1);
+    settings.auth.selected = if delta.is_negative() {
+        settings.auth.selected.saturating_sub(delta.unsigned_abs())
+    } else {
+        settings.auth.selected.saturating_add(delta as usize).min(max)
+    };
 }
 
 fn scroll_editor_tab_horizontal(
@@ -621,6 +696,59 @@ mod tests {
         };
         assert_eq!(settings.active_tab, SettingsTab::General);
         assert!(settings.tab_bar_focused);
+    }
+
+    #[test]
+    fn settings_general_selection_and_toggle_update_state() {
+        let mut state = state_with_saved_count(0);
+        let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+        settings.general.pending_dco = false;
+        state.stage = ManagerStage::Settings(settings);
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::MoveSettingsGeneralSelection { delta: 1 },
+            )
+            .is_dirty()
+        );
+        assert!(update_manager(&mut state, ManagerMessage::ToggleSettingsGeneralSelected).is_dirty());
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.general.selected, 1);
+        assert!(settings.general.pending_dco);
+    }
+
+    #[test]
+    fn settings_auth_selection_and_kind_entry_update_state() {
+        let mut state = state_with_saved_count(0);
+        state.stage =
+            ManagerStage::Settings(SettingsState::from_config(&crate::config::AppConfig::default()));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::MoveSettingsAuthSelection { delta: 99 },
+            )
+            .is_dirty()
+        );
+        assert!(update_manager(&mut state, ManagerMessage::EnterSettingsAuthKind).is_dirty());
+
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.auth.selected, 0);
+        assert!(settings.auth.selected_kind.is_some());
+
+        assert!(update_manager(&mut state, ManagerMessage::ClearSettingsAuthKind).is_dirty());
+
+        let ManagerStage::Settings(settings) = state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.auth.selected, 0);
+        assert!(settings.auth.selected_kind.is_none());
     }
 
     #[test]

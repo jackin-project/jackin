@@ -1221,6 +1221,21 @@ impl SettingsAuthState {
         self.pending != self.original || self.github_env != self.original_github_env
     }
 
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        let Some(kind) = self.selected_kind else {
+            return self.pending.len();
+        };
+        let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
+            return 0;
+        };
+        if kind.required_env_var(row.mode).is_some() {
+            2
+        } else {
+            1
+        }
+    }
+
     pub fn discard(&mut self) {
         self.pending = self.original.clone();
         self.github_env = self.original_github_env.clone();
