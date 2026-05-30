@@ -13,10 +13,15 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
+#[cfg(test)]
+use std::path::Path;
+#[cfg(test)]
+use std::process::Command;
+#[cfg(test)]
+use std::sync::Mutex;
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
@@ -70,9 +75,10 @@ use crate::session::{
 use crate::pr_context::gh_pull_request_info;
 use crate::mouse_protocol::{
     encode_mouse_for_protocol, encode_wheel_cursor_fallback, is_wheel_button,
-    mouse_event_allowed_for_mode, mouse_event_encoding_for_session, pane_wheel_cursor_fallback_reason,
-    push_xterm_mouse_number,
+    mouse_event_encoding_for_session, pane_wheel_cursor_fallback_reason,
 };
+#[cfg(test)]
+use crate::mouse_protocol::{mouse_event_allowed_for_mode, push_xterm_mouse_number};
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};

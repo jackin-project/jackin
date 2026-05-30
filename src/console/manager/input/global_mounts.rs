@@ -457,7 +457,7 @@ pub(super) fn handle_settings_auth_modal(
             target,
             state,
             focus,
-            literal_buffer,
+            literal_buffer: _,
         } => {
             if key.code == KeyCode::Esc {
                 return;
