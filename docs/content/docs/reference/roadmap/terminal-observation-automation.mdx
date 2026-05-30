@@ -59,12 +59,12 @@ The landscape splits into recorders, scripted demo/test tools, VT emulators, wid
 | [cellshot](https://github.com/kitlangton/cellshot) | PTY capture/session daemon with `wait`, `send`, `snapshot`, structured frames, SVG/PNG/text/JSON/ANSI artifacts, and JSONL recording. | Native Capsule control calls for read/wait/send/snapshot/record; sparse terminal frame schema; artifact bundle shape; block-element SVG rendering. | Nested daemon, binary-crate dependency, duplicated PTY ownership. |
 | [asciinema](https://github.com/asciinema/asciinema), [asciinema-player](https://github.com/asciinema/asciinema-player), [agg](https://github.com/asciinema/agg), and [avt](https://github.com/asciinema/avt) | Standard terminal recording ecosystem: asciicast v2/v3 events, browser player, GIF renderer, Rust VT emulator. | Consider `.cast` export for session recordings; emit marker events for status transitions; evaluate `avt` for offline replay/diff/dump. | Replacing Capsule's live `vt100` + OSC policy with `avt` without solving OSC/unhandled-CSI callbacks. |
 | [Charmbracelet VHS](https://github.com/charmbracelet/vhs) | Scripted `.tape` demos with `Type`, `Enter`, `Sleep`, `Wait /regex/`, `Screenshot`, and golden ASCII output. | A future `jackin automate` script shape; regex waits against visible screen text; golden text snapshots for CI. | Chromium/ttyd/xterm.js rendering pipeline inside containers. It is too heavy and host-oriented for Capsule. |
-| [Microsoft tui-test](https://github.com/microsoft/tui-test) | Playwright-like terminal tests: isolated PTY, `getByText`, auto-wait, snapshot assertions, and trace replay. | Query API naming and behavior: `getByText` / `toBeVisible` style waits map directly to Capsule screen rows. Store trace artifacts on failure. | Node/xterm.js runtime dependency for Jackin core. |
-| [Netflix go-expect](https://github.com/Netflix/go-expect) and classic `expect` | Minimal PTY automation: `Send`, `Expect`, `ExpectEOF`. | Keep Jackin's first automation API small and blocking: send bytes, wait for condition, return match/evidence. | Raw-byte regexes as the primary API. Jackin can match the interpreted screen instead of ANSI-noisy output. |
+| [Microsoft tui-test](https://github.com/microsoft/tui-test) | Playwright-like terminal tests: isolated PTY, `getByText`, auto-wait, snapshot assertions, and trace replay. | Query API naming and behavior: `getByText` / `toBeVisible` style waits map directly to Capsule screen rows. Store trace artifacts on failure. | Node/xterm.js runtime dependency for jackin' core. |
+| [Netflix go-expect](https://github.com/Netflix/go-expect) and classic `expect` | Minimal PTY automation: `Send`, `Expect`, `ExpectEOF`. | Keep the first jackin' automation API small and blocking: send bytes, wait for condition, return match/evidence. | Raw-byte regexes as the primary API. jackin' can match the interpreted screen instead of ANSI-noisy output. |
 | [termtosvg](https://github.com/nbedos/termtosvg) | Standalone SVG terminal animation using a VT emulator and templates. | SVG as a scalable docs/demo artifact; themeable terminal-frame rendering. | Depending on an archived Python project or SMIL animation as the runtime format. |
 | `ttyrec`, `script`, and `scriptreplay` | Tiny timestamped raw terminal-byte logs. | Offer a lowest-level raw trace export for audit/debug and converter compatibility. | Treating raw traces as enough for orchestration; they are replayable, not directly queryable. |
 | [pyte](https://github.com/selectel/pyte) | Simple `Screen.display`, `DiffScreen`, and dirty-line tracking. | Dirty-row/delta concepts for efficient control-stream previews and snapshots. | Python dependency and older terminal-feature coverage. |
-| [Ratatui TestBackend](https://github.com/ratatui/ratatui) | In-memory styled-cell buffers and snapshot assertions for TUI widgets. | Golden-buffer testing for Jackin's own renderers and preview widgets; align artifact format with future terminal frames. | Confusing widget-buffer tests with live PTY session observation. |
+| [Ratatui TestBackend](https://github.com/ratatui/ratatui) | In-memory styled-cell buffers and snapshot assertions for TUI widgets. | Golden-buffer testing for jackin' renderers and preview widgets; align artifact format with future terminal frames. | Confusing widget-buffer tests with live PTY session observation. |
 
 ## Current jackin' leverage
 
@@ -74,7 +74,7 @@ The missing pieces are not another PTY runner. They are typed control messages, 
 
 ## Target capabilities
 
-The product shape is **Playwright-like control for live Jackin instances**, but against terminal sessions instead of browser pages. A test, workflow runner, or external orchestrator should be able to address an instance, pick a tab/session, wait for visible or semantic state, type into the agent input, press enter, switch focus, capture the resulting terminal moment, and continue from the evidence it receives. The API should feel deterministic and scriptable, while preserving Jackin's core promise that the session remains visible, attachable, and hijackable by the operator.
+The product shape is **Playwright-like control for live jackin' instances**, but against terminal sessions instead of browser pages. A test, workflow runner, or external orchestrator should be able to address an instance, pick a tab/session, wait for visible or semantic state, type into the agent input, press enter, switch focus, capture the resulting terminal moment, and continue from the evidence it receives. The API should feel deterministic and scriptable, while preserving the core jackin' promise that the session remains visible, attachable, and hijackable by the operator.
 
 Conceptually:
 
@@ -94,10 +94,10 @@ The API should model the things operators already see, not Docker internals. The
 
 | API family | Operations | Purpose |
 |---|---|---|
-| Instance discovery | `instance.list`, `instance.describe` | Find running or preserved Jackin instances and return instance id, workspace/role labels, supported agents, available providers, tab summary, and active tab. |
+| Instance discovery | `instance.list`, `instance.describe` | Find running or preserved jackin' instances and return instance id, workspace/role labels, supported agents, available providers, tab summary, and active tab. |
 | Tab control | `tab.list`, `tab.select`, `tab.create`, `tab.rename`, `tab.close` | Let automation and future UI tools switch between Capsule tabs, create a fresh tab, name it for a workflow phase, and close tabs when a run is done. `tab.select` changes Capsule focus; every other operation should also be able to target a tab by id without relying on focus. |
 | Session creation | `session.create` with `{ tab_id, kind, agent?, provider?, label?, prompt? }` | Start a new PTY-backed session in the target tab. `kind = agent` requires an agent slug and may include a provider choice; `kind = shell` creates a shell session and should be treated as the shell agent for API consistency. A starting prompt is optional and should be delivered after the session is ready, not pasted before the runtime has rendered its input box. |
-| Provider selection | `provider.list` and `session.create.provider` | Return the providers valid for a chosen agent in this instance, then let the caller choose explicitly. If omitted, Jackin applies the same default/last-used/provider-picker policy as the interactive console. The response must record the resolved provider so recordings and workflow evidence say whether Claude Code used Anthropic, Z.AI, or another future backend. |
+| Provider selection | `provider.list` and `session.create.provider` | Return the providers valid for a chosen agent in this instance, then let the caller choose explicitly. If omitted, jackin' applies the same default/last-used/provider-picker policy as the interactive console. The response must record the resolved provider so recordings and workflow evidence say whether Claude Code used Anthropic, Z.AI, or another future backend. |
 | Focus and attach | `session.focus`, `session.attach`, `session.detach` | Jump the operator or an automation client to the exact session/pane. Automation should not need focus for `send` or `read`, but focus changes are still first-class because the visible operator UI matters. |
 | Input | `session.send_text`, `session.send_keys`, `session.submit` | Send literal text, named keys, or text plus enter to a target session. `session.submit` is the high-level convenience for "put this in the agent input and send it"; lower-level key APIs still exist for TUIs, approval prompts, and shell sessions. |
 | Observation | `session.read_visible`, `session.read_frame`, `session.capture`, `session.record_start`, `session.record_stop` | Read visible rows, structured cells, artifact bundles, and recording state from the target session. These calls return evidence ids/revisions so a workflow can cite exactly what it saw. |
@@ -182,7 +182,7 @@ Add opt-in recording at the Capsule/session level. The artifact should be append
 | asciicast v2/v3 | Existing player/rendering ecosystem; browser embeds; `agg` GIF rendering; marker events for agent status transitions. |
 | jackin JSONL trace | Native schema can include session id, pane id, input origin, status markers, operator intervention, container/role metadata, and redaction annotations without fighting an external format. |
 
-Raw `ttyrec`-style output is useful as a lowest-level debug export, but Jackin's durable recording should know about sessions, inputs, status markers, and operator interventions.
+Raw `ttyrec`-style output is useful as a lowest-level debug export, but the durable jackin' recording should know about sessions, inputs, status markers, and operator interventions.
 
 ### Automation script surface
 
@@ -251,17 +251,17 @@ Add opt-in per-session recording, with local redaction warnings and a clear priv
 
 ### Phase 6 — Automation scripts and adapter surface
 
-Add a tiny tape/expect-style runner for smoke tests and demos. Then expose the same primitives through the future MCP/daemon adapter surface so external orchestrators can use Jackin as a visible, isolated execution substrate.
+Add a tiny tape/expect-style runner for smoke tests and demos. Then expose the same primitives through the future MCP/daemon adapter surface so external orchestrators can use jackin' as a visible, isolated execution substrate.
 
 ## Open questions
 
 | Question | Current stance |
 |---|---|
-| Should Jackin store raw ANSI for every session by default? | No. Keep bounded in-memory data for live attach/preview and require opt-in recording for durable raw traces because terminal output can contain secrets. |
+| Should jackin' store raw ANSI for every session by default? | No. Keep bounded in-memory data for live attach/preview and require opt-in recording for durable raw traces because terminal output can contain secrets. |
 | Should visible-text waits support regex immediately? | Yes, but keep the engine simple, bounded, and tested. Regex should run over visible rows or a caller-selected recent window, not unbounded scrollback. |
 | Should snapshots include scrollback? | Not in the first frame API. Start with visible viewport; add explicit recent/scrollback export later with size limits. |
 | Should SVG/PNG rendering be in Capsule or host CLI? | Prefer host CLI for file rendering so Capsule stays focused on runtime state and protocol. Capsule should return text/frame/ANSI; host code renders artifacts. |
-| Should `asciinema/avt` replace `vt100`? | Not now. `avt` is attractive for offline replay and dump/diff APIs, but Jackin's live path depends on OSC/unhandled-CSI callback behavior. Revisit as part of the VT parser dependency strategy. |
+| Should `asciinema/avt` replace `vt100`? | Not now. `avt` is attractive for offline replay and dump/diff APIs, but the jackin' live path depends on OSC/unhandled-CSI callback behavior. Revisit as part of the VT parser dependency strategy. |
 | Should waits be event-driven or polling? | Event-driven when waiting on status markers or session revisions; bounded polling is acceptable for visible-text regex in the first version if it wakes on PTY output rather than fixed tight loops. |
 | How does this interact with operator hijack? | Any automation should record when the operator attaches, types, pauses, or resumes. The terminal remains visible and hijackable; automation is a client of the session, not its owner. |
 | Is a shell an agent? | For API consistency, yes: represent shell sessions as `kind = shell` or a reserved shell agent with no provider. The operator-visible UI can still label it `Shell`; automation should not need a separate resource type. |
