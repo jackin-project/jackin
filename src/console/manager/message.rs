@@ -1009,9 +1009,9 @@ mod tests {
     use super::{ManagerMessage, update_manager};
     use crate::console::manager::auth_kind::AuthKind;
     use crate::console::manager::state::{
-        AuthFormFocus, AuthFormReturnPath, AuthFormTarget, CreatePreludeState, EditorState,
-        EditorTab, FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal,
-        SettingsState, SettingsTab,
+        AuthFormFocus, AuthFormReturnPath, AuthFormTarget, CreatePreludeState, DragState,
+        EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, MountScrollFocus,
+        SettingsAuthModal, SettingsState, SettingsTab,
     };
     use crate::console::widgets::auth_panel::AuthForm;
     use crate::console::widgets::error_popup::ErrorPopupState;
@@ -1847,5 +1847,98 @@ mod tests {
             panic!("expected settings stage");
         };
         assert_eq!(settings.trust.selected, settings.trust.pending.len() - 1);
+    }
+
+    #[test]
+    fn set_list_scroll_focus_stores_focus() {
+        let cwd = std::path::Path::new("/");
+        let config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        assert!(state.list_scroll_focus.is_none());
+
+        assert!(
+            update_manager(&mut state, ManagerMessage::SetListScrollFocus(Some(MountScrollFocus::Workspace))).is_dirty()
+        );
+        assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
+
+        assert!(
+            update_manager(&mut state, ManagerMessage::SetListScrollFocus(None)).is_dirty()
+        );
+        assert!(state.list_scroll_focus.is_none());
+    }
+
+    #[test]
+    fn set_list_names_focused_stores_flag() {
+        let cwd = std::path::Path::new("/");
+        let config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        assert!(update_manager(&mut state, ManagerMessage::SetListNamesFocused(true)).is_dirty());
+        assert!(state.list_names_focused);
+        assert!(update_manager(&mut state, ManagerMessage::SetListNamesFocused(false)).is_dirty());
+        assert!(!state.list_names_focused);
+    }
+
+    #[test]
+    fn set_drag_state_stores_and_clears() {
+        let cwd = std::path::Path::new("/");
+        let config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        assert!(state.drag_state.is_none());
+
+        let drag = DragState { anchor_pct: 50, anchor_x: 40 };
+        assert!(update_manager(&mut state, ManagerMessage::SetDragState(Some(drag))).is_dirty());
+        assert!(state.drag_state.is_some());
+        assert!(update_manager(&mut state, ManagerMessage::SetDragState(None)).is_dirty());
+        assert!(state.drag_state.is_none());
+    }
+
+    #[test]
+    fn set_list_split_pct_stores_value() {
+        let cwd = std::path::Path::new("/");
+        let config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let original = state.list_split_pct;
+
+        assert!(update_manager(&mut state, ManagerMessage::SetListSplitPct(75)).is_dirty());
+        assert_eq!(state.list_split_pct, 75);
+        assert_ne!(state.list_split_pct, original);
+    }
+
+    #[test]
+    fn open_list_error_popup_sets_error_modal() {
+        let cwd = std::path::Path::new("/");
+        let config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        assert!(state.list_modal.is_none());
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::OpenListErrorPopup {
+                    title: "Test error".into(),
+                    message: "Something went wrong.".into(),
+                }
+            ).is_dirty()
+        );
+        assert!(matches!(state.list_modal, Some(super::super::state::Modal::ErrorPopup { .. })));
+    }
+
+    #[test]
+    fn dismiss_list_modal_clears_modal() {
+        let cwd = std::path::Path::new("/");
+        let config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        update_manager(
+            &mut state,
+            ManagerMessage::OpenListErrorPopup {
+                title: "x".into(),
+                message: "y".into(),
+            },
+        );
+        assert!(state.list_modal.is_some());
+
+        assert!(update_manager(&mut state, ManagerMessage::DismissListModal).is_dirty());
+        assert!(state.list_modal.is_none());
     }
 }
