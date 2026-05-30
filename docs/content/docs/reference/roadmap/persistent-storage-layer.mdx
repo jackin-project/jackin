@@ -1,5 +1,5 @@
 ---
-title: "Persistent Storage Layer (per-instance SQLite)"
+title: "Persistent Storage and Workspace Memory Layer"
 ---
 
 **Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
@@ -18,12 +18,20 @@ operator config is a single TOML file. There's no way to store:
 - Provider account quota snapshots and stale/error metadata
 - Tool fire history (audit log)
 - The autonomous queue's pending and completed tasks
+- Cross-agent workspace memory: durable operator preferences, workflow rules,
+  project facts, review feedback, and run handoff summaries that Claude Code,
+  Codex, Kimi, OpenCode, and future runtimes can all read through one surface
+  owned by jackin'
 
 Every Phase 2 and Phase 4 item that needs any of the above either does
 its own ad-hoc JSON file (which gets messy) or skips the feature.
 
 This is the **load-bearing** Phase 3 item — the substrate for half of
-the program.
+the program. It is also the right home for memory owned by jackin'. Runtime-native
+memories are useful inside one agent, but they become the wrong abstraction
+when the operator mixes Claude Code, Codex, Kimi, OpenCode, and future agents
+inside the same workspace and expects each new session to inherit the same
+review policy, project facts, and workflow history.
 
 ## Why It Matters
 
@@ -36,10 +44,31 @@ the program.
   [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/),
   [autonomous task queue](/reference/roadmap/autonomous-task-queue/),
   [agent runtime status](/reference/roadmap/agent-runtime-status/)
-  (status_log table), and completed-instance retention metadata for queued work.
+  (status_log table), completed-instance retention metadata for queued work,
+  and [agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/)
+  run handoffs.
+- A cross-agent memory layer lets jackin' promote durable operator preferences
+  out of agent-private storage. A Claude Code memory such as "during PR review,
+  fix every confirmed finding instead of returning report-only buckets" should
+  become a workspace or workflow memory that every selected reviewer/implementer
+  receives, not a file trapped under one Claude project path.
 - Adding it after the consumers exist is much more painful than adding
   it first — that's the case for landing it early in Phase 3 even
   though no consumer in isolation justifies it.
+
+## Memory research
+
+Several adjacent systems validate the need for a tool-neutral memory surface, but none maps directly onto jackin' container and host-mutation rules.
+
+| Project | Useful idea | jackin' stance |
+|---|---|---|
+| [OpenMemory / Mem0](https://mem0.ai/openmemory) | MCP-facing memory shared across AI apps, project-scoped memories, tags, dashboard review, and local or cloud deployment. | Strong external-memory reference and possible backend adapter. jackin' should still own workspace/run scope, policy, audit, and container delivery. |
+| [Mem0 state-of-agent-memory research](https://mem0.ai/blog/state-of-ai-agent-memory-2026) | Names the hard problems: cross-session identity, temporal abstraction, contradiction handling, stale memories, privacy, consent, and memory evaluation. | Use as design pressure. Avoid "append facts forever" without recency, provenance, and operator curation. |
+| [Letta shared memory blocks](https://docs.letta.com/guides/core-concepts/memory/shared-memory/) | A memory block can be attached to multiple agents; updates become visible to all attached agents; read-only blocks and concurrency caveats are explicit. | Best conceptual fit for policy memory and shared project facts. jackin' should borrow the scoped-block model, not necessarily the server. |
+| [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge graph memory for evolving facts and multi-hop retrieval. | Possible future backend for rich semantic memory. V1 should stay SQLite-first and text/metadata-shaped until retrieval requirements are proven. |
+| Runtime-native memories | Claude project memory, Codex skills/goals, OpenCode skills, Kimi/OpenCode local config. | Useful adapter targets, not the source of truth. jackin' must be able to inject or mount selected memories into each runtime without copying one runtime's private format as the canonical model. |
+
+The key product distinction is **packaged context vs mutable memory**. [Native APM support](/reference/roadmap/native-apm-role-support/) should own installable skills, prompts, instructions, plugins, and MCP server dependencies. This persistent storage layer should own mutable state: remembered operator preferences, facts learned during a workspace, workflow/run summaries, review outcomes, and memory audit events. The two can work together: APM can install the memory client skill or MCP server; the storage layer remains the authority for what a workspace/run remembers.
 
 ## Inspiration in multicode
 
@@ -146,6 +175,45 @@ CREATE TABLE tool_history (
     duration_ms INTEGER
 );
 
+-- Workspace/run memory. V1 stores text plus metadata; semantic indexes
+-- and external memory backends come after the write/read policy is proven.
+CREATE TABLE memory_items (
+    id TEXT PRIMARY KEY,
+    scope_kind TEXT NOT NULL,                -- 'operator' | 'workspace' | 'role' | 'run' | 'workflow'
+    scope_key TEXT NOT NULL,
+    kind TEXT NOT NULL,                      -- 'preference' | 'project_fact' | 'workflow_rule' | 'review_feedback' | 'run_summary'
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    source TEXT NOT NULL,                    -- 'operator' | 'agent' | 'workflow' | 'import'
+    source_session_id INTEGER,
+    source_run_id TEXT,
+    confidence TEXT NOT NULL,                -- 'operator_asserted' | 'agent_inferred' | 'verified' | 'stale'
+    read_policy TEXT NOT NULL,               -- 'always' | 'workflow' | 'agent' | 'manual'
+    write_policy TEXT NOT NULL,              -- 'operator_only' | 'agent_append' | 'workflow_append'
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    supersedes_id TEXT
+);
+CREATE INDEX memory_items_by_scope ON memory_items (scope_kind, scope_key, updated_at);
+CREATE INDEX memory_items_by_kind ON memory_items (kind, updated_at);
+
+-- Memory access audit. This is deliberately separate from memory_items so
+-- retrieval/injection can be inspected without mutating the memory row.
+CREATE TABLE memory_events (
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,
+    memory_id TEXT,
+    event_kind TEXT NOT NULL,                -- 'created' | 'read' | 'served_to_agent' | 'updated' | 'superseded' | 'hidden'
+    actor_kind TEXT NOT NULL,                -- 'operator' | 'agent' | 'workflow' | 'system'
+    actor_id TEXT,
+    session_id INTEGER,
+    run_id TEXT,
+    metadata TEXT
+);
+CREATE INDEX memory_events_by_memory ON memory_events (memory_id, occurred_at);
+CREATE INDEX memory_events_by_run ON memory_events (run_id, occurred_at);
+
 -- Schema version. One row.
 CREATE TABLE _meta (
     key TEXT PRIMARY KEY,
@@ -154,6 +222,35 @@ CREATE TABLE _meta (
 ```
 
 Future leaves add more tables; the migration framework handles upgrades.
+
+### Cross-agent memory model
+
+Memory is not a replacement for role packages, docs, or AGENTS files. It is the durable, queryable layer for context that is discovered or refined while work happens.
+
+| Memory scope | Example | Default lifetime | Default write policy |
+|---|---|---|---|
+| `operator` | "During PR review, address every confirmed finding in the same pass." | Until changed by operator | Operator-only |
+| `workspace` | "This repo uses roadmap pages as source-of-truth specs before implementation." | Until changed or superseded | Operator-only or workflow-append |
+| `role` | "Security reviewer should prefer exploitability evidence over style comments." | Until changed by operator/role owner | Operator-only |
+| `run` | "The operator manually verified the UI before review cycle 2." | Run retention window | Workflow-append |
+| `workflow` | "The `pr-review-fix-cycle` profile runs Claude, Codex, then Claude again before final operator verification." | Until profile changes | Operator-only |
+
+The V1 reader should be conservative. It should assemble a small "memory brief" before launching a session, ordered by scope specificity and provenance: workflow/run memory, workspace memory, role memory, then operator memory. The brief is delivered through runtime adapters: native memory/skill directories where safe, prompt preamble for runtimes without a stable memory API, and an MCP memory server once the [host bridge](/reference/roadmap/host-bridge/) and MCP surfaces exist. The agent should see the memory content and provenance, not the raw SQLite path.
+
+The V1 writer should be even stricter. Agents may propose memory items or append run summaries, but automatic mutation of durable operator/workspace memory should require either an explicit operator command or a workflow-controlled append policy. This avoids the failure mode where one confused reviewer teaches every future agent a bad rule. Contradictions should create a new item that supersedes the old one instead of editing history in place; the audit table records the supersession.
+
+### Memory delivery and external backends
+
+jackin' should expose the memory layer through a narrow internal API first:
+
+```text
+memory.resolve(scope, workflow, role, agent, run) -> MemoryBrief
+memory.propose(scope, kind, title, body, provenance) -> pending item
+memory.append_run_summary(run, session, body) -> memory item
+memory.hide/supersede(id, reason) -> operator action
+```
+
+Later, jackin' can expose an MCP server with equivalent operations so agents can query or propose memories during a session. The MCP server must enforce the same scope, read policy, write policy, and audit rules as the host CLI; it must not become arbitrary file access to the operator's host. External systems such as OpenMemory/Mem0, Letta, or Zep/Graphiti can become optional backends behind the same API only after V1 proves the local policy model.
 
 ### Daemon-global account cache
 
@@ -217,6 +314,8 @@ handles this; turn it on at DB creation time. No multi-writer scenarios
 exist in V1 because each instance has at most one running jackin
 process.
 
+Memory introduces a second concurrency question: multiple agents inside one Capsule-managed container may read the same memory brief and propose new memory during the same run. V1 should serialize writes through the workflow runner or daemon-owned storage handle, not let each in-container agent open the database directly. Agents submit proposals through the control/MCP surface; the host-side storage owner stamps provenance and writes the row. This keeps the database private to jackin' and prevents an agent from rewriting durable memory with ordinary filesystem access.
+
 ### Trimming
 
 Tables with rolling-window semantics (`status_log`, `usage_samples`,
@@ -235,6 +334,13 @@ observing real footprint.
 - WAL mode enabled at creation.
 - Async access via the chosen sqlite client.
 - Rolling-window trim per table.
+- Workspace/run memory tables for text memories, provenance, scope, read/write
+  policy, supersession, and access audit.
+- Runtime-neutral memory resolution that can build a compact memory brief for
+  Claude Code, Codex, Kimi, OpenCode, and future runtimes.
+- Agent memory writes are proposals or workflow-scoped append events by
+  default; durable operator/workspace memory changes require explicit operator
+  action or a configured workflow write policy.
 - DB creation failure is a hard error at instance load (don't
   silently start without persistence — would diverge silently).
 - Migration failure halts load with a clear message; operator
@@ -246,7 +352,14 @@ observing real footprint.
   is the right boundary for V1 — independent lifecycle, purge-friendly, no
   cross-instance state to leak.
 - Encrypted-at-rest. SQLite has SEE; not in V1.
-- Replication / sync. Out of scope.
+- Replication / sync. Out of scope for V1, but the memory schema should not
+  assume local-only forever; future cloud or team memory sync needs stable ids,
+  provenance, supersession, and conflict metadata from the start.
+- Semantic vector/graph retrieval. V1 stores text and metadata; optional
+  OpenMemory/Mem0, Letta, or Zep/Graphiti backends wait until the local policy
+  model is proven.
+- Automatic promotion of every agent observation into workspace memory. Agents
+  can propose; operator/workflow policy decides what sticks.
 - Read-only export / dump command (`jackin debug dump-db <name>`).
   Useful but small; defer.
 
@@ -265,15 +378,22 @@ observing real footprint.
 - **Per-instance vs single global DB.** Confirmed in the master:
   *per-instance*. This open question exists only as a checkpoint for
   the alternate path in case operator feedback shifts the call.
+- **Workspace memory across many instances.** Per-instance DBs are purge-friendly, but workspace memory wants to survive individual instance purge and serve new containers for the same workspace. Should V1 add a workspace-level DB at `~/.jackin/data/workspaces/<workspace>/jackin.db`, or keep memory in each instance DB until daemon/global storage lands? Recommended: *design the memory API as workspace-scoped now, then decide the physical home in the storage ADR before implementation*.
+- **Memory retrieval semantics.** Is V1 only explicit scope filtering, or should it include keyword search, embeddings, or graph lookup? Recommended: *explicit scope filtering plus operator-curated titles/kinds first*; semantic retrieval follows only after there are enough real memories to evaluate quality.
+- **Agent write authority.** Which workflows may auto-append memory? Recommended: *run summaries and review findings may be workflow-append; operator preferences and project facts are operator-only until the operator accepts a proposal*.
 
 ## Related Files
 
 - New module (e.g. `src/storage/mod.rs` or a new
   crate-internal `storage/`) — DB pool, migrations, query helpers
+- New module (e.g. `src/memory/mod.rs`) — memory resolution, proposals,
+  policy checks, and runtime-neutral `MemoryBrief` construction
 - <RepoFile path="src/runtime/launch.rs" /> — DB creation on first load
 - <RepoFile path="src/runtime/cleanup.rs" /> — DB teardown on `purge`
+- Future control/MCP surface — agents query/propose memory through jackin,
+  never by opening host-side storage directly
 - Future ADR file under `docs/content/docs/internal/adrs/` —
-  sqlx vs rusqlite decision
+  sqlx vs rusqlite decision plus physical home for workspace memory
 
 ## See Also
 
@@ -284,5 +404,11 @@ observing real footprint.
   schema home for the link cache
 - [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) —
   Phase 4 consumer
+- [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) —
+  consumes memory briefs for brainstorm, implementation, review, and merge-gate
+  phases
+- [Native APM support](/reference/roadmap/native-apm-role-support/) —
+  package/install layer for skills, prompts, and MCP clients; complementary to
+  mutable workspace memory
 - [Architecture Decision Records](/reference/roadmap/architecture-decision-records/) —
   the right home for the sqlx-vs-rusqlite decision

@@ -2,6 +2,7 @@
   "title": "Infrastructure",
   "defaultOpen": false,
   "pages": [
+    "../architect-code-intelligence-tooling",
     "../construct-user-creation",
     "../workspace-registry-cache"
   ]

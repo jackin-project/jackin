@@ -10,6 +10,8 @@ jackin' already runs multiple coding agents in isolated, visible, hijackable ter
 
 The operator goal is not "hide the agent and tell me when it is done." The goal is "start the right workflow from a known source, keep every agent visible, let me attach and intervene, and make the durable state visible through GitHub." A roadmap item such as [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) should become a tracked run with live Capsule sessions, GitHub status, a reviewable PR, and a final human gate, not a pile of manually coordinated terminal tabs.
 
+The long-term product shape is an operator-facing coordinator: the operator can describe an idea, ask jackin' to brainstorm it with the right agents, turn the resulting design into a roadmap page, assign implementation, ask for the known review/fix cycle, and receive explicit checkpoints when human judgment is required. The workflow runner should feel like a reliable engineering secretary: it remembers the process, routes work to the right agents, records evidence, asks for clarification when needed, and stops at policy gates. It should not become a hidden LLM manager whose decisions are harder to audit than the worker agents.
+
 ## Target workflow
 
 The first workflow worth building is `roadmap-to-pr`:
@@ -26,6 +28,18 @@ The first workflow worth building is `roadmap-to-pr`:
 10. jackin' leaves a non-draft, reviewable PR for the operator and stops before merge.
 
 The workflow must be interruptible. The operator can attach to any live Capsule session, type directly into the agent, add context, pause the run, cancel the run, or take over the branch manually. That intervention is part of the run history instead of an invisible side channel.
+
+The first user-visible profiles should mirror the operator's real process rather than a generic task DAG:
+
+| Profile | Purpose | Human gate |
+|---|---|---|
+| `brainstorm-roadmap` | Start Claude Code and Codex in high-reasoning modes, provide shared workspace memory, let them challenge the design, and produce a detailed roadmap item. | Operator approves the roadmap text before it becomes implementation source. |
+| `implement-roadmap-item` | Give one implementer agent a roadmap page as a `/goal`-style objective, create an isolated branch/instance, implement code/docs/tests, and open or prepare a PR. | Operator manually verifies the feature before review automation starts. |
+| `operator-fixup` | After manual verification, let an agent apply the operator's corrections inside the same run and refresh verification evidence. | Operator confirms the behavior now matches intent. |
+| `pr-review-fix-cycle` | Run the configured Claude/Codex/Claude review sequence, fix every confirmed finding, rerun verification, and summarize false positives or net-negative fixes with evidence. | Operator re-verifies after the automated review/fix loop. |
+| `final-merge-gate` | Re-check branch freshness, CI, roadmap/docs freshness, and PR policy, then merge only after the operator explicitly says the PR is ready. | Explicit merge approval. |
+
+These profiles can all use the same `WorkflowRun` model. The difference is phase graph, agent assignment, memory brief, verification commands, and GitHub reporting policy.
 
 ## Why jackin' should own the substrate
 
@@ -54,6 +68,7 @@ The first implementation should therefore be:
 | Workflow definition | Hardcode `roadmap-to-pr` in Rust until the run model proves stable; later add declarative TOML/YAML. |
 | Task source | Reuse the future [Task source abstraction](/reference/roadmap/task-source-abstraction/) concepts: roadmap page, GitHub issue, PR, local file, stdin prompt. |
 | Runtime execution | Use Capsule sessions, not external tmux/worktree runners. |
+| Context and memory | Resolve a workflow-scoped memory brief from the [persistent storage and workspace memory layer](/reference/roadmap/persistent-storage-layer/) before each agent session. Do not depend on one runtime's private memory as the shared source of truth. |
 | Review fan-out | Optional adapter to MCO/Hive-style review once branch state is ready. |
 | External control | Add MCP/ACP later so external orchestrators can drive jackin' sessions through typed APIs. |
 | Background queue | Defer to [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) and [jackin' daemon](/reference/roadmap/jackin-daemon/). |
@@ -85,6 +100,16 @@ These projects are worth tracking and testing. The table intentionally excludes 
 | [GitHub Agentic Workflows](https://github.github.io/gh-aw/introduction/overview/) and [third-party agents on GitHub](https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents) | Open workflow format/tooling around GitHub Actions; execution depends on GitHub-hosted environment and eligible plans for third-party agents. | Markdown workflow compiled into hardened GitHub Actions YAML; agents execute in GitHub Actions with read-only default permissions and safe outputs. | Strong reference for GitHub-visible automation, natural-language workflow files, permission narrowing, and safe write outputs. | GitHub-native issues/PRs/comments and public-preview third-party agent assignment. | **Visibility/security reference, not dependency.** Good for check-run/comment/gate semantics. It is not jackin's local hardware substrate. |
 | [RuFlo](https://github.com/ruvnet/ruflo) (formerly Claude Flow) and OpenFlow-style dashboards | Open-source claims, high visibility, but quality/maturity signals are mixed and require careful hands-on audit. | Claude-centric swarm/MCP ecosystem with many hooks, agents, memory, dashboards, and downstream wrappers. The repo was renamed from `ruvnet/claude-flow` to `ruvnet/ruflo` in 2026; the old URL still redirects. | Useful as a cautionary reference for over-broad "swarm" claims and for UI demand around monitoring many Claude sessions. | Not clearly centered on GitHub issue-to-PR lifecycle. | **Avoid as dependency for now.** Audit only if there is a concrete feature to borrow; prefer smaller, verifiable pieces. |
 | [workmux](https://github.com/raine/workmux), [worktrunk](https://github.com/max-sixty/worktrunk), [par](https://github.com/coplane/par), and similar worktree/session tools | Open-source, focused utilities with varied maturity. | Bind git worktrees to tmux/editor/session management for parallel development. | Good workflow ergonomics around branch/session naming, editor launch, and lightweight parallel agent setup. | Usually no first-class PR lifecycle, no multi-agent graph, no review fan-out. | **Low-level ergonomics references.** jackin' already owns worktree/clone isolation and Capsule UI; borrow naming and cleanup lessons only. |
+
+Cross-agent memory systems are relevant to this workflow even though they are not full orchestrators:
+
+| Project | Useful idea | jackin' stance |
+|---|---|---|
+| [OpenMemory / Mem0](https://mem0.ai/openmemory) | Project-scoped memory exposed through MCP to multiple AI clients. | Possible external backend or MCP-shape reference for workflow memory. jackin' still owns run scopes, policy, and audit. |
+| [Letta shared memory](https://docs.letta.com/guides/core-concepts/memory/shared-memory/) | One shared block attached to many agents, with read-only and concurrent-update considerations. | Strong model for workflow/operator memory shared across Claude, Codex, Kimi, and OpenCode sessions. |
+| [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge graph memory for evolving facts. | Future retrieval backend candidate after local SQLite memory and workflow briefs prove useful. |
+
+The workflow runner should treat memory as an input and output of each phase. Before a session starts, it receives a scoped memory brief. After a phase ends, it may append a run summary or propose a durable memory. Operator preferences and project facts remain protected by write policy in the storage layer.
 
 The common pattern is clear: every serious tool is converging on visible execution, durable task state, provider mixing, human gates, and GitHub or issue-tracker visibility. The difference is substrate. Most tools assume host-native worktrees, tmux, a web dashboard, or their own PTY server. jackin' should keep Capsule as the runtime boundary and make the workflow runner speak to Capsule.
 
@@ -206,6 +231,26 @@ That PR should prove:
 
 `RunReporter` writes durable visibility. The first reporter should be GitHub: tracking issue comments, PR comments, check runs, branch/PR links, and final status summaries. A console reporter renders the same event stream in `jackin console`.
 
+`WorkflowProfile` names an operator workflow such as `brainstorm-roadmap`, `implement-roadmap-item`, `pr-review-fix-cycle`, or `final-merge-gate`. A profile binds a phase graph to agent defaults, model/default-runtime preferences, context packs or APM-installed skills, memory selection, verification commands, review chain, and human gates. Profiles may start as built-in Rust constants and later move to declarative files after the run/event model is stable.
+
+`MemoryBrief` is the compact context package resolved for one phase/session. It should include only the memories relevant to the current run, workspace, role, workflow, and agent: operator preferences, workspace facts, workflow rules, recent run summaries, and explicit operator notes. It is built from the [persistent storage and workspace memory layer](/reference/roadmap/persistent-storage-layer/) and delivered through runtime adapters; it is not copied from Claude Code's or Codex's private memory store.
+
+### Memory in workflow phases
+
+Workflow memory should be explicit because it is the mechanism that lets a newly spawned reviewer or implementer behave like it has been part of the same long-running collaboration.
+
+| Phase | Memory read | Memory write |
+|---|---|---|
+| Brainstorm | Operator preferences, workspace facts, prior related roadmap/run summaries. | Proposed roadmap facts and open questions; operator-approved results become workspace or workflow memory. |
+| Implementation | Roadmap source, project facts, coding/test/doc rules, run-specific operator notes. | Run summary, implementation decisions, PR/branch facts, proposed project memories. |
+| Operator fixup | Operator feedback plus the current run summary. | Updated run summary and explicit operator decisions. |
+| Review/fix cycle | Review policy memories, known operator preferences, previous review findings, current PR facts. | Structured findings, false-positive decisions, fixed-finding summaries, verification evidence. |
+| Final merge gate | PR policy, branch freshness rules, docs/roadmap freshness requirements, latest verification evidence. | Final disposition, merge SHA when applicable, reusable lessons proposed for future runs. |
+
+One concrete V1 memory is the operator's review preference: during any PR review/fix pass, every confirmed finding is addressed in the same pass; report-only buckets are allowed only for verified false positives or fixes that are net-negative, and the reason must be recorded. That preference should be stored once as operator/workflow memory, then served to Claude Code and Codex reviewers through the same brief.
+
+The workflow runner should record which memories were served to which session. If an agent makes a surprising decision later, the run history should answer: what memory did it receive, from which scope, and at what revision?
+
 ### Run state model
 
 The run state should be explicit and boring. It is the verification layer that prevents the agent's narrative from becoming the source of truth.
@@ -246,6 +291,7 @@ The current `status` and `snapshot` control calls are enough for display, but no
 |---|---|---|
 | `session.create` | Yes | Start implementer, reviewer, shell, or diagnostic sessions inside the same Capsule-managed container. |
 | `session.send_input` | Yes | Send prompt text or slash-command payloads to a specific session. Must target session id, not merely focused pane. |
+| `session.inject_context` | Yes | Deliver the resolved prompt preamble or memory brief to a session before the first workflow instruction, without relying on manual paste timing. This may be implemented as part of `session.send_input` in V1, but the model should name it. |
 | `session.focus` / `session.attach` | Yes | Let the operator hijack a specific phase/session and let console jump directly to it. |
 | `session.read_visible` | Yes | Debug/status fallback: read the current visible screen/recent output for reporting and failure diagnostics. This is not a state authority. |
 | `session.wait` | Yes | Block until effective status, process exit, explicit marker, timeout, or operator intervention. |
@@ -263,6 +309,7 @@ Some useful work can ship before the full state authority exists:
 | Can ship early | Guardrail |
 |---|---|
 | Run records and GitHub reporter | Events come from the workflow runner, verifier commands, and explicit operator actions. |
+| Memory briefs for manual runs | The operator or workflow command selects the source scope; writes remain manual/proposal-only. |
 | Foreground `roadmap-to-pr` prototype | Require explicit completion markers, deterministic verification commands, or operator confirmation before phase transitions. |
 | Reviewer adapter invocation | Review starts from a known git ref after verification, not from a guessed "done" state. |
 | Manual attach/pause/resume/cancel | Operator controls are state transitions in the run record. |
@@ -274,6 +321,7 @@ These pieces should wait for agent runtime status authority:
 |---|---|
 | Background unattended overnight runs | Without reliable `blocked`/`done`/`stuck`, the daemon will either spam or stall. |
 | Automatic review/fix loops beyond one bounded cycle | Looping on weak state risks burning tokens and mutating branches after failure. |
+| Automatic promotion of agent-discovered facts into workspace memory | Durable memory needs operator/workflow policy and contradiction handling. |
 | Dispatching multiple queued roadmap items | Parallelism needs reliable per-instance state and resource accounting. |
 | Notifications and click-to-focus for workflow phases | Attention prompts depend on accurate effective status. |
 | Automatic cleanup of "idle" runs | `idle` versus `done but unseen` is the state authority's job. |
@@ -347,6 +395,7 @@ The declarative format should not start as "arbitrary shell plus prompts." It sh
 | Step kind | Example use |
 |---|---|
 | `agent` | Start Codex, Claude, Gemini, or another runtime in a Capsule session. |
+| `context` | Resolve and inject the memory brief, APM-installed skills, and source documents for the phase. |
 | `review` | Run Claude Code `/code-review` or `/ultrareview`, MCO/Hive fan-out, or another review adapter against a git ref. |
 | `verify` | Run deterministic commands and capture exit/output. |
 | `github` | Create/update tracking issue, PR, check run, or comment. |
@@ -370,15 +419,17 @@ After the low-regret run-record/GitHub-reporter PR proves the state model, the f
 
 1. Add a foreground `jackin run roadmap <roadmap-page>` command.
 2. Hardcode `roadmap-to-pr`.
-3. Use Codex as implementer by default and Claude Code as reviewer by default, with explicit flags to swap agents.
-4. Create a run record and isolated branch/instance using existing workspace isolation.
-5. Spawn Codex in a visible Capsule session with a generated objective.
-6. Wait for a reliable done/blocked/failed signal; if state authority is not ready, require an explicit agent-emitted completion marker or operator confirmation instead of guessing from silence.
-7. Run configured verification commands.
-8. Create/update the PR only after the workflow reaches review-ready state.
-9. Spawn Claude Code review in a second visible Capsule session.
-10. Feed findings back to Codex for one fix cycle.
-11. Stop before merge and ask the operator to verify.
+3. Resolve a memory brief for the workspace, role, workflow, and source roadmap page.
+4. Use Codex as implementer by default and Claude Code as reviewer by default, with explicit flags to swap agents.
+5. Create a run record and isolated branch/instance using existing workspace isolation.
+6. Spawn Codex in a visible Capsule session with the memory brief plus a generated objective.
+7. Wait for a reliable done/blocked/failed signal; if state authority is not ready, require an explicit agent-emitted completion marker or operator confirmation instead of guessing from silence.
+8. Run configured verification commands.
+9. Create/update the PR only after the workflow reaches review-ready state.
+10. Spawn Claude Code review in a second visible Capsule session with the review-policy memory brief.
+11. Feed findings back to Codex for one fix cycle.
+12. Append a run summary and proposed reusable memories, but do not auto-promote them to durable workspace/operator memory.
+13. Stop before merge and ask the operator to verify.
 
 The first version may be foreground-only. Background/overnight dispatch belongs to [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) and the daemon.
 
@@ -391,6 +442,10 @@ Run the same real jackin' roadmap task through jackin' Capsule, Vibe Kanban, Con
 ### Phase 1 — Run record and GitHub reporter
 
 Add durable run records, phase events, GitHub issue/PR/check-run reporting, and `jackin run status`. This can land before full autonomous control because it gives manual multi-agent workflows a shared audit trail.
+
+### Phase 1b — Workflow memory briefs
+
+Resolve and record memory briefs for manual runs before full automation. This phase consumes the persistent-storage memory API, logs which memory ids/revisions were served to each session, and lets agents append run summaries or propose memories without auto-promoting them.
 
 ### Phase 2 — Capsule session control API
 
@@ -415,6 +470,8 @@ Expose jackin' as an execution substrate for external orchestrators through MCP 
 - How should the workflow represent review quality: Claude-only, MCO/Hive-style consensus, GitHub Code Review, or a configurable reviewer chain?
 - How much of `/goal` should jackin' rely on for Codex, and how much run state should be owned by jackin' itself?
 - What is the minimum reliable completion signal before [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) ships?
+- What memory should be injected automatically for each profile, and how should the operator inspect or override the brief before launch?
+- Should workflow profiles be a distinct config surface, or should the first profile definitions live entirely in Rust until memory/run semantics settle?
 - Should declarative workflow files live in the jackin' repo, role repos, workspace config, or all three with precedence rules?
 
 ## Related roadmap items
@@ -427,4 +484,5 @@ Expose jackin' as an execution substrate for external orchestrators through MCP 
 - [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) — durable run records and event logs.
 - [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) — structured agent-emitted links and completion markers.
 - [Console agent session control](/reference/roadmap/console-agent-session-control/) — operator surface for visible sessions.
+- [Native APM support](/reference/roadmap/native-apm-role-support/) — package/install layer for skills, prompts, and MCP clients used by workflow profiles.
 - [jackin' daemon](/reference/roadmap/jackin-daemon/) — eventual home for background/overnight orchestration.
