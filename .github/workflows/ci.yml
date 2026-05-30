@@ -132,6 +132,8 @@ jobs:
       # running nextest both with and without it would re-execute every
       # non-feature-gated test for no extra coverage.
       - run: cargo check --all-targets
+      - name: Check generated TUI lookbook previews
+        run: cargo run -p jackin-tui --bin tui-lookbook -- --check docs/public/tui-lookbook
       # `dind_e2e` invokes `jackin load` end-to-end. `jackin load` calls
       # `capsule_binary::ensure_available`, which downloads the
       # `jackin-capsule` artifact from the rolling `preview` GitHub Release.

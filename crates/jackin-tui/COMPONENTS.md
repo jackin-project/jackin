@@ -7,7 +7,9 @@ first story set covers `Panel`, `ButtonStrip`, `TabStrip`, `ConfirmDialog`,
 `ErrorDialog`, `SaveDiscardDialog`, and `StatusPopup`. Run
 `cargo run -p jackin-tui --bin tui-lookbook -- docs/public/tui-lookbook` to
 render those stories from the real `TestBackend` buffers into the docs SVG
-previews consumed by `/reference/tui-lookbook/`.
+previews consumed by `/reference/tui-lookbook/`. CI checks the committed
+previews with `cargo run -p jackin-tui --bin tui-lookbook -- --check
+docs/public/tui-lookbook`.
 
 | Component / pattern | Owner | Current call sites | Maturity | Notes |
 |---|---|---|---|---|
