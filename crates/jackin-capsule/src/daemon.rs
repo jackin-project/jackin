@@ -183,6 +183,15 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
+    /// Ratatui terminal backed by [`SocketBackend`].
+    ///
+    /// Chrome widgets (status bar, pane boxes, dialogs) will progressively
+    /// migrate from raw ANSI to this terminal so they can use shared
+    /// `jackin-tui` components. For now it is initialized alongside the
+    /// daemon and kept in sync with resize events but not yet used for
+    /// frame output — the raw ANSI path in `compose_full_frame` /
+    /// `compose_partial_frame` still owns all rendering.
+    ratatui_terminal: ratatui::Terminal<crate::socket_backend::SocketBackend>,
 }
 
 /// Three book-keeping fields for a background context lookup. They
@@ -503,6 +512,10 @@ impl Multiplexer {
             workdir,
             workdir_context,
             zai_key,
+            ratatui_terminal: ratatui::Terminal::new(
+                crate::socket_backend::SocketBackend::new(cols, rows),
+            )
+            .expect("SocketBackend::new never fails"),
         }
     }
 
@@ -1963,6 +1976,7 @@ impl Multiplexer {
         self.term_cols = cols;
         self.content_rows = self.available_content_rows();
         self.resize_panes();
+        self.ratatui_terminal.backend_mut().resize(cols, rows);
     }
 
     fn available_content_rows(&self) -> u16 {
