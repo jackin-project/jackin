@@ -677,17 +677,17 @@ fn update_scroll_focus(
             };
             if point_in(mouse, left_pane_area) {
                 // Click in left pane: activate left pane, clear right focus.
-                state.list_names_focused = true;
-                state.list_scroll_focus = None;
+                dispatch_manager(state, ManagerMessage::SetListNamesFocused(true));
+                dispatch_manager(state, ManagerMessage::SetListScrollFocus(None));
                 return;
             }
-            state.list_names_focused = false;
+            dispatch_manager(state, ManagerMessage::SetListNamesFocused(false));
 
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
-                state.list_scroll_focus = None;
+                dispatch_manager(state, ManagerMessage::SetListScrollFocus(None));
                 return;
             };
-            state.list_scroll_focus = if point_in(mouse, areas.workspace.area) {
+            let focus = if point_in(mouse, areas.workspace.area) {
                 Some(MountScrollFocus::Workspace)
             } else if point_in(mouse, areas.global.area) && areas.global.area.height > 0 {
                 Some(MountScrollFocus::Global)
@@ -698,6 +698,7 @@ fn update_scroll_focus(
             } else {
                 None
             };
+            dispatch_manager(state, ManagerMessage::SetListScrollFocus(focus));
         }
         ManagerStage::Editor(editor) => {
             if editor.active_tab == EditorTab::Mounts {

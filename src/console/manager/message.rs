@@ -8,7 +8,8 @@ use super::auth_kind::AuthKind;
 use super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
 use super::state::{
     CreatePreludeState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
-    ManagerListRow, ManagerStage, ManagerState, SecretsScopeTag, SettingsState, SettingsTab,
+    ManagerListRow, ManagerStage, ManagerState, MountScrollFocus, SecretsScopeTag, SettingsState,
+    SettingsTab,
 };
 use crate::config::AppConfig;
 use jackin_tui::runtime::{NoEffect, UpdateResult};
@@ -141,6 +142,8 @@ pub(crate) enum ManagerMessage {
     ReturnToList,
     ScrollListHorizontal(i16),
     ScrollFocusedListBlockVertical(i16),
+    SetListScrollFocus(Option<MountScrollFocus>),
+    SetListNamesFocused(bool),
 }
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
@@ -273,6 +276,12 @@ pub(crate) fn update_manager(
         ManagerMessage::ScrollListHorizontal(delta) => scroll_list_horizontal(state, delta),
         ManagerMessage::ScrollFocusedListBlockVertical(delta) => {
             scroll_focused_mount_block_vertical(state, delta);
+        }
+        ManagerMessage::SetListScrollFocus(focus) => {
+            state.list_scroll_focus = focus;
+        }
+        ManagerMessage::SetListNamesFocused(focused) => {
+            state.list_names_focused = focused;
         }
     }
     UpdateResult::redraw()
