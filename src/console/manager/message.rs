@@ -7,8 +7,8 @@
 use super::auth_kind::AuthKind;
 use super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
 use super::state::{
-    EditorTab, FieldFocus, InstanceRefreshSnapshot, ManagerListRow, ManagerStage, ManagerState,
-    SecretsScopeTag, SettingsTab,
+    CreatePreludeState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
+    ManagerListRow, ManagerStage, ManagerState, SecretsScopeTag, SettingsState, SettingsTab,
 };
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
@@ -18,9 +18,19 @@ pub(crate) enum ManagerMessage {
     CollapseSelectedTree,
     ClearEditorAuthKind,
     EnterPreview,
+    EnterConfirmDelete {
+        name: String,
+    },
+    EnterConfirmInstancePurge {
+        container: String,
+        label: String,
+    },
+    EnterCreatePrelude(CreatePreludeState<'static>),
+    EnterEditor(EditorState<'static>),
     EnterEditorAuthKind {
         kind: AuthKind,
     },
+    EnterSettings(SettingsState<'static>),
     InstancesRefreshed(Result<InstanceRefreshSnapshot, String>),
     FocusEditorContent,
     FocusEditorTabBar,
@@ -133,7 +143,20 @@ pub(crate) fn update_manager(
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
         ManagerMessage::ClearEditorAuthKind => clear_editor_auth_kind(state),
         ManagerMessage::EnterPreview => state.preview_focused = true,
+        ManagerMessage::EnterConfirmDelete { name } => enter_confirm_delete(state, name),
+        ManagerMessage::EnterConfirmInstancePurge { container, label } => {
+            enter_confirm_instance_purge(state, container, label);
+        }
+        ManagerMessage::EnterCreatePrelude(prelude) => {
+            state.stage = ManagerStage::CreatePrelude(prelude);
+        }
+        ManagerMessage::EnterEditor(editor) => {
+            state.stage = ManagerStage::Editor(editor);
+        }
         ManagerMessage::EnterEditorAuthKind { kind } => enter_editor_auth_kind(state, kind),
+        ManagerMessage::EnterSettings(settings) => {
+            state.stage = ManagerStage::Settings(settings);
+        }
         ManagerMessage::InstancesRefreshed(result) => state.apply_instance_refresh(result),
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
@@ -271,6 +294,24 @@ fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
     editor.active_field = FieldFocus::Row(0);
     editor.tab_scroll_x = 0;
     editor.tab_scroll_y = 0;
+}
+
+fn enter_confirm_delete(state: &mut ManagerState<'_>, name: String) {
+    state.stage = ManagerStage::ConfirmDelete {
+        state: crate::console::widgets::confirm::ConfirmState::new(format!("Delete \"{name}\"?")),
+        name,
+    };
+}
+
+fn enter_confirm_instance_purge(state: &mut ManagerState<'_>, container: String, label: String) {
+    let prompt = format!(
+        "Purge \"{label}\"?\nThis removes the role container, DinD sidecar, volume, network, AND local recovery state. Cannot be undone."
+    );
+    state.stage = ManagerStage::ConfirmInstancePurge {
+        container,
+        label,
+        state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+    };
 }
 
 fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
@@ -881,9 +922,9 @@ mod tests {
     use super::{ManagerMessage, update_manager};
     use crate::console::manager::auth_kind::AuthKind;
     use crate::console::manager::state::{
-        AuthFormFocus, AuthFormReturnPath, AuthFormTarget, EditorState, EditorTab, FieldFocus,
-        ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
-        SettingsTab,
+        AuthFormFocus, AuthFormReturnPath, AuthFormTarget, CreatePreludeState, EditorState,
+        EditorTab, FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal,
+        SettingsState, SettingsTab,
     };
     use crate::console::widgets::auth_panel::AuthForm;
     use crate::console::widgets::error_popup::ErrorPopupState;
@@ -1324,6 +1365,69 @@ mod tests {
         assert!(update_manager(&mut state, ManagerMessage::ReturnToList).is_dirty());
 
         assert!(matches!(state.stage, ManagerStage::List));
+    }
+
+    #[test]
+    fn stage_entry_messages_open_requested_stage() {
+        let mut state = state_with_saved_count(0);
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::EnterSettings(SettingsState::from_config(
+                    &crate::config::AppConfig::default(),
+                )),
+            )
+            .is_dirty()
+        );
+        assert!(matches!(state.stage, ManagerStage::Settings(_)));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::EnterEditor(EditorState::new_edit(
+                    "workspace".into(),
+                    crate::workspace::WorkspaceConfig::default(),
+                )),
+            )
+            .is_dirty()
+        );
+        assert!(matches!(state.stage, ManagerStage::Editor(_)));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::EnterCreatePrelude(CreatePreludeState::new()),
+            )
+            .is_dirty()
+        );
+        assert!(matches!(state.stage, ManagerStage::CreatePrelude(_)));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::EnterConfirmDelete {
+                    name: "workspace".into(),
+                },
+            )
+            .is_dirty()
+        );
+        assert!(matches!(state.stage, ManagerStage::ConfirmDelete { .. }));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::EnterConfirmInstancePurge {
+                    container: "jk-test".into(),
+                    label: "jk-test (rust)".into(),
+                },
+            )
+            .is_dirty()
+        );
+        assert!(matches!(
+            state.stage,
+            ManagerStage::ConfirmInstancePurge { .. }
+        ));
     }
 
     #[test]

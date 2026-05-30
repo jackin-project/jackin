@@ -3,12 +3,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::super::super::widgets::{
-    ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
-};
+use super::super::super::widgets::{ModalOutcome, file_browser::FileBrowserState};
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::state::{
-    EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
+    CreatePreludeState, EditorState, FileBrowserTarget, ManagerListRow, ManagerState, Modal,
     ProviderPickerState, SettingsState,
 };
 use super::InputOutcome;
@@ -91,12 +89,12 @@ pub(super) fn handle_list_key(
         KeyCode::Enter => match state.selected_row() {
             ManagerListRow::CurrentDirectory => Ok(InputOutcome::LaunchCurrentDir),
             ManagerListRow::NewWorkspace => {
-                let mut prelude = super::super::state::CreatePreludeState::new();
+                let mut prelude = CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
                     target: FileBrowserTarget::CreateFirstMountSrc,
                     state: FileBrowserState::new_from_home()?,
                 });
-                state.stage = ManagerStage::CreatePrelude(prelude);
+                dispatch_manager(state, ManagerMessage::EnterCreatePrelude(prelude));
                 Ok(InputOutcome::Continue)
             }
             ManagerListRow::SavedWorkspace(i) => Ok(state
@@ -122,8 +120,13 @@ pub(super) fn handle_list_key(
                     if let Some(summary) = state.workspaces.get(i) {
                         let name = summary.name.clone();
                         if let Some(ws) = config.workspaces.get(&name) {
-                            state.stage =
-                                ManagerStage::Editor(EditorState::new_edit(name, ws.clone()));
+                            dispatch_manager(
+                                state,
+                                ManagerMessage::EnterEditor(EditorState::new_edit(
+                                    name,
+                                    ws.clone(),
+                                )),
+                            );
                         }
                     }
                 }
@@ -153,12 +156,12 @@ pub(super) fn handle_list_key(
                     });
                 }
             } else {
-                let mut prelude = super::super::state::CreatePreludeState::new();
+                let mut prelude = CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
                     target: FileBrowserTarget::CreateFirstMountSrc,
                     state: FileBrowserState::new_from_home()?,
                 });
-                state.stage = ManagerStage::CreatePrelude(prelude);
+                dispatch_manager(state, ManagerMessage::EnterCreatePrelude(prelude));
             }
             Ok(InputOutcome::Continue)
         }
@@ -171,10 +174,7 @@ pub(super) fn handle_list_key(
                 ManagerListRow::SavedWorkspace(i) => {
                     if let Some(ws) = state.workspaces.get(i) {
                         let name = ws.name.clone();
-                        state.stage = ManagerStage::ConfirmDelete {
-                            name: name.clone(),
-                            state: ConfirmState::new(format!("Delete \"{name}\"?")),
-                        };
+                        dispatch_manager(state, ManagerMessage::EnterConfirmDelete { name });
                     }
                 }
             }
@@ -216,7 +216,10 @@ pub(super) fn handle_list_key(
                 ManagerListRow::WorkspaceInstance(_, _)
                     | ManagerListRow::CurrentDirectoryInstance(_)
             ) {
-                state.stage = ManagerStage::Settings(SettingsState::from_config(config));
+                dispatch_manager(
+                    state,
+                    ManagerMessage::EnterSettings(SettingsState::from_config(config)),
+                );
             }
             Ok(InputOutcome::Continue)
         }
@@ -284,14 +287,10 @@ fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
             || container.clone(),
             |entry| format!("{} ({})", entry.container_base, entry.role_key),
         );
-    let prompt = format!(
-        "Purge \"{label}\"?\nThis removes the role container, DinD sidecar, volume, network, AND local recovery state. Cannot be undone."
+    dispatch_manager(
+        state,
+        ManagerMessage::EnterConfirmInstancePurge { container, label },
     );
-    state.stage = ManagerStage::ConfirmInstancePurge {
-        container,
-        label,
-        state: crate::console::widgets::confirm::ConfirmState::new(prompt),
-    };
     InputOutcome::Continue
 }
 
