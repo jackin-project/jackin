@@ -373,7 +373,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 6. **No `StatefulWidget`/`WidgetRef`.** Every renderer is a free `fn(frame, area, &mut state)`. The `unstable-widget-ref` feature is enabled in <RepoFile path="Cargo.toml" /> but unused — there are no reusable widget components implementing the Ratatui widget traits.
 
-7. **Three coexisting modal-stack shapes.** A `Vec<Modal>` stack (correct), legacy stash slots (`pending_auth_form_return`, `pending_env_key`, …), and a bare `Option<Modal>` slot the [TUI Design Decisions](/reference/tui-design-decisions/) page already flags as an invalid shape that cannot represent a parent-under-child.
+7. **Three coexisting modal-stack shapes.** — *resolved:* `AuthFormReturnPath` stash slots (`pending_auth_form_return` on both `EditorState` and `SettingsAuthState`) retired; `EditorState.pending_env_key` retired (now embedded in `Modal::SourcePicker { env_key: … }`); auth parent stack now `Vec<SettingsAuthModal>`. `SettingsEnvState.pending_env_key` for the settings env-add flow is a distinct field that remains intentionally.
 
 8. **DRY drift from symmetric variants.** `sidebar_inputs_for_workspace` vs. `sidebar_inputs_for_current_dir` in <RepoFile path="src/console/manager/render/list.rs" /> are near-identical bodies; the same workspace-vs-current-dir distinction is repeated in `focused_block_still_scrollable`, `clamp_list_scroll_for_area`, and the mouse `update_scroll_focus` handler — four call sites that must stay in lock-step.
 
@@ -381,13 +381,13 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 ## Current state — `jackin-capsule` multiplexer
 
-The in-container control plane (the [jackin' Capsule](/reference/roadmap/jackin-capsule/) program) is a small tmux-like PTY multiplexer. It uses `crossterm` only for `enable_raw_mode`/`disable_raw_mode` and `terminal::size()` in <RepoFile path="crates/jackin-capsule/src/client.rs" />. **It does not depend on Ratatui.**
+The in-container control plane (the [jackin' Capsule](/reference/roadmap/jackin-capsule/) program) is a small tmux-like PTY multiplexer. It now renders fully through Ratatui via a custom `SocketBackend` that serializes `Buffer::diff` diffs to the attach socket; the `crossterm` dependency remains only for `enable_raw_mode`/`disable_raw_mode` and `terminal::size()` in <RepoFile path="crates/jackin-capsule/src/client.rs" />.
 
-### Anti-patterns
+### Anti-patterns (initial state — now resolved or in progress)
 
-1. **All rendering is hand-rolled raw ANSI** into a `Vec<u8>` — direct `write!(buf, "\x1b[{};{}H", …)` cursor moves and inline SGR byte sequences in <RepoFile path="crates/jackin-capsule/src/render.rs" />, <RepoFile path="crates/jackin-capsule/src/dialog.rs" />, and the status bar. There is a hand-rolled SGR serializer and a hand-rolled CSI re-serializer (the latter untested) in <RepoFile path="crates/jackin-capsule/src/session.rs" />.
+1. **All rendering is hand-rolled raw ANSI** — *resolved:* chrome, pane bodies, and ALL dialog variants now render through Ratatui widgets. The raw-ANSI `compose_full_frame` is a fallback only. The hand-rolled SGR serializer in `session.rs` remains for the PTY output relay (not jackin-owned chrome).
 
-2. **A hand-rolled row diff re-implements `Buffer::diff`.** `PaneBodyCache` builds a `Vec<RowSnapshot>` from the `vt100::Screen`, compares it cell-by-cell against the cached previous snapshot, and emits only changed rows. This is exactly the job Ratatui's `Buffer` double-buffer does — re-built by hand.
+2. **A hand-rolled row diff re-implements `Buffer::diff`.** — *resolved:* `PaneBodyCache` has been replaced by `PaneBodyWidget` + Ratatui's `Buffer::diff` via the `SocketBackend`; see ADR-004.
 
 3. **A ~6,900-line god-struct.** `Multiplexer` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> owns rendering, input parsing, network I/O, git/PR context polling, session lifecycle, the dialog stack, and mouse drag/selection in one file and one compilation unit.
 
