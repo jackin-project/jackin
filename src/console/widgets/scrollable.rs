@@ -9,7 +9,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::scroll;
 
 pub(crate) const fn viewport_width(area: Rect) -> usize {
     area.width.saturating_sub(2) as usize
@@ -20,31 +21,15 @@ pub(crate) const fn viewport_height(area: Rect) -> usize {
 }
 
 pub(crate) const fn max_offset(content_len: usize, viewport: usize) -> u16 {
-    if viewport == 0 || content_len <= viewport {
-        0
-    } else {
-        let max = content_len.saturating_sub(viewport);
-        // Silent truncation: an overflow greater than u16::MAX cannot be fully
-        // addressed by a u16 scroll offset. Debug builds surface this.
-        debug_assert!(
-            max <= u16::MAX as usize,
-            "scroll overflow (content_len - viewport) exceeds u16::MAX — scrollbar position truncated"
-        );
-        if max > u16::MAX as usize {
-            u16::MAX
-        } else {
-            max as u16
-        }
-    }
+    scroll::max_offset_u16(content_len, viewport)
 }
 
 pub(crate) const fn is_scrollable(content_len: usize, viewport: usize) -> bool {
-    viewport > 0 && content_len > viewport
+    scroll::is_scrollable(content_len, viewport)
 }
 
 pub(crate) const fn effective_offset(content_len: usize, viewport: usize, offset: u16) -> u16 {
-    let max = max_offset(content_len, viewport);
-    if offset > max { max } else { offset }
+    scroll::effective_offset_u16(content_len, viewport, offset)
 }
 
 pub(crate) const fn clamp_scroll_offset(
@@ -52,23 +37,7 @@ pub(crate) const fn clamp_scroll_offset(
     viewport: usize,
     offset: &mut u16,
 ) -> u16 {
-    let effective = effective_offset(content_len, viewport, *offset);
-    *offset = effective;
-    effective
-}
-
-pub(crate) fn scrollbar_position_for_offset(
-    content_length: usize,
-    viewport: usize,
-    offset: usize,
-) -> u16 {
-    if is_scrollable(content_length, viewport) {
-        offset
-            .min(content_length.saturating_sub(viewport))
-            .min(usize::from(u16::MAX)) as u16
-    } else {
-        0
-    }
+    scroll::clamp_offset_u16(content_len, viewport, offset)
 }
 
 pub(crate) fn cursor_follow_offset(
@@ -77,26 +46,8 @@ pub(crate) fn cursor_follow_offset(
     viewport: usize,
     stored_offset: u16,
 ) -> u16 {
-    if viewport == 0 {
-        return 0;
-    }
-
-    let max = max_offset(content_length, viewport);
-    let stored = stored_offset.min(max);
-    let stored_usize = usize::from(stored);
-    let raw = if cursor < stored_usize {
-        cursor.min(usize::from(u16::MAX)) as u16
-    } else if is_scrollable(content_length, viewport)
-        && cursor >= stored_usize.saturating_add(viewport)
-    {
-        cursor
-            .saturating_add(1)
-            .saturating_sub(viewport)
-            .min(usize::from(u16::MAX)) as u16
-    } else {
-        stored
-    };
-    raw.min(max)
+    scroll::cursor_follow_offset(cursor, content_length, viewport, usize::from(stored_offset))
+        .min(usize::from(u16::MAX)) as u16
 }
 
 fn scrollbar_thumb_geometry(
@@ -105,24 +56,15 @@ fn scrollbar_thumb_geometry(
     track_len: usize,
     offset: usize,
 ) -> (usize, usize) {
-    if !is_scrollable(content_length, viewport) || track_len == 0 {
-        return (0, 0);
-    }
-
-    // is_scrollable guarantees content_length > viewport >= 1, so both divisions are safe.
-    debug_assert!(content_length >= 1 && content_length > viewport);
-    let thumb_len = (track_len.saturating_mul(viewport) / content_length)
-        .max(1)
-        .min(track_len);
-    let max_start = track_len.saturating_sub(thumb_len);
-    let max_offset = content_length.saturating_sub(viewport);
-    let offset = offset.min(max_offset);
-    let thumb_start = offset
-        .saturating_mul(max_start)
-        .saturating_add(max_offset / 2)
-        / max_offset;
-
-    (thumb_start, thumb_len)
+    scroll::full_cell_thumb(
+        content_length,
+        viewport,
+        track_len.min(usize::from(u16::MAX)) as u16,
+        offset,
+    )
+    .map_or((0, 0), |thumb| {
+        (usize::from(thumb.start), usize::from(thumb.len))
+    })
 }
 
 pub(crate) fn scrollbar_offset_for_track_position(
@@ -131,71 +73,92 @@ pub(crate) fn scrollbar_offset_for_track_position(
     track_len: usize,
     track_position: usize,
 ) -> u16 {
-    if !is_scrollable(content_length, viewport) || track_len == 0 {
-        return 0;
-    }
-
-    let max_scroll = content_length.saturating_sub(viewport);
-    let max_position = track_len.saturating_sub(1);
-    if max_position == 0 {
-        return 0;
-    }
-
-    // max_position >= 1: guarded by the explicit return above.
-    debug_assert!(max_position >= 1);
-    let position = track_position.min(max_position);
-    let offset = position
-        .saturating_mul(max_scroll)
-        .saturating_add(max_position / 2)
-        / max_position;
-    offset.min(usize::from(u16::MAX)) as u16
+    scroll::offset_for_track_position_u16(content_length, viewport, track_len, track_position)
 }
 
 // No upper clamp: every caller's render path calls effective_offset, which clamps.
-pub(crate) const fn apply_scroll_delta(value: &mut u16, delta: i16) {
-    *value = if delta.is_negative() {
-        value.saturating_sub(delta.unsigned_abs())
-    } else {
-        value.saturating_add(delta as u16)
-    };
+pub(crate) const fn apply_scroll_delta_unclamped(value: &mut u16, delta: i16) {
+    scroll::apply_delta_unclamped_u16(value, delta);
 }
 
-pub(crate) fn apply_horizontal_scroll_delta(
+pub(crate) fn apply_scroll_delta(value: &mut u16, delta: i16, viewport: usize, content_len: usize) {
+    scroll::apply_delta_u16(content_len, viewport, value, isize::from(delta));
+}
+
+pub(crate) fn apply_term_width_scroll_delta(
     value: &mut u16,
     delta: i16,
-    viewport: usize,
+    term_width: u16,
     content_width: usize,
 ) {
-    let max = max_offset(content_width, viewport);
-    let current = (*value).min(max);
-    let next = if delta.is_negative() {
-        current.saturating_sub(delta.unsigned_abs())
-    } else {
-        current.saturating_add(delta as u16)
-    };
-    *value = next.min(max);
+    apply_scroll_delta(
+        value,
+        delta,
+        usize::from(term_width.saturating_sub(2)),
+        content_width,
+    );
 }
 
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
     line.spans
         .iter()
-        .map(|span| span.content.chars().count())
+        .map(|span| jackin_tui::display_cols(&span.content))
         .sum()
+}
+
+pub(crate) fn render_line_with_fixed_prefix_scroll(
+    frame: &mut Frame,
+    area: Rect,
+    row: u16,
+    line: Line<'static>,
+    fixed_prefix_cols: usize,
+    scroll_x: usize,
+) {
+    let mut fill_style = line.style;
+    let mut styled_spans = Vec::new();
+    let mut base_col = 0usize;
+    for span in line.spans {
+        let style = line.style.patch(span.style);
+        if fill_style.bg.is_none() && style.bg.is_some() {
+            fill_style = style;
+        }
+        let span_width = jackin_tui::display_cols(&span.content);
+        styled_spans.push((span.content.into_owned(), style, base_col));
+        base_col += span_width;
+    }
+
+    let width = usize::from(area.width);
+    for col in 0..width {
+        frame
+            .buffer_mut()
+            .set_string(area.x + col as u16, area.y + row, " ", fill_style);
+    }
+
+    for (text, style, base_col) in styled_spans {
+        for segment in jackin_tui::fixed_prefix_scroll_segments(
+            &text,
+            base_col,
+            fixed_prefix_cols,
+            scroll_x,
+            width,
+        ) {
+            frame.buffer_mut().set_string(
+                area.x + segment.target_col as u16,
+                area.y + row,
+                &text[segment.start_byte..segment.end_byte],
+                style,
+            );
+            for col in segment.target_col..segment.target_col + segment.display_cols {
+                frame.buffer_mut()[(area.x + col as u16, area.y + row)].set_style(style);
+            }
+        }
+    }
 }
 
 // Trailing padding mirrors leading spaces so indented content scrolls
 // symmetrically — without it the rightmost indent column is unreachable.
 fn leading_space_count(line: &Line<'_>) -> usize {
-    let mut count = 0;
-    for span in &line.spans {
-        for ch in span.content.chars() {
-            if ch != ' ' {
-                return count;
-            }
-            count += 1;
-        }
-    }
-    count
+    jackin_tui::leading_space_cols(line.spans.iter().map(|span| span.content.as_ref()))
 }
 
 pub(crate) fn max_line_width(lines: &[Line<'_>]) -> usize {
@@ -204,7 +167,11 @@ pub(crate) fn max_line_width(lines: &[Line<'_>]) -> usize {
     // wide, so content_width must reflect it to keep the scrollbar range correct.
     lines
         .iter()
-        .map(|l| line_width(l).saturating_add(leading_space_count(l)))
+        .map(|line| {
+            jackin_tui::padded_line_display_cols(
+                line.spans.iter().map(|span| span.content.as_ref()),
+            )
+        })
         .max()
         .unwrap_or(0)
 }
@@ -247,13 +214,12 @@ pub(crate) fn render_horizontal_scrollbar(
     if !is_scrollable(content_width, viewport) {
         return;
     }
-    let position = scrollbar_position_for_offset(content_width, viewport, usize::from(scroll_x));
     let area = horizontal_scrollbar_area(block_area);
     frame.render_widget(
         FixedScrollbar {
             content_length: content_width,
             viewport,
-            position,
+            offset: scroll_x,
             orientation: FixedScrollbarOrientation::Horizontal,
         },
         area,
@@ -284,12 +250,11 @@ pub(crate) fn render_vertical_scrollbar_in_area(
     if !is_scrollable(content_height, viewport) || area.height == 0 {
         return;
     }
-    let position = scrollbar_position_for_offset(content_height, viewport, usize::from(scroll_y));
     frame.render_widget(
         FixedScrollbar {
             content_length: content_height,
             viewport,
-            position,
+            offset: scroll_y,
             orientation: FixedScrollbarOrientation::Vertical,
         },
         area,
@@ -353,7 +318,7 @@ enum FixedScrollbarOrientation {
 struct FixedScrollbar {
     content_length: usize,
     viewport: usize,
-    position: u16,
+    offset: u16,
     orientation: FixedScrollbarOrientation,
 }
 
@@ -371,7 +336,7 @@ impl Widget for FixedScrollbar {
             self.content_length,
             self.viewport,
             track_len,
-            usize::from(self.position),
+            usize::from(self.offset),
         );
         let thumb_end = thumb_start.saturating_add(thumb_len);
         // Hoist orientation constants out of the per-cell loop.
@@ -380,8 +345,8 @@ impl Widget for FixedScrollbar {
                 FixedScrollbarOrientation::Horizontal => ("━", "·", area.x, area.y, 1, 0),
                 FixedScrollbarOrientation::Vertical => ("█", "·", area.x, area.y, 0, 1),
             };
-        let thumb_style = Style::default().fg(PHOSPHOR_DIM);
-        let track_style = Style::default().fg(PHOSPHOR_DARK);
+        let thumb_style = Style::default().fg(DIALOG_SCROLL_THUMB);
+        let track_style = Style::default().fg(DIALOG_SCROLL_TRACK);
         for idx in 0..track_len {
             let in_thumb = (thumb_start..thumb_end).contains(&idx);
             let i = idx as u16;
@@ -443,12 +408,13 @@ pub(crate) fn render_scrollable_block(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_horizontal_scroll_delta, clamp_scroll_offset, cursor_follow_offset,
-        render_scrollable_block, render_selected_lines_in_area, render_vertical_scrollbar_in_area,
-        scrollbar_offset_for_track_position, scrollbar_position_for_offset,
-        scrollbar_thumb_geometry,
+        apply_scroll_delta, apply_scroll_delta_unclamped, clamp_scroll_offset,
+        cursor_follow_offset, render_line_with_fixed_prefix_scroll, render_scrollable_block,
+        render_selected_lines_in_area, render_vertical_scrollbar_in_area,
+        scrollbar_offset_for_track_position, scrollbar_thumb_geometry,
     };
-    use ratatui::{Terminal, backend::TestBackend, layout::Rect, text::Line};
+    use crate::console::widgets::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_GREEN};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Style, text::Line};
 
     #[test]
     fn scrollbar_thumb_length_is_offset_invariant() {
@@ -456,7 +422,7 @@ mod tests {
             .map(|offset| scrollbar_thumb_geometry(12, 10, 10, offset).1)
             .collect();
 
-        assert_eq!(lengths, vec![8, 8, 8]);
+        assert_eq!(lengths, vec![9, 9, 9]);
     }
 
     #[test]
@@ -481,9 +447,27 @@ mod tests {
             (0..10).filter(|y| buffer[(0, *y)].symbol() == "█").count()
         }
 
-        assert_eq!(rendered_thumb_len(0), 8);
-        assert_eq!(rendered_thumb_len(1), 8);
-        assert_eq!(rendered_thumb_len(2), 8);
+        assert_eq!(rendered_thumb_len(0), 9);
+        assert_eq!(rendered_thumb_len(1), 9);
+        assert_eq!(rendered_thumb_len(2), 9);
+    }
+
+    #[test]
+    fn scrollbar_uses_shared_dialog_scroll_palette() {
+        let backend = TestBackend::new(1, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_vertical_scrollbar_in_area(frame, Rect::new(0, 0, 1, 10), 20, 5, 0);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "█");
+        assert_eq!(buffer[(0, 0)].fg, DIALOG_SCROLL_THUMB);
+        assert_eq!(buffer[(0, 9)].symbol(), "·");
+        assert_eq!(buffer[(0, 9)].fg, DIALOG_SCROLL_TRACK);
     }
 
     #[test]
@@ -508,12 +492,76 @@ mod tests {
     }
 
     #[test]
-    fn apply_scroll_delta_moves_from_clamped_offset() {
+    fn apply_scroll_delta_unclamped_moves_from_current_offset() {
         let mut scroll_x = 40;
 
-        super::apply_scroll_delta(&mut scroll_x, -8);
+        apply_scroll_delta_unclamped(&mut scroll_x, -8);
 
         assert_eq!(scroll_x, 32);
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_keeps_prefix_and_background_visible() {
+        let backend = TestBackend::new(8, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let style = Style::default().bg(PHOSPHOR_GREEN);
+        let line = Line::styled("▸  abcdef  ", style);
+
+        terminal
+            .draw(|frame| {
+                render_line_with_fixed_prefix_scroll(frame, Rect::new(0, 0, 8, 1), 0, line, 3, 2);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "▸");
+        assert_eq!(buffer[(3, 0)].symbol(), "c");
+        for x in 0..8 {
+            assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_fills_background_past_short_suffix() {
+        let backend = TestBackend::new(8, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let style = Style::default().bg(PHOSPHOR_GREEN);
+        let line = Line::styled("▸  abc", style);
+
+        terminal
+            .draw(|frame| {
+                render_line_with_fixed_prefix_scroll(frame, Rect::new(0, 0, 8, 1), 0, line, 3, 5);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "▸");
+        for x in 0..8 {
+            assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
+    }
+
+    #[test]
+    fn fixed_prefix_scroll_uses_display_columns_for_wide_chars() {
+        let backend = TestBackend::new(8, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let style = Style::default().bg(PHOSPHOR_GREEN);
+        let line = Line::styled("▸  a日本z", style);
+
+        terminal
+            .draw(|frame| {
+                render_line_with_fixed_prefix_scroll(frame, Rect::new(0, 0, 8, 1), 0, line, 3, 1);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "▸");
+        assert_eq!(buffer[(3, 0)].symbol(), "日");
+        assert_eq!(buffer[(5, 0)].symbol(), "本");
+        assert_eq!(buffer[(7, 0)].symbol(), "z");
+        for x in [0, 1, 2, 3, 5, 7] {
+            assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
     }
 
     #[test]
@@ -527,17 +575,6 @@ mod tests {
         assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 2), 0);
         assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 5), 1);
         assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 9), 2);
-    }
-
-    #[test]
-    fn scrollbar_position_maps_visible_end_to_track_end() {
-        assert_eq!(scrollbar_position_for_offset(13, 10, 0), 0);
-        assert_eq!(scrollbar_position_for_offset(13, 10, 3), 3);
-    }
-
-    #[test]
-    fn scrollbar_position_clamps_overscroll() {
-        assert_eq!(scrollbar_position_for_offset(13, 10, 99), 3);
     }
 
     #[test]
@@ -656,25 +693,25 @@ mod tests {
     }
 
     #[test]
-    fn apply_horizontal_scroll_delta_clamps_at_max() {
+    fn apply_scroll_delta_clamps_at_max() {
         // content=12, viewport=5 → max=7. Start at 3, delta +10 → clamped to 7.
         let mut value: u16 = 3;
-        apply_horizontal_scroll_delta(&mut value, 10, 5, 12);
+        apply_scroll_delta(&mut value, 10, 5, 12);
         assert_eq!(value, 7);
     }
 
     #[test]
-    fn apply_horizontal_scroll_delta_corrects_overclamped_initial_value() {
+    fn apply_scroll_delta_corrects_overclamped_initial_value() {
         // value already above max; delta +1 should produce max, not max+1+stale_excess.
         let mut value: u16 = 20;
-        apply_horizontal_scroll_delta(&mut value, 1, 5, 12); // max=7, current=20.min(7)=7, 7+1=8>7 → 7
+        apply_scroll_delta(&mut value, 1, 5, 12); // max=7, current=20.min(7)=7, 7+1=8>7 → 7
         assert_eq!(value, 7);
     }
 
     #[test]
-    fn apply_horizontal_scroll_delta_saturates_at_zero() {
+    fn apply_scroll_delta_saturates_at_zero() {
         let mut value: u16 = 0;
-        apply_horizontal_scroll_delta(&mut value, -5, 5, 12);
+        apply_scroll_delta(&mut value, -5, 5, 12);
         assert_eq!(value, 0);
     }
 
@@ -697,10 +734,7 @@ mod tests {
         assert_eq!(len_0, len_1, "thumb length must be offset-invariant");
         assert_eq!(start_0, 0);
         assert!(start_1 > 0);
-        assert!(
-            start_1 + len_1 <= 10,
-            "thumb must stay in track at max offset"
-        );
+        assert_eq!(start_1 + len_1, 10, "thumb must reach track end");
     }
 
     #[test]

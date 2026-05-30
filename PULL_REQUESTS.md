@@ -70,7 +70,7 @@ Required pattern for docs-only PRs:
 1. **Checkout block** — same as any other PR.
 2. **Docs checks** — run the automated docs verification gate (the `### Docs checks` block from the template): `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. These catch broken builds, dead repo links, type errors, and failing docs tests before the manual walk.
 3. **Run the docs site locally** — `cd docs && bun install --frozen-lockfile && bun run dev`. Astro serves at `http://localhost:4321/`.
-4. **Direct links to every changed page** — for each affected MDX file, include a localhost URL the operator can click straight into. Map `docs/src/content/docs/<path>.mdx` to `http://localhost:4321/<path>/`. For new pages, also tell the operator which sidebar group the entry should appear under, so they can confirm the navigation lands in the right place.
+4. **Direct links to every changed page** — for each affected MDX file, include a localhost URL the operator can click straight into. Map `docs/content/docs/<path>.mdx` to `http://localhost:4321/<path>/`. For new pages, also tell the operator which sidebar group the entry should appear under, so they can confirm the navigation lands in the right place.
 
 A `.mdx`-only PR that omits the Docs checks gate or the local-render step is incomplete. The Files-changed tab is the operator's last-resort fallback, not the primary review surface.
 
@@ -100,6 +100,7 @@ cd jackin
 mise trust
 git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
+mise trust
 mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
@@ -265,13 +266,13 @@ Missing or stale fixtures under `tests/fixtures/migrations/` break the smooth-mi
 
 ### Accepted-exceptions catalog
 
-Do not flag items listed under "Accepted exceptions" on the [Open review findings](docs/src/content/docs/reference/roadmap/open-review-findings.mdx) roadmap catalog. Those items are retained intentionally and have been reviewed.
+Do not flag items listed under "Accepted exceptions" on the [Open review findings](docs/content/docs/reference/roadmap/open-review-findings.mdx) roadmap catalog. Those items are retained intentionally and have been reviewed.
 
 The catalog itself is a forward-looking backlog — consult it on demand when a review task calls for it. It is not operational context and should not be loaded at session start.
 
 ### Always check the PR against the jackin' design principles
 
-Every PR review must explicitly verify the change against the jackin' [design principles](docs/src/content/docs/getting-started/design-principles.mdx). Read that page before producing review output. If a change appears to contradict any principle (most commonly: *never mutate the host machine silently*, *operator-only configuration boundaries*, *container is the trust boundary, not the prompt*), flag it loudly in the review with a specific reference to which principle is at risk.
+Every PR review must explicitly verify the change against the jackin' [design principles](docs/content/docs/getting-started/design-principles.mdx). Read that page before producing review output. If a change appears to contradict any principle (most commonly: *never mutate the host machine silently*, *operator-only configuration boundaries*, *container is the trust boundary, not the prompt*), flag it loudly in the review with a specific reference to which principle is at risk.
 
 Don't silently let a principle violation pass because the diff is small or the operator seemed to want the shortcut. The whole point of the principles is that operators rely on them across every feature — a quietly-merged exception erodes that contract for every future PR.
 
@@ -283,7 +284,9 @@ The operator's call decides the outcome — the agent's job is to make sure the 
 
 ### Always check TUI changes against the TUI design decisions
 
-Every PR review that touches console, capsule, or any other terminal UI surface must explicitly verify the change against the jackin' [TUI design decisions](docs/src/content/docs/reference/tui-design-decisions.mdx). Read that page before producing review output. Reviewers must reject or flag TUI changes that miss the documented interaction cues: clickable targets need a distinct resting style, a visible hover style change, and pointer-shape feedback where supported; active keys need footer hints; focus and scroll geometry must use the shared rules.
+Every PR review that touches console, capsule, or any other terminal UI surface must explicitly verify the change against the jackin' [TUI design decisions](docs/content/docs/reference/tui-design-decisions.mdx). Read that page before producing review output. Reviewers must reject or flag TUI changes that miss the documented interaction cues: long-running or background work needs an explicit in-surface progress/status state; clickable targets need a distinct resting style, a visible hover style change, and pointer-shape feedback where supported; active keys need footer hints; focus and scroll geometry must use the shared rules.
+
+For every TUI action that can wait on I/O, Docker, git, network, a background worker, token generation, or any other noticeably slow operation, the review must answer: after the operator commits the action, what visible state tells them work is happening before the result appears? If the answer is "the screen stays unchanged until it finishes," the PR violates the TUI design decisions and must be fixed before it lands.
 
 Surface TUI issues like this:
 
@@ -296,7 +299,7 @@ When a PR ships the last remaining piece of a roadmap item — every feature, su
 1. **Confirm there is no remaining work.** Re-read the page top to bottom. Any "Remaining Work", "Future Work", "Phase N — open", or open question that is not actually shipped is a remaining-work signal — keep the page and update its status to `Partially implemented` instead.
 2. **Confirm no load-bearing inbound links.** `rg "roadmap/<slug>" docs/` from the repo root. References from the roadmap overview and the sidebar config are expected and get cleaned up below; references from *open* roadmap items mean the page is acting as an internal contract for unfinished work — keep it, or repoint those references first.
 3. **Audit every detail on the page and place it in its long-term home.** Operator behaviour goes to a `guides/` or `commands/` page so users can learn the feature without reading internals; design decisions, on-disk layout, struct/enum/function names, and architecture trade-offs go to `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, or another internals page so the next contributor reads accurate internals. The git history is the long-term archive of design rationale; the roadmap directory is not. Apply the **Documentation as the source of truth** rule in `AGENTS.md` for the audience split — never inline TOML schemas, on-disk paths, or struct names on the user-facing pages, and never put `jackin foo --bar` operator instructions on internals pages.
-4. **Replace the page with a single bullet in the Completed section** of `docs/src/content/docs/reference/roadmap.mdx`. The bullet names the feature in plain prose and links to the canonical user-facing or contributor-facing doc that now describes the shipped behaviour. No link back to a deleted roadmap page.
+4. **Replace the page with a single bullet in the Completed section** of `docs/content/docs/reference/roadmap/index.mdx`. The bullet names the feature in plain prose and links to the canonical user-facing or contributor-facing doc that now describes the shipped behaviour. No link back to a deleted roadmap page.
 5. **Repoint inbound references.** Update any open roadmap item, goal prompt, or contributor doc that linked to the deleted page; point them at the canonical home from step 3 instead.
 6. **Run the sidebar and overview audits** documented in `docs/AGENTS.md`. The sidebar audit must show no diff after deleting the entry from `docs/astro.config.ts`. The overview audit must continue to pass (every roadmap file is reachable from `roadmap.mdx` or covered by a parent program entry).
 7. **Run the docs verification gate.** `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. A retirement that breaks the build or repo-link references is incomplete.

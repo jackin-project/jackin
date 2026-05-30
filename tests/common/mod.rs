@@ -18,6 +18,13 @@ pub fn install_capsule_binary_stub(paths: &JackinPaths) {
     jackin::capsule_binary::install_test_stub(paths).expect("install jackin-capsule test stub");
 }
 
+#[allow(dead_code)]
+pub fn install_agent_binary_stubs(paths: &JackinPaths) {
+    for agent in jackin::agent::Agent::ALL {
+        jackin::agent_binary::install_test_stub(paths, *agent).expect("install agent binary stub");
+    }
+}
+
 /// Minimal no-op `DockerApi` stub. All operations return empty/success so
 /// `load_role` proceeds as if no containers exist.
 pub struct NoOpDocker;

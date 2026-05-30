@@ -526,15 +526,14 @@ fn build_confirm_save_lines(
     config: &AppConfig,
     collapse_lines: &[ratatui::text::Line<'static>],
 ) -> Vec<ratatui::text::Line<'static>> {
-    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
 
-    let phosphor_green = Color::Rgb(0, 255, 65);
-    let phosphor_dim = Color::Rgb(0, 140, 30);
-    let white = Color::Rgb(255, 255, 255);
-    let heading = Style::default().fg(white).add_modifier(Modifier::BOLD);
-    let value = Style::default().fg(phosphor_green);
-    let dim = Style::default().fg(phosphor_dim);
+    let heading = Style::default()
+        .fg(crate::console::widgets::WHITE)
+        .add_modifier(Modifier::BOLD);
+    let value = Style::default().fg(crate::console::widgets::PHOSPHOR_GREEN);
+    let dim = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
 
     let mut out: Vec<Line<'static>> = Vec::new();
 
@@ -851,10 +850,9 @@ fn append_env_map_diff_lines(
 fn collapse_section_lines(
     collapses: &[crate::workspace::Removal],
 ) -> Vec<ratatui::text::Line<'static>> {
-    use ratatui::style::{Color, Style};
+    use ratatui::style::Style;
     use ratatui::text::{Line, Span};
-    let phosphor_dim = Color::Rgb(0, 140, 30);
-    let style = Style::default().fg(phosphor_dim);
+    let style = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
     collapses
         .iter()
         .map(|r| {
@@ -2503,12 +2501,11 @@ pub(super) fn build_settings_save_lines(
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
 
-    let green = Color::Rgb(0, 255, 65);
-    let dim = Color::Rgb(0, 140, 30);
-    let white = Color::Rgb(255, 255, 255);
-    let heading = Style::default().fg(white).add_modifier(Modifier::BOLD);
-    let add_style = Style::default().fg(green);
-    let remove_style = Style::default().fg(dim);
+    let heading = Style::default()
+        .fg(crate::console::widgets::WHITE)
+        .add_modifier(Modifier::BOLD);
+    let add_style = Style::default().fg(crate::console::widgets::PHOSPHOR_GREEN);
+    let remove_style = Style::default().fg(crate::console::widgets::PHOSPHOR_DIM);
     let sep_style = Style::default().fg(Color::Rgb(0, 50, 12));
 
     let mut out: Vec<Line<'static>> = Vec::new();

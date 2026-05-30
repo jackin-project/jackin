@@ -19,9 +19,8 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{Context, Result};
-use jackin::capsule_binary::{
-    REQUIRED_VERSION, cached_binary_path, chmod_executable, container_arch,
-};
+use jackin::binary_artifact::{chmod_executable, container_arch};
+use jackin::capsule_binary::{REQUIRED_VERSION, cached_binary_path};
 use jackin::paths::JackinPaths;
 
 // Compile-time workspace root: reliable even when cwd differs.

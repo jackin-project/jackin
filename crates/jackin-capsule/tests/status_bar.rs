@@ -43,8 +43,8 @@ fn active_tab_background_differs_from_brand_pill() {
     let mut bar = StatusBar::new();
     let tab = Tab::new_single("Codex", 7);
     let s = render(&mut bar, 80, &[tab], 0, &[]);
-    let brand_green_bg = "\x1b[48;2;0;255;65m";
-    let active_tab_graphite_bg = "\x1b[48;2;42;42;42m";
+    let brand_green_bg = jackin_tui::ansi::rgb_bg(jackin_tui::PHOSPHOR_GREEN);
+    let active_tab_graphite_bg = jackin_tui::ansi::rgb_bg(jackin_tui::TAB_BG_ACTIVE);
     assert_eq!(
         s.matches(brand_green_bg).count(),
         1,

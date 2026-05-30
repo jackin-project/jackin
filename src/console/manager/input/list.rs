@@ -6,10 +6,10 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::super::super::widgets::{
     ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
 };
-use super::super::render::apply_scroll_delta;
+use super::super::render::apply_scroll_delta_unclamped;
 use super::super::state::{
     EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
-    SettingsState,
+    ProviderPickerState, SettingsState,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -21,7 +21,7 @@ pub(super) fn handle_list_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
     _paths: &JackinPaths,
-    _cwd: &std::path::Path,
+    cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     // Preview-pane navigation mode: the operator dropped focus into
@@ -64,15 +64,18 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Char('h' | 'H') => {
             scroll_list_horizontal(state, -8);
+            clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('l' | 'L') => {
             scroll_list_horizontal(state, 8);
+            clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             if state.list_scroll_focus.is_some() {
                 scroll_focused_mount_block_vertical(state, -3);
+                clamp_list_scroll_after_key(state, config, cwd);
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
@@ -88,6 +91,7 @@ pub(super) fn handle_list_key(
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             if state.list_scroll_focus.is_some() {
                 scroll_focused_mount_block_vertical(state, 3);
+                clamp_list_scroll_after_key(state, config, cwd);
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
@@ -151,7 +155,11 @@ pub(super) fn handle_list_key(
                         crate::console::widgets::agent_choice::AgentChoiceState::with_choices(
                             crate::agent::Agent::ALL.to_vec(),
                         );
-                    state.inline_new_session_picker = Some((container, picker));
+                    // The host config does not prove what env the already-running
+                    // Capsule daemon captured. Offer provider choices only from
+                    // daemon-owned flows that know `ZAI_API_KEY` exists there.
+                    let providers = Vec::new();
+                    state.inline_new_session_picker = Some((container, picker, providers));
                 } else {
                     state.list_modal = Some(Modal::ErrorPopup {
                         state: crate::console::widgets::error_popup::ErrorPopupState::new(
@@ -230,6 +238,21 @@ pub(super) fn handle_list_key(
         }
         _ => Ok(InputOutcome::Continue),
     }
+}
+
+fn clamp_list_scroll_after_key(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) {
+    let area = state.cached_term_size;
+    let body = ratatui::layout::Rect {
+        x: 0,
+        y: 2,
+        width: area.width,
+        height: area.height.saturating_sub(4),
+    };
+    super::super::render::clamp_list_scroll_for_area(body, state, config, cwd);
 }
 
 fn handle_tree_right(state: &mut ManagerState<'_>) {
@@ -643,16 +666,24 @@ pub(super) fn handle_new_session_picker(
     state: &mut ManagerState<'_>,
     key: KeyEvent,
 ) -> InputOutcome {
-    let Some((container, picker)) = state.inline_new_session_picker.as_mut() else {
+    let Some((container, picker, providers)) = state.inline_new_session_picker.as_mut() else {
         return InputOutcome::Continue;
     };
     match picker.handle_key(key) {
         ModalOutcome::Commit(agent) => {
             let container = container.clone();
-            state.inline_new_session_picker = None;
-            InputOutcome::InstanceAction {
-                container,
-                action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+            if providers.is_empty() || agent != crate::agent::Agent::Claude {
+                state.inline_new_session_picker = None;
+                InputOutcome::InstanceAction {
+                    container,
+                    action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+                }
+            } else {
+                let providers = providers.clone();
+                state.inline_new_session_picker = None;
+                state.inline_provider_picker =
+                    Some(ProviderPickerState::new(container, agent, providers));
+                InputOutcome::Continue
             }
         }
         ModalOutcome::Cancel => {
@@ -663,9 +694,84 @@ pub(super) fn handle_new_session_picker(
     }
 }
 
+/// Handle key events while the inline provider picker is open (shown after
+/// agent selection when multiple providers are available). Enter commits;
+/// Esc cancels; Up/Down navigate.
+pub(super) fn handle_inline_provider_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some(picker) = state.inline_provider_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            picker.move_up();
+            InputOutcome::Continue
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            picker.move_down();
+            InputOutcome::Continue
+        }
+        KeyCode::Enter => {
+            let Some(provider) = picker.selected_provider() else {
+                return InputOutcome::Continue;
+            };
+            let container = picker.context.clone();
+            let agent = picker.agent;
+            state.inline_provider_picker = None;
+            InputOutcome::NewSessionWithProvider {
+                container,
+                agent,
+                provider,
+            }
+        }
+        KeyCode::Esc => {
+            state.inline_provider_picker = None;
+            InputOutcome::Continue
+        }
+        _ => InputOutcome::Continue,
+    }
+}
+
+pub(super) fn handle_launch_provider_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some(picker) = state.launch_provider_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            picker.move_up();
+            InputOutcome::Continue
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            picker.move_down();
+            InputOutcome::Continue
+        }
+        KeyCode::Enter => {
+            let Some(provider) = picker.selected_provider() else {
+                return InputOutcome::Continue;
+            };
+            let picker = state.launch_provider_picker.take().expect("checked above");
+            InputOutcome::LaunchWithProvider {
+                selector: picker.context,
+                agent: picker.agent,
+                provider,
+            }
+        }
+        KeyCode::Esc => {
+            state.launch_provider_picker = None;
+            InputOutcome::Continue
+        }
+        _ => InputOutcome::Continue,
+    }
+}
+
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
     if state.list_names_focused {
-        apply_scroll_delta(&mut state.list_names_scroll_x, delta);
+        apply_scroll_delta_unclamped(&mut state.list_names_scroll_x, delta);
     } else {
         scroll_focused_mount_block(state, delta);
     }
@@ -676,7 +782,7 @@ const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
         return;
     };
     let value = state.list_scroll_x_mut(focus);
-    apply_scroll_delta(value, delta);
+    apply_scroll_delta_unclamped(value, delta);
 }
 
 const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
@@ -684,7 +790,7 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
         return;
     };
     let value = state.list_scroll_y_mut(focus);
-    apply_scroll_delta(value, delta);
+    apply_scroll_delta_unclamped(value, delta);
 }
 
 #[cfg(test)]
@@ -693,9 +799,10 @@ mod tests {
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
     use super::super::super::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use super::super::test_support::{key, mount};
-    use super::{InputOutcome, instance_action_accepts_status};
+    use super::{InputOutcome, handle_new_session_picker, instance_action_accepts_status};
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
+    use crate::console::widgets::agent_choice::AgentChoiceState;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
     use crate::paths::JackinPaths;
     use crate::workspace::WorkspaceConfig;
@@ -766,6 +873,108 @@ mod tests {
             status,
             updated_at: "2026-05-11T00:00:00Z".into(),
         }
+    }
+
+    fn provider_choices() -> Vec<jackin_protocol::Provider> {
+        vec![
+            jackin_protocol::Provider::Anthropic,
+            jackin_protocol::Provider::Zai,
+        ]
+    }
+
+    #[test]
+    fn new_session_provider_picker_only_opens_for_claude() {
+        let config = AppConfig::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Codex]);
+        picker.focused = crate::agent::Agent::Codex;
+        state.inline_new_session_picker =
+            Some(("jackin-demo-architect".into(), picker, provider_choices()));
+
+        let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect");
+                assert_eq!(
+                    action,
+                    crate::console::ConsoleInstanceAction::NewSessionWithAgent(
+                        crate::agent::Agent::Codex,
+                    )
+                );
+            }
+            other => panic!("expected direct new-session dispatch; got {other:?}"),
+        }
+        assert!(
+            state.inline_provider_picker.is_none(),
+            "non-Claude agents must not open the provider picker"
+        );
+    }
+
+    #[test]
+    fn new_session_provider_picker_opens_for_claude() {
+        let config = AppConfig::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Claude]);
+        picker.focused = crate::agent::Agent::Claude;
+        state.inline_new_session_picker =
+            Some(("jackin-demo-architect".into(), picker, provider_choices()));
+
+        let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+
+        assert!(matches!(outcome, InputOutcome::Continue));
+        let Some(picker) = state.inline_provider_picker else {
+            panic!("Claude with providers must open provider picker");
+        };
+        assert_eq!(picker.context, "jackin-demo-architect");
+        assert_eq!(picker.agent, crate::agent::Agent::Claude);
+        assert_eq!(picker.providers().len(), 2);
+        assert_eq!(picker.selected(), 0);
+    }
+
+    #[test]
+    fn new_session_picker_does_not_offer_host_config_providers_for_running_container() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        config.env.insert(
+            "ZAI_API_KEY".into(),
+            crate::operator_env::EnvValue::Plain("host-key-added-after-launch".into()),
+        );
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-running",
+            InstanceStatus::Running,
+            workdir,
+        )];
+        state.expand_workspace(0);
+        state.selected = state
+            .index_of_row(crate::console::manager::state::ManagerListRow::WorkspaceInstance(0, 0))
+            .expect("expanded workspace instance row exists");
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('n')),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, InputOutcome::Continue));
+        let Some((_container, _picker, providers)) = state.inline_new_session_picker.as_ref()
+        else {
+            panic!("N on a running instance must open the agent picker");
+        };
+        assert!(
+            providers.is_empty(),
+            "host config must not offer providers for an already-running container"
+        );
     }
 
     fn live_snapshot() -> crate::runtime::snapshot::InstanceSnapshot {
@@ -1323,7 +1532,7 @@ mod tests {
     }
 
     #[test]
-    fn down_key_with_focused_block_scrolls_vertically_not_selection() {
+    fn down_key_with_focused_block_clamps_vertical_scroll_without_selection_move() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -1349,9 +1558,9 @@ mod tests {
             state.selected, 0,
             "selection must not change while block focused"
         );
-        assert!(
-            state.list_mounts_scroll_y > 0,
-            "block must have scrolled vertically"
+        assert_eq!(
+            state.list_mounts_scroll_y, 0,
+            "non-overflowing block stays clamped"
         );
     }
 

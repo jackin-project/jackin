@@ -1,0 +1,7 @@
+{
+  "title": "Configuration ergonomics",
+  "defaultOpen": false,
+  "pages": [
+    "../config-versioning-migration"
+  ]
+}

@@ -164,6 +164,9 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
             AuthKind::Kimi => ro.kimi = None,
             AuthKind::Opencode => ro.opencode = None,
             AuthKind::Github => ro.github = None,
+            AuthKind::Zai => {
+                ro.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
+            }
         }
     }
 }
@@ -176,6 +179,9 @@ fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKi
         AuthKind::Kimi => ws.kimi = None,
         AuthKind::Opencode => ws.opencode = None,
         AuthKind::Github => ws.github = None,
+        AuthKind::Zai => {
+            ws.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
+        }
     }
 }
 
@@ -258,6 +264,11 @@ fn current_mode_and_credential(
                 });
                 (mode, cred)
             }
+            AuthKind::Zai => {
+                let cred = editor.pending.env.get("ZAI_API_KEY").cloned();
+                let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
+                (mode, cred)
+            }
         },
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let override_ref = editor.pending.roles.get(role);
@@ -317,6 +328,11 @@ fn current_mode_and_credential(
                             .and_then(|ro| ro.github.as_ref())
                             .and_then(|g| g.env.get(v).cloned())
                     });
+                    (mode, cred)
+                }
+                AuthKind::Zai => {
+                    let cred = override_ref.and_then(|ro| ro.env.get("ZAI_API_KEY").cloned());
+                    let mode = cred.as_ref().map(|_| AuthMode::ApiKey);
                     (mode, cred)
                 }
             }
@@ -881,13 +897,17 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
     match target {
         AuthFormTarget::Workspace { kind } => {
             set_workspace_mode(&mut editor.pending, *kind, Some(outcome.mode));
+            if *kind == AuthKind::Zai && outcome.mode == AuthMode::Ignore {
+                editor.pending.env.remove("ZAI_API_KEY");
+            }
             if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
                 match kind {
                     AuthKind::Claude
                     | AuthKind::Codex
                     | AuthKind::Amp
                     | AuthKind::Kimi
-                    | AuthKind::Opencode => {
+                    | AuthKind::Opencode
+                    | AuthKind::Zai => {
                         editor.pending.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -900,13 +920,17 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let entry = editor.pending.roles.entry(role.clone()).or_default();
             set_role_mode(entry, *kind, Some(outcome.mode));
+            if *kind == AuthKind::Zai && outcome.mode == AuthMode::Ignore {
+                entry.env.remove("ZAI_API_KEY");
+            }
             if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
                 match kind {
                     AuthKind::Claude
                     | AuthKind::Codex
                     | AuthKind::Amp
                     | AuthKind::Kimi
-                    | AuthKind::Opencode => {
+                    | AuthKind::Opencode
+                    | AuthKind::Zai => {
                         entry.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -980,6 +1004,9 @@ fn set_workspace_mode(
                 GithubAuthConfig { auth_forward, env }
             });
         }
+        AuthKind::Zai => {
+            // No auth_forward block — mode is implicit in ZAI_API_KEY presence in env.
+        }
     }
 }
 
@@ -1023,6 +1050,9 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
                 GithubAuthConfig { auth_forward, env }
             });
         }
+        AuthKind::Zai => {
+            // No auth_forward block — mode is implicit in ZAI_API_KEY presence in env.
+        }
     }
 }
 
@@ -1036,7 +1066,7 @@ mod tests {
         AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
     };
     use crate::operator_env::{OpRef, OpRunner};
-    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -1137,6 +1167,55 @@ mod tests {
         let ws_github_idx = workspace_github_row_idx(editor, &cfg);
         editor.active_field = FieldFocus::Row(ws_github_idx);
         (cfg, state)
+    }
+
+    #[test]
+    fn auth_form_saving_workspace_zai_ignore_removes_key() {
+        let mut editor = EditorState::new_edit("proj".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .env
+            .insert("ZAI_API_KEY".into(), EnvValue::Plain("secret".into()));
+        let mut form = AuthForm::new(AuthKind::Zai);
+        form.set_mode(AuthMode::Ignore);
+
+        persist_form(
+            &mut editor,
+            &AuthFormTarget::Workspace {
+                kind: AuthKind::Zai,
+            },
+            &form,
+        );
+
+        assert!(!editor.pending.env.contains_key("ZAI_API_KEY"));
+    }
+
+    #[test]
+    fn auth_form_saving_role_zai_ignore_removes_key() {
+        let mut editor = EditorState::new_edit("proj".into(), WorkspaceConfig::default());
+        let mut role = WorkspaceRoleOverride::default();
+        role.env
+            .insert("ZAI_API_KEY".into(), EnvValue::Plain("secret".into()));
+        editor.pending.roles.insert("smith".into(), role);
+        let mut form = AuthForm::new(AuthKind::Zai);
+        form.set_mode(AuthMode::Ignore);
+
+        persist_form(
+            &mut editor,
+            &AuthFormTarget::WorkspaceRole {
+                role: "smith".into(),
+                kind: AuthKind::Zai,
+            },
+            &form,
+        );
+
+        assert!(
+            !editor
+                .pending
+                .roles
+                .get("smith")
+                .is_some_and(|role| role.env.contains_key("ZAI_API_KEY"))
+        );
     }
 
     /// Walking from the workspace × Claude row through the form:
@@ -1964,6 +2043,43 @@ mod tests {
         assert!(
             editor.pending.github.is_none(),
             "D on github WorkspaceMode must clear [workspaces.<ws>.github]"
+        );
+    }
+
+    /// `D` on a Z.AI workspace mode row removes `ZAI_API_KEY` from the
+    /// workspace `[env]` — the env-only kind has no typed block to null,
+    /// so the reset path must reach into the env map.
+    #[test]
+    fn d_on_zai_workspace_mode_row_clears_env_key() {
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        editor.pending.env.insert(
+            crate::env_model::ZAI_API_KEY_ENV_NAME.to_string(),
+            crate::operator_env::EnvValue::Plain("zai-key".into()),
+        );
+        // Detail rows render for the selected kind; focus the Z.AI section.
+        editor.auth_selected_kind = Some(AuthKind::Zai);
+        let idx = auth_flat_rows(editor, &cfg)
+            .iter()
+            .position(|r| {
+                matches!(
+                    r,
+                    AuthRow::WorkspaceMode {
+                        kind: AuthKind::Zai
+                    }
+                )
+            })
+            .expect("Z.AI WorkspaceMode row must exist with a key configured");
+        editor.active_field = FieldFocus::Row(idx);
+        handle_d_on_auth_row(editor, &cfg);
+        assert!(
+            !editor
+                .pending
+                .env
+                .contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME),
+            "D on Z.AI WorkspaceMode must remove ZAI_API_KEY from the workspace env"
         );
     }
 

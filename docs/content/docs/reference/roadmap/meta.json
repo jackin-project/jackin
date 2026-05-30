@@ -1,0 +1,15 @@
+{
+  "title": "Roadmap",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "(agent-orchestrator-research)",
+    "(codebase-health)",
+    "(reactive-daemon-program)",
+    "(agent-runtimes-authentication)",
+    "(isolation-security)",
+    "(infrastructure)",
+    "(documentation-tooling)",
+    "(configuration-ergonomics)"
+  ]
+}

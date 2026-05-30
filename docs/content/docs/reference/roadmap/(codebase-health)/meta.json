@@ -1,0 +1,11 @@
+{
+  "title": "Codebase health",
+  "defaultOpen": false,
+  "pages": [
+    "../codebase-readability",
+    "../tui-architecture",
+    "(phase-1-docs-setup)",
+    "(phase-2-file-splits)",
+    "(phase-3-deferred)"
+  ]
+}

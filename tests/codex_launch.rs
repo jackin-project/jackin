@@ -1,6 +1,6 @@
 mod common;
 
-use common::{FakeRunner, NoOpDocker, install_capsule_binary_stub};
+use common::{FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub};
 use jackin::agent::Agent;
 use jackin::config::AppConfig;
 use jackin::isolation::MountIsolation;
@@ -70,12 +70,28 @@ fn codex_workspace(repo_dir: &Path) -> ResolvedWorkspace {
     }
 }
 
+fn assert_cached_agent_install_blocks(dockerfile: &str) {
+    assert_eq!(
+        dockerfile
+            .matches(&Agent::Claude.install_block(".jackin-runtime/agent-binaries/claude"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        dockerfile
+            .matches(&Agent::Codex.install_block(".jackin-runtime/agent-binaries/codex"))
+            .count(),
+        1
+    );
+}
+
 #[tokio::test]
 async fn codex_launch_invokes_docker_run_with_codex_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     install_capsule_binary_stub(&paths);
+    install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]
@@ -112,11 +128,10 @@ model = "gpt-5"
     .unwrap();
     let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
     let build =
-        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
+        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None, &[])
             .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
-    assert!(dockerfile.contains("claude.ai/install.sh"));
-    assert!(dockerfile.contains("openai/codex/releases"));
+    assert_cached_agent_install_blocks(&dockerfile);
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = codex_workspace(&repo_dir);
@@ -196,6 +211,7 @@ async fn codex_launch_cli_agent_override_wins_over_workspace() {
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     install_capsule_binary_stub(&paths);
+    install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]

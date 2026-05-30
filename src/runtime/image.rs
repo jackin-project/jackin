@@ -7,11 +7,66 @@ use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
 use crate::version_check;
 use anyhow::Context as _;
+use futures_util::future::try_join_all;
+use std::path::PathBuf;
 
 use super::identity::HostIdentity;
 use super::naming::{
     LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
 };
+use super::progress::{LaunchProgress, LaunchStage};
+
+pub(super) struct PreparedRuntimeBinaries {
+    agent_binaries: Vec<(crate::agent::Agent, PathBuf)>,
+    jackin_capsule_src: String,
+}
+
+pub(super) async fn prepare_runtime_binaries(
+    paths: &JackinPaths,
+    validated_repo: &crate::repo::ValidatedRoleRepo,
+    mut progress: Option<&mut LaunchProgress>,
+) -> anyhow::Result<PreparedRuntimeBinaries> {
+    if let Some(progress) = &mut progress {
+        progress.stage_progress(LaunchStage::AgentBinaries, "preparing agent binaries");
+    }
+
+    let agents = validated_repo.manifest.supported_agents();
+
+    // Resolve + download all agent binaries and jackin-capsule concurrently.
+    // Each ensure_available call is network-bound (HTTP resolve + optional download),
+    // so running them in parallel cuts wall-clock time to the slowest single binary
+    // rather than the sum of all.
+    //
+    // Derived image ENTRYPOINT is `/jackin/runtime/jackin-capsule`, so a missing
+    // capsule binary would produce an opaque "exec: file not found" at `docker run`.
+    // Failing fast here gives an actionable error message.
+    let agent_futures = agents.into_iter().map(|agent| async move {
+        let binary = crate::agent_binary::ensure_available(paths, agent)
+            .await
+            .with_context(|| format!("preparing {} binary", agent.slug()))?;
+        Ok::<_, anyhow::Error>((binary.agent, binary.path))
+    });
+    let capsule_future = async {
+        capsule_binary::ensure_available(paths)
+            .await
+            .context("preparing jackin-capsule binary")
+    };
+
+    let (agent_binaries, jackin_capsule_binary) =
+        tokio::try_join!(try_join_all(agent_futures), capsule_future)?;
+
+    let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "cached jackin-capsule path {} contains non-UTF-8 bytes; cannot reference it from Dockerfile",
+            jackin_capsule_binary.display()
+        )
+    })?;
+
+    Ok(PreparedRuntimeBinaries {
+        agent_binaries,
+        jackin_capsule_src: jackin_capsule_src.to_string(),
+    })
+}
 
 /// Build the Docker image for the role. Returns the image name.
 #[expect(
@@ -26,6 +81,7 @@ pub(super) async fn build_agent_image(
     validated_repo: &crate::repo::ValidatedRoleRepo,
     host: &HostIdentity,
     agent: crate::agent::Agent,
+    runtime_binaries: PreparedRuntimeBinaries,
     rebuild: bool,
     agent_update: bool,
     debug: bool,
@@ -33,6 +89,7 @@ pub(super) async fn build_agent_image(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
+    progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
     // Decide the build mode up front.
     //
@@ -121,23 +178,6 @@ pub(super) async fn build_agent_image(
         rebuild
     };
 
-    // Ensure the jackin-capsule binary is available in the local cache.
-    // Downloads from the GitHub preview release if not cached for this
-    // version. Propagate the error: the derived image's ENTRYPOINT is
-    // `/jackin/runtime/jackin-capsule`, so a Dockerfile built without
-    // the binary would build successfully then fail at `docker run`
-    // with the opaque "exec: file not found." Failing fast here with
-    // the actionable message from `capsule_binary` is much better.
-    let jackin_capsule_binary = capsule_binary::ensure_available(paths)
-        .await
-        .context("preparing jackin-capsule binary for derived image build")?;
-    let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
-        anyhow::anyhow!(
-            "cached jackin-capsule path {} contains non-UTF-8 bytes; cannot reference it from Dockerfile",
-            jackin_capsule_binary.display()
-        )
-    })?;
-
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
@@ -145,7 +185,8 @@ pub(super) async fn build_agent_image(
         &cached_repo.repo_dir,
         validated_repo,
         base_image_override,
-        Some(jackin_capsule_src),
+        Some(&runtime_binaries.jackin_capsule_src),
+        &runtime_binaries.agent_binaries,
     )?;
     drop(repo_lock);
 
@@ -273,6 +314,10 @@ pub(super) async fn build_agent_image(
         build_args.extend(["--secret", s.as_str()]);
     }
 
+    if let Some(progress) = progress {
+        progress.stage_progress(LaunchStage::DerivedImage, "Building Docker image");
+    }
+
     // Tee the build's captured output into the live build-log sink so the
     // loading cockpit can show it on demand (the build is the slowest step).
     // `end` stops teeing but keeps the captured lines for the dialog.
@@ -285,12 +330,10 @@ pub(super) async fn build_agent_image(
             &RunOptions {
                 capture_stderr: true,
                 capture_stdout: true,
+                null_stdin: true,
                 stream_captured_output: should_stream_build_output(debug),
                 tee_to_build_log: true,
-                extra_env: github_token
-                    .as_ref()
-                    .map(|_| vec![("DOCKER_BUILDKIT".to_string(), "1".to_string())])
-                    .unwrap_or_default(),
+                extra_env: docker_build_env(github_token.is_some()),
                 ..RunOptions::default()
             },
         )
@@ -316,7 +359,15 @@ async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) ->
 }
 
 fn should_stream_build_output(debug: bool) -> bool {
-    !debug && !crate::tui::rich_surface_active()
+    !debug && !crate::tui::rich_terminal_owned()
+}
+
+fn docker_build_env(has_github_token: bool) -> Vec<(String, String)> {
+    let mut env = vec![("BUILDKIT_PROGRESS".to_string(), "plain".to_string())];
+    if has_github_token {
+        env.push(("DOCKER_BUILDKIT".to_string(), "1".to_string()));
+    }
+    env
 }
 
 fn emit_compact_image_warning(message: &str) {
@@ -403,12 +454,21 @@ async fn extract_agent_version(
             version_check::parse_opencode_version,
             version_check::store_opencode_version,
         ),
+        crate::agent::Agent::Codex => (
+            "Codex",
+            version_check::parse_codex_version,
+            version_check::store_codex_version,
+        ),
+        crate::agent::Agent::Amp => (
+            "Amp",
+            version_check::parse_amp_version,
+            version_check::store_amp_version,
+        ),
         crate::agent::Agent::Kimi => (
             "Kimi",
             version_check::parse_kimi_version,
             version_check::store_kimi_version,
         ),
-        _ => return,
     };
     let slug = agent.slug();
     let Ok(raw) = runner
@@ -485,6 +545,7 @@ mod tests {
     impl Drop for RichSurfaceTestGuard {
         fn drop(&mut self) {
             crate::tui::set_rich_surface_active(false);
+            crate::tui::set_host_screen_owned(false);
         }
     }
 
@@ -493,6 +554,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::tui::set_rich_surface_active(false);
+        crate::tui::set_host_screen_owned(false);
         RichSurfaceTestGuard { _guard: guard }
     }
 
@@ -518,6 +580,25 @@ mod tests {
 
         crate::tui::set_rich_surface_active(true);
         assert!(!should_stream_build_output(false));
+        crate::tui::set_rich_surface_active(false);
+
+        crate::tui::set_host_screen_owned(true);
+        assert!(!should_stream_build_output(false));
+    }
+
+    #[test]
+    fn docker_build_env_forces_plain_buildkit_progress() {
+        assert_eq!(
+            docker_build_env(false),
+            vec![("BUILDKIT_PROGRESS".to_string(), "plain".to_string())]
+        );
+        assert_eq!(
+            docker_build_env(true),
+            vec![
+                ("BUILDKIT_PROGRESS".to_string(), "plain".to_string()),
+                ("DOCKER_BUILDKIT".to_string(), "1".to_string()),
+            ]
+        );
     }
 
     #[test]

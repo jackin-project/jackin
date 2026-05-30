@@ -1,0 +1,52 @@
+---
+title: "Split app/mod.rs"
+---
+
+**Status**: Open — Phase 2, confirmation needed
+
+## Problem
+
+<RepoFile path="src/app/mod.rs" /> is now **2932L** total — more than **double** the 1243L at the original analysis (+136% growth). It is the sixth-largest file in the codebase after `runtime/launch.rs`, `console/manager/input/editor.rs`, `operator_env.rs`, `console/manager/render/editor.rs`, and `instance/auth.rs`. Nearly all production code is the `run()` dispatch function with a giant match on CLI commands, but the file has accumulated substantial new command handling, error recovery, and test coverage.
+
+<RepoFile path="src/app/context.rs" /> (1474L) has also grown and now contains significant instance management, workspace resolution, and Docker interaction logic.
+
+## Proposed split
+
+```
+src/app/
+  mod.rs           ← re-exports, pub fn run() dispatcher (~80L)
+  dispatch.rs      ← the giant match on cli::Command (~700L)
+  workspace_cmd.rs ← workspace subcommand handlers (~150L)
+  config_cmd.rs    ← config subcommand handlers (~100L)
+  load_cmd.rs      ← load/hardline/eject command handlers (new — extracted from dispatch)
+  instance_cmd.rs  ← instance management commands (new — instance recovery/purge flows)
+```
+
+Note: <RepoFile path="src/app/context.rs" /> already implements the impl-extension pattern and stays as-is, though it may need its own split analysis if it continues growing.
+
+## Duplication found
+
+- `app/mod.rs` contains its own `FakeOpWriter` (stripped version) that duplicates the fuller one in <RepoFile path="src/workspace/token_setup.rs" />. Should use a shared test utility.
+- 4 inline `format!("{name}-dind")` / `format!("{name}-net")` derivations that should use a shared naming helper.
+- `fake_runner_with_running` helper is near-identical to one in `console/manager/input/save.rs` but with a subtle trailing-newline difference — potential copy-paste bug.
+
+## What needs confirmation
+
+- Whether `run()` stays in `mod.rs` or also moves to `dispatch.rs`
+- The exact boundary between `dispatch.rs` and `workspace_cmd.rs` (some workspace handling is interleaved in the dispatch match)
+- Whether `load_cmd.rs` and `instance_cmd.rs` are worth separate files or should stay in `dispatch.rs`
+- Whether `context.rs` (1466L) also needs splitting or is manageable at its current size
+
+## Auditability gain
+
+To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` instead of scanning ~2700L of mixed-command dispatch.
+
+## Recommended priority
+
+**Split first among Phase 2 targets** — it has the highest growth rate (+123%), pure dispatch structure (lowest risk), and its split will establish patterns for the remaining file splits.
+
+## Related files
+
+- <RepoFile path="src/app/mod.rs" /> — target file (2767L)
+- <RepoFile path="src/app/context.rs" /> — impl-extension module (1466L)
+- <RepoFile path="src/cli/dispatch.rs" /> — CLI argument types consumed by the dispatch match

@@ -102,6 +102,7 @@ pub fn render_derived_dockerfile(
     supported: &[crate::agent::Agent],
     claude_config: Option<&crate::manifest::ClaudeConfig>,
     jackin_capsule_bin: Option<&str>,
+    agent_binaries: &[(crate::agent::Agent, String)],
 ) -> String {
     let hook_section = render_hook_section(hooks);
 
@@ -121,7 +122,14 @@ pub fn render_derived_dockerfile(
         crate::agent::Agent::Opencode => 4,
     });
     for h in sorted {
-        install_blocks.push_str(h.install_block());
+        let source = agent_binaries
+            .iter()
+            .find(|(agent, _)| *agent == h)
+            .map_or_else(
+                || format!(".jackin-runtime/agent-binaries/{}", h.slug()),
+                |(_, path)| path.clone(),
+            );
+        install_blocks.push_str(&h.install_block(&source));
         if h == crate::agent::Agent::Claude {
             install_blocks.push_str(&render_claude_plugin_install_block(claude_config));
         }
@@ -183,11 +191,11 @@ RUN current_gid=\"$(id -g agent)\" \
        fi \
     && chown -R agent:agent /home/agent
 {install_blocks}{hook_section}USER root
-RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.kimi /jackin/default-home/.local/share/opencode \
+RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.kimi-code /jackin/default-home/.local/share/opencode \
     && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.codex/. /jackin/default-home/.codex/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.local/share/amp/. /jackin/default-home/.local/share/amp/ 2>/dev/null || true ) \
-    && ( cp -a /home/agent/.kimi/. /jackin/default-home/.kimi/ 2>/dev/null || true ) \
+    && ( cp -a /home/agent/.kimi-code/. /jackin/default-home/.kimi-code/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
@@ -315,6 +323,7 @@ pub fn create_derived_build_context(
     // When Some, the binary is copied into the build context and baked into
     // the derived image at /jackin/runtime/jackin-capsule.
     jackin_capsule_host_path: Option<&str>,
+    agent_binary_host_paths: &[(crate::agent::Agent, PathBuf)],
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -335,6 +344,8 @@ pub fn create_derived_build_context(
     } else {
         None
     };
+
+    let agent_binary_ctx_paths = copy_agent_binaries(&runtime_dir, agent_binary_host_paths)?;
 
     let hooks = validated.manifest.hooks.as_ref();
 
@@ -389,6 +400,7 @@ pub fn create_derived_build_context(
             &supported,
             validated.manifest.claude.as_ref(),
             jackin_capsule_ctx_path.as_deref(),
+            &agent_binary_ctx_paths,
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;
@@ -398,6 +410,30 @@ pub fn create_derived_build_context(
         context_dir,
         dockerfile_path,
     })
+}
+
+fn copy_agent_binaries(
+    runtime_dir: &Path,
+    host_paths: &[(crate::agent::Agent, PathBuf)],
+) -> anyhow::Result<Vec<(crate::agent::Agent, String)>> {
+    let dst_dir = runtime_dir.join("agent-binaries");
+    std::fs::create_dir_all(&dst_dir)?;
+    let mut copied = Vec::new();
+    for (agent, host_path) in host_paths {
+        let dst = dst_dir.join(agent.slug());
+        std::fs::copy(host_path, &dst).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to copy {} binary into build context from {}: {e}",
+                agent.slug(),
+                host_path.display()
+            )
+        })?;
+        copied.push((
+            *agent,
+            format!(".jackin-runtime/agent-binaries/{}", agent.slug()),
+        ));
+    }
+    Ok(copied)
 }
 
 fn ensure_runtime_assets_are_included(
@@ -415,6 +451,8 @@ fn ensure_runtime_assets_are_included(
         "!.jackin-runtime/".to_string(),
         "!.jackin-runtime/entrypoint.sh".to_string(),
         "!.jackin-runtime/jackin-capsule".to_string(),
+        "!.jackin-runtime/agent-binaries/".to_string(),
+        "!.jackin-runtime/agent-binaries/*".to_string(),
         "!.jackin-runtime/DerivedDockerfile".to_string(),
     ];
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
@@ -465,6 +503,36 @@ mod tests {
     use std::os::unix::fs::symlink;
     use tempfile::tempdir;
 
+    fn default_agent_binary_path(agent: Agent) -> String {
+        format!(".jackin-runtime/agent-binaries/{}", agent.slug())
+    }
+
+    fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
+        let source = default_agent_binary_path(agent);
+        let copy = format!("COPY --chown=agent:agent {source}");
+        let copy_pos = dockerfile
+            .find(&copy)
+            .unwrap_or_else(|| panic!("missing COPY line for {}", agent.slug()));
+        let start = dockerfile[..copy_pos]
+            .rfind("USER agent\n")
+            .unwrap_or_else(|| panic!("missing USER agent before {}", agent.slug()));
+        let rest = &dockerfile[start..];
+        let candidates = [
+            rest[1..]
+                .find("\nUSER agent\nARG JACKIN_CACHE_BUST=0\nRUN mkdir -p")
+                .map(|pos| pos + 1),
+            rest.find("\n# Install Claude plugins"),
+            rest.find("\nUSER root\nRUN mkdir -p /jackin/runtime/hooks"),
+            rest.find("\nUSER root\nRUN mkdir -p /jackin/default-home"),
+        ];
+        let end = candidates
+            .into_iter()
+            .flatten()
+            .min()
+            .map_or(rest.len(), |pos| pos + 1);
+        &rest[..end]
+    }
+
     #[test]
     fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         let dockerfile = render_derived_dockerfile(
@@ -473,9 +541,13 @@ mod tests {
             &[Agent::Claude],
             None,
             None,
+            &[],
         );
 
-        assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
+        assert_eq!(
+            extract_agent_install_block(&dockerfile, Agent::Claude),
+            Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
+        );
         assert!(!dockerfile.contains("WORKDIR"));
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
@@ -492,12 +564,15 @@ mod tests {
             &[Agent::Claude],
             None,
             None,
+            &[],
         );
 
         assert!(dockerfile.contains("USER agent\n"));
         assert!(dockerfile.contains("ARG JACKIN_CACHE_BUST=0"));
-        assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
-        assert!(dockerfile.contains("RUN claude --version"));
+        assert_eq!(
+            extract_agent_install_block(&dockerfile, Agent::Claude),
+            Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
+        );
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
@@ -512,6 +587,7 @@ mod tests {
             &[Agent::Claude],
             None,
             None,
+            &[],
         );
 
         assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
@@ -533,6 +609,7 @@ mod tests {
             &[Agent::Claude],
             None,
             None,
+            &[],
         );
 
         assert!(dockerfile.contains(
@@ -589,6 +666,7 @@ mod tests {
             &[Agent::Claude],
             None,
             None,
+            &[],
         );
 
         assert!(!dockerfile.contains("setup-once.sh"));
@@ -607,15 +685,31 @@ mod tests {
             &[Agent::Amp, Agent::Claude, Agent::Codex],
             None,
             None,
+            &[],
         );
 
-        assert!(dockerfile.contains("https://claude.ai/install.sh"));
-        assert!(dockerfile.contains("openai/codex/releases"));
-        assert!(dockerfile.contains("https://ampcode.com/install.sh"));
+        assert_eq!(
+            extract_agent_install_block(&dockerfile, Agent::Claude),
+            Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
+        );
+        assert_eq!(
+            extract_agent_install_block(&dockerfile, Agent::Codex),
+            Agent::Codex.install_block(&default_agent_binary_path(Agent::Codex))
+        );
+        assert_eq!(
+            extract_agent_install_block(&dockerfile, Agent::Amp),
+            Agent::Amp.install_block(&default_agent_binary_path(Agent::Amp))
+        );
         // Stable ordering for deterministic Dockerfile output.
-        let claude_pos = dockerfile.find("claude.ai/install.sh").unwrap();
-        let codex_pos = dockerfile.find("openai/codex/releases").unwrap();
-        let amp_pos = dockerfile.find("ampcode.com/install.sh").unwrap();
+        let claude_pos = dockerfile
+            .find(&default_agent_binary_path(Agent::Claude))
+            .unwrap();
+        let codex_pos = dockerfile
+            .find(&default_agent_binary_path(Agent::Codex))
+            .unwrap();
+        let amp_pos = dockerfile
+            .find(&default_agent_binary_path(Agent::Amp))
+            .unwrap();
         assert!(claude_pos < codex_pos);
         assert!(codex_pos < amp_pos);
     }
@@ -628,14 +722,13 @@ mod tests {
             &[Agent::Amp],
             None,
             None,
+            &[],
         );
 
-        let amp_block_pos = dockerfile.find("ampcode.com/install.sh").unwrap();
-        let agent_pos = dockerfile[..amp_block_pos].rfind("USER agent\n").unwrap();
-        assert!(agent_pos < amp_block_pos);
-        assert!(dockerfile.contains("RUN amp --version"));
-        assert!(!dockerfile.contains("https://claude.ai/install.sh"));
-        assert!(!dockerfile.contains("openai/codex/releases"));
+        assert_eq!(
+            extract_agent_install_block(&dockerfile, Agent::Amp),
+            Agent::Amp.install_block(&default_agent_binary_path(Agent::Amp))
+        );
     }
 
     #[test]
@@ -646,17 +739,13 @@ mod tests {
             &[Agent::Codex],
             None,
             None,
+            &[],
         );
 
-        let codex_block_pos = dockerfile.find("ASSET=\"codex-${ARCH}\"").unwrap();
-        // rfind finds the most recent USER directive before the Codex install
-        // block; it must be agent, not root.
-        let agent_pos = dockerfile[..codex_block_pos].rfind("USER agent\n").unwrap();
-        assert!(agent_pos < codex_block_pos);
-        assert!(dockerfile.contains("set -euxo pipefail"));
-        assert!(dockerfile.contains("tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\""));
-        assert!(dockerfile.contains("chmod 0755 \"${HOME}/.local/bin/codex\""));
-        assert!(!dockerfile.contains("tar -xz -C /usr/local/bin"));
+        assert_eq!(
+            extract_agent_install_block(&dockerfile, Agent::Codex),
+            Agent::Codex.install_block(&default_agent_binary_path(Agent::Codex))
+        );
     }
 
     #[test]
@@ -667,6 +756,7 @@ mod tests {
             &[Agent::Codex],
             None,
             None,
+            &[],
         );
         let last_user = dockerfile
             .lines()
@@ -683,10 +773,13 @@ mod tests {
             &[Agent::Codex],
             None,
             None,
+            &[],
         );
 
-        assert!(!dockerfile.contains("https://claude.ai/install.sh"));
-        assert!(dockerfile.contains("openai/codex/releases"));
+        assert_eq!(
+            extract_agent_install_block(&dockerfile, Agent::Codex),
+            Agent::Codex.install_block(&default_agent_binary_path(Agent::Codex))
+        );
     }
 
     #[test]
@@ -697,6 +790,7 @@ mod tests {
             &[Agent::Claude],
             None,
             None,
+            &[],
         );
 
         assert!(dockerfile.contains("/home/agent"));
@@ -714,6 +808,7 @@ mod tests {
             &[Agent::Claude, Agent::Codex],
             None,
             None,
+            &[],
         );
 
         assert!(!dockerfile.contains("ENV JACKIN_AGENT"));
@@ -844,6 +939,7 @@ mod tests {
             &[Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode],
             None,
             None,
+            &[],
         );
 
         assert!(dockerfile.contains("/jackin/default-home/.claude"));
@@ -872,9 +968,12 @@ mod tests {
             &[Agent::Claude],
             Some(&config),
             None,
+            &[],
         );
 
-        let version_pos = dockerfile.find("RUN claude --version").unwrap();
+        let block_pos = dockerfile
+            .find(&Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude)))
+            .unwrap();
         let official_pos = dockerfile
             .find("RUN claude plugin marketplace add anthropics/claude-plugins-official || true")
             .unwrap();
@@ -885,7 +984,7 @@ mod tests {
             .find("RUN claude plugin install 'superpowers@superpowers-marketplace'")
             .unwrap();
 
-        assert!(version_pos < official_pos);
+        assert!(block_pos < official_pos);
         assert!(official_pos < custom_pos);
         assert!(custom_pos < plugin_pos);
         assert!(dockerfile.contains("RUN claude plugin install 'quote'\"'\"'plugin@market'"));
@@ -1007,6 +1106,7 @@ mod tests {
             &[Agent::Claude],
             None,
             None,
+            &[],
         );
 
         assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
@@ -1039,6 +1139,7 @@ mod tests {
             &[Agent::Claude],
             None,
             None,
+            &[],
         );
 
         assert!(dockerfile.contains("/jackin/runtime/hooks/setup-once.sh"));
@@ -1076,7 +1177,7 @@ source = "hooks/source.sh"
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None, &[]).unwrap();
         let dockerignore =
             std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
@@ -1105,7 +1206,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None, &[]).unwrap();
 
         assert!(build.context_dir.join("Dockerfile").is_file());
         assert!(
@@ -1144,7 +1245,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None, &[]).unwrap();
         let dockerignore =
             std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
@@ -1178,6 +1279,7 @@ plugins = []
             &validated,
             Some("docker.io/myorg/my-role:latest"),
             None,
+            &[],
         )
         .unwrap();
 
@@ -1243,7 +1345,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let error = create_derived_build_context(repo.path(), &validated, None, None)
+        let error = create_derived_build_context(repo.path(), &validated, None, None, &[])
             .expect_err("symlinks should be rejected");
 
         assert!(error.to_string().contains("symlink"));

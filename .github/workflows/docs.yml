@@ -135,20 +135,20 @@ jobs:
           lychee \
             --config docs/lychee.toml \
             --include-fragments \
-            --remap "${{ env.DOCS_SITE_URL }}/(.*) file://${{ github.workspace }}/docs/dist/\$1" \
+            --remap "${{ env.DOCS_SITE_URL }}/(.*) file://${{ github.workspace }}/docs/.output/public/\$1" \
             --remap "${{ env.JACKIN_REPO_EDIT_URL }}/(.*) file://${{ github.workspace }}/\$1" \
             --remap "${{ env.JACKIN_REPO_BLOB_URL }}/(.*) file://${{ github.workspace }}/\$1" \
-            --root-dir "${{ github.workspace }}/docs/dist" \
-            "docs/dist/**/*.html"
+            --root-dir "${{ github.workspace }}/docs/.output/public" \
+            "docs/.output/public/**/*.html"
 
       - name: Upload artifact
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: docs/dist
+          path: docs/.output/public
 
   deploy:
-    # docs-link-check covers full-site lychee + Astro build; repo-link-check
+    # docs-link-check covers full-site lychee + docs build; repo-link-check
     # covers <RepoFile /> path validity. Both must pass before publishing.
     needs: [docs-link-check, repo-link-check]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
@@ -180,7 +180,7 @@ jobs:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
           set -euo pipefail
-          echo "url=${PAGE_URL%/}/sitemap-0.xml" >> "$GITHUB_OUTPUT"
+          echo "url=${PAGE_URL%/}/sitemap.xml" >> "$GITHUB_OUTPUT"
 
       - name: Verify deployed docs links
         uses: ./.github/actions/check-deployed-docs
@@ -210,7 +210,7 @@ jobs:
       - name: Verify deployed docs links
         uses: ./.github/actions/check-deployed-docs
         with:
-          sitemap-url: ${{ env.DOCS_SITE_URL }}/sitemap-0.xml
+          sitemap-url: ${{ env.DOCS_SITE_URL }}/sitemap.xml
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
           github-token: ${{ github.token }}

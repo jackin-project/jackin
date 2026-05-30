@@ -1,9 +1,8 @@
 // docs/components/landing/ThemeToggle.tsx
-// Landing-page theme toggle. Starlight's ThemeSelect override is only
-// mounted on docs pages; the landing has its own topnav and needs a
+// Landing-page theme toggle. The landing has its own topnav and needs a
 // matching toggle so a user can switch modes without leaving the home
-// page. Reuses the 'starlight-theme' localStorage key so the choice
-// carries straight over to the docs.
+// page. Reuses the legacy 'starlight-theme' localStorage key so existing
+// visitors keep their saved theme.
 import { useEffect, useState } from 'react';
 
 type Theme = 'dark' | 'light';
@@ -21,7 +20,7 @@ function readStoredTheme(): Theme | null {
 }
 
 function readRenderedTheme(): Theme {
-  // The pre-paint script in index.astro has already set data-theme on
+  // The pre-paint script in the root route has already set data-theme on
   // <html> — treat that as source of truth for the initial active button.
   if (typeof document === 'undefined') return 'dark';
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
@@ -39,13 +38,6 @@ function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   root.dataset.theme = theme;
   root.style.colorScheme = theme;
-  // Keep the docs toggle visually in sync if the user navigates from
-  // here into the docs — the docs ThemeSelect custom element reads
-  // aria-pressed on its own <starlight-theme-select> elements too.
-  document.querySelectorAll<HTMLElement>('starlight-theme-select button[data-theme-value]').forEach((btn) => {
-    const active = (btn as HTMLButtonElement).dataset.themeValue === theme;
-    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  });
 }
 
 function onThemePick(theme: Theme): void {
@@ -71,9 +63,8 @@ function onThemePick(theme: Theme): void {
 export function ThemeToggle() {
   // SSR: return 'dark' so the server-rendered markup doesn't flip after
   // hydration; the effect below syncs to the actual resolved theme.
-  // Important: this component is inside Landing which is client:load,
-  // so Astro still SSRs it. Without this guard the React tree would
-  // render with window/document references and hydration would break.
+  // Important: this component can render on the server; without this
+  // guard the React tree would render with window/document references.
   const [theme, setTheme] = useState<Theme>('dark');
   const [mounted, setMounted] = useState(false);
 

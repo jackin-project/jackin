@@ -1,4 +1,6 @@
 // docs/components/landing/InstallBlock.tsx
+import { EarlyDevelopmentNotice } from './EarlyDevelopmentNotice';
+
 export function InstallBlock() {
   return (
     <section className="landing-section">
@@ -11,6 +13,10 @@ export function InstallBlock() {
           <div className="landing-install-line"><span className="k">brew</span> tap jackin-project/tap</div>
           <div className="landing-install-line"><span className="k">brew</span> install jackin@preview</div>
           <div className="landing-install-line"><span className="k">jackin</span> load agent-smith</div>
+        </div>
+
+        <div className="landing-install-warning">
+          <EarlyDevelopmentNotice />
         </div>
 
         <div className="landing-install-ctas">
