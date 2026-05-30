@@ -838,6 +838,13 @@ pub async fn run_console(
     // shape, so OSC 22 is emitted only when the hover crosses a clickable
     // boundary rather than on every motion event.
     let mut pointer_is_hand = false;
+    // Async event source: yields to the Tokio reactor between events so
+    // background tasks can progress instead of blocking for up to TICK_MS.
+    let mut event_stream = crossterm::event::EventStream::new();
+    // Animation tick: redraws the TUI when no events arrive so spinners,
+    // the op-picker panel rain, and other animations stay live.
+    let mut animation_tick = tokio::time::interval(Duration::from_millis(TICK_MS));
+    animation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let result = 'main: loop {
         // Drain a pending token-generate request before render: suspend
@@ -988,18 +995,28 @@ pub async fn run_console(
         }
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
-        // Non-blocking poll: a TICK_MS timeout falls through to advance
-        // the spinner and drain worker channels even when idle.
-        let mut events_processed = 0;
-        while events_processed < MAX_EVENTS_PER_TICK
-            && event::poll(if events_processed == 0 {
-                Duration::from_millis(TICK_MS)
-            } else {
-                Duration::ZERO
-            })?
-        {
-            events_processed += 1;
-            match event::read()? {
+        // Async event wait: yield to the Tokio reactor until either a
+        // terminal event arrives or the animation tick fires. This frees
+        // the reactor between events so background tasks can progress
+        // instead of blocking for up to TICK_MS on event::poll.
+        use futures_util::StreamExt as _;
+        let first = tokio::select! {
+            event = event_stream.next() => event.map(|r| r.map_err(anyhow::Error::from)),
+            _ = animation_tick.tick() => None,
+        };
+        // Collect the first event then drain any remaining buffered events
+        // non-blocking (same batch-up-to-256 behaviour as the previous
+        // event::poll loop, so a burst of key/mouse events still coalesces
+        // into one render rather than one render per event).
+        let mut event_batch: Vec<Event> = Vec::new();
+        if let Some(first_event) = first {
+            event_batch.push(first_event?);
+            while event_batch.len() < MAX_EVENTS_PER_TICK && event::poll(Duration::ZERO)? {
+                event_batch.push(event::read()?);
+            }
+        }
+        for event in event_batch {
+            match event {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     if matches!(key.code, KeyCode::Esc)
                         && key.modifiers.is_empty()
