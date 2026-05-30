@@ -1064,7 +1064,7 @@ const STAGE_PULSE_PERIOD: usize = 12;
 const BLOCK_WIDTH: usize = 3;
 const BLOCK_GAP: usize = 1;
 const LABEL_GAP: usize = 4;
-const LABEL_EDGE_FADE_WIDTH: usize = 12;
+const LABEL_EDGE_FADE_WIDTH: usize = 18;
 const LABEL_SLIDE_FRAMES: usize = 12;
 const PROGRESS_RAIL_WIDTH: usize =
     LaunchStage::ALL.len() * BLOCK_WIDTH + (LaunchStage::ALL.len() - 1) * BLOCK_GAP;
