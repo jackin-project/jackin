@@ -123,6 +123,8 @@ mod tests {
         let line = button_strip_line(&items, 0, "    ");
 
         let text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
-        assert_eq!(text, "  Save      Cancel  ");
+        // Each label gets 2-space padding on each side; gap is 4 spaces.
+        // "  Save  " + "    " + "  Cancel  " = 2+4+2+4+2+6+2 chars.
+        assert_eq!(text, "  Save        Cancel  ");
     }
 }
