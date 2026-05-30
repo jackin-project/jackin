@@ -1,0 +1,28 @@
+---
+source: src/console/manager/render/snapshot_tests.rs
+assertion_line: 63
+expression: rendered
+---
+ jackin'  · workspaces                                                          
+                                                                                
+┌──────────────────────┐┌ General ─────────────────────────────────────────────┐
+│▸  Current directory  ││  Working dir /workspace                              │
+│   + New workspace    │└──────────────────────────────────────────────────────┘
+│                      │┌ Mounts ──────────────────────────────────────────────┐
+│                      ││  Destination  Mode  Isolation  Type                  │
+│                      ││  /workspace   rw    shared     missing               │
+│                      │└──────────────────────────────────────────────────────┘
+│                      │┌ Roles ───────────────────────────────────────────────┐
+│                      ││  Default (none)                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      │└──────────────────────────────────────────────────────┘
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+│                      │                                                        
+└──────────────────────┘                                                        
+                 ↑↓ · Enter launch   N new · S settings   Q quit

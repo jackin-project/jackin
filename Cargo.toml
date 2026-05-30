@@ -82,6 +82,7 @@ jackin-build-meta = { path = "crates/jackin-build-meta" }
 assert_cmd = "=2.2.2"
 criterion = { version = "0.5", features = ["html_reports"] }
 filetime = "=0.2.29"
+insta = { version = "1", features = ["filters"] }
 predicates = "=3.1.4"
 tokio = { version = "=1.52.3", features = ["test-util"] }
 

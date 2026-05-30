@@ -1,0 +1,25 @@
+---
+source: src/console/manager/render/snapshot_tests.rs
+assertion_line: 98
+expression: rendered
+---
+ jackin'  · edit workspace · ws                                                           
+                                                                                          
+                                                                                          
+ General   Mounts   Roles   Environments   Auth                                           
+          ━━━━━━━━                                                                        
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  Destination  Mode  Isolation  Type                                                    │
+│▸ + Add mount                                                                           │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+             ←→ switch tab   Tab/↓ enter content   S save workspace   Esc back
