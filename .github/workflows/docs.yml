@@ -89,6 +89,10 @@ jobs:
         working-directory: docs
         run: bun run check:repo-links
 
+      - name: Check roadmap sidebar completeness
+        working-directory: docs
+        run: bun run check:roadmap-sidebar
+
   docs-link-check:
     needs: changes
     if: needs.changes.outputs.docs == 'true'
