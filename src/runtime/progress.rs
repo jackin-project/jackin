@@ -9,7 +9,8 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::components::{
     ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
     confirm_width_pct, render_confirm_dialog, render_error_dialog, render_hint_bar,
-    render_select_list, render_status_footer, render_text_input,
+    render_scrollable_block, render_select_list, render_status_footer, render_text_input,
+    viewport_height, viewport_width,
     required_height as error_dialog_required_height,
 };
 use jackin_tui::theme::{
@@ -575,8 +576,8 @@ fn build_log_scroll_filled(area: Rect) -> usize {
         height: area.height.saturating_sub(1),
         ..area
     };
-    let viewport_w = crate::console::widgets::scrollable::viewport_width(box_area);
-    let viewport_h = crate::console::widgets::scrollable::viewport_height(box_area);
+    let viewport_w = viewport_width(box_area);
+    let viewport_h = viewport_height(box_area);
     let raw = crate::runtime::build_log::snapshot();
     let line_count = if raw.is_empty() {
         1
@@ -1935,8 +1936,6 @@ fn dialog_backdrop(frame: &mut Frame<'_>, area: Rect) -> (Rect, Rect) {
 }
 
 fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
-    use crate::console::widgets::scrollable::{render_scrollable_block, viewport_height};
-
     let (box_area, hint_area) = dialog_backdrop(frame, area);
 
     let title = if crate::runtime::build_log::is_active() {
@@ -1948,7 +1947,7 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     // scrollbar is correct. Cloning the (capped) buffer is acceptable here: the
     // overlay is a transient, operator-opened modal, not the steady cockpit.
     let raw = crate::runtime::build_log::snapshot();
-    let viewport_w = crate::console::widgets::scrollable::viewport_width(box_area);
+    let viewport_w = viewport_width(box_area);
     let lines: Vec<Line<'_>> = if raw.is_empty() {
         vec![Line::from(Span::styled(
             "(waiting for docker build output…)",
@@ -2647,7 +2646,7 @@ mod tests {
         );
 
         assert!(lines.len() > 1);
-        assert!(crate::console::widgets::scrollable::max_line_width(&lines) <= 32);
+        assert!(jackin_tui::components::max_line_width(&lines) <= 32);
         let rendered = lines
             .iter()
             .map(|line| {
