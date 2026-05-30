@@ -20,7 +20,8 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_widget_list::ListState;
@@ -217,7 +218,7 @@ pub struct OpPickerState {
     /// `Arc` so spawned worker threads share the same trait object
     /// (test injectees included).
     runner: Arc<dyn OpStructRunner + Send + Sync>,
-    rx: Option<mpsc::Receiver<LoadResult>>,
+    rx: Option<mpsc::UnboundedReceiver<LoadResult>>,
     /// Session-scoped cache shared with `ConsoleState`; the default
     /// constructor allocates a fresh empty one for unit tests.
     op_cache: Rc<RefCell<OpCache>>,
@@ -359,7 +360,7 @@ impl OpPickerState {
     /// stays the single completion path.
     fn start_account_load(&mut self) {
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::unbounded_channel();
         self.rx = Some(rx);
         if let Some(cached) = self.op_cache.borrow().get_accounts() {
             let _ = tx.send(LoadResult::Accounts(Ok(cached)));
@@ -405,7 +406,7 @@ impl OpPickerState {
         self.stage = OpPickerStage::Vault;
         self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::unbounded_channel();
         self.rx = Some(rx);
         if let Some(cached) = self.op_cache.borrow().get_vaults(account_id.as_deref()) {
             let _ = tx.send(LoadResult::Vaults(Ok(cached)));
@@ -421,7 +422,7 @@ impl OpPickerState {
         self.stage = OpPickerStage::Item;
         self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::unbounded_channel();
         self.rx = Some(rx);
         if let Some(cached) = self
             .op_cache
@@ -443,7 +444,7 @@ impl OpPickerState {
         self.stage = OpPickerStage::Field;
         self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::unbounded_channel();
         self.rx = Some(rx);
         if let Some(cached) =
             self.op_cache
@@ -493,7 +494,7 @@ impl OpPickerState {
     }
 
     pub fn poll_load(&mut self) {
-        let Some(rx) = self.rx.as_ref() else {
+        let Some(rx) = self.rx.as_mut() else {
             return;
         };
         match rx.try_recv() {
@@ -591,8 +592,8 @@ impl OpPickerState {
                 }
                 self.load_state = OpLoadState::Ready;
             }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
+            Err(mpsc::error::TryRecvError::Empty) => {}
+            Err(mpsc::error::TryRecvError::Disconnected) => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(OpPickerError::Recoverable {
                     message: "background worker disconnected".into(),
@@ -1965,7 +1966,7 @@ mod tests {
         s.fields.clear();
         s.field_refresh_in_place = true;
         // Publish the reloaded fields through the same arm the worker uses.
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::unbounded_channel();
         tx.send(LoadResult::Fields(Ok(vec![
             field_with_reference("user", "op://Personal/login/user"),
             field_with_reference("api", "op://Personal/login/auth/api"),

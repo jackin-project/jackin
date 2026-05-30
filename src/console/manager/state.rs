@@ -257,7 +257,7 @@ pub struct ManagerState<'a> {
     instances_last_refresh: Option<std::time::Instant>,
     instances_refresh_generation: u64,
     instances_refresh_rx: Option<
-        std::sync::mpsc::Receiver<(u64, Result<InstanceRefreshSnapshot, String>)>,
+        tokio::sync::oneshot::Receiver<(u64, Result<InstanceRefreshSnapshot, String>)>,
     >,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
@@ -815,7 +815,7 @@ pub struct PendingRoleLoad {
     pub raw: String,
     pub key: String,
     pub source: crate::config::RoleSource,
-    pub rx: std::sync::mpsc::Receiver<anyhow::Result<()>>,
+    pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
 }
 
 impl std::fmt::Debug for PendingRoleLoad {
@@ -2231,8 +2231,8 @@ impl ManagerState<'_> {
         self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
         let generation = self.instances_refresh_generation;
         let paths = paths.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
             let result = load_instance_refresh_snapshot(&paths);
             let _ = tx.send((generation, result));
         });
@@ -2240,22 +2240,24 @@ impl ManagerState<'_> {
     }
 
     fn drain_instance_refresh(&mut self) -> Option<Result<InstanceRefreshSnapshot, String>> {
-        let Some(rx) = self.instances_refresh_rx.take() else {
+        let Some(rx) = self.instances_refresh_rx.as_mut() else {
             return None;
         };
         match rx.try_recv() {
             Ok((generation, result)) => {
+                self.instances_refresh_rx = None;
                 if generation == self.instances_refresh_generation {
                     Some(result)
                 } else {
                     None
                 }
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                self.instances_refresh_rx = Some(rx);
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                // Worker still running — keep the receiver.
                 None
             }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                self.instances_refresh_rx = None;
                 Some(Err("instance refresh worker disconnected".into()))
             }
         }

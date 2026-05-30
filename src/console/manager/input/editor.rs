@@ -1690,7 +1690,7 @@ fn apply_role_input(
     let result = (|| -> anyhow::Result<(
         String,
         crate::config::RoleSource,
-        std::sync::mpsc::Receiver<anyhow::Result<()>>,
+        tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
     )> {
         let source = candidate_role_source(config, &selector)?;
         crate::debug_log!(
@@ -1702,13 +1702,13 @@ fn apply_role_input(
         let selector = selector.clone();
         let thread_paths = paths.clone();
         let git_url = source.git.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = tokio::sync::oneshot::channel();
         crate::debug_log!(
             "role",
             "registering role repo for key={key:?} git={git:?}",
             git = source.git.as_str()
         );
-        std::thread::spawn(move || {
+        tokio::task::spawn_blocking(move || {
             let mut runner = crate::docker::ShellRunner {
                 debug: crate::tui::is_debug_mode(),
             };
@@ -1777,13 +1777,13 @@ pub(super) fn poll_role_load(
     config: &mut AppConfig,
     paths: &JackinPaths,
 ) {
-    let Some(load) = editor.pending_role_load.as_ref() else {
+    let Some(load) = editor.pending_role_load.as_mut() else {
         return;
     };
     let result = match load.rx.try_recv() {
         Ok(result) => result,
-        Err(std::sync::mpsc::TryRecvError::Empty) => return,
-        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return,
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
             Err(anyhow::anyhow!("role loader worker disconnected"))
         }
     };
@@ -3039,7 +3039,7 @@ plugins = []
         std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
         let mut editor = EditorState::new_edit("ws".into(), empty_ws());
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = tokio::sync::oneshot::channel();
         let source = crate::config::RoleSource {
             git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
             trusted: false,
