@@ -18,7 +18,9 @@ pub mod runtime_setup;
 pub mod session;
 pub mod selection;
 pub mod socket;
+
 pub mod socket_backend;
 pub mod statusbar;
+pub mod title;
 pub mod terminal_geometry;
 pub mod util;
