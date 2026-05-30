@@ -2,6 +2,10 @@
 
 This inventory tracks repeatable terminal UI patterns, their current owner, call sites, and maturity. New TUI work should name the existing component it uses or add a row before introducing a new repeated pattern.
 
+Renderable component stories live in `crates/jackin-tui/src/lookbook.rs`. The
+first story set covers `Panel`, `ButtonStrip`, `ConfirmDialog`, and `ErrorDialog`
+and gives future docs/SVG generation one source of truth for previews.
+
 | Component / pattern | Owner | Current call sites | Maturity | Notes |
 |---|---|---|---|---|
 | Design tokens | `jackin_tui` root + `jackin_tui::theme` | Host console, launch progress, capsule ANSI renderers | 3 — shared Ratatui adapter | RGB tokens remain backend-neutral; `theme` adapts them to Ratatui `Color`. |

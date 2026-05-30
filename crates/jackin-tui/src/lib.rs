@@ -9,6 +9,7 @@
 //! palette values or reimplementing visual primitives.
 
 pub mod components;
+pub mod lookbook;
 pub mod runtime;
 pub mod scroll;
 pub mod theme;

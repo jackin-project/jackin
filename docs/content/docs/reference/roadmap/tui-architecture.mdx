@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, `Panel` / `ButtonStrip` / scrollable primitives plus a small `Dirty` runtime contract live in `jackin-tui`, host list navigation/tree/preview state have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and the lookbook remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, `Panel` / `ButtonStrip` / scrollable primitives plus a small `Dirty` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components, host list navigation/tree/preview state have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and generated docs/SVG lookbook output remain open.
 
 ## Goal
 
@@ -226,7 +226,7 @@ This map is the answer to "where does TUI code go?" New work under this roadmap 
 6. **Consolidate launch.** Launch progress stops importing `src/console/widgets`; it consumes `jackin-tui` components and emits app messages/effects.
 7. **Bridge capsule.** Capsule consumes shared tokens/models with raw-ANSI adapters until Phase 6 gives it a Ratatui frame.
 8. **Replace capsule renderers.** Once capsule renders through Ratatui, delete raw dialog/picker/status renderer copies and consume canonical components.
-9. **Generate lookbook.** Every canonical component gets stories, snapshots, generated SVG previews, and usage examples.
+9. **Generate lookbook.** Every canonical component gets stories, snapshots, generated SVG previews, and usage examples. The first renderable story registry lives at <RepoFile path="crates/jackin-tui/src/lookbook.rs" />; generated docs/SVG output still needs to be added.
 
 ### Guardrails that make reuse enforceable
 
