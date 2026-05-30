@@ -118,6 +118,7 @@ pub(crate) enum ManagerMessage {
         container: String,
         delta: isize,
     },
+    ReturnToList,
     ScrollListHorizontal(i16),
     ScrollFocusedListBlockVertical(i16),
 }
@@ -229,6 +230,7 @@ pub(crate) fn update_manager(
         ManagerMessage::MovePreviewPane { container, delta } => {
             move_preview_pane(state, &container, delta);
         }
+        ManagerMessage::ReturnToList => state.stage = ManagerStage::List,
         ManagerMessage::ScrollListHorizontal(delta) => scroll_list_horizontal(state, delta),
         ManagerMessage::ScrollFocusedListBlockVertical(delta) => {
             scroll_focused_mount_block_vertical(state, delta);
@@ -984,12 +986,13 @@ mod tests {
     }
 
     #[test]
-    fn expand_and_collapse_selected_tree_updates_current_dir() {
+    fn current_dir_tree_messages_respect_instance_gate() {
         let mut state = state_with_saved_count(1);
 
         assert!(update_manager(&mut state, ManagerMessage::ExpandSelectedTree).is_dirty());
-        assert!(state.current_dir_expanded);
+        assert!(!state.current_dir_expanded);
 
+        state.current_dir_expanded = true;
         assert!(update_manager(&mut state, ManagerMessage::CollapseSelectedTree).is_dirty());
         assert!(!state.current_dir_expanded);
     }
@@ -1308,6 +1311,19 @@ mod tests {
         );
         assert_eq!(focus, AuthFormFocus::Save);
         assert_eq!(literal_buffer, "token");
+    }
+
+    #[test]
+    fn return_to_list_closes_confirm_stages() {
+        let mut state = state_with_saved_count(0);
+        state.stage = ManagerStage::ConfirmDelete {
+            name: "workspace".into(),
+            state: crate::console::widgets::confirm::ConfirmState::new("delete?"),
+        };
+
+        assert!(update_manager(&mut state, ManagerMessage::ReturnToList).is_dirty());
+
+        assert!(matches!(state.stage, ManagerStage::List));
     }
 
     #[test]

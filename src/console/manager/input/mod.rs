@@ -354,14 +354,14 @@ fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent
     let container_name = container.clone();
     match outcome {
         ModalOutcome::Commit(true) => {
-            state.stage = ManagerStage::List;
+            let _ = update_manager(state, ManagerMessage::ReturnToList);
             InputOutcome::InstanceAction {
                 container: container_name,
                 action: crate::console::ConsoleInstanceAction::Purge,
             }
         }
         ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
-            state.stage = ManagerStage::List;
+            let _ = update_manager(state, ManagerMessage::ReturnToList);
             InputOutcome::Continue
         }
         ModalOutcome::Continue => InputOutcome::Continue,
@@ -395,7 +395,7 @@ fn handle_confirm_delete_key(
             Ok(InputOutcome::Continue)
         }
         ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
-            state.stage = ManagerStage::List;
+            let _ = update_manager(state, ManagerMessage::ReturnToList);
             Ok(InputOutcome::Continue)
         }
         ModalOutcome::Continue => Ok(InputOutcome::Continue),
