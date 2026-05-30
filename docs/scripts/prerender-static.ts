@@ -102,6 +102,10 @@ const child = Bun.spawn(
   ['bunx', 'vite', 'preview', '--host', host, '--port', String(port), '--strictPort'],
   {
     cwd: root,
+    env: {
+      ...process.env,
+      TSS_CLIENT_OUTPUT_DIR: outDir,
+    },
     stdout: 'pipe',
     stderr: 'pipe',
   },
