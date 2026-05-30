@@ -14,7 +14,7 @@ use crossterm::event::KeyEvent;
 
 use super::super::widgets::ModalOutcome;
 use super::message::{ManagerMessage, update_manager};
-use super::state::{EditorSaveFlow, EditorState, ExitIntent, ManagerStage, ManagerState};
+use super::state::{EditorSaveFlow, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
@@ -282,11 +282,13 @@ pub fn handle_key(
             match status {
                 PreludeStatus::Complete(payload) => {
                     let (name, ws) = *payload;
-                    let mut editor = EditorState::new_create();
-                    editor.pending = ws;
-                    editor.pending_name = Some(name);
-                    editor.refresh_mount_info_cache();
-                    state.stage = ManagerStage::Editor(editor);
+                    let _ = update_manager(
+                        state,
+                        ManagerMessage::EnterCreateEditor {
+                            name,
+                            workspace: ws,
+                        },
+                    );
                 }
                 PreludeStatus::Cancelled => {
                     let cache = state.op_cache.clone();

@@ -25,6 +25,10 @@ pub(crate) enum ManagerMessage {
         container: String,
         label: String,
     },
+    EnterCreateEditor {
+        name: String,
+        workspace: crate::workspace::WorkspaceConfig,
+    },
     EnterCreatePrelude(CreatePreludeState<'static>),
     EnterEditor(EditorState<'static>),
     EnterEditorAuthKind {
@@ -146,6 +150,9 @@ pub(crate) fn update_manager(
         ManagerMessage::EnterConfirmDelete { name } => enter_confirm_delete(state, name),
         ManagerMessage::EnterConfirmInstancePurge { container, label } => {
             enter_confirm_instance_purge(state, container, label);
+        }
+        ManagerMessage::EnterCreateEditor { name, workspace } => {
+            enter_create_editor(state, name, workspace);
         }
         ManagerMessage::EnterCreatePrelude(prelude) => {
             state.stage = ManagerStage::CreatePrelude(prelude);
@@ -312,6 +319,18 @@ fn enter_confirm_instance_purge(state: &mut ManagerState<'_>, container: String,
         label,
         state: crate::console::widgets::confirm::ConfirmState::new(prompt),
     };
+}
+
+fn enter_create_editor(
+    state: &mut ManagerState<'_>,
+    name: String,
+    workspace: crate::workspace::WorkspaceConfig,
+) {
+    let mut editor = EditorState::new_create();
+    editor.pending = workspace;
+    editor.pending_name = Some(name);
+    editor.refresh_mount_info_cache();
+    state.stage = ManagerStage::Editor(editor);
 }
 
 fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
@@ -1393,6 +1412,21 @@ mod tests {
             .is_dirty()
         );
         assert!(matches!(state.stage, ManagerStage::Editor(_)));
+
+        assert!(
+            update_manager(
+                &mut state,
+                ManagerMessage::EnterCreateEditor {
+                    name: "new-workspace".into(),
+                    workspace: crate::workspace::WorkspaceConfig::default(),
+                },
+            )
+            .is_dirty()
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.pending_name.as_deref(), Some("new-workspace"));
 
         assert!(
             update_manager(
