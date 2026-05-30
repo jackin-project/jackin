@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and the lookbook remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary, `Panel` / scrollable primitives live in `jackin-tui`, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide `Message`/`Effect`, typed terminal session ownership, capsule Ratatui rendering, and the lookbook remain open.
 
 ## Goal
 

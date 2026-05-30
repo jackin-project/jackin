@@ -4,16 +4,18 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Paragraph, Widget},
 };
 
 use crate::{
     display_cols, fixed_prefix_scroll_segments, leading_space_cols, padded_line_display_cols,
     scroll,
-    theme::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE},
+    theme::{DIALOG_SCROLL_THUMB, DIALOG_SCROLL_TRACK, PHOSPHOR_GREEN},
 };
+
+use super::{Panel, PanelFocus};
 
 pub const fn viewport_width(area: Rect) -> usize {
     area.width.saturating_sub(2) as usize
@@ -377,19 +379,16 @@ pub fn render_scrollable_block(
     // uses the default border so it doesn't imply scroll capability it doesn't have.
     let has_scroll =
         is_scrollable(content_width, viewport_w) || is_scrollable(content_height, viewport_h);
-    let border_color = if focused && has_scroll {
-        PHOSPHOR_GREEN
+    let focus = if focused && has_scroll {
+        PanelFocus::FocusedScrollable
+    } else if focused {
+        PanelFocus::Focused
     } else {
-        PHOSPHOR_DARK
+        PanelFocus::Unfocused
     };
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
-    if let Some(t) = title {
-        block = block.title(Span::styled(
-            t,
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let mut panel = Panel::new().focus(focus);
+    if let Some(title) = title {
+        panel = panel.title(title);
     }
     let eff_x = effective_offset(content_width, viewport_w, *scroll_x);
     let eff_y = effective_offset(content_height, viewport_h, *scroll_y);
@@ -397,7 +396,7 @@ pub fn render_scrollable_block(
     *scroll_y = eff_y;
     frame.render_widget(
         Paragraph::new(add_trailing_padding(lines))
-            .block(block)
+            .block(panel.block())
             .style(Style::default().fg(PHOSPHOR_GREEN))
             .scroll((eff_y, eff_x)),
         area,
