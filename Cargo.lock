@@ -1714,6 +1714,7 @@ dependencies = [
  "jackin-tui",
  "nix 0.31.3",
  "portable-pty",
+ "ratatui",
  "serde",
  "serde_json",
  "tempfile",
