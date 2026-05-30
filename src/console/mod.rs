@@ -966,7 +966,12 @@ pub async fn run_console(
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             manager::input::poll_background_loads(ms, &mut config, paths);
-            ms.poll_instance_refresh(paths);
+            if let Some(result) = ms.poll_instance_refresh(paths) {
+                let _ = manager::update_manager(
+                    ms,
+                    manager::ManagerMessage::InstancesRefreshed(result),
+                );
+            }
         }
 
         if let ConsoleStage::Manager(ms) = &mut state.stage {

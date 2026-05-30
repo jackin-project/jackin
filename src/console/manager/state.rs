@@ -352,11 +352,11 @@ pub enum ManagerStage<'a> {
 }
 
 #[derive(Debug)]
-struct InstanceRefreshSnapshot {
-    instances: Vec<crate::instance::InstanceIndexEntry>,
-    sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
-    session_errors: HashSet<String>,
-    snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
+pub(crate) struct InstanceRefreshSnapshot {
+    pub(crate) instances: Vec<crate::instance::InstanceIndexEntry>,
+    pub(crate) sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
+    pub(crate) session_errors: HashSet<String>,
+    pub(crate) snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
 }
 
 #[derive(Debug)]
@@ -2190,9 +2190,13 @@ impl ManagerState<'_> {
         }
     }
 
-    pub fn poll_instance_refresh(&mut self, paths: &crate::paths::JackinPaths) {
-        self.drain_instance_refresh();
+    pub(crate) fn poll_instance_refresh(
+        &mut self,
+        paths: &crate::paths::JackinPaths,
+    ) -> Option<Result<InstanceRefreshSnapshot, String>> {
+        let result = self.drain_instance_refresh();
         self.spawn_instance_refresh_if_due(paths);
+        result
     }
 
     fn spawn_instance_refresh_if_due(&mut self, paths: &crate::paths::JackinPaths) {
@@ -2218,25 +2222,35 @@ impl ManagerState<'_> {
         self.instances_refresh_rx = Some(rx);
     }
 
-    fn drain_instance_refresh(&mut self) {
+    fn drain_instance_refresh(&mut self) -> Option<Result<InstanceRefreshSnapshot, String>> {
         let Some(rx) = self.instances_refresh_rx.take() else {
-            return;
+            return None;
         };
         match rx.try_recv() {
             Ok((generation, result)) => {
                 if generation == self.instances_refresh_generation {
-                    match result {
-                        Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
-                        Err(error) => self.apply_instance_refresh_error(error),
-                    }
+                    Some(result)
+                } else {
+                    None
                 }
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 self.instances_refresh_rx = Some(rx);
+                None
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                self.apply_instance_refresh_error("instance refresh worker disconnected".into());
+                Some(Err("instance refresh worker disconnected".into()))
             }
+        }
+    }
+
+    pub(crate) fn apply_instance_refresh(
+        &mut self,
+        result: Result<InstanceRefreshSnapshot, String>,
+    ) {
+        match result {
+            Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
+            Err(error) => self.apply_instance_refresh_error(error),
         }
     }
 

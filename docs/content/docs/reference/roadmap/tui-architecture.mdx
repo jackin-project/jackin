@@ -366,7 +366,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 3. **The view is not pure.** Render functions take `&mut state`. `render_scrollable_block` clamps `scroll_x`/`scroll_y` in place every frame; the editor tab renderers write `tab_content_width`/`tab_content_height` back into `EditorState` so the mouse handler can later read them. "Draw" mutates observable state, which couples render output to input handling and is the root of a class of stale-geometry scroll bugs.
 
-4. **Filesystem I/O on the event loop.** Visible mount rows now read only cached `MountInfoCache` facts during render, with synchronous refreshes moved to state construction and input/update paths, but those refreshes are not yet typed background messages. Instance index/manifest reads and the per-container snapshot fan-out now run on a worker thread and report back through a polled result channel, but the remaining worker boundary is still ad hoc rather than a typed `ManagerMessage` / effect.
+4. **Filesystem I/O on the event loop.** Visible mount rows now read only cached `MountInfoCache` facts during render, with synchronous refreshes moved to state construction and input/update paths, but those refreshes are not yet typed background messages. Instance index/manifest reads and the per-container snapshot fan-out now run on a worker thread and report back through `ManagerMessage::InstancesRefreshed`; the remaining gap is promoting the spawn/poll side into the shared typed-effect/subscription layer.
 
 5. **Unconditional full-frame redraw.** The loop draws every tick regardless of whether anything changed. No dirty flag, no skipped frames.
 
@@ -558,7 +558,7 @@ The async-first principle becomes actionable as a concrete list. Every site belo
 | Site | What blocks | Target |
 |---|---|---|
 | `mount_info::inspect` (<RepoFile path="src/console/manager/mount_info.rs" />) | visible mount rows read only cached facts during render, but cache refresh still runs synchronously on state construction/input paths | typed `MountFacts`, refreshed by a background `MountInspected` message |
-| instance refresh (<RepoFile path="src/console/manager/state.rs" />) | index/manifest reads + per-container socket fan-out now run on a worker thread and are polled back into state; this is still a bespoke channel, not a typed effect/message | typed background task → `InstancesRefreshed` message |
+| instance refresh (<RepoFile path="src/console/manager/state.rs" />) | index/manifest reads + per-container socket fan-out now run on a worker thread and land through `ManagerMessage::InstancesRefreshed`; the spawn/poll side is still bespoke instead of a shared effect/subscription | typed subscription/effect producer for `InstancesRefreshed` |
 | 1Password loads | synchronous `OpRunner` calls invoked from input handlers | background task → result message |
 | `event::poll(50 ms)` loop | wakes 20×/s even when idle; full-frame redraw every tick | `tokio::select!` over an `EventStream` + the `Message` channel; dirty/animation-tick redraw |
 
@@ -591,7 +591,7 @@ Introduce the Model/Update/View seam without changing behavior:
 
 3. **Pure view.** Convert renderers to `fn(frame, area, &Model, &UiState)` with no `&mut` and no I/O. Move scroll clamping into `update` (on resize / scroll messages). Replace per-frame `mount_info::inspect` with a cached `MountFacts` map refreshed by a background `MountInspected` message.
 
-4. **Background I/O → channel.** Move the remaining bespoke/background work into typed effects: instance refresh already runs on a worker-thread result channel, but still needs an `InstancesRefreshed` message; 1Password loads and mount inspection still need to move behind result messages. `run_console` is already an `async fn`, so the target loop is a `tokio::select!` over a crossterm `EventStream` and the background `Message` channel — replacing today's synchronous `event::poll(50 ms)` — so the draw never blocks on disk/socket work and no longer wakes 20×/s just to spin. (Fallback if `EventStream` proves awkward: a dedicated input thread feeding the same `Message` channel via `std::sync::mpsc`.)
+4. **Background I/O → channel.** Move the remaining bespoke/background work into typed effects: instance refresh already runs on a worker-thread result channel and reports through `InstancesRefreshed`, but its spawn/poll side still needs to become a shared effect/subscription; 1Password loads and mount inspection still need to move behind result messages. `run_console` is already an `async fn`, so the target loop is a `tokio::select!` over a crossterm `EventStream` and the background `Message` channel — replacing today's synchronous `event::poll(50 ms)` — so the draw never blocks on disk/socket work and no longer wakes 20×/s just to spin. (Fallback if `EventStream` proves awkward: a dedicated input thread feeding the same `Message` channel via `std::sync::mpsc`.)
 
 5. **`StatefulWidget` components.** Extract the list, the editor (per tab), settings, and the modal family into components implementing the Ratatui widget traits, each with its own `State`. This is where the [Split `input/editor.rs`](/reference/roadmap/split-input-editor/) and [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) work should land — the splits target component boundaries, not arbitrary smaller files.
 
@@ -806,7 +806,7 @@ Remove `&mut` and I/O from renderers. Move scroll clamping into `update`. Visibl
 
 ### Phase 3 — Host: background I/O
 
-Move the remaining refresh/load paths onto background tasks that send `Message`s. Instance refresh no longer blocks draw, but it still reports through a bespoke worker channel; promote that result to `ManagerMessage` alongside 1Password loads and mount inspection.
+Move the remaining refresh/load paths onto background tasks that send `Message`s. Instance refresh no longer blocks draw and reports through `ManagerMessage::InstancesRefreshed`; next promote its spawn/poll side to the shared effect/subscription layer alongside 1Password loads and mount inspection.
 
 ### Phase 4 — Host: components + modal-stack convergence
 

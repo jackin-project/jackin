@@ -7,20 +7,21 @@
 use super::auth_kind::AuthKind;
 use super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
 use super::state::{
-    EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, SecretsScopeTag,
-    SettingsTab,
+    EditorTab, FieldFocus, InstanceRefreshSnapshot, ManagerListRow, ManagerStage, ManagerState,
+    SecretsScopeTag, SettingsTab,
 };
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ManagerMessage {
+#[derive(Debug)]
+pub(crate) enum ManagerMessage {
     CollapseSelectedTree,
     ClearEditorAuthKind,
     EnterPreview,
     EnterEditorAuthKind {
         kind: AuthKind,
     },
+    InstancesRefreshed(Result<InstanceRefreshSnapshot, String>),
     FocusEditorContent,
     FocusEditorTabBar,
     FocusSettingsContent,
@@ -120,14 +121,18 @@ pub enum ManagerMessage {
     ScrollFocusedListBlockVertical(i16),
 }
 
-pub type ManagerUpdate = UpdateResult<NoEffect>;
+pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
 
-pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> ManagerUpdate {
+pub(crate) fn update_manager(
+    state: &mut ManagerState<'_>,
+    message: ManagerMessage,
+) -> ManagerUpdate {
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),
         ManagerMessage::ClearEditorAuthKind => clear_editor_auth_kind(state),
         ManagerMessage::EnterPreview => state.preview_focused = true,
         ManagerMessage::EnterEditorAuthKind { kind } => enter_editor_auth_kind(state, kind),
+        ManagerMessage::InstancesRefreshed(result) => state.apply_instance_refresh(result),
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
         ManagerMessage::FocusSettingsContent => set_settings_tab_bar_focus(state, false),
