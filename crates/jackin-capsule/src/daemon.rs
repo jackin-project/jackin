@@ -35,6 +35,7 @@ use portable_pty::CommandBuilder;
 
 use crate::action::Action;
 use crate::git_context::{WorkdirContext, git_capture_at_workdir, resolve_default_branch};
+use crate::selection::{SelectionState, paint_selection_highlight, selection_text};
 use crate::util::{WaitOutcome, wait_child_with_timeout};
 use crate::dialog::{
     ConfirmKind, Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand,
@@ -387,23 +388,6 @@ struct DragState {
 /// highlight; release base64-encodes the selected text and writes it
 /// to the operator's clipboard via OSC 52. Cleared on any focus
 /// change, tab swap, or dialog open.
-#[derive(Debug, Clone)]
-struct SelectionState {
-    session_id: u64,
-    /// Pane's inner content rectangle at selection-start time. Stays
-    /// stable through the drag (a resize / reflow cancels the
-    /// selection in the same places `DragState` is cancelled).
-    inner: Rect,
-    /// 0-based grid coordinates relative to the pane's inner area,
-    /// captured at press time. Stays put during the drag.
-    anchor_row: u16,
-    anchor_col: u16,
-    /// Latest grid coordinate the operator's cursor reached. Updated
-    /// on every motion event.
-    end_row: u16,
-    end_col: u16,
-}
-
 const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Hard cap on simultaneous tabs. 32 is well past any operator
@@ -4116,102 +4100,6 @@ async fn handle_attach_client(
         crate::clog!(
             "attach client: cmd_tx closed before synthetic Detach could fire; main loop is already tearing down"
         );
-    }
-}
-
-/// Extract the text inside `sel` from the source pane's `vt100`
-/// screen. Walks every cell between anchor and end in row-major
-/// order (with newlines between rows) and concatenates the cell
-/// contents. Whitespace at the trailing edge of each row is trimmed
-/// so the operator's clipboard doesn't fill with padding spaces.
-fn selection_text(screen: &vt100::Screen, sel: &SelectionState) -> String {
-    let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
-    let (screen_rows, _) = screen.size();
-    // Must match `paint_selection_highlight`'s bound — without this
-    // the painted highlight and the copied text disagree mid-resize.
-    let cols_for_full_row = sel.inner.cols.saturating_sub(1);
-    let max_row = screen_rows.saturating_sub(1).min(end_row);
-    if start_row > max_row {
-        return String::new();
-    }
-    let mut out = String::new();
-    for r in start_row..=max_row {
-        let from_col = if r == start_row { start_col } else { 0 };
-        let to_col = if r == end_row {
-            end_col
-        } else {
-            cols_for_full_row
-        };
-        let mut row_text = String::new();
-        let mut c = from_col;
-        while c <= to_col {
-            if let Some(cell) = screen.cell(r, c)
-                && cell.has_contents()
-            {
-                row_text.push_str(cell.contents());
-                c += if cell.is_wide() { 2 } else { 1 };
-            } else {
-                row_text.push(' ');
-                c += 1;
-            }
-        }
-        out.push_str(row_text.trim_end());
-        if r != max_row {
-            out.push('\n');
-        }
-    }
-    out
-}
-
-/// Normalise a selection into `(start_row, start_col, end_row, end_col)`
-/// in top-left → bottom-right order, regardless of which direction the
-/// operator dragged.
-fn canonical_selection(sel: &SelectionState) -> (u16, u16, u16, u16) {
-    if (sel.anchor_row, sel.anchor_col) <= (sel.end_row, sel.end_col) {
-        (sel.anchor_row, sel.anchor_col, sel.end_row, sel.end_col)
-    } else {
-        (sel.end_row, sel.end_col, sel.anchor_row, sel.anchor_col)
-    }
-}
-
-/// Paint an inverse-video highlight over every cell inside the
-/// selection rectangle. Emitted after pane-body rendering so the
-/// agent's content is preserved underneath — the operator sees the same
-/// glyphs but on a reversed colour pair, which is the universal
-/// "this is selected" cue.
-fn paint_selection_highlight(buf: &mut Vec<u8>, screen: &vt100::Screen, sel: &SelectionState) {
-    let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
-    let inner = sel.inner;
-    for r in start_row..=end_row {
-        let from_col = if r == start_row { start_col } else { 0 };
-        let to_col = if r == end_row {
-            end_col
-        } else {
-            inner.cols.saturating_sub(1)
-        };
-        if to_col < from_col {
-            continue;
-        }
-        let abs_row = inner.row + r;
-        let abs_col = inner.col + from_col;
-        let _ =
-            std::io::Write::write_fmt(buf, format_args!("\x1b[{};{}H", abs_row + 1, abs_col + 1));
-        // Inverse SGR — preserves whatever fg/bg the underlying cell
-        // carried so the operator still reads the selected text.
-        buf.extend_from_slice(b"\x1b[7m");
-        let mut c = from_col;
-        while c <= to_col {
-            if let Some(cell) = screen.cell(r, c)
-                && cell.has_contents()
-            {
-                buf.extend_from_slice(cell.contents().as_bytes());
-                c += if cell.is_wide() { 2 } else { 1 };
-            } else {
-                buf.push(b' ');
-                c += 1;
-            }
-        }
-        buf.extend_from_slice(b"\x1b[0m");
     }
 }
 

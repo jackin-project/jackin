@@ -16,6 +16,7 @@ pub mod protocol;
 pub mod render;
 pub mod runtime_setup;
 pub mod session;
+pub mod selection;
 pub mod socket;
 pub mod socket_backend;
 pub mod statusbar;
