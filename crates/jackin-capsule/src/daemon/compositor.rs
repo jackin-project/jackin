@@ -6,10 +6,6 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-// Import Ratatui's Rect under an alias so it coexists with the capsule's own
-// layout::Rect which uses row/col/rows/cols naming (daemon's VisiblePane etc.).
-use ratatui::layout::Rect as RatatuiRect;
-
 use super::*;
 
 impl Multiplexer {

@@ -93,7 +93,7 @@ mod multiplexer_utils;
 mod pane_layout;
 mod render_helpers;
 mod session_lifecycle;
-pub(super) use render_helpers::*;
+use render_helpers::*;
 
 struct SessionLaunch {
     label: String,

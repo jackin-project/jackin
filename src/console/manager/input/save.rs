@@ -257,7 +257,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
     cwd: &std::path::Path,
     plan: super::super::state::PendingSaveCommit,
     exit_on_success: bool,
-    runner: &mut impl crate::docker::CommandRunner,
+    _runner: &mut impl crate::docker::CommandRunner,
     docker_override: Option<&D>,
 ) -> anyhow::Result<()> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
@@ -467,19 +467,24 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                 Ok(detection) => {
                     for rec in &detection.stopped_records {
                         let container_dir = paths.data_dir.join(&rec.container_name);
-                        // block_on inside an async context panics; runner is !Send so we can't
-                        // spawn a thread. Workaround: spin a fresh single-threaded runtime.
-                        let cleanup_result = (|| -> anyhow::Result<()> {
+                        // Spawn a fresh OS thread with its own runtime so we
+                        // avoid building a nested Tokio runtime on the reactor
+                        // thread. IsolationRecord + PathBuf are both Send + Clone.
+                        let rec_owned = rec.clone();
+                        let cleanup_result = std::thread::spawn(move || -> anyhow::Result<()> {
                             let rt = tokio::runtime::Builder::new_current_thread()
                                 .enable_all()
                                 .build()
                                 .context("building tokio runtime for cleanup")?;
+                            let mut runner = crate::docker::ShellRunner::default();
                             rt.block_on(crate::isolation::cleanup::force_cleanup_isolated(
-                                rec,
+                                &rec_owned,
                                 &container_dir,
-                                runner,
+                                &mut runner,
                             ))
-                        })();
+                        })
+                        .join()
+                        .map_err(|_| anyhow::anyhow!("cleanup thread panicked"))?;
                         if let Err(e) = cleanup_result {
                             open_save_error_popup(editor, &e.to_string());
                             return Ok(());

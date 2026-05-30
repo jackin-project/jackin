@@ -1055,15 +1055,14 @@ fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
     // injecting the modal directly with op_available=true.)
     let mut state = manager_on_secrets_tab(&config, cwd);
     // Pretend the operator already typed "API_KEY" and committed via
-    // the sentinel-add path: stash pending_env_key + open SourcePicker
-    // with op_available = true.
+    // the sentinel-add path: env_key is embedded in SourcePicker modal.
     {
         let editor_state = editor_mut(&mut state);
-        editor_state.pending_env_key = Some((
-            jackin::console::manager::state::SecretsScopeTag::Workspace,
-            "API_KEY".into(),
-        ));
         editor_state.modal = Some(Modal::SourcePicker {
+            env_key: Some((
+                jackin::console::manager::state::SecretsScopeTag::Workspace,
+                "API_KEY".into(),
+            )),
             state: SourcePickerState::new("API_KEY".into(), true),
         });
     }
@@ -1086,12 +1085,6 @@ fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
             panic!("expected pending_picker_target = (scope, Some(\"API_KEY\")); got {other:?}")
         }
     }
-    // pending_env_key is consumed once OpPicker takes ownership of the
-    // (scope, key) pair via pending_picker_target.
-    assert!(
-        editor(&state).pending_env_key.is_none(),
-        "Op branch must consume pending_env_key into pending_picker_target"
-    );
     Ok(())
 }
 
@@ -1110,11 +1103,11 @@ fn source_picker_op_disabled_when_op_missing() -> Result<()> {
     let mut state = manager_on_secrets_tab(&config, cwd);
     {
         let editor_state = editor_mut(&mut state);
-        editor_state.pending_env_key = Some((
-            jackin::console::manager::state::SecretsScopeTag::Workspace,
-            "API_KEY".into(),
-        ));
         editor_state.modal = Some(Modal::SourcePicker {
+            env_key: Some((
+                jackin::console::manager::state::SecretsScopeTag::Workspace,
+                "API_KEY".into(),
+            )),
             state: SourcePickerState::new("API_KEY".into(), false),
         });
     }
@@ -1130,7 +1123,7 @@ fn source_picker_op_disabled_when_op_missing() -> Result<()> {
         key(KeyCode::Char('O')),
     )?;
     match &editor(&state).modal {
-        Some(Modal::SourcePicker { state }) => {
+        Some(Modal::SourcePicker { state, .. }) => {
             assert_eq!(
                 state.focused,
                 SourceChoice::Plain,
@@ -1166,13 +1159,13 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
     let cwd = temp.path();
 
     let mut state = drive_to_source_picker(&mut config, &paths, cwd, "API_KEY")?;
-    assert!(matches!(
-        editor(&state).modal,
-        Some(Modal::SourcePicker { .. })
-    ));
+    // env_key context travels inside the SourcePicker modal itself.
     assert!(
-        editor(&state).pending_env_key.is_some(),
-        "EnvKey commit must stash (scope, key)"
+        matches!(
+            editor(&state).modal,
+            Some(Modal::SourcePicker { env_key: Some(_), .. })
+        ),
+        "EnvKey commit must embed (scope, key) in SourcePicker modal"
     );
 
     // Esc walks back one dialog frame.
@@ -1187,10 +1180,6 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
         ),
         "Esc on SourcePicker must restore EnvKey input; got {:?}",
         editor(&state).modal
-    );
-    assert!(
-        editor(&state).pending_env_key.is_none(),
-        "Esc on SourcePicker must clear pending_env_key"
     );
     assert!(
         editor(&state).pending_picker_value.is_none(),
@@ -3358,10 +3347,6 @@ fn auth_credential_text_input_cancel_restores_form() -> Result<()> {
         matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
         "TextInput cancel must restore AuthForm; got {:?}",
         editor(&state).modal
-    );
-    assert!(
-        editor(&state).pending_auth_form_return.is_none(),
-        "TextInput cancel must drain pending_auth_form_return"
     );
     Ok(())
 }
