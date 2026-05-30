@@ -8,10 +8,10 @@ title: "Agent Tag Protocol (`<jackin:*>` operator-surface markers)"
 
 Agents produce useful machine-readable signals during their work — "I'm
 investigating an issue", "I just opened a pull request", "the repo I'm
-editing is at /workspace/jackin". Today jackin' has no way to *capture*
+editing is at /workspace/jackin". Today jackin❯ has no way to *capture*
 these signals;
 the operator either reads them in the agent's prose output or doesn't see
-them at all. As a result, jackin' UI cannot show live PR status, can't link
+them at all. As a result, jackin❯ UI cannot show live PR status, can't link
 the active workspace to its issue, and can't surface the agent's repo-of-
 record without scraping its stdout.
 
@@ -61,8 +61,8 @@ Important properties:
 
 ## Recommended Shape
 
-A jackin'-namespaced version with a small core vocabulary, an extension
-point for future kinds, and explicit multi-vendor compatibility (jackin'
+A jackin❯-namespaced version with a small core vocabulary, an extension
+point for future kinds, and explicit multi-vendor compatibility (jackin❯
 honors `<multicode:*>` too, so an role designed for either tool
 keeps working).
 
@@ -153,7 +153,7 @@ runtime; for Claude, that's the `[claude.plugins]` array).
 - Tag protocol versioning (`<jackin:repo version="2">...</jackin:repo>`).
   V1 is unversioned; if we ever need to break compatibility, add the
   attribute then.
-- Tag emission *from* jackin' to the agent (reverse direction). Out of
+- Tag emission *from* jackin❯ to the agent (reverse direction). Out of
   scope.
 
 ## Open Questions
@@ -169,7 +169,7 @@ runtime; for Claude, that's the `[claude.plugins]` array).
 - **`status` tag semantics.** Is the agent's `<jackin:status>` value
   authoritative, or just a display hint? Recommended: *display hint only* —
   the runtime status adapter remains the source of truth.
-- **Self-emission for ecosystem skills.** Should jackin' emit tags on the
+- **Self-emission for ecosystem skills.** Should jackin❯ emit tags on the
   operator's behalf when, e.g., the operator starts a workspace from a
   GitHub issue URL? Recommended: *yes, eventually*. The
   [autonomous queue](/reference/roadmap/autonomous-task-queue/) will

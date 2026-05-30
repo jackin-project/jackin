@@ -9,31 +9,16 @@
 @import '@fontsource/fraunces/500.css';
 @import '@fontsource/fraunces/700.css';
 
-/* Static Inter 900 for the giant wordmark. fontsource-variable ships
-   the variable-axis file where weight 900 is interpolated from the
-   wght axis endpoint, which reads thinner and more geometric than the
-   hand-drawn static Black. Declared under a unique family name so the
-   wordmark selectors unambiguously pick the static face instead of
-   the variable Inter that body/headline copy uses. */
-@font-face {
-  font-family: 'Inter Black';
-  font-style: normal;
-  font-display: block;
-  font-weight: 900;
-  src: url('@fontsource/inter/files/inter-latin-900-normal.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
 /* ==========================================================================
    Design tokens — dark-first, juicy-mint variants in [data-theme='light'].
 
    Light mode is explicitly NOT "dark mode with inverted luminance" — it's
-   a distinct brand aesthetic: a mint-tinted page that signals jackin'
+   a distinct brand aesthetic: a mint-tinted page that signals jackin❯
    green from first glance, with pure-white cards that lift off the
    tinted surface (the inverse of dark mode, where panels are LIGHTER
    than bg). Accent washes use --landing-accent-rgb so every border,
    bloom, and tint picks up a juicy mid-green (#16a34a) in light mode
-   and the bright phosphor (#00ff41) in dark mode through one token.
+   and the bright phosphor (#5cf07a) in dark mode through one token.
 
    Terminal-like surfaces (hero, code panel, daily-loop terminals,
    tabbed builder, install block) stay dark in BOTH modes via the
@@ -41,13 +26,13 @@
    ========================================================================== */
 
 :root {
-  --landing-bg: #0a0b0a;
-  --landing-bg-deep: #050605;
+  --landing-bg: #0a0a0a;
+  --landing-bg-deep: #050505;
   --landing-panel: #0f1110;
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #00ff41;
+  --landing-accent: #5cf07a;
   --landing-danger: #ff5e7a;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
@@ -57,7 +42,7 @@
      every border/wash/bloom/glow in the stylesheet. One token controls
      the hue of every accented surface: bright phosphor in dark mode,
      juicy mid-green (#16a34a) in light mode. */
-  --landing-accent-rgb: 0 255 65;
+  --landing-accent-rgb: 92 240 122;
 
   /* Page-level bg kept unscoped — the hero's bottom-fade gradient uses
      this to blend into whatever the page is (dark or light), even though
@@ -96,9 +81,7 @@
   /* Builder body syntax color (string literals). */
   --landing-builder-string: #fbc05b;
 
-  /* Wordmark typography — uses the static 'Inter Black' @font-face
-     declared above (hand-drawn 900), not the variable axis endpoint. */
-  --landing-wordmark-stack: 'Inter Black', 'Inter', sans-serif;
+  --landing-wordmark-stack: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 /* Light mode — white page body that matches the docs so landing→docs
@@ -131,7 +114,7 @@
   --landing-grid-dot: transparent;
 
   /* Green-tinted card shadows mirror the phosphor-bleed of dark mode
-     so cards feel like they're lifting out of a jackin' halo, not
+     so cards feel like they're lifting out of a jackin❯ halo, not
      casting a plain black drop. */
   --landing-card-shadow-soft: 0 14px 32px rgba(10, 80, 30, 0.12);
   --landing-card-shadow-strong: 0 20px 48px rgba(10, 80, 30, 0.18);
@@ -185,14 +168,14 @@
 .landing-cast-invite,
 .landing-machine-panel,
 .landing-focus-card {
-  --landing-bg: #0a0b0a;
-  --landing-bg-deep: #050605;
+  --landing-bg: #0a0a0a;
+  --landing-bg-deep: #050505;
   --landing-panel: #0f1110;
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #00ff41;
-  --landing-accent-rgb: 0 255 65;
+  --landing-accent: #5cf07a;
+  --landing-accent-rgb: 92 240 122;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
   --landing-ui-subtle: rgba(244, 247, 245, 0.05);
@@ -215,21 +198,21 @@
 
    Light mode: the hero flips to a saturated green bg with black rain
    — a deliberate brand-punch moment that signals "you're entering the
-   jackin' world." Text goes dark; the brand accent (tick mark, star
+   jackin❯ world." Text goes dark; the brand accent (chevron, star
    icon) flips to WHITE so it still pops against the green. The hero's
    CodePanel is shadowed by the always-dark scope above so it stays
    dark in both modes.
    ========================================================================== */
 
 .landing-hero-stage {
-  --landing-bg: #0a0b0a;
-  --landing-bg-deep: #050605;
+  --landing-bg: #0a0a0a;
+  --landing-bg-deep: #050505;
   --landing-panel: #0f1110;
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #00ff41;
-  --landing-accent-rgb: 0 255 65;
+  --landing-accent: #5cf07a;
+  --landing-accent-rgb: 92 240 122;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
   --landing-ui-subtle: rgba(244, 247, 245, 0.05);
@@ -277,13 +260,13 @@
    In dark mode, keep the hero as a solid near-black surface — matches
    the original design and is what the rain engine expects. */
 .landing-hero-stage {
-  background: #0a0b0a;
+  background: #0a0a0a;
 }
 :root[data-theme='light'] .landing-hero-stage {
   background: linear-gradient(
     180deg,
-    #0a0b0a 0%,
-    #0a0b0a 12%,     /* solid dark through the topnav strip */
+    #0a0a0a 0%,
+    #0a0a0a 12%,     /* solid dark through the topnav strip */
     #16a34a 40%,     /* smooth transition into brand green */
     #16a34a 68%,     /* hold green through the content zone */
     #ffffff 100%     /* fade to white at the seam to page body */
@@ -293,17 +276,17 @@
 /* Topnav in light-mode hero sits on the dark top of the gradient, so
    re-scope it to dark-mode tokens — this makes the theme-toggle pill
    read as a dark pill (not white-on-dark), the logo/star read as
-   light text, and the tick + star icon stay phosphor-green. */
+   light text, and the chevron + star icon stay phosphor-green. */
 :root[data-theme='light'] nav.landing-topnav {
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
   --landing-panel: #0f1110;
-  --landing-bg-deep: #050605;
+  --landing-bg-deep: #050505;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
-  --landing-accent: #00ff41;
-  --landing-accent-rgb: 0 255 65;
+  --landing-accent: #5cf07a;
+  --landing-accent-rgb: 92 240 122;
 }
 
 /* Primary CTA sits in the content zone (green bg) — override the
@@ -566,18 +549,21 @@ html.theme-init *::after {
 .landing-footer-meta .sep { color: var(--landing-ui-strong); }
 .landing-footer-wordmark {
   font-family: var(--landing-wordmark-stack);
-  font-weight: 900;
+  font-weight: 500;
   font-size: clamp(120px, 24vw, 300px);
   line-height: 0.9;
-  letter-spacing: -0.06em;
+  letter-spacing: 0;
   color: var(--landing-text);
   margin: 0;
   padding: 0;
   user-select: none;
 }
-.landing-footer-wordmark .tick {
+.landing-footer-wordmark .jk-brand-mark__chevron {
   color: var(--landing-accent);
-  text-shadow: 0 0 0.1em rgb(var(--landing-accent-rgb) / 0.35);
+}
+.landing-footer-wordmark .jk-brand-mark__byline {
+  font-size: clamp(15px, 3.1vw, 38px);
+  color: var(--landing-text-ghost);
 }
 
 @media (max-width: 880px) {
@@ -682,7 +668,7 @@ html.theme-init *::after {
 }
 
 /* TabbedBuilder (Section 04, used by ApproachCards) — always-dark
-   terminal. Uses --landing-bg-deep (solid #050605) rather than a
+   terminal. Uses --landing-bg-deep (solid #050505) rather than a
    translucent rgba so the white page in light mode doesn't bleed
    through and turn the terminal muddy grey. */
 .landing-builder {
@@ -1197,7 +1183,7 @@ section.landing-section.landing-voc-scroll-section {
   margin: 0; max-width: 440px;
 }
 .landing-loop-term {
-  /* Solid --landing-bg-deep (#050605) rather than translucent rgba —
+  /* Solid --landing-bg-deep (#050505) rather than translucent rgba —
      otherwise the white page in light mode bleeds through the alpha
      channel and the terminal reads as muddy grey instead of the
      near-black it's meant to be. */
@@ -1317,8 +1303,8 @@ nav.landing-topnav .landing-star {
 }
 .landing-logo {
   font-family: var(--landing-wordmark-stack);
-  font-weight: 900;
-  letter-spacing: -0.04em;
+  font-weight: 500;
+  letter-spacing: 0;
   font-size: clamp(22px, 2.4vw, 28px);
   line-height: 1;
   color: var(--landing-text);
@@ -1326,9 +1312,8 @@ nav.landing-topnav .landing-star {
   align-items: center;
   user-select: none;
 }
-.landing-logo .tick {
-  color: var(--landing-accent);
-  text-shadow: 0 0 0.2em rgb(var(--landing-accent-rgb) / 0.45);
+.landing-logo .jk-brand-mark__chevron {
+  color: #5cf07a;
 }
 .landing-nav-right { display: flex; gap: 14px; align-items: center; }
 .landing-star {
@@ -1427,6 +1412,32 @@ nav.landing-topnav .landing-star {
 }
 
 .landing-hero { padding: 88px 0 112px; }
+
+.landing-hero-wordmark-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 clamp(64px, 8vw, 104px);
+}
+
+.landing-hero-wordmark {
+  font-family: var(--landing-wordmark-stack);
+  font-weight: 500;
+  font-size: clamp(56px, 8vw, 96px);
+  letter-spacing: 0;
+  line-height: 1;
+  color: var(--landing-text);
+  text-align: center;
+}
+
+.landing-hero-wordmark .jk-brand-mark__chevron {
+  color: #5cf07a;
+}
+
+.landing-hero-wordmark .jk-brand-mark__byline {
+  justify-self: center;
+  font-size: clamp(13px, 1.8vw, 21px);
+  color: var(--landing-text-dim);
+}
 
 .landing-dev-warning {
   max-width: 960px;

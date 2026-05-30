@@ -1,4 +1,6 @@
 // docs/components/landing/WordmarkFooter.tsx
+import { BrandMark } from '../brand/BrandMark';
+
 export function WordmarkFooter() {
   return (
     <footer className="landing-footer">
@@ -9,7 +11,7 @@ export function WordmarkFooter() {
         <span className="sep">·</span>
         <span>Apache 2.0</span>
       </div>
-      <div className="landing-footer-wordmark">jackin<span className="tick">'</span></div>
+      <BrandMark className="landing-footer-wordmark" byline />
     </footer>
   );
 }

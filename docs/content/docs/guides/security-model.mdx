@@ -1,16 +1,16 @@
 ---
 title: Security Model
-description: How jackin' isolates agents and where that isolation stops
+description: How jackin❯ isolates agents and where that isolation stops
 ---
 
 
 ## Honest boundary statement
 
-jackin' provides a **container boundary** today. That is a deliberate proof-of-concept choice, not the long-term ceiling.
+jackin❯ provides a **container boundary** today. That is a deliberate proof-of-concept choice, not the long-term ceiling.
 
-Containers are where jackin' starts because the team building it has years of operational experience with `Docker`, the mental model is widely understood, and a container boundary is the shortest path to a useful product the operator can actually feel — workspaces, mounts, isolated worktrees, parallel agents, all running locally without an additional virtualization layer to debug. The current version is mostly designed around that boundary because it is what we know how to make ergonomic *now*.
+Containers are where jackin❯ starts because the team building it has years of operational experience with `Docker`, the mental model is widely understood, and a container boundary is the shortest path to a useful product the operator can actually feel — workspaces, mounts, isolated worktrees, parallel agents, all running locally without an additional virtualization layer to debug. The current version is mostly designed around that boundary because it is what we know how to make ergonomic *now*.
 
-That doesn't mean jackin' has to stop there. Stronger boundaries — microVMs, hypervisor-backed sandboxes, and selectable backends — are explicit research items on the roadmap:
+That doesn't mean jackin❯ has to stop there. Stronger boundaries — microVMs, hypervisor-backed sandboxes, and selectable backends — are explicit research items on the roadmap:
 
 - [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) — keep the Docker-first model while making profiles, DinD hardening, resource budgets, network posture, and launch-contract reporting explicit.
 - [OrbStack isolated machine backend](/reference/roadmap/orbstack-isolated-machine-backend/) — research a macOS backend that preserves Docker workflows inside an OrbStack isolated machine with explicit shares.
@@ -18,19 +18,19 @@ That doesn't mean jackin' has to stop there. Stronger boundaries — microVMs, h
 - [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) — keep Docker, OrbStack, Kubernetes, and later true microVM providers under one backend-selection umbrella without forcing one boundary on every workload.
 - [Reproducibility & provenance pinning](/reference/roadmap/reproducibility-pinning/) — tighten what gets into the image to begin with.
 
-The plan is to keep iterating on UX, ergonomics, and operator workflows until jackin' is no longer in the *experimenting and figuring it out* phase, and then research and add stronger isolation boundaries as a configurable option. We constantly look at adjacent projects (microVM-based agent sandboxes, devcontainer setups, remote sandbox products) and borrow good ideas — see [Comparison with Alternatives](/guides/comparison/) for a current snapshot.
+The plan is to keep iterating on UX, ergonomics, and operator workflows until jackin❯ is no longer in the *experimenting and figuring it out* phase, and then research and add stronger isolation boundaries as a configurable option. We constantly look at adjacent projects (microVM-based agent sandboxes, devcontainer setups, remote sandbox products) and borrow good ideas — see [Comparison with Alternatives](/guides/comparison/) for a current snapshot.
 
 So the honest framing today is:
 
-- jackin' is useful when you trust the agent runtime itself but want to limit what it can touch on your machine.
+- jackin❯ is useful when you trust the agent runtime itself but want to limit what it can touch on your machine.
 - It is not the right tool to claim hypervisor-level isolation or to contain a fully hostile workload **right now**.
-- If you need the hardest local isolation boundary available today, a microVM-based tool such as `Docker Sandboxes` is stronger by design — and we treat those tools as references for what jackin' should eventually offer as one of the selectable backends.
+- If you need the hardest local isolation boundary available today, a microVM-based tool such as `Docker Sandboxes` is stronger by design — and we treat those tools as references for what jackin❯ should eventually offer as one of the selectable backends.
 
 For the latest plan and current research items, the [Roadmap](/reference/roadmap/) is the source of truth.
 
 ## Isolation layers
 
-jackin' security model is built on several layers that stack together:
+jackin❯ security model is built on several layers that stack together:
 
 ### 1. Container isolation
 
@@ -53,7 +53,7 @@ The agent can only access host paths you explicitly mount.
 jackin load agent-smith ~/Projects/my-app --mount ~/reference:/reference:ro
 ```
 
-This is the core blast-radius control in jackin'.
+This is the core blast-radius control in jackin❯.
 
 ### 3. Read-only enforcement
 
@@ -61,9 +61,9 @@ Mounts marked `:ro` are enforced by Docker and the kernel. The agent cannot writ
 
 ### 4. Agent source trust
 
-jackin' uses a trust-on-first-use model for third-party agent sources.
+jackin❯ uses a trust-on-first-use model for third-party agent sources.
 
-Built-in agents (`agent-smith`, `the-architect`) are always trusted. When you load a third-party agent (a namespaced selector like `org/agent-name`) for the first time, jackin' prompts you to review and confirm the source before building:
+Built-in agents (`agent-smith`, `the-architect`) are always trusted. When you load a third-party agent (a namespaced selector like `org/agent-name`) for the first time, jackin❯ prompts you to review and confirm the source before building:
 
 ```
 !! Untrusted agent source !!
@@ -71,13 +71,13 @@ Built-in agents (`agent-smith`, `the-architect`) are always trusted. When you lo
   agent:  org/agent-name
   source: https://github.com/org/jackin-agent-name.git
 
-  jackin' has never loaded this agent before. Trusting it means:
+  jackin❯ has never loaded this agent before. Trusting it means:
     - Its Dockerfile will be executed during the image build
     - Arbitrary commands in that Dockerfile will run on your machine
     - The agent will have access to your mounted workspace files
 ```
 
-Once you confirm, jackin' remembers the decision and subsequent loads of the same role proceed without prompting.
+Once you confirm, jackin❯ remembers the decision and subsequent loads of the same role proceed without prompting.
 
 You can also manage trust from the command line:
 
@@ -95,7 +95,7 @@ jackin config trust list
 For non-interactive environments (CI, automation), use `jackin config trust grant <selector>` ahead of the first load — that records the trust decision the same way the interactive prompt would.
 
 <Aside type="note">
-Trust is tied to the agent selector (e.g., `org/agent-name`), not the git URL. If an agent's cached repo URL no longer matches the configured source, jackin' rejects it with a separate remote-mismatch error regardless of trust status.
+Trust is tied to the agent selector (e.g., `org/agent-name`), not the git URL. If an agent's cached repo URL no longer matches the configured source, jackin❯ rejects it with a separate remote-mismatch error regardless of trust status.
 </Aside>
 ### Branch trust gate
 
@@ -103,7 +103,7 @@ Loading a role from an unmerged branch (`--role-branch`) triggers a separate, al
 
 The reason: trusting a role records that you reviewed the role's **default branch**. An external contributor can open a pull request on that same role repository with a modified Dockerfile that runs arbitrary commands during the image build. If you loaded the branch without a prompt, you could unknowingly execute code you never reviewed, in a context where you expected the behaviour of the trusted default branch.
 
-The branch trust gate shows the role, source repository, and branch name inside the launch cockpit, then asks you to confirm that you reviewed the diff before jackin' builds it.
+The branch trust gate shows the role, source repository, and branch name inside the launch cockpit, then asks you to confirm that you reviewed the diff before jackin❯ builds it.
 
 This gate cannot be bypassed: there is no `--force-branch` flag, no config option to skip it, and non-interactive terminals bail with an error rather than defaulting to yes.
 
@@ -137,7 +137,7 @@ These guarantees are useful, but they are not absolute in the face of a kernel e
 
 ## User mapping
 
-jackin' remaps the container user to your host UID and GID. That means:
+jackin❯ remaps the container user to your host UID and GID. That means:
 
 - files created in mounted directories are owned by your host user
 - you avoid common permission conflicts after the agent edits files
@@ -153,7 +153,7 @@ Several important things do **not** persist:
 - packages installed interactively into the running container
 - containers and images the agent built inside its own private `Docker` daemon during the session
 
-This is a deliberate trade-off. jackin' is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes. Use `jackin purge <role>` to wipe all of an agent's persisted state and start fresh.
+This is a deliberate trade-off. jackin❯ is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes. Use `jackin purge <role>` to wipe all of an agent's persisted state and start fresh.
 
 ## Current implementation constraints
 
@@ -161,15 +161,15 @@ These are the parts of the security story that should be stated bluntly.
 
 ### Privileged DinD sidecar
 
-jackin' launches a privileged `docker:dind` sidecar per agent. The sidecar auto-generates TLS certificates at startup and shares client certs with the agent container via a Docker volume. The agent connects over TLS-authenticated TCP (`DOCKER_HOST=tcp://...:2376` with `DOCKER_TLS_VERIFY=1`).
+jackin❯ launches a privileged `docker:dind` sidecar per agent. The sidecar auto-generates TLS certificates at startup and shares client certs with the agent container via a Docker volume. The agent connects over TLS-authenticated TCP (`DOCKER_HOST=tcp://...:2376` with `DOCKER_TLS_VERIFY=1`).
 
 That keeps the agent away from your host Docker daemon and prevents unauthenticated access to the DinD daemon on the per-agent network. But it is still a privileged sidecar, and the auto-generated certificates are session-scoped (not pinned to an external CA).
 
 ### Open outbound network by default
 
-jackin' does not currently provide per-agent allowlists, denylists, private-network blocking, or request logs for outbound traffic.
+jackin❯ does not currently provide per-agent allowlists, denylists, private-network blocking, or request logs for outbound traffic.
 
-If an agent can read a mounted secret and the network path is open, jackin' cannot stop exfiltration.
+If an agent can read a mounted secret and the network path is open, jackin❯ cannot stop exfiltration.
 
 ### Direct bind mounts, not snapshots
 
@@ -177,7 +177,7 @@ Mounted files are live host files. If the agent edits a mounted path, the host f
 
 ### Authentication forwarding
 
-By default, jackin' forwards the host's agent credentials (Claude Code, Codex, Amp, Kimi, OpenCode, and `gh`) into new agent containers (the `sync` auth-forward mode). This means agents start pre-authenticated, but it also means OAuth tokens and API keys land on disk inside the agent's persisted state with owner-only file permissions.
+By default, jackin❯ forwards the host's agent credentials (Claude Code, Codex, Amp, Kimi, OpenCode, and `gh`) into new agent containers (the `sync` auth-forward mode). This means agents start pre-authenticated, but it also means OAuth tokens and API keys land on disk inside the agent's persisted state with owner-only file permissions.
 
 `--debug` output never prints resolved token values. Command-level diagnostic lines show the command name and arguments; env-var values and command stdout that carry credentials are redacted or suppressed at the source before they reach the terminal.
 
@@ -185,13 +185,13 @@ You can control this behaviour at three scopes (global, per workspace, and per w
 
 ### Credentials obtained inside the runtime remain inside the runtime
 
-Whether credentials were forwarded from the host or obtained via in-container login, they persist in jackin' state until you purge it.
+Whether credentials were forwarded from the host or obtained via in-container login, they persist in jackin❯ state until you purge it.
 
 If you authenticate a tool like `gh` inside the runtime, that credential becomes readable by that runtime as well.
 
 ## Threat model
 
-jackin' is designed to reduce the most common operator risks:
+jackin❯ is designed to reduce the most common operator risks:
 
 | Threat | Mitigation | Residual risk |
 |---|---|---|
@@ -203,10 +203,10 @@ jackin' is designed to reduce the most common operator risks:
 | Typosquatted or malicious role repo | Trust-on-first-use prompt before building | User must review the source; trusted flag persists |
 | Malicious code in an unmerged PR branch | Branch trust gate always fires for `--role-branch` | User must confirm they reviewed the branch diff; cannot be skipped |
 
-## What jackin' does NOT protect against
+## What jackin❯ does NOT protect against
 
 <Aside type="caution">
-This is where people often over-claim container isolation. Don't do that. jackin' is useful, but it is not magical.
+This is where people often over-claim container isolation. Don't do that. jackin❯ is useful, but it is not magical.
 </Aside>
 - **Container escape vulnerabilities** — containers share the host kernel
 - **Kernel-level exploits** — there is no hypervisor boundary
@@ -218,9 +218,9 @@ This is where people often over-claim container isolation. Don't do that. jackin
 
 1. **Mount the minimum necessary.** Smaller visibility is the biggest win.
 2. **Prefer read-only mounts.** If the agent only needs to inspect something, mount it as `:ro`.
-3. **Do not mount credential directories.** Avoid `~/.ssh`, `~/.aws`, `~/.gnupg`, and similar paths. jackin' warns and asks for confirmation when it detects these, but avoiding them entirely is the safest approach.
+3. **Do not mount credential directories.** Avoid `~/.ssh`, `~/.aws`, `~/.gnupg`, and similar paths. jackin❯ warns and asks for confirmation when it detects these, but avoiding them entirely is the safest approach.
 4. **Treat runtime login as sensitive.** If you authenticate inside the runtime, assume the agent can read that state.
-5. **Review role repos before loading.** The Dockerfile defines what the runtime contains. jackin' prompts for trust confirmation on first use of third-party agents, but you should inspect the repository yourself before confirming.
+5. **Review role repos before loading.** The Dockerfile defines what the runtime contains. jackin❯ prompts for trust confirmation on first use of third-party agents, but you should inspect the repository yourself before confirming.
 6. **Always review the branch diff before loading a role branch.** `--role-branch` always prompts for confirmation, but the prompt is only as useful as your review. Open the pull request, check the Dockerfile and any scripts, and confirm only after you understand what changed.
 7. **Split roles by scope.** Keep frontend, backend, infra, and review workflows in separate environments when appropriate.
 8. **Use `jackin purge` when a runtime no longer needs its persisted state.**

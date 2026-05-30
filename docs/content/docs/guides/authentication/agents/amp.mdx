@@ -1,13 +1,13 @@
 ---
 title: Amp
-description: How jackin' forwards your Amp login into agent containers
+description: How jackin❯ forwards your Amp login into agent containers
 ---
 
 
-Amp authenticates via `~/.local/share/amp/secrets.json` on your host (the file the Amp CLI writes the `apiKey@https://ampcode.com/` token into). In `sync` mode (the default), jackin' copies this file into the container on every launch — Amp inside the container sees the same account and model access you have locally.
+Amp authenticates via `~/.local/share/amp/secrets.json` on your host (the file the Amp CLI writes the `apiKey@https://ampcode.com/` token into). In `sync` mode (the default), jackin❯ copies this file into the container on every launch — Amp inside the container sees the same account and model access you have locally.
 
 <Aside type="note">
-`~/.config/amp/settings.json` is Amp's preferences file and never holds the authentication token. jackin' forwards `~/.local/share/amp/secrets.json`, not the preferences file.
+`~/.config/amp/settings.json` is Amp's preferences file and never holds the authentication token. jackin❯ forwards `~/.local/share/amp/secrets.json`, not the preferences file.
 </Aside>
 
 ## Logging in on the host
@@ -18,7 +18,7 @@ Before sync can forward anything, you need a working Amp login on your host:
 amp auth login
 ```
 
-Follow the prompted flow. Once it completes, Amp is ready on your host and jackin' will forward that login into every container launch.
+Follow the prompted flow. Once it completes, Amp is ready on your host and jackin❯ will forward that login into every container launch.
 
 <Aside type="tip">
 To verify the host login is active, run `amp` briefly on the host — if it starts a session without prompting for credentials, you're good.
@@ -26,7 +26,7 @@ To verify the host login is active, run `amp` briefly on the host — if it star
 
 ## Runtime trust prompts
 
-jackin' launches Amp with `--dangerously-allow-all`, so workspace-backed launches do not stop on command confirmation prompts. This applies only inside the jackin' container runtime; jackin' does not write Amp preferences on the host.
+jackin❯ launches Amp with `--dangerously-allow-all`, so workspace-backed launches do not stop on command confirmation prompts. This applies only inside the jackin❯ container runtime; jackin❯ does not write Amp preferences on the host.
 
 ## Subscription
 

@@ -45,7 +45,7 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 
 `jackin hardline` only works on **running** containers. Any stopped container — whether it exited cleanly or crashed — requires `jackin load` to start a new session. This keeps the rule simple: if you can see the container in `jackin console` as running, use `jackin hardline`; otherwise, use `jackin load`.
 
-If the role container itself was deleted, jackin' can rebuild the runtime around local state managed by jackin', such as the per-instance agent home and preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone. jackin' intentionally does not restore packages installed ad hoc inside the container, global files edited outside mounted paths, DinD images, or other container-layer mutations.
+If the role container itself was deleted, jackin❯ can rebuild the runtime around local state managed by jackin❯, such as the per-instance agent home and preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone. jackin❯ intentionally does not restore packages installed ad hoc inside the container, global files edited outside mounted paths, DinD images, or other container-layer mutations.
 
 For ad-hoc instances, `jackin hardline <instance-id>` normally expects the original project directory. If that directory moved, run the exact hardline command in an interactive terminal; the CLI lets you mount the current directory, browse for the moved project directory, or enter another path manually at the original in-container workdir before rebuilding the missing runtime.
 
@@ -61,7 +61,7 @@ Closing your terminal tab **does not** shut the container down. The foreground s
 
 To stop one agent, exit it from inside (e.g., `/exit` in Claude Code). That ends the agent's tab cleanly. When the last tab ends, the multiplexer exits and the container shuts down cleanly.
 
-To stop the whole container from inside the multiplexer, use the command palette's **Exit** action and confirm **Exit?**. That terminates every live pane, lets the Capsule daemon exit as PID 1, and returns to the host finalizer so jackin' removes the role container, DinD sidecar, certs volume, and network through the standard cleanup path.
+To stop the whole container from inside the multiplexer, use the command palette's **Exit** action and confirm **Exit?**. That terminates every live pane, lets the Capsule daemon exit as PID 1, and returns to the host finalizer so jackin❯ removes the role container, DinD sidecar, certs volume, and network through the standard cleanup path.
 
 ## Terminal tab title
 
@@ -71,7 +71,7 @@ To stop the whole container from inside the multiplexer, use the command palette
 
 Inside an attached `jackin-capsule` session, the command palette includes **Clear pane**. With prefix mode enabled (`JACKIN_PREFIX=C-b`), press `Ctrl+B` then `Ctrl+L` to run the same command. Plain `Ctrl+L` still goes directly to the shell or agent.
 
-Clear pane drops scrollback saved by jackin' for the focused pane and sends the standard form-feed key (`Ctrl+L`) to the pane so shells and TUIs redraw themselves. It does not use a terminal reset sequence, so bracketed paste, mouse mode, alternate screen state, and other pane modes stay intact.
+Clear pane drops scrollback saved by jackin❯ for the focused pane and sends the standard form-feed key (`Ctrl+L`) to the pane so shells and TUIs redraw themselves. It does not use a terminal reset sequence, so bracketed paste, mouse mode, alternate screen state, and other pane modes stay intact.
 
 The palette's close action is context-aware. On a one-pane tab it appears as **Close tab** and opens the confirmation directly. On a split tab it appears as **Close**, then asks whether to close the focused pane or the whole tab; **Close pane** is highlighted first.
 

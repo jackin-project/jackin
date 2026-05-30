@@ -4,7 +4,7 @@ description: Use Z.AI's Anthropic-compatible endpoint as an alternative provider
 ---
 
 
-[Z.AI's GLM Coding Plan](https://z.ai/subscribe) provides an Anthropic-compatible API endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
+[Z.AI's GLM Coding Plan](https://z.ai/subscribe) provides an Anthropic-compatible API endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin❯ injects the redirect at session-spawn time.
 
 When `ZAI_API_KEY` is configured, opening a new Claude tab presents a two-item provider picker — **Anthropic** or **Z.AI** — immediately after you select the Claude agent. Single-provider operators (no `ZAI_API_KEY`) see no change: the picker is skipped and the session opens directly.
 
@@ -16,11 +16,11 @@ Z.AI is configured in the **Auth** tab of `jackin console`, not by hand-editing 
 
 1. Open [Z.AI's GLM Coding Plan](https://z.ai/subscribe), sign in, and choose the subscription plan you want to use for coding.
 2. After the plan is active, open the [Z.AI API Keys](https://z.ai/manage-apikey/apikey-list) page and create an API key.
-3. Keep that key private. In jackin', store it as `ZAI_API_KEY` through the Auth settings below; do not paste it into Claude Code's host settings.
+3. Keep that key private. In jackin❯, store it as `ZAI_API_KEY` through the Auth settings below; do not paste it into Claude Code's host settings.
 
-Z.AI's own Claude Code setup writes `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` into Claude Code configuration. jackin' deliberately does not mutate your host Claude settings. Instead, the Z.AI key you save in jackin' Auth settings makes Z.AI appear as an Anthropic-compatible provider choice for Claude Code launches, and jackin' injects those two variables only into the Claude Code process that selected Z.AI.
+Z.AI's own Claude Code setup writes `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` into Claude Code configuration. jackin❯ deliberately does not mutate your host Claude settings. Instead, the Z.AI key you save in jackin❯ Auth settings makes Z.AI appear as an Anthropic-compatible provider choice for Claude Code launches, and jackin❯ injects those two variables only into the Claude Code process that selected Z.AI.
 
-## Configure your Z.AI API key in jackin'
+## Configure your Z.AI API key in jackin❯
 
 1. Open `jackin console`, select your workspace, and switch to the **Auth** tab.
 2. Scroll to the **Z.AI** row and press `Enter` or `Space` to open the auth form.
@@ -68,7 +68,7 @@ Set a global key to have Z.AI available in every workspace, or set a per-workspa
 
 ## How the redirect works
 
-When you select Z.AI in the provider picker, jackin' injects two environment variables into the spawned Claude Code process at launch time — not into any shared config file:
+When you select Z.AI in the provider picker, jackin❯ injects two environment variables into the spawned Claude Code process at launch time — not into any shared config file:
 
 - `ANTHROPIC_AUTH_TOKEN` — set to your `ZAI_API_KEY` value
 - `ANTHROPIC_BASE_URL` — set to `https://api.z.ai/api/anthropic`
@@ -79,6 +79,6 @@ Your `ZAI_API_KEY` is never written to the logs, including `--debug` output.
 
 ## See also
 
-- [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin' applies across every auth axis.
+- [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin❯ applies across every auth axis.
 - [Agent Authentication](/guides/authentication/agents/) — agent-level auth forwarding for Claude Code, Codex, Amp, Kimi, and OpenCode.
 - [Environment Variables](/guides/environment-variables/) — how the operator env-vars model supplies credentials at global and per-workspace scope.

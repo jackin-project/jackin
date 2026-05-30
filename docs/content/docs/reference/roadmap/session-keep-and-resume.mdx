@@ -6,7 +6,7 @@ title: "Session Keep and Resume"
 
 ## Problem
 
-When an operator leaves a jackin' session, the exit path silently discards more than the operator expects, and the next launch cannot bring them back. This is the concrete cause of the "sometimes I lose important context" instability operators report.
+When an operator leaves a jackin❯ session, the exit path silently discards more than the operator expects, and the next launch cannot bring them back. This is the concrete cause of the "sometimes I lose important context" instability operators report.
 
 Trace a normal clean exit (`Stopped/0`) today: <RepoFile path="src/isolation/finalize.rs" /> assesses each isolated mount, **auto-deletes** any worktree it judges safe (`force_cleanup_isolated`, no prompt), returns `FinalizeDecision::Cleaned`, the launcher tears the container down, and <RepoFile path="src/runtime/launch.rs" /> stamps the instance `InstanceStatus::CleanExited`. The per-instance agent home (`~/.jackin/data/<container>/home/.claude`, `.claude.json`, installed plugins, conversation history, every other runtime's home) is preserved on disk — but `CleanExited` is **not** a restore candidate (`is_restore_candidate()` in <RepoFile path="src/instance/manifest.rs" /> matches `Active | Running | Crashed | PreservedDirty | PreservedUnpushed | RestoreAvailable | FailedSetup`, never `CleanExited`). So the next `jackin load` / `jackin console` mints a fresh `instance_id`, a fresh container name, a fresh data directory, and an empty home. Yesterday's conversation is stranded on disk with no path back to it.
 
@@ -51,7 +51,7 @@ Findings from auditing the exit/restore path and the in-flight rich-dialog chang
 | F3 | Medium | The restore picker is framed as mess-recovery ("Unfinished jackin instances"), not session continuity ("resume yesterday"), and does not include kept-clean instances. |
 | F4 | Medium | `Clone`-mode mounts are assessed by worktree semantics incidentally (the record field is `worktree_path` but holds the clone dir too); there are no clone-specific tests, and `force_cleanup_clone` is `rm -rf` only. |
 | F5 | Medium | Verification surfaces a path plus "has uncommitted changes" — never the actual file list or unpushed branch list, and offers no acknowledge-the-detail step. |
-| F6 | Low | The non-interactive preserve path only `eprintln!`s; nothing records whether the operator *wanted* to keep versus jackin' merely *could not ask*. |
+| F6 | Low | The non-interactive preserve path only `eprintln!`s; nothing records whether the operator *wanted* to keep versus jackin❯ merely *could not ask*. |
 | F7 | Low | The rich cleanup dialog renders unconditionally (`enter_dialog` skips the capability check) with no plain-text degrade; on a `<80×24` or `TERM=dumb` terminal both the choice and its error popup are unreadable. The popup's own render failure is swallowed (`let _ =`) with no `clog!`. |
 | F8 | Trivial | <RepoFile path="src/isolation/finalize.rs" /> cites a `worktree-cleanup-assessment.mdx` doc that does not exist; fold the policy table into this item or an internals page and fix the reference. |
 | F9 | High | A terminal exit leaks its data directory: `LoadCleanup::run` removes Docker resources but never `~/.jackin/data/<container>/`, so every clean exit accumulates a `jk-…/` folder. Reaping only ever happens if the operator runs `jackin prune instances` manually. |
@@ -95,7 +95,7 @@ Findings from auditing the exit/restore path and the in-flight rich-dialog chang
 
 ## TUI design — screens, flow, and storage
 
-Every screen below renders on the existing rich surface and obeys the canonical [TUI Design Decisions](/reference/tui-design-decisions/): the shared ` jackin' ` brand pill + `·` + screen label on top, the forced-choice `select_list` (`Filter:` row over a `▸`-marked list, `Start …` as the default first row), footer-only hints, and an opaque modal backdrop. Mockups use the same light, terminal-native vocabulary as the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — no heavy borders, compact labels, bright state words.
+Every screen below renders on the existing rich surface and obeys the canonical [TUI Design Decisions](/reference/tui-design-decisions/): the shared ` jackin❯ ` brand pill + `·` + screen label on top, the forced-choice `select_list` (`Filter:` row over a `▸`-marked list, `Start …` as the default first row), footer-only hints, and an opaque modal backdrop. Mockups use the same light, terminal-native vocabulary as the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — no heavy borders, compact labels, bright state words.
 
 ### Exit flow
 
@@ -119,7 +119,7 @@ session ends (foreground attach returned)
 **Screen A — Unfinished work** (shown only on `ask` + dirty/unpushed; the verify-and-acknowledge gate):
 
 ```text
- jackin'  · session ended
+ jackin❯  · session ended
 
  the-architect (claude) · workspace jackin · jk-sz2v4p0e
 
@@ -141,7 +141,7 @@ Footer hint: `Enter continue · Ctrl-C abort`.
 **Screen B — How to end this session** (forced-choice):
 
 ```text
- jackin'  · session ended
+ jackin❯  · session ended
 
  the-architect (claude) · workspace jackin · jk-sz2v4p0e
  1 isolated mount has unfinished work.
@@ -154,7 +154,7 @@ Footer hint: `Enter continue · Ctrl-C abort`.
 
 Footer hint: `↑/↓ navigate · Enter select · Ctrl-C abort`.
 
-`Return to agent` reconnects to the live session (today's `ReturnToAgent`) and is the default first row because it never loses work. `Exit and keep` tears the container down to free Docker resources but retains the host state and marks the instance restorable — it is **not** a `Ctrl-B D` detach, which keeps the container running for `jackin hardline`. `Exit and clean up` is the deliberate-discard path: the operator has seen the unfinished work on Screen A and insists, so jackin' runs the terminal-cleanup path (see *Data-directory and index lifecycle*).
+`Return to agent` reconnects to the live session (today's `ReturnToAgent`) and is the default first row because it never loses work. `Exit and keep` tears the container down to free Docker resources but retains the host state and marks the instance restorable — it is **not** a `Ctrl-B D` detach, which keeps the container running for `jackin hardline`. `Exit and clean up` is the deliberate-discard path: the operator has seen the unfinished work on Screen A and insists, so jackin❯ runs the terminal-cleanup path (see *Data-directory and index lifecycle*).
 
 ### Launch flow
 
@@ -179,7 +179,7 @@ operator selects role + agent for a workspace
 **Screen C — Resume or start new** (forced-choice; `Start new` is the default first row per the launch-dialog rule):
 
 ```text
- jackin'  · resume or start new
+ jackin❯  · resume or start new
 
  the-architect (claude) · workspace jackin
 
@@ -194,7 +194,7 @@ Footer hint: `↑/↓ navigate · type to filter · Enter select · Ctrl-C abort
 **Screen D — Verify preserved state** (shown only when the chosen instance has a worktree/clone mount):
 
 ```text
- jackin'  · resume jk-fme29j3j
+ jackin❯  · resume jk-fme29j3j
 
  Restoring the-architect (claude) · workspace jackin
  Reusing the preserved worktree at /workspace/jackin:
@@ -316,7 +316,7 @@ Restore today re-runs the whole pipeline and re-resolves everything against *cur
 | **resolved secret values** (1Password output, tokens) | ❌ **never** | re-asked / re-resolved every restore |
 
 <Aside type="caution">
-Resolved secret values must never be persisted. jackin' already resolves 1Password references, operator env, and tokens fresh on every launch and passes them straight to `docker run` as env — they are never written to the manifest or data dir, and this design must not regress that. The recipe stores only the **reference** (`op://vault/item/field`, the env-var name, the GitHub auth mode); restore re-runs `op read` and re-resolves tokens with the operator's current access. Caching the resolved value would turn the per-instance data dir into a plaintext secret store — a security regression the design forbids.
+Resolved secret values must never be persisted. jackin❯ already resolves 1Password references, operator env, and tokens fresh on every launch and passes them straight to `docker run` as env — they are never written to the manifest or data dir, and this design must not regress that. The recipe stores only the **reference** (`op://vault/item/field`, the env-var name, the GitHub auth mode); restore re-runs `op read` and re-resolves tokens with the operator's current access. Caching the resolved value would turn the per-instance data dir into a plaintext secret store — a security regression the design forbids.
 </Aside>
 
 ### Agent state: inside the container vs on the host
@@ -333,7 +333,7 @@ The immutable-snapshot alternative (mint a new id, copy the home + worktree, fre
 The verify-and-acknowledge step is the same logic on both edges (discarding on exit, reusing on resume) and must be a single shared helper, not two parallel copies:
 
 - Only `worktree` and `clone` mounts are checked; `shared` is exempt because its working tree is the host's own directory and never jackin-managed.
-- The operator sees the concrete evidence — the `git status` file list and the list of branches ahead of their upstream — not just a count, and acknowledges it before jackin' reuses or discards the tree.
+- The operator sees the concrete evidence — the `git status` file list and the list of branches ahead of their upstream — not just a count, and acknowledges it before jackin❯ reuses or discards the tree.
 - `clone` assessment must be specified and tested in its own right (F4), not inherited implicitly from worktree semantics.
 
 ## Data-directory and index lifecycle (garbage collection)
@@ -373,7 +373,7 @@ Two supporting sweeps close the long tail:
 ## Open questions
 
 - Should a `keep`-policy workspace cap how many kept instances accumulate per `(workspace, role, agent)`, or prune the oldest automatically? The state is meant to be short-lived, so unbounded keeps that pile up data directories run against the intent.
-- When resuming, should jackin' re-run `git_pull_on_entry` semantics against the reused worktree, or treat the preserved tree as authoritative and skip the pull? (Leaning authoritative — the point is to return to the exact state, not advance it.)
+- When resuming, should jackin❯ re-run `git_pull_on_entry` semantics against the reused worktree, or treat the preserved tree as authoritative and skip the pull? (Leaning authoritative — the point is to return to the exact state, not advance it.)
 - In-container session continuity is now tier-dependent: Tier 0/1 reconnect to the live agent session for free (the container never died), while Tiers 2–3 restore the bind-mounted home/conversation but start a fresh agent process. Should Tiers 2–3 also attempt to resume the agent's own session log (e.g. `claude --resume`), or is restoring the home enough? This overlaps [Console agent session control](/reference/roadmap/console-agent-session-control/) Phase 4 (session reconciliation) and should be scoped against it.
 
 ## Cross-references

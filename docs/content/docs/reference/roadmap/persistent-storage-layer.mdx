@@ -6,7 +6,7 @@ title: "Persistent Storage and Workspace Memory Layer"
 
 ## Problem
 
-jackin' currently has zero structured persistence. Per-instance state is
+jackin❯ currently has zero structured persistence. Per-instance state is
 filesystem-shaped (`~/.jackin/data/<container>/.claude/`,
 `.config/gh/`, `.jackin/isolation.json`), and the
 operator config is a single TOML file. There's no way to store:
@@ -21,13 +21,13 @@ operator config is a single TOML file. There's no way to store:
 - Cross-agent workspace memory: durable operator preferences, workflow rules,
   project facts, review feedback, and run handoff summaries that Claude Code,
   Codex, Kimi, OpenCode, and future runtimes can all read through one surface
-  owned by jackin'
+  owned by jackin❯
 
 Every Phase 2 and Phase 4 item that needs any of the above either does
 its own ad-hoc JSON file (which gets messy) or skips the feature.
 
 This is the **load-bearing** Phase 3 item — the substrate for half of
-the program. It is also the right home for memory owned by jackin'. Runtime-native
+the program. It is also the right home for memory owned by jackin❯. Runtime-native
 memories are useful inside one agent, but they become the wrong abstraction
 when the operator mixes Claude Code, Codex, Kimi, OpenCode, and future agents
 inside the same workspace and expects each new session to inherit the same
@@ -47,7 +47,7 @@ review policy, project facts, and workflow history.
   (status_log table), completed-instance retention metadata for queued work,
   and [agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/)
   run handoffs.
-- A cross-agent memory layer lets jackin' promote durable operator preferences
+- A cross-agent memory layer lets jackin❯ promote durable operator preferences
   out of agent-private storage. A Claude Code memory such as "during PR review,
   fix every confirmed finding instead of returning report-only buckets" should
   become a workspace or workflow memory that every selected reviewer/implementer
@@ -58,15 +58,15 @@ review policy, project facts, and workflow history.
 
 ## Memory research
 
-Several adjacent systems validate the need for a tool-neutral memory surface, but none maps directly onto jackin' container and host-mutation rules.
+Several adjacent systems validate the need for a tool-neutral memory surface, but none maps directly onto jackin❯ container and host-mutation rules.
 
-| Project | Useful idea | jackin' stance |
+| Project | Useful idea | jackin❯ stance |
 |---|---|---|
-| [OpenMemory / Mem0](https://mem0.ai/openmemory) | MCP-facing memory shared across AI apps, project-scoped memories, tags, dashboard review, and local or cloud deployment. | Strong external-memory reference and possible backend adapter. jackin' should still own workspace/run scope, policy, audit, and container delivery. |
+| [OpenMemory / Mem0](https://mem0.ai/openmemory) | MCP-facing memory shared across AI apps, project-scoped memories, tags, dashboard review, and local or cloud deployment. | Strong external-memory reference and possible backend adapter. jackin❯ should still own workspace/run scope, policy, audit, and container delivery. |
 | [Mem0 state-of-agent-memory research](https://mem0.ai/blog/state-of-ai-agent-memory-2026) | Names the hard problems: cross-session identity, temporal abstraction, contradiction handling, stale memories, privacy, consent, and memory evaluation. | Use as design pressure. Avoid "append facts forever" without recency, provenance, and operator curation. |
-| [Letta shared memory blocks](https://docs.letta.com/guides/core-concepts/memory/shared-memory/) | A memory block can be attached to multiple agents; updates become visible to all attached agents; read-only blocks and concurrency caveats are explicit. | Best conceptual fit for policy memory and shared project facts. jackin' should borrow the scoped-block model, not necessarily the server. |
+| [Letta shared memory blocks](https://docs.letta.com/guides/core-concepts/memory/shared-memory/) | A memory block can be attached to multiple agents; updates become visible to all attached agents; read-only blocks and concurrency caveats are explicit. | Best conceptual fit for policy memory and shared project facts. jackin❯ should borrow the scoped-block model, not necessarily the server. |
 | [Zep / Graphiti](https://arxiv.org/abs/2501.13956) | Temporal knowledge graph memory for evolving facts and multi-hop retrieval. | Possible future backend for rich semantic memory. V1 should stay SQLite-first and text/metadata-shaped until retrieval requirements are proven. |
-| Runtime-native memories | Claude project memory, Codex skills/goals, OpenCode skills, Kimi/OpenCode local config. | Useful adapter targets, not the source of truth. jackin' must be able to inject or mount selected memories into each runtime without copying one runtime's private format as the canonical model. |
+| Runtime-native memories | Claude project memory, Codex skills/goals, OpenCode skills, Kimi/OpenCode local config. | Useful adapter targets, not the source of truth. jackin❯ must be able to inject or mount selected memories into each runtime without copying one runtime's private format as the canonical model. |
 
 The key product distinction is **packaged context vs mutable memory**. [Native APM support](/reference/roadmap/native-apm-role-support/) should own installable skills, prompts, instructions, plugins, and MCP server dependencies. This persistent storage layer should own mutable state: remembered operator preferences, facts learned during a workspace, workflow/run summaries, review outcomes, and memory audit events. The two can work together: APM can install the memory client skill or MCP server; the storage layer remains the authority for what a workspace/run remembers.
 
@@ -93,13 +93,13 @@ multicode also keeps a JSON snapshot file (`~/.multicode/workspaces/<key>.json`)
 *alongside* the SQLite — the JSON holds persistent operator-facing state
 (description and agent-provided links) while the SQLite holds the cached /
 queryable parts. We should not split this way; it duplicates state. SQLite
-alone is the right choice for jackin'.
+alone is the right choice for jackin❯.
 
 ## Recommended Shape
 
 One SQLite database **per instance**, at
 `~/.jackin/data/<container>/jackin.db`. Schema versioned via
-embedded migrations. Async access via `sqlx` (jackin' is already async-
+embedded migrations. Async access via `sqlx` (jackin❯ is already async-
 ready) or `rusqlite` with a small async wrapper — pick once, document
 the rationale in an ADR.
 
@@ -241,7 +241,7 @@ The V1 writer should be even stricter. Agents may propose memory items or append
 
 ### Memory delivery and external backends
 
-jackin' should expose the memory layer through a narrow internal API first:
+jackin❯ should expose the memory layer through a narrow internal API first:
 
 ```text
 memory.resolve(scope, workflow, role, agent, run) -> MemoryBrief
@@ -250,7 +250,7 @@ memory.append_run_summary(run, session, body) -> memory item
 memory.hide/supersede(id, reason) -> operator action
 ```
 
-Later, jackin' can expose an MCP server with equivalent operations so agents can query or propose memories during a session. The MCP server must enforce the same scope, read policy, write policy, and audit rules as the host CLI; it must not become arbitrary file access to the operator's host. External systems such as OpenMemory/Mem0, Letta, or Zep/Graphiti can become optional backends behind the same API only after V1 proves the local policy model.
+Later, jackin❯ can expose an MCP server with equivalent operations so agents can query or propose memories during a session. The MCP server must enforce the same scope, read policy, write policy, and audit rules as the host CLI; it must not become arbitrary file access to the operator's host. External systems such as OpenMemory/Mem0, Letta, or Zep/Graphiti can become optional backends behind the same API only after V1 proves the local policy model.
 
 ### Daemon-global account cache
 
@@ -314,7 +314,7 @@ handles this; turn it on at DB creation time. No multi-writer scenarios
 exist in V1 because each instance has at most one running jackin
 process.
 
-Memory introduces a second concurrency question: multiple agents inside one Capsule-managed container may read the same memory brief and propose new memory during the same run. V1 should serialize writes through the workflow runner or daemon-owned storage handle, not let each in-container agent open the database directly. Agents submit proposals through the control/MCP surface; the host-side storage owner stamps provenance and writes the row. This keeps the database private to jackin' and prevents an agent from rewriting durable memory with ordinary filesystem access.
+Memory introduces a second concurrency question: multiple agents inside one Capsule-managed container may read the same memory brief and propose new memory during the same run. V1 should serialize writes through the workflow runner or daemon-owned storage handle, not let each in-container agent open the database directly. Agents submit proposals through the control/MCP surface; the host-side storage owner stamps provenance and writes the row. This keeps the database private to jackin❯ and prevents an agent from rewriting durable memory with ordinary filesystem access.
 
 ### Trimming
 
@@ -365,7 +365,7 @@ observing real footprint.
 
 ## Open Questions
 
-- **`sqlx` vs `rusqlite`.** `sqlx` is async-native and matches jackin'
+- **`sqlx` vs `rusqlite`.** `sqlx` is async-native and matches jackin❯
   Tokio runtime, but adds a meaningful build-time cost (offline mode
   with macro-checked queries). `rusqlite` is simpler and battle-tested
   but blocking — needs `spawn_blocking` discipline. Recommended:

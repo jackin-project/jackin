@@ -2,11 +2,11 @@
 title: "Brand Identity System"
 ---
 
-**Status**: Open — design proposal and implementation plan
+**Status**: Partially implemented — non-Rust surfaces shipped; Rust CLI/Capsule output deferred
 
 ## Problem
 
-jackin' already has a strong product vocabulary: Operator, Construct, hardline, isolated agents, terminal-first control. The visual identity does not yet have an equally strict contract. The current apostrophe wordmark, bright green docs treatment, CLI logo, favicons, Open Graph images, README, and future app/package icons can drift unless the project defines one canonical mark, color relationship, typography stack, terminal treatment, and migration plan before assets are replaced piecemeal.
+jackin❯ already has a strong product vocabulary: Operator, Construct, hardline, isolated agents, terminal-first control. The visual identity does not yet have an equally strict contract. The current apostrophe wordmark, bright green docs treatment, CLI logo, favicons, Open Graph images, README, and future app/package icons can drift unless the project defines one canonical mark, color relationship, typography stack, terminal treatment, and migration plan before assets are replaced piecemeal.
 
 This roadmap item captures the proposed terminal-native identity. It should become a short-lived implementation program: once the rebrand ships, durable usage rules move into normal brand/docs surfaces and this page is retired or reduced to a completed summary.
 
@@ -36,7 +36,7 @@ The working monogram is:
 j❯
 ```
 
-The chevron is the constant. It reads as a shell prompt, as forward motion, and as the boundary crossing that jackin' exists to make safe. Any mark that requires gradients, glows, illustration detail, or sub-pixel rendering fails the terminal-first requirement.
+The chevron is the constant. It reads as a shell prompt, as forward motion, and as the boundary crossing that jackin❯ exists to make safe. Any mark that requires gradients, glows, illustration detail, or sub-pixel rendering fails the terminal-first requirement.
 
 The company lockup is part of logo artwork:
 
@@ -97,6 +97,18 @@ The implementation PR should prototype several logo directions before choosing o
 | **E. Wordmark-first lockup** | `jackin❯` over `by tailrocks`, with `j❯` as the small-size extraction | Docs header, README top, website nav | Clear for a young brand; teaches the sigil before using it alone | Less iconically unique until repeated prompt exposure builds memory |
 
 The likely answer is a system, not a single drawing: E teaches the name, A distributes it in terminals, D gives the brand a recognizable atmosphere, and B or C may supply the stronger standalone website/icon mark if they survive sketches.
+
+## Implemented Direction
+
+The first implementation chose a three-part system after sketching the terminal, favicon, README, and social-card constraints:
+
+| Direction | Sketch result | Decision |
+|---|---|---|
+| Prompt sigil | `j❯` stayed legible at prompt size and favicon size, with the `j` in foreground color and the chevron in `#5CF07A`. | Chosen for prompt, favicon, app/PWA icons, and monogram surfaces. |
+| Wordmark-first lockup | `jackin❯` over `by tailrocks` taught the name clearly in docs chrome, README, and social cards without inventing a second symbol. | Chosen for docs, landing hero, README hero, and Open Graph artwork. |
+| Rain-cut wordmark | A frozen field built from `j`, `a`, `c`, `k`, `i`, `n`, `❯`, and box/block glyphs gave large static surfaces enough texture without animating the mark. | Chosen for README and social image atmosphere. |
+
+Boundary-gate and hardline-connector variants were rejected for this pass because they introduced extra geometry that did not reduce cleanly to the terminal prompt mark.
 
 ## Brand Invariants
 
@@ -260,7 +272,7 @@ After the rebrand lands, prose should use the new wordmark where rich text relia
 3. Choose the system: decide which direction owns the standalone website/icon mark, which owns the prompt, and which owns environmental treatments such as frozen rain.
 4. Freeze the final spec: confirm the mark, chevron character, colors, typography, prohibited treatments, prompt shape, byline lockup, and asset list.
 5. Update repository rules and published docs together: agent spelling policy, README, docs navigation, landing page, public docs references, and any user-facing pages that describe the product name or terminal output.
-6. Run the global brand text sweep: find every prose occurrence of `jackin'`, `Jackin`, `Jackin'`, and `JACKIN` and replace product/project mentions with `jackin❯`. Use `jackin>` only after confirming the target surface cannot render `❯`. Do not rewrite literal commands, code identifiers, paths, package names, env vars, URLs, or examples where the operator must type `jackin`.
+6. Run the global brand text sweep: find every prose occurrence of `jackin❯`, `Jackin`, `jackin❯`, and `JACKIN` and replace product/project mentions with `jackin❯`. Use `jackin>` only after confirming the target surface cannot render `❯`. Do not rewrite literal commands, code identifiers, paths, package names, env vars, URLs, or examples where the operator must type `jackin`.
 7. Replace docs/site visual assets: Fumadocs title, landing hero, README hero banner, favicons, app/PWA icons, Open Graph card, and any social-card generation code.
 8. Update CLI and terminal output: frozen `--help` banner, version/splash treatment, jackin-owned status prefixes, Capsule chrome, prompt setup inside role containers, and tests for ANSI color output where practical.
 9. Update package/distribution surfaces: Homebrew metadata, release artifacts, GitHub social preview, and any future desktop/mobile icon source files.
@@ -292,6 +304,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 
 ## Defer
 
+- Rust CLI/Capsule output, frozen `--help` banner, version/splash treatment, and Rust snapshot tests. This PR intentionally avoids Rust while refactoring is in flight.
 - Desktop and mobile app implementation beyond source icon preparation.
 - Hosted analytics for Open Graph or attribution effectiveness.
 - Recolorable theme packs, seasonal marks, or per-runtime logo variants.

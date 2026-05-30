@@ -34,7 +34,7 @@ editor and the next agent invocation sees the change.
   workspace skills mount handles *local* / *team-specific* skills the
   operator doesn't want to publish.
 - It gives the [tag protocol](/reference/roadmap/agent-tag-protocol/)
-  a natural distribution channel: jackin' can ship a skill bundle that
+  a natural distribution channel: jackin❯ can ship a skill bundle that
   roles pull in via this mount, and operators see the protocol
   "for free" without having to install plugins per role.
 - It also supports workflow and playbook skills such as "independent
@@ -72,7 +72,7 @@ The contents in their repo (visible in `workspace-skills/`):
 ## Recommended Shape
 
 The runtime-agnostic version: each runtime adapter owns the *destination*
-inside the container; jackin' owns the *source* selection and bind-mount
+inside the container; jackin❯ owns the *source* selection and bind-mount
 plumbing.
 
 ### Config
@@ -119,7 +119,7 @@ combined list, the *last* declaration of a skill name wins (later
 overrides earlier). This is documented behavior, not implicit.
 
 If a skill name collides with one installed via the manifest's
-`[claude.plugins]` (or the per-runtime equivalent), jackin' refuses
+`[claude.plugins]` (or the per-runtime equivalent), jackin❯ refuses
 to launch with a clear error — the operator chooses which to keep.
 Silent override here is too dangerous.
 
@@ -175,7 +175,7 @@ as opt-in.
   the bind-mount duplicates it — confusing. Recommended: *reject
   `add_from` paths that resolve under an isolated workspace mount*,
   with a clear error.
-- **Default skill bundle for jackin'.** Should `jackin-project/jackin-skills`
+- **Default skill bundle for jackin❯.** Should `jackin-project/jackin-skills`
   be auto-mounted by default when an operator opts into the
   `<jackin:*>` tag protocol? Recommended: *no auto-mount*; operators
   add it explicitly. Avoids surprise.

@@ -22,10 +22,10 @@ work is invisible — operators can't see what the limits are *doing*.
   on resource limits: operator sets `memory_max = 16 GiB`, watches the
   agent crawl up to 14 GiB, makes an informed decision about whether to
   raise the limit or kill the agent.
-- The host-level summary (total CPU/RAM used, free, by jackin' vs system)
+- The host-level summary (total CPU/RAM used, free, by jackin❯ vs system)
   tells the operator at a glance whether they have headroom for another
   agent.
-- This is one of the surfaces that makes jackin' feel *alive* rather than
+- This is one of the surfaces that makes jackin❯ feel *alive* rather than
   a one-shot launcher; the gap shows up in every tool comparison.
 
 ## Inspiration in multicode
@@ -81,7 +81,7 @@ Cross-platform — use the `sysinfo` crate (already a candidate dependency
 for this kind of work) for CPU/RAM. For the data-dir disk usage, walk
 `~/.jackin/data/` once on console open and after instance lifecycle changes
 such as load, hardline recovery, clean exit, or purge; also show free disk for
-the filesystem containing jackin' data directory. Do not poll disk usage on
+the filesystem containing jackin❯ data directory. Do not poll disk usage on
 every render.
 
 ### Console rendering
@@ -125,7 +125,7 @@ per-agent table includes a status column to its left.
   owns it*, mirroring how each backend already owns mount translation.
 - **Always-on vs on-demand sampling.** multicode samples constantly even
   when the panel isn't visible, because the data feeds usage aggregation.
-  jackin' V1 doesn't need that yet — pause when closed is the right
+  jackin❯ V1 doesn't need that yet — pause when closed is the right
   call. Revisit when [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) needs continuous series.
 - **Keystroke choice.** `t` for telemetry, `r` for resources, `m` for
   metrics — pick once and document. Defer to console UX review.

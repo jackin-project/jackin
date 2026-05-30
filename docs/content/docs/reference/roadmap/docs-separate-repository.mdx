@@ -8,7 +8,7 @@ title: "Move documentation to a separate repository"
 
 The Fumadocs documentation site currently lives inside this
 repo under `docs/` (entry point: <RepoFile path="docs/source.config.ts" />, with sidebar metadata in `docs/content/docs/**/meta.json`).
-That worked while jackin' was a
+That worked while jackin❯ was a
 single Rust crate, but the project is now an **ecosystem of GitHub
 repositories**:
 
@@ -72,7 +72,7 @@ This roadmap item exists to answer that.
   pagefind) and the Rust build (cargo + nextest) currently share a
   single repo's CI minutes and PR checks. A split would isolate them.
 - **Versioning.** A separate docs repo can grow a versioned-docs flow
-  (multiple sidebars per major version of jackin') without polluting
+  (multiple sidebars per major version of jackin❯) without polluting
   the CLI repo's branches.
 - **Same-repo bleed.** Docs PRs and code PRs currently compete for
   reviewer attention; splitting clarifies the ownership of each PR.
@@ -186,7 +186,7 @@ Worth studying when fleshing out the design:
   community.
 
 The pattern is roughly: small projects keep docs in-repo;
-ecosystem-shaped projects move them out. jackin' is on the line.
+ecosystem-shaped projects move them out. jackin❯ is on the line.
 
 ## Acceptance criteria
 

@@ -11,7 +11,7 @@ queue, a CPU-heavy build pipeline, or a memory-hungry indexing job all
 benefit from running on a beefy host (cloud VM, home server, office
 workstation) while the operator continues to use their laptop normally.
 
-Today, jackin' has no story for this. Operators either run jackin' over
+Today, jackin❯ has no story for this. Operators either run jackin❯ over
 SSH (losing all of the console UX), set up a manual SSH-mounted workspace
 (losing the data-dir guarantees), or simply don't.
 
@@ -28,7 +28,7 @@ SSH-relayed handler invocations (open links in the local browser, etc.).
   vision](/reference/roadmap/#vision) addresses this long-term, but is
   far away. A simpler SSH-bridge sits naturally between local-only and
   full Kubernetes.
-- It demonstrates that jackin' role + workspace + queue model
+- It demonstrates that jackin❯ role + workspace + queue model
   is location-independent — exactly the kind of property a "general
   tool" claim needs.
 
@@ -62,14 +62,14 @@ move off the laptop.
 
 ## Recommended Shape
 
-The fundamental architecture choice for jackin' version:
+The fundamental architecture choice for jackin❯ version:
 
 **Option A — SSH + rsync**, like multicode-remote. Pros: simple, no new
 protocols, works through any SSH-accessible host. Cons: rsync polling
 adds latency, file-conflict resolution is rsync-shaped (which is fine
 but unsubtle), credential plumbing requires care.
 
-**Option B — Agent gRPC**, jackin' on the remote exposes a typed gRPC
+**Option B — Agent gRPC**, jackin❯ on the remote exposes a typed gRPC
 endpoint, the local UI is a thin client. Pros: low-latency, structured
 events (not file syncs), easier to extend. Cons: another protocol to
 maintain, harder to operate over restrictive networks.
@@ -80,7 +80,7 @@ one architecture for "remote", not two. Cons: years away; ignores the
 simpler "I have one home server" use case entirely.
 
 Recommendation: **Option A for V1**, designed so the eventual K8s story
-absorbs it without rewrite. Most jackin' state already lives in
+absorbs it without rewrite. Most jackin❯ state already lives in
 `~/.jackin/data/<container>/` — rsync of that tree over SSH is the
 natural fit.
 
@@ -191,7 +191,7 @@ they use the credential source pattern and per-invocation grants instead.
   `jackin-remote` get deprecated, refactored, or absorbed? Recommended:
   *design now so it can be a thin shim later* — most of the work
   (handler relay, credential push, console attach) is reusable.
-- **Trust model.** A compromised remote can read everything jackin'
+- **Trust model.** A compromised remote can read everything jackin❯
   knows about. This is implicit in any remote-execution tool;
   document it clearly. Recommended: *don't try to make remote-host
   isolation a feature*; that's the wrong scope.

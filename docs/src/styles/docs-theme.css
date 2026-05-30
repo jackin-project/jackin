@@ -35,23 +35,24 @@
      phosphor green while light mode uses a juicy-but-usable mid-green.
      Per-theme values live in the [data-theme='*'] blocks below; this
      fallback matches the dark-mode default for pre-theme-set renders. */
-  --jk-brand:      #00ff41;
+  --jk-brand:      #5cf07a;
+  --jk-brand-muted: #1d9e75;
 
   /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
      data-theme gets applied to <html>. */
-  --jk-bg:         #0a0b0a;
-  --jk-bg-deep:    #050605;
+  --jk-bg:         #0a0a0a;
+  --jk-bg-deep:    #050505;
   --jk-panel:      #0f1110;
   --jk-text:       #f4f7f5;
   --jk-prose:      #dce4e0;
   --jk-text-dim:   #9ca8a1;
   --jk-text-ghost: #5e6a64;
-  --jk-accent:     #00ff41;
-  --jk-accent-dim: #00b82f;
+  --jk-accent:     #5cf07a;
+  --jk-accent-dim: #1d9e75;
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
-  --jk-code-bg:    #050605;
+  --jk-code-bg:    #050505;
   --jk-code-radius: 6px;
   --jk-code-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
@@ -93,16 +94,17 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --jk-bg:         #0a0b0a;
-  --jk-bg-deep:    #050605;
+  --jk-bg:         #0a0a0a;
+  --jk-bg-deep:    #050505;
   --jk-panel:      #0f1110;
   --jk-text:       #f4f7f5;
   --jk-prose:      #dce4e0;
   --jk-text-dim:   #9ca8a1;
   --jk-text-ghost: #5e6a64;
-  --jk-accent:     #00ff41;
-  --jk-accent-dim: #00b82f;
-  --jk-brand:      #00ff41;   /* bright phosphor green on dark surfaces */
+  --jk-accent:     #5cf07a;
+  --jk-accent-dim: #1d9e75;
+  --jk-brand:      #5cf07a;   /* canonical bright chevron green */
+  --jk-brand-muted: #1d9e75;
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
@@ -129,7 +131,7 @@
 
   --sl-color-bg-inline-code: var(--jk-panel);
 
-  --sl-color-accent-low:  rgba(0, 255, 65, 0.15);
+  --sl-color-accent-low:  rgba(92, 240, 122, 0.15);
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
@@ -172,16 +174,17 @@
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --jk-bg:         #fbfcfb;
+  --jk-bg:         #ffffff;
   --jk-bg-deep:    #e2e9e5;   /* recessed state (active toggle, pressed badge) */
   --jk-panel:      #f2f6f3;   /* lifted surface (cards, pills, modals) */
   --jk-text:       #111513;
   --jk-prose:      #242b27;
   --jk-text-dim:   #4b554f;
   --jk-text-ghost: #76817b;
-  --jk-accent:     #006f22;   /* deep forest green — AA contrast on white */
-  --jk-accent-dim: #004f18;   /* deeper still for pressed/active highlights */
-  --jk-brand:      #10a846;   /* saturated mid-green for active chips + accents */
+  --jk-accent:     #1d9e75;
+  --jk-accent-dim: #12664c;
+  --jk-brand:      #5cf07a;
+  --jk-brand-muted: #1d9e75;
   --jk-ui:         rgba(5, 20, 12, 0.1);
   --jk-ui-strong:  rgba(5, 20, 12, 0.22);
   --jk-ui-subtle:  rgba(5, 20, 12, 0.055);
@@ -258,29 +261,52 @@ body {
   background: var(--jk-bg);
 }
 
+.jk-brand-mark,
 .jk-site-title,
 .jk-sidebar-wordmark {
-  font-family: 'Inter Black', 'Inter', sans-serif;
-  font-weight: 900;
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--sl-font-mono);
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
   color: var(--jk-text);
   user-select: none;
 }
 
+.jk-brand-mark--lockup {
+  display: inline-grid;
+  gap: 0.2em;
+}
+
 .jk-site-title {
-  font-size: 1.375rem;
+  font-size: 1.5rem;
 }
 
-.jk-site-title .tick,
-.jk-sidebar-wordmark .tick {
-  color: #00ff41;
-  text-shadow: 0 0 0.2em rgba(0, 255, 65, 0.45);
+.jk-brand-mark__text,
+.jk-name__text {
+  color: var(--jk-text);
 }
 
-:root[data-theme='light'] .jk-site-title .tick,
-:root[data-theme='light'] .jk-sidebar-wordmark .tick {
-  text-shadow: none;
+.jk-brand-mark__chevron,
+.jk-name__chevron,
+.jk-site-title .jk-brand-mark__chevron,
+.jk-sidebar-wordmark .jk-brand-mark__chevron {
+  color: var(--jk-brand);
+}
+
+.jk-brand-mark__byline {
+  grid-column: 1 / -1;
+  font-family: var(--sl-font-mono);
+  font-size: 0.18em;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--jk-text-dim);
+  letter-spacing: 0;
+}
+
+.jk-brand-mark--monogram {
+  letter-spacing: 0;
 }
 
 .jk-social-link {
@@ -449,11 +475,6 @@ body {
 :root[data-theme='dark'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
   background: rgba(244, 247, 245, 0.08);
   color: var(--jk-text);
-}
-
-.jk-name {
-  color: var(--jk-brand);
-  font-weight: 700;
 }
 
 #nd-page :is(h1, h2, h3, h4) {
@@ -1383,20 +1404,20 @@ html.theme-init *::after {
 }
 
 #nd-toc::after {
-  content: "jackin'";
+  content: "jackin❯";
   display: block;
   margin-top: auto;
   padding-top: 2rem;
   padding-bottom: 1rem;
-  font-family: var(--sl-font);
+  font-family: var(--sl-font-mono);
   font-size: var(--jk-toc-wordmark-size);
-  font-weight: 900;
+  font-weight: 500;
   line-height: 0.82;
   letter-spacing: 0;
   background: linear-gradient(
     90deg,
-    var(--jk-text) 0 5.9ch,
-    var(--jk-brand) 5.9ch 100%
+    var(--jk-text) 0 6ch,
+    var(--jk-brand) 6ch 100%
   );
   background-clip: text;
   color: transparent;
@@ -1421,9 +1442,9 @@ header.header {
    ========================================================================== */
 
 .site-title {
-  font-family: var(--sl-font);
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-family: var(--sl-font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--sl-color-white);
 }
 
@@ -1976,16 +1997,17 @@ site-search dialog {
   color: var(--jk-brand);
 }
 
-/* Brand-styled inline name for "jackin'" — automatically wrapped
+/* Brand-styled inline name for "jackin❯" — automatically wrapped
    by the `rehype-jk` plugin (see docs/scripts/rehype-jk.ts). Uses
-   `--jk-text` so the name reads white-on-dark and black-on-light
-   (theme-aware) and stays maximally legible in long prose. The
-   weight bump distinguishes it from the surrounding paragraph
-   without using a saturated brand colour mid-sentence. Skips code
-   blocks. */
+   `--jk-text` for the letters and canonical green for the chevron.
+   Skips code blocks. */
 .jk-name {
-  color: var(--jk-text);
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--sl-font-mono);
+  color: inherit;
   font-weight: 500;
+  letter-spacing: 0;
 }
 
 .jk-name:hover {

@@ -114,7 +114,7 @@ RUN groupadd -g "$GID" agent && \
     install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
-# including `docker exec` sessions that bypass jackin's runtime entrypoint.
+# including `docker exec` sessions that bypass the jackin runtime entrypoint.
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
@@ -130,6 +130,8 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 COPY --chown=agent:agent zshrc /home/agent/.zshrc
+RUN mkdir -p /home/agent/.config
+COPY --chown=agent:agent starship.toml /home/agent/.config/starship.toml
 
 # Fish config — opt-in alternative shell. Same Starship prompt and
 # auto-title behaviour as zsh so the operator's pane border title

@@ -6,7 +6,7 @@ description: Save and manage project workspace configurations
 
 ## What is a workspace?
 
-A workspace is a saved configuration that tells jackin' how to mount your project directories into an agent container. Instead of typing long mount paths every time, you save a project boundary once and reference it by name.
+A workspace is a saved configuration that tells jackin❯ how to mount your project directories into an agent container. Instead of typing long mount paths every time, you save a project boundary once and reference it by name.
 
 A workspace is **not** the same thing as a role:
 
@@ -25,7 +25,7 @@ need to hand-edit a configuration file to manage workspaces.
 
 ## The current directory workspace
 
-The simplest way to use jackin' is from your project directory:
+The simplest way to use jackin❯ is from your project directory:
 
 ```bash
 cd ~/Projects/my-app
@@ -109,7 +109,7 @@ Here, `/workspace` is the container start path and `~/src:/workspace` is the exp
 
 By default, every workspace mount is `shared` — the host directory is bind-mounted as-is, and any agent that loads the workspace edits the same files you do on the host. That is the right default for most workflows, but it stops working as soon as you want two agents to work on the same project at the same time without stepping on each other.
 
-Setting a mount's isolation to `worktree` tells jackin' to create a per-container `git worktree` of the host repo and mount that instead of the original directory. Each container gets its own checkout, its own scratch branch, and its own working tree — so concurrent agents no longer share a `.git` directory.
+Setting a mount's isolation to `worktree` tells jackin❯ to create a per-container `git worktree` of the host repo and mount that instead of the original directory. Each container gets its own checkout, its own scratch branch, and its own working tree — so concurrent agents no longer share a `.git` directory.
 
 ### Modes
 
@@ -133,18 +133,18 @@ jackin workspace create jackin \
   --mount-isolation /workspace/jackin=worktree
 ```
 
-The agent sees an isolated checkout at `/workspace/jackin` while `target/` is backed by a shared host cache. jackin' arranges the mounts so the cache mount overlays the corresponding path inside the isolated worktree — the cache then survives across agents even when each agent has its own checkout.
+The agent sees an isolated checkout at `/workspace/jackin` while `target/` is backed by a shared host cache. jackin❯ arranges the mounts so the cache mount overlays the corresponding path inside the isolated worktree — the cache then survives across agents even when each agent has its own checkout.
 
 ### What happens when the agent exits
 
-When you exit an agent that was using an isolated mount, jackin' looks at the per-container checkout and decides what to do automatically:
+When you exit an agent that was using an isolated mount, jackin❯ looks at the per-container checkout and decides what to do automatically:
 
-- **Everything is wrapped up** — your work is committed and pushed (or merged on the remote and the branch was deleted), with no stray edits left behind. jackin' deletes the per-container checkout for you. There is nothing to remember.
-- **There is still work to deal with** — you have uncommitted edits, or commits that never made it to the remote. jackin' keeps the checkout exactly as it was and asks what to do: go back into the agent, leave it preserved so you can return later with `jackin hardline`, or throw the work away.
+- **Everything is wrapped up** — your work is committed and pushed (or merged on the remote and the branch was deleted), with no stray edits left behind. jackin❯ deletes the per-container checkout for you. There is nothing to remember.
+- **There is still work to deal with** — you have uncommitted edits, or commits that never made it to the remote. jackin❯ keeps the checkout exactly as it was and asks what to do: go back into the agent, leave it preserved so you can return later with `jackin hardline`, or throw the work away.
 
-If you exited non-interactively (no terminal to ask), jackin' always preserves the checkout and tells you the path on disk plus how to return, inspect it, or discard it.
+If you exited non-interactively (no terminal to ask), jackin❯ always preserves the checkout and tells you the path on disk plus how to return, inspect it, or discard it.
 
-If a container crashed or was terminated unexpectedly, jackin' also keeps everything in place — `jackin hardline` can restart the container so you continue where the agent left off.
+If a container crashed or was terminated unexpectedly, jackin❯ also keeps everything in place — `jackin hardline` can restart the container so you continue where the agent left off.
 
 For the exact safety policy (which branches count as safe, how the squash-merged-and-pruned case is detected, what the per-mount state file records), see [Foreground session finalization](/reference/architecture/#foreground-session-finalization) in the internals section.
 
@@ -250,7 +250,7 @@ jackin workspace edit secure-api --clear-default-agent
 
 Long-running agent work — large builds, test suites, dataset pulls — can outlast your screen-saver and the host's idle-sleep timer. macOS will then suspend the machine and the agent stops making progress until you wake it up.
 
-Workspaces can opt in to a per-workspace keep-awake reconciler that prevents this. While any agent in any keep-awake workspace is running, jackin' keeps a single `caffeinate -imsu` process alive in the background; when the last keep-awake agent stops, jackin' releases it.
+Workspaces can opt in to a per-workspace keep-awake reconciler that prevents this. While any agent in any keep-awake workspace is running, jackin❯ keeps a single `caffeinate -imsu` process alive in the background; when the last keep-awake agent stops, jackin❯ releases it.
 
 <Aside type="caution">
 Keep-awake is **macOS-only** today. On Linux and Windows the flag is
@@ -286,12 +286,12 @@ jackin workspace edit my-app --no-keep-awake
 
 When you open a workspace, your local branches may have drifted behind their remotes. The git-pull-on-entry toggle runs `git pull` on every mounted git repository from the **host** before the agent container starts — so the agent always sees the latest committed code without you needing to remember a manual pull first.
 
-Failures are **non-fatal**: if a pull fails (offline, uncommitted changes, protected branch, etc.) jackin' prints a warning and continues the launch. The workspace remains fully usable — the toggle is a convenience, not a gate.
+Failures are **non-fatal**: if a pull fails (offline, uncommitted changes, protected branch, etc.) jackin❯ prints a warning and continues the launch. The workspace remains fully usable — the toggle is a convenience, not a gate.
 
 <Aside type="caution">
 `git pull` is run on the **host** directory, not inside the container.
 Any uncommitted local changes or an active rebase will cause the pull
-to fail; jackin' will warn and proceed.
+to fail; jackin❯ will warn and proceed.
 </Aside>
 
 ### Setting git pull on entry
