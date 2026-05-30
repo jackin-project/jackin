@@ -54,15 +54,19 @@ Pressing the review key on a PR-bearing instance switches the **left sidebar int
 │    console               ○ idle             │ config: your real config (copy)    │
 │    test                  ○ idle             │ role: none · cache: shared         │
 ├──────────────────────────────────────────────┴───────────────────────────────┤
-│ enter run · a all-relevant · A all · r refresh · o open · s settings · esc back │
+│ enter run · a all-relevant · A all · r refresh · s shell · o open · c settings · esc back │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Step 3 — Run and verify
 
-Select a command and run it: build, test, start the docs server, or any command the repo's recipe defines. The operator runs the focused command, every relevant command in order, or all of them; refreshes the PR to its latest pushed commit; opens any served pages (below); and adjusts the verification settings (isolation, companion role, build cache — all with sensible defaults). Run-state badges show idle, running, passed, or failed; finishing shows a pass/fail summary. Commands the diff did not touch are still listed (never silently hidden), just not pre-selected.
+Select a command and run it: build, test, start the docs server, or any command the repo's recipe defines. The operator runs the focused command, every relevant command in order, or all of them; **opens a shell in the checkout** to poke around or run something by hand; **refreshes** the PR; opens any served pages (below); and adjusts the verification settings (isolation, companion role, build cache — all with sensible defaults). Run-state badges show idle, running, passed, or failed; finishing shows a pass/fail summary. Commands the diff did not touch are still listed (never silently hidden), just not pre-selected.
 
-**The live instance is never touched.** Selecting the instance only *identifies* the pull request. Running review checks that PR's head out into a separate, throwaway host-side checkout and runs the recipe there, against an isolated configuration and state. The operator's running session keeps going undisturbed, and jackin' can verify a PR against its own code without risking the real setup. Because the review surface is rich, debug mode does not paint over it: the full firehose of every command and its output is captured to a diagnostics run file, per [Debug output never reaches a rich full-screen TUI](/reference/tui-design-decisions/#debug-output-never-reaches-a-rich-full-screen-tui). To triage a failed command, the operator shares the run id rather than pasting scrollback.
+**Shell into the checkout.** A shell action drops the operator into an interactive shell at the root of the isolated checkout — the same throwaway worktree the recipe commands run in, with the same redirected configuration and state. So anything run by hand (`git log`, `cargo build`, a one-off script) sees exactly what a recipe command sees, behaves the same way, and still cannot touch the operator's real setup. On exit the terminal returns to review mode.
+
+**Refresh to rebuild.** Refresh re-fetches the PR's latest pushed commits and hard-resets the local checkout to the new head — the right response to a force-pushed branch — so the next build runs against the updated code. The PR details (head commit, checks) update with it. Re-running the build set after a refresh is the local rebuild loop: pull the new commits in, rebuild, re-verify, without leaving the surface.
+
+**The live instance is never touched.** Selecting the instance only *identifies* the pull request. Running review checks that PR's head out into a separate, throwaway host-side checkout and runs the recipe there — including the shell — against an isolated configuration and state. The operator's running session keeps going undisturbed, and jackin' can verify a PR against its own code without risking the real setup. Because the review surface is rich, debug mode does not paint over it: the full firehose of every command and its output is captured to a diagnostics run file, per [Debug output never reaches a rich full-screen TUI](/reference/tui-design-decisions/#debug-output-never-reaches-a-rich-full-screen-tui). To triage a failed command, the operator shares the run id rather than pasting scrollback.
 
 ## Setting up verification: the repo recipe
 
@@ -159,6 +163,7 @@ Per jackin's rule that it must never mutate the host machine silently, verificat
 - **Fork, force-push, closed/merged** — checkout uses the PR head ref directly; refresh resets hard; a closed/merged PR is flagged but still reviewable for post-merge inspection.
 - **No recipe in the repo** — review mode opens with a one-line "no recipe in this repo" notice and no runnable commands.
 - **Server lifecycle** — a server command is a child that must be torn down on quit, with its whole process group signalled so workers don't orphan, and a readiness timeout so a server that never binds fails loudly instead of hanging.
+- **Shell / interactive child** — the checkout shell hands the terminal over while it runs and must restore the review surface cleanly on exit; like the launched binary, it inherits the redirected configuration and state so it defaults to the isolated bundle, not the operator's real setup.
 - **Doneness** — review shows a pass/fail summary and badges a failed command `✗`. A server command is interactive, not pass/fail, so it does not count toward the verdict.
 
 ## Deferred
@@ -201,7 +206,7 @@ The novel combination: host-side PR verification reached from the instance the o
 - **Phase 0 — Recipe + checkout bundle.** Read the repo recipe. Check a PR out into an isolated, reclaimable bundle with metadata; support refresh and a single-verify-at-a-time guard.
 - **Phase 1 — PR details in the instance view.** Surface the pull request jackin-capsule already detects for an instance's branch in the right detail block: number, title, base/head, state, checks.
 - **Phase 2 — Review mode + run-all baseline.** The sidebar mode switch on a PR-bearing instance; the command list; check the PR head out host-side; run the whole build set against the freshly built binary, with a pass/fail summary.
-- **Phase 3 — In-surface verbs + relevance (the diff-driven spine).** Build / run-named / refresh from review mode; map the PR's changed files to the relevant commands and list them first; suggestion-not-skip; de-selection logging.
+- **Phase 3 — In-surface verbs + relevance (the diff-driven spine).** Build / run-named / refresh / shell-into-checkout from review mode; refresh re-fetches the PR head and resets the checkout so a rebuild picks up new commits; map the PR's changed files to the relevant commands and list them first; suggestion-not-skip; de-selection logging.
 - **Phase 4 — Documentation preview.** The server command: start it, wait for ready, derive and open the PR's changed pages, tear down cleanly on quit.
 - **Phase 5 — Isolation profiles.** The review-mode setting "against my real config" vs "clean room".
 - **Phase 6 — Companion role pinning.** The review-mode setting of a role and optional branch, threaded into inner jackin' launches.
