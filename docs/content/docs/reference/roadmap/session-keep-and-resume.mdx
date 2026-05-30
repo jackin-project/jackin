@@ -25,6 +25,8 @@ The fix is the flow the operator described: a clear, rich exit decision — keep
 - A per-workspace **cleanup policy** controls the default: `ask` (today's behaviour — only interrupt on unfinished Git state, clean exits clean up automatically), `keep` (always retain, always resumable from the selection bar), and `clean` (always force-clean, no prompt). The product default is `ask`.
 - A kept instance becomes a first-class restore candidate, so the next time the operator selects that workspace + role + agent they are offered **resume previous session** vs **start new**.
 - Resuming rebinds the **same instance** — same `container_base`, same `~/.jackin/data/<container>/` — so home, plugins, auth, conversation, and the isolated worktree/clone return in place. A power-off or `docker rm` that removed the container but left the host data directory is fully recoverable.
+- Restore **degrades by tier and reuses before it rebuilds**: reconnect to a still-running container, `docker start` a stopped one, recreate a deleted one from the stored launch recipe reusing the same image, and rebuild the image only when it too is gone — pinned to the launch-time snapshot so the operator returns to the state that was working, never a re-resolved different one.
+- Restore **never caches resolved secrets**. The launch recipe stores references (`op://…` paths, env-var names, the GitHub auth mode), and 1Password values and tokens are re-asked / re-resolved on every restore.
 - Before reusing a clone or worktree mount on resume (and before discarding one on exit), the operator **sees the actual uncommitted files and unpushed branches** and acknowledges them. `shared` mounts are exempt — their data is the host's own and is never jackin-managed.
 
 ## Background — most of the plumbing already exists
@@ -56,6 +58,8 @@ Findings from auditing the exit/restore path and the in-flight rich-dialog chang
 | F10 | High | The instance index row is never removed on a terminal outcome — `clean_exited` instances linger in `instances.json` indefinitely, so the index grows without bound and stale rows misrepresent what state still exists. |
 | F11 | Medium | Even the explicit purge path leaks the sibling `jk-…​.lock` file (orphaned locks with no matching directory are visible on disk), and unrelated `*.repo.lock` detritus is never swept. |
 | F12 | Medium | Stale `active` rows: instances whose container was removed externally keep `status: active` in the index, so neither prune nor restore treats them correctly — the index is never reconciled against live Docker state. |
+| F13 | Medium | No `docker start` tier: `start_container` exists in <RepoFile path="src/docker_client.rs" /> but is never called, so a stopped-but-present container forces a full pipeline re-run instead of a cheap restart (the highest-fidelity restore is left on the table). |
+| F14 | High | Restore re-resolves against *current* config and the role repo's *current* `HEAD` instead of the launch-time snapshot. If the role repo advanced or the workspace config changed since launch, restore rebuilds a **different** image and mount/env shape than the session it claims to restore — a correctness bug for a "finish the work I started" feature. |
 
 ## Proposed flow
 
@@ -71,7 +75,7 @@ Findings from auditing the exit/restore path and the in-flight rich-dialog chang
 
 4. If any mount has uncommitted files or unpushed branches, render a rich panel on the launch cockpit surface that **shows the detail** — the changed files and the ahead-of-upstream branches — and asks the operator to acknowledge.
 
-5. Present the decision: **Keep to resume later**, **Clean up now**, or **Return to agent** (restart + reattach, today's `ReturnToAgent`). "Keep" preserves the worktree/clone and the home, tears down only the container to free Docker resources, and marks the instance restorable. "Clean up" runs the existing force-delete path.
+5. Present the decision: **Return to agent** (reconnect now to finish, today's `ReturnToAgent`), **Exit and keep** (preserve the worktree/clone and the home, tear down only the container, mark the instance restorable), or **Exit and clean up** (the operator has seen the unfinished work and insists — run the terminal-cleanup path). `Return to agent` is the default because it never loses work.
 
 </Steps>
 
@@ -83,7 +87,7 @@ Findings from auditing the exit/restore path and the in-flight rich-dialog chang
 
 2. If any exist, present a rich **Resume previous session vs Start new** choice in the selection surface, each resume candidate labelled with its date, agent, and a dirty/unpushed summary.
 
-3. **Resume** rebinds the same instance: re-create a container with the same `container_base` and the same `~/.jackin/data/<container>/`, so home, plugins, auth, and conversation return in place, and re-materialise the same worktree/clone — after the verify-and-acknowledge step below.
+3. **Resume** rebinds the same instance and walks the **restore ladder** (see *Restore model*): reconnect to a still-running container, `docker start` a stopped one, or recreate a deleted one from the stored launch recipe reusing the same image — rebuilding only when the image is gone. Home, plugins, auth, conversation, and the same worktree/clone return in place; only secret values are re-resolved. Verify-and-acknowledge runs before any worktree/clone is reused.
 
 4. **Start new** mints a fresh instance exactly as today. A `keep`-policy workspace always shows its kept instance here; this is the "always able to restart the previous session from the selection bar" guarantee.
 
@@ -107,9 +111,9 @@ session ends (foreground attach returned)
               │  Screen A — Unfinished work (acknowledge)
               ▼
               Screen B — How to end this session
-                 ├─ Keep            ─────────────► KEEP
-                 ├─ Clean up        ─────────────► CLEAN
-                 └─ Return to agent ─────────────► RESTART → reattach → re-assess
+                 ├─ Return to agent  ────────────► reconnect now → re-assess on next exit
+                 ├─ Exit and keep    ────────────► KEEP   (preserve, resume later to finish)
+                 └─ Exit and clean up ───────────► CLEAN  (operator insists; discard)
 ```
 
 **Screen A — Unfinished work** (shown only on `ask` + dirty/unpushed; the verify-and-acknowledge gate):
@@ -143,14 +147,14 @@ Footer hint: `Enter continue · Ctrl-C abort`.
  1 isolated mount has unfinished work.
 
  Filter:
- ▸ Keep — preserve everything, resume from the selection bar later
-   Clean up — discard the worktree and delete all instance state
-   Return to agent — restart the container and reconnect to fix it
+ ▸ Return to agent — keep working in this session now
+   Exit and keep — preserve everything, resume later to finish the work
+   Exit and clean up — discard the worktree and delete all instance state
 ```
 
 Footer hint: `↑/↓ navigate · Enter select · Ctrl-C abort`.
 
-`Keep` tears the container down to free Docker resources but retains the host state and marks the instance restorable (it is **not** the same as a `Ctrl-B D` detach, which keeps the container running for `jackin hardline`). `Clean up` runs the terminal-cleanup path (see *Data-directory and index lifecycle*). `Return to agent` is today's `ReturnToAgent`.
+`Return to agent` reconnects to the live session (today's `ReturnToAgent`) and is the default first row because it never loses work. `Exit and keep` tears the container down to free Docker resources but retains the host state and marks the instance restorable — it is **not** a `Ctrl-B D` detach, which keeps the container running for `jackin hardline`. `Exit and clean up` is the deliberate-discard path: the operator has seen the unfinished work on Screen A and insists, so jackin' runs the terminal-cleanup path (see *Data-directory and index lifecycle*).
 
 ### Launch flow
 
@@ -164,9 +168,12 @@ operator selects role + agent for a workspace
         └─ Resume <id>
               │  Screen D — Verify preserved state (acknowledge)
               ▼
-              rebind same container_base + same data dir
-                → re-materialize the same worktree/clone
-                → attach   (home, plugins, conversation return in place)
+              inspect_container_state(container_base) → restore ladder
+                Tier 0  Running          → hardline reconnect
+                Tier 1  Stopped/exists    → docker start + reconnect
+                Tier 2  NotFound, image   → docker run, reuse stored image_tag
+                Tier 3  NotFound, no image → pinned rebuild → Tier 2
+              (home, plugins, conversation return in place; secrets re-resolved)
 ```
 
 **Screen C — Resume or start new** (forced-choice; `Start new` is the default first row per the launch-dialog rule):
@@ -271,9 +278,55 @@ This setting lives in the per-workspace file (`~/.config/jackin/workspaces/<name
 
 One-shot CLI overrides (`--keep` / `--clean`) should mirror the existing `--git-pull` / `--no-git-pull` precedent so a single launch can deviate without editing the workspace file.
 
-## Restore model — reuse the same instance
+## Restore model — reuse first, recreate faithfully
 
-Resuming **reuses the same instance identity** rather than snapshotting into a fresh one: the recovered container is rebuilt against the original `container_base` and the surviving `~/.jackin/data/<container>/`. This is the simplest model, it matches the existing restore-candidate plumbing (`resolve_restore_candidate` / `mark_restore_available`), and it means the operator's conversation and plugins are the literal same files, not a copy. The immutable-snapshot alternative (mint a new id, copy home + worktree, keep the original frozen) is deliberately deferred to [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/), which targets a different problem (pre-launch host rollback) and a heavier disk/identity cost.
+Resuming **reuses the same instance identity** — the same `container_base` and the surviving `~/.jackin/data/<container>/`, never a fresh copy. The goal is narrow and short-lived: get back to exactly the state that was working so the operator can finish the work they started, then clean it up. The state is not meant to live forever. So restore degrades gracefully by how much of the original still exists, and at every tier it **reuses whatever is still there before it recreates anything** — rebuilding risks landing on a *different* state (a moved role `HEAD`, a drifted base image) and breaking the very thing the operator is trying to recover.
+
+### The restore ladder
+
+```text
+operator chooses Resume <id>
+  │  inspect_container_state(container_base)
+  ├─ Running          ─► Tier 0  hardline — reconnect to the live session, recreate nothing
+  ├─ Stopped / exists ─► Tier 1  docker start + reconnect — same container, same writable layer
+  ├─ NotFound, image present ─► Tier 2  docker run reusing the stored image_tag — no build
+  └─ NotFound, image gone    ─► Tier 3  rebuild the image pinned to the launch snapshot, then Tier 2
+```
+
+| Tier | Condition (`inspect_container_state`) | Action | What returns |
+|---|---|---|---|
+| 0 | container **Running** | `jackin hardline` reconnect | the literal live session — nothing recreated |
+| 1 | container **Stopped**, still exists | `docker start` + reconnect | the literal container, full writable layer intact |
+| 2 | **NotFound**, image present | `docker run` reusing the stored `image_tag` | a functionally equal container; bind-mounted home/conversation intact |
+| 3 | **NotFound**, image gone | rebuild the image from the pinned inputs, then Tier 2 | same, after one pinned rebuild |
+
+Tier 0 and Tier 1 are the highest fidelity and the common case for the operator's scenario — battery died, machine restarted, `docker stop` on shutdown — because the container's writable layer is untouched, so everything the agent installed *inside* it (shell history, `oh-my-zsh`, ad-hoc tools, anything not bind-mounted) comes back exactly. Tier 1 (`docker start`) is a **gap today** (F13): the `start_container` API exists but is never called, so a stopped container currently forces a full re-run instead of a restart. Tier 2 reuses the persisted `image_tag` as-is. Tier 3 is the only tier that builds, and it must reproduce the **same** image — pinned to the role commit and base image recorded at first launch, not the current `HEAD` (F14).
+
+### Pin to the launch snapshot, do not re-resolve
+
+Restore today re-runs the whole pipeline and re-resolves everything against *current* config and the role repo's *current* `HEAD`. For a "finish the work I started" feature that is a correctness bug (F14): a session must come back as it was, not as it would be launched fresh today. Restore must instead replay a **launch recipe** captured at first launch and stored on the manifest. The manifest already carries `image_tag`, `DockerResources` (container/dind/network/volume names), `role_source_git`, and `role_source_ref`; the recipe adds the rest.
+
+| Recipe field | Stored at launch? | On restore |
+|---|---|---|
+| `image_tag` + the exact role commit SHA it was built from | tag ✅ today · **add** the pinned SHA | reuse the tag; rebuild only at Tier 3, pinned to that SHA |
+| base / construct image reference | **add** | rebuild against the same base, never `latest` drift |
+| mount plan — sources, destinations, isolation mode per mount | **add** | re-materialize the same mounts; worktree/clone reuse the preserved tree |
+| env var **names** and their **source refs** (`op://…`, `${env.VAR}`, GitHub auth mode) | **add** | re-resolve the *values* fresh |
+| docker run flags / network / DinD shape | partially (`DockerResources`) | replay the same shape |
+| **resolved secret values** (1Password output, tokens) | ❌ **never** | re-asked / re-resolved every restore |
+
+<Aside type="caution">
+Resolved secret values must never be persisted. jackin' already resolves 1Password references, operator env, and tokens fresh on every launch and passes them straight to `docker run` as env — they are never written to the manifest or data dir, and this design must not regress that. The recipe stores only the **reference** (`op://vault/item/field`, the env-var name, the GitHub auth mode); restore re-runs `op read` and re-resolves tokens with the operator's current access. Caching the resolved value would turn the per-instance data dir into a plaintext secret store — a security regression the design forbids.
+</Aside>
+
+### Agent state: inside the container vs on the host
+
+Why the ladder prefers reuse: some agent state is bind-mounted to the host and survives `docker rm`, and some lives only in the container's writable layer and does not.
+
+- **Bind-mounted → survives removal** (restored at every tier): the agent homes under `/home/agent/` (`.claude`, `.claude.json`, `.codex`, amp, kimi, opencode — conversation history and installed-plugin state), the per-agent auth slots, and `/jackin/state`, all under `~/.jackin/data/<container>/`.
+- **Container writable layer → lost on removal** (only Tiers 0–1 preserve it; Tiers 2–3 reseed from the image): shell rc and `oh-my-zsh`, ad-hoc tool installs, and the baked Claude-plugin layer. The derived image reinstalls plugins on rebuild and first-boot seeding repopulates the home defaults, so Tiers 2–3 recover a *functionally* equivalent container while Tiers 0–1 recover the *literal* one.
+
+The immutable-snapshot alternative (mint a new id, copy the home + worktree, freeze the original) is deliberately deferred to [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/), which targets pre-launch host rollback at a heavier disk/identity cost.
 
 ## Mount verification on exit and restore
 
@@ -314,14 +367,14 @@ Two supporting sweeps close the long tail:
 - **Phase 1 — Status model and terminal cleanup.** Make "keep to resume" a real `FinalizeDecision` outcome; promote kept instances (including clean ones) to a restore candidate; stop auto-deleting the worktree when the operator keeps (F1, F2). Wire the terminal-outcome cleanup into the exit path so a clean/clean-up/`clean` exit removes the data directory, sibling lock, socket directory, and the `instances.json` row by routing through the existing `purge_container_filesystem` / `InstanceIndex::remove_many` helpers (F9, F10, F11). `instance.json` and the index are **not** versioned schemas, so a new `InstanceStatus` variant needs no migration.
 - **Phase 2 — Rich exit cockpit.** Move the exit decision onto the launch-progress surface; show dirty/unpushed detail with acknowledge (F3, F5, F6).
 - **Phase 3 — Per-workspace policy.** Add the `ask` / `keep` / `clean` setting with its full workspace-schema migration set and the `--keep` / `--clean` overrides.
-- **Phase 4 — Resume-or-new at launch.** Surface restorable sessions when selecting an agent; rebind the same instance; wire the verify-and-acknowledge step into re-materialisation.
+- **Phase 4 — Resume-or-new and the restore ladder.** Surface restorable sessions when selecting an agent; rebind the same instance; implement the tier ladder — Tier 0 `hardline`, Tier 1 `docker start` (F13), Tier 2 `docker run` reusing the stored `image_tag`, Tier 3 pinned rebuild — driven by `inspect_container_state`; persist the launch recipe on the manifest (pinned role commit SHA, base image reference, mount plan, env-var names + source refs) and replay it instead of re-resolving against current config (F14), re-resolving only secret *values*; wire verify-and-acknowledge into re-materialisation. The manifest is not a versioned schema, so the new fields need no migration.
 - **Phase 5 — Clone parity, GC sweeps, tests, docs.** Specify and test clone assessment (F4); add the launch-time lock/detritus reaping and index reconciliation sweeps (F11, F12); update [Parallel Agents](/guides/parallel-agents/) (operator), [Runtime Instance Model](/reference/runtime-instance-model/) (contributor), and [TUI Design Decisions](/reference/tui-design-decisions/); fix the stale doc reference (F8).
 
 ## Open questions
 
-- Should a `keep`-policy workspace cap how many kept instances accumulate per `(workspace, role, agent)`, or prune the oldest automatically? Unbounded keeps could pile up data directories.
-- When resuming, should jackin' re-run `git_pull_on_entry` semantics against the reused worktree, or treat the preserved tree as authoritative and skip the pull?
-- Does "resume" reattach to the agent's prior in-container session (tmux/capsule continuity), or only restore the home and start a fresh agent process? The former overlaps [Console agent session control](/reference/roadmap/console-agent-session-control/) Phase 4 (session reconciliation) and should be scoped against it rather than duplicated.
+- Should a `keep`-policy workspace cap how many kept instances accumulate per `(workspace, role, agent)`, or prune the oldest automatically? The state is meant to be short-lived, so unbounded keeps that pile up data directories run against the intent.
+- When resuming, should jackin' re-run `git_pull_on_entry` semantics against the reused worktree, or treat the preserved tree as authoritative and skip the pull? (Leaning authoritative — the point is to return to the exact state, not advance it.)
+- In-container session continuity is now tier-dependent: Tier 0/1 reconnect to the live agent session for free (the container never died), while Tiers 2–3 restore the bind-mounted home/conversation but start a fresh agent process. Should Tiers 2–3 also attempt to resume the agent's own session log (e.g. `claude --resume`), or is restoring the home enough? This overlaps [Console agent session control](/reference/roadmap/console-agent-session-control/) Phase 4 (session reconciliation) and should be scoped against it.
 
 ## Cross-references
 
