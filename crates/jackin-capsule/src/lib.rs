@@ -11,6 +11,7 @@ pub mod git_context;
 pub mod input;
 pub mod layout;
 pub mod logging;
+pub mod mouse_protocol;
 pub mod mux_mode;
 pub mod pid1;
 pub mod pr_context;

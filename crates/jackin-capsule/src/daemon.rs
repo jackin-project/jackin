@@ -68,6 +68,11 @@ use crate::session::{
     SESSION_ENV_PASSTHROUGH, Session, SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::pr_context::gh_pull_request_info;
+use crate::mouse_protocol::{
+    encode_mouse_for_protocol, encode_wheel_cursor_fallback, is_wheel_button,
+    mouse_event_allowed_for_mode, mouse_event_encoding_for_session, pane_wheel_cursor_fallback_reason,
+    push_xterm_mouse_number,
+};
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
@@ -4293,122 +4298,6 @@ fn screen_scroll_affordance_metrics(
         first_occupied_row,
         last_occupied_row,
     })
-}
-
-fn pane_wheel_cursor_fallback_reason(session: &Session) -> Option<&'static str> {
-    if session.mouse_enabled() {
-        return None;
-    }
-    if session.screen().alternate_screen() {
-        return Some("alternate-screen");
-    }
-    None
-}
-
-/// SGR mouse wheel events set bit 6 of the button byte. Every value in
-/// `64..=95` is a wheel event with some combination of modifier flags
-/// (shift = +4, alt = +8, ctrl = +16). Panes that did not request
-/// mouse mode must not receive these bytes because they dump raw SGR at
-/// prompts or disappear into TUIs that never subscribed to mouse input.
-fn is_wheel_button(button: u8) -> bool {
-    (64..96).contains(&button)
-}
-
-fn mouse_event_allowed_for_mode(mode: vt100::MouseProtocolMode, button: u8, press: bool) -> bool {
-    use vt100::MouseProtocolMode;
-
-    if mode == MouseProtocolMode::None {
-        return false;
-    }
-    if is_wheel_button(button) {
-        return true;
-    }
-
-    let motion = button & 0b100000 != 0;
-    let passive_motion = motion && button & 0b11 == 3;
-    match mode {
-        MouseProtocolMode::None => false,
-        MouseProtocolMode::Press => press && !motion,
-        MouseProtocolMode::PressRelease => !motion,
-        MouseProtocolMode::ButtonMotion => !passive_motion,
-        MouseProtocolMode::AnyMotion => true,
-    }
-}
-
-fn mouse_event_encoding_for_session(
-    session: &Session,
-    button: u8,
-    press: bool,
-) -> Option<vt100::MouseProtocolEncoding> {
-    if mouse_event_allowed_for_mode(session.mouse_protocol_mode(), button, press) {
-        return Some(session.mouse_protocol_encoding());
-    }
-    None
-}
-
-fn encode_mouse_for_protocol(
-    button: u8,
-    col: u16,
-    row: u16,
-    press: bool,
-    encoding: vt100::MouseProtocolEncoding,
-) -> Option<Vec<u8>> {
-    match encoding {
-        vt100::MouseProtocolEncoding::Sgr => {
-            let final_byte = if press { 'M' } else { 'm' };
-            Some(format!("\x1b[<{button};{col};{row}{final_byte}").into_bytes())
-        }
-        vt100::MouseProtocolEncoding::Default | vt100::MouseProtocolEncoding::Utf8 => {
-            let release_button = (button & !0b11) | 3;
-            let button_code = if press { button } else { release_button };
-            let mut out = b"\x1b[M".to_vec();
-            push_xterm_mouse_number(&mut out, u32::from(button_code) + 32, encoding)?;
-            push_xterm_mouse_number(&mut out, u32::from(col) + 32, encoding)?;
-            push_xterm_mouse_number(&mut out, u32::from(row) + 32, encoding)?;
-            Some(out)
-        }
-    }
-}
-
-fn encode_wheel_cursor_fallback(session: &Session, button: u8) -> Option<Vec<u8>> {
-    if !is_wheel_button(button) || session.mouse_enabled() {
-        return None;
-    }
-    let seq = if session.screen().application_cursor() {
-        if (button & 1) == 0 {
-            b"\x1bOA".as_slice()
-        } else {
-            b"\x1bOB".as_slice()
-        }
-    } else if (button & 1) == 0 {
-        b"\x1b[A".as_slice()
-    } else {
-        b"\x1b[B".as_slice()
-    };
-    let mut out = Vec::with_capacity(seq.len() * 3);
-    for _ in 0..3 {
-        out.extend_from_slice(seq);
-    }
-    Some(out)
-}
-
-fn push_xterm_mouse_number(
-    out: &mut Vec<u8>,
-    value: u32,
-    encoding: vt100::MouseProtocolEncoding,
-) -> Option<()> {
-    match encoding {
-        vt100::MouseProtocolEncoding::Default => {
-            out.push(u8::try_from(value).ok()?);
-        }
-        vt100::MouseProtocolEncoding::Utf8 => {
-            let ch = char::from_u32(value)?;
-            let mut buf = [0u8; 4];
-            out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
-        }
-        vt100::MouseProtocolEncoding::Sgr => unreachable!("SGR does not use xterm fields"),
-    }
-    Some(())
 }
 
 /// Format a spawn-failure banner: save cursor → jump to row 1, col 1
