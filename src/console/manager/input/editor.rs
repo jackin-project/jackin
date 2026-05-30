@@ -431,31 +431,22 @@ pub(super) fn handle_editor_key(
         KeyCode::Char('o' | 'O') if editor.active_tab == super::super::state::EditorTab::Mounts => {
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get(n) {
-                let kind = super::super::mount_info::inspect(&m.src);
-                match kind {
-                    super::super::mount_info::MountKind::Git {
-                        origin: Some(super::super::mount_info::GitOrigin::Github { web_url, .. }),
-                        ..
-                    } => {
-                        if let Err(e) = open::that_detached(&web_url) {
-                            editor.modal = Some(Modal::ErrorPopup {
-                                state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                                    "Failed to open URL",
-                                    e.to_string(),
-                                ),
-                            });
-                        }
-                    }
-                    super::super::mount_info::MountKind::Git { .. }
-                    | super::super::mount_info::MountKind::Folder
-                    | super::super::mount_info::MountKind::Missing => {
+                if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
+                    if let Err(e) = open::that_detached(&web_url) {
                         editor.modal = Some(Modal::ErrorPopup {
                             state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                                "No GitHub URL",
-                                "This mount has no GitHub remote URL.\n\nOnly git repositories with a GitHub origin support browser preview.",
+                                "Failed to open URL",
+                                e.to_string(),
                             ),
                         });
                     }
+                } else {
+                    editor.modal = Some(Modal::ErrorPopup {
+                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                            "No GitHub URL",
+                            "This mount has no GitHub remote URL.\n\nOnly git repositories with a GitHub origin support browser preview.",
+                        ),
+                    });
                 }
             }
         }

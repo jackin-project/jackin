@@ -10,7 +10,9 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use super::super::state::{ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary};
+use super::super::state::{
+    ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
+};
 use super::{
     CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
@@ -538,14 +540,23 @@ pub(super) fn mount_display_paths(
     }
 }
 
+#[cfg(test)]
 pub(super) fn format_mount_rows(mounts: &[crate::workspace::MountConfig]) -> Vec<MountDisplayRow> {
+    let cache = MountInfoCache::default();
+    format_mount_rows_with_cache(mounts, &cache)
+}
+
+pub(super) fn format_mount_rows_with_cache(
+    mounts: &[crate::workspace::MountConfig],
+    cache: &MountInfoCache,
+) -> Vec<MountDisplayRow> {
     mounts
         .iter()
         .map(|m| {
             let (destination, host_source) = mount_display_paths(m);
             let mode: &'static str = if m.readonly { "ro" } else { "rw" };
             let iso: &'static str = m.isolation.as_str();
-            let kind = super::super::mount_info::inspect(&m.src).label();
+            let kind = cache.label(&m.src);
             MountDisplayRow {
                 destination,
                 host_source,
@@ -655,7 +666,15 @@ pub(super) fn render_global_mount_lines(
 pub(in crate::console::manager) fn workspace_mounts_content_width(
     mounts: &[crate::workspace::MountConfig],
 ) -> usize {
-    let rows = format_mount_rows(mounts);
+    let cache = MountInfoCache::default();
+    workspace_mounts_content_width_with_cache(mounts, &cache)
+}
+
+pub(in crate::console::manager) fn workspace_mounts_content_width_with_cache(
+    mounts: &[crate::workspace::MountConfig],
+    cache: &MountInfoCache,
+) -> usize {
+    let rows = format_mount_rows_with_cache(mounts, cache);
     let path_w = mount_path_width(&rows);
     let mut lines = vec![render_mount_header(path_w)];
     lines.extend(render_mount_lines(&rows, path_w));
@@ -675,7 +694,15 @@ pub(in crate::console::manager) fn workspace_mounts_content_height(
 pub(in crate::console::manager) fn global_mounts_content_width(
     mounts: &[crate::workspace::MountConfig],
 ) -> usize {
-    let rows = format_mount_rows(mounts);
+    let cache = MountInfoCache::default();
+    global_mounts_content_width_with_cache(mounts, &cache)
+}
+
+pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
+    mounts: &[crate::workspace::MountConfig],
+    cache: &MountInfoCache,
+) -> usize {
+    let rows = format_mount_rows_with_cache(mounts, cache);
     let path_w = mount_path_width(&rows);
     let mut lines = vec![render_global_mount_header(path_w)];
     lines.extend(render_global_mount_lines(&rows, path_w));
@@ -690,6 +717,7 @@ pub(in crate::console::manager) fn global_mounts_content_width(
 pub(in crate::console::manager) struct SidebarInputs<'a> {
     pub workdir: &'a str,
     pub mounts: &'a [crate::workspace::MountConfig],
+    pub mount_info_cache: MountInfoCache,
     pub ws_config: Option<&'a crate::workspace::WorkspaceConfig>,
     pub global_rows: Vec<crate::config::GlobalMountRow>,
     pub picker_role_label: String,
@@ -793,7 +821,10 @@ pub(in crate::console::manager) fn compute_sidebar_scroll_areas(
     SidebarScrollAreas {
         workspace: SidebarScrollArea {
             area: layout.mounts,
-            content_width: workspace_mounts_content_width(inputs.mounts),
+            content_width: workspace_mounts_content_width_with_cache(
+                inputs.mounts,
+                &inputs.mount_info_cache,
+            ),
             content_height: workspace_mounts_content_height(inputs.mounts),
         },
         global: SidebarScrollArea {
@@ -842,6 +873,7 @@ pub(in crate::console::manager) fn sidebar_inputs_for_workspace<'a>(
     SidebarInputs {
         workdir: ws.workdir.as_str(),
         mounts,
+        mount_info_cache: state.mount_info_cache.clone(),
         ws_config,
         global_rows,
         picker_role_label: picker_role
@@ -878,6 +910,7 @@ pub(in crate::console::manager) fn sidebar_inputs_for_current_dir<'a>(
     SidebarInputs {
         workdir: cwd_str,
         mounts,
+        mount_info_cache: state.mount_info_cache.clone(),
         ws_config: None,
         global_rows: super::global_rows_for_selected_row(state, config),
         picker_role_label: String::new(),
@@ -910,6 +943,7 @@ fn render_sidebar_body(
         frame,
         layout.mounts,
         inputs.mounts,
+        &inputs.mount_info_cache,
         &mut state.list_mounts_scroll_x,
         &mut state.list_mounts_scroll_y,
         ws_focused,
@@ -1408,6 +1442,7 @@ fn render_mounts_subpanel(
     frame: &mut Frame,
     area: Rect,
     mounts: &[crate::workspace::MountConfig],
+    cache: &MountInfoCache,
     scroll_x: &mut u16,
     scroll_y: &mut u16,
     focused: bool,
@@ -1420,7 +1455,7 @@ fn render_mounts_subpanel(
             Style::default().fg(PHOSPHOR_DIM),
         )));
     } else {
-        let rows = format_mount_rows(mounts);
+        let rows = format_mount_rows_with_cache(mounts, cache);
         let path_w = mount_path_width(&rows);
         lines.push(render_mount_header(path_w));
         lines.extend(render_mount_lines(&rows, path_w));
@@ -1454,7 +1489,7 @@ fn render_global_mount_rows_section(
     } else {
         let mounts: Vec<crate::workspace::MountConfig> =
             rows.iter().map(|row| row.mount.clone()).collect();
-        let display_rows = format_mount_rows(&mounts);
+        let display_rows = format_mount_rows_with_cache(&mounts, &MountInfoCache::default());
         let path_w = mount_path_width(&display_rows);
         lines.push(render_global_mount_header(path_w));
         lines.extend(render_global_mount_lines(&display_rows, path_w));

@@ -19,6 +19,45 @@ use crate::console::widgets::{
     workdir_pick::WorkdirPickState,
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct MountInfoCache {
+    entries: Rc<RefCell<BTreeMap<String, crate::console::manager::mount_info::MountKind>>>,
+}
+
+impl MountInfoCache {
+    pub(crate) fn inspect(&self, src: &str) -> crate::console::manager::mount_info::MountKind {
+        if let Some(kind) = self.entries.borrow().get(src).cloned() {
+            return kind;
+        }
+        let kind = crate::console::manager::mount_info::inspect(src);
+        self.entries
+            .borrow_mut()
+            .insert(src.to_string(), kind.clone());
+        kind
+    }
+
+    pub(crate) fn label(&self, src: &str) -> String {
+        self.inspect(src).label()
+    }
+
+    pub(crate) fn github_web_url(&self, src: &str) -> Option<String> {
+        match self.inspect(src) {
+            crate::console::manager::mount_info::MountKind::Git {
+                origin:
+                    Some(crate::console::manager::mount_info::GitOrigin::Github { web_url, .. }),
+                ..
+            } => Some(web_url),
+            crate::console::manager::mount_info::MountKind::Missing
+            | crate::console::manager::mount_info::MountKind::Folder
+            | crate::console::manager::mount_info::MountKind::Git { .. } => None,
+        }
+    }
+
+    pub(crate) fn clear(&self) {
+        self.entries.borrow_mut().clear();
+    }
+}
+
 /// Logical row in the manager list. Prefer over the raw `selected:
 /// usize` when reasoning about what the operator is pointing at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,6 +227,7 @@ pub struct ManagerState<'a> {
     /// Logical list row the pointer is hovering (lifts its background like a
     /// hovered tab). Transient; set on mouse motion, cleared off the list.
     pub hovered_list_row: Option<ManagerListRow>,
+    pub mount_info_cache: MountInfoCache,
     /// Process-lifetime cache of `op` structural metadata, threaded
     /// into the picker on open. Carries no credentials — see
     /// `op_cache.rs`.
@@ -301,6 +341,7 @@ pub struct GlobalMountsState<'a> {
     pub selected: usize,
     pub pending: Vec<crate::config::GlobalMountRow>,
     pub original: Vec<crate::config::GlobalMountRow>,
+    pub mount_info_cache: MountInfoCache,
     pub modal: Option<GlobalMountModal<'a>>,
     pub modal_parents: Vec<GlobalMountModal<'a>>,
     pub add_draft: Option<GlobalMountDraft>,
@@ -646,6 +687,7 @@ pub struct EditorState<'a> {
     pub active_field: FieldFocus,
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
+    pub mount_info_cache: MountInfoCache,
     pub modal: Option<Modal<'a>>,
     /// Parent chain backing the Esc-back rule from
     /// `docs/.../tui-design-decisions.mdx` — modals that opened a
@@ -825,6 +867,7 @@ impl GlobalMountsState<'_> {
             selected: 0,
             pending: rows.clone(),
             original: rows,
+            mount_info_cache: MountInfoCache::default(),
             modal: None,
             modal_parents: Vec::new(),
             add_draft: None,
@@ -843,6 +886,7 @@ impl GlobalMountsState<'_> {
 
     pub fn discard(&mut self) {
         self.pending = self.original.clone();
+        self.mount_info_cache.clear();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
         self.modal = None;
@@ -864,6 +908,7 @@ impl GlobalMountsState<'_> {
         }
         let config = editor.save()?;
         self.original = self.pending.clone();
+        self.mount_info_cache.clear();
         Ok(config)
     }
 }
@@ -1727,6 +1772,7 @@ impl ManagerState<'_> {
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             hovered_list_row: None,
+            mount_info_cache: MountInfoCache::default(),
             op_cache,
             op_available,
             cached_term_size: Rect {
@@ -2342,6 +2388,7 @@ impl EditorState<'_> {
             active_field: FieldFocus::Row(0),
             original: ws.clone(),
             pending: ws,
+            mount_info_cache: MountInfoCache::default(),
             modal: None,
             modal_parents: Vec::new(),
             pending_name: None,
@@ -2380,6 +2427,7 @@ impl EditorState<'_> {
             active_field: FieldFocus::Row(0),
             original: empty.clone(),
             pending: empty,
+            mount_info_cache: MountInfoCache::default(),
             modal: None,
             modal_parents: Vec::new(),
             pending_name: None,

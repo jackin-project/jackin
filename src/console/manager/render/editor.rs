@@ -15,8 +15,8 @@ use std::cmp::Ordering;
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, Modal, SecretsScopeTag};
 use super::list::{
-    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
-    render_mount_header,
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache,
+    mount_path_width, render_mount_header,
 };
 use super::{
     PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE, footer_height, render_footer,
@@ -227,14 +227,12 @@ fn contextual_row_items(
                         HintSpan::Key("A"),
                         HintSpan::Text("add"),
                     ];
-                    if let Some(m) = state.pending.mounts.get(cursor)
-                        && matches!(
-                            super::super::mount_info::inspect(&m.src),
-                            super::super::mount_info::MountKind::Git {
-                                origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
-                                ..
-                            }
-                        )
+                    if state
+                        .pending
+                        .mounts
+                        .get(cursor)
+                        .and_then(|m| state.mount_info_cache.github_web_url(&m.src))
+                        .is_some()
                     {
                         items.push(HintSpan::Sep);
                         items.push(HintSpan::Key("O"));
@@ -540,7 +538,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>)
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Build aligned table rows for all mounts.
-    let rows = format_mount_rows(&state.pending.mounts);
+    let rows = format_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
     let path_w = mount_path_width(&rows);
 
     // Header row — shares path_w so the "mode" and "type" columns line up

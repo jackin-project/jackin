@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary returning the shared `UpdateResult`, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus dirty-exit and status popups and a small `Dirty` / `UpdateResult` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components and the `tui-lookbook` binary emits SVG previews from real `TestBackend` buffers into the [TUI Lookbook](/reference/tui-lookbook/) with per-component pages and a CI drift check, host list navigation/tree/preview/editor/settings-tab state, mouse list/tab/content-row selection, editor cursor/scroll/auth-kind/header/toggle state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide typed effects, typed terminal session ownership, capsule Ratatui rendering, and complete component coverage remain open.
+**Status**: Partially implemented — component extraction is underway on `feature/tui-architecture`; the launch progress renderer now consumes shared `jackin-tui` widgets instead of host-console internals and has an initial `LaunchMessage` update boundary returning the shared `UpdateResult`, `Panel` / `ButtonStrip` / `TabStrip` / scrollable primitives plus dirty-exit and status popups and a small `Dirty` / `UpdateResult` runtime contract live in `jackin-tui`, the first `jackin_tui::lookbook` stories render canonical components and the `tui-lookbook` binary emits SVG previews from real `TestBackend` buffers into the [TUI Lookbook](/reference/tui-lookbook/) with per-component pages and a CI drift check, host list navigation/tree/preview/editor/settings-tab state, mouse list/tab/content-row selection, editor cursor/scroll/auth-kind/header/toggle state, and simple settings content cursor/toggle/header state now have the first `ManagerMessage` update paths, visible mount rows use a cached `MountInfoCache` instead of re-reading `.git` metadata on every render, and the capsule dispatch layer has initial `MuxMode` / `Action` boundaries. Host-wide typed effects, typed terminal session ownership, capsule Ratatui rendering, and complete component coverage remain open.
 
 ## Goal
 
@@ -366,7 +366,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 3. **The view is not pure.** Render functions take `&mut state`. `render_scrollable_block` clamps `scroll_x`/`scroll_y` in place every frame; the editor tab renderers write `tab_content_width`/`tab_content_height` back into `EditorState` so the mouse handler can later read them. "Draw" mutates observable state, which couples render output to input handling and is the root of a class of stale-geometry scroll bugs.
 
-4. **Filesystem I/O and instance refresh on the render loop.** `mount_info::inspect` (<RepoFile path="src/console/manager/mount_info.rs" />) still runs from render/input paths and stats the disk / reads `.git` pointers for visible mounts. `refresh_instances` still does blocking index/manifest reads and a per-container socket fan-out on the event-loop thread (self-throttled to 500 ms, but still blocking the draw when it fires).
+4. **Filesystem I/O and instance refresh on the render loop.** Visible mount rows now read through `MountInfoCache` instead of calling `mount_info::inspect` (<RepoFile path="src/console/manager/mount_info.rs" />) for every frame, but the first lookup still happens synchronously and the cache is not yet refreshed by a typed background message. `refresh_instances` still does blocking index/manifest reads and a per-container socket fan-out on the event-loop thread (self-throttled to 500 ms, but still blocking the draw when it fires).
 
 5. **Unconditional full-frame redraw.** The loop draws every tick regardless of whether anything changed. No dirty flag, no skipped frames.
 
@@ -557,7 +557,7 @@ The async-first principle becomes actionable as a concrete list. Every site belo
 
 | Site | What blocks | Target |
 |---|---|---|
-| `mount_info::inspect` (<RepoFile path="src/console/manager/mount_info.rs" />) | per-frame `stat()` + `.git` reads for every mount, at 20 Hz, uncached | cached `MountFacts`, refreshed by a background `MountInspected` message |
+| `mount_info::inspect` (<RepoFile path="src/console/manager/mount_info.rs" />) | visible mount rows now use a `MountInfoCache`, but the first lookup still runs synchronously and cache refresh is manual | typed `MountFacts`, refreshed by a background `MountInspected` message |
 | `refresh_instances` (<RepoFile path="src/console/manager/state.rs" />) | blocking index/manifest reads + per-container socket fan-out (self-throttled to 500 ms, still blocks the draw when it fires) | background task → `InstancesRefreshed` message |
 | 1Password loads / snapshot fan-out | synchronous `OpRunner` + socket calls invoked from input handlers | background task → result message |
 | `event::poll(50 ms)` loop | wakes 20×/s even when idle; full-frame redraw every tick | `tokio::select!` over an `EventStream` + the `Message` channel; dirty/animation-tick redraw |
@@ -802,7 +802,7 @@ Introduce the `Message` enum and central `update`; route existing key/mouse hand
 
 ### Phase 2 — Host: pure view
 
-Remove `&mut` and I/O from renderers. Move scroll clamping into `update`. Replace per-frame `mount_info::inspect` with cached facts refreshed by a message. Introduce event-driven (dirty) redraw — draw on a `Message` or an animation tick, not unconditionally every 50 ms — so an idle console does no work.
+Remove `&mut` and I/O from renderers. Move scroll clamping into `update`. Visible mount rows now consume `MountInfoCache`, which removes repeat per-frame `.git` reads for unchanged sources; the remaining target is to replace synchronous first lookup with cached facts refreshed by a message. Introduce event-driven (dirty) redraw — draw on a `Message` or an animation tick, not unconditionally every 50 ms — so an idle console does no work.
 
 ### Phase 3 — Host: background I/O
 

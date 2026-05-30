@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header};
 use crate::console::manager::auth_kind::AuthKind;
 use crate::console::manager::render::list::{
-    MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
+    MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
 use crate::console::manager::state::{
-    GlobalMountModal, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope, SettingsState,
-    SettingsTab,
+    GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
+    SettingsState, SettingsTab,
 };
 use crate::operator_env::EnvValue;
 use jackin_tui::HintSpan;
@@ -21,7 +21,8 @@ use jackin_tui::HintSpan;
 pub(in crate::console::manager) fn global_mounts_content_width(
     rows: &[crate::config::GlobalMountRow],
 ) -> usize {
-    let lines = global_mount_lines(rows, None, false);
+    let cache = MountInfoCache::default();
+    let lines = global_mount_lines(rows, None, false, &cache);
     super::max_line_width(&lines)
 }
 
@@ -127,7 +128,12 @@ fn render_mounts_tab(
     state: &mut SettingsState<'_>,
     area: ratatui::layout::Rect,
 ) {
-    let mut lines = global_mount_lines(&state.mounts.pending, Some(state.mounts.selected), true);
+    let mut lines = global_mount_lines(
+        &state.mounts.pending,
+        Some(state.mounts.selected),
+        true,
+        &state.mounts.mount_info_cache,
+    );
     if let Some(err) = &state.mounts.error {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
@@ -215,8 +221,13 @@ pub(in crate::console::manager) fn trust_content_width(state: &SettingsState<'_>
 }
 
 pub(in crate::console::manager) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
-    let mut height =
-        global_mount_lines(&state.mounts.pending, Some(state.mounts.selected), true).len();
+    let mut height = global_mount_lines(
+        &state.mounts.pending,
+        Some(state.mounts.selected),
+        true,
+        &state.mounts.mount_info_cache,
+    )
+    .len();
     if state.mounts.error.is_some() {
         height = height.saturating_add(2);
     }
@@ -331,14 +342,12 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
                     HintSpan::Key("A"),
                     HintSpan::Text("add"),
                 ];
-                if let Some(row) = state.mounts.pending.get(cursor)
-                    && matches!(
-                        super::super::mount_info::inspect(&row.mount.src),
-                        super::super::mount_info::MountKind::Git {
-                            origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
-                            ..
-                        }
-                    )
+                if state
+                    .mounts
+                    .pending
+                    .get(cursor)
+                    .and_then(|row| state.mounts.mount_info_cache.github_web_url(&row.mount.src))
+                    .is_some()
                 {
                     items.push(HintSpan::Sep);
                     items.push(HintSpan::Key("O"));
@@ -469,9 +478,10 @@ fn global_mount_lines(
     rows: &[crate::config::GlobalMountRow],
     selected: Option<usize>,
     include_sentinel: bool,
+    cache: &MountInfoCache,
 ) -> Vec<Line<'static>> {
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
-    let display_rows = format_mount_rows(&mounts);
+    let display_rows = format_mount_rows_with_cache(&mounts, cache);
     let path_w = mount_path_width(&display_rows);
     let mut lines: Vec<Line<'static>> = Vec::new();
     if !display_rows.is_empty() {

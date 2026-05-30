@@ -233,20 +233,12 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         }
         KeyCode::Char('o' | 'O') => {
             if let Some(row) = global.pending.get(global.selected) {
-                match super::super::mount_info::inspect(&row.mount.src) {
-                    super::super::mount_info::MountKind::Git {
-                        origin: Some(super::super::mount_info::GitOrigin::Github { web_url, .. }),
-                        ..
-                    } => {
-                        if let Err(err) = open::that_detached(&web_url) {
-                            global.error = Some(format!("failed to open URL: {err}"));
-                        }
+                if let Some(web_url) = global.mount_info_cache.github_web_url(&row.mount.src) {
+                    if let Err(err) = open::that_detached(&web_url) {
+                        global.error = Some(format!("failed to open URL: {err}"));
                     }
-                    super::super::mount_info::MountKind::Git { .. }
-                    | super::super::mount_info::MountKind::Folder
-                    | super::super::mount_info::MountKind::Missing => {
-                        global.error = Some("no GitHub URL for this mount".into());
-                    }
+                } else {
+                    global.error = Some("no GitHub URL for this mount".into());
                 }
             }
         }
