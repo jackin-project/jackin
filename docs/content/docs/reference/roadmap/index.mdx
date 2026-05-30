@@ -101,6 +101,7 @@ jackin' is a functional proof of concept, not a stable product line. **`Claude C
 
 - **[Construct user creation optimization](/reference/roadmap/construct-user-creation/)** — move user creation to the derived layer to eliminate UID/GID remapping (status: deferred — needs design work)
 - **[Workspace registry cache](/reference/roadmap/workspace-registry-cache/)** — opt-in workspace-level zot registry that acts as a pull-through cache for Docker Hub and a local push target; shared across all DinD sidecars in a workspace so base image layers are pulled once and reused, and built images persist across sessions (status: open — design proposal)
+- **[Code-intelligence tooling for the-architect role](/reference/roadmap/architect-code-intelligence-tooling/)** — pilot baking `ast-grep` (structural search CLI), `rust-analyzer` (LSP), the cargo verifiers, and the `fff` file-search MCP server into the-architect, with baked agent guidance so the model uses them; opt-in, role-scoped, and decoupled from jackin core so the approach can be measured before any broader rollout (status: open — ready to implement)
 
 ### Operator surface and fleet operations
 
