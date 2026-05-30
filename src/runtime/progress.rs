@@ -818,6 +818,10 @@ impl Drop for LaunchProgress {
 struct RichRenderer {
     terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     no_motion: bool,
+    /// Whether this renderer entered the alternate screen on construction.
+    /// Recorded so `drop` can leave it only when we entered it — under the
+    /// host `TerminalSession` guard the screen persists into the capsule attach.
+    entered_alt_screen: bool,
     /// Shared digital-rain engine (the same one the intro/outro use), ticked
     /// per frame and painted into the loading box. Sized to the terminal so
     /// the box shows a window into one continuous rainfall.
@@ -833,7 +837,8 @@ impl RichRenderer {
         let mut stdout = std::io::stdout();
         // When the launch flow's host guard already owns the alternate screen,
         // draw into it; only enter it ourselves when running standalone.
-        if !crate::tui::host_screen_owned() {
+        let entered_alt_screen = !crate::tui::host_screen_owned();
+        if entered_alt_screen {
             stdout.execute(EnterAlternateScreen)?;
         }
         stdout.execute(crossterm::cursor::Hide)?;
@@ -850,6 +855,7 @@ impl RichRenderer {
         Ok(Self {
             terminal,
             no_motion,
+            entered_alt_screen,
             rain: None,
         })
     }
@@ -899,7 +905,7 @@ impl RichRenderer {
         context: &'static str,
         f: impl FnOnce(&mut Self) -> anyhow::Result<T>,
     ) -> anyhow::Result<T> {
-        let owns_raw = !crate::tui::host_screen_owned();
+        let owns_raw = self.entered_alt_screen;
         if owns_raw {
             crossterm::terminal::enable_raw_mode().context(context)?;
         }
@@ -1136,7 +1142,7 @@ impl Drop for RichRenderer {
         let _ = self.terminal.backend_mut().execute(crossterm::cursor::Show);
         // Leave the alternate screen only when we entered it; under the host
         // guard the screen persists into the capsule attach.
-        if !crate::tui::host_screen_owned() {
+        if self.entered_alt_screen {
             let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
         }
         let _ = std::io::stdout().flush();
