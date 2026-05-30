@@ -52,6 +52,8 @@ This populates `node_modules/` with the platform-specific optional native binari
 - Start dev server: `bun run dev`
 - Build docs: `bun run build`
 - Preview production build: `bun run preview`
+- Check source repository links: `bun run check:repo-links`
+- Check roadmap sidebar completeness: `bun run check:roadmap-sidebar`
 - Check links in the existing production build: `bun run check:links`
 - Rebuild and then check links: `bun run check:links:fresh`
 - Run tests: `bun test`
@@ -85,17 +87,13 @@ bun install --frozen-lockfile
 - `check:repo-links` exists because lychee only checks real links in rendered HTML. Plain code spans like `src/runtime/launch.rs` are not links, so lychee cannot detect when those files are renamed or deleted. The source check makes those references use `<RepoFile />`, then lychee verifies the generated URL.
 - `mailto:` links are included in lychee checks, so use real, intentional email addresses rather than placeholders.
 - Sidebar and top-nav are configured through `meta.json` files and `src/lib/layout.shared.tsx`.
-- **Roadmap sidebar discipline.** Every MDX file under `content/docs/reference/roadmap/` must have a matching entry in `content/docs/reference/roadmap/meta.json` under one of the open-work categories (`Agent Orchestrator Research`, `Codebase health`, `Agent runtimes & authentication`, `Isolation & security`, `Infrastructure`, `Documentation tooling`, `Configuration ergonomics`) or under `Resolved`, as appropriate for the page's `**Status**` field. Whenever you add, rename, delete, or change the status of a roadmap item — or restructure the directory — verify the sidebar still matches the directory contents in the same PR. Operators rely on the sidebar (not the overview prose) to discover open work, so an item reachable only via direct URL or the overview page is effectively hidden. To audit:
+- **Roadmap sidebar discipline.** Every MDX file under `content/docs/reference/roadmap/` must be referenced in at least one `meta.json` under the roadmap directory tree (the sidebar uses a nested group structure: root `meta.json` points to group dirs, each group's `meta.json` points to pages via `../slug` or `../../slug` relative paths). Whenever you add, rename, delete, or change the status of a roadmap item — or restructure the directory — verify the sidebar still matches the directory contents in the same PR. Operators rely on the sidebar (not the overview prose) to discover open work, so an item reachable only via direct URL or the overview page is effectively hidden. To audit, run the dedicated script from `docs/`:
 
   ```sh
-  ls docs/content/docs/reference/roadmap/*.mdx \
-    | xargs -n1 basename -s .mdx | sort > /tmp/roadmap-files
-  jq -r '.. | strings' docs/content/docs/reference/roadmap/meta.json \
-    | grep -E '^[a-z0-9-]+$' | sort -u > /tmp/roadmap-sidebar
-  diff /tmp/roadmap-files /tmp/roadmap-sidebar
+  bun run check:roadmap-sidebar
   ```
 
-  The diff must be empty.
+  The script reports any MDX file with no matching `meta.json` entry and any `meta.json` entry with no matching MDX file. Both directions must be clean.
 - **Roadmap overview discipline.** `content/docs/reference/roadmap/index.mdx` is the entry point operators land on when they want a single picture of *what shipped, what is partial, what is planned, what is deferred, and what is on hold*. The sidebar lists every item alphabetically/by phase; the overview is what tells the reader the **status story**. The two surfaces have different jobs and must be maintained together, not folded into one.
 
   Whenever you add, rename, delete, or change the `**Status**` field of a roadmap item, also update `roadmap.mdx` so the item lands in the section that matches its new status:
