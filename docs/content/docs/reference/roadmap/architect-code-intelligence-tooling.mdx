@@ -1,13 +1,13 @@
 ---
 title: "Code-intelligence tooling for the-architect role"
-description: "Pilot: equip the-architect with ast-grep, rust-analyzer, the cargo verifiers, and the fff file-search MCP, plus one shared agent-rules file wired into every supported runtime — opt-in, role-scoped, no jackin-core change"
+description: "Pilot: equip the-architect with ast-grep, rust-analyzer, the cargo verifiers, and the fff file-search MCP, plus one shared agent-rules file copied into every supported runtime — opt-in, role-scoped, no jackin-core change"
 ---
 
 **Status**: Open — ready to implement (pilot: the-architect role only, opt-in, no jackin-core code change)
 
 ## Objective
 
-Equip the the-architect role with a Rust code-intelligence stack and make the agent use it: structural search and refactor (`ast-grep`), semantic navigation (`rust-analyzer`), the cargo verifiers (`nextest`, `clippy`, `rustfmt`), and a resident file-search server (`fff`). The guidance that tells the agent to use these tools is written once and applied to every runtime the role supports (`claude`, `codex`, `amp`, `kimi`, `opencode`) with no duplicated content. Deliver everything inside the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository, opt-in and role-scoped, with no change to jackin core.
+Equip the the-architect role with a Rust code-intelligence stack and make the agent use it: structural search and refactor (`ast-grep`), semantic navigation (`rust-analyzer`), the cargo verifiers (`nextest`, `clippy`, `rustfmt`), and a resident file-search server (`fff`). The guidance that tells the agent to use these tools is authored once and applied to every runtime the role supports (`claude`, `codex`, `amp`, `kimi`, `opencode`) with no duplicated content. Deliver everything inside the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository, opt-in and role-scoped, with no change to jackin core.
 
 ## Scope
 
@@ -39,14 +39,17 @@ The-architect already carries the Rust toolchain plus `nextest`/`clippy`/`rustfm
 # rust-analyzer: official LSP as a rustup component (no compile)
 RUN rustup component add rust-analyzer
 
-# ast-grep: structural search/refactor as a CLI. Prebuilt binary via mise's
-# aqua backend (layer-cached, no source compile). Invoke as `ast-grep` — never
-# `sg`, which is the system set-group command on Debian.
-RUN mise use --global "aqua:ast-grep/ast-grep"
+# ast-grep: structural search/refactor as a CLI. No Debian apt package exists,
+# so install via mise — the registry entry resolves to the aqua backend and
+# pulls a prebuilt, SLSA-verified binary (no source compile, layer-cached,
+# pin a version with `ast-grep@<ver>` for reproducibility). Invoke as
+# `ast-grep`, never `sg`, the system set-group command on Debian.
+RUN mise use --global ast-grep
 
-# fff: resident file-search MCP server, installed via the upstream installer
-# (the project ships no Debian package).
-RUN curl -fsSL https://dmtrkovalenko.dev/install-mcp.sh | bash
+# fff: resident file-search MCP server. No Debian apt package; install via the
+# upstream installer, which fetches the latest prebuilt binary. Docker caches
+# this layer — pass `--rebuild` (or bust the layer) to pull a newer fff.
+RUN curl -L https://dmtrkovalenko.dev/install-fff-mcp.sh | bash
 ```
 
 `cargo install ast-grep --locked` is an acceptable fallback for `ast-grep` since the toolchain is present, but it compiles from source; prefer the prebuilt path.
@@ -72,38 +75,35 @@ Wire it in the manifest if a `setup_once` hook is not already declared (no manif
 setup_once = "hooks/setup-once.sh"
 ```
 
-### 3. Install the guidance once, share it across every runtime
+### 3. Install the guidance once, copy it into every runtime
 
-The agent only uses the tools if it is told they exist. Write that guidance as a **single canonical file** and point every supported runtime's global-instructions path at it — one file, no duplicated content, one mechanism (symlink).
+The agent only uses the tools if it is told they exist. Author that guidance as **one source file** in the role repo and copy it to each supported runtime's global-instructions path at build time — the content is written once, never hand-duplicated.
 
-`~/.config/AGENTS.md` is the canonical location: Amp reads it natively, and it is the cross-tool global convention from the [AGENTS.md](https://agents.md/) standard. Symlink the other runtimes' paths to it — Claude Code follows symlinks, Codex and OpenCode read `AGENTS.md` natively, and `cp -a` (the derived layer's default-home capture) preserves symlinks so the captured home dirs survive seeding.
+Copy rather than symlink: Codex does not reliably follow symlinked config files ([codex#11314](https://github.com/openai/codex/issues/11314), [codex#8943](https://github.com/openai/codex/issues/8943)), and coding agents increasingly refuse to follow symlinks in config directories as a sandbox-escape defense. The file is static in the image, so a symlink would buy nothing over a copy.
 
 ```dockerfile
-# Canonical agent rules — one file for every runtime.
+# One source file → each runtime's global-instructions path. Real files (not
+# symlinks) so every runtime reads them and the captured home dirs survive
+# default-home seeding cleanly.
 COPY --chown=agent:agent code-intelligence.md /home/agent/.config/AGENTS.md
-
-# Point each runtime's global-instructions path at the one canonical file.
-RUN set -eux; \
-    for link in .claude/CLAUDE.md .codex/AGENTS.md .config/opencode/AGENTS.md; do \
-      mkdir -p "/home/agent/$(dirname "$link")"; \
-      ln -sf /home/agent/.config/AGENTS.md "/home/agent/$link"; \
-      chown -h agent:agent "/home/agent/$link"; \
-    done
+COPY --chown=agent:agent code-intelligence.md /home/agent/.claude/CLAUDE.md
+COPY --chown=agent:agent code-intelligence.md /home/agent/.codex/AGENTS.md
+COPY --chown=agent:agent code-intelligence.md /home/agent/.config/opencode/AGENTS.md
 ```
 
-Global-instructions path per runtime — every entry resolves to the one canonical file:
+Global-instructions path per runtime — each is a copy of the one source file:
 
 | Runtime | Global path | Wiring |
 |---|---|---|
-| `amp` | `~/.config/AGENTS.md` | canonical file (read natively) |
-| `claude` | `~/.claude/CLAUDE.md` | symlink → canonical (Claude follows symlinks) |
-| `codex` | `~/.codex/AGENTS.md` | symlink → canonical (native `AGENTS.md`) |
-| `opencode` | `~/.config/opencode/AGENTS.md` | symlink → canonical (also reads `~/.claude/CLAUDE.md`) |
-| `kimi` | project-root `AGENTS.md` only | no home-level rules file upstream yet — tracked under follow-ups |
+| `amp` | `~/.config/AGENTS.md` | copy (read natively) |
+| `claude` | `~/.claude/CLAUDE.md` | copy |
+| `codex` | `~/.codex/AGENTS.md` | copy (native `AGENTS.md`) |
+| `opencode` | `~/.config/opencode/AGENTS.md` | copy (also reads `~/.claude/CLAUDE.md`) |
+| `kimi` | — | Kimi Code auto-loads no home-level rules file yet — tracked under follow-ups |
 
-The single canonical content (markdown, agent-agnostic):
+The single source content (markdown, agent-agnostic):
 
-```markdown title="code-intelligence.md  →  ~/.config/AGENTS.md"
+```markdown title="code-intelligence.md (one source, copied to each path)"
 # Code-intelligence tooling (the-architect)
 
 This container ships dedicated code-intelligence tools. Prefer them over ad-hoc text search when the query is about code structure.
@@ -131,9 +131,9 @@ Definitions, references, types, and implementations come from rust-analyzer (on 
 
 ## How the agent learns the tools
 
-1. The the-architect `Dockerfile` writes the canonical guidance to `/home/agent/.config/AGENTS.md` and symlinks each runtime's global-instructions path to it (agent layer, on top of the construct).
-2. `~/.config/AGENTS.md` and the `~/.config/...` symlinks are baked into the image and present at runtime. The symlinks under `~/.claude/` and `~/.codex/` are additionally captured by the derived layer's default-home step (`cp -a` preserves symlinks — see <RepoFile path="src/derived_image.rs" />) and reseeded on first boot.
-3. Each runtime reads its global-instructions path at startup — Amp the file directly, Claude/Codex/OpenCode through the symlink — so the guidance is in context for every session regardless of which repo the operator mounted.
+1. The the-architect `Dockerfile` copies the source guidance to each runtime's global-instructions path as a real file (agent layer, on top of the construct).
+2. The copies under `~/.claude/` and `~/.codex/` are captured by the derived layer's default-home step (see <RepoFile path="src/derived_image.rs" />) and reseeded on first boot; `~/.config/AGENTS.md` and `~/.config/opencode/AGENTS.md` are baked into the image and present at runtime.
+3. Each runtime reads its global-instructions path at startup, so the guidance is in context for every session regardless of which repo the operator mounted.
 
 Because the guidance lives in the agent's home, it applies to every workspace the-architect runs against and never mutates a host repository.
 
@@ -151,7 +151,7 @@ Inside the container, confirm each surface:
 - `command -v rust-analyzer` resolves; `Claude Code` go-to-definition works on a symbol.
 - `claude mcp list` shows `fff`; ask the agent to "use fff" for a file search.
 - `cargo nextest run` runs the suite.
-- `readlink -f ~/.codex/AGENTS.md` and `readlink -f ~/.claude/CLAUDE.md` both resolve to `~/.config/AGENTS.md`.
+- `sha256sum ~/.config/AGENTS.md ~/.claude/CLAUDE.md ~/.codex/AGENTS.md ~/.config/opencode/AGENTS.md` — all four hashes match (one source).
 - When asked to find all trait impls or `.unwrap()` calls, the agent reaches for `ast-grep` rather than `rg`. Repeat the launch with `--codex` / `--amp` / `--opencode` to confirm the same guidance is in context for each runtime.
 
 ## Success criteria
@@ -161,20 +161,20 @@ The pilot succeeds when, across a handful of representative the-architect sessio
 - the agent invokes `ast-grep` for structural queries and `rust-analyzer` for symbol resolution instead of ad-hoc text search;
 - code lookups cost fewer tokens than repeated `rg` plus file reads, net of the `fff` MCP schema carried each turn;
 - fewer edits land on wrong paths because symbols were resolved rather than guessed;
-- the same guidance is confirmed in context across `claude`, `codex`, `amp`, and `opencode` from the one canonical file;
+- the same guidance is confirmed in context across `claude`, `codex`, `amp`, and `opencode` from the one source file;
 - `fff`'s resident index measurably beats the construct's ripgrep on this repo — or the pilot concludes it does not, and `fff` is dropped while the CLI and LSP tools stay.
 
 ## Follow-ups (deferred)
 
-- **Kimi global rules.** Kimi reads only a project-root `AGENTS.md` today. Wire the canonical file into Kimi once it supports a home-level rules file ([MoonshotAI/kimi-cli#850](https://github.com/MoonshotAI/kimi-cli/issues/850)).
+- **Kimi Code global rules.** [Kimi Code](https://github.com/MoonshotAI/kimi-code) auto-loads no home-level rules file today. Copy the source guidance into Kimi's home (config dir `~/.kimi-code/`) once Kimi Code supports a global rules file ([upstream feature request](https://github.com/MoonshotAI/kimi-cli/issues/2152)).
 - **ast-grep lint gate.** Add `sgconfig.yml` plus `.ast-grep/rules/*.yml` (flag `todo!()`/`unimplemented!()`, audit `.unwrap()`) and run `ast-grep scan` in CI. Independent of the agent-guidance pilot; can land separately.
 - **Declarative MCP servers in the manifest.** A first-class `[claude].mcp_servers` (and per-runtime equivalents) field in `jackin.role.toml` would register MCP servers without a hook. This is a versioned-schema change (one `CURRENT_MANIFEST_VERSION` bump with migration and fixtures) and is only worth designing if the pilot proves MCP servers worth generalizing.
 - **Skill-based guidance.** Deliver the guidance as a `Claude Code` skill loaded on demand instead of always-on memory, cutting standing memory cost.
-- **Generalize to a shared layer.** Move the CLI tools (`ast-grep`, `rust-analyzer`) and the canonical-rules wiring into a shared base so other Rust roles inherit them, keeping `fff`/MCP opt-in.
+- **Generalize to a shared layer.** Move the CLI tools (`ast-grep`, `rust-analyzer`) and the source-copy wiring into a shared base so other Rust roles inherit them, keeping `fff`/MCP opt-in.
 
 ## References
 
-- [AGENTS.md](https://agents.md/) — the cross-tool agent-instructions standard (read globally by Codex at `~/.codex/AGENTS.md`, OpenCode at `~/.config/opencode/AGENTS.md`, and Amp at `~/.config/AGENTS.md`; Claude Code reads `~/.claude/CLAUDE.md` and follows symlinks).
-- [ast-grep](https://ast-grep.github.io/) — structural search/rewrite CLI.
+- [AGENTS.md](https://agents.md/) — the cross-tool agent-instructions standard, read globally by Codex at `~/.codex/AGENTS.md`, OpenCode at `~/.config/opencode/AGENTS.md`, and Amp at `~/.config/AGENTS.md`. Claude Code reads `~/.claude/CLAUDE.md`.
+- [ast-grep](https://ast-grep.github.io/) — structural search/rewrite CLI (no Debian apt package; installed via mise).
 - [fff](https://github.com/dmtrKovalenko/fff) — file-search toolkit for AI agents with an MCP server.
 - [Creating a Role](/developing/creating-roles/), [Role Manifest](/developing/role-manifest/), [The Construct Image](/developing/construct-image/) — the role extension points this pilot uses.
