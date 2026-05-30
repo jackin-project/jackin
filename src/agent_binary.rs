@@ -772,7 +772,7 @@ mod tests {
         chmod_executable(&newer_binary).unwrap();
         filetime::set_file_mtime(
             &older_binary,
-            filetime::FileTime::from_system_time(SystemTime::now() - Duration::from_secs(60)),
+            filetime::FileTime::from_system_time(SystemTime::now() - Duration::from_mins(1)),
         )
         .unwrap();
 
