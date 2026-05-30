@@ -16,9 +16,10 @@ pub mod widgets;
 pub use op_cache::OpCache;
 use prompts::{
     console_location_debug, dispatch_and_prompt_launch, invalidate_op_cache_for_ref,
-    key_debug_name, launch_with_committed_agent, prompt_agent_for_launch, prompt_committed_role,
-    providers_for_launch,
+    key_debug_name, launch_with_committed_agent, prompt_committed_role,
 };
+#[cfg(test)]
+use prompts::{prompt_agent_for_launch, providers_for_launch};
 pub use state::ConsoleStage;
 pub use state::ConsoleState;
 pub use state::WorkspaceChoice;
