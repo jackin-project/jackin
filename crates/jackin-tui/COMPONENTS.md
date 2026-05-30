@@ -12,7 +12,7 @@ This inventory tracks repeatable terminal UI patterns, their current owner, call
 | `TextField` / `TextInput` | `jackin_tui::TextField`, `jackin_tui::components::text_input` | Console text input, launch text prompt, capsule rename dialog model | 3 — shared Ratatui widget | Capsule still uses the shared model through raw ANSI until its Ratatui frame lands. |
 | `TabCell` / tab layout | `jackin_tui` root | Console tab strips, capsule status bar | 2 — shared model | Ratatui `TabStrip` component still needs promotion. |
 | Scroll metrics | `jackin_tui::scroll` | Console scrollable blocks, launch build-log overlay, capsule scroll math | 2 — shared model | Ratatui `ScrollablePanel` component still needs promotion. |
-| `ModalOutcome` | `jackin_tui::ModalOutcome` | Console widgets, launch forced-choice prompts | 2 — shared update contract | Event vocabulary is shared; modal components are still per-surface. |
-| Confirm dialog | `src/console/widgets/confirm.rs` and `crates/jackin-capsule/src/dialog.rs` | Console, launch, capsule | 1 — local helpers | Promote to one `ConfirmDialog` before further reuse. |
-| Error dialog | `src/console/widgets/error_popup.rs` | Console, launch | 1 — local helper | Runtime still imports the console widget; move next. |
-| Filter list picker | `src/console/widgets/select_list.rs` plus picker-specific modules | Console, launch | 1 — local helper | Promote as generic `FilterListPicker<T>` with typed row ids. |
+| `ModalOutcome` | `jackin_tui::ModalOutcome` | Console widgets, launch forced-choice prompts | 2 — shared update contract | Event vocabulary is shared; composed modal flows still need one runtime loop per surface. |
+| `ConfirmDialog` | `jackin_tui::components::confirm_dialog` | Console, launch | 3 — shared Ratatui widget | Capsule still redraws confirm actions in raw ANSI until its Ratatui frame lands. |
+| Error dialog | `jackin_tui::components::error_dialog` | Console, launch | 3 — shared Ratatui widget | Capsule still needs a matching error surface once it moves to Ratatui. |
+| Filter list picker | `jackin_tui::components::select_list` plus picker-specific modules | Console, launch | 2 — shared simple picker | Rich host pickers still need a generic `FilterListPicker<T>` with typed row ids. |

@@ -7,9 +7,14 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::components::{
-    ErrorPopupState, SelectListState, TextInputState, render_error_dialog, render_hint_bar,
+    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
+    confirm_width_pct, render_confirm_dialog, render_error_dialog, render_hint_bar,
     render_select_list, render_status_footer, render_text_input,
     required_height as error_dialog_required_height,
+};
+use jackin_tui::theme::{
+    DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
+    PHOSPHOR_GREEN, WHITE,
 };
 use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
@@ -18,11 +23,6 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-use crate::console::widgets::confirm::{self, ConfirmState};
-use crate::console::widgets::{
-    DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
-    PHOSPHOR_GREEN, WHITE,
-};
 use crate::diagnostics::RunDiagnostics;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -2084,7 +2084,7 @@ fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable
 
 fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-    confirm::render(frame, confirm_rect(box_area, state), state);
+    render_confirm_dialog(frame, confirm_rect(box_area, state), state);
     render_hint_bar(frame, hint_area, CONFIRM_HINT);
 }
 
@@ -2130,8 +2130,8 @@ fn text_prompt_rect(area: Rect) -> Rect {
 }
 
 fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
-    let width = area.width.saturating_mul(confirm::width_pct(state)) / 100;
-    let height = confirm::required_height(state);
+    let width = area.width.saturating_mul(confirm_width_pct(state)) / 100;
+    let height = confirm_required_height(state);
     centered_rect(width, height, area)
 }
 

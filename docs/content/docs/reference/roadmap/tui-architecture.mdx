@@ -148,7 +148,7 @@ The codebase is not starting from zero. The useful shape already exists in fragm
 |---|---|---|
 | <RepoFile path="src/console/widgets/role_picker.rs" />, <RepoFile path="src/console/widgets/github_picker.rs" />, <RepoFile path="src/console/widgets/workdir_pick.rs" /> | filtered list picker with local state, filter input, selected row, `ModalOutcome` | generic `FilterListPicker<T>` with typed row IDs and section headers |
 | <RepoFile path="src/console/widgets/agent_choice/mod.rs" />, <RepoFile path="src/console/widgets/source_picker.rs" />, <RepoFile path="src/console/widgets/scope_picker.rs" /> | small option chooser with button/list focus | `ChoiceDialog<T>` / `SegmentedChoice<T>` |
-| <RepoFile path="src/console/widgets/confirm.rs" />, <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | confirm dialog, default focus, button strip | one `ConfirmDialog` with `severity`, `body`, `default_focus`, and `trust_variant` props |
+| <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />, <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | shared host/launch confirm dialog plus capsule raw-ANSI confirm action | extend `ConfirmDialog` with `severity`, `body`, and capsule-compatible variants once capsule renders through Ratatui |
 | <RepoFile path="src/console/widgets/text_input.rs" />, <RepoFile path="crates/jackin-tui/src/lib.rs" /> | text-entry model plus rendered dialog | consolidate on `TextField` + Ratatui `TextInputDialog`; retire `ratatui-textarea` unless a feature gap remains |
 | <RepoFile path="src/console/widgets/scrollable.rs" /> | scroll math, selected-line render helpers, proportional scrollbars | `ScrollablePanel`, `Scrollbar`, and shared clamp/update helpers |
 | <RepoFile path="src/console/widgets/hints.rs" />, <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" />, <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> | footer hints, status bars, tab/chrome tokens | `HintBar`, `StatusFooter`, `TabStrip`, `BrandHeader` |
@@ -687,7 +687,7 @@ The audit's patterns, grouped by atomic layer. This is the seed inventory the lo
 
 | Component | Represents | Look & feel | Reuse status today |
 |---|---|---|---|
-| `ConfirmDialog` | destructive Yes/No | title `" Confirm "`; question ends `?`; default focus **No** | host <RepoFile path="src/console/widgets/confirm.rs" /> + capsule `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> — two impls, parity by hand |
+| `ConfirmDialog` | destructive Yes/No | title `" Confirm "`; question ends `?`; default focus **No** | host and launch share <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />; capsule `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> still waits for the Ratatui frame |
 | `FilterListPicker` | filter + list pick | filter row 0, spacer, items 2+; box `items + 4` | host <RepoFile path="src/console/widgets/role_picker.rs" /> + launch `select_list` + capsule palette / agent / split pickers — many impls |
 | `ErrorPopup` | the only error surface | red border + title; scrollable; dismissible | host <RepoFile path="src/console/widgets/error_popup.rs" /> and launch failure popup reuse the host widget; capsule has none |
 | `ConfirmSaveDialog` | diff-preview save | scrollable diff; default focus Save | host only |
