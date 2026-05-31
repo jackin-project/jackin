@@ -82,56 +82,11 @@ impl ManagerListRow {
 /// cannot reference a provider/env pair that drifted from its label; the
 /// index is clamped by `move_up` / `move_down` and read back through
 /// `selected_provider`.
-#[derive(Debug, Clone)]
-pub struct ProviderPickerState<C> {
-    pub context: C,
-    pub agent: crate::agent::Agent,
-    // Private so the `selected < providers.len()` invariant holds: `selected`
-    // is only ever moved by the clamping `move_up`/`move_down`, and `providers`
-    // is set once at construction. External code reads them via the accessors.
-    providers: Vec<jackin_protocol::Provider>,
-    selected: usize,
-}
-
-impl<C> ProviderPickerState<C> {
-    pub const fn new(
-        context: C,
-        agent: crate::agent::Agent,
-        providers: Vec<jackin_protocol::Provider>,
-    ) -> Self {
-        Self {
-            context,
-            agent,
-            providers,
-            selected: 0,
-        }
-    }
-
-    pub const fn move_up(&mut self) {
-        self.selected = self.selected.saturating_sub(1);
-    }
-
-    pub const fn move_down(&mut self) {
-        if self.selected + 1 < self.providers.len() {
-            self.selected += 1;
-        }
-    }
-
-    #[must_use]
-    pub fn providers(&self) -> &[jackin_protocol::Provider] {
-        &self.providers
-    }
-
-    #[must_use]
-    pub const fn selected(&self) -> usize {
-        self.selected
-    }
-
-    #[must_use]
-    pub fn selected_provider(&self) -> Option<jackin_protocol::Provider> {
-        self.providers.get(self.selected).copied()
-    }
-}
+pub type ProviderPickerState<C> = jackin_console::provider_picker::ProviderPickerState<
+    C,
+    crate::agent::Agent,
+    jackin_protocol::Provider,
+>;
 
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
