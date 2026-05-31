@@ -18,6 +18,7 @@ use jackin_console::editor::update::{
     toggle_mount_readonly as toggle_editor_mount_readonly,
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
+use jackin_console::focus::moved_selection;
 use jackin_console::settings::update::{
     move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
     set_role_expanded as set_settings_role_expanded, step_cursor_down_by, step_cursor_up_by,
@@ -471,11 +472,7 @@ fn move_editor_field_selection(
         return;
     };
     let FieldFocus::Row(row) = editor.active_field;
-    let candidate = if delta.is_negative() {
-        row.saturating_sub(delta.unsigned_abs())
-    } else {
-        row.saturating_add(delta as usize).min(max_row)
-    };
+    let candidate = moved_selection(row, max_row.saturating_add(1), delta);
     let next = if delta.is_negative() {
         step_cursor_up(skipped_rows, candidate)
     } else {
@@ -586,16 +583,8 @@ fn move_settings_auth_selection(state: &mut ManagerState<'_>, delta: isize) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let max = settings.auth.row_count().saturating_sub(1);
-    settings.auth.selected = if delta.is_negative() {
-        settings.auth.selected.saturating_sub(delta.unsigned_abs())
-    } else {
-        settings
-            .auth
-            .selected
-            .saturating_add(delta as usize)
-            .min(max)
-    };
+    settings.auth.selected =
+        moved_selection(settings.auth.selected, settings.auth.row_count(), delta);
 }
 
 fn scroll_editor_tab_horizontal(
@@ -864,11 +853,7 @@ fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize
         .copied()
         .unwrap_or(0)
         .min(len - 1);
-    let next = if delta.is_negative() {
-        cursor.saturating_sub(delta.unsigned_abs())
-    } else {
-        cursor.saturating_add(delta as usize).min(len - 1)
-    };
+    let next = moved_selection(cursor, len, delta);
     state.preview_pane_cursor.insert(container.to_owned(), next);
 }
 

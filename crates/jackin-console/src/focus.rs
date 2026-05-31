@@ -7,6 +7,21 @@ pub enum MountScrollFocus {
 }
 
 #[must_use]
+pub fn moved_selection(selected: usize, row_count: usize, delta: isize) -> usize {
+    let last = row_count.saturating_sub(1);
+    if delta.is_negative() {
+        selected.saturating_sub(delta.unsigned_abs())
+    } else {
+        selected.saturating_add(delta as usize).min(last)
+    }
+}
+
+#[must_use]
+pub fn selected_index(selected: usize, row_count: usize) -> usize {
+    selected.min(row_count.saturating_sub(1))
+}
+
+#[must_use]
 pub fn follow_cursor_y(
     cursor: usize,
     content_height: usize,

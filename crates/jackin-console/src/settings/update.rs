@@ -25,11 +25,7 @@ pub const fn next_settings_tab(tab: SettingsTab) -> SettingsTab {
 }
 
 pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
-    state.selected = if delta.is_negative() {
-        state.selected.saturating_sub(delta.unsigned_abs())
-    } else {
-        state.selected.saturating_add(delta as usize).min(1)
-    };
+    state.selected = crate::focus::moved_selection(state.selected, 2, delta);
 }
 
 pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
@@ -45,12 +41,7 @@ pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
 }
 
 pub fn move_trust_selection(state: &mut SettingsTrustState, delta: isize) {
-    let max = state.pending.len().saturating_sub(1);
-    state.selected = if delta.is_negative() {
-        state.selected.saturating_sub(delta.unsigned_abs())
-    } else {
-        state.selected.saturating_add(delta as usize).min(max)
-    };
+    state.selected = crate::focus::moved_selection(state.selected, state.pending.len(), delta);
 }
 
 pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
