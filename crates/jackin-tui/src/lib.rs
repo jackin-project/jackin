@@ -10,7 +10,6 @@
 
 pub mod components;
 pub mod geometry;
-pub mod lookbook;
 pub mod runtime;
 pub mod scroll;
 pub mod theme;

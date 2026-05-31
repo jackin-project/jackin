@@ -1,0 +1,26 @@
+[package]
+name = "jackin-tui-lookbook"
+description = "Interactive component lookbook for jackin-tui"
+version = "0.6.0-dev"
+edition = "2024"
+rust-version = "1.94"
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "tui-lookbook"
+path = "src/main.rs"
+
+[dependencies]
+jackin-tui = { path = "../jackin-tui" }
+ratatui = "0.30"
+crossterm = "0.29"
+unicode-width = "0.2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }

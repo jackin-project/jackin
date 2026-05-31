@@ -80,6 +80,14 @@ impl ConfirmState {
         self
     }
 
+    /// Set focus to No. Allows callers outside this crate to pre-select
+    /// No (the default, but useful when building state from a stored value).
+    #[must_use]
+    pub fn with_focus_no(mut self) -> Self {
+        self.focus = ConfirmFocus::No;
+        self
+    }
+
     /// Returns true when the Yes button is focused.
     #[must_use]
     pub const fn is_focused_yes(&self) -> bool {

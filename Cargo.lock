@@ -1761,6 +1761,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-tui-lookbook"
+version = "0.6.0-dev"
+dependencies = [
+ "crossterm",
+ "jackin-tui",
+ "ratatui",
+ "unicode-width",
+]
+
+[[package]]
 name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

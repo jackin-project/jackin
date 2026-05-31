@@ -1,9 +1,19 @@
+//! Terminal browser and SVG generator for the jackin-tui component lookbook.
+//!
+//! Usage:
+//!   `tui-lookbook`                            — write SVGs to target/tui-lookbook/
+//!   `tui-lookbook <out-dir>`                  — write SVGs to <out-dir>
+//!   `tui-lookbook --check <dir>`              — verify SVGs are current
+//!   `tui-lookbook --terminal`                 — launch interactive browser
+
+mod interactors;
+mod stories;
+mod svg;
+
 use std::{
-    collections::BTreeSet,
     ffi::OsStr,
-    fs,
     io::{self, Stdout},
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::Duration,
 };
 
@@ -12,7 +22,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use jackin_tui::lookbook::StoryInteraction;
+use interactors::StoryInteraction;
 use jackin_tui::{
     HintSpan,
     components::{
@@ -31,6 +41,8 @@ use ratatui::{
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph, Wrap},
 };
+use stories::stories;
+use svg::{check_svgs, write_story_svgs};
 
 const USAGE: &str =
     "usage: tui-lookbook --terminal | tui-lookbook [out-dir] | tui-lookbook --check <dir>";
@@ -94,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
-    let stories = jackin_tui::lookbook::stories();
+    let stories = stories();
     let mut terminal = TerminalGuard::enter()?;
     let mut selected = 0usize;
     let mut preview_scroll: u16 = 0;
@@ -228,18 +240,13 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
             // Fill the preview canvas with PHOSPHOR_DARK so the preview area
             // is visually distinct from the transparent terminal background.
-            // This makes the component's boundaries immediately clear — the
-            // operator can see exactly where the preview canvas starts and ends.
             frame.render_widget(
                 ratatui::widgets::Block::default()
                     .style(ratatui::style::Style::default().bg(PHOSPHOR_DARK)),
                 preview_inner,
             );
 
-            // Centre component both horizontally and vertically within the
-            // canvas. Vertical centering uses the story's natural height so a
-            // small component sits in the middle of the canvas rather than
-            // at the top edge.
+            // Centre component both horizontally and vertically within the canvas.
             let vp_width = preview_inner.width;
             let vp_height = preview_inner.height;
             let content_width = story.width.min(vp_width);
@@ -253,10 +260,8 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
             // Vertical: centred when content fits; scrollable when it doesn't.
             let cy = if content_height <= vp_height {
-                // Content fits — centre it.
                 preview_inner.y + vp_height.saturating_sub(content_height) / 2
             } else {
-                // Content taller than viewport — apply scroll offset from top.
                 preview_inner.y.saturating_sub(effective_scroll)
             };
 
@@ -279,9 +284,6 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 interactor.render(frame, component_rect);
             }
 
-            // Store for mouse hit-testing.
-            // (Written into outer variable via closure; safe because draw is FnOnce.)
-            let _ = component_rect; // captured below via last_component_area assignment
             last_component_area = component_rect;
 
             // ── Hint bar ──────────────────────────────────────────────────────
@@ -430,71 +432,8 @@ impl Drop for TerminalGuard {
 }
 
 fn write_svgs(out_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    for path in jackin_tui::lookbook::write_story_svgs(&out_dir)? {
+    for path in write_story_svgs(&out_dir)? {
         println!("{}", path.display());
     }
     Ok(())
-}
-
-fn check_svgs(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let expected = expected_svg_names();
-    let actual = actual_svg_names(&dir)?;
-    let mut failures = Vec::new();
-
-    for missing in expected.difference(&actual) {
-        failures.push(format!("missing generated preview: {missing}"));
-    }
-    for stale in actual.difference(&expected) {
-        failures.push(format!("stale generated preview: {stale}"));
-    }
-
-    for story in jackin_tui::lookbook::stories() {
-        let filename = jackin_tui::lookbook::story_svg_filename(story);
-        let path = dir.join(&filename);
-        if !path.exists() {
-            continue;
-        }
-        let committed = fs::read_to_string(&path)?;
-        let rendered = jackin_tui::lookbook::render_story_to_svg(story);
-        if committed != rendered {
-            failures.push(format!("generated preview is stale: {}", path.display()));
-        }
-    }
-
-    if failures.is_empty() {
-        println!("tui lookbook previews are current");
-        Ok(())
-    } else {
-        for failure in &failures {
-            eprintln!("{failure}");
-        }
-        Err(concat!(
-            "tui lookbook previews are out of date; regenerate with ",
-            "`cargo run -p jackin-tui --bin tui-lookbook -- docs/public/tui-lookbook`",
-        )
-        .into())
-    }
-}
-
-fn expected_svg_names() -> BTreeSet<String> {
-    jackin_tui::lookbook::stories()
-        .into_iter()
-        .map(jackin_tui::lookbook::story_svg_filename)
-        .collect()
-}
-
-fn actual_svg_names(dir: &Path) -> Result<BTreeSet<String>, Box<dyn std::error::Error>> {
-    let mut names = BTreeSet::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension() != Some(OsStr::new("svg")) {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(OsStr::to_str) else {
-            return Err(format!("non-UTF-8 lookbook preview path: {}", path.display()).into());
-        };
-        names.insert(name.to_owned());
-    }
-    Ok(names)
 }

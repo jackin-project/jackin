@@ -24,7 +24,7 @@ The host console uses a Ratatui-style Model/Update/View separation. This is a **
 
 **Async event loop.** The console event loop uses `crossterm::event::EventStream` + `tokio::select!` instead of `event::poll(50ms)`. This yields to the Tokio reactor between events so background tasks can advance. An `animation_tick` interval drives periodic redraws for spinners and other animated components.
 
-**Component library.** Repeated visual patterns live in `crates/jackin-tui/src/components/`. New screens compose existing components; they do not hand-roll a second panel, picker, confirm dialog, or hint bar. Every `jackin-tui` component has a lookbook story visible in the terminal browser (`tui-lookbook --terminal`) and a generated SVG in the docs site that must never drift from the real widget.
+**Component library.** Repeated visual patterns live in `crates/jackin-tui/src/components/`. New screens compose existing components; they do not hand-roll a second panel, picker, confirm dialog, or hint bar. Every `jackin-tui` component has a lookbook story in `crates/jackin-tui-lookbook/` visible in the terminal browser (`cargo run -p jackin-tui-lookbook -- --terminal`) and a generated SVG in the docs site that must never drift from the real widget.
 
 ---
 

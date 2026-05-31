@@ -4,6 +4,7 @@ members = [
     "crates/jackin-capsule",
     "crates/jackin-protocol",
     "crates/jackin-tui",
+    "crates/jackin-tui-lookbook",
 ]
 resolver = "2"
 
