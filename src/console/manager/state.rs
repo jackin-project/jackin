@@ -1408,50 +1408,37 @@ impl ManagerState<'_> {
     /// Flat ordered list of selectable rows accounting for tree expansion.
     /// Instance rows appear immediately after their parent workspace row.
     fn selectable_rows_vec(&self) -> Vec<ManagerListRow> {
-        let mut rows = vec![ManagerListRow::CurrentDirectory];
-        if self.current_dir_expanded {
-            let count = self.current_dir_active_instances().len();
-            for j in 0..count {
-                rows.push(ManagerListRow::CurrentDirectoryInstance(j));
-            }
-        }
-        for (i, _) in self.workspaces.iter().enumerate() {
-            rows.push(ManagerListRow::SavedWorkspace(i));
-            if self.expanded_workspaces.contains(&i) {
-                let count = self.workspace_active_instances(i).len();
-                for j in 0..count {
-                    rows.push(ManagerListRow::WorkspaceInstance(i, j));
-                }
-            }
-        }
-        rows.push(ManagerListRow::NewWorkspace);
-        rows
+        let workspace_instance_counts = self.workspace_instance_counts();
+        jackin_console::workspaces::update::selectable_rows(
+            jackin_console::workspaces::update::WorkspaceRowLayout {
+                current_dir_expanded: self.current_dir_expanded,
+                current_dir_instance_count: self.current_dir_active_instances().len(),
+                workspace_instance_counts: &workspace_instance_counts,
+                expanded_workspaces: &self.expanded_workspaces,
+            },
+        )
     }
 
     /// Visual row list for rendering — same as `selectable_rows_vec` plus a
     /// `None` spacer before `NewWorkspace` when saved workspaces exist.
     pub fn visual_rows_vec(&self) -> Vec<Option<ManagerListRow>> {
-        let mut rows: Vec<Option<ManagerListRow>> = vec![Some(ManagerListRow::CurrentDirectory)];
-        if self.current_dir_expanded {
-            let count = self.current_dir_active_instances().len();
-            for j in 0..count {
-                rows.push(Some(ManagerListRow::CurrentDirectoryInstance(j)));
-            }
-        }
-        for (i, _) in self.workspaces.iter().enumerate() {
-            rows.push(Some(ManagerListRow::SavedWorkspace(i)));
-            if self.expanded_workspaces.contains(&i) {
-                let count = self.workspace_active_instances(i).len();
-                for j in 0..count {
-                    rows.push(Some(ManagerListRow::WorkspaceInstance(i, j)));
-                }
-            }
-        }
-        if !self.workspaces.is_empty() {
-            rows.push(None); // spacer before "+ New workspace"
-        }
-        rows.push(Some(ManagerListRow::NewWorkspace));
-        rows
+        let workspace_instance_counts = self.workspace_instance_counts();
+        jackin_console::workspaces::update::visual_rows(
+            jackin_console::workspaces::update::WorkspaceRowLayout {
+                current_dir_expanded: self.current_dir_expanded,
+                current_dir_instance_count: self.current_dir_active_instances().len(),
+                workspace_instance_counts: &workspace_instance_counts,
+                expanded_workspaces: &self.expanded_workspaces,
+            },
+        )
+    }
+
+    fn workspace_instance_counts(&self) -> Vec<usize> {
+        self.workspaces
+            .iter()
+            .enumerate()
+            .map(|(i, _)| self.workspace_active_instances(i).len())
+            .collect()
     }
 
     /// Returns the position of `row` in `selectable_rows_vec`, or `None`.
