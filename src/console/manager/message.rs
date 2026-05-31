@@ -14,6 +14,7 @@ use super::state::{
 use crate::config::AppConfig;
 use jackin_console::editor::update::{
     next_editor_tab, previous_editor_tab, step_cursor_down, step_cursor_up,
+    toggle_general_selected as toggle_editor_general_row,
 };
 use jackin_console::settings::update::{
     move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
@@ -530,16 +531,16 @@ fn set_editor_secrets_role_expanded(state: &mut ManagerState<'_>, role: String, 
     }
 }
 
-const fn toggle_editor_general_selected(state: &mut ManagerState<'_>) {
+fn toggle_editor_general_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
     let FieldFocus::Row(row) = editor.active_field;
-    match row {
-        2 => editor.pending.keep_awake.enabled = !editor.pending.keep_awake.enabled,
-        3 => editor.pending.git_pull_on_entry = !editor.pending.git_pull_on_entry,
-        _ => {}
-    }
+    toggle_editor_general_row(
+        row,
+        &mut editor.pending.keep_awake.enabled,
+        &mut editor.pending.git_pull_on_entry,
+    );
 }
 
 fn toggle_editor_mount_readonly_selected(state: &mut ManagerState<'_>) {

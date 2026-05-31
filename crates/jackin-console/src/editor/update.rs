@@ -49,3 +49,15 @@ pub fn step_cursor_up(skipped_rows: &[usize], candidate: usize) -> usize {
         }
     }
 }
+
+pub fn toggle_general_selected(
+    row: usize,
+    keep_awake_enabled: &mut bool,
+    git_pull_on_entry: &mut bool,
+) {
+    match row {
+        2 => *keep_awake_enabled = !*keep_awake_enabled,
+        3 => *git_pull_on_entry = !*git_pull_on_entry,
+        _ => {}
+    }
+}
