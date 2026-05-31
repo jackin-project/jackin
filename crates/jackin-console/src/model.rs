@@ -6,5 +6,5 @@ pub use crate::settings::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget,
     SettingsAuthRow, SettingsEnvConfig, SettingsEnvConfirm, SettingsEnvScope,
     SettingsEnvTextTarget, SettingsGeneralState, SettingsTab, SettingsTrustRow, SettingsTrustState,
-    settings_map_change_count, settings_vec_change_count,
 };
+pub use crate::settings::update::{settings_map_change_count, settings_vec_change_count};
