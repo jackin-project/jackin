@@ -989,6 +989,55 @@ Move all terminal-rendering source files into designated TUI directories so the 
 
 **Tracked in:** `TODO.md` → `tui-directory-migration`.
 
+### Phase 10 — Extract `jackin-console` and `jackin-launch` crates
+
+Split the console and launch surfaces into dedicated crates, each following the per-screen Option B structure described in Phase 9.
+
+**`jackin-console`** — the workspace manager TUI (workspace list, editor, settings):
+
+```
+crates/jackin-console/src/
+├── lib.rs
+├── run.rs              ← event loop (wiring only)
+├── state.rs            ← ConsoleState (top-level model wrapping all screens)
+├── workspaces/         ← workspace list screen
+│   ├── state.rs        ← Model
+│   ├── update.rs       ← Update (message handlers, key dispatch)
+│   └── tui/            ← View (render fns, pure &State reads)
+├── editor/             ← workspace editor screen
+│   ├── state.rs
+│   ├── update.rs
+│   └── tui/
+└── settings/           ← settings screen
+    ├── state.rs
+    ├── update.rs
+    └── tui/
+```
+
+**`jackin-launch`** — the launch progress cockpit (digital rain, stage rail, failure popup):
+
+```
+crates/jackin-launch/src/
+├── lib.rs
+├── run.rs              ← event loop (wiring only)
+├── state.rs            ← LaunchView, stage model
+├── update.rs           ← stage transitions, forced-choice picker logic
+└── tui/                ← View (cockpit, rain, progress rail, failure popup)
+    ├── cockpit.rs
+    ├── rain.rs
+    └── failure.rs
+```
+
+Currently `jackin-launch` content lives in `src/runtime/progress.rs` — one 2000+ line file mixing model, update, and view. Extracting it separates those layers and gives the cockpit its own `cargo build -p jackin-launch` fast path.
+
+**MUV contract reminder:** `tui/` in every crate is the View layer only. `run.rs` is the wiring loop. `update.rs` / `message.rs` is the Update layer. `state.rs` is the Model. Nothing crosses the boundary.
+
+**Rule for multiple screens (console):** split by screen first (`workspaces/`, `editor/`, `settings/`), then put `tui/` inside each screen folder. **Rule for single-screen crates (capsule, launch):** one `tui/` at the crate root is sufficient.
+
+**Prerequisite:** `src/runtime/progress.rs` and `src/console/` must not import each other's types; verify before extraction. Check how much `src/console/` currently imports from `src/runtime/`, `src/config/`, `src/instance/` — those deps must become explicit crate dependencies or trait abstractions.
+
+**Tracked in:** `TODO.md` (add entry `jackin-console-jackin-launch-extraction`).
+
 ## Open questions & risks
 
 - **Handoff feasibility.** The single-host-alt-screen approach (the host keeps its alt-screen across `docker exec -it`; the capsule client skips its own `?1049` toggle via `JACKIN_HOST_ALT_SCREEN`) is implemented by the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) work and must keep being confirmed across real terminals — alt-screen survival, raw mode, SIGWINCH, and the stale `Buffer` full-redraw on resume. If a terminal mishandles the shared screen, the fallback is to tear the host backend down before the exec and re-initialize on return, with the flash minimized.
