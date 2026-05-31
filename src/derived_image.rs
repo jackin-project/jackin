@@ -201,6 +201,8 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
 {shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /jackin/run /jackin/state && chown agent:agent /jackin/run /jackin/state
+# Make jackin-capsule available as a plain shell command from any session.
+ENV PATH=\"/jackin/runtime:${{PATH}}\"
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
 "
