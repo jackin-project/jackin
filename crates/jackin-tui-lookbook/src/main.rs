@@ -238,11 +238,12 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             let preview_inner = preview_block.inner(preview_area);
             frame.render_widget(preview_block, preview_area);
 
-            // Fill the preview canvas with PHOSPHOR_DARK so the preview area
-            // is visually distinct from the transparent terminal background.
+            // Fill the preview canvas with a dark charcoal so the preview area
+            // is visually distinct from the terminal background without the
+            // green tint of PHOSPHOR_DARK.
             frame.render_widget(
                 ratatui::widgets::Block::default()
-                    .style(ratatui::style::Style::default().bg(PHOSPHOR_DARK)),
+                    .style(ratatui::style::Style::default().bg(ratatui::style::Color::Rgb(28, 28, 28))),
                 preview_inner,
             );
 
