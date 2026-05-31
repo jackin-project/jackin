@@ -1424,8 +1424,9 @@ mod tests {
 
         press_s(&mut state, &mut config, &paths, cwd);
 
-        // Step 2: Enter on the ConfirmSave modal (default focus = Save)
-        // commits the save.
+        // Step 2: Tab moves focus Cancel -> Save; Enter then commits the save.
+        // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         assert!(
@@ -1728,6 +1729,8 @@ mod tests {
         state.stage = ManagerStage::Editor(editor);
 
         begin_editor_save(&mut state, &config, true).unwrap();
+        // Default focus = Cancel; Tab -> Save, then Enter commits.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         assert!(
@@ -1769,6 +1772,8 @@ mod tests {
         state.stage = ManagerStage::Editor(editor);
 
         begin_editor_save(&mut state, &config, true).unwrap();
+        // Default focus = Cancel; Tab -> Save, then Enter commits.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         assert!(matches!(state.stage, ManagerStage::List));
@@ -1799,6 +1804,8 @@ mod tests {
         state.stage = ManagerStage::Editor(editor);
 
         begin_editor_save(&mut state, &config, true).unwrap();
+        // Default focus = Cancel; Tab -> Save, then Enter commits.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         assert!(
@@ -1902,6 +1909,8 @@ mod tests {
         state.stage = ManagerStage::Editor(editor);
 
         press_s(&mut state, &mut config, &paths, cwd);
+        // Default focus = Cancel; Tab -> Save, then Enter commits.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         assert!(
@@ -1930,6 +1939,8 @@ mod tests {
         state.stage = ManagerStage::Editor(editor);
 
         press_s(&mut state, &mut config, &paths, cwd);
+        // Default focus = Cancel; Tab -> Save, then Enter commits.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         assert!(
@@ -1971,6 +1982,8 @@ mod tests {
         state.stage = ManagerStage::Editor(editor);
 
         press_s(&mut state, &mut config, &paths, cwd);
+        // Default focus = Cancel; Tab -> Save, then Enter commits.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
@@ -2011,6 +2024,9 @@ mod tests {
         state.stage = ManagerStage::Editor(editor);
 
         press_s(&mut state, &mut config, &paths, cwd);
+        // Default focus = Cancel; Tab -> Save, then Enter fires the save attempt
+        // which collides with "beta" and opens the ErrorPopup.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc)).unwrap();
 

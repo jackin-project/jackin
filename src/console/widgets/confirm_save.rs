@@ -57,13 +57,13 @@ pub struct ConfirmSaveState {
 }
 
 impl ConfirmSaveState {
-    /// Build a new `ConfirmSave` modal. Default focus = Save so the
-    /// operator can confirm with a single Enter after reviewing the diff.
+    /// Build a new `ConfirmSave` modal. Default focus = Cancel so that Enter
+    /// on a freshly-opened confirm never fires the destructive arm (RULE 7).
     #[must_use]
     pub const fn new(lines: Vec<Line<'static>>) -> Self {
         Self {
             lines,
-            focus: ConfirmSaveFocus::Save,
+            focus: ConfirmSaveFocus::Cancel,
             scroll_offset: 0,
             preview_rows: 0,
             effective_removals: Vec::new(),
@@ -209,46 +209,40 @@ mod tests {
     }
 
     #[test]
-    fn confirm_save_defaults_to_save_focus() {
+    fn confirm_save_defaults_to_cancel_focus() {
+        // Default = Cancel so Enter on a freshly-opened dialog never fires
+        // the save arm (TUI design decisions: confirmation dialog rule).
         let s = sample_state();
-        assert_eq!(s.focus, ConfirmSaveFocus::Save);
+        assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
     }
 
     #[test]
-    fn confirm_save_tab_cycles_save_cancel() {
+    fn confirm_save_tab_cycles_cancel_save() {
         let mut s = sample_state();
-        assert_eq!(s.focus, ConfirmSaveFocus::Save);
+        assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
         assert!(matches!(
             s.handle_key(key(KeyCode::Tab)),
             ModalOutcome::Continue
         ));
-        assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
-        s.handle_key(key(KeyCode::Tab));
         assert_eq!(s.focus, ConfirmSaveFocus::Save);
+        s.handle_key(key(KeyCode::Tab));
+        assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
     }
 
     #[test]
     fn confirm_save_left_cycles_reverse() {
         let mut s = sample_state();
-        s.handle_key(key(KeyCode::Left));
-        assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
+        // Starts at Cancel; Left toggles to Save.
         s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, ConfirmSaveFocus::Save);
-    }
-
-    #[test]
-    fn confirm_save_enter_on_save_commits_save_choice() {
-        let mut s = sample_state();
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Enter)),
-            ModalOutcome::Commit(SaveChoice::Save)
-        ));
+        s.handle_key(key(KeyCode::Left));
+        assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
     }
 
     #[test]
     fn confirm_save_enter_on_cancel_returns_cancel() {
+        // Default focus = Cancel, so Enter fires Cancel immediately.
         let mut s = sample_state();
-        s.handle_key(key(KeyCode::Tab)); // Save -> Cancel
         assert!(matches!(
             s.handle_key(key(KeyCode::Enter)),
             ModalOutcome::Cancel
@@ -256,10 +250,21 @@ mod tests {
     }
 
     #[test]
+    fn confirm_save_enter_on_save_commits_save_choice() {
+        // Tab once (Cancel -> Save) then Enter commits Save.
+        let mut s = sample_state();
+        s.handle_key(key(KeyCode::Tab)); // Cancel -> Save
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Commit(SaveChoice::Save)
+        ));
+    }
+
+    #[test]
     fn confirm_save_s_shortcut_commits_save() {
         let mut s = sample_state();
         // Rotate focus first to prove the shortcut is focus-independent.
-        s.handle_key(key(KeyCode::Tab)); // -> Cancel
+        s.handle_key(key(KeyCode::Tab)); // Cancel -> Save
         assert!(matches!(
             s.handle_key(key(KeyCode::Char('s'))),
             ModalOutcome::Commit(SaveChoice::Save)

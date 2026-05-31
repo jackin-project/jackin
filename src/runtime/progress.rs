@@ -7,10 +7,11 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::components::{
-    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
-    confirm_width_pct, render_confirm_dialog, render_error_dialog, render_hint_bar,
-    render_scrollable_block, render_select_list, render_status_footer, render_text_input,
-    required_height as error_dialog_required_height, viewport_height, viewport_width,
+    ConfirmState, ErrorPopupState, SelectListState, TextInputState, brand_header_line,
+    confirm_required_height, confirm_width_pct, render_confirm_dialog, render_error_dialog,
+    render_hint_bar, render_scrollable_block, render_select_list, render_status_footer,
+    render_text_input, required_height as error_dialog_required_height, viewport_height,
+    viewport_width,
 };
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use jackin_tui::theme::{
@@ -1316,22 +1317,21 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
     }
 }
 
-/// Top header: the ` jackin' ` brand pill, a separator, then the loading line
-/// (`Loading <role> in <path>`) — replacing both the old brand-header label and
-/// the box title.
+/// Top header: the ` jackin' ` brand pill and separator (from the shared
+/// `brand_header_line` component), then the loading line (`Loading <role> in <path>`).
+///
+/// Uses `brand_header_line` so the pill styling stays in sync with the console
+/// manager and the lookbook — if the brand pill ever changes, the cockpit updates
+/// automatically without a separate code path (RULE 10: brand chrome reuse).
 fn render_cockpit_header(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
-    let mut spans = vec![
-        Span::styled(
-            " jackin' ",
-            Style::default()
-                .bg(PHOSPHOR_GREEN)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("  ·  ", Style::default().fg(PHOSPHOR_DARK)),
-    ];
-    spans.extend(loading_line_spans(view, frozen));
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    // brand_header_line emits: [pill][sep][label]. We want [pill][sep][loading spans],
+    // so we take the first two spans (pill + sep) and replace the label with our
+    // animated loading line.
+    let mut brand_line = brand_header_line("launch");
+    // Drop the static label span and append the animated loading spans instead.
+    brand_line.spans.pop();
+    brand_line.spans.extend(loading_line_spans(view, frozen));
+    frame.render_widget(Paragraph::new(brand_line), area);
 }
 
 /// The `Loading <role> in <path>` line: one green colour throughout, the role
@@ -1958,6 +1958,9 @@ const PICKER_HINT: &[HintSpan<'static>] = &[
     HintSpan::GroupSep,
     HintSpan::Key("↵"),
     HintSpan::Text("select"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("cancel"),
 ];
 
 /// Footer-hint keys for the build-log overlay. Shared `HintSpan` vocabulary,

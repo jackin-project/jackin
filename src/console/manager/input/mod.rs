@@ -506,6 +506,8 @@ mod tests {
             key(KeyCode::Char('s')),
         )
         .unwrap();
+        // Default focus = Cancel; Tab -> Save, then Enter commits.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         let reloaded = AppConfig::load_or_init(&paths).unwrap();

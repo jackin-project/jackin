@@ -15,6 +15,7 @@ use super::{
     FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState,
 };
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
+use jackin_tui::components::{Panel, PanelFocus};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -73,20 +74,6 @@ pub fn breadcrumb_title(
     }
 }
 
-pub fn modal_block(title: impl Into<String>) -> ratatui::widgets::Block<'static> {
-    use ratatui::widgets::{Block, Borders};
-    let title_text: String = title.into();
-    let title_span = Span::styled(
-        format!(" {title_text} "),
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    );
-    // Delegates to Panel's canonical styling — PHOSPHOR_GREEN border + WHITE BOLD title.
-    Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(title_span)
-}
-
 #[allow(clippy::too_many_lines)]
 fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     let multi_account = state.accounts.len() > 1;
@@ -108,7 +95,11 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     }
 
     let title = breadcrumb_title(state.stage, multi_account, account_email, v_name, i_name);
-    let block = modal_block(title);
+    let title_with_spaces = format!(" {title} ");
+    let block = Panel::new()
+        .title(&title_with_spaces)
+        .focus(PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -425,7 +416,11 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
         state.stage
     };
     let title = breadcrumb_title(title_stage, multi_account, account_email, v_name, i_name);
-    let block = modal_block(title);
+    let title_with_spaces = format!(" {title} ");
+    let block = Panel::new()
+        .title(&title_with_spaces)
+        .focus(PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -472,7 +467,10 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
 }
 
 pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
-    let block = modal_block("1Password");
+    let block = Panel::new()
+        .title(" 1Password ")
+        .focus(PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 

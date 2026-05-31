@@ -272,7 +272,8 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
         "pending.env must reflect the edit"
     );
 
-    // Kick off the save: `S` opens ConfirmSave, Enter commits.
+    // Kick off the save: `S` opens ConfirmSave; Tab moves Cancel -> Save,
+    // Enter commits.
     handle_key(
         &mut state,
         &mut config,
@@ -280,6 +281,8 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
         cwd,
         key(KeyCode::Char('S')),
     )?;
+    // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     let reloaded = AppConfig::load_or_init(&paths)?;
@@ -330,7 +333,7 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
         "pending.env must no longer contain the deleted key"
     );
 
-    // `S` → Enter writes through to disk.
+    // `S` opens ConfirmSave; Tab moves Cancel -> Save, Enter commits.
     handle_key(
         &mut state,
         &mut config,
@@ -338,6 +341,8 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
         cwd,
         key(KeyCode::Char('S')),
     )?;
+    // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     let reloaded = AppConfig::load_or_init(&paths)?;
@@ -2813,8 +2818,8 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     );
 
     // Save the editor: `s` opens the ConfirmSave modal (no collapses
-    // expected here since the seed has a single mount), Enter commits
-    // and bounces back to List.
+    // expected here since the seed has a single mount); Tab moves focus
+    // Cancel -> Save, then Enter commits and bounces back to List.
     handle_key(
         &mut state,
         &mut config,
@@ -2822,6 +2827,8 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         cwd,
         key(KeyCode::Char('s')),
     )?;
+    // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     // Reload AppConfig from disk and assert both halves of the auth
@@ -3514,7 +3521,8 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         "GH_TOKEN must not leak into the regular workspace env map"
     );
 
-    // Save the editor (s opens ConfirmSave, Enter commits).
+    // Save the editor: `s` opens ConfirmSave; Tab moves Cancel -> Save,
+    // Enter commits and returns to List.
     handle_key(
         &mut state,
         &mut config,
@@ -3522,6 +3530,8 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         cwd,
         key(KeyCode::Char('s')),
     )?;
+    // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     // Reload AppConfig from disk and assert the round-trip.

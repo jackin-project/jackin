@@ -104,12 +104,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_GREEN, WHITE};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
-use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::components::{Panel, PanelFocus, render_filter_input};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
     // Filter row stays out of the title — see RULES.md "TUI List
@@ -132,24 +131,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
         ])
         .split(inner);
 
-    let filter_line = if state.filter.is_empty() {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled(state.filter.clone(), Style::default().fg(WHITE)),
-            Span::styled(
-                "\u{2588}",
-                Style::default()
-                    .fg(WHITE)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ])
-    };
-    frame.render_widget(Paragraph::new(filter_line), rows[0]);
+    render_filter_input(frame, rows[0], &state.filter);
 
     // List body. When the filter narrows the visible set to nothing,
     // render no rows — the blank space below the filter row IS the

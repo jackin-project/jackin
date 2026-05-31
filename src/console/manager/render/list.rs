@@ -2,6 +2,7 @@
 //! details (saved workspace / current-directory / "+ New workspace"
 //! sentinel).
 
+use jackin_tui::components::{Panel, PanelFocus};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -278,15 +279,16 @@ fn render_list_names_block(
     let content_height = lines.len();
     let viewport_w = super::scroll_viewport_width(area);
     let viewport_h = super::scroll_viewport_height(area);
-    let scrollable = super::is_scrollable(content_width, viewport_w);
-    let border_color = if state.list_names_focused && scrollable {
-        PHOSPHOR_GREEN
-    } else {
-        PHOSPHOR_DARK
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+    let h_scrollable = super::is_scrollable(content_width, viewport_w);
+    let v_scrollable = super::is_scrollable(content_height, viewport_h);
+    // Focused → PHOSPHOR_GREEN regardless of scrollability (RULE 1: focus-visible border).
+    let block = Panel::new()
+        .focus(if state.list_names_focused {
+            PanelFocus::Focused
+        } else {
+            PanelFocus::Unfocused
+        })
+        .block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -300,10 +302,10 @@ fn render_list_names_block(
             usize::from(state.list_names_scroll_x),
         );
     }
-    if scrollable {
+    if h_scrollable {
         super::render_horizontal_scrollbar(frame, area, content_width, state.list_names_scroll_x);
     }
-    if super::is_scrollable(content_height, viewport_h) {
+    if v_scrollable {
         super::render_vertical_scrollbar(frame, area, content_height, 0);
     }
 }
@@ -408,13 +410,11 @@ fn render_provider_picker_sidebar(
     providers: &[jackin_protocol::Provider],
     selected: usize,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            provider_picker_title(container_id),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let title = provider_picker_title(container_id);
+    let block = Panel::new()
+        .title(&title)
+        .focus(PanelFocus::Unfocused)
+        .block();
     let items: Vec<ListItem> = providers
         .iter()
         .map(|provider| ListItem::new(Line::from(provider.label())))
@@ -457,13 +457,11 @@ fn render_role_picker_sidebar(
     workspace_name: &str,
     picker: &crate::console::widgets::role_picker::RolePickerState,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            format!(" {workspace_name} "),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let title = format!(" {workspace_name} ");
+    let block = Panel::new()
+        .title(&title)
+        .focus(PanelFocus::Unfocused)
+        .block();
     let items: Vec<ListItem> = picker
         .filtered
         .iter()
@@ -485,13 +483,11 @@ fn render_agent_picker_sidebar(
     role_name: &str,
     picker: &crate::console::widgets::agent_choice::AgentChoiceState,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            format!(" {role_name} "),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let title = format!(" {role_name} ");
+    let block = Panel::new()
+        .title(&title)
+        .focus(PanelFocus::Unfocused)
+        .block();
     let items: Vec<ListItem> = picker
         .choices
         .iter()
@@ -1220,18 +1216,15 @@ fn render_instance_details_pane(
     selected_pane: Option<u64>,
     preview_focused: bool,
 ) {
-    let border_color = if preview_focused {
-        PHOSPHOR_GREEN
-    } else {
-        PHOSPHOR_DARK
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color))
-        .title(Span::styled(
-            format!(" Instance: {} ", entry.instance_id),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let instance_title = format!(" Instance: {} ", entry.instance_id);
+    let block = Panel::new()
+        .title(&instance_title)
+        .focus(if preview_focused {
+            PanelFocus::Focused
+        } else {
+            PanelFocus::Unfocused
+        })
+        .block();
 
     let mut lines: Vec<Line<'static>> = Vec::new();
 
@@ -1366,13 +1359,10 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
         ])
         .split(area);
 
-    let intro_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " What is a workspace? ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let intro_block = Panel::new()
+        .title(" What is a workspace? ")
+        .focus(PanelFocus::Unfocused)
+        .block();
     let intro_lines = vec![
         Line::from(Span::styled(
             "  A workspace saves a project boundary once so you",
@@ -1389,13 +1379,10 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
     ];
     frame.render_widget(Paragraph::new(intro_lines).block(intro_block), rows[0]);
 
-    let why_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " Why create one? ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let why_block = Panel::new()
+        .title(" Why create one? ")
+        .focus(PanelFocus::Unfocused)
+        .block();
     let bullet_style = Style::default().fg(PHOSPHOR_GREEN);
     let bullets = [
         "Name a project once, launch from any cwd",
@@ -1419,13 +1406,10 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
 }
 
 fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir: &str) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " General ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let block = Panel::new()
+        .title(" General ")
+        .focus(PanelFocus::Unfocused)
+        .block();
 
     // Each content row is prefixed with two spaces to match the Mounts and
     // Roles sub-panels (see `SUBPANEL_CONTENT_INDENT`). Without the prefix the
@@ -1555,13 +1539,10 @@ fn render_environments_subpanel(
     area: Rect,
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " Environments ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let block = Panel::new()
+        .title(" Environments ")
+        .focus(PanelFocus::Unfocused)
+        .block();
 
     let mut rows: Vec<EnvRow> = Vec::new();
     if let Some(ws) = ws_config {

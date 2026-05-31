@@ -5,12 +5,13 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use super::git_prompt::render_git_prompt;
 use super::state::FileBrowserState;
-use super::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use super::{DANGER_RED, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::components::{Panel, PanelFocus};
 
 /// Vertical-layout constraints used by `render` and by the geometry-only
 /// helpers consumed by the mouse-click hit-tester. Keep these in sync.
@@ -78,17 +79,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 /// Render the folder listing inside `area` with a phosphor-framed block
 /// and a bold-white cwd title.
 fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
-    let title = Span::styled(
-        format!(
-            " {} ",
-            crate::tui::shorten_home(&state.cwd.display().to_string())
-        ),
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    let title = format!(
+        " {} ",
+        crate::tui::shorten_home(&state.cwd.display().to_string())
     );
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(title);
+    // File browser is a modal picker — always active when visible — so its
+    // border must be PHOSPHOR_GREEN (RULE 1: focus-visible border).
+    let block = Panel::new()
+        .title(title.as_str())
+        .focus(PanelFocus::Focused)
+        .block();
 
     let selected = state.list_state.selected;
     let highlight_style = Style::default()
