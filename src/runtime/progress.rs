@@ -1,5 +1,4 @@
 use std::io::{IsTerminal, Write};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,7 +27,9 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::diagnostics::RunDiagnostics;
 
-pub use jackin_launch::{LaunchIdentity, LaunchStage, LaunchTargetKind, StageStatus};
+pub use jackin_launch::{
+    LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind, StageStatus,
+};
 
 #[derive(Debug, Clone)]
 struct StageView {
@@ -74,17 +75,6 @@ enum FailureCopyTarget {
     RunId,
     DiagnosticsPath,
     CommandOutputPath,
-}
-
-#[derive(Debug, Clone)]
-pub struct LaunchFailure {
-    pub title: String,
-    pub summary: String,
-    pub detail: Option<String>,
-    pub next_step: Option<String>,
-    pub stage: LaunchStage,
-    pub diagnostics_path: Option<PathBuf>,
-    pub command_output_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -2515,6 +2505,8 @@ fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
     use ratatui::backend::TestBackend;
 
     fn test_diagnostics() -> std::sync::Arc<RunDiagnostics> {

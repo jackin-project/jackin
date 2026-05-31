@@ -1,5 +1,7 @@
 //! Launch cockpit model types shared with runtime orchestration.
 
+use std::path::PathBuf;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum LaunchStage {
     Identity,
@@ -75,6 +77,17 @@ pub struct LaunchIdentity {
     pub mounts: Vec<String>,
     pub image: Option<String>,
     pub container: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LaunchFailure {
+    pub title: String,
+    pub summary: String,
+    pub detail: Option<String>,
+    pub next_step: Option<String>,
+    pub stage: LaunchStage,
+    pub diagnostics_path: Option<PathBuf>,
+    pub command_output_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
