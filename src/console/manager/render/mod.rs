@@ -573,7 +573,6 @@ pub(in crate::console::manager) fn clamp_list_scroll_for_area(
             }
         } else {
             state.list_names_scroll_x = 0;
-            state.list_names_focused = false;
         }
     }
 }
