@@ -6,6 +6,7 @@ pub mod auth_kind;
 pub mod auth_rows;
 mod create;
 pub(crate) mod editor_footer;
+pub(crate) mod editor_geometry;
 pub(crate) mod github_mounts;
 pub mod input;
 pub(crate) mod list_geometry;

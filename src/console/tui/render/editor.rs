@@ -96,54 +96,6 @@ pub(super) fn render_editor(
     render_footer(frame, chunks[3], &items);
 }
 
-pub(crate) fn prepare_editor_for_render(
-    area: Rect,
-    state: &mut EditorState<'_>,
-    config: &AppConfig,
-) {
-    let body = editor_body_area(area, state.cached_footer_h);
-    prepare_editor_tab_for_area(body, state, config);
-}
-
-fn prepare_editor_tab_for_area(body: Rect, state: &mut EditorState<'_>, config: &AppConfig) {
-    let lines = editor_tab_lines(body, state, config);
-    state.tab_content_width = super::max_line_width(&lines);
-    state.tab_content_height = lines.len();
-    let viewport_w = super::scroll_viewport_width(body);
-    let viewport_h = super::scroll_viewport_height(body);
-    if state.active_tab == EditorTab::Mounts {
-        let content_width = super::list::workspace_mounts_content_width_with_cache(
-            &state.pending.mounts,
-            &state.mount_info_cache,
-        );
-        super::clamp_scroll_x(
-            content_width,
-            viewport_w,
-            &mut state.workspace_mounts_scroll_x,
-        );
-    } else {
-        super::clamp_scroll_x(state.tab_content_width, viewport_w, &mut state.tab_scroll_x);
-    }
-    super::clamp_scroll_x(
-        state.tab_content_height,
-        viewport_h,
-        &mut state.tab_scroll_y,
-    );
-}
-
-fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(5),
-            Constraint::Length(footer_h),
-        ])
-        .split(area);
-    chunks[2]
-}
-
 fn render_editor_tab_strip(
     frame: &mut Frame,
     area: Rect,
@@ -171,7 +123,11 @@ pub(super) fn render_tab_strip(
         .render(frame, area);
 }
 
-fn editor_tab_lines(area: Rect, state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
+pub(crate) fn editor_tab_lines(
+    area: Rect,
+    state: &EditorState<'_>,
+    config: &AppConfig,
+) -> Vec<Line<'static>> {
     match state.active_tab {
         EditorTab::General => general_tab_lines(state),
         EditorTab::Mounts => mounts_tab_lines(state),
@@ -1337,8 +1293,9 @@ mod contextual_row_items_tests {
 
 #[cfg(test)]
 mod general_tab_render_tests {
-    use super::{prepare_editor_tab_for_area, render_general_tab};
+    use super::render_general_tab;
     use crate::config::AppConfig;
+    use crate::console::manager::editor_geometry::prepare_editor_tab_for_area;
     use crate::console::manager::state::{EditorState, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
@@ -1428,8 +1385,9 @@ mod mounts_tab_render_tests {
 mod agents_tab_render_tests {
     //! Pins `[x]`/`[ ]` to the *effectively allowed* state — empty
     //! `allowed_roles` is the "all allowed" shorthand.
-    use super::{prepare_editor_tab_for_area, render_roles_tab};
+    use super::render_roles_tab;
     use crate::config::{AppConfig, RoleSource};
+    use crate::console::manager::editor_geometry::prepare_editor_tab_for_area;
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;

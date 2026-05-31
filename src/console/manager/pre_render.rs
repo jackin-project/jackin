@@ -3,6 +3,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use crate::config::AppConfig;
+use crate::console::manager::editor_geometry::prepare_editor_for_render;
 use crate::console::manager::list_geometry::clamp_list_scroll_for_area;
 use crate::console::manager::modal_layout::modal_outer_rect;
 use crate::console::manager::settings_geometry::clamp_global_mounts_scroll_for_frame;
@@ -25,7 +26,7 @@ pub fn prepare_for_render(
                 state.op_available,
             );
             editor.cached_footer_h = footer_height(&footer, area.width).max(1);
-            crate::console::tui::render::editor::prepare_editor_for_render(area, editor, config);
+            prepare_editor_for_render(area, editor, config);
         }
         ManagerStage::Settings(settings) => {
             let footer = crate::console::manager::settings_footer::settings_footer_items(

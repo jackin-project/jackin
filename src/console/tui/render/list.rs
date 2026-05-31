@@ -43,7 +43,7 @@ pub(super) use crate::console::manager::list_geometry::{
 pub(super) use crate::console::manager::mount_display::format_mount_rows;
 pub(super) use crate::console::manager::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows_with_cache,
-    mount_path_width, workspace_mounts_content_width_with_cache,
+    mount_path_width,
 };
 use crate::console::manager::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,

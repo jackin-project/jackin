@@ -22,8 +22,8 @@ pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 pub(crate) use jackin_tui::components::scrollable_panel::{
-    clamp_scroll_offset as clamp_scroll_x, is_scrollable,
-    viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
+    is_scrollable, viewport_height as scroll_viewport_height,
+    viewport_width as scroll_viewport_width,
 };
 pub(super) use jackin_tui::components::scrollable_panel::{
     line_width, max_line_width, render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll,
