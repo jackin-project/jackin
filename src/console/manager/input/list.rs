@@ -518,9 +518,12 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
             }
         }
         _ => {
-            state.list_modal = Some(Modal::GithubPicker {
-                state: crate::console::widgets::github_picker::GithubPickerState::new(choices),
-            });
+            dispatch_manager(
+                state,
+                ManagerMessage::OpenListGithubPicker {
+                    state: crate::console::widgets::github_picker::GithubPickerState::new(choices),
+                },
+            );
         }
     }
 }

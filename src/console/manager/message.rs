@@ -167,6 +167,9 @@ pub(crate) enum ManagerMessage {
     OpenListContainerInfo {
         state: jackin_tui::components::ContainerInfoState,
     },
+    OpenListGithubPicker {
+        state: crate::console::widgets::github_picker::GithubPickerState,
+    },
     DismissListModal,
     DismissInlineSessionPicker,
     DismissInlineRolePicker,
@@ -329,6 +332,9 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::OpenListContainerInfo { state: info } => {
             state.list_modal = Some(super::state::Modal::ContainerInfo { state: info });
+        }
+        ManagerMessage::OpenListGithubPicker { state: picker } => {
+            state.list_modal = Some(super::state::Modal::GithubPicker { state: picker });
         }
         ManagerMessage::DismissListModal => {
             state.list_modal = None;
