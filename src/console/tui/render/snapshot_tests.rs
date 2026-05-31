@@ -126,6 +126,21 @@ mod tests {
         state
     }
 
+    fn settings_mounts_with_modal<'a>(
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        modal: GlobalMountModal<'a>,
+    ) -> ManagerState<'a> {
+        let mut state = ManagerState::from_config(config, cwd);
+        let mut settings = SettingsState::from_config(config);
+        settings.active_tab = crate::console::manager::state::SettingsTab::Mounts;
+        settings.tab_bar_focused = false;
+        settings.mounts.scroll_focused = true;
+        settings.mounts.modal = Some(modal);
+        state.stage = ManagerStage::Settings(settings);
+        state
+    }
+
     #[test]
     fn snapshot_list_empty_80x24() {
         let config = AppConfig::default();
@@ -454,6 +469,88 @@ mod tests {
         });
         settings_mounts_confirm.stage = ManagerStage::Settings(settings);
         cases.push(("settings mounts confirm", settings_mounts_confirm));
+
+        cases.push((
+            "settings mounts text",
+            settings_mounts_with_modal(
+                &config,
+                &cwd,
+                GlobalMountModal::Text {
+                    target: crate::console::manager::state::GlobalMountTextTarget::AddName,
+                    state: Box::new(jackin_tui::components::TextInputState::new(
+                        "Mount name",
+                        "repo",
+                    )),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings mounts file browser",
+            settings_mounts_with_modal(
+                &config,
+                &cwd,
+                GlobalMountModal::FileBrowser {
+                    state: Box::new(
+                        crate::console::widgets::file_browser::FileBrowserState::new_at(
+                            cwd.clone(),
+                            cwd.clone(),
+                        ),
+                    ),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings mounts destination choice",
+            settings_mounts_with_modal(
+                &config,
+                &cwd,
+                GlobalMountModal::MountDstChoice {
+                    state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
+                        "/workspace",
+                    ),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings mounts scope picker",
+            settings_mounts_with_modal(
+                &config,
+                &cwd,
+                GlobalMountModal::ScopePicker {
+                    state: crate::console::widgets::scope_picker::ScopePickerState::new(),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings mounts role picker",
+            settings_mounts_with_modal(
+                &config,
+                &cwd,
+                GlobalMountModal::RolePicker {
+                    state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+                        crate::selector::RoleSelector::parse("chainargos/agent-smith")
+                            .expect("valid role selector"),
+                    ]),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings mounts preview save",
+            settings_mounts_with_modal(
+                &config,
+                &cwd,
+                GlobalMountModal::PreviewSave {
+                    state: crate::console::widgets::confirm_save::ConfirmSaveState::new(vec![
+                        ratatui::text::Line::from("Add global mount /workspace"),
+                    ]),
+                },
+            ),
+        ));
 
         let mut settings_env_text = ManagerState::from_config(&config, &cwd);
         let mut settings = SettingsState::from_config(&config);
