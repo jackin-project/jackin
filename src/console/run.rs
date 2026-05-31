@@ -551,11 +551,13 @@ pub async fn run_console<H: InstanceActionHandler>(
                                         _ => "Working",
                                     };
                                     let busy_body = format!("{busy_title} {container}…");
-                                    ms.list_modal = Some(manager::state::Modal::ErrorPopup {
-                                        state: jackin_tui::components::ErrorPopupState::new(
-                                            busy_title, busy_body,
-                                        ),
-                                    });
+                                    let _ = manager::update_manager(
+                                        ms,
+                                        manager::ManagerMessage::OpenListErrorPopup {
+                                            title: busy_title.into(),
+                                            message: busy_body,
+                                        },
+                                    );
                                     terminal.draw(|frame| {
                                         let full_area = frame.area();
                                         let (main_area, _debug_bar) = split_debug_area(
@@ -619,23 +621,26 @@ pub async fn run_console<H: InstanceActionHandler>(
                             && let ConsoleStage::Manager(ms) = &mut state.stage
                         {
                             let log_path = run.path().display().to_string();
-                            ms.list_modal = Some(manager::state::Modal::ContainerInfo {
-                                state: jackin_tui::components::ContainerInfoState::new(
-                                    "Container info",
-                                    vec![
-                                        jackin_tui::components::ContainerInfoRow::new(
-                                            "Run ID",
-                                            run.run_id(),
-                                        )
-                                        .copyable()
-                                        .emphasised(),
-                                        jackin_tui::components::ContainerInfoRow::new(
-                                            "Run log", &log_path,
-                                        )
-                                        .hyperlink(format!("file://{log_path}")),
-                                    ],
-                                ),
-                            });
+                            let _ = manager::update_manager(
+                                ms,
+                                manager::ManagerMessage::OpenListContainerInfo {
+                                    state: jackin_tui::components::ContainerInfoState::new(
+                                        "Container info",
+                                        vec![
+                                            jackin_tui::components::ContainerInfoRow::new(
+                                                "Run ID",
+                                                run.run_id(),
+                                            )
+                                            .copyable()
+                                            .emphasised(),
+                                            jackin_tui::components::ContainerInfoRow::new(
+                                                "Run log", &log_path,
+                                            )
+                                            .hyperlink(format!("file://{log_path}")),
+                                        ],
+                                    ),
+                                },
+                            );
                         }
                     }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {

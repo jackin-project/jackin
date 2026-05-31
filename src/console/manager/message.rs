@@ -164,6 +164,9 @@ pub(crate) enum ManagerMessage {
         title: String,
         message: String,
     },
+    OpenListContainerInfo {
+        state: jackin_tui::components::ContainerInfoState,
+    },
     DismissListModal,
     DismissInlineSessionPicker,
     DismissInlineRolePicker,
@@ -323,6 +326,9 @@ pub(crate) fn update_manager(
             state.list_modal = Some(super::state::Modal::ErrorPopup {
                 state: jackin_tui::components::ErrorPopupState::new(title, message),
             });
+        }
+        ManagerMessage::OpenListContainerInfo { state: info } => {
+            state.list_modal = Some(super::state::Modal::ContainerInfo { state: info });
         }
         ManagerMessage::DismissListModal => {
             state.list_modal = None;
