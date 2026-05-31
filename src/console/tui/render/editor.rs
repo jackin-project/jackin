@@ -1669,9 +1669,59 @@ mod general_tab_render_tests {
         let viewport = super::super::scroll_viewport_width(area);
         assert_eq!(
             editor.tab_scroll_x,
-            super::super::max_scroll_offset(editor.tab_content_width, viewport)
+            jackin_tui::components::scrollable_panel::max_offset(
+                editor.tab_content_width,
+                viewport
+            )
         );
         assert!(editor.tab_scroll_x > 0);
+    }
+}
+
+#[cfg(test)]
+mod mounts_tab_render_tests {
+    use super::render_editor;
+    use crate::config::AppConfig;
+    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    #[test]
+    fn readonly_mount_renders_ro_mode() {
+        let ws = WorkspaceConfig {
+            mounts: vec![MountConfig {
+                src: "/host/a".into(),
+                dst: "/host/a".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Mounts;
+        editor.tab_bar_focused = false;
+        editor.active_field = FieldFocus::Row(0);
+
+        let config = AppConfig::default();
+        let backend = TestBackend::new(80, 10);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_editor(f, f.area(), &mut editor, &config, true);
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let found = (0..buf.area.height).any(|y| {
+            let row = (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>();
+            row.contains(" ro ") || row.trim_end().ends_with(" ro") || row.contains(" ro  ")
+        });
+        assert!(
+            found,
+            "readonly mount render must show `ro` in the mode column"
+        );
     }
 }
 
@@ -1772,7 +1822,10 @@ mod agents_tab_render_tests {
         let viewport = super::super::scroll_viewport_width(area);
         assert_eq!(
             editor.tab_scroll_x,
-            super::super::max_scroll_offset(editor.tab_content_width, viewport)
+            jackin_tui::components::scrollable_panel::max_offset(
+                editor.tab_content_width,
+                viewport
+            )
         );
         assert!(editor.tab_scroll_x > 0);
     }

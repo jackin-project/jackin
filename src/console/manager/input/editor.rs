@@ -3938,50 +3938,6 @@ plugins = []
         );
     }
 
-    #[test]
-    fn toggle_rw_to_ro_reflects_in_render() {
-        // After pressing R, render the Mounts tab and check the visible
-        // `mode` column displays `ro`. Guards against a future regression
-        // where the flip only updates state but the render helper ignores
-        // the new value.
-        use ratatui::backend::TestBackend;
-
-        let mut config = AppConfig::default();
-        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
-
-        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
-
-        let ManagerStage::Editor(editor) = &mut state.stage else {
-            panic!("editor stage expected");
-        };
-        let backend = TestBackend::new(80, 10);
-        let mut term = ratatui::Terminal::new(backend).unwrap();
-        term.draw(|f| {
-            {
-                let a = f.area();
-                crate::console::manager::render::render_editor(f, a, editor, &config, true);
-            };
-        })
-        .unwrap();
-        let buf = term.backend().buffer();
-        let area = buf.area;
-        let mut found = false;
-        for y in 0..area.height {
-            let mut row = String::new();
-            for x in 0..area.width {
-                row.push_str(buf[(x, y)].symbol());
-            }
-            if row.contains(" ro ") || row.trim_end().ends_with(" ro") || row.contains(" ro  ") {
-                found = true;
-                break;
-            }
-        }
-        assert!(
-            found,
-            "post-toggle render must show `ro` in the mode column"
-        );
-    }
-
     // ── Caps-Lock parity: SHIFT-modified letter shortcuts ──────────────
 
     /// Enter on an op:// key row must NOT open the `EnvValue` text-edit
