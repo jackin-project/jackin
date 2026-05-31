@@ -99,7 +99,8 @@ pub(super) fn settings_footer_items(
 
 fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let lines = general_lines(state);
-    super::render_scrollable_block_at(frame, area, lines, 0, 0, false, None);
+    let focused = !state.tab_bar_focused && state.error_popup.is_none();
+    super::render_scrollable_block_at(frame, area, lines, 0, 0, focused, None);
 }
 
 fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
@@ -119,7 +120,7 @@ fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
         (1, "DCO sign-off", state.general.pending_dco),
     ];
 
-    let show_cursor = !state.tab_bar_focused;
+    let show_cursor = !state.tab_bar_focused && state.error_popup.is_none();
     rows.iter()
         .map(|(i, label, pending)| {
             let selected = show_cursor && (state.general.selected == *i);

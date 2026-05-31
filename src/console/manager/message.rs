@@ -933,6 +933,7 @@ fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
     };
     let was_secrets = editor.active_tab == EditorTab::Secrets;
     editor.active_tab = tab;
+    editor.tab_bar_focused = true;
     editor.active_field = FieldFocus::Row(0);
     editor.workspace_mounts_scroll_focused = false;
     if editor.active_tab != EditorTab::Auth {
@@ -952,11 +953,12 @@ const fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
     editor.workspace_mounts_scroll_focused = true;
 }
 
-const fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
+fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
     settings.active_tab = tab;
+    settings.tab_bar_focused = true;
 }
 
 const fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
