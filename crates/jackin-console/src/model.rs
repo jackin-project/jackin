@@ -142,6 +142,14 @@ pub struct SettingsTrustRow {
     pub trusted: bool,
 }
 
+#[derive(Debug, Default)]
+pub struct GlobalMountDraft {
+    pub name: String,
+    pub src: String,
+    pub dst: String,
+    pub scope: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitIntent {
     Save,
