@@ -1,0 +1,188 @@
+---
+title: "Déjà Vu — Cross-Agent Conversation Capture"
+---
+
+**Status**: Open — research and design proposal (Phase 2, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+
+## Problem
+
+jackin' runs five agent runtimes — `Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` — inside isolated, per-instance containers. Each one keeps its own conversation history in its own private layout, and each one can resume *its own* threads with *its own* resume command. There is no single place an operator can stand and see **every conversation they have had, across every agent, across every workspace and instance**. The history is real, but it is scattered across five incompatible stores and trapped behind five different resume CLIs.
+
+This hurts in two concrete ways the operator hits today:
+
+- **Eject erases it.** `jackin eject` / `jackin prune` tear down `~/.jackin/data/<container>/`, and the agent's conversation history goes with it. That cleanup is the intended default — but it means a conversation worth keeping is gone the moment the instance is reclaimed, with no way to go back and re-read what was discussed, what the agent proposed, and what was decided.
+- **No cross-agent recall.** Even while instances live, there is no "show me that conversation again" surface that works regardless of which agent produced it. `Amp` has the best-in-class version of this (server-side threads, `amp threads continue`, shareable `ampcode.com/threads/T-<id>` URLs, and `@T-<id>` cross-thread references). jackin's job is to bring that *experience* to every agent — including agents and models that some operators can only run in certain regions — without picking a winner among them.
+
+**Déjà Vu** is the capture-store-browse layer that closes this gap. It captures each agent's conversation — every prompt the operator sent and every answer the operator saw — normalizes it into one shared shape, archives it on the **host** in a location that survives instance teardown, and exposes it through a `jackin console`-style TUI, a CLI, and an MCP server so both operators and agents can find, read, and re-live past work.
+
+The name is literal: Déjà Vu is the feeling of seeing something again. The first deliverable is exactly that — see your past agent conversations again.
+
+## Scope of the first cut
+
+Capture, store, and browse. Nothing more, deliberately:
+
+- **Must capture** every operator input (the full prompt thread) and every agent answer the operator visually saw (the rendered assistant turns). This is the load-bearing requirement: a Déjà Vu that loses what the operator typed or what the agent replied is not worth shipping.
+- **Should capture, when the native source makes it cheap** tool calls, tool results, thinking/reasoning blocks, diffs, model id, and token usage. These come for free from most agents' session files; capture them when present, never block on them.
+- **Browse** select a workspace → narrow by instance or date → pick a conversation → read the thread, top to bottom.
+
+Everything else — forking a conversation, change/diff attribution per turn, semantic search, cross-agent `@thread` injection, cloud sharing, orchestration — is explicitly out of this cut and tracked under [Non-goals for V1](#non-goals-for-v1).
+
+## Prior art: how SpecStory does it
+
+[SpecStory](https://specstory.com/) is the closest existing product, and its mechanism is the key lesson. Its open-source CLI ([`specstoryai/getspecstory`](https://github.com/specstoryai/getspecstory), Go, Apache-2.0) does **not** wrap the agent's PTY or scrape the terminal. It launches the agent with plain passthrough stdio and, concurrently, watches the agent's **own on-disk session files** with an `fsnotify` watcher, converting them to Markdown under `.specstory/history/` in the repo. It ships three modes — `specstory run <agent>` (launch + watch), `specstory watch` (watch only), `specstory sync` (retroactive batch convert) — and a per-provider parser for each supported tool (`~/.claude/projects/.../*.jsonl` for Claude Code, `~/.codex/sessions/*.jsonl` for Codex, a SQLite `store.db` for Cursor CLI, JSON for Gemini, etc.). Each provider parses its native format into one shared `SessionData` struct, then a single renderer emits Markdown.
+
+The architecture to borrow: **per-provider parser → one normalized record → render on demand.** The things jackin' should do differently:
+
+| SpecStory | Déjà Vu |
+|---|---|
+| Writes Markdown into the repo's `.specstory/history/` | Writes to the **host** under jackin's own data root, never into the operator's repo |
+| Reads the agent's session files from the developer's real home | Reads them from the per-instance home jackin' already restores on the host (see [leverage](#leverage-jackin-already-puts-the-history-on-the-host)) |
+| Markdown is the storage format | A compact normalized record is the canonical store; Markdown/JSON are *rendered* on demand |
+| Per-tool, repo-local, single-user | Cross-agent, cross-instance, workspace-keyed, browsable through one TUI/CLI/MCP surface |
+
+## Leverage: jackin' already puts the history on the host
+
+The critical enabler is already shipped. jackin' bind-mounts each agent's home into the container and restores it on the host under the per-instance data dir — `~/.jackin/data/<container>/.claude/`, `.codex/`, `.local/share/amp/`, `.kimi-code/`, and `.local/share/opencode/` all carry the agent's conversation history (see [Session keep and resume](/reference/roadmap/session-keep-and-resume/)). That means **for four of the five agents the raw conversation is already a host-side file jackin' can read directly** — no terminal scraping, no new container mount, no host mutation. Déjà Vu's capture step is, for those agents, a host-side read of paths jackin' already owns, plus a normalize-and-copy into a purge-surviving archive. Only `Amp` (cloud-only) needs a different path.
+
+## Per-agent capture research
+
+Each agent's resume command is the proof its format is replayable — if the agent can reconstruct a thread from disk, so can Déjà Vu. The table below is the research result that drives the per-provider parsers.
+
+| Agent | Where its conversation lives | Format & threading | Resume / reference UX | Déjà Vu capture path |
+|---|---|---|---|---|
+| **Claude Code** | `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` (cwd encoded as non-alphanumeric → `-`); subagents in a sibling `…/<session-id>/subagents/agent-*.jsonl` | JSONL, `type`-tagged records; per-record `uuid` ← `parentUuid` linked list; assistant blocks carry `text`/`thinking`/`tool_use`, user records carry `tool_result` + `toolUseResult`; model id + token usage present | `--resume <id>`, `--continue`, `--fork-session`; hooks expose `transcript_path` to the live JSONL | Read native JSONL from the restored home. Optional `UserPromptSubmit` + `Stop` hooks for liveness. |
+| **Codex** | `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`; input log `~/.codex/history.jsonl` | JSONL `RolloutLine{timestamp,type,payload}`; payload variants `SessionMeta` (cwd, git, model), `ResponseItem`, `EventMsg` (`UserMessage`/`AgentMessage`), `TurnContext`, `Compacted`; fork via `SessionMeta.forked_from_id` | `codex resume [id]`, `--last`, `-c experimental_resume=<path>` | Read rollout JSONL. Vendor warns the rollout format is internal/unstable, so also support the newer hooks (`UserPromptSubmit`/`Stop`/`PostToolUse`) and the legacy `notify` callback. |
+| **Amp** | **No durable local store** — threads live in Amp's cloud (Postgres @ GCP). Local state is pointers/recents only. | Server-authoritative; thread id `T-<uuid>` | `amp threads continue [--last\|<id>]`, interactive picker, `@T-<id>` in-prompt reference, shareable `ampcode.com/threads/T-<id>` | Capture via the supported export commands: `amp threads export <id>` (full JSON) and `amp threads markdown <id>`; private REST `GET /api/threads/:id/messages/:mid` (bearer `AMP_API_KEY`) as the lower-level path. Requires the forwarded `AMP_API_KEY`. |
+| **Kimi** (`kimi-code`, TS) | `~/.kimi-code/sessions/<wd_<slug>_<sha256(cwd)[:12]>>/<sessionId>/{state.json, agents/<id>/wire.jsonl}` (override `KIMI_CODE_HOME`); jackin' mounts the home at `~/.kimi-code` | Per-agent append-only JSONL journal `wire.jsonl` (kind-tagged `message`/`event`/`request`/`response`; roles user/assistant/tool; tool-use blocks; `turnId`); `state.json` is metadata only; threading by append order + `turnId`, not `parentUuid` | `--continue`, `--resume`/picker, `/fork`; hooks (`UserPromptSubmit`/`Stop`/`PostToolUse`/`SessionStart`/`SessionEnd`/…) | Read `agents/*/wire.jsonl` from the restored home; or `kimi export` (ZIP) / `/export-md`. jackin' ships the `kimi-code` distribution (binary from `cdn.kimi.com/kimi-code`, home `~/.kimi-code/`) — confirm the live layout in-container; the legacy Python `kimi-cli` used `~/.kimi/…/context.jsonl`+`wire.jsonl` instead. |
+| **OpenCode** | `~/.local/share/opencode/` — migrating JSON → SQLite. Legacy JSON: `storage/session/<projectID>/<id>.json`, `storage/message/<sessionID>/<id>.json`, `storage/part/<messageID>/<id>.json` (`projectID` = repo first-commit hash); newer: `opencode.db` | `Session` / `Message` (role-discriminated) / `Part` (`text`/`reasoning`/`tool`/`file`/`step-*`/`patch`/…) unions; cost + token fields present | `run -c\|-s <id>`, TUI `/sessions` (`/resume`); share `opncd.ai/s/<id>` | Read native JSON/SQLite from the restored home; or `opencode export <id>` (JSON); or drive `opencode serve` (`GET /session`, `GET /session/:id/message`) via the generated SDK. |
+
+The common shape across all five: an append-only, replayable session record (cloud-side for Amp), a resume command that proves it, and — increasingly — a hooks surface that fires on `UserPromptSubmit` / `Stop` / `PostToolUse`. Déjà Vu standardizes on that shape.
+
+## Decision: native files first, fall back per agent
+
+The capture strategy is a layered fallback, chosen per agent, exactly as the operator framed it — read the native source of truth where we can, use something else where we cannot:
+
+1. **Native session files (source of truth).** For Claude Code, Codex, Kimi, and OpenCode the canonical capture is parsing the agent's own on-disk session store, read host-side from the restored per-instance home. This is lossless, needs no agent cooperation, and captures historical sessions, not just future ones.
+2. **Vendor export / API (cloud agents and stable interfaces).** For Amp — which has no local store — capture via `amp threads export`/`markdown` and the threads REST API. The same path is the safe option for any agent whose file format the vendor declares unstable (Codex says exactly this).
+3. **Hooks (liveness, and a hedge against format drift).** Where an agent exposes lifecycle hooks (`UserPromptSubmit`, `Stop`, `PostToolUse`, `SessionEnd`), Déjà Vu can subscribe for low-latency capture and as a vendor-blessed signal that does not depend on reverse-engineering a file layout. Claude Code, Codex, and Kimi all ship compatible hook contracts.
+
+Per-provider parsers normalize whichever source is used into one record shape, so the storage and browse layers never learn five formats.
+
+## Storage shape
+
+### The normalized record
+
+One canonical record per conversation captures: identity (workspace, instance/container, agent, native session id, captured-at), the ordered turns (role, author, the visible content the operator saw, timestamp), and optional enrichment (tool calls/results, model id, token usage) when the native source supplies it. Per-agent quirks (Claude's `parentUuid` tree, Kimi's `turnId`, Codex's `RolloutItem` variants) are flattened into this shape at parse time and preserved verbatim in an opaque `raw` blob so nothing is thrown away.
+
+### Format: compact canonical blob + index + render-on-demand
+
+The operator's preference, and the right call, is a **compact binary canonical store** (Protocol Buffers) rather than keeping fat Markdown or JSON as the system of record. Protobuf gives a schema-checked, space-efficient, append-friendly encoding that is cheap to keep for thousands of conversations, and Markdown/JSON are *derived* views generated on demand — agents never have to decode protobuf, because the CLI/MCP render it to Markdown or JSON for them. This separates "how we store it" from "how we show it."
+
+Alongside the blobs, a small **SQLite index** powers browse and search (workspace, instance, date, agent, title, first prompt, turn count). This deliberately mirrors the [persistent storage layer](/reference/roadmap/persistent-storage-layer/) — Déjà Vu's index should live in, or beside, that layer rather than inventing a parallel one, and the canonical conversation blobs sit next to the index as content-addressed or id-named files.
+
+The library choice (`prost` vs `protobuf` for the schema; `sqlx` vs `rusqlite` for the index) should follow the same decision the persistent storage layer makes, and is worth an ADR (see [Architecture Decision Records](/reference/roadmap/architecture-decision-records/)). JSONL was considered as a simpler canonical format and remains the fallback if protobuf's build/codegen cost is judged not worth it for V1; the index and render-on-demand design hold either way.
+
+### Host layout
+
+Conversations must outlive the instance that produced them — that is the whole point. So the archive lives under jackin's host data root, keyed by workspace, **outside** any per-instance `~/.jackin/data/<container>/` tree that `eject`/`purge` reclaims:
+
+```text
+~/.jackin/data/deja-vu/
+  index.db                                  # SQLite browse/search index
+  <workspace>/
+    <instance-or-date>/
+      <agent>/
+        <conversation-id>.pb                # canonical protobuf blob
+```
+
+Keying by workspace (then instance/date, then agent) matches the browse flow directly: workspace → instance/date → conversation. Whether the index is Déjà Vu-private or a table inside the persistent storage layer's DB is an [open question](#open-questions).
+
+## Capture timing
+
+The host-side capture runs at the moments that matter and never depends on the operator remembering to act:
+
+- **On session end / eject (the safety net).** Before `jackin eject` / `jackin prune` reclaims a per-instance data dir, Déjà Vu normalizes and copies every conversation it finds into the purge-surviving archive. This directly fixes "exiting the instance cleans up the conversation I still needed."
+- **Periodically / on demand for live instances.** A `jackin deja-vu sync` re-reads the restored homes and upserts new turns, so long-running instances are captured incrementally without waiting for teardown.
+- **Optionally live via hooks.** Where hooks exist, capture can be near-real-time instead of poll-based.
+
+## Browse surfaces
+
+Three surfaces over the same archive, in priority order for V1:
+
+- **TUI (`jackin deja-vu`, console-style).** The headline deliverable. A `jackin console`-shaped browser: pick a workspace, narrow by instance or date, pick a conversation, read the rendered thread top to bottom. Follows the [TUI design decisions](/reference/tui-design-decisions/) (W3C Tabs navigation, scrollable blocks via `jackin_tui::scroll`, the shared color palette).
+- **CLI (`jackin deja-vu list | show | search | export`).** Scriptable and, importantly, the surface an *agent* can call from inside a session. `show` renders a conversation to Markdown/JSON; `export` writes it out.
+- **MCP server.** Exposes `list` / `read` / `search` as MCP tools so an agent — in any runtime — can pull a past conversation into its current context. This is the seed of the future cross-agent "go back to that conversation" experience and the orchestration use case, gated behind the same host-mediated MCP/host-bridge surface as other agent-facing capabilities (see [Host bridge](/reference/roadmap/host-bridge/)).
+
+## Architecture
+
+Three layers, mirroring how the rest of jackin' separates capsule / protocol / host:
+
+| Layer | Owns | Does not own |
+|---|---|---|
+| Per-agent providers | Locating, reading, and parsing each agent's native session store (or export/API/hooks) into the normalized record | The archive format, the index, or the browse UI |
+| Archive + index | The canonical protobuf store, the SQLite index, capture timing, render-on-demand to Markdown/JSON | How any single agent encodes its own sessions |
+| Surfaces (TUI / CLI / MCP) | Operator and agent access: browse, search, show, export | Re-parsing native formats or writing native stores |
+
+The capture path is host-side and read-only against agent state: it reads the per-instance homes jackin' already restores and runs read-only vendor exports (`amp threads export`). The only writes are into Déjà Vu's own `~/.jackin/data/deja-vu/` tree.
+
+## Host-side effects
+
+Per the [security model](/guides/security-model/) and the never-mutate-the-host-silently contract, this item is explicit about what it touches on the host:
+
+- **Reads** the per-instance agent homes under `~/.jackin/data/<container>/` (jackin's own data; reading is always allowed) and runs read-only network fetches of the operator's *own* Amp threads via `amp threads export` using the already-forwarded `AMP_API_KEY`.
+- **Writes** only under `~/.jackin/data/deja-vu/` — jackin's own host root, the sanctioned location for jackin-owned state. It never writes into the operator's repositories, `~/.claude/`, `~/.codex/`, `~/.config/gh/`, dotfiles, or any non-jackin path.
+- Capture is **opt-in and surfaced** (config flag / CLI flag), and the archive location is reported, consistent with the host-effects contract. No container-side path is required for the file-reading path; if a future capsule-side capture point is added it lives under `/jackin/` (e.g. `/jackin/deja-vu/`), never under `/run`, `/var`, or `/tmp`.
+
+## Phases
+
+### Phase 0 — Normalized record + one provider
+
+Define the normalized record and the protobuf schema. Implement the Claude Code provider (richest, best-documented format) and a `jackin deja-vu show` that renders one captured conversation to Markdown. No archive yet — prove the parse → normalize → render path end to end.
+
+### Phase 1 — Archive, index, and the eject safety net
+
+Add the `~/.jackin/data/deja-vu/` archive, the SQLite index, and capture-on-eject so the operator's pain point is fixed first. `jackin deja-vu list` and `jackin deja-vu sync`.
+
+### Phase 2 — Remaining providers
+
+Codex, Kimi (`kimi-code`), and OpenCode native-file providers, plus the Amp export/API provider. Confirm each against a live in-container layout before trusting it.
+
+### Phase 3 — Browse TUI
+
+The `jackin deja-vu` console-style browser: workspace → instance/date → conversation → thread. The first surface most operators will actually use.
+
+### Phase 4 — Search and MCP
+
+Index-backed search (`jackin deja-vu search`) and the MCP server exposing list/read/search to agents. This is the bridge toward cross-agent recall and orchestration.
+
+## Non-goals for V1
+
+Named so later work has a home and V1 stays small:
+
+- **Forking / branching a conversation** (git-style divergence from a past turn). Future.
+- **Change attribution** — linking each turn to the files/diffs it produced. The user wants this eventually ("what changed, what produced it"); V1 captures only what was said and shown.
+- **Semantic / vector search.** V1 is index + keyword. Semantic retrieval waits until there are enough captured conversations to evaluate quality, aligned with the [persistent storage layer](/reference/roadmap/persistent-storage-layer/) memory direction.
+- **Cross-agent `@thread` injection** (Amp-style referencing another conversation inside a live prompt). The MCP read surface is the precursor; the injection UX is future.
+- **Cloud sharing / team sync.** Local-host-first; the record schema should keep stable ids and provenance so sync is possible later, but it is not in scope.
+- **Orchestration.** Déjà Vu provides the read surface a future orchestrator consumes (see [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/)); it does not schedule or drive agents.
+
+## Open questions
+
+| Question | Current stance |
+|---|---|
+| Protobuf vs JSONL as the canonical store? | Protobuf for compactness + schema, per operator preference; JSONL is the documented fallback if codegen cost outweighs the benefit for V1. Decide in an ADR. |
+| Déjà Vu-private index vs a table in the persistent storage layer? | Prefer reusing the [persistent storage layer](/reference/roadmap/persistent-storage-layer/) once it lands; ship a small private SQLite index first if Déjà Vu moves earlier. |
+| Workspace-scoped vs instance-scoped archive? | Workspace-scoped under `~/.jackin/data/deja-vu/<workspace>/` so it survives per-instance purge — the explicit requirement. Instance and date are sub-keys, not the top key. |
+| How is the Kimi `kimi-code` on-disk layout confirmed? | Verify live inside a running jackin' Kimi container (`ls ~/.kimi-code/sessions/…`); the shipped distribution may differ from both the documented `kimi-code` and the legacy Python `kimi-cli` trees. |
+| Capture on every eject by default, or opt-in? | Lean opt-in-but-default-on per workspace, surfaced in the launch summary, so the safety net is real without being a silent host write. |
+| Do we capture tool calls/diffs in V1? | Capture them when the native source provides them for free; never block the must-have (prompts + visible answers) on them. |
+
+## Related roadmap items
+
+- [Session keep and resume](/reference/roadmap/session-keep-and-resume/) — the shipped mechanism that already restores agent conversation history onto the host; Déjà Vu's primary capture source.
+- [Persistent storage and workspace memory layer](/reference/roadmap/persistent-storage-layer/) — the index/DB home Déjà Vu should reuse, and the cross-agent memory direction it complements.
+- [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) — sibling capture surface (live terminal frames/recordings) vs Déjà Vu's structured conversation archive.
+- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — the five-runtime model whose per-agent quirks the providers normalize.
+- [Host bridge](/reference/roadmap/host-bridge/) — the host-mediated MCP surface the agent-facing read tools plug into.
+- [jackin' daemon](/reference/roadmap/jackin-daemon/) — the future long-running host process that could own periodic/live capture.
+- [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) — future consumer of the captured-conversation read surface.
