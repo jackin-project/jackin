@@ -238,8 +238,8 @@ pub struct SettingsState<'a> {
 }
 
 pub use jackin_console::editor::state::{
-    CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget, SecretsRow,
-    SecretsScopeTag, TextInputTarget,
+    AuthRow as GenericAuthRow, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus,
+    FileBrowserTarget, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
 pub use jackin_console::settings::state::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
@@ -255,6 +255,7 @@ pub type PendingSaveCommit =
 pub type EditorSaveFlow = jackin_console::editor::state::EditorSaveFlow<PendingSaveCommit>;
 pub type AuthFormTarget =
     jackin_console::settings::state::AuthFormTarget<crate::console::manager::auth_kind::AuthKind>;
+pub type AuthRow = GenericAuthRow<crate::console::manager::auth_kind::AuthKind>;
 pub type SettingsAuthRow = jackin_console::settings::state::SettingsAuthRow<
     crate::console::manager::auth_kind::AuthKind,
     crate::console::manager::auth_kind::AuthMode,

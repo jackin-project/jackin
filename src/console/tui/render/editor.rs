@@ -21,6 +21,7 @@ use super::{
     render_header,
 };
 use crate::config::AppConfig;
+pub use crate::console::manager::state::AuthRow;
 pub(crate) use crate::console::manager::state::SecretsRow;
 use crate::console::manager::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, Modal, SecretsScopeTag,
@@ -807,53 +808,6 @@ pub(crate) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
         &editor.secrets_expanded,
         |role| &role.env,
     )
-}
-
-/// Row-shape model for the Auth tab.
-///
-/// `auth_flat_rows()` rebuilds this per frame from `editor.pending` +
-/// `editor.auth_expanded` + the live `AppConfig`. Rendering and input
-/// both index into the same `Vec<AuthRow>` so cursor row numbers always
-/// agree with what's drawn.
-///
-/// Keyed off [`AuthKind`], wider than the
-/// runtime `Agent` enum so the GitHub CLI row sits alongside the agent
-/// rows without forcing a synthetic `Agent::Github` variant.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AuthRow {
-    /// Root picker row: choose which auth kind to manage.
-    ///
-    /// The variant is named `AuthKindRow` (rather than `AuthKind`) to
-    /// avoid colliding with the [`AuthKind`] enum itself; the trailing
-    /// `Row` keeps the disambiguation visible at every match site.
-    AuthKindRow {
-        kind: crate::console::manager::auth_kind::AuthKind,
-    },
-    /// Selected auth kind's workspace-level mode row.
-    WorkspaceMode {
-        kind: crate::console::manager::auth_kind::AuthKind,
-    },
-    /// Selected auth kind's workspace credential source row.
-    WorkspaceSource {
-        kind: crate::console::manager::auth_kind::AuthKind,
-    },
-    /// Collapsible role override block. `expanded` toggles the mode (and
-    /// credential source, when required) for the selected auth kind.
-    RoleHeader { role: String, expanded: bool },
-    /// Mode row inside an expanded `RoleHeader`. Editable.
-    RoleMode {
-        role: String,
-        kind: crate::console::manager::auth_kind::AuthKind,
-    },
-    /// Credential source row inside an expanded `RoleHeader`.
-    RoleSource {
-        role: String,
-        kind: crate::console::manager::auth_kind::AuthKind,
-    },
-    /// `+ Override for a role` sentinel.
-    AddSentinel { eligible: usize },
-    /// Visual spacer.
-    Spacer,
 }
 
 /// Build the row-shape vector for the Auth tab.
