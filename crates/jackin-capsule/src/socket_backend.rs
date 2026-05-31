@@ -175,18 +175,47 @@ impl Backend for SocketBackend {
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
     {
+        // Track the terminal cursor position so we can skip the `\x1b[row;colH`
+        // move for cells that immediately follow the previously written cell on
+        // the same row. This eliminates a large fraction of cursor-position
+        // escapes when Ratatui's diff sends runs of consecutive changed cells
+        // (e.g. the entire dialog backdrop on first open).
+        let mut cursor_row: Option<u16> = None;
+        let mut cursor_col: Option<u16> = None;
+
         for (x, y, cell) in content {
-            // Move cursor to (col, row) — 1-based.
-            let row = y + 1;
-            let col = x + 1;
-            self.output.extend_from_slice(b"\x1b[");
-            push_number(&mut self.output, u32::from(row));
-            self.output.push(b';');
-            push_number(&mut self.output, u32::from(col));
-            self.output.push(b'H');
+            let row = y + 1; // 1-based terminal row
+            let col = x + 1; // 1-based terminal column
+
+            // Emit cursor position only when we are not already there.
+            // After writing a single-column cell at (col, row) the terminal
+            // advances to (col + 1, row), so we can skip the next move when
+            // the next cell is exactly one column to the right on the same row.
+            let already_positioned = cursor_row == Some(row) && cursor_col == Some(col);
+            if !already_positioned {
+                self.output.extend_from_slice(b"\x1b[");
+                push_number(&mut self.output, u32::from(row));
+                self.output.push(b';');
+                push_number(&mut self.output, u32::from(col));
+                self.output.push(b'H');
+                cursor_row = Some(row);
+            }
 
             self.apply_style(CellStyle::from_cell(cell));
-            self.output.extend_from_slice(cell.symbol().as_bytes());
+            let sym = cell.symbol();
+            self.output.extend_from_slice(sym.as_bytes());
+
+            // Advance the tracked column by the number of terminal columns the
+            // symbol occupies.  ASCII is always 1; wide characters (CJK etc.)
+            // are 2.  Combining characters (width 0) leave the cursor in place.
+            use unicode_width::UnicodeWidthStr;
+            let width = sym.width() as u16;
+            if width == 0 {
+                // Combining character: cursor didn't move.
+                cursor_col = cursor_col; // unchanged
+            } else {
+                cursor_col = Some(col + width);
+            }
         }
         Ok(())
     }

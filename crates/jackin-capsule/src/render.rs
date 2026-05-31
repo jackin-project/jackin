@@ -562,12 +562,18 @@ fn emit_bg(buf: &mut Vec<u8>, color: ColorKey) {
 /// whatever was beneath. Used as the opaque backdrop behind modal dialogs.
 pub fn fill_screen(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, rgb: jackin_tui::Rgb) {
     let jackin_tui::Rgb { r, g, b } = rgb;
+    // Emit the SGR (background color + reset) once before the loop, then only
+    // emit cursor-position escapes per row. Emitting SGR per-row created redundant
+    // escape sequences and made the buffer larger than necessary.
+    let _ = write!(buf, "\x1b[0;48;2;{r};{g};{b}m");
+    // Pre-build a row of spaces to avoid per-cell push inside the loop.
+    let spaces: Vec<u8> = vec![b' '; term_cols as usize];
     for row in 0..term_rows {
-        let _ = write!(buf, "\x1b[{};1H\x1b[0;48;2;{r};{g};{b}m", row + 1);
-        for _ in 0..term_cols {
-            buf.push(b' ');
-        }
+        let _ = write!(buf, "\x1b[{};1H", row + 1);
+        buf.extend_from_slice(&spaces);
     }
+    // Reset SGR so subsequent renders start from a known state.
+    buf.extend_from_slice(b"\x1b[0m");
 }
 
 #[cfg(test)]

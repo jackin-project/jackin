@@ -211,9 +211,15 @@ pub async fn run_console<H: InstanceActionHandler>(
                 paths, &config, &req.scope, &req.args,
             );
             let _ = resume_console_terminal(&mut out);
-            // Force a full redraw next frame so leftover child output is
-            // cleared before the TUI repaints.
-            let _ = terminal.clear();
+            // Force a full repaint next frame so leftover child output is
+            // overwritten. terminal.resize() resets Ratatui's internal diff
+            // buffer (marks every cell dirty) without emitting \x1b[2J — this
+            // avoids the blank-screen flash that terminal.clear() causes while
+            // still guaranteeing that every cell is redrawn next tick.
+            if let Ok(size) = terminal.size() {
+                let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                let _ = terminal.resize(rect);
+            }
             match mint {
                 Ok(env_value) => {
                     // A successful op mint created or edited an item/field;

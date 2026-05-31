@@ -317,9 +317,22 @@ impl Multiplexer {
     }
 
     pub(super) fn compose_dialog_overlay_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
-        // Dialog overlays always go through the full compositor so the
-        // opaque backdrop + footer hint stay consistent for every
-        // dialog type.
+        // Prefer the Ratatui diff path: it only sends changed cells so a
+        // dialog whose state hasn't changed produces an empty or near-empty
+        // diff instead of a full fill_screen + repaint. This eliminates the
+        // flicker visible when the state_ticker fires while a dialog is open.
+        if let Some(ratatui_output) = self.compose_ratatui_frame() {
+            crate::cdebug!(
+                "render: kind=dialog-overlay reason={} via=ratatui bytes={}",
+                reason.as_str(),
+                ratatui_output.len()
+            );
+            let mut out = Vec::with_capacity(ratatui_output.len() + 64);
+            self.append_outer_terminal_title(&mut out);
+            out.extend_from_slice(&ratatui_output);
+            return out;
+        }
+        // Raw-ANSI fallback: only reached when the Ratatui terminal fails.
         self.compose_full_frame(reason)
     }
 
@@ -359,6 +372,16 @@ impl Multiplexer {
             return Vec::new();
         }
         if self.dialog_open() || self.selection.is_some() {
+            // Prefer the Ratatui diff path so dialog state that hasn't
+            // changed produces an empty diff instead of a full fill_screen.
+            // The raw-ANSI fallback is kept for the (rare) case where the
+            // Ratatui terminal fails to draw.
+            if let Some(ratatui_output) = self.compose_ratatui_frame() {
+                let mut out = Vec::with_capacity(ratatui_output.len() + 64);
+                self.append_outer_terminal_title(&mut out);
+                out.extend_from_slice(&ratatui_output);
+                return out;
+            }
             return self.compose_full_frame(FullRedrawReason::UnsafePartial);
         }
 
