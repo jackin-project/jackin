@@ -59,6 +59,12 @@ pub enum StageStatus {
 }
 
 #[derive(Debug, Clone)]
+pub enum PromptResult {
+    Value(String),
+    Skipped,
+}
+
+#[derive(Debug, Clone)]
 pub struct LaunchIdentity {
     pub role: String,
     pub agent: String,

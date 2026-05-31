@@ -1,15 +1,11 @@
 use crate::manifest::EnvVarDecl;
 use std::collections::BTreeMap;
 
+pub use jackin_launch::PromptResult;
+
 #[derive(Debug, Clone)]
 pub struct ResolvedEnv {
     pub vars: Vec<(String, String)>,
-}
-
-#[derive(Debug, Clone)]
-pub enum PromptResult {
-    Value(String),
-    Skipped,
 }
 
 pub trait EnvPrompter {

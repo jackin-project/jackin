@@ -6,4 +6,4 @@
 
 pub mod state;
 
-pub use state::{LaunchIdentity, LaunchStage, LaunchTargetKind, StageStatus};
+pub use state::{LaunchIdentity, LaunchStage, LaunchTargetKind, PromptResult, StageStatus};
