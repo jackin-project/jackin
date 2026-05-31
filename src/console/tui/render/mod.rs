@@ -18,9 +18,6 @@ pub(crate) mod modal;
 #[cfg(test)]
 mod snapshot_tests;
 
-// Modal dismissal sequencing requires a render call across a module boundary;
-// re-exported here so input handlers can reach render_editor directly.
-pub use editor::render_editor;
 pub(super) use jackin_console::layout::centered_rect_fixed;
 
 pub(super) use crate::console::widgets::{
