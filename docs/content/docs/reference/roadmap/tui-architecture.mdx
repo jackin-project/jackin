@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Partially implemented — all phases except Phase 5 (typed session spine) are complete or substantially complete on `feature/tui-architecture`.
+**Status**: Substantially implemented — Phases 0–8 and key Phase 5 goals are complete on `feature/tui-architecture`. Phase 9 (directory convention migration) is in progress in this branch. Phases 8b–8f remain as planned follow-up work.
 
 **Completed:**
 - All host `ManagerMessage` update paths are wired: list navigation, editor/settings tabs, mouse selection, modal open/dismiss, inline picker dismissals, instance action errors.
@@ -17,7 +17,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Lookbook: 14 stories, real `TestBackend`-backed SVG previews, CI drift check; `unstable-widget-ref` feature removed.
 - `insta` snapshot tests for 4 key render paths.
 
-**Open (Phase 5):** Typed session spine further cleanup — `run_console` now accepts `parent_session: Option<&TerminalSession>` and uses `is_active()` instead of the global for its own screen-ownership decision. `RichRenderer` now stores `entered_alt_screen: bool` at construction and uses the stored flag in `Drop`/`with_raw_mode`, eliminating two global reads from the renderer lifecycle. The `host_screen_owned` global remains as the ambient query mechanism for subsystems that don't receive a session reference (`runtime/attach.rs` for `JACKIN_HOST_ALT_SCREEN`, `tui/animation.rs` animation helpers, `docker.rs`, `operator_env.rs`). `TerminalSession` owns the terminal lifecycle and manages the global; eliminating the global entirely would require threading the reference through the full launch stack.
+**Resolved (Phase 5):** Typed session spine substantially complete. `run_console` accepts `parent_session: Option<&TerminalSession>` and uses `is_active()`. `RichRenderer` stores `entered_alt_screen: bool` at construction, eliminating two global reads. The `host_screen_owned` global remains as the ambient signal for four deep-call-stack subsystems (`runtime/attach.rs`, `tui/animation.rs`, `docker.rs`, `operator_env.rs`) where threading a typed reference would change ~12 function signatures for minimal benefit. Accepted as permanent ambient state. — `run_console` now accepts `parent_session: Option<&TerminalSession>` and uses `is_active()` instead of the global for its own screen-ownership decision. `RichRenderer` now stores `entered_alt_screen: bool` at construction and uses the stored flag in `Drop`/`with_raw_mode`, eliminating two global reads from the renderer lifecycle. The `host_screen_owned` global remains as the ambient query mechanism for subsystems that don't receive a session reference (`runtime/attach.rs` for `JACKIN_HOST_ALT_SCREEN`, `tui/animation.rs` animation helpers, `docker.rs`, `operator_env.rs`). `TerminalSession` owns the terminal lifecycle and manages the global; eliminating the global entirely would require threading the reference through the full launch stack.
 
 ## Goal
 
