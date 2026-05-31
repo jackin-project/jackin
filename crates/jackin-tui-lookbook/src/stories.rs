@@ -410,8 +410,8 @@ fn story_scrollable_panel_mounts(frame: &mut Frame<'_>, area: Rect) {
         Line::from("ssh                /jackin/host/ssh                                   ro"),
         Line::from("op-session         /jackin/host/config/op                             ro"),
     ];
-    let mut scroll_x = 12;
-    let mut scroll_y = 2;
+    let mut scroll_x = 0;
+    let mut scroll_y = 0;
     render_scrollable_block(
         frame,
         area,

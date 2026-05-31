@@ -247,23 +247,30 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 preview_inner,
             );
 
-            // Centre component both horizontally and vertically within the canvas.
-            let vp_width = preview_inner.width;
-            let vp_height = preview_inner.height;
+            // Apply 1-cell uniform padding so the component floats inside the
+            // canvas with equal breathing room on all sides.
+            let canvas = preview_inner.inner(ratatui::layout::Margin {
+                horizontal: 1,
+                vertical: 1,
+            });
+
+            // Centre component both horizontally and vertically within the padded canvas.
+            let vp_width = canvas.width;
+            let vp_height = canvas.height;
             let content_width = story.width.min(vp_width);
             let content_height = story.height;
 
             let effective_scroll =
                 preview_scroll.min(max_offset(content_height as usize, vp_height as usize));
 
-            // Horizontal: centred.
-            let cx = preview_inner.x + vp_width.saturating_sub(content_width) / 2;
+            // Horizontal: centred within padded canvas.
+            let cx = canvas.x + vp_width.saturating_sub(content_width) / 2;
 
             // Vertical: centred when content fits; scrollable when it doesn't.
             let cy = if content_height <= vp_height {
-                preview_inner.y + vp_height.saturating_sub(content_height) / 2
+                canvas.y + vp_height.saturating_sub(content_height) / 2
             } else {
-                preview_inner.y.saturating_sub(effective_scroll)
+                canvas.y.saturating_sub(effective_scroll)
             };
 
             let clamped_height = if content_height <= vp_height {
@@ -276,7 +283,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
             let component_rect = Rect {
                 x: cx,
-                y: cy.max(preview_inner.y),
+                y: cy.max(canvas.y),
                 width: content_width,
                 height: clamped_height,
             };

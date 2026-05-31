@@ -234,8 +234,8 @@ pub(crate) struct ScrollablePanelInteractor {
 impl ScrollablePanelInteractor {
     pub(crate) fn new() -> Self {
         Self {
-            scroll_x: 12,
-            scroll_y: 2,
+            scroll_x: 0,
+            scroll_y: 0,
         }
     }
 
