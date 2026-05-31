@@ -166,7 +166,7 @@ where
             for &byte in &buf[..n] {
                 if byte == b'\n' {
                     let line = String::from_utf8_lossy(&line_remainder);
-                    crate::runtime::build_log::push_line(line.trim_end_matches('\r'));
+                    jackin_launch::build_log::push_line(line.trim_end_matches('\r'));
                     line_remainder.clear();
                 } else {
                     line_remainder.push(byte);
@@ -177,7 +177,7 @@ where
     }
     if tee_build_log && !line_remainder.is_empty() {
         let line = String::from_utf8_lossy(&line_remainder);
-        crate::runtime::build_log::push_line(line.trim_end_matches('\r'));
+        jackin_launch::build_log::push_line(line.trim_end_matches('\r'));
     }
     Ok(captured)
 }

@@ -321,7 +321,7 @@ pub(super) async fn build_agent_image(
     // Tee the build's captured output into the live build-log sink so the
     // loading cockpit can show it on demand (the build is the slowest step).
     // `end` stops teeing but keeps the captured lines for the dialog.
-    crate::runtime::build_log::begin();
+    jackin_launch::build_log::begin();
     let build_result = runner
         .run(
             "docker",
@@ -338,7 +338,7 @@ pub(super) async fn build_agent_image(
             },
         )
         .await;
-    crate::runtime::build_log::end();
+    jackin_launch::build_log::end();
     build_result?;
 
     extract_agent_version(paths, &image, agent, debug, runner).await;
