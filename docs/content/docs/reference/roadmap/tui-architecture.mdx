@@ -939,14 +939,16 @@ Systematically audit every screen in the host console and settings for focus vio
 
 ### Phase 9 — TUI source directory convention migration
 
-**Capsule side: complete in this branch.** 8 TUI rendering files moved via `git mv` into `crates/jackin-capsule/src/tui/`: `branch_context_bar.rs`, `chrome_widget.rs`, `dialog.rs`, `dialog_widgets.rs`, `pane_widget.rs`, `render.rs`, `socket_backend.rs`, `statusbar.rs`. A `tui/mod.rs` declares all sub-modules; `lib.rs` re-exports them at their original paths so no call sites needed updating. Build clean.
+**In progress — started on `feature/tui-architecture`.** Capsule side partially done: 8 TUI rendering files moved via `git mv` into `crates/jackin-capsule/src/tui/`. This is the start of Phase 9, not the completion.
 
-**Console side: follow-up PR.** Still to migrate:
+**Remaining work (console side + full wiring):**
 - `src/console/manager/render/` → `src/console/tui/render/`
 - `src/console/widgets/` → `src/console/tui/widgets/`
 - `src/console/terminal.rs` → `src/console/tui/terminal.rs`
+- Update all `mod` declarations and `use` paths after the moves.
+- Verify build clean and tests pass.
 
-Use `git mv` for each file, then update `mod` declarations and `use` paths. New TUI files added before migration completes must go into the target directory immediately.
+Use `git mv` for every file move to preserve history. New TUI files added before migration completes must go into the target directory immediately.
 
 Move all terminal-rendering source files into designated TUI directories so the location of any visual component is unambiguous. The rule: TUI code lives in exactly three homes — `crates/jackin-tui/` (shared), `crates/<crate>/src/tui/` (crate-specific), or `src/console/tui/` (host console). A developer or agent changing a visual behavior must know the exact directory to open without searching.
 
