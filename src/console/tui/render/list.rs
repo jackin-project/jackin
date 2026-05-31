@@ -32,8 +32,8 @@ use super::{
 };
 use crate::config::AppConfig;
 use crate::console::manager::list_geometry::{
-    SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
-    sidebar_inputs_for_workspace, split_global_mount_rows,
+    SidebarInputs, SidebarLayout, compute_sidebar_layout, current_dir_mount_config,
+    sidebar_inputs_for_current_dir, sidebar_inputs_for_workspace, split_global_mount_rows,
 };
 #[cfg(test)]
 pub(super) use crate::console::manager::list_geometry::{
@@ -721,12 +721,7 @@ fn render_current_dir_details_pane(
     state: &ManagerState<'_>,
 ) {
     let cwd_str = cwd.display().to_string();
-    let mounts = [crate::workspace::MountConfig {
-        src: cwd_str.clone(),
-        dst: cwd_str.clone(),
-        readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
-    }];
+    let mounts = [current_dir_mount_config(&cwd_str)];
     let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
     let layout = compute_sidebar_layout(area, &inputs);
     render_sidebar_body(frame, &layout, &inputs, config, state);
