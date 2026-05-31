@@ -241,7 +241,7 @@ pub use jackin_console::model::{
     AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
     GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SecretsScopeTag,
     SettingsEnvConfirm, SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab,
-    SettingsTrustRow, TextInputTarget,
+    SettingsTrustRow, TextInputTarget, settings_map_change_count, settings_vec_change_count,
 };
 
 #[derive(Debug)]
@@ -722,7 +722,7 @@ impl SettingsState<'_> {
             + self.mounts_change_count()
             + self.env.change_count()
             + settings_vec_change_count(&self.auth.original, &self.auth.pending)
-            + env_change_count(&self.auth.original_github_env, &self.auth.github_env)
+            + settings_map_change_count(&self.auth.original_github_env, &self.auth.github_env)
             + settings_vec_change_count(&self.trust.original, &self.trust.pending)
     }
 
@@ -847,15 +847,6 @@ impl SettingsState<'_> {
     }
 }
 
-fn settings_vec_change_count<T: PartialEq>(original: &[T], pending: &[T]) -> usize {
-    let common_changes = original
-        .iter()
-        .zip(pending.iter())
-        .filter(|(a, b)| a != b)
-        .count();
-    common_changes + original.len().abs_diff(pending.len())
-}
-
 impl SettingsEnvState<'_> {
     pub fn from_config(config: &AppConfig) -> Self {
         let pending = SettingsEnvConfig {
@@ -905,7 +896,7 @@ impl SettingsEnvState<'_> {
 
     #[must_use]
     pub fn change_count(&self) -> usize {
-        env_change_count(&self.original.env, &self.pending.env)
+        settings_map_change_count(&self.original.env, &self.pending.env)
             + self
                 .original
                 .roles
@@ -917,7 +908,7 @@ impl SettingsEnvState<'_> {
                     let empty = BTreeMap::new();
                     let original = self.original.roles.get(role).unwrap_or(&empty);
                     let pending = self.pending.roles.get(role).unwrap_or(&empty);
-                    env_change_count(original, pending)
+                    settings_map_change_count(original, pending)
                 })
                 .sum::<usize>()
     }
@@ -2460,7 +2451,7 @@ impl EditorState<'_> {
             .iter()
             .filter(|d| !matches!(d, MountDiff::Unchanged(_)))
             .count();
-        n += env_change_count(&self.original.env, &self.pending.env);
+        n += settings_map_change_count(&self.original.env, &self.pending.env);
         // Per-role overrides: union the keys; an role present on
         // only one side counts its whole env map / claude / codex /
         // github block as added/removed.
@@ -2476,7 +2467,7 @@ impl EditorState<'_> {
             let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
             let orig_env = orig.map_or(&empty, |o| &o.env);
             let pend_env = pend.map_or(&empty, |p| &p.env);
-            n += env_change_count(orig_env, pend_env);
+            n += settings_map_change_count(orig_env, pend_env);
             // Per-role auth-forward overrides count as one change
             // each so a role × github mode flip with no env edit
             // still wakes the save button.
@@ -2507,26 +2498,6 @@ impl EditorState<'_> {
             };
         }
     }
-}
-
-fn env_change_count(
-    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-) -> usize {
-    let mut n = 0;
-    for (k, v) in pending {
-        match original.get(k) {
-            None => n += 1,                // added
-            Some(ov) if ov != v => n += 1, // changed
-            _ => {}
-        }
-    }
-    for k in original.keys() {
-        if !pending.contains_key(k) {
-            n += 1; // removed
-        }
-    }
-    n
 }
 
 impl Default for CreatePreludeState<'_> {
@@ -3026,7 +2997,7 @@ mod tests {
     }
 
     /// Adding and removing per-role env override keys each contribute +1
-    /// via the same `env_change_count` helper as workspace-level env.
+    /// via the same map-change helper as workspace-level env.
     #[test]
     fn change_count_agent_env_delta() {
         use crate::workspace::WorkspaceRoleOverride;
