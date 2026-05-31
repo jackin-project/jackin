@@ -1,5 +1,29 @@
 use std::collections::BTreeMap;
 
+use super::state::SettingsTab;
+
+#[must_use]
+pub const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
+    match tab {
+        SettingsTab::General => SettingsTab::Trust,
+        SettingsTab::Mounts => SettingsTab::General,
+        SettingsTab::Environments => SettingsTab::Mounts,
+        SettingsTab::Auth => SettingsTab::Environments,
+        SettingsTab::Trust => SettingsTab::Auth,
+    }
+}
+
+#[must_use]
+pub const fn next_settings_tab(tab: SettingsTab) -> SettingsTab {
+    match tab {
+        SettingsTab::General => SettingsTab::Mounts,
+        SettingsTab::Mounts => SettingsTab::Environments,
+        SettingsTab::Environments => SettingsTab::Auth,
+        SettingsTab::Auth => SettingsTab::Trust,
+        SettingsTab::Trust => SettingsTab::General,
+    }
+}
+
 #[must_use]
 pub fn settings_vec_change_count<T: PartialEq>(original: &[T], pending: &[T]) -> usize {
     let common_changes = original

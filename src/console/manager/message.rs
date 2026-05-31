@@ -12,6 +12,8 @@ use super::state::{
     SettingsTab,
 };
 use crate::config::AppConfig;
+use jackin_console::editor::update::{next_editor_tab, previous_editor_tab};
+use jackin_console::settings::update::{next_settings_tab, previous_settings_tab};
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -829,46 +831,6 @@ fn move_settings_trust_selection(
         term,
         footer_h,
     );
-}
-
-const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
-    match tab {
-        EditorTab::General => EditorTab::Auth,
-        EditorTab::Mounts => EditorTab::General,
-        EditorTab::Roles => EditorTab::Mounts,
-        EditorTab::Secrets => EditorTab::Roles,
-        EditorTab::Auth => EditorTab::Secrets,
-    }
-}
-
-const fn next_editor_tab(tab: EditorTab) -> EditorTab {
-    match tab {
-        EditorTab::General => EditorTab::Mounts,
-        EditorTab::Mounts => EditorTab::Roles,
-        EditorTab::Roles => EditorTab::Secrets,
-        EditorTab::Secrets => EditorTab::Auth,
-        EditorTab::Auth => EditorTab::General,
-    }
-}
-
-const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
-    match tab {
-        SettingsTab::General => SettingsTab::Trust,
-        SettingsTab::Mounts => SettingsTab::General,
-        SettingsTab::Environments => SettingsTab::Mounts,
-        SettingsTab::Auth => SettingsTab::Environments,
-        SettingsTab::Trust => SettingsTab::Auth,
-    }
-}
-
-const fn next_settings_tab(tab: SettingsTab) -> SettingsTab {
-    match tab {
-        SettingsTab::General => SettingsTab::Mounts,
-        SettingsTab::Mounts => SettingsTab::Environments,
-        SettingsTab::Environments => SettingsTab::Auth,
-        SettingsTab::Auth => SettingsTab::Trust,
-        SettingsTab::Trust => SettingsTab::General,
-    }
 }
 
 fn collapse_selected_tree(state: &mut ManagerState<'_>) {
