@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Substantially implemented — Phases 0–9 and key Phase 5 goals are complete on `feature/tui-architecture`; Phases 8b, 8c, 8d, and 8e are complete on 2026-05-31. Phase 10 is substantially implemented for `jackin-launch`; `jackin-console` extraction plus the remaining Phase 8f audit tail remain as planned follow-up work.
+**Status**: Substantially implemented — Phases 0–9 and key Phase 5 goals are complete on `feature/tui-architecture`; Phases 8b through 8f are complete on 2026-05-31. Phase 10 is substantially implemented for `jackin-launch`; the remaining planned work is the larger `jackin-console` extraction.
 
 **Completed:**
 - All host `ManagerMessage` update paths are wired: list navigation, editor/settings tabs, mouse selection, modal open/dismiss, inline picker dismissals, instance action errors.
@@ -852,7 +852,7 @@ Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` co
 
 Several rules in [TUI Design Decisions](/reference/tui-design-decisions/) have no corresponding implementation phase. This phase audits and enforces them:
 
-**Partially implemented on `feature/tui-architecture` (2026-05-31):** modal button-spacing tests already cover action dialogs, the main modal tests already enforce green modal borders and padded titles, editor/settings tab tests cover the ARIA tab focus pattern, editor/settings toggle tests cover Space-vs-Enter semantics for the known toggle rows, the new-workspace description now routes the Enter/setup hint through the footer instead of an inline body row, and settings sub-tab errors are covered by a promotion test that drains every sub-tab error slot into the shared `ErrorPopup`. Remaining work: complete the full footer-only sweep for less common overlays and any remaining non-settings error surfaces.
+**Complete on `feature/tui-architecture` (2026-05-31):** modal button-spacing tests already cover action dialogs, the main modal tests already enforce green modal borders and padded titles, editor/settings tab tests cover the ARIA tab focus pattern, editor/settings toggle tests cover Space-vs-Enter semantics for the known toggle rows, the new-workspace description routes the Enter/setup hint through the footer instead of an inline body row, the less-common file-browser Git prompt routes its key hints through footer items, settings sub-tab errors are covered by a promotion test that drains every sub-tab error slot into the shared `ErrorPopup`, role-resolution errors have `ErrorPopup` coverage, and the remaining `StatusPopup` constructors are limited to working states (`Resolving agent role`, `Loading role`, and `Saving`).
 
 **Navigation W3C ARIA Tabs pattern** — verify every tabbed surface (`ManagerStage::Editor`, `ManagerStage::Settings`) implements the full pattern: `←`/`→` cycle tabs when tab bar focused, `⇥`/`↓` enters content, `⇧Tab`/`Esc` returns to tab bar. Verify `tab_bar_focused: bool` exists on every tabbed state struct. Write a test for each surface that asserts the key bindings route correctly.
 

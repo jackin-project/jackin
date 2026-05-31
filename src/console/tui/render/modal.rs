@@ -122,7 +122,7 @@ pub(crate) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
         Modal::ScopePicker { .. } => return scope_picker_rect(outer),
         // Hug the content: hide the credential block when the mode
         // doesn't need one so the dialog doesn't leave dead rows
-        // below the hint line.
+        // below the action buttons.
         Modal::AuthForm { state, .. } => return auth_form_rect(outer, state.as_ref()),
     };
     centered_rect_fixed(outer, pct_w, height_rows)
