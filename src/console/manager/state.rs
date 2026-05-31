@@ -205,14 +205,7 @@ pub struct ManagerState<'a> {
     pub preview_pane_cursor: HashMap<String, usize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MountScrollFocus {
-    Workspace,
-    Global,
-    RoleGlobal,
-    Roles,
-}
-
+pub use jackin_console::focus::MountScrollFocus;
 pub use jackin_console::split::{
     DEFAULT_SPLIT_PCT, DragState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, clamp_split,
 };
