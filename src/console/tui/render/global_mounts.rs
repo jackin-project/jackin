@@ -70,7 +70,7 @@ pub(super) fn render_settings(
     render_footer(frame, chunks[3], &footer);
 }
 
-pub(super) fn settings_footer_items(
+pub(crate) fn settings_footer_items(
     state: &SettingsState<'_>,
     op_available: bool,
 ) -> Vec<HintSpan<'static>> {

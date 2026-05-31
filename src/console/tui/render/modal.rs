@@ -16,15 +16,6 @@ use jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT;
 
 // ── Modal dispatcher ────────────────────────────────────────────────
 
-pub(super) fn prepare_modal(outer: ratatui::layout::Rect, modal: &mut Modal<'_>) {
-    let modal_area = modal_outer_rect(modal, outer);
-    match modal {
-        Modal::OpPicker { state } => state.tick(),
-        Modal::ConfirmSave { state } => confirm_save::prepare_for_render(modal_area, state),
-        _ => {}
-    }
-}
-
 pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     let area = frame.area();
     let modal_area = modal_outer_rect(modal, area);

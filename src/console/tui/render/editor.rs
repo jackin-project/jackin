@@ -55,7 +55,7 @@ pub(super) fn disclosure_style() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-pub(super) fn editor_footer_items(
+pub(crate) fn editor_footer_items(
     state: &EditorState<'_>,
     config: &AppConfig,
     op_available: bool,
@@ -187,7 +187,7 @@ pub(super) fn render_editor(
     render_footer(frame, chunks[3], &items);
 }
 
-pub(super) fn prepare_editor_for_render(
+pub(crate) fn prepare_editor_for_render(
     area: Rect,
     state: &mut EditorState<'_>,
     config: &AppConfig,

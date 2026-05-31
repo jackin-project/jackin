@@ -6,8 +6,6 @@ use ratatui::{
 };
 
 use crate::config::AppConfig;
-use crate::console::manager::list_geometry::clamp_list_scroll_for_area;
-use crate::console::manager::settings_geometry::clamp_global_mounts_scroll_for_frame;
 use crate::console::manager::state::{ManagerListRow, ManagerStage, ManagerState};
 use jackin_tui::HintSpan;
 
@@ -51,84 +49,6 @@ pub(super) fn footer_height(items: &[HintSpan<'_>], width: u16) -> u16 {
 
 pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[HintSpan<'_>]) {
     jackin_tui::components::render_wrapped_hint_bar(frame, area, items);
-}
-
-#[doc(hidden)]
-pub fn prepare_for_render(
-    state: &mut ManagerState<'_>,
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    area: Rect,
-) {
-    state.cached_term_size = area;
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
-            let footer = editor::editor_footer_items(editor, config, state.op_available);
-            editor.cached_footer_h = footer_height(&footer, area.width).max(1);
-            editor::prepare_editor_for_render(area, editor, config);
-        }
-        ManagerStage::Settings(settings) => {
-            let footer = global_mounts::settings_footer_items(settings, state.op_available);
-            settings.cached_footer_h = footer_height(&footer, area.width).max(1);
-            clamp_global_mounts_scroll_for_frame(area, &mut settings.mounts);
-        }
-        ManagerStage::List => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(2),
-                    Constraint::Min(10),
-                    Constraint::Length(2),
-                ])
-                .split(area);
-            clamp_list_scroll_for_area(chunks[1], state, config, cwd);
-        }
-        ManagerStage::CreatePrelude(_)
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => {}
-    }
-    prepare_visible_modal(area, state);
-}
-
-fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
-    if let Some(modal) = &mut state.list_modal {
-        modal::prepare_modal(area, modal);
-    }
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
-            if let Some(modal) = &mut editor.modal {
-                modal::prepare_modal(area, modal);
-            }
-        }
-        ManagerStage::CreatePrelude(prelude) => {
-            if let Some(modal) = &mut prelude.modal {
-                modal::prepare_modal(area, modal);
-            }
-        }
-        ManagerStage::Settings(settings) => {
-            if let Some(crate::console::manager::state::GlobalMountModal::PreviewSave { state }) =
-                &mut settings.mounts.modal
-            {
-                use crate::console::widgets::confirm_save;
-                let height = confirm_save::required_height(state).min(area.height);
-                let modal_area = centered_rect_fixed(area, 80, height);
-                confirm_save::prepare_for_render(modal_area, state);
-            }
-            if let Some(crate::console::manager::state::SettingsEnvModal::OpPicker { state }) =
-                &mut settings.env.modal
-            {
-                state.tick();
-            }
-            if let Some(crate::console::manager::state::SettingsAuthModal::OpPicker { state }) =
-                &mut settings.auth.modal
-            {
-                state.tick();
-            }
-        }
-        ManagerStage::List
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => {}
-    }
 }
 
 #[allow(clippy::too_many_lines)]

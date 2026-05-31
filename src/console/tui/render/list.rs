@@ -1290,7 +1290,9 @@ fn render_agents_subpanel_scrollable(
 mod list_name_scroll_tests {
     use super::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, render_list_body};
     use crate::config::AppConfig;
-    use crate::console::manager::list_geometry::list_names_content_width;
+    use crate::console::manager::list_geometry::{
+        clamp_list_scroll_for_area, list_names_content_width,
+    };
     use crate::console::manager::state::{ManagerListRow, ManagerState};
     use crate::workspace::WorkspaceConfig;
     use jackin_tui::components::scrollable_panel::max_offset;
@@ -1359,12 +1361,7 @@ mod list_name_scroll_tests {
 
         let backend = TestBackend::new(70, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        super::super::clamp_list_scroll_for_area(
-            Rect::new(0, 0, 70, 24),
-            &mut state,
-            &config,
-            tmp.path(),
-        );
+        clamp_list_scroll_for_area(Rect::new(0, 0, 70, 24), &mut state, &config, tmp.path());
 
         terminal
             .draw(|frame| {
