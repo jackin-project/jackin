@@ -43,7 +43,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Container info is unified across surfaces: shared `jackin-tui` state/render/hit-test/OSC 8 overlay helpers back the host console and launch cockpit; capsule status-bar chip click opens the matching container-info dialog; OSC 52 copy works for copyable rows.
 - Launch failure paths now render as full wrapped plain text and receive OSC 8 `file://` hyperlink overlays for supporting terminals; overlay tests assert both diagnostics and docker-output links.
 - Launch failure acknowledgement and failure-popup copy feedback now route through `LaunchMessage` instead of mutating the shared view directly from input.
-- Launch build-log open/close now routes through `LaunchMessage` instead of mutating the shared view directly from input.
+- Launch build-log open/close/scroll state now routes through `LaunchMessage` instead of mutating the shared view directly from input.
 - Launch container-info open/close/copy state now routes through `LaunchMessage` instead of mutating the shared view directly from input.
 - Launch footer hover state now routes through `LaunchMessage` instead of mutating the shared view directly from input.
 

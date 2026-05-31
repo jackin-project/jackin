@@ -7,7 +7,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEve
 use jackin_tui::components::StatusFooterHover;
 use ratatui::layout::Rect;
 
-use crate::tui::build_log::scroll_build_log;
+use crate::tui::build_log::build_log_scroll_filled;
 use crate::tui::container_info::{launch_container_info_rect, launch_container_info_state};
 use crate::tui::failure::{failure_copy_payload, failure_copy_target_at};
 use crate::tui::footer::{footer_instance, format_activity};
@@ -17,6 +17,16 @@ const BUILD_LOG_SCROLL_STEP: usize = 3;
 const BUILD_LOG_PAGE_STEP: usize = 10;
 
 pub type SharedView = Arc<Mutex<LaunchView>>;
+
+fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
+    let _dirty = update_launch_view(
+        view,
+        LaunchMessage::BuildLogScrolled {
+            filled: build_log_scroll_filled(area),
+            delta,
+        },
+    );
+}
 
 /// Whether `(col, row)` falls on the footer activity text ("Building Docker
 /// image…"). The footer is the last terminal row; the activity is left-aligned
@@ -186,10 +196,10 @@ pub fn handle_cockpit_input(
                     handle_cockpit_mouse_move(&mut v, area, run_id, m.column, m.row, terminal);
                 }
                 MouseEventKind::ScrollUp if v.build_log_open => {
-                    scroll_build_log(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
+                    update_build_log_scroll(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
                 }
                 MouseEventKind::ScrollDown if v.build_log_open => {
-                    scroll_build_log(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
+                    update_build_log_scroll(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
                 }
                 _ => {}
             },
@@ -215,13 +225,13 @@ pub fn handle_cockpit_input(
                 KeyCode::Esc | KeyCode::Char('q') => {
                     let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
                 }
-                KeyCode::Up => scroll_build_log(&mut v, area, 1),
-                KeyCode::Down => scroll_build_log(&mut v, area, -1),
+                KeyCode::Up => update_build_log_scroll(&mut v, area, 1),
+                KeyCode::Down => update_build_log_scroll(&mut v, area, -1),
                 KeyCode::PageUp => {
-                    scroll_build_log(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
+                    update_build_log_scroll(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
                 }
                 KeyCode::PageDown => {
-                    scroll_build_log(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
+                    update_build_log_scroll(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
                 }
                 _ => {}
             },

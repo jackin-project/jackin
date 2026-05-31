@@ -30,11 +30,6 @@ pub fn build_log_scroll_filled(area: Rect) -> usize {
     jackin_tui::scroll::max_offset(line_count, viewport_h)
 }
 
-pub fn scroll_build_log(view: &mut LaunchView, area: Rect, delta: isize) {
-    let filled = build_log_scroll_filled(area);
-    view.build_log_scroll.scroll_by(filled, delta);
-}
-
 /// Footer-hint keys for the build-log overlay. Shared `HintSpan` vocabulary,
 /// rendered by the shared host hint renderer so it matches every other footer.
 const BUILD_LOG_HINT: &[HintSpan<'static>] = &[

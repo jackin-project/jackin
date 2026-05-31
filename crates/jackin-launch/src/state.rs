@@ -121,6 +121,10 @@ pub enum LaunchMessage {
     FooterHoverChanged(StatusFooterHover),
     BuildLogOpened,
     BuildLogClosed,
+    BuildLogScrolled {
+        filled: usize,
+        delta: isize,
+    },
     ContainerInfoOpened,
     ContainerInfoClosed,
     ContainerInfoCopied(usize),

@@ -88,6 +88,9 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         LaunchMessage::BuildLogClosed => {
             view.build_log_open = false;
         }
+        LaunchMessage::BuildLogScrolled { filled, delta } => {
+            view.build_log_scroll.scroll_by(filled, delta);
+        }
         LaunchMessage::ContainerInfoOpened => {
             view.container_info_open = true;
             view.container_info_copied = None;
@@ -247,6 +250,21 @@ mod tests {
         let _ = update_launch_view(&mut view, LaunchMessage::BuildLogClosed);
 
         assert!(!view.build_log_open);
+    }
+
+    #[test]
+    fn build_log_scroll_message_updates_tail_offset() {
+        let mut view = initial_view();
+
+        let _ = update_launch_view(
+            &mut view,
+            LaunchMessage::BuildLogScrolled {
+                filled: 12,
+                delta: 3,
+            },
+        );
+
+        assert_eq!(view.build_log_scroll.offset(), 3);
     }
 
     #[test]
