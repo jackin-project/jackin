@@ -272,6 +272,17 @@ pub async fn run_console<H: InstanceActionHandler>(
                 );
                 needs_redraw = true;
             }
+            if let Some((cleanup, result)) = ms.poll_pending_isolation_cleanup() {
+                let _ = manager::input::save::continue_save_after_isolation_cleanup(
+                    ms,
+                    &mut config,
+                    paths,
+                    cwd,
+                    cleanup,
+                    result,
+                );
+                needs_redraw = true;
+            }
         }
 
         if let ConsoleStage::Manager(ms) = &mut state.stage

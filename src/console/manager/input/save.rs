@@ -5,7 +5,7 @@
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
-    PendingDriftCheck,
+    PendingDriftCheck, PendingIsolationCleanup,
 };
 use crate::config::AppConfig;
 use crate::config::editor::EnvScope;
@@ -52,6 +52,21 @@ pub fn continue_save_after_drift_check(
                 return Ok(());
             }
             if !detection.stopped_records.is_empty() {
+                if drift_check.plan.delete_isolated_acknowledged {
+                    editor.pending_isolation_cleanup = Some(PendingIsolationCleanup::spawn(
+                        paths.clone(),
+                        detection.stopped_records,
+                        drift_check.plan,
+                        drift_check.exit_on_success,
+                    ));
+                    editor.modal = Some(Modal::StatusPopup {
+                        state: jackin_tui::components::StatusPopupState::new(
+                            "Saving",
+                            "Deleting isolated state...",
+                        ),
+                    });
+                    return Ok(());
+                }
                 let affected_containers: Vec<String> = detection
                     .stopped_records
                     .iter()
@@ -87,6 +102,38 @@ pub fn continue_save_after_drift_check(
         cwd,
         drift_check.plan,
         drift_check.exit_on_success,
+        &mut crate::docker::ShellRunner::default(),
+        None,
+    )
+}
+
+pub fn continue_save_after_isolation_cleanup(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    cleanup: PendingIsolationCleanup,
+    result: anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return Ok(());
+    };
+    if matches!(editor.modal, Some(Modal::StatusPopup { .. })) {
+        editor.modal = None;
+    }
+    if let Err(e) = result {
+        open_save_error_popup(editor, &e.to_string());
+        return Ok(());
+    }
+    let mut plan = cleanup.plan;
+    plan.isolated_cleanup_complete = true;
+    commit_editor_save_with_runner::<crate::docker_client::BollardDockerClient>(
+        state,
+        config,
+        paths,
+        cwd,
+        plan,
+        cleanup.exit_on_success,
         &mut crate::docker::ShellRunner::default(),
         None,
     )
@@ -213,8 +260,8 @@ pub(super) fn begin_editor_save(
 /// `ErrorPopup` ("eject first") and abort. Stopped containers with
 /// preserved state → open a `ConfirmTarget::DeleteIsolatedAndSave`
 /// confirm modal that, on Yes, re-stashes the plan with
-/// `delete_isolated_acknowledged = true` so the second commit pass skips
-/// the check and runs `force_cleanup_isolated` for each affected record.
+/// `delete_isolated_acknowledged = true` so the second commit pass starts
+/// the cleanup worker, then the final pass writes after cleanup completes.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 pub(super) fn commit_editor_save(
     state: &mut ManagerState<'_>,
@@ -286,6 +333,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
     // previous commit pass.
     if let SaveMode::Edit { original_name } = &save_mode
         && !plan.delete_isolated_acknowledged
+        && !plan.isolated_cleanup_complete
     {
         // Build prospective mounts mirroring `edit_workspace`'s merge
         // order: drop `effective_removals`, then upsert each pending
@@ -388,6 +436,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
     // branch in `app/mod.rs`.
     if let SaveMode::Edit { original_name } = &save_mode
         && plan.delete_isolated_acknowledged
+        && !plan.isolated_cleanup_complete
     {
         let current_ws = config.workspaces.get(original_name).cloned();
         if let Some(current_ws) = current_ws {
@@ -403,6 +452,23 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                 crate::isolation::state::list_records_for_workspace(&paths.data_dir, original_name)
                     .is_ok_and(|r| !r.is_empty());
 
+            if has_records2 && docker_override.is_none() {
+                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck::spawn(
+                    paths.clone(),
+                    original_name.clone(),
+                    prospective_mounts,
+                    plan,
+                    exit_on_success,
+                ));
+                editor.modal = Some(super::super::state::Modal::StatusPopup {
+                    state: jackin_tui::components::StatusPopupState::new(
+                        "Saving",
+                        "Checking isolation records...",
+                    ),
+                });
+                return Ok(());
+            }
+
             let drift_result: anyhow::Result<_> = if !has_records2 {
                 Ok(crate::config::DriftDetection::default())
             } else if let Some(docker) = docker_override {
@@ -417,24 +483,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                     docker,
                 ))
             } else {
-                let paths_clone = paths.clone();
-                let name = original_name.clone();
-                let mounts = prospective_mounts;
-                std::thread::spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .context("building tokio runtime for drift re-detection")?;
-                    let docker = crate::docker_client::BollardDockerClient::connect()?;
-                    rt.block_on(crate::config::detect_workspace_edit_drift(
-                        &paths_clone,
-                        &name,
-                        &mounts,
-                        &docker,
-                    ))
-                })
-                .join()
-                .map_err(|_| anyhow::anyhow!("drift detection thread panicked"))?
+                unreachable!("production drift detection returned above");
             };
             match drift_result {
                 Err(e) => {
@@ -1839,6 +1888,7 @@ mod tests {
             effective_removals: vec!["/does/not/exist".to_string()],
             final_mounts: None,
             delete_isolated_acknowledged: false,
+            isolated_cleanup_complete: false,
         };
         commit_editor_save(&mut state, &mut config, &paths, cwd, bad_plan, false).unwrap();
 
@@ -2300,6 +2350,7 @@ mod tests {
                         effective_removals: m.effective_removals.clone(),
                         final_mounts: m.final_mounts.clone(),
                         delete_isolated_acknowledged: false,
+                        isolated_cleanup_complete: false,
                     }
                 }
                 other => panic!("expected ConfirmSave modal; got {other:?}"),
@@ -2373,6 +2424,7 @@ mod tests {
                         effective_removals: m.effective_removals.clone(),
                         final_mounts: m.final_mounts.clone(),
                         delete_isolated_acknowledged: false,
+                        isolated_cleanup_complete: false,
                     }
                 }
                 other => panic!("expected ConfirmSave modal; got {other:?}"),

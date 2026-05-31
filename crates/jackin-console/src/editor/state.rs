@@ -91,6 +91,9 @@ pub struct PendingSaveCommit<M> {
     /// True when the operator has already confirmed isolated-state cleanup
     /// for source drift in this save cycle.
     pub delete_isolated_acknowledged: bool,
+    /// True after the acknowledged cleanup worker has completed; the final
+    /// write pass can then skip drift re-check and cleanup.
+    pub isolated_cleanup_complete: bool,
 }
 
 #[derive(Debug, Clone, Default)]

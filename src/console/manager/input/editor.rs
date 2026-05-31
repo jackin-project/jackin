@@ -943,6 +943,7 @@ pub(super) fn handle_editor_modal(
                     } = target
                     {
                         plan.delete_isolated_acknowledged = true;
+                        plan.isolated_cleanup_complete = false;
                         editor.save_flow = EditorSaveFlow::PendingCommit {
                             plan,
                             exit_on_success,
@@ -1037,6 +1038,7 @@ pub(super) fn handle_editor_modal(
                         // re-stashes the plan with the flag flipped to
                         // `true` so the second pass skips the check.
                         delete_isolated_acknowledged: false,
+                        isolated_cleanup_complete: false,
                     };
                     let exit_on_success = matches!(
                         editor.save_flow,

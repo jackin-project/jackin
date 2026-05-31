@@ -503,6 +503,10 @@ pub struct EditorState<'a> {
     /// completes. The outer console loop polls this each tick so the reactor is
     /// not blocked while the Docker/git check runs on the `spawn_blocking` pool.
     pub pending_drift_check: Option<PendingDriftCheck>,
+    /// Acknowledged isolated-state cleanup dispatched by the save flow.
+    /// The outer console loop polls this each tick; once it succeeds, the
+    /// save is retried with `isolated_cleanup_complete = true`.
+    pub pending_isolation_cleanup: Option<PendingIsolationCleanup>,
     /// In-flight 1Password read for an op-picker auth-form commit. Spawned on
     /// `spawn_blocking` so Touch ID / the 1Password desktop dialog don't freeze
     /// the TUI reactor. Polled each tick by the outer console loop.
@@ -578,6 +582,54 @@ pub struct PendingDriftCheck {
     pub plan: PendingSaveCommit,
     pub exit_on_success: bool,
     pub original_name: String,
+}
+
+pub struct PendingIsolationCleanup {
+    pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
+    pub plan: PendingSaveCommit,
+    pub exit_on_success: bool,
+}
+
+impl PendingIsolationCleanup {
+    #[must_use]
+    pub fn spawn(
+        paths: crate::paths::JackinPaths,
+        records: Vec<crate::isolation::state::IsolationRecord>,
+        plan: PendingSaveCommit,
+        exit_on_success: bool,
+    ) -> Self {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result = async {
+                for rec in records {
+                    let container_dir = paths.data_dir.join(&rec.container_name);
+                    let mut runner = crate::docker::ShellRunner::default();
+                    crate::isolation::cleanup::force_cleanup_isolated(
+                        &rec,
+                        &container_dir,
+                        &mut runner,
+                    )
+                    .await?;
+                }
+                Ok(())
+            }
+            .await;
+            let _ = tx.send(result);
+        });
+        Self {
+            rx,
+            plan,
+            exit_on_success,
+        }
+    }
+}
+
+impl std::fmt::Debug for PendingIsolationCleanup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingIsolationCleanup")
+            .field("exit_on_success", &self.exit_on_success)
+            .finish_non_exhaustive()
+    }
 }
 
 impl PendingDriftCheck {
@@ -1870,6 +1922,30 @@ impl ManagerState<'_> {
         result.map(|r| (check, r))
     }
 
+    pub(crate) fn poll_pending_isolation_cleanup(
+        &mut self,
+    ) -> Option<(PendingIsolationCleanup, anyhow::Result<()>)> {
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            return None;
+        };
+        let cleanup = editor.pending_isolation_cleanup.as_mut()?;
+        let result = match cleanup.rx.try_recv() {
+            Ok(result) => Some(result),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return None,
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => Some(Err(anyhow::anyhow!(
+                "isolation cleanup worker disconnected"
+            ))),
+        };
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            unreachable!()
+        };
+        let cleanup = editor
+            .pending_isolation_cleanup
+            .take()
+            .expect("polled above");
+        result.map(|r| (cleanup, r))
+    }
+
     /// Poll the in-flight 1Password op-ref read for the auth-form op picker commit.
     ///
     /// Returns `Some((op_ref, result, is_settings))` when the read has finished,
@@ -2383,6 +2459,7 @@ impl EditorState<'_> {
             pending_token_generate: None,
             pending_role_load: None,
             pending_drift_check: None,
+            pending_isolation_cleanup: None,
             pending_op_commit: None,
             cached_footer_h: 1,
         };
@@ -2424,6 +2501,7 @@ impl EditorState<'_> {
             pending_token_generate: None,
             pending_role_load: None,
             pending_drift_check: None,
+            pending_isolation_cleanup: None,
             pending_op_commit: None,
             cached_footer_h: 1,
         };
