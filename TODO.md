@@ -46,6 +46,20 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 
 ### Internal cleanups
 
+#### `tui-directory-migration` — reorganize TUI source files into designated directories
+
+- **What:** Move all terminal-rendering code into designated TUI directories per the rule in `tui-design-decisions.mdx`:
+  - `crates/jackin-capsule/src/tui/` — capsule-specific rendering (currently in `crates/jackin-capsule/src/`: `statusbar.rs`, `chrome_widget.rs`, `dialog.rs`, `dialog_widgets.rs`, `pane_widget.rs`, `socket_backend.rs`, `render.rs`, `branch_context_bar.rs`, compositor render methods from `daemon/compositor.rs`)
+  - `src/console/tui/` — console-specific rendering (currently in `src/console/manager/render/`, `src/console/widgets/`, `src/console/terminal.rs`)
+- **Why:** TUI code is currently scattered alongside business logic. The convention makes every visual component findable in one place. When changing a visual behavior, the developer knows exactly where to look; when it's in the wrong place, the rule catches it at PR review.
+- **Plan:**
+  1. Create `crates/jackin-capsule/src/tui/` as a `mod tui` under `lib.rs`. Move each TUI file there, update `pub use` re-exports so nothing outside changes.
+  2. Create `src/console/tui/` as a module. Move `manager/render/` → `tui/render/`, `widgets/` → `tui/widgets/`, `terminal.rs` → `tui/terminal.rs`. Update `mod` and `use` paths.
+  3. Add `// TODO(tui-directory-migration)` markers at each file that has not yet moved.
+- **Until migration lands:** new TUI files must go into the correct target directory immediately. Do not add rendering code outside these paths.
+- **Last verified:** 2026-05-31 — migration not yet started; rule documented in `tui-design-decisions.mdx` and `AGENTS.md`.
+- **Done when:** `fd -e rs . crates/jackin-capsule/src | grep -v tui/` produces no TUI rendering files; `fd -e rs . src/console | grep -v tui/` produces no rendering files. CI stays green.
+
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check
 
 - **What:** the deploy job's `Check deployed docs links` step in [`.github/workflows/docs.yml`](.github/workflows/docs.yml) emits a one-line `[WARN] [Full Github Actions output]: No files found for this input source` from the lychee binary, then continues and reports `Total 4703 / Successful 4703 / Errors 0`. Identify which of the 46 sitemap input URLs triggered the warn and either fix the cause or filter the warn so the signal is clean.

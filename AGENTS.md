@@ -337,7 +337,18 @@ All rules for the `jackin-capsule` smoke-test mandate — the eval one-shot buil
 
 All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, visible progress/status for long-running work, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/content/docs/reference/tui-design-decisions.mdx`](docs/content/docs/reference/tui-design-decisions.mdx).
 
-**Read that document before implementing any TUI change.** When a new decision is made (operator explains what should change and why), add it there immediately, not here.
+**Read that document before implementing any TUI change.**
+
+**TUI code location rule (agent-only):** All terminal-rendering code must live in a designated TUI directory. Check before creating any new file that renders to the terminal:
+
+| Surface | TUI directory |
+|---|---|
+| Shared components | `crates/jackin-tui/src/` |
+| Capsule | `crates/jackin-capsule/src/tui/` *(migration pending — new files go here)* |
+| Host console | `src/console/tui/` *(migration pending — new files go here)* |
+| Lookbook | `crates/jackin-tui-lookbook/src/` (already a dedicated TUI crate) |
+
+New TUI files must go into the correct directory even before the full migration lands. Do not add rendering code to modules outside these paths. When a new decision is made (operator explains what should change and why), add it there immediately, not here.
 
 **Hard rule — keep tui-design-decisions.mdx as the single source of truth (agent-only):**
 

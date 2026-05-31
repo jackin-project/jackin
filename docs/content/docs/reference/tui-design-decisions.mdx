@@ -28,6 +28,38 @@ The host console uses a Ratatui-style Model/Update/View separation. This is a **
 
 ---
 
+## TUI source code location — mandatory directory convention
+
+All code that directly renders, paints, or computes the terminal user interface must live in a designated TUI directory. This convention makes it possible to find every visual component in one place and prevents TUI logic from leaking into business-logic or I/O modules.
+
+**Rule: TUI code has exactly three homes:**
+
+1. **`crates/jackin-tui/`** — Shared components reused across surfaces (Panel, SelectList, HintBar, TabStrip, ScrollablePanel, etc.). Every shared widget lives here. Nothing in this crate is surface-specific.
+
+2. **`crates/<surface-crate>/src/tui/`** — Surface-specific TUI code for a crate that is not the shared library. Example: `crates/jackin-capsule/src/tui/` contains all capsule-specific rendering (status bar, pane borders, dialog rendering, socket backend, branch context bar). Example: `crates/jackin-tui-lookbook/src/` is already a dedicated TUI crate by definition.
+
+3. **`src/console/tui/`** — Console-specific TUI code for the host jackin binary. All workspace manager rendering, widget definitions, and terminal state management live here.
+
+**What belongs in a TUI directory:**
+- Ratatui widget implementations and `Widget` / `StatefulWidget` impls
+- Raw ANSI escape rendering functions
+- Screen layout and geometry helpers
+- Color token application and border rendering
+- Cursor management, focus state rendering, hint bar rendering
+- Lookbook stories for the surface's components
+
+**What does NOT belong in a TUI directory:**
+- Business logic (workspace resolution, role loading, Docker commands)
+- Input event dispatch and key binding handlers (these live alongside business logic)
+- Network and I/O code
+- Config parsing
+
+**Enforcement:** Before adding a new file that renders to the terminal, check its location. If it goes into a module that is not a designated TUI directory, it is in the wrong place. Refactor it into the correct directory before the PR lands.
+
+**Migration status (tracked in `TODO.md`):** The capsule and console TUI code is not yet reorganized into these directories. The migration is planned as a follow-up refactor. Until it lands, existing files stay in place; new TUI files must go into the correct directory.
+
+---
+
 ## Navigation conventions
 
 jackin' TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else.
