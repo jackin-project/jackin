@@ -38,60 +38,62 @@ All code for the terminal user interface (Model, Update, View, and event-loop wi
 
 1. **`crates/jackin-tui/`** — Shared component library. Panels, pickers, scrollable blocks, hint bars, confirm dialogs, tab strips. Nothing surface-specific. Consumed by every other TUI crate.
 
-2. **`crates/<surface-crate>/src/tui/`** — Everything TUI for that surface: Model (state structs), Update (message handlers, key dispatch), View (render functions, widgets), and event-loop wiring. For single-screen crates a flat layout is enough. For multi-screen crates (e.g. `jackin-console`), screens are sub-folders inside `tui/screens/`.
+2. **`crates/<surface-crate>/src/`** — Everything TUI for that surface: Model (state structs), Update (message handlers, key dispatch), View (render functions, widgets), and event-loop wiring. `tui/` is the View layer inside that surface crate. For single-screen crates one root `tui/` is enough. For multi-screen crates (e.g. `jackin-console`), screens are sub-folders at the crate root, each with its own `tui/`.
 
 **Single-screen crate layout** (`jackin-capsule`, `jackin-launch`):
 ```
-src/tui/
-├── mod.rs          ← event-loop wiring
-├── model.rs        ← Model (state structs)
+src/
+├── run.rs          ← event-loop wiring
+├── state.rs        ← Model (state structs)
 ├── update.rs       ← Update (message handlers, input dispatch)
-└── view/           ← View (render fns, pure &Model reads)
-    ├── statusbar.rs
+└── tui/            ← View (render fns, pure &State reads)
+    ├── cockpit.rs
     ├── dialog.rs
     └── ...
 ```
 
 **Multi-screen crate layout** (`jackin-console`):
 ```
-src/tui/
-├── mod.rs          ← ConsoleState, event-loop wiring
-├── screens/
-│   ├── workspaces/ ← workspace list screen
-│   │   ├── model.rs
-│   │   ├── update.rs
-│   │   └── view.rs
-│   ├── editor/     ← workspace editor screen
-│   │   ├── model.rs
-│   │   ├── update.rs
-│   │   └── view.rs
-│   └── settings/   ← settings screen
-│       ├── model.rs
-│       ├── update.rs
-│       └── view.rs
+src/
+├── run.rs          ← ConsoleState/event-loop wiring
+├── state.rs        ← top-level console model
+├── workspaces/     ← workspace list screen
+│   ├── state.rs
+│   ├── update.rs
+│   └── tui/
+├── editor/         ← workspace editor screen
+│   ├── state.rs
+│   ├── update.rs
+│   └── tui/
+├── settings/       ← settings screen
+│   ├── state.rs
+│   ├── update.rs
+│   └── tui/
 └── widgets/        ← surface-specific sub-components
 ```
 
-**MUV contract inside `tui/`:**
-- `model.rs` — pure data structs; no rendering, no I/O.
+**MUV contract inside each surface crate:**
+- `state.rs` — pure data structs; no rendering, no I/O.
 - `update.rs` — pure fn(Model + Message) → Effects; no rendering.
-- `view.rs` / `view/` — pure `&Model` reads; no mutations, no I/O, no side effects.
-- `mod.rs` / wiring — event loop that connects M + U + V; not M, U, or V itself.
+- `tui/` — pure `&State` reads; no mutations, no I/O, no side effects.
+- `run.rs` / wiring — event loop that connects M + U + V; not M, U, or V itself.
 
-**What belongs in `tui/`** (everything TUI):
-- All three MUV layers for each screen
+**What belongs in `tui/`** (the View layer):
 - Ratatui widget implementations
 - Raw ANSI rendering functions
-- Focus state, scroll state, modal state
-- Event-loop wiring and terminal lifecycle
+- Pure frame composition and geometry helpers
+- View-only hover/click hitbox descriptions
 
-**What does NOT belong in `tui/`** (stays outside as business logic):
+**What does NOT belong in `tui/`**:
+- Model state (`state.rs`), including focus state, scroll state, and modal state
+- Update logic (`update.rs`), including message handlers and input dispatch
+- Event-loop wiring and terminal lifecycle (`run.rs`, `terminal.rs`)
 - Workspace resolution, role loading, Docker commands
 - Network and I/O calls
 - Config file writes and reads
 - Data models that have no visual representation (e.g. `session.rs` PTY management in the capsule)
 
-**Enforcement:** before adding any file, ask: "Would deleting this file affect workspace resolution, Docker, or config?" Yes → it does not go in `tui/`. No → it belongs in `tui/`.
+**Enforcement:** before adding any file, ask: "Does this file mutate state, dispatch input, manage terminal lifecycle, or touch workspace resolution, Docker, or config?" Yes → it does not go in `tui/`. No → it belongs in `tui/`.
 
 **Migration status:** Capsule `tui/` started (Phase 9). Console and launch surface migrations are Phase 10. New files must go into the correct directory now regardless of migration status.
 
