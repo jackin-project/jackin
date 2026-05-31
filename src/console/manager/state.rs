@@ -277,7 +277,8 @@ pub struct SettingsState<'a> {
 }
 
 pub use jackin_console::model::{
-    CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, SecretsScopeTag, SettingsTab,
+    AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, SecretsScopeTag,
+    SettingsTab,
 };
 
 #[derive(Debug)]
@@ -1355,26 +1356,6 @@ pub enum Modal<'a> {
         /// modal can re-open pre-populated.
         literal_buffer: String,
     },
-}
-
-/// Where in the auth-edit form the cursor currently sits.
-///
-/// The credential value is collected through
-/// `Modal::AuthSourcePicker` → `Modal::TextInput` (literal) or
-/// `Modal::OpPicker` (1Password), so the form carries only one
-/// credential-related focus (`CredentialSource`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthFormFocus {
-    /// Mode picker line — Space cycles modes; Tab/Down advances focus.
-    Mode,
-    /// Required credential row — Enter opens the shared source picker.
-    CredentialSource,
-    /// Save action button.
-    Save,
-    /// Cancel action button.
-    Cancel,
-    /// Reset action button — clears the layer's mode/credential.
-    Reset,
 }
 
 /// Identifies the (scope, kind) pair an open `AuthForm` modal is editing.

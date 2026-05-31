@@ -60,6 +60,16 @@ pub enum FieldFocus {
     Row(usize),
 }
 
+/// Cursor position inside the auth-edit form modal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthFormFocus {
+    Mode,
+    CredentialSource,
+    Save,
+    Cancel,
+    Reset,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SecretsScopeTag {
     Workspace,
