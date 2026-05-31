@@ -193,6 +193,10 @@ Every interactive TUI state must make the current focus owner visually obvious. 
 
 No other mechanism may transfer or clear focus. In particular: navigation keys (`↑`/`↓`/`←`/`→`) within a focused container must NOT clear or move focus to another container — they navigate within the current owner. Resize events, content fitting within viewport, and workspace selection changes must NOT clear focus.
 
+**Hard rule: every screen must have at least one visible focus owner.** A screen with no PHOSPHOR_GREEN indicator anywhere is a design violation. The launch cockpit and other non-interactive progress surfaces are the only acceptable exception — they show work in progress and have no interactive element to focus. Every screen that the operator navigates through must make the current focus owner visible at all times via the green border, green tab underline, or equivalent.
+
+**Hard rule: `▸` and green border are inseparable.** A content block must show both signals together or neither. The expressions that control them must be identical: `focused = !tab_bar_focused && scroll_focused && modal.is_none()` and `show_cursor = !tab_bar_focused && scroll_focused && modal.is_none()`. Any mismatch — border green but no cursor, or cursor visible but border dark — is a bug. This applies to every list, form, and scroll block in the application.
+
 - **Exactly one** `PHOSPHOR_GREEN` border visible per surface layer at any time.
 - **Click-to-focus**: clicking a focusable container immediately transfers focus to it and updates the hint bar.
 - **Non-focusable containers never steal focus**: if a block has no scroll capability and no interactive elements (no buttons, no picker, no text input), clicking it does nothing — focus stays on the previously focused container.

@@ -844,6 +844,19 @@ Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high
 
 Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, provides a real-terminal browser through `tui-lookbook --terminal`, one MDX page per component following the story shape above, and CI regeneration so previews never drift. The first generator lives at <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> and renders <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> stories from `TestBackend` buffers into committed assets under <RepoFile path="docs/public/tui-lookbook/panel-focused.svg" />, consumed by per-component [TUI Lookbook](/reference/tui-lookbook/) pages. The generated SVGs always carry a black terminal background so docs previews match real terminal use. CI runs `tui-lookbook --check` against those committed previews; every new shared TUI component must appear in both the docs lookbook and the terminal browser in the same PR. Reconcile the host/capsule drift table as components consolidate into shared widgets.
 
+### Phase 8c — Terminal resize visual correctness
+
+**Problem:** Resizing the terminal window (especially the capsule) produces visual corruption — wrong background colors, broken layout, stale cell artifacts from the previous size. The capsule's Ratatui double-buffer needs a full reset on resize to guarantee every cell is repainted at the new dimensions.
+
+**Root cause (known):** On resize, `SocketBackend`'s internal state (current cursor position, current style) may be out of sync with what the attached client expects after a resize. Additionally, the Ratatui terminal's previous-buffer is sized for the old geometry; without a reset, the diff only sends cells that changed value, leaving cells at positions that no longer exist in the new layout with their old content.
+
+**Required fix:**
+1. On `ClientFrame::Resize`, call `ratatui_terminal.clear()` (which resets the diff buffer without emitting `[2J`) before `compose_full_frame`. This is the same pattern used in `compose_pending_frame` for layout changes.
+2. Reset `SocketBackend`'s cursor position tracking so consecutive-cell optimization does not carry stale coordinates across the resize boundary.
+3. Verify the host console (`run_console`) also handles resize correctly — `terminal.autoresize()` plus the existing `terminal.resize()` approach should be sufficient; confirm no gray/wrong-color artifacts appear.
+
+**Acceptance:** Dragging the terminal window to a smaller or larger size while the capsule multiplexer is running must produce a correct full repaint with no gray background, no stale cells, and no layout tears within one animation tick.
+
 ### Phase 8b — Focus correctness audit
 
 Systematically audit every screen in the host console and settings for focus violations:
