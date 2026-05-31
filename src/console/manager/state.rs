@@ -237,27 +237,30 @@ pub struct SettingsState<'a> {
     pub cached_footer_h: u16,
 }
 
-pub use jackin_console::model::{
-    AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
-    GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SecretsScopeTag,
-    SettingsEnvConfirm, SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab,
-    SettingsTrustRow, SettingsTrustState, TextInputTarget, settings_map_change_count,
-    settings_vec_change_count,
+pub use jackin_console::editor::state::{
+    CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget, SecretsScopeTag,
+    TextInputTarget,
 };
+pub use jackin_console::settings::state::{
+    AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
+    SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab, SettingsTrustRow,
+    SettingsTrustState,
+};
+pub use jackin_console::settings::update::{settings_map_change_count, settings_vec_change_count};
 
 pub type SettingsEnvConfig =
-    jackin_console::model::SettingsEnvConfig<crate::operator_env::EnvValue>;
+    jackin_console::settings::state::SettingsEnvConfig<crate::operator_env::EnvValue>;
 pub type PendingSaveCommit =
-    jackin_console::model::PendingSaveCommit<crate::workspace::MountConfig>;
-pub type EditorSaveFlow = jackin_console::model::EditorSaveFlow<PendingSaveCommit>;
+    jackin_console::editor::state::PendingSaveCommit<crate::workspace::MountConfig>;
+pub type EditorSaveFlow = jackin_console::editor::state::EditorSaveFlow<PendingSaveCommit>;
 pub type AuthFormTarget =
-    jackin_console::model::AuthFormTarget<crate::console::manager::auth_kind::AuthKind>;
-pub type SettingsAuthRow = jackin_console::model::SettingsAuthRow<
+    jackin_console::settings::state::AuthFormTarget<crate::console::manager::auth_kind::AuthKind>;
+pub type SettingsAuthRow = jackin_console::settings::state::SettingsAuthRow<
     crate::console::manager::auth_kind::AuthKind,
     crate::console::manager::auth_kind::AuthMode,
 >;
 pub type ConfirmTarget =
-    jackin_console::model::ConfirmTarget<crate::config::RoleSource, PendingSaveCommit>;
+    jackin_console::editor::state::ConfirmTarget<crate::config::RoleSource, PendingSaveCommit>;
 
 #[derive(Debug)]
 pub struct SettingsEnvState<'a> {
