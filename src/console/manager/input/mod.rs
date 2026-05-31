@@ -24,11 +24,12 @@ pub fn poll_background_loads(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
-) {
-    state.poll_picker_loads();
+) -> bool {
+    let mut dirty = state.poll_picker_loads();
     if let ManagerStage::Editor(editor) = &mut state.stage {
-        editor::poll_role_load(editor, config, paths);
+        dirty |= editor::poll_role_load(editor, config, paths);
     }
+    dirty
 }
 
 fn refresh_active_mount_info(state: &ManagerState<'_>) {

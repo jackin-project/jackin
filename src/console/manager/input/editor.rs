@@ -1779,13 +1779,13 @@ pub(super) fn poll_role_load(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
-) {
+) -> bool {
     let Some(load) = editor.pending_role_load.as_mut() else {
-        return;
+        return false;
     };
     let result = match load.rx.try_recv() {
         Ok(result) => result,
-        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return,
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return false,
         Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
             Err(anyhow::anyhow!("role loader worker disconnected"))
         }
@@ -1810,7 +1810,7 @@ pub(super) fn poll_role_load(
                     Some(&load.source.git),
                     &e.context("role repository loaded, but registration could not be persisted"),
                 );
-                return;
+                return true;
             }
             crate::debug_log!(
                 "role",
@@ -1852,11 +1852,12 @@ pub(super) fn poll_role_load(
                         load.raw
                     ),
                 );
-                return;
+                return true;
             }
             open_role_resolution_error(editor, &load.raw, Some(&load.source.git), &e);
         }
     }
+    true
 }
 
 #[cfg(test)]

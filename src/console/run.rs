@@ -117,6 +117,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     // the op-picker panel rain, and other animations stay live.
     let mut animation_tick = tokio::time::interval(Duration::from_millis(TICK_MS));
     animation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut needs_redraw = true;
 
     // Track the debug chip rect for click hit-testing. Updated after each draw.
     let mut last_debug_chip_area: Option<ratatui::layout::Rect> = None;
@@ -171,6 +172,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                 let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 let _ = terminal.resize(rect);
             }
+            needs_redraw = true;
             match mint {
                 Ok(env_value) => {
                     // A successful op mint created or edited an item/field;
@@ -250,12 +252,13 @@ pub async fn run_console<H: InstanceActionHandler>(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            manager::input::poll_background_loads(ms, &mut config, paths);
+            needs_redraw |= manager::input::poll_background_loads(ms, &mut config, paths);
             if let Some(result) = ms.poll_instance_refresh(paths) {
-                let _ = manager::update_manager(
+                needs_redraw |= manager::update_manager(
                     ms,
                     manager::ManagerMessage::InstancesRefreshed(result),
-                );
+                )
+                .is_dirty();
             }
             // Poll the async drift check started by a save operation.
             // When ready, continue the save without blocking the reactor.
@@ -268,11 +271,13 @@ pub async fn run_console<H: InstanceActionHandler>(
                     drift_check,
                     detection,
                 );
+                needs_redraw = true;
             }
             // Poll the async 1Password read started when an op picker commits
             // an OpRef from the auth form. The read runs on spawn_blocking so
             // Touch ID / the 1Password desktop dialog don't freeze the TUI.
             if let Some((op_ref, result, is_settings)) = ms.poll_pending_op_commit() {
+                needs_redraw = true;
                 if is_settings {
                     if let ManagerStage::Settings(s) = &mut ms.stage {
                         match result {
@@ -308,7 +313,9 @@ pub async fn run_console<H: InstanceActionHandler>(
             }
         }
 
-        if let ConsoleStage::Manager(ms) = &mut state.stage {
+        if let ConsoleStage::Manager(ms) = &mut state.stage
+            && (needs_redraw || ms.has_active_animation())
+        {
             let full_area: ratatui::layout::Rect = terminal.size()?.into();
             let (main_area, debug_bar_area) =
                 split_debug_area(full_area, crate::tui::is_debug_mode());
@@ -346,6 +353,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                     let _ = std::io::Write::flush(&mut out);
                 }
             }
+            needs_redraw = false;
         }
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
@@ -353,10 +361,20 @@ pub async fn run_console<H: InstanceActionHandler>(
         // terminal event arrives or the animation tick fires. This frees
         // the reactor between events so background tasks can progress
         // instead of blocking for up to TICK_MS.
+        let mut tick_fired = false;
         let first = tokio::select! {
             event = event_stream.next() => event.map(|r| r.map_err(anyhow::Error::from)),
-            _ = animation_tick.tick() => None,
+            _ = animation_tick.tick() => {
+                tick_fired = true;
+                None
+            },
         };
+        if tick_fired
+            && let ConsoleStage::Manager(ms) = &state.stage
+            && ms.has_active_animation()
+        {
+            needs_redraw = true;
+        }
         // Collect the first event then drain any stream-ready events
         // non-blocking (same batch-up-to-256 behavior as the previous
         // poll loop, so a burst of key/mouse events still coalesces into
@@ -371,6 +389,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                 event_batch.push(event?);
             }
         }
+        needs_redraw |= !event_batch.is_empty();
         for event in event_batch {
             match event {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -563,6 +582,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                     }
                                     ms.force_refresh_instances();
                                 }
+                                needs_redraw = true;
                                 continue;
                             }
                             break 'main Ok(Some(ConsoleOutcome::InstanceAction {

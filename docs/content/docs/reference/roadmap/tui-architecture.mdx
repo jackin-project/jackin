@@ -8,6 +8,7 @@ title: "TUI architecture — Ratatui application patterns"
 - All host `ManagerMessage` update paths are wired: list navigation, editor/settings tabs, mouse selection, modal open/dismiss, inline picker dismissals, instance action errors.
 - Render paths are immutable: scroll geometry prepared before draw, modal spinner/confirm-save geometry computed in update, `MountInfoCache` consumed read-only during render.
 - Async throughout: `EventStream` + `tokio::select!` replaces the 50ms blocking `event::poll`; deploy-hold sleep is `tokio::time::sleep`; all background work uses `spawn_blocking` + oneshot — no nested Tokio runtimes.
+- Console redraw is now dirty/animation gated: input, background completions, pending-worker results, and active spinner/rain ticks schedule draws; idle ticks no longer repaint the full frame.
 - Modal stack convergence: `AuthFormReturnPath` stash slots retired; `EditorState.pending_env_key` retired (env_key embedded in `Modal::SourcePicker { env_key }`); auth parent stack is `Vec<SettingsAuthModal>`.
 - Module-root files thin: `console/mod.rs` (1729→628 lines) via `console/terminal.rs`, `console/prompts.rs`, `console/run.rs`; `jackin-tui/lib.rs` (1040→740 lines) via `geometry.rs`.
 - Capsule fully Ratatui: `SocketBackend` custom backend serializes `Buffer::diff` to the attach socket; `compose_ratatui_frame()` renders chrome, pane bodies, and ALL dialog overlays (via `dialog_widgets.rs` using shared `jackin-tui` components) — raw-ANSI path is fallback only.
@@ -839,7 +840,7 @@ Introduce the `Message` enum and central `update`; route existing key/mouse hand
 
 ### Phase 2 — Host: pure view
 
-Remove `&mut` and I/O from renderers. Terminal-size, footer-height, and top-level scroll-clamp prep now runs before `render`; the remaining target is moving the rest of the scroll/geometry writes into `update` on resize / scroll messages. Visible mount rows now consume pre-refreshed `MountInfoCache` facts, which removes `.git` reads from render; the remaining target is to replace synchronous update-path refresh with cached facts refreshed by a message. Introduce event-driven (dirty) redraw — draw on a `Message` or an animation tick, not unconditionally every 50 ms — so an idle console does no work.
+Remove `&mut` and I/O from renderers. Terminal-size, footer-height, and top-level scroll-clamp prep now runs before `render`; the remaining target is moving the rest of the scroll/geometry writes into `update` on resize / scroll messages. Visible mount rows now consume pre-refreshed `MountInfoCache` facts, which removes `.git` reads from render; the remaining target is to replace synchronous update-path refresh with cached facts refreshed by a message. Dirty redraw now gates the console loop so input, background completions, pending-worker results, and active animation ticks schedule draws while idle ticks do no work; the remaining target is folding those dirty reasons into the final shared `Message` / subscription runtime.
 
 ### Phase 3 — Host: background I/O
 

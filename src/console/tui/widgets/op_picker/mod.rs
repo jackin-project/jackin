@@ -416,21 +416,22 @@ impl OpPickerState {
         self.load_state = OpLoadState::Ready;
     }
 
-    pub fn poll_load(&mut self) {
+    pub fn poll_load(&mut self) -> bool {
         let Some(rx) = self.rx.as_mut() else {
-            return;
+            return false;
         };
         match rx.try_recv() {
             Ok(LoadResult::Accounts(Ok(accounts))) => {
                 self.rx = None;
                 self.handle_accounts_loaded(accounts);
+                true
             }
             Ok(LoadResult::Vaults(Ok(vaults))) => {
                 self.rx = None;
                 if vaults.is_empty() {
                     self.load_state =
                         OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NoVaults));
-                    return;
+                    return true;
                 }
                 self.op_cache
                     .borrow_mut()
@@ -438,10 +439,12 @@ impl OpPickerState {
                 self.vaults = vaults;
                 self.vault_list_state.select(Some(0));
                 self.load_state = OpLoadState::Ready;
+                true
             }
             Ok(LoadResult::Accounts(Err(e)) | LoadResult::Vaults(Err(e))) => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(classify_probe_error(&e));
+                true
             }
             Ok(LoadResult::Items(Ok(items))) => {
                 self.rx = None;
@@ -459,12 +462,14 @@ impl OpPickerState {
                 self.item_list_state
                     .select(if self.items.is_empty() { None } else { Some(0) });
                 self.load_state = OpLoadState::Ready;
+                true
             }
             Ok(LoadResult::Items(Err(e)) | LoadResult::Fields(Err(e))) => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(OpPickerError::Recoverable {
                     message: e.to_string(),
                 });
+                true
             }
             Ok(LoadResult::Fields(Ok(mut fields))) => {
                 self.rx = None;
@@ -514,22 +519,30 @@ impl OpPickerState {
                         .select(if display_count == 0 { None } else { Some(0) });
                 }
                 self.load_state = OpLoadState::Ready;
+                true
             }
-            Err(mpsc::error::TryRecvError::Empty) => {}
+            Err(mpsc::error::TryRecvError::Empty) => false,
             Err(mpsc::error::TryRecvError::Disconnected) => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(OpPickerError::Recoverable {
                     message: "background worker disconnected".into(),
                 });
+                true
             }
         }
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> bool {
+        let mut dirty = false;
         if let OpLoadState::Loading { spinner_tick } = &mut self.load_state {
             *spinner_tick = spinner_tick.wrapping_add(1);
+            dirty = true;
         }
-        self.poll_load();
+        dirty | self.poll_load()
+    }
+
+    pub const fn is_animating(&self) -> bool {
+        matches!(self.load_state, OpLoadState::Loading { .. })
     }
 
     pub fn filtered_accounts(&self) -> Vec<&OpAccount> {

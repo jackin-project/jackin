@@ -1886,24 +1886,55 @@ impl ManagerState<'_> {
     /// Drained from the outer event loop every tick so picker results
     /// land without keystroke pumping. Idempotent on empty channels.
     /// Covers both modal anchors (`list_modal` and `editor.modal`).
-    pub fn poll_picker_loads(&mut self) {
+    pub fn poll_picker_loads(&mut self) -> bool {
+        let mut dirty = false;
         if let Some(Modal::OpPicker { state }) = self.list_modal.as_mut() {
-            state.poll_load();
+            dirty |= state.poll_load();
         }
         if let ManagerStage::Editor(editor) = &mut self.stage
             && let Some(Modal::OpPicker { state }) = editor.modal.as_mut()
         {
-            state.poll_load();
+            dirty |= state.poll_load();
         }
         if let ManagerStage::Settings(settings) = &mut self.stage
             && let Some(SettingsEnvModal::OpPicker { state }) = settings.env.modal.as_mut()
         {
-            state.poll_load();
+            dirty |= state.poll_load();
         }
         if let ManagerStage::Settings(settings) = &mut self.stage
             && let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal.as_mut()
         {
-            state.poll_load();
+            dirty |= state.poll_load();
+        }
+        dirty
+    }
+
+    pub(crate) fn has_active_animation(&self) -> bool {
+        if let Some(Modal::OpPicker { state }) = self.list_modal.as_ref()
+            && state.is_animating()
+        {
+            return true;
+        }
+        match &self.stage {
+            ManagerStage::Editor(editor) => {
+                matches!(
+                    editor.modal.as_ref(),
+                    Some(Modal::OpPicker { state }) if state.is_animating()
+                )
+            }
+            ManagerStage::Settings(settings) => {
+                matches!(
+                    settings.env.modal.as_ref(),
+                    Some(SettingsEnvModal::OpPicker { state }) if state.is_animating()
+                ) || matches!(
+                    settings.auth.modal.as_ref(),
+                    Some(SettingsAuthModal::OpPicker { state }) if state.is_animating()
+                )
+            }
+            ManagerStage::List
+            | ManagerStage::CreatePrelude(_)
+            | ManagerStage::ConfirmDelete { .. }
+            | ManagerStage::ConfirmInstancePurge { .. } => false,
         }
     }
 }

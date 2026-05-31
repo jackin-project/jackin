@@ -81,10 +81,10 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
                 confirm_save::prepare_for_render(modal_area, state);
             }
             if let Some(SettingsEnvModal::OpPicker { state }) = &mut settings.env.modal {
-                state.tick();
+                let _ = state.tick();
             }
             if let Some(SettingsAuthModal::OpPicker { state }) = &mut settings.auth.modal {
-                state.tick();
+                let _ = state.tick();
             }
         }
         ManagerStage::List
@@ -96,7 +96,9 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
 fn prepare_modal(outer: Rect, modal: &mut Modal<'_>) {
     let modal_area = modal_outer_rect(modal, outer);
     match modal {
-        Modal::OpPicker { state } => state.tick(),
+        Modal::OpPicker { state } => {
+            let _ = state.tick();
+        }
         Modal::ConfirmSave { state } => {
             crate::console::widgets::confirm_save::prepare_for_render(modal_area, state);
         }
