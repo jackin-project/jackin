@@ -346,7 +346,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                 });
                 editor.pending_drift_check = Some(super::super::state::PendingDriftCheck {
                     rx,
-                    plan: plan.clone(),
+                    plan,
                     exit_on_success,
                     original_name: original_name.clone(),
                 });

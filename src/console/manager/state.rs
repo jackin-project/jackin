@@ -561,11 +561,11 @@ pub struct SettingsAuthState {
     pub modal: Option<SettingsAuthModal<'static>>,
     /// Parent modal chain for the auth sub-modal stack.
     ///
-    /// When the auth form opens a sub-modal (SourcePicker, TextInput,
-    /// OpPicker), it pushes the current AuthForm modal here so Esc pops
+    /// When the auth form opens a sub-modal (`SourcePicker`, `TextInput`,
+    /// `OpPicker`), it pushes the current `AuthForm` modal here so Esc pops
     /// back to it instead of requiring a separate stash slot. Mirrors the
-    /// same pattern used by GlobalMountsState, SettingsEnvState, and
-    /// EditorState.
+    /// same pattern used by `GlobalMountsState`, `SettingsEnvState`, and
+    /// `EditorState`.
     pub modal_parents: Vec<SettingsAuthModal<'static>>,
     /// Set while the `g`/`G` generate action's Create-mode `OpPicker` is
     /// open, so its commit knows the pick is a token-generate (always
@@ -806,7 +806,7 @@ pub struct EditorState<'a> {
     /// Isolation-drift check dispatched by the save flow. Holds the oneshot
     /// receiver plus the save plan and flags needed to continue once the check
     /// completes. The outer console loop polls this each tick so the reactor is
-    /// not blocked while the Docker/git check runs on the spawn_blocking pool.
+    /// not blocked while the Docker/git check runs on the `spawn_blocking` pool.
     pub pending_drift_check: Option<PendingDriftCheck>,
     /// Footer height (rows) the renderer last laid out, cached so mouse
     /// hit-testing subtracts the same dynamic footer the frame drew rather than
@@ -847,11 +847,6 @@ impl std::fmt::Debug for PendingRoleLoad {
             .finish_non_exhaustive()
     }
 }
-
-/// Captured auth-form context to re-mount the form after a side
-/// modal (`AuthSourcePicker`, `TextInput`, or `OpPicker`) commits or
-/// cancels.
-///
 
 /// Save cycle state machine.
 ///
@@ -1538,7 +1533,7 @@ pub enum Modal<'a> {
     SourcePicker {
         state: SourcePickerState,
         /// Key context for the two-step env-add flow: scope + key name
-        /// typed in the preceding `EnvKey` TextInput. Replaces the
+        /// typed in the preceding `EnvKey` `TextInput`. Replaces the
         /// `pending_env_key` stash slot so the context travels with the
         /// modal rather than in a separate field.
         env_key: Option<(SecretsScopeTag, String)>,
@@ -2213,7 +2208,7 @@ impl ManagerState<'_> {
         self.instances_last_refresh = Some(now);
         match load_instance_refresh_snapshot(paths) {
             Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
-            Err(error) => self.apply_instance_refresh_error(error),
+            Err(error) => self.apply_instance_refresh_error(&error),
         }
     }
 
@@ -2280,9 +2275,7 @@ impl ManagerState<'_> {
     }
 
     fn drain_instance_refresh(&mut self) -> Option<Result<InstanceRefreshSnapshot, String>> {
-        let Some(rx) = self.instances_refresh_rx.as_mut() else {
-            return None;
-        };
+        let rx = self.instances_refresh_rx.as_mut()?;
         match rx.try_recv() {
             Ok((generation, result)) => {
                 self.instances_refresh_rx = None;
@@ -2309,7 +2302,7 @@ impl ManagerState<'_> {
     ) {
         match result {
             Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
-            Err(error) => self.apply_instance_refresh_error(error),
+            Err(error) => self.apply_instance_refresh_error(&error),
         }
     }
 
@@ -2330,7 +2323,7 @@ impl ManagerState<'_> {
         self.selected = self.selected.min(max);
     }
 
-    fn apply_instance_refresh_error(&mut self, error: String) {
+    fn apply_instance_refresh_error(&mut self, error: &str) {
         self.instances.clear();
         self.instance_sessions.clear();
         self.instance_session_errors.clear();

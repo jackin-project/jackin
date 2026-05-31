@@ -101,7 +101,7 @@ impl TerminalSession {
     ///
     /// This is the typed alternative to `crate::tui::host_screen_owned()` for
     /// callers that have a reference to the session. Subsystems without access
-    /// (docker, operator_env) still fall back to the global flag for now; the
+    /// (docker, `operator_env`) still fall back to the global flag for now; the
     /// full migration to typed ownership is tracked in Phase 5.
     #[must_use]
     pub fn is_active(&self) -> bool {

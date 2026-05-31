@@ -22,7 +22,7 @@ mod tests {
         workspace::WorkspaceConfig,
     };
 
-    /// Render ManagerState to a text buffer dump for snapshot comparison.
+    /// Render `ManagerState` to a text buffer dump for snapshot comparison.
     fn render_manager_state(
         state: &mut ManagerState<'_>,
         config: &AppConfig,

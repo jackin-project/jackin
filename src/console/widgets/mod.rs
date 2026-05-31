@@ -244,12 +244,12 @@ mod consistency_tests {
         use super::confirm_save::{ConfirmSaveState, render};
         use ratatui::text::Line;
         let area = Rect::new(0, 0, 70, 10);
-        let mut state = ConfirmSaveState::new(vec![
+        let state = ConfirmSaveState::new(vec![
             Line::from("Create workspace: demo"),
             Line::from(""),
             Line::from("Working directory: /home/user/demo"),
         ]);
-        let buf = draw(area.width, area.height, |f| render(f, area, &mut state));
+        let buf = draw(area.width, area.height, |f| render(f, area, &state));
         (buf, area)
     }
 

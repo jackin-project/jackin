@@ -204,10 +204,10 @@ pub fn handle_mouse_with_config(
             }
             // Otherwise, treat as click-to-select if the click lands inside
             // the list pane's content area (excluding borders).
-            if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
-                if let Some(selected) = state.index_of_row(row) {
-                    dispatch_manager(state, ManagerMessage::SelectListRow(selected));
-                }
+            if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x)
+                && let Some(selected) = state.index_of_row(row)
+            {
+                dispatch_manager(state, ManagerMessage::SelectListRow(selected));
             }
         }
         MouseEventKind::Drag(MouseButton::Left) => {

@@ -14,7 +14,6 @@ impl Dirty {
         matches!(self, Self::Redraw)
     }
 
-    #[must_use]
     pub const fn merge(self, other: Self) -> Self {
         match (self, other) {
             (Self::Redraw, _) | (_, Self::Redraw) => Self::Redraw,
@@ -40,7 +39,6 @@ pub struct UpdateResult<E = NoEffect> {
 }
 
 impl<E> UpdateResult<E> {
-    #[must_use]
     pub const fn clean() -> Self {
         Self {
             dirty: Dirty::Clean,
@@ -48,7 +46,6 @@ impl<E> UpdateResult<E> {
         }
     }
 
-    #[must_use]
     pub const fn redraw() -> Self {
         Self {
             dirty: Dirty::Redraw,
@@ -56,7 +53,6 @@ impl<E> UpdateResult<E> {
         }
     }
 
-    #[must_use]
     pub fn with_effect(effect: E) -> Self {
         Self {
             dirty: Dirty::Redraw,
@@ -64,7 +60,6 @@ impl<E> UpdateResult<E> {
         }
     }
 
-    #[must_use]
     pub const fn dirty(&self) -> Dirty {
         self.dirty
     }
@@ -84,7 +79,6 @@ impl<E> UpdateResult<E> {
         self.effects
     }
 
-    #[must_use]
     pub fn merge(mut self, other: Self) -> Self {
         self.dirty = self.dirty.merge(other.dirty);
         self.effects.extend(other.effects);

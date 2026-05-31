@@ -134,6 +134,7 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     let _dirty = update_manager(state, message);
 }
 
+#[allow(clippy::too_many_lines)]
 fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     // S is handled here, before `global` borrows `settings.mounts`, so
     // `open_settings_save_preview` can receive all of `settings`.

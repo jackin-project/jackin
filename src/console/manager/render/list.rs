@@ -1835,13 +1835,7 @@ mod list_name_scroll_tests {
 
         terminal
             .draw(|frame| {
-                render_list_body(
-                    frame,
-                    Rect::new(0, 0, 70, 24),
-                    &mut state,
-                    &config,
-                    tmp.path(),
-                );
+                render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
             })
             .unwrap();
 
@@ -1870,13 +1864,7 @@ mod list_name_scroll_tests {
 
         terminal
             .draw(|frame| {
-                render_list_body(
-                    frame,
-                    Rect::new(0, 0, 70, 24),
-                    &mut state,
-                    &config,
-                    tmp.path(),
-                );
+                render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
             })
             .unwrap();
 
@@ -1898,13 +1886,7 @@ mod list_name_scroll_tests {
 
         terminal
             .draw(|frame| {
-                render_list_body(
-                    frame,
-                    Rect::new(0, 0, 120, 24),
-                    &mut state,
-                    &config,
-                    tmp.path(),
-                );
+                render_list_body(frame, Rect::new(0, 0, 120, 24), &state, &config, tmp.path());
             })
             .unwrap();
 
@@ -1931,13 +1913,7 @@ mod list_name_scroll_tests {
 
         terminal
             .draw(|frame| {
-                render_list_body(
-                    frame,
-                    Rect::new(0, 0, 70, 24),
-                    &mut state,
-                    &config,
-                    tmp.path(),
-                );
+                render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
             })
             .unwrap();
 
@@ -3180,12 +3156,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let mut state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -3240,12 +3216,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let mut state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary(), &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary(), &cfg, &state);
         })
         .unwrap();
 
@@ -3281,12 +3257,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let mut state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -3359,7 +3335,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -3402,12 +3378,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let mut state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -3465,12 +3441,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let mut state = crate::console::manager::state::ManagerState::from_config(
+        let state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &state);
         })
         .unwrap();
 

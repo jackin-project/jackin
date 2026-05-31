@@ -30,7 +30,7 @@ pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
     rows: &[crate::config::GlobalMountRow],
     cache: &MountInfoCache,
 ) -> usize {
-    let lines = global_mount_lines(rows, None, false, &cache);
+    let lines = global_mount_lines(rows, None, false, cache);
     super::max_line_width(&lines)
 }
 
@@ -915,7 +915,7 @@ mod tests {
     use crate::config::AppConfig;
     use ratatui::{Terminal, backend::TestBackend};
 
-    fn render_settings_to_dump(state: &mut SettingsState<'_>) -> String {
+    fn render_settings_to_dump(state: &SettingsState<'_>) -> String {
         let backend = TestBackend::new(90, 18);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|frame| render_settings(frame, state, false))
@@ -937,7 +937,7 @@ mod tests {
         for tab in SettingsTab::ALL {
             let mut state = SettingsState::from_config(&config);
             state.active_tab = tab;
-            let dump = render_settings_to_dump(&mut state);
+            let dump = render_settings_to_dump(&state);
             let header = dump.lines().next().unwrap_or_default();
             assert!(
                 header.contains("settings"),

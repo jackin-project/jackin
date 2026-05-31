@@ -160,6 +160,7 @@ pub(crate) enum ManagerMessage {
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn update_manager(
     state: &mut ManagerState<'_>,
     message: ManagerMessage,
@@ -328,21 +329,21 @@ pub(crate) fn update_manager(
     UpdateResult::redraw()
 }
 
-fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
+const fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
     editor.tab_bar_focused = focused;
 }
 
-fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
+const fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
     settings.tab_bar_focused = focused;
 }
 
-fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
+const fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
@@ -352,7 +353,7 @@ fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
     editor.tab_scroll_y = 0;
 }
 
-fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
+const fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
@@ -398,7 +399,7 @@ fn reload_from_config(state: &mut ManagerState<'_>, config: &AppConfig, cwd: &st
     *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
 }
 
-fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
+const fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
@@ -500,7 +501,7 @@ fn step_cursor_up(skipped_rows: &[usize], candidate: usize) -> usize {
     }
 }
 
-fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
+const fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
@@ -530,7 +531,7 @@ fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
     };
 }
 
-fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
+const fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
@@ -567,7 +568,7 @@ fn set_editor_secrets_role_expanded(state: &mut ManagerState<'_>, role: String, 
     }
 }
 
-fn toggle_editor_general_selected(state: &mut ManagerState<'_>) {
+const fn toggle_editor_general_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
@@ -943,7 +944,7 @@ fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
     }
 }
 
-fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
+const fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
@@ -951,14 +952,14 @@ fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
     editor.workspace_mounts_scroll_focused = true;
 }
 
-fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
+const fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
     settings.active_tab = tab;
 }
 
-fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
+const fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
@@ -1967,7 +1968,7 @@ mod tests {
         let cwd = std::path::Path::new("/");
         let config = crate::config::AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);
-        update_manager(
+        let _ = update_manager(
             &mut state,
             ManagerMessage::OpenListErrorPopup {
                 title: "x".into(),

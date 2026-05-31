@@ -165,8 +165,8 @@ mod quit_confirm_tests {
     //! Pin the gates for the Q-intercept and the
     //! `ConfirmState::handle_key` outcomes the run-loop dispatches.
     use super::prompts::{
-        OnPromptFailure, PromptOutcome, console_location_debug, invalidate_op_cache_for_ref,
-        key_debug_name, show_role_resolution_error,
+        OnPromptFailure, PromptOutcome, console_location_debug, key_debug_name,
+        show_role_resolution_error,
     };
     use super::*;
     use crate::console::manager::state::{

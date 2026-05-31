@@ -13,7 +13,7 @@ use ratatui::{Terminal, backend::TestBackend};
 use jackin::config::AppConfig;
 use jackin::console::manager::{ManagerState, prepare_for_render, render};
 
-fn build_list_state<'a>(config: &'a AppConfig) -> ManagerState<'a> {
+fn build_list_state(config: &AppConfig) -> ManagerState<'_> {
     let cwd = std::path::Path::new("/workspace/jackin-project/jackin");
     ManagerState::from_config(config, cwd)
 }

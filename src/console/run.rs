@@ -107,6 +107,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     use std::time::Duration;
 
     use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+    use futures_util::{FutureExt as _, StreamExt as _};
 
     use crate::console::manager::state::{ManagerStage, Modal};
 
@@ -299,7 +300,6 @@ pub async fn run_console<H: InstanceActionHandler>(
         // terminal event arrives or the animation tick fires. This frees
         // the reactor between events so background tasks can progress
         // instead of blocking for up to TICK_MS.
-        use futures_util::{FutureExt as _, StreamExt as _};
         let first = tokio::select! {
             event = event_stream.next() => event.map(|r| r.map_err(anyhow::Error::from)),
             _ = animation_tick.tick() => None,

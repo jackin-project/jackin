@@ -2173,7 +2173,7 @@ mod secrets_tab_render_tests {
 
     /// Render the Secrets tab to a 80x15 `TestBackend`, return the raw
     /// buffer as newline-delimited rows so tests can search for glyphs.
-    fn render_to_dump(editor: &mut EditorState<'_>) -> String {
+    fn render_to_dump(editor: &EditorState<'_>) -> String {
         let config = AppConfig::default();
         let backend = TestBackend::new(80, 15);
         let mut term = Terminal::new(backend).unwrap();
@@ -2196,12 +2196,12 @@ mod secrets_tab_render_tests {
     fn secrets_tab_defaults_to_masked() {
         // `new_edit` leaves `unmasked_rows` empty, so every plain-text
         // value renders masked by default.
-        let mut editor = editor_with_workspace_env();
+        let editor = editor_with_workspace_env();
         assert!(
             editor.unmasked_rows.is_empty(),
             "new_edit must leave unmasked_rows empty (default = all masked)"
         );
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         assert!(
             dump.contains("●●●●●●●●●●●"),
             "masked-default render must show the mask glyph; got:\n{dump}"
@@ -2218,7 +2218,7 @@ mod secrets_tab_render_tests {
         editor
             .unmasked_rows
             .insert((SecretsScopeTag::Workspace, "DB_URL".into()));
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         assert!(
             dump.contains("postgres://localhost/db"),
             "unmasked render must show literal value; got:\n{dump}"
@@ -2234,9 +2234,9 @@ mod secrets_tab_render_tests {
         // `secrets_expanded` is empty by default (set by `new_edit`), so
         // the role section header renders but its `LOG_LEVEL` key row
         // does not.
-        let mut editor = editor_with_agent_override();
+        let editor = editor_with_agent_override();
         assert!(editor.secrets_expanded.is_empty());
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         assert!(
             dump.contains("agent-smith"),
             "role header must render; got:\n{dump}"
@@ -2251,7 +2251,7 @@ mod secrets_tab_render_tests {
     fn secrets_tab_expanded_agent_shows_key_rows() {
         let mut editor = editor_with_agent_override();
         editor.secrets_expanded.insert("agent-smith".into());
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         assert!(
             dump.contains("agent-smith"),
             "role header must still render when expanded; got:\n{dump}"
@@ -2366,8 +2366,8 @@ mod secrets_tab_render_tests {
 
     #[test]
     fn secrets_tab_empty_renders_only_sentinel() {
-        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        let dump = render_to_dump(&mut editor);
+        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        let dump = render_to_dump(&editor);
 
         assert!(
             dump.contains("+ Add environment variable"),
@@ -2406,7 +2406,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         assert!(
             dump.contains("Work"),
             "breadcrumb must render vault segment; dump:\n{dump}"
@@ -2460,7 +2460,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         // All four components must appear, in order, with the arrow
         // glyph between the section and the field.
         assert!(
@@ -2509,7 +2509,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         assert!(
             dump.contains("[op]"),
             "OpRef row must render the `[op]` text marker; dump:\n{dump}"
@@ -2532,7 +2532,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         assert!(
             !dump.contains("[op]"),
             "plain-text row must not render the `[op]` marker; dump:\n{dump}"
@@ -2558,7 +2558,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         assert!(
             dump.contains("[op] "),
             "OpRef row must render the marker as exactly `[op] ` (5 chars \
@@ -2584,7 +2584,7 @@ mod secrets_tab_render_tests {
         let mut term = Terminal::new(backend).unwrap();
         let config = AppConfig::default();
         term.draw(|f| {
-            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &mut editor, &config);
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &editor, &config);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -2613,7 +2613,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         let alpha = dump.find("ALPHA").expect("ALPHA must appear");
         let mike = dump.find("MIKE").expect("MIKE must appear");
         let zulu = dump.find("ZULU").expect("ZULU must appear");
@@ -2716,7 +2716,7 @@ mod secrets_tab_render_tests {
 
     /// Helper that renders the Secrets tab to a wider (120-column) terminal
     /// so long breadcrumbs (subtitle + section + field) are not truncated.
-    fn render_to_dump_wide(editor: &mut EditorState<'_>) -> String {
+    fn render_to_dump_wide(editor: &EditorState<'_>) -> String {
         let config = AppConfig::default();
         let backend = TestBackend::new(120, 15);
         let mut term = Terminal::new(backend).unwrap();
@@ -2758,7 +2758,7 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         // Use the wide terminal so the subtitle and field are not truncated.
-        let dump = render_to_dump_wide(&mut editor);
+        let dump = render_to_dump_wide(&editor);
         // The row must carry the [op] marker (OpRef variant).
         assert!(
             dump.contains("[op]"),
@@ -2807,7 +2807,7 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         // Use the wide terminal so `?attribute=otp` is not truncated.
-        let dump = render_to_dump_wide(&mut editor);
+        let dump = render_to_dump_wide(&editor);
         // The row must carry the [op] marker.
         assert!(
             dump.contains("[op]"),
@@ -2849,7 +2849,7 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         // Use the wide terminal so no piece is truncated.
-        let dump = render_to_dump_wide(&mut editor);
+        let dump = render_to_dump_wide(&editor);
 
         // All visible pieces must appear in order:
         // vault → item → subtitle → section → field → query.
@@ -2881,7 +2881,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&mut editor);
+        let dump = render_to_dump(&editor);
         // Plain rows carrying a legacy op:// string must NOT render the
         // [op] marker — the visual distinction signals the need to re-pick.
         assert!(
@@ -2924,7 +2924,7 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         // Use the wide terminal so the breadcrumb is not truncated.
-        let dump = render_to_dump_wide(&mut editor);
+        let dump = render_to_dump_wide(&editor);
         assert!(
             dump.contains("CLAUDE_CODE_OAUTH_TOKEN  Private"),
             "expected at least 2 spaces between key and breadcrumb; dump:\n{dump}"
@@ -2961,7 +2961,7 @@ mod secrets_tab_render_tests {
             .unmasked_rows
             .insert((SecretsScopeTag::Workspace, "TOKEN".into()));
 
-        let dump = render_to_dump_wide(&mut editor);
+        let dump = render_to_dump_wide(&editor);
         // Malformed path → parse_path_breadcrumb returns None → no [op] marker.
         assert!(!dump.contains("[op]"), "no [op] marker; dump:\n{dump}");
         // Re-pick placeholder must be shown instead of the UUID URI.

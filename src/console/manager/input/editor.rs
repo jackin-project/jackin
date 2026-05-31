@@ -345,7 +345,6 @@ pub(super) fn handle_editor_key(
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = super::super::render::editor::auth_flat_rows(editor, config);
                 match rows.get(n) {
-                    Some(super::super::render::editor::AuthRow::AuthKindRow { .. }) => {}
                     Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {
                         super::auth::open_auth_role_picker(editor, config);
                     }
@@ -504,9 +503,7 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, String)> {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
-    let Some(row) = rows.get(n).cloned() else {
-        return None;
-    };
+    let row = rows.get(n).cloned()?;
     let key = match row {
         SecretsRow::WorkspaceKeyRow(key) => {
             // OpRef rows render as breadcrumbs and ignore mask state.
