@@ -18,8 +18,8 @@ pub enum PanelFocus {
 impl PanelFocus {
     const fn border_style(self) -> Style {
         match self {
-            Self::FocusedScrollable => Style::new().fg(PHOSPHOR_GREEN),
-            Self::Unfocused | Self::Focused => Style::new().fg(PHOSPHOR_DARK),
+            Self::Focused | Self::FocusedScrollable => Style::new().fg(PHOSPHOR_GREEN),
+            Self::Unfocused => Style::new().fg(PHOSPHOR_DARK),
         }
     }
 }

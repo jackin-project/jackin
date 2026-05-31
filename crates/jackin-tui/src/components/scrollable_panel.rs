@@ -385,8 +385,9 @@ pub fn render_scrollable_block_at(
     let content_height = lines.len();
     let viewport_w = viewport_width(area);
     let viewport_h = viewport_height(area);
-    // Green border signals "you can scroll here". A focused but non-scrollable block
-    // uses the default border so it doesn't imply scroll capability it doesn't have.
+    // All focused blocks get PHOSPHOR_GREEN border (WCAG focus-visible rule).
+    // FocusedScrollable vs Focused is kept so callers can distinguish scroll
+    // affordance, but both render green — the difference is informational only.
     let has_scroll =
         is_scrollable(content_width, viewport_w) || is_scrollable(content_height, viewport_h);
     let focus = if focused && has_scroll {

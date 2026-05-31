@@ -112,8 +112,10 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let mut preview_scroll: u16 = 0;
     let mut focus = Focus::Sidebar;
     let mut interactor: Box<dyn StoryInteraction> = stories[selected].make_interactor();
-    // Component rect updated after every draw for mouse hit-testing.
+    // Component rect and preview panel rect updated after every draw for mouse
+    // hit-testing. Clicking anywhere in the preview panel switches focus there.
     let mut last_component_area = Rect::default();
+    let mut last_preview_panel_area = Rect::default();
 
     loop {
         let story = stories[selected];
@@ -293,6 +295,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             last_component_area = component_rect;
+            last_preview_panel_area = preview_area;
 
             // ── Hint bar ──────────────────────────────────────────────────────
             let hint = match focus {
@@ -310,6 +313,18 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
         let _ = preview_content_rows; // used in scroll calls below
         match event::read()? {
             Event::Mouse(mouse) => {
+                use crossterm::event::MouseEventKind;
+                // Any click inside the preview panel area switches focus to Preview
+                // so the component becomes interactive. This mirrors how clicking a
+                // focused block in the jackin console transfers keyboard focus to it.
+                if matches!(mouse.kind, MouseEventKind::Down(_)) {
+                    let col = mouse.column;
+                    let row = mouse.row;
+                    let p = last_preview_panel_area;
+                    if col >= p.x && col < p.x + p.width && row >= p.y && row < p.y + p.height {
+                        focus = Focus::Preview;
+                    }
+                }
                 interactor.handle_mouse(mouse, last_component_area);
             }
             Event::Key(key) => {
