@@ -18,6 +18,7 @@ pub mod confirm_save;
 pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;
+pub(crate) mod op_breadcrumb;
 pub mod op_picker;
 pub mod role_picker;
 pub mod scope_picker;

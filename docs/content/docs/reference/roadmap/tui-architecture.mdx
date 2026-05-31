@@ -25,6 +25,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Sidebar input, layout, scroll-area, and list-scroll clamp geometry now live in `manager::list_geometry`, so production input/update paths no longer depend on the render facade for list/sidebar scroll bounds.
 - The top-level pre-render state preparation entrypoint now lives in `manager::pre_render`, so terminal-size caching, footer-height caching, modal tick/prep, and list/settings scroll clamps are no longer owned by `tui/render/mod.rs`.
 - Editor tab content-size calculation and scroll clamping now live in `manager::editor_geometry`, using manager-owned row/width models rather than asking editor renderers for styled lines.
+- 1Password breadcrumb parsing now lives in `manager::op_breadcrumb`, with a local widget span helper shared by editor, settings, and auth-form renderers instead of importing editor render helpers across view modules.
 - Modal footer-hint selection now lives in `manager::modal_footer`; `tui/render/modal.rs` only dispatches widget drawing for the active modal.
 - Settings footer-hint selection now lives in `manager::settings_footer`; `tui/render/global_mounts.rs` only renders settings pixels and uses the manager-owned footer model.
 - Editor footer-hint selection now lives in `manager::editor_footer`; `tui/render/editor.rs` only renders editor pixels and uses the manager-owned footer model.

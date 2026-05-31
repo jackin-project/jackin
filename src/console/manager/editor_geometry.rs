@@ -304,30 +304,8 @@ fn auth_source_width(
 }
 
 fn op_reference_width(path: &str) -> Option<usize> {
-    let (path_no_q, query) = path
-        .find('?')
-        .map_or((path, None), |i| (&path[..i], Some(path[i..].to_string())));
-    let segs: Vec<&str> = path_no_q.split('/').collect();
-    let width = match segs.as_slice() {
-        [vault, item, field] => {
-            text_width(vault)
-                + text_width(" / ")
-                + text_width(item)
-                + text_width(" -> ")
-                + text_width(field)
-        }
-        [vault, item, section, field] => {
-            text_width(vault)
-                + text_width(" / ")
-                + text_width(item)
-                + text_width(" / ")
-                + text_width(section)
-                + text_width(" -> ")
-                + text_width(field)
-        }
-        _ => return None,
-    };
-    Some(width + query.as_ref().map_or(0, |q| 1 + text_width(q)))
+    let parts = crate::console::manager::op_breadcrumb::parse_path_breadcrumb(path)?;
+    Some(crate::console::manager::op_breadcrumb::breadcrumb_display_width(&parts))
 }
 
 fn padded_width(text: &str) -> usize {

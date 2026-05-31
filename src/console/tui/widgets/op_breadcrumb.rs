@@ -1,0 +1,40 @@
+//! Shared `OpRef.path` breadcrumb spans.
+
+use ratatui::{
+    style::{Modifier, Style},
+    text::Span,
+};
+
+use crate::console::manager::op_breadcrumb::parse_path_breadcrumb;
+use crate::console::widgets::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+
+/// Render an `OpRef.path` as `vault / item [subtitle] / section → field ?query`.
+pub(crate) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
+    let dim = Style::default().fg(PHOSPHOR_DIM);
+    let white_style = Style::default().fg(WHITE);
+    let green = Style::default().fg(PHOSPHOR_GREEN);
+    let green_bold = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+    let Some(parts) = parse_path_breadcrumb(path) else {
+        spans.push(Span::styled("<unparseable path - re-pick>", dim));
+        return;
+    };
+    spans.push(Span::styled(parts.vault, white_style));
+    spans.push(Span::styled(" / ", dim));
+    spans.push(Span::styled(parts.item, green));
+    if let Some(subtitle) = parts.item_subtitle {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(subtitle, dim));
+    }
+    if let Some(section) = parts.section {
+        spans.push(Span::styled(" / ", dim));
+        spans.push(Span::styled(section, green));
+    }
+    spans.push(Span::styled(" \u{2192} ", dim));
+    spans.push(Span::styled(parts.field, green_bold));
+    if let Some(query) = parts.attribute_query {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(query, dim));
+    }
+}

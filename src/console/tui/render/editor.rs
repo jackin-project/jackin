@@ -553,69 +553,6 @@ fn secrets_tab_lines(
     lines
 }
 
-/// Display-side breadcrumb parser for `OpRef.path`.
-/// Grammar: `<Vault>/<Item>[<subtitle>?]/[<Section>/]<Field>[?<query>]`
-#[derive(Debug, PartialEq, Eq)]
-pub(super) struct PathBreadcrumb {
-    pub vault: String,
-    pub item: String,
-    pub item_subtitle: Option<String>,
-    pub section: Option<String>,
-    pub field: String,
-    pub attribute_query: Option<String>,
-}
-
-/// Parse a snapshot breadcrumb. Returns `None` on empty input or non-3-/4-segment counts.
-pub(super) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
-    if path.is_empty() {
-        return None;
-    }
-    // Peel off optional `?attribute=...` / `?attr=...` / `?ssh-format=...` query.
-    let (path_no_q, attr) = path
-        .find('?')
-        .map_or((path, None), |i| (&path[..i], Some(path[i..].to_string())));
-    let segs: Vec<&str> = path_no_q.split('/').collect();
-    let (item, item_subtitle, vault, section, field) = match segs.as_slice() {
-        [vault, item_seg, field] => {
-            let (item, sub) = split_bracket_subtitle(item_seg);
-            (item, sub, vault.to_string(), None, field.to_string())
-        }
-        [vault, item_seg, section, field] => {
-            let (item, sub) = split_bracket_subtitle(item_seg);
-            (
-                item,
-                sub,
-                vault.to_string(),
-                Some(section.to_string()),
-                field.to_string(),
-            )
-        }
-        _ => return None,
-    };
-    Some(PathBreadcrumb {
-        vault,
-        item,
-        item_subtitle,
-        section,
-        field,
-        attribute_query: attr,
-    })
-}
-
-fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
-    // rfind so an inner '[' in the subtitle is tolerated.
-    if let Some(open) = s.rfind('[')
-        && s.ends_with(']')
-        && open < s.len() - 1
-    {
-        return (
-            s[..open].to_string(),
-            Some(s[open + 1..s.len() - 1].to_string()),
-        );
-    }
-    (s.to_string(), None)
-}
-
 /// `OpRef` rows skip masking and render as a breadcrumb (3-segment:
 /// `vault / item → field`, 4-segment adds `section`). An optional
 /// `[subtitle]` annotation after the item renders in `PHOSPHOR_DIM`; an
@@ -648,7 +585,9 @@ pub(super) fn render_secrets_key_line(
     // `op://...` strings) render as literal / masked — the visual signal
     // that the row needs re-picking to upgrade to a pinned `OpRef`.
     let op_breadcrumb = match value {
-        EnvValue::OpRef(r) => parse_path_breadcrumb(&r.path),
+        EnvValue::OpRef(r) => {
+            crate::console::manager::op_breadcrumb::parse_path_breadcrumb(&r.path)
+        }
         EnvValue::Plain(_) => None,
     };
     let marker = if op_breadcrumb.is_some() {
@@ -666,32 +605,10 @@ pub(super) fn render_secrets_key_line(
     // OpRef rows render as a breadcrumb regardless of `masked` — the
     // path is not the credential, so masking it makes the row a
     // less informative version of itself.
-    if let Some(parts) = op_breadcrumb {
-        let white_style = Style::default().fg(WHITE);
-        let green = Style::default().fg(PHOSPHOR_GREEN);
-        let green_bold = Style::default()
-            .fg(PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD);
-        spans.push(Span::styled(parts.vault, white_style));
-        spans.push(Span::styled(" / ", dim));
-        spans.push(Span::styled(parts.item, green));
-        if let Some(subtitle) = parts.item_subtitle {
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(subtitle, dim));
-        }
-        if let Some(section) = parts.section {
-            // 4-segment reference: the field lives inside a named
-            // section of the item. Render the section between the
-            // item and the field.
-            spans.push(Span::styled(" / ", dim));
-            spans.push(Span::styled(section, green));
-        }
-        spans.push(Span::styled(" \u{2192} ", dim));
-        spans.push(Span::styled(parts.field, green_bold));
-        if let Some(query) = parts.attribute_query {
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(query, dim));
-        }
+    if op_breadcrumb.is_some()
+        && let EnvValue::OpRef(r) = value
+    {
+        crate::console::widgets::op_breadcrumb::push_op_breadcrumb_spans(&mut spans, &r.path);
         return Line::from(spans);
     }
 
@@ -895,7 +812,7 @@ fn render_auth_source_line(
     match value {
         Some(EnvValue::OpRef(r)) => {
             spans.push(Span::styled("[op] ", Style::default().fg(PHOSPHOR_DIM)));
-            push_op_breadcrumb_spans(&mut spans, &r.path);
+            crate::console::widgets::op_breadcrumb::push_op_breadcrumb_spans(&mut spans, &r.path);
         }
         Some(EnvValue::Plain(s)) if !s.is_empty() => {
             spans.push(Span::styled(
@@ -1041,39 +958,6 @@ fn github_source_value<'a>(
         .github
         .as_ref()
         .and_then(|g| g.env.get(env_name))
-}
-
-/// Render an `OpRef.path` as a `vault / item [subtitle] / section → field ?query`
-/// breadcrumb. Shared between the Auth tab, the Secrets tab, and the
-/// auth-edit form so all three render the same path identically.
-pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
-    let dim = Style::default().fg(PHOSPHOR_DIM);
-    let white_style = Style::default().fg(WHITE);
-    let green = Style::default().fg(PHOSPHOR_GREEN);
-    let green_bold = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-    let Some(parts) = parse_path_breadcrumb(path) else {
-        spans.push(Span::styled("<unparseable path - re-pick>", dim));
-        return;
-    };
-    spans.push(Span::styled(parts.vault, white_style));
-    spans.push(Span::styled(" / ", dim));
-    spans.push(Span::styled(parts.item, green));
-    if let Some(subtitle) = parts.item_subtitle {
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(subtitle, dim));
-    }
-    if let Some(section) = parts.section {
-        spans.push(Span::styled(" / ", dim));
-        spans.push(Span::styled(section, green));
-    }
-    spans.push(Span::styled(" \u{2192} ", dim));
-    spans.push(Span::styled(parts.field, green_bold));
-    if let Some(query) = parts.attribute_query {
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(query, dim));
-    }
 }
 
 #[cfg(test)]
@@ -2495,71 +2379,6 @@ mod eligible_agents_for_override_tests {
         let editor = editor_for(ws_with_overrides(&[], &[]));
         let eligible = eligible_agents_for_override(&editor, &cfg);
         assert!(eligible.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod parse_path_breadcrumb_tests {
-    use super::parse_path_breadcrumb;
-
-    #[test]
-    fn parse_path_breadcrumb_3_segment_no_subtitle() {
-        let p = parse_path_breadcrumb("Private/Stripe/api key").unwrap();
-        assert_eq!(p.vault, "Private");
-        assert_eq!(p.item, "Stripe");
-        assert!(p.item_subtitle.is_none());
-        assert!(p.section.is_none());
-        assert_eq!(p.field, "api key");
-        assert!(p.attribute_query.is_none());
-    }
-
-    #[test]
-    fn parse_path_breadcrumb_3_segment_with_subtitle() {
-        let p = parse_path_breadcrumb("Private/Claude[alexey@zhokhov.com]/auth").unwrap();
-        assert_eq!(p.vault, "Private");
-        assert_eq!(p.item, "Claude");
-        assert_eq!(p.item_subtitle.as_deref(), Some("alexey@zhokhov.com"));
-        assert!(p.section.is_none());
-        assert_eq!(p.field, "auth");
-    }
-
-    #[test]
-    fn parse_path_breadcrumb_4_segment_with_subtitle() {
-        let p = parse_path_breadcrumb("Private/Claude[alexey@zhokhov.com]/security/auth token")
-            .unwrap();
-        assert_eq!(p.vault, "Private");
-        assert_eq!(p.item, "Claude");
-        assert_eq!(p.item_subtitle.as_deref(), Some("alexey@zhokhov.com"));
-        assert_eq!(p.section.as_deref(), Some("security"));
-        assert_eq!(p.field, "auth token");
-    }
-
-    #[test]
-    fn parse_path_breadcrumb_with_attribute_query() {
-        let p = parse_path_breadcrumb("Private/GitHub/one-time password?attribute=otp").unwrap();
-        assert_eq!(p.field, "one-time password");
-        assert_eq!(p.attribute_query.as_deref(), Some("?attribute=otp"));
-    }
-
-    #[test]
-    fn parse_path_breadcrumb_subtitle_containing_brackets() {
-        // rfind('[') means the last [...] is the subtitle.
-        let p = parse_path_breadcrumb("Private/Claude[has [bracket]]/auth").unwrap();
-        assert_eq!(p.item, "Claude[has ");
-        assert_eq!(p.item_subtitle.as_deref(), Some("bracket]"));
-    }
-
-    #[test]
-    fn parse_path_breadcrumb_invalid_too_few_segments() {
-        assert!(parse_path_breadcrumb("Private/Item").is_none());
-        assert!(parse_path_breadcrumb("Private").is_none());
-        assert!(parse_path_breadcrumb("").is_none());
-    }
-
-    #[test]
-    fn parse_path_breadcrumb_invalid_too_many_segments() {
-        // 5+ segments is not a valid 1Password breadcrumb.
-        assert!(parse_path_breadcrumb("a/b/c/d/e").is_none());
     }
 }
 

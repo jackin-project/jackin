@@ -384,7 +384,10 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
             }
             Some(EnvValue::OpRef(op_ref)) => {
                 spans.push(Span::styled("[op] ", source_style));
-                super::editor::push_op_breadcrumb_spans(&mut spans, &op_ref.path);
+                crate::console::widgets::op_breadcrumb::push_op_breadcrumb_spans(
+                    &mut spans,
+                    &op_ref.path,
+                );
             }
             _ => {
                 spans.push(Span::styled(
