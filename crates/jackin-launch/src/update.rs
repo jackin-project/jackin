@@ -79,6 +79,19 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         LaunchMessage::BuildLogClosed => {
             view.build_log_open = false;
         }
+        LaunchMessage::ContainerInfoOpened => {
+            view.container_info_open = true;
+            view.container_info_copied = None;
+            view.footer_hover.right = false;
+        }
+        LaunchMessage::ContainerInfoClosed => {
+            view.container_info_open = false;
+            view.container_info_copied = None;
+            view.footer_hover.right = false;
+        }
+        LaunchMessage::ContainerInfoCopied(row) => {
+            view.container_info_copied = Some(row);
+        }
     }
     UpdateResult::redraw()
 }
@@ -184,5 +197,28 @@ mod tests {
         let _ = update_launch_view(&mut view, LaunchMessage::BuildLogClosed);
 
         assert!(!view.build_log_open);
+    }
+
+    #[test]
+    fn container_info_messages_open_copy_and_close_overlay() {
+        let mut view = initial_view();
+        view.footer_hover.right = true;
+        view.container_info_copied = Some(4);
+
+        let _ = update_launch_view(&mut view, LaunchMessage::ContainerInfoOpened);
+
+        assert!(view.container_info_open);
+        assert_eq!(view.container_info_copied, None);
+        assert!(!view.footer_hover.right);
+
+        let _ = update_launch_view(&mut view, LaunchMessage::ContainerInfoCopied(2));
+
+        assert_eq!(view.container_info_copied, Some(2));
+
+        let _ = update_launch_view(&mut view, LaunchMessage::ContainerInfoClosed);
+
+        assert!(!view.container_info_open);
+        assert_eq!(view.container_info_copied, None);
+        assert!(!view.footer_hover.right);
     }
 }

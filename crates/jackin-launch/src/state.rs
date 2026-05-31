@@ -118,6 +118,9 @@ pub enum LaunchMessage {
     FailureAcknowledged,
     BuildLogOpened,
     BuildLogClosed,
+    ContainerInfoOpened,
+    ContainerInfoClosed,
+    ContainerInfoCopied(usize),
 }
 
 #[derive(Debug, Clone, Copy)]

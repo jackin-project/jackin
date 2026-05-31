@@ -83,11 +83,10 @@ fn handle_cockpit_mouse_down(
             jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
         {
             if terminal.copy_to_clipboard(&payload) {
-                v.container_info_copied = Some(row);
+                let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoCopied(row));
             }
         } else {
-            v.container_info_open = false;
-            v.container_info_copied = None;
+            let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
         }
     } else if let Some(failure) = v.failure.as_ref() {
         if let Some(target) = failure_copy_target_at(area, failure, run_id, col, row)
@@ -105,9 +104,7 @@ fn handle_cockpit_mouse_down(
     } else if v.build_log_open {
         let _dirty = update_launch_view(v, LaunchMessage::BuildLogClosed);
     } else if hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode()) {
-        v.container_info_open = true;
-        v.container_info_copied = None;
-        v.footer_hover.right = false;
+        let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoOpened);
         terminal.set_pointer_shape(false);
     } else if crate::build_log::len() > 0 && hit_activity(v, col, row) {
         let _dirty = update_launch_view(v, LaunchMessage::BuildLogOpened);
@@ -197,8 +194,7 @@ pub fn handle_cockpit_input(
                     && v.container_info_open
                     && matches!(k.code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q')) =>
             {
-                v.container_info_open = false;
-                v.footer_hover.right = false;
+                let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
                 terminal.set_pointer_shape(false);
             }
             Event::Key(k)
