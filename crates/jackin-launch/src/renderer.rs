@@ -4,6 +4,7 @@ use std::io::Write;
 
 use anyhow::Context;
 use crossterm::ExecutableCommand;
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
@@ -27,6 +28,21 @@ pub struct RichRenderer {
     rain: Option<crate::tui::rain::RainState>,
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
+}
+
+fn read_pressed_key(context: &'static str) -> anyhow::Result<KeyEvent> {
+    loop {
+        let Event::Key(key) = crossterm::event::read().context(context)? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            anyhow::bail!("launch cancelled by operator");
+        }
+        return Ok(key);
+    }
 }
 
 impl RichRenderer {
@@ -193,25 +209,15 @@ impl RichRenderer {
         context: &[Line<'_>],
         items: Vec<String>,
     ) -> anyhow::Result<usize> {
-        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let mut picker = SelectListState::new(items);
         loop {
             self.terminal
                 .draw(|frame| draw_select(frame, title, context, &picker))
                 .context("rendering launch picker")?;
-            if let Event::Key(key) =
-                crossterm::event::read().context("reading launch picker input")?
-            {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    anyhow::bail!("launch cancelled by operator");
-                }
-                // Esc reports Cancel; ignored here so the choice is forced.
-                if let ModalOutcome::Commit(index) = picker.handle_key(key) {
-                    return Ok(index);
-                }
+            let key = read_pressed_key("reading launch picker input")?;
+            // Esc reports Cancel; ignored here so the choice is forced.
+            if let ModalOutcome::Commit(index) = picker.handle_key(key) {
+                return Ok(index);
             }
         }
     }
@@ -233,7 +239,6 @@ impl RichRenderer {
         initial: &str,
         skippable: bool,
     ) -> anyhow::Result<PromptResult> {
-        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let mut input = if skippable {
             TextInputState::new_allow_empty(title, initial)
         } else {
@@ -243,25 +248,15 @@ impl RichRenderer {
             self.terminal
                 .draw(|frame| draw_text_prompt(frame, &input, skippable))
                 .context("rendering launch env text prompt")?;
-            if let Event::Key(key) =
-                crossterm::event::read().context("reading launch env prompt input")?
-            {
-                if key.kind != KeyEventKind::Press {
-                    continue;
+            match input.handle_key(read_pressed_key("reading launch env prompt input")?) {
+                ModalOutcome::Commit(value) if value.is_empty() && skippable => {
+                    return Ok(PromptResult::Skipped);
                 }
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    anyhow::bail!("launch cancelled by operator");
+                ModalOutcome::Commit(value) => {
+                    return Ok(PromptResult::Value(value));
                 }
-                match input.handle_key(key) {
-                    ModalOutcome::Commit(value) if value.is_empty() && skippable => {
-                        return Ok(PromptResult::Skipped);
-                    }
-                    ModalOutcome::Commit(value) => {
-                        return Ok(PromptResult::Value(value));
-                    }
-                    ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
-                    ModalOutcome::Continue => {}
-                }
+                ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
+                ModalOutcome::Continue => {}
             }
         }
     }
@@ -285,7 +280,6 @@ impl RichRenderer {
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<PromptResult> {
-        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let mut items = options.to_vec();
         if skippable {
             items.push("(skip)".to_string());
@@ -300,25 +294,15 @@ impl RichRenderer {
             self.terminal
                 .draw(|frame| draw_select(frame, title, &[], &picker))
                 .context("rendering launch env select prompt")?;
-            if let Event::Key(key) =
-                crossterm::event::read().context("reading launch env select input")?
-            {
-                if key.kind != KeyEventKind::Press {
-                    continue;
+            match picker.handle_key(read_pressed_key("reading launch env select input")?) {
+                ModalOutcome::Commit(index) if skippable && index == options.len() => {
+                    return Ok(PromptResult::Skipped);
                 }
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    anyhow::bail!("launch cancelled by operator");
+                ModalOutcome::Commit(index) => {
+                    return Ok(PromptResult::Value(options[index].clone()));
                 }
-                match picker.handle_key(key) {
-                    ModalOutcome::Commit(index) if skippable && index == options.len() => {
-                        return Ok(PromptResult::Skipped);
-                    }
-                    ModalOutcome::Commit(index) => {
-                        return Ok(PromptResult::Value(options[index].clone()));
-                    }
-                    ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
-                    ModalOutcome::Continue => {}
-                }
+                ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
+                ModalOutcome::Continue => {}
             }
         }
     }
@@ -330,50 +314,28 @@ impl RichRenderer {
     }
 
     fn confirm_loop(&mut self, state: &mut ConfirmState) -> anyhow::Result<bool> {
-        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         loop {
             self.terminal
                 .draw(|frame| draw_confirm(frame, state))
                 .context("rendering launch confirmation")?;
-            if let Event::Key(key) =
-                crossterm::event::read().context("reading launch confirmation input")?
-            {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    anyhow::bail!("launch cancelled by operator");
-                }
-                match state.handle_key(key) {
-                    ModalOutcome::Commit(confirmed) => return Ok(confirmed),
-                    ModalOutcome::Cancel => return Ok(false),
-                    ModalOutcome::Continue => {}
-                }
+            match state.handle_key(read_pressed_key("reading launch confirmation input")?) {
+                ModalOutcome::Commit(confirmed) => return Ok(confirmed),
+                ModalOutcome::Cancel => return Ok(false),
+                ModalOutcome::Continue => {}
             }
         }
     }
 
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
-        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let state = ErrorPopupState::new(title, message);
         loop {
             self.terminal
                 .draw(|frame| draw_error_popup(frame, &state))
                 .context("rendering launch error popup")?;
-            if let Event::Key(key) =
-                crossterm::event::read().context("reading error popup input")?
-            {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    anyhow::bail!("launch cancelled by operator");
-                }
-                match state.handle_key(key) {
-                    ModalOutcome::Cancel => return Ok(()),
-                    ModalOutcome::Continue => {}
-                    ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
-                }
+            match state.handle_key(read_pressed_key("reading error popup input")?) {
+                ModalOutcome::Cancel => return Ok(()),
+                ModalOutcome::Continue => {}
+                ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
             }
         }
     }
