@@ -139,7 +139,7 @@ fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
 fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     // Only show the cursor when the mounts content block is focused — not when
     // the tab bar owns focus. Pass None as `selected` to suppress `▸` entirely.
-    let selected = if !state.tab_bar_focused && state.mounts.scroll_focused {
+    let selected = if !state.tab_bar_focused && state.mounts.scroll_focused && state.mounts.modal.is_none() {
         Some(state.mounts.selected)
     } else {
         None
@@ -163,7 +163,7 @@ fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui
         lines,
         state.mounts.scroll_x,
         state.mounts.scroll_y,
-        state.mounts.scroll_focused,
+        state.mounts.scroll_focused && state.mounts.modal.is_none(),
         None,
     );
 }
@@ -183,7 +183,7 @@ fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::l
         lines,
         0,
         state.env.scroll_y,
-        state.env.scroll_focused,
+        state.env.scroll_focused && state.env.modal.is_none(),
         None,
     );
 }
@@ -204,7 +204,7 @@ fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::
         lines,
         0,
         state.auth.scroll_y,
-        state.auth.scroll_focused,
+        state.auth.scroll_focused && state.auth.modal.is_none(),
         title.as_deref(),
     );
 }
@@ -224,7 +224,10 @@ fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui:
         lines,
         state.trust.scroll_x,
         state.trust.scroll_y,
-        state.trust.scroll_focused,
+        state.trust.scroll_focused
+            && state.auth.modal.is_none()
+            && state.env.modal.is_none()
+            && state.mounts.modal.is_none(),
         None,
     );
 }
@@ -558,7 +561,7 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
     let rows = settings_env_flat_rows(state);
     let mut lines = Vec::with_capacity(rows.len());
     let label_width = 22;
-    let show_cursor = !state.tab_bar_focused && state.env.scroll_focused;
+    let show_cursor = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
     for (i, row) in rows.iter().enumerate() {
         let selected = show_cursor && (state.env.selected == i);
         let cursor_col = if selected { "▸ " } else { "  " };
@@ -697,7 +700,7 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let phosphor = Style::default().fg(PHOSPHOR_GREEN);
     let dim = Style::default().fg(PHOSPHOR_DIM);
-    let show_cursor = !state.tab_bar_focused && state.auth.scroll_focused;
+    let show_cursor = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     let Some(kind) = state.auth.selected_kind else {
         return state
             .auth
@@ -789,7 +792,11 @@ fn trust_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
             Style::default().fg(PHOSPHOR_DIM),
         )));
     }
-    let show_cursor = !state.tab_bar_focused && state.trust.scroll_focused;
+    let show_cursor = !state.tab_bar_focused
+        && state.trust.scroll_focused
+        && state.auth.modal.is_none()
+        && state.env.modal.is_none()
+        && state.mounts.modal.is_none();
     for (i, row) in state.trust.pending.iter().enumerate() {
         let selected = show_cursor && (state.trust.selected == i);
         let mut style = if selected {

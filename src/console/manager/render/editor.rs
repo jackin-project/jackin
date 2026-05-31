@@ -520,7 +520,7 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         rows,
         state.tab_scroll_x,
         state.tab_scroll_y,
-        state.tab_content_scroll_focused,
+        state.tab_content_scroll_focused && state.modal.is_none(),
         None,
     );
 }
@@ -633,14 +633,14 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         lines,
         state.workspace_mounts_scroll_x,
         state.tab_scroll_y,
-        state.workspace_mounts_scroll_focused,
+        state.workspace_mounts_scroll_focused && state.modal.is_none(),
         None,
     );
 }
 
 fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor = !state.tab_bar_focused && state.workspace_mounts_scroll_focused;
+    let show_cursor = !state.tab_bar_focused && state.workspace_mounts_scroll_focused && state.modal.is_none();
 
     // Build aligned table rows for all mounts.
     let rows = format_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
@@ -724,14 +724,14 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
         lines,
         state.tab_scroll_x,
         state.tab_scroll_y,
-        state.tab_content_scroll_focused,
+        state.tab_content_scroll_focused && state.modal.is_none(),
         None,
     );
 }
 
 fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused;
+    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     // Status line: "Allowed roles:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
     let is_all = super::super::agent_allow::allows_all_agents(&state.pending);
@@ -1073,7 +1073,7 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
         lines,
         state.tab_scroll_x,
         state.tab_scroll_y,
-        state.tab_content_scroll_focused,
+        state.tab_content_scroll_focused && state.modal.is_none(),
         None,
     );
 }
@@ -1084,7 +1084,7 @@ fn secrets_tab_lines(
     config: &AppConfig,
 ) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused;
+    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     let rows = secrets_flat_rows(state);
     let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
@@ -1369,7 +1369,7 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
         lines,
         state.tab_scroll_x,
         state.tab_scroll_y,
-        state.tab_content_scroll_focused,
+        state.tab_content_scroll_focused && state.modal.is_none(),
         title.as_deref(),
     );
 }
@@ -1382,7 +1382,7 @@ fn auth_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'stat
     let FieldFocus::Row(cursor) = state.active_field;
     let max_idx = rows.len().saturating_sub(1);
     let cursor_clamped = cursor.min(max_idx);
-    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused;
+    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     rows.iter()
         .enumerate()
