@@ -1529,6 +1529,8 @@ async fn load_role_with(
         let mut progress = super::progress::LaunchProgress::new(
             run,
             std::env::var_os("JACKIN_NO_MOTION").is_some(),
+            super::progress::host_terminal(),
+            env!("JACKIN_VERSION"),
         )?;
         progress.started(super::progress::LaunchIdentity {
             role: selector.name.clone(),

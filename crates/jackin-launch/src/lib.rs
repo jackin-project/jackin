@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub mod build_log;
 pub mod input;
+pub mod progress;
 pub mod renderer;
 pub mod state;
 pub mod terminal;
@@ -35,4 +36,31 @@ pub trait LaunchHostTerminal: Send + Sync {
     fn emit_compact_line(&self, kind: &str, line: &str);
     fn set_pointer_shape(&self, pointer: bool);
     fn copy_to_clipboard(&self, payload: &str) -> bool;
+}
+
+mod test_support {
+    use super::LaunchHostTerminal;
+
+    struct TestHostTerminal;
+
+    impl LaunchHostTerminal for TestHostTerminal {
+        fn set_rich_surface_active(&self, _active: bool) {}
+        fn host_screen_owned(&self) -> bool {
+            false
+        }
+        fn is_debug_mode(&self) -> bool {
+            false
+        }
+        fn emit_compact_line(&self, _kind: &str, _line: &str) {}
+        fn set_pointer_shape(&self, _pointer: bool) {}
+        fn copy_to_clipboard(&self, _payload: &str) -> bool {
+            true
+        }
+    }
+
+    static TEST_HOST_TERMINAL: TestHostTerminal = TestHostTerminal;
+
+    pub(crate) fn test_host_terminal() -> &'static dyn LaunchHostTerminal {
+        &TEST_HOST_TERMINAL
+    }
 }
