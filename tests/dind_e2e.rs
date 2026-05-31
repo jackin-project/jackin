@@ -254,7 +254,7 @@ fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &str, stderr:
     assert!(
         stdout.contains("Choose launch agent")
             && stdout.contains("Sentinel free text:")
-            && stdout.contains("Enter")
+            && stdout.contains("↵")
             && stdout.contains("save"),
         "PTY transcript should prove the rich launch dialogs rendered\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
