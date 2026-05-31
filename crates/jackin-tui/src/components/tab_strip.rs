@@ -105,7 +105,24 @@ pub fn tab_underline_line(cells: &[TabCell<'_>], focused: bool) -> Line<'static>
                 },
             ));
         } else {
-            spans.push(Span::raw(" ".repeat(usize::from(cell.cell_cols))));
+            // Content is focused (tab bar is not). Show WHITE underline on the
+            // active tab so the operator still sees which tab is selected, but
+            // the dim color makes clear the tab bar itself is not the focus owner.
+            // This gives a two-state visual: GREEN = tab bar active, WHITE = tab
+            // bar inactive but showing context, blank = no tab shown at all.
+            let bar_text = if cell.active {
+                "━".repeat(usize::from(cell.cell_cols))
+            } else {
+                " ".repeat(usize::from(cell.cell_cols))
+            };
+            spans.push(Span::styled(
+                bar_text,
+                if cell.active {
+                    Style::default().fg(WHITE)
+                } else {
+                    Style::default()
+                },
+            ));
         }
         spans.push(Span::raw(" ".repeat(usize::from(crate::TAB_GAP))));
     }
