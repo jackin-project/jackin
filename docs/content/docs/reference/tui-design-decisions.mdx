@@ -827,7 +827,7 @@ A `token_store_picker` widget once duplicated the Account → Vault → Item nav
 
 ## Reusable Component Catalog
 
-All shared TUI widgets live in `src/console/tui/widgets/`. Use this table to identify the right component before writing new code.
+Shared TUI widgets live in `crates/jackin-tui/src/components/`, `crates/jackin-console/src/widgets/`, and the remaining console-local `src/console/tui/widgets/` modules. Use this table to identify the right component before writing new code.
 
 | Component | Module | What it provides | When to use |
 |---|---|---|---|
@@ -836,7 +836,7 @@ All shared TUI widgets live in `src/console/tui/widgets/`. Use this table to ide
 | Text input box | <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> | Single-line labelled input box (`TextInputState` + `render`) with validation, duplicate detection, forbidden-char rules. This is the **"Credential" dialog** the operator sees when typing any single value. | Any flow needing one line of free text — env value, item name, field label, section name, workspace name |
 | Scope picker | <RepoFile path="src/console/tui/widgets/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
 | Source picker | <RepoFile path="src/console/tui/widgets/source_picker.rs" /> | Two-button horizontal strip: `Plain text` / `1Password` | Choosing whether a value is literal or an `op://` reference |
-| Agent choice | <RepoFile path="src/console/tui/widgets/agent_choice/mod.rs" /> | Two-button agent selector used in the Auth-tab `+ Add` flow | Picking one agent from a small fixed set |
+| Agent choice | <RepoFile path="crates/jackin-console/src/widgets/agent_choice.rs" /> | Two-button agent selector used in the Auth-tab `+ Add` flow | Picking one agent from a small fixed set |
 | Mount destination choice | <RepoFile path="src/console/tui/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
 | Confirm dialog | <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule) | Any destructive or irreversible action |
 | Save / discard strip | <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> | Save / Discard two-button strip, designed for form footers | Bottom of any editable form |
