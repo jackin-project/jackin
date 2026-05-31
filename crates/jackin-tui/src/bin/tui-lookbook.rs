@@ -12,6 +12,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use jackin_tui::lookbook::StoryInteraction;
 use jackin_tui::{
     HintSpan,
     components::{
@@ -26,7 +27,7 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
@@ -39,6 +40,9 @@ const SIDEBAR_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↑↓"),
     HintSpan::Text("navigate"),
     HintSpan::Sep,
+    HintSpan::Key("⇥"),
+    HintSpan::Text("focus preview"),
+    HintSpan::Sep,
     HintSpan::Key("q/Esc"),
     HintSpan::Text("quit"),
 ];
@@ -50,9 +54,26 @@ const PREVIEW_SCROLL_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("⇧↑↓"),
     HintSpan::Text("scroll preview"),
     HintSpan::Sep,
+    HintSpan::Key("⇥"),
+    HintSpan::Text("focus preview"),
+    HintSpan::Sep,
     HintSpan::Key("q/Esc"),
     HintSpan::Text("quit"),
 ];
+
+const PREVIEW_FOCUS_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Esc/⇥"),
+    HintSpan::Text("back"),
+    HintSpan::Sep,
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("interact"),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Sidebar,
+    Preview,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
@@ -88,6 +109,16 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = TerminalGuard::enter()?;
     let mut selected = 0usize;
     let mut preview_scroll: u16 = 0;
+    let mut focus = Focus::Sidebar;
+    // Current interactor — rebuilt whenever the selection changes.
+    let mut interactor: Box<dyn StoryInteraction> = stories[selected].make_interactor();
+    // Compute the preview area from the current terminal size. The value is
+    // refreshed after each draw, so the initial assignment may be overwritten
+    // before it is read if a mouse event arrives before the first draw. The
+    // assignment is still load-bearing: it gives the variable a correct type
+    // and a valid initial rect rather than a zero-sized placeholder.
+    #[allow(unused_assignments)]
+    let mut last_preview_area = preview_area_from_size(terminal.size()?);
 
     loop {
         let story = stories[selected];
@@ -97,12 +128,12 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             let area = frame.area();
             // Fill entire screen with the console background colour.
             frame.render_widget(
-                Block::default().style(Style::default().bg(PHOSPHOR_DARK)),
+                Block::default().style(Style::default().bg(Color::Black)),
                 area,
             );
             frame.render_widget(Clear, area);
             frame.render_widget(
-                Block::default().style(Style::default().bg(PHOSPHOR_DARK)),
+                Block::default().style(Style::default().bg(Color::Black)),
                 area,
             );
 
@@ -120,10 +151,12 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
             render_brand_header(frame, brand_area, "lookbook");
 
-            let sidebar_block = Panel::new()
-                .title(" stories ")
-                .focus(PanelFocus::Unfocused)
-                .block();
+            let sidebar_focus = if focus == Focus::Sidebar {
+                PanelFocus::Focused
+            } else {
+                PanelFocus::Unfocused
+            };
+            let sidebar_block = Panel::new().title(" stories ").focus(sidebar_focus).block();
             let sidebar_inner = sidebar_block.inner(list_area);
             frame.render_widget(sidebar_block, list_area);
 
@@ -156,61 +189,162 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             // ── Preview panel ─────────────────────────────────────────────────
             let preview_vp = viewport_height(preview_area).saturating_sub(6); // minus header rows
             let scrollable = is_scrollable(preview_content_rows, preview_vp);
-            let hint = if scrollable {
-                PREVIEW_SCROLL_HINT
-            } else {
-                SIDEBAR_HINT
+            let hint = match focus {
+                Focus::Preview => PREVIEW_FOCUS_HINT,
+                Focus::Sidebar if scrollable => PREVIEW_SCROLL_HINT,
+                Focus::Sidebar => SIDEBAR_HINT,
             };
 
-            render_story_preview(frame, preview_area, story, preview_scroll);
+            // Publish the preview_area so the event loop can use it for
+            // hit-testing. We borrow `last_preview_area` mutably here via a
+            // raw write — safe because the closure is `FnOnce`.
+            //
+            // SAFETY: there is no aliasing; the closure runs synchronously
+            // inside `terminal.draw` and we never access `last_preview_area`
+            // concurrently. Using a cell or mutex here would add noise for no
+            // threading benefit.
+            //
+            // We can't use a `&mut` capture because the borrow checker would
+            // require the outer variable to be mutable through the closure
+            // lifetime. Instead we copy the rect value out after the draw call.
+            let _ = preview_area; // will capture via render call below
+
+            render_story_preview_with_interactor(
+                frame,
+                preview_area,
+                story,
+                preview_scroll,
+                &mut *interactor,
+                focus == Focus::Preview,
+            );
 
             // ── Hint bar ──────────────────────────────────────────────────────
             render_hint_bar(frame, hint_area, hint);
         })?;
 
-        if event::poll(Duration::from_millis(120))?
-            && let Event::Key(key) = event::read()?
-        {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => break,
-                KeyCode::Down | KeyCode::Char('j') => {
-                    let next = (selected + 1).min(stories.len().saturating_sub(1));
-                    if next != selected {
-                        preview_scroll = 0;
+        // Refresh the preview area rect after each draw so mouse hit-testing
+        // stays accurate when the terminal is resized.
+        last_preview_area = preview_area_from_size(terminal.size()?);
+
+        if event::poll(Duration::from_millis(120))? {
+            match event::read()? {
+                Event::Mouse(mouse) => {
+                    // Compute the inner component area used by render_story_preview_with_interactor.
+                    // The preview panel has a 1-cell border plus 5 header rows before the
+                    // component rect (title+id, spacer, description×2, spacer).
+                    let inner = {
+                        let block_inner = Rect {
+                            x: last_preview_area.x + 1,
+                            y: last_preview_area.y + 1,
+                            width: last_preview_area.width.saturating_sub(2),
+                            height: last_preview_area.height.saturating_sub(2),
+                        };
+                        // rows[4]: skip 1 (title) + 1 (spacer) + 2 (desc) + 1 (spacer) = 5 rows
+                        Rect {
+                            x: block_inner.x,
+                            y: block_inner.y + 5,
+                            width: block_inner.width,
+                            height: block_inner.height.saturating_sub(5),
+                        }
+                    };
+                    // Centre the component horizontally as render_story_preview does.
+                    let component_x = inner.x + inner.width.saturating_sub(story.width) / 2;
+                    let component_area = Rect {
+                        x: component_x,
+                        y: inner.y.saturating_sub(preview_scroll),
+                        width: story.width.min(inner.width),
+                        height: story.height,
+                    };
+                    interactor.handle_mouse(mouse, component_area);
+                }
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
                     }
-                    selected = next;
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    let next = selected.saturating_sub(1);
-                    if next != selected {
-                        preview_scroll = 0;
+                    match focus {
+                        Focus::Preview => match key.code {
+                            KeyCode::Esc | KeyCode::Tab | KeyCode::BackTab => {
+                                focus = Focus::Sidebar;
+                            }
+                            _ => {
+                                interactor.handle_key(key);
+                            }
+                        },
+                        Focus::Sidebar => {
+                            match key.code {
+                                KeyCode::Char('q') | KeyCode::Esc => break,
+                                KeyCode::Tab => {
+                                    focus = Focus::Preview;
+                                }
+                                KeyCode::Down | KeyCode::Char('j') => {
+                                    let next = (selected + 1).min(stories.len().saturating_sub(1));
+                                    if next != selected {
+                                        preview_scroll = 0;
+                                        interactor = stories[next].make_interactor();
+                                    }
+                                    selected = next;
+                                }
+                                KeyCode::Up | KeyCode::Char('k') => {
+                                    let next = selected.saturating_sub(1);
+                                    if next != selected {
+                                        preview_scroll = 0;
+                                        interactor = stories[next].make_interactor();
+                                    }
+                                    selected = next;
+                                }
+                                KeyCode::Home => {
+                                    if selected != 0 {
+                                        interactor = stories[0].make_interactor();
+                                    }
+                                    selected = 0;
+                                    preview_scroll = 0;
+                                }
+                                KeyCode::End => {
+                                    let last = stories.len().saturating_sub(1);
+                                    if selected != last {
+                                        interactor = stories[last].make_interactor();
+                                    }
+                                    selected = last;
+                                    preview_scroll = 0;
+                                }
+                                // Shift+Down / Shift+Up scroll the preview pane.
+                                KeyCode::Char('J') => {
+                                    let vp = 10usize; // approximate; recalculated per frame above
+                                    apply_scroll_delta(
+                                        &mut preview_scroll,
+                                        1,
+                                        vp,
+                                        preview_content_rows,
+                                    );
+                                }
+                                KeyCode::Char('K') => {
+                                    apply_scroll_delta(
+                                        &mut preview_scroll,
+                                        -1,
+                                        10,
+                                        preview_content_rows,
+                                    );
+                                }
+                                KeyCode::PageDown => {
+                                    apply_scroll_delta(
+                                        &mut preview_scroll,
+                                        10,
+                                        10,
+                                        preview_content_rows,
+                                    );
+                                }
+                                KeyCode::PageUp => {
+                                    apply_scroll_delta(
+                                        &mut preview_scroll,
+                                        -10,
+                                        10,
+                                        preview_content_rows,
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
                     }
-                    selected = next;
-                }
-                KeyCode::Home => {
-                    selected = 0;
-                    preview_scroll = 0;
-                }
-                KeyCode::End => {
-                    selected = stories.len().saturating_sub(1);
-                    preview_scroll = 0;
-                }
-                // Shift+Down / Shift+Up scroll the preview pane.
-                KeyCode::Char('J') => {
-                    let vp = 10usize; // approximate; recalculated per frame above
-                    apply_scroll_delta(&mut preview_scroll, 1, vp, preview_content_rows);
-                }
-                KeyCode::Char('K') => {
-                    apply_scroll_delta(&mut preview_scroll, -1, 10, preview_content_rows);
-                }
-                KeyCode::PageDown => {
-                    apply_scroll_delta(&mut preview_scroll, 10, 10, preview_content_rows);
-                }
-                KeyCode::PageUp => {
-                    apply_scroll_delta(&mut preview_scroll, -10, 10, preview_content_rows);
                 }
                 _ => {}
             }
@@ -220,16 +354,20 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn render_story_preview(
+fn render_story_preview_with_interactor(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     story: jackin_tui::lookbook::Story,
     scroll: u16,
+    interactor: &mut dyn StoryInteraction,
+    preview_focused: bool,
 ) {
-    let block = Panel::new()
-        .title(" preview ")
-        .focus(PanelFocus::Focused)
-        .block();
+    let panel_focus = if preview_focused {
+        PanelFocus::FocusedScrollable
+    } else {
+        PanelFocus::Focused
+    };
+    let block = Panel::new().title(" preview ").focus(panel_focus).block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -262,7 +400,7 @@ fn render_story_preview(
 
     let preview_area = rows[4];
     frame.render_widget(
-        Block::default().style(Style::default().bg(PHOSPHOR_DARK)),
+        Block::default().style(Style::default().bg(Color::Black)),
         preview_area,
     );
 
@@ -275,24 +413,6 @@ fn render_story_preview(
     let visible_start = effective_scroll;
     let visible_end = effective_scroll + vp_height;
 
-    // Render story into a scratch rect and clip the visible rows into the frame.
-    let scratch = Rect {
-        x,
-        y: preview_area.y.saturating_sub(visible_start),
-        width: story.width.min(preview_area.width),
-        height: content_height,
-    };
-
-    // Clip rendering to the preview viewport.
-    let clip = Rect {
-        x: preview_area.x,
-        y: preview_area.y,
-        width: preview_area.width,
-        height: vp_height,
-    };
-    // Ratatui clips widgets to the frame area automatically when we render
-    // with the scratch rect positioned above/within the clip area.
-    let _ = clip; // viewport clipping is inherent via frame.area()
     let render_rect = Rect {
         x,
         y: preview_area.y.saturating_sub(visible_start),
@@ -309,9 +429,8 @@ fn render_story_preview(
                 .height
                 .min(vp_height.saturating_sub(render_rect.y.saturating_sub(preview_area.y))),
         };
-        story.render(frame, clamped);
+        interactor.render(frame, clamped);
     }
-    let _ = scratch;
     let _ = visible_end;
 }
 
@@ -323,7 +442,11 @@ impl TerminalGuard {
     fn enter() -> Result<Self, Box<dyn std::error::Error>> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        if let Err(error) = execute!(stdout, EnterAlternateScreen) {
+        if let Err(error) = execute!(
+            stdout,
+            EnterAlternateScreen,
+            crossterm::event::EnableMouseCapture
+        ) {
             let _ = disable_raw_mode();
             return Err(error.into());
         }
@@ -331,7 +454,11 @@ impl TerminalGuard {
             Ok(terminal) => terminal,
             Err(error) => {
                 let _ = disable_raw_mode();
-                let _ = execute!(io::stdout(), LeaveAlternateScreen);
+                let _ = execute!(
+                    io::stdout(),
+                    crossterm::event::DisableMouseCapture,
+                    LeaveAlternateScreen
+                );
                 return Err(error.into());
             }
         };
@@ -344,12 +471,32 @@ impl TerminalGuard {
     {
         self.terminal.draw(f).map(|_| ())
     }
+
+    fn size(&self) -> io::Result<ratatui::layout::Size> {
+        self.terminal.size()
+    }
+}
+
+/// Recompute the preview panel's Rect from the terminal size using the same
+/// layout split that `run_terminal`'s draw closure uses. Kept as a free
+/// function so both the initialisation path and the post-draw refresh use the
+/// same geometry without duplicating the constraint list.
+fn preview_area_from_size(size: ratatui::layout::Size) -> Rect {
+    let area = Rect::new(0, 0, size.width, size.height);
+    let [main_area, _] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+    let [_, preview_area] =
+        Layout::horizontal([Constraint::Length(34), Constraint::Min(32)]).areas(main_area);
+    preview_area
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
+        let _ = execute!(
+            self.terminal.backend_mut(),
+            crossterm::event::DisableMouseCapture,
+            LeaveAlternateScreen
+        );
         let _ = disable_raw_mode();
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         let _ = self.terminal.show_cursor();
     }
 }
