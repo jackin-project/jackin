@@ -283,16 +283,13 @@ impl OpPickerState {
     /// stays the single completion path.
     fn start_account_load(&mut self) {
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.rx = Some(rx);
-        if let Some(cached) = self.op_cache.borrow().get_accounts() {
-            let _ = tx.send(LoadResult::Accounts(Ok(cached)));
-            return;
-        }
+        let cached = self
+            .op_cache
+            .borrow()
+            .get_accounts()
+            .map(|accounts| LoadResult::Accounts(Ok(accounts)));
         let runner = Arc::clone(&self.runner);
-        std::thread::spawn(move || {
-            let _ = tx.send(LoadResult::Accounts(runner.account_list()));
-        });
+        self.start_worker_load(cached, move || LoadResult::Accounts(runner.account_list()));
     }
 
     fn handle_accounts_loaded(&mut self, accounts: Vec<OpAccount>) {
@@ -329,15 +326,14 @@ impl OpPickerState {
         self.stage = OpPickerStage::Vault;
         self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.rx = Some(rx);
-        if let Some(cached) = self.op_cache.borrow().get_vaults(account_id.as_deref()) {
-            let _ = tx.send(LoadResult::Vaults(Ok(cached)));
-            return;
-        }
+        let cached = self
+            .op_cache
+            .borrow()
+            .get_vaults(account_id.as_deref())
+            .map(|vaults| LoadResult::Vaults(Ok(vaults)));
         let runner = self.runner_clone_for_thread();
-        std::thread::spawn(move || {
-            let _ = tx.send(LoadResult::Vaults(runner.vault_list(account_id.as_deref())));
+        self.start_worker_load(cached, move || {
+            LoadResult::Vaults(runner.vault_list(account_id.as_deref()))
         });
     }
 
@@ -345,21 +341,14 @@ impl OpPickerState {
         self.stage = OpPickerStage::Item;
         self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.rx = Some(rx);
-        if let Some(cached) = self
+        let cached = self
             .op_cache
             .borrow()
             .get_items(account_id.as_deref(), &vault_id)
-        {
-            let _ = tx.send(LoadResult::Items(Ok(cached)));
-            return;
-        }
+            .map(|items| LoadResult::Items(Ok(items)));
         let runner = self.runner_clone_for_thread();
-        std::thread::spawn(move || {
-            let _ = tx.send(LoadResult::Items(
-                runner.item_list(&vault_id, account_id.as_deref()),
-            ));
+        self.start_worker_load(cached, move || {
+            LoadResult::Items(runner.item_list(&vault_id, account_id.as_deref()))
         });
     }
 
@@ -367,23 +356,30 @@ impl OpPickerState {
         self.stage = OpPickerStage::Field;
         self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
+        let cached = self
+            .op_cache
+            .borrow()
+            .get_fields(account_id.as_deref(), &vault_id, &item_id)
+            .map(|fields| LoadResult::Fields(Ok(fields)));
+        let runner = self.runner_clone_for_thread();
+        self.start_worker_load(cached, move || {
+            LoadResult::Fields(runner.item_get(&item_id, &vault_id, account_id.as_deref()))
+        });
+    }
+
+    fn start_worker_load(
+        &mut self,
+        cached: Option<LoadResult>,
+        worker: impl FnOnce() -> LoadResult + Send + 'static,
+    ) {
         let (tx, rx) = mpsc::unbounded_channel();
         self.rx = Some(rx);
-        if let Some(cached) =
-            self.op_cache
-                .borrow()
-                .get_fields(account_id.as_deref(), &vault_id, &item_id)
-        {
-            let _ = tx.send(LoadResult::Fields(Ok(cached)));
+        if let Some(cached) = cached {
+            let _ = tx.send(cached);
             return;
         }
-        let runner = self.runner_clone_for_thread();
         std::thread::spawn(move || {
-            let _ = tx.send(LoadResult::Fields(runner.item_get(
-                &item_id,
-                &vault_id,
-                account_id.as_deref(),
-            )));
+            let _ = tx.send(worker());
         });
     }
 
