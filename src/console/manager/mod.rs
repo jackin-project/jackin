@@ -11,6 +11,7 @@ pub mod mount_diff;
 pub mod mount_info;
 pub mod mount_info_cache;
 pub mod state;
+pub mod workspace_summary;
 
 pub use crate::console::tui::render;
 pub use input::{InputOutcome, handle_key};

@@ -22,6 +22,8 @@ use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, 
 
 pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_diffs};
 pub use crate::console::manager::mount_info_cache::MountInfoCache;
+pub use crate::console::manager::workspace_summary::WorkspaceSummary;
+use crate::console::manager::workspace_summary::workspace_summary_from_config;
 pub use jackin_console::list_row::ManagerListRow;
 
 /// Provider picker bound to its follow-up context.
@@ -479,17 +481,6 @@ pub enum GlobalMountTextTarget {
     Destination,
     Scope,
     Rename,
-}
-
-#[derive(Debug, Clone)]
-pub struct WorkspaceSummary {
-    pub name: String,
-    pub workdir: String,
-    pub mount_count: usize,
-    pub readonly_mount_count: usize,
-    pub allowed_role_count: usize,
-    pub default_role: Option<String>,
-    pub last_role: Option<String>,
 }
 
 /// A request to mint a Claude OAuth token and write it to the chosen
@@ -1475,20 +1466,6 @@ pub struct CreatePreludeState<'a> {
 
 // ── Impls ──────────────────────────────────────────────────────────
 
-impl WorkspaceSummary {
-    pub fn from_config(name: &str, ws: &WorkspaceConfig) -> Self {
-        Self {
-            name: name.to_string(),
-            workdir: ws.workdir.clone(),
-            mount_count: ws.mounts.len(),
-            readonly_mount_count: ws.mounts.iter().filter(|m| m.readonly).count(),
-            allowed_role_count: ws.allowed_roles.len(),
-            default_role: ws.default_role.clone(),
-            last_role: ws.last_role.clone(),
-        }
-    }
-}
-
 pub(crate) fn active_instances_matching<'a>(
     instances: &'a [crate::instance::InstanceIndexEntry],
     query: crate::instance::InstanceQuery<'a>,
@@ -1564,7 +1541,7 @@ impl ManagerState<'_> {
         let workspaces: Vec<WorkspaceSummary> = config
             .workspaces
             .iter()
-            .map(|(name, ws)| WorkspaceSummary::from_config(name, ws))
+            .map(|(name, ws)| workspace_summary_from_config(name, ws))
             .collect();
 
         let saved_count = workspaces.len();
@@ -2742,7 +2719,7 @@ mod tests {
             allowed_roles: vec!["agent-smith".into()],
             ..Default::default()
         };
-        let sum = WorkspaceSummary::from_config("big-monorepo", &ws);
+        let sum = workspace_summary_from_config("big-monorepo", &ws);
         assert_eq!(sum.name, "big-monorepo");
         assert_eq!(sum.mount_count, 2);
         assert_eq!(sum.readonly_mount_count, 1);
