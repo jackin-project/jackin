@@ -52,6 +52,48 @@ impl FileBrowserState {
     pub(super) fn dismiss_git_prompt(&mut self) {
         self.pending_git_prompt = None;
         self.pending_git_url = None;
+        self.pending_git_url_rx = None;
+    }
+
+    pub(super) fn open_git_prompt(&mut self, path: PathBuf) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker_path = path.clone();
+        if std::thread::Builder::new()
+            .name("jackin-file-browser-git-url".to_string())
+            .spawn(move || {
+                let _ = tx.send(resolve_git_url(&worker_path));
+            })
+            .is_err()
+        {
+            self.pending_git_url = resolve_git_url(&path);
+            self.pending_git_url_rx = None;
+            self.pending_git_prompt = Some(path);
+            self.pending_git_focus = GitPromptFocus::MountHere;
+            return;
+        }
+        self.pending_git_url = None;
+        self.pending_git_url_rx = Some(rx);
+        self.pending_git_prompt = Some(path);
+        self.pending_git_focus = GitPromptFocus::MountHere;
+    }
+
+    #[must_use]
+    pub fn poll_git_url_resolution(&mut self) -> bool {
+        let Some(rx) = self.pending_git_url_rx.as_ref() else {
+            return false;
+        };
+        match rx.try_recv() {
+            Ok(url) => {
+                self.pending_git_url = url;
+                self.pending_git_url_rx = None;
+                true
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.pending_git_url_rx = None;
+                false
+            }
+        }
     }
 
     /// Key handler used while the git-repo prompt is active.
@@ -304,6 +346,16 @@ mod tests {
         FileBrowserState::new_at(root, cwd)
     }
 
+    fn wait_for_git_url_resolution(state: &mut FileBrowserState) {
+        for _ in 0..50 {
+            if state.poll_git_url_resolution() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        panic!("git URL worker did not finish");
+    }
+
     // ── Git-repo prompt ───────────────────────────────────────────────
 
     #[test]
@@ -346,6 +398,8 @@ mod tests {
         state.handle_key(key(KeyCode::Down));
         state.handle_key(key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
+        assert!(state.pending_git_url.is_none());
+        wait_for_git_url_resolution(&mut state);
         let url = state
             .pending_git_url
             .as_deref()
@@ -376,6 +430,7 @@ mod tests {
         state.handle_key(key(KeyCode::Down));
         state.handle_key(key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
+        wait_for_git_url_resolution(&mut state);
         assert!(state.pending_git_url.is_none());
     }
 

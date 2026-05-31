@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 
-use super::git_prompt::{GitPromptFocus, git_prompt_url_row_rect, resolve_git_url};
+use super::git_prompt::git_prompt_url_row_rect;
 use super::state::{FileBrowserState, canonicalize_or_self, is_within_root};
 use crate::widgets::ModalOutcome;
 
@@ -71,9 +71,7 @@ impl FileBrowserState {
             return ModalOutcome::Continue;
         }
         if entry.is_git {
-            self.pending_git_url = resolve_git_url(&entry.path);
-            self.pending_git_prompt = Some(entry.path);
-            self.pending_git_focus = GitPromptFocus::MountHere;
+            self.open_git_prompt(entry.path);
             return ModalOutcome::Continue;
         }
         // Plain folder — navigate in. Canonicalize so a legitimate

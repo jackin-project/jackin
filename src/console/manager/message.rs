@@ -6,9 +6,10 @@
 
 use super::auth_kind::AuthKind;
 use super::state::{
-    CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
-    ManagerListRow, ManagerStage, ManagerState, MountScrollFocus, PendingDriftCheck,
-    PendingIsolationCleanup, PendingMountInfoRefresh, SecretsScopeTag, SettingsState, SettingsTab,
+    CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, GlobalMountModal,
+    InstanceRefreshSnapshot, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
+    PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, SecretsScopeTag,
+    SettingsState, SettingsTab,
 };
 use crate::config::AppConfig;
 use jackin_console::editor::update::{
@@ -214,6 +215,7 @@ pub(crate) fn poll_background_messages(
     if let ManagerStage::Editor(editor) = &mut state.stage {
         dirty |= super::input::editor::poll_role_load(editor, config, paths);
     }
+    dirty |= poll_file_browser_git_urls(state);
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::MountInfoRefreshed(result),
@@ -241,6 +243,54 @@ pub(crate) fn poll_background_messages(
         messages.push(ManagerBackgroundEvent::IsolationCleanupFinished { cleanup, result });
     }
     (messages, dirty)
+}
+
+fn poll_file_browser_git_urls(state: &mut ManagerState<'_>) -> bool {
+    let mut dirty = false;
+    if let Some(modal) = state.list_modal.as_mut() {
+        dirty |= poll_modal_file_browser_git_url(modal);
+    }
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            if let Some(modal) = editor.modal.as_mut() {
+                dirty |= poll_modal_file_browser_git_url(modal);
+            }
+            for modal in &mut editor.modal_parents {
+                dirty |= poll_modal_file_browser_git_url(modal);
+            }
+        }
+        ManagerStage::CreatePrelude(prelude) => {
+            if let Some(modal) = prelude.modal.as_mut() {
+                dirty |= poll_modal_file_browser_git_url(modal);
+            }
+        }
+        ManagerStage::Settings(settings) => {
+            if let Some(modal) = settings.mounts.modal.as_mut() {
+                dirty |= poll_global_mount_file_browser_git_url(modal);
+            }
+            for modal in &mut settings.mounts.modal_parents {
+                dirty |= poll_global_mount_file_browser_git_url(modal);
+            }
+        }
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
+    }
+    dirty
+}
+
+fn poll_modal_file_browser_git_url(modal: &mut Modal<'_>) -> bool {
+    match modal {
+        Modal::FileBrowser { state, .. } => state.poll_git_url_resolution(),
+        _ => false,
+    }
+}
+
+fn poll_global_mount_file_browser_git_url(modal: &mut GlobalMountModal<'_>) -> bool {
+    match modal {
+        GlobalMountModal::FileBrowser { state } => state.poll_git_url_resolution(),
+        _ => false,
+    }
 }
 
 #[allow(clippy::too_many_lines)]
