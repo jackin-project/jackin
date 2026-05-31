@@ -27,52 +27,188 @@ Capture, store, and browse. Nothing more, deliberately:
 
 Everything else — forking a conversation, change/diff attribution per turn, semantic search, cross-agent `@thread` injection, cloud sharing, orchestration — is explicitly out of this cut and tracked under [Non-goals for V1](#non-goals-for-v1).
 
-## Prior art: how SpecStory does it
+The rest of this document is primarily about **extraction**: the technical question of *how* you get a complete, faithful conversation out of each agent. Storage and browse are the easy half; extraction is where the real engineering is, because each agent exposes a different set of surfaces with different fidelity, stability, and cooperation requirements. The research below catalogs every public extraction vector, validates each against agent source or docs, maps which conversation data each yields, and recommends the primary vector per agent.
 
-[SpecStory](https://specstory.com/) is the closest existing product, and its mechanism is the key lesson. Its open-source CLI ([`specstoryai/getspecstory`](https://github.com/specstoryai/getspecstory), Go, Apache-2.0) does **not** wrap the agent's PTY or scrape the terminal. It launches the agent with plain passthrough stdio and, concurrently, watches the agent's **own on-disk session files** with an `fsnotify` watcher, converting them to Markdown under `.specstory/history/` in the repo. It ships three modes — `specstory run <agent>` (launch + watch), `specstory watch` (watch only), `specstory sync` (retroactive batch convert) — and a per-provider parser for each supported tool (`~/.claude/projects/.../*.jsonl` for Claude Code, `~/.codex/sessions/*.jsonl` for Codex, a SQLite `store.db` for Cursor CLI, JSON for Gemini, etc.). Each provider parses its native format into one shared `SessionData` struct, then a single renderer emits Markdown.
+## Prior art: how SpecStory extracts (the key lesson)
 
-The architecture to borrow: **per-provider parser → one normalized record → render on demand.** The things jackin' should do differently:
+[SpecStory](https://specstory.com/) is the closest existing product, and the question that matters for us is not how it stores conversations but **how it gets them out of the agents**. The answer is the single most important design input here, and it is decisively simple.
 
-| SpecStory | Déjà Vu |
-|---|---|
-| Writes Markdown into the repo's `.specstory/history/` | Writes to the **host** under jackin's own data root, never into the operator's repo |
-| Reads the agent's session files from the developer's real home | Reads them from the per-instance home jackin' already restores on the host (see [leverage](#leverage-jackin-already-puts-the-history-on-the-host)) |
-| Markdown is the storage format | A compact normalized record is the canonical store; Markdown/JSON are *rendered* on demand |
-| Per-tool, repo-local, single-user | Cross-agent, cross-instance, workspace-keyed, browsable through one TUI/CLI/MCP surface |
+SpecStory's CLI ([`specstoryai/getspecstory`](https://github.com/specstoryai/getspecstory), Go, Apache-2.0) does **not** wrap the agent's PTY, scrape the terminal, intercept the network, or use hooks. It reads each agent's **own on-disk session files** and converts them. Verified from source:
+
+- **`specstory run <agent>`** launches the agent with **plain passthrough stdio** — `exec.Command(agentCmd, args...)` with `cmd.Stdin/Stdout/Stderr = os.Stdin/Stdout/Stderr` (no `creack/pty`, no PTY dependency in `go.mod`) — and concurrently runs an [`fsnotify`](https://github.com/fsnotify/fsnotify) file-watcher on the agent's session directory, converting new/changed session files to Markdown as they appear.
+- **`specstory watch [<agent>]`** runs only the `fsnotify` watcher against the session directory, auto-saving an agent the operator launched separately.
+- **`specstory sync [<agent>]`** is a retroactive batch conversion of already-stored sessions (`-s <session-uuid>` for one).
+
+Each agent has a provider package (`pkg/providers/<agent>/`) whose `path_utils.go` knows the on-disk location, whose `jsonl_parser.go` / `sqlite_reader.go` parses the native format, and the results land in one shared `SessionData` struct that a single Markdown renderer emits. The supported sources are all native session stores: Claude Code `~/.claude/projects/<mangled-cwd>/*.jsonl` (JSONL), Codex `~/.codex/sessions/*.jsonl` (JSONL), Cursor CLI `~/.cursor/chats/<md5>/<uuid>/store.db` (**SQLite**, read with the pure-Go `modernc.org/sqlite`), Gemini CLI `~/.gemini/tmp/<hash>/` (JSON), Droid `~/.factory/sessions/` (JSONL), DeepSeek `~/.deepseek/sessions/*.json` (JSON). The closed-source IDE extensions (Cursor, VS Code + Copilot) do the editor equivalent — they read the editor's chat store, which Cursor/VS Code keep in a SQLite `state.vscdb` under `workspaceStorage`/`globalStorage`.
+
+**The lesson for Déjà Vu:** the highest-fidelity, lowest-cooperation, fully-passive way to capture a conversation is to read the agent's own session file. SpecStory proves a per-provider-parser → one-normalized-record → render-on-demand architecture works across many agents. jackin' should do the same as its primary vector — and, because jackin' *owns the container and the multiplexer*, it has additional vectors SpecStory does not (built-in telemetry, wire interception, and screen scraping), available as fallbacks where a native file is missing or insufficient.
 
 ## Leverage: jackin' already puts the history on the host
 
-The critical enabler is already shipped. jackin' bind-mounts each agent's home into the container and restores it on the host under the per-instance data dir — `~/.jackin/data/<container>/.claude/`, `.codex/`, `.local/share/amp/`, `.kimi-code/`, and `.local/share/opencode/` all carry the agent's conversation history (see [Session keep and resume](/reference/roadmap/session-keep-and-resume/)). That means **for four of the five agents the raw conversation is already a host-side file jackin' can read directly** — no terminal scraping, no new container mount, no host mutation. Déjà Vu's capture step is, for those agents, a host-side read of paths jackin' already owns, plus a normalize-and-copy into a purge-surviving archive. Only `Amp` (cloud-only) needs a different path.
+The critical enabler is already shipped. jackin' bind-mounts each agent's home into the container and restores it on the host under the per-instance data dir — `~/.jackin/data/<container>/.claude/`, `.codex/`, `.local/share/amp/`, `.kimi-code/`, and `.local/share/opencode/` all carry the agent's conversation history (see [Session keep and resume](/reference/roadmap/session-keep-and-resume/)). That means **for four of the five agents the raw conversation is already a host-side file jackin' can read directly** — no terminal scraping, no new container mount, no host mutation. For those agents Déjà Vu's capture step is a host-side read of paths jackin' already owns, plus a normalize-and-copy into a purge-surviving archive. Only `Amp` (cloud-only) needs a different vector.
 
-## Per-agent capture research
+## Extraction vectors (research)
 
-Each agent's resume command is the proof its format is replayable — if the agent can reconstruct a thread from disk, so can Déjà Vu. The table below is the research result that drives the per-provider parsers.
+There are six mechanically distinct ways to get a coding agent's conversation out. They differ along three axes that decide which one Déjà Vu uses for a given agent: **passive vs cooperative** (does the agent author have to do anything — a hook script, a launch flag, an env var — or can jackin' do it transparently), **live vs post-hoc**, and **fidelity** (which fields it yields).
 
-| Agent | Where its conversation lives | Format & threading | Resume / reference UX | Déjà Vu capture path |
-|---|---|---|---|---|
-| **Claude Code** | `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` (cwd encoded as non-alphanumeric → `-`); subagents in a sibling `…/<session-id>/subagents/agent-*.jsonl` | JSONL, `type`-tagged records; per-record `uuid` ← `parentUuid` linked list; assistant blocks carry `text`/`thinking`/`tool_use`, user records carry `tool_result` + `toolUseResult`; model id + token usage present | `--resume <id>`, `--continue`, `--fork-session`; hooks expose `transcript_path` to the live JSONL | Read native JSONL from the restored home. Optional `UserPromptSubmit` + `Stop` hooks for liveness. |
-| **Codex** | `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`; input log `~/.codex/history.jsonl` | JSONL `RolloutLine{timestamp,type,payload}`; payload variants `SessionMeta` (cwd, git, model), `ResponseItem`, `EventMsg` (`UserMessage`/`AgentMessage`), `TurnContext`, `Compacted`; fork via `SessionMeta.forked_from_id` | `codex resume [id]`, `--last`, `-c experimental_resume=<path>` | Read rollout JSONL. Vendor warns the rollout format is internal/unstable, so also support the newer hooks (`UserPromptSubmit`/`Stop`/`PostToolUse`) and the legacy `notify` callback. |
-| **Amp** | **No durable local store** — threads live in Amp's cloud (Postgres @ GCP). Local state is pointers/recents only. | Server-authoritative; thread id `T-<uuid>` | `amp threads continue [--last\|<id>]`, interactive picker, `@T-<id>` in-prompt reference, shareable `ampcode.com/threads/T-<id>` | Capture via the supported export commands: `amp threads export <id>` (full JSON) and `amp threads markdown <id>`; private REST `GET /api/threads/:id/messages/:mid` (bearer `AMP_API_KEY`) as the lower-level path. Requires the forwarded `AMP_API_KEY`. |
-| **Kimi** (`kimi-code`, TS) | `~/.kimi-code/sessions/<wd_<slug>_<sha256(cwd)[:12]>>/<sessionId>/{state.json, agents/<id>/wire.jsonl}` (override `KIMI_CODE_HOME`); jackin' mounts the home at `~/.kimi-code` | Per-agent append-only JSONL journal `wire.jsonl` (kind-tagged `message`/`event`/`request`/`response`; roles user/assistant/tool; tool-use blocks; `turnId`); `state.json` is metadata only; threading by append order + `turnId`, not `parentUuid` | `--continue`, `--resume`/picker, `/fork`; hooks (`UserPromptSubmit`/`Stop`/`PostToolUse`/`SessionStart`/`SessionEnd`/…) | Read `agents/*/wire.jsonl` from the restored home; or `kimi export` (ZIP) / `/export-md`. jackin' ships the `kimi-code` distribution (binary from `cdn.kimi.com/kimi-code`, home `~/.kimi-code/`) — confirm the live layout in-container; the legacy Python `kimi-cli` used `~/.kimi/…/context.jsonl`+`wire.jsonl` instead. |
-| **OpenCode** | `~/.local/share/opencode/` — migrating JSON → SQLite. Legacy JSON: `storage/session/<projectID>/<id>.json`, `storage/message/<sessionID>/<id>.json`, `storage/part/<messageID>/<id>.json` (`projectID` = repo first-commit hash); newer: `opencode.db` | `Session` / `Message` (role-discriminated) / `Part` (`text`/`reasoning`/`tool`/`file`/`step-*`/`patch`/…) unions; cost + token fields present | `run -c\|-s <id>`, TUI `/sessions` (`/resume`); share `opncd.ai/s/<id>` | Read native JSON/SQLite from the restored home; or `opencode export <id>` (JSON); or drive `opencode serve` (`GET /session`, `GET /session/:id/message`) via the generated SDK. |
+| # | Vector | Where it taps | Live / post-hoc | Passive? | Vendor-blessed? |
+|---|--------|---------------|-----------------|----------|-----------------|
+| **A** | **Native session file** | The agent's own on-disk JSONL/SQLite transcript | Post-hoc (or tail) | Yes — file read, zero cooperation | Format usually internal/undocumented |
+| **B** | **Lifecycle hooks** | Agent runs a command on events (prompt submit, tool use, stop) | Live | No — agent must support hooks; jackin' installs them at launch | Yes |
+| **C** | **Built-in OpenTelemetry** | Agent's own instrumentation emits OTLP logs/metrics/traces | Live | Semi — env-configured once, then passive | Yes |
+| **D** | **Wire interception** | The agent↔model HTTP boundary (base-URL redirect, fetch patch, MITM) | Live | Yes — operator controls env/proxy, agent unaware | Config blessed; capture-via-proxy operational |
+| **E** | **Headless stream-json** | Agent stdout in `--print` / `--output-format stream-json` mode | Live | No — you launch the run headless | Yes |
+| **F** | **Multiplexer screen scrape** | jackin's own `vt100` screen + scrollback for the pane | Live / post-hoc | Yes — jackin owns the PTY | n/a (jackin-internal) |
 
-The common shape across all five: an append-only, replayable session record (cloud-side for Amp), a resume command that proves it, and — increasingly — a hooks surface that fires on `UserPromptSubmit` / `Stop` / `PostToolUse`. Déjà Vu standardizes on that shape.
+A seventh item is not a tap but the shared *schema* these converge on: the **OpenTelemetry GenAI semantic conventions** (`gen_ai.*` — `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, token-usage and finish-reason attributes; the older opt-in `gen_ai.content.prompt`/`gen_ai.content.completion` events were deprecated in semconv v1.38.0). Where Déjà Vu needs a normalized on-the-wire vocabulary, this is the standard to align to.
 
-## Decision: native files first, fall back per agent
+### What each vector yields
 
-The capture strategy is a layered fallback, chosen per agent, exactly as the operator framed it — read the native source of truth where we can, use something else where we cannot:
+Columns: UP = user prompt text · AT = assistant text · TC = tool calls (name + input) · TR = tool results/output · TH = thinking/reasoning · TOK = token usage · DIFF = code diffs · TIME = timing. ✅ available · ⚠️ conditional · ❌ not available.
 
-1. **Native session files (source of truth).** For Claude Code, Codex, Kimi, and OpenCode the canonical capture is parsing the agent's own on-disk session store, read host-side from the restored per-instance home. This is lossless, needs no agent cooperation, and captures historical sessions, not just future ones.
-2. **Vendor export / API (cloud agents and stable interfaces).** For Amp — which has no local store — capture via `amp threads export`/`markdown` and the threads REST API. The same path is the safe option for any agent whose file format the vendor declares unstable (Codex says exactly this).
-3. **Hooks (liveness, and a hedge against format drift).** Where an agent exposes lifecycle hooks (`UserPromptSubmit`, `Stop`, `PostToolUse`, `SessionEnd`), Déjà Vu can subscribe for low-latency capture and as a vendor-blessed signal that does not depend on reverse-engineering a file layout. Claude Code, Codex, and Kimi all ship compatible hook contracts.
+| Vector | UP | AT | TC | TR | TH | TOK | DIFF | TIME |
+|--------|----|----|----|----|----|-----|------|------|
+| **A. Native session file** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **B. Hooks** | ✅ | ⚠️ via `transcript_path` re-read (Claude); ⚠️ `SubagentStop.response` (Kimi) | ✅ | ✅ | ⚠️ via transcript | ⚠️ via transcript | ⚠️ via transcript | ✅ |
+| **C. OTEL (defaults)** | ❌ length only | ❌ | ⚠️ name/decision only | ❌ size only | ❌ | ✅ | ✅ | ✅ |
+| **C. OTEL (all content flags)** | ✅ | ✅ (Claude `OTEL_LOG_RAW_API_BODIES`) | ✅ | ✅ | ❌ **always redacted** | ✅ | ✅ | ✅ |
+| **D. Wire interception** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ inside tool I/O | ✅ |
+| **E. stream-json** | ✅ | ✅ | ✅ | ✅ | ⚠️ if thinking surfaced | ✅ | ⚠️ inside tool I/O | ✅ |
+| **F. Screen scrape** | ✅ (post-render) | ✅ (post-render) | ⚠️ only what's printed | ⚠️ only what's printed | ⚠️ only if printed | ❌ | ⚠️ if printed | ✅ |
+
+Two asymmetries decide the design:
+
+1. **The native session file (A) is the only single vector that captures everything losslessly with zero cooperation** — which is why it is the primary vector wherever it exists (Claude Code, Codex, Kimi, OpenCode).
+2. **Thinking/reasoning is the discriminator.** The agent's own OTEL never exports thinking content (Claude Code redacts extended-thinking from raw API bodies regardless of flags). Wire interception (D) is the only vector that captures the model-facing system prompt and tool *definitions* exactly as sent, plus thinking blocks — at the cost of being headless-only for some agents. The native file captures thinking too, for the agents that persist it.
+
+## Per-agent extraction surfaces
+
+Each agent's *resume* command is the proof its format is replayable — if the agent can reconstruct a thread from disk, so can Déjà Vu. Below, per agent, every public extraction surface, what it yields, whether it is passive, and its stability, followed by the recommended primary vector. Validated against each agent's source or docs.
+
+### Claude Code (`@anthropic-ai/claude-code`)
+
+| Surface | Yields | Passive? | Stability |
+|---|---|---|---|
+| **Native JSONL** `~/.claude/projects/<encoded-cwd>/<id>.jsonl` (subagents in `…/<id>/subagents/agent-*.jsonl`) | Full thread: user/assistant/`tool_use`/`tool_result`/`thinking`, `uuid`↔`parentUuid` tree, model, token usage, cwd, git | Yes | Internal format (undocumented; stable in practice) |
+| **Hooks** (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `SessionStart/End`, …) | stdin JSON; `UserPromptSubmit.prompt` (literal text), `PostToolUse.tool_response`; **every payload carries `transcript_path`** → pivot to the JSONL | No (jackin installs at launch) | Vendor-blessed |
+| **Built-in OTEL** (`CLAUDE_CODE_ENABLE_TELEMETRY=1`) | `claude_code.user_prompt` (redacted unless `OTEL_LOG_USER_PROMPTS=1`), `tool_result`, `tool_decision`, `api_request`; cost/token metrics. `OTEL_LOG_RAW_API_BODIES=1` (or `=file:<dir>`) emits full request+response bodies incl. **assistant text and the full conversation history** | Semi (env set once) | Vendor-blessed; **extended-thinking always redacted** |
+| **`--print --output-format stream-json`** (`--include-partial-messages`) | Live NDJSON: `system`(init), `assistant`(text+`tool_use`), `user`(tool_result), `stream_event` deltas, `result`(usage) | No (you launch headless) | Vendor-blessed |
+| **`ANTHROPIC_BASE_URL` redirect / fetch-patch** ([claude-trace](https://github.com/mariozechner/claude-trace), [claude-tap](https://github.com/liaohch3/claude-tap)) | Full wire request+response: system prompt, tool defs, all messages, **thinking blocks**, cache/token usage | Yes | Operational; **interactive `claude` ignores `ANTHROPIC_BASE_URL` — reliable only with `-p`** ([#36998](https://github.com/anthropics/claude-code/issues/36998)); fetch-patch (claude-trace via `node --require`) works in both |
+| **Agent SDK** `@anthropic-ai/claude-agent-sdk` (`query()`) | Typed streamed messages (text + `tool_use`, `tool_result`, `result`) | No (you author the run) | Vendor-blessed |
+
+**Primary for Déjà Vu:** native JSONL (A), already on the host. Hooks (B) for liveness. Wire interception (D) only if we ever need the exact system prompt / thinking beyond what the JSONL holds.
+
+### Codex CLI (`openai/codex`, Rust)
+
+| Surface | Yields | Passive? | Stability |
+|---|---|---|---|
+| **Native rollout JSONL** `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` | Full thread auto-saved: `SessionMeta`, `ResponseItem`, `EventMsg`(`UserMessage`/`AgentMessage`), `TurnContext`, `Compacted`; what `codex resume` reads | Yes | Internal format (vendor warns it is not a stable interface) |
+| **`notify` callback** | JSON on `agent-turn-complete`: `input-messages` (user) + `last-assistant-message` + `cwd` | No | Vendor-blessed but coarse (last turn only) |
+| **Hooks** (`requirements.toml`, `allow_managed_hooks_only`) | Exists; event list / payload content **unverified** | No | Vendor-blessed (details unconfirmed) |
+| **`codex exec --json`** | NDJSON: `thread.*`, `turn.*`, `item.*` (`agent_message`, `reasoning`, command exec, file changes, MCP tool calls) | No | Vendor-blessed (`--json` vs older `--experimental-json` churn) |
+| **Built-in OTEL** (`[otel]` in config) | `codex.user_prompt` (text only if `log_user_prompt=true`), `codex.tool_decision`, `codex.tool_result`, `codex.api_request`, `codex.sse_event` | Semi | Vendor-blessed; `exec` has no metrics, `mcp-server` emits none |
+| **`OPENAI_BASE_URL` / `[model_providers]` base_url** | Full wire traffic via a proxy (`wire_api = responses`; Chat-only proxies need translation) | Yes | Config blessed; capture operational |
+
+**Primary:** native rollout JSONL (A). Because the vendor flags the format as unstable, pair it with hooks/`notify` (B) or `--json` (E) as a stability hedge; OTEL (C) for tool decisions and cost.
+
+### Amp (Sourcegraph)
+
+Amp is the outlier: **threads are server-side (cloud Postgres); there is no durable local transcript on disk.** Capture must come from a thread surface, not a file.
+
+| Surface | Yields | Passive? | Stability |
+|---|---|---|---|
+| **`amp --execute --stream-json`** (and `amp threads continue <id> --stream-json`) | Live NDJSON: `system`(init), `user`, `assistant`(+`tool_use`), `tool_result`, final `result`; subagents via `parent_tool_use_id`. `--stream-json-thinking` adds thinking (not Claude-Code-compatible) | No (you launch / re-emit) | Vendor-blessed |
+| **`amp threads` subcommands** (`list`, `continue`, `fork`, `share`, `compact`) | Thread enumeration + resume; threads sync to ampcode.com | No | Vendor-blessed; **`export`/`markdown` and a public REST `/api/threads` are unconfirmed for the core CLI** (markdown exists only in a third-party Elixir SDK) |
+| **SDK** `@sourcegraph/amp-sdk` (TS) | Wraps `--execute --stream-json` | No | Vendor-blessed (core `@sourcegraph/amp` is now a CLI alias, not a library) |
+| **OTEL / model base-URL proxy** | None — Amp brokers models server-side; no model-base-URL override surfaced | — | Absent |
+
+**Primary:** `--stream-json` on launch (E), captured live, since there is no file to read and the server REST is not a documented public surface. This is the one agent where Déjà Vu must capture *during* the session rather than reading after the fact — and the one where the multiplexer fallback (F) matters most if a session was started outside Déjà Vu's stream capture.
+
+### Kimi (`kimi-code`, the TypeScript distribution jackin' ships)
+
+jackin' installs the `kimi-code` binary from `cdn.kimi.com/kimi-code` with home `~/.kimi-code/` (not the legacy Python `kimi-cli`, which used `~/.kimi/…/context.jsonl`). Surfaces below are for `kimi-code`.
+
+| Surface | Yields | Passive? | Stability |
+|---|---|---|---|
+| **Native JSONL** `~/.kimi-code/sessions/<wd_<slug>_<sha256[:12]>>/<sessionId>/agents/<id>/wire.jsonl` (+ `state.json`) | Per-agent append-only journal: `message`/`event`/`request`/`response` (roles user/assistant/tool, tool-use blocks, `turnId`) | Yes | Internal format |
+| **Hooks** (`[[hooks]]` in `config.toml`; 13 events) | `UserPromptSubmit.prompt`, `PreToolUse`/`PostToolUse`, `SubagentStop.response` (assistant text), `SessionStart/End` | No | Vendor-blessed (Beta); **no `transcript_path` exposed** — cannot pivot to the file from a hook |
+| **`--print --output-format stream-json`** | OpenAI-chat-shaped role stream (`user`/`assistant`+`tool_calls`/`tool`); no `init`/`result` envelope | No | Vendor-blessed |
+| **Wire mode (`--wire`)** / **ACP (`kimi acp`)** | JSON-RPC 2.0 over stdio: assistant chunks, tool calls, hook events; ACP makes Kimi tappable by any ACP client (e.g. Zed) | No | Vendor-blessed (wire experimental) |
+| **Provider `base_url` (config) proxy** | Full wire traffic via a proxy (per-provider `base_url`, no env override) | Yes | Config blessed; capture operational |
+| **OTEL** | None (only an anonymous on/off telemetry toggle) | — | Absent |
+
+**Primary:** native `wire.jsonl` (A) from the restored home. Hooks (B) for liveness, with the caveat that Kimi hooks lack `transcript_path`, so the file must be located by recomputing the `wd_<slug>_<sha256[:12]>` key.
+
+### OpenCode (`sst/opencode`)
+
+| Surface | Yields | Passive? | Stability |
+|---|---|---|---|
+| **Native store** `~/.local/share/opencode/storage/{session,message,part}/…json` (or `opencode.db`) | Full thread: `Session`/`Message`(role-discriminated)/`Part`(`text`/`reasoning`/`tool`/`file`/`patch`/`step-*`) | Yes | Internal format (mid JSON→SQLite migration) |
+| **`opencode serve` HTTP API** (`GET /session`, `GET /session/:id/message`) | `{ info, parts[] }[]` — complete history; OpenAPI 3.1 spec drives the SDK | Cooperative (run the server) then passive polling | Vendor-blessed |
+| **SSE `GET /event`** | Live bus: `message.updated`, `message.part.updated` (text deltas), `session.*` — 80+ event types | Cooperative (run server) | Vendor-blessed |
+| **`opencode run --format json`** | Per-run JSON result | No | Vendor-blessed |
+| **SDK** `@opencode-ai/sdk` / **plugins** (`tool.execute.before/after`) | Typed client over HTTP+SSE; plugins observe tool I/O | No | Vendor-blessed |
+| **OTEL** | None native (third-party `opencode-plugin-otel` only) | — | Third-party |
+
+**Primary:** native store (A) from the restored home. The `serve` HTTP+SSE API (E-ish) is the cleanest live-tap if Déjà Vu ever wants real-time capture without parsing files.
+
+### Cross-agent summary
+
+- **Native session file (A)** is available and passive for **four of five** (all but Amp) and is the recommended primary everywhere it exists. jackin' already restores these onto the host.
+- **Hooks (B)** exist for Claude Code, Codex, Kimi, OpenCode (plugins). Only **Claude Code's hooks hand back `transcript_path`**; the rest carry inline `prompt`/`response` text but no pointer to the full record. Amp has no lifecycle conversation hook.
+- **Headless stream-json (E)** is near-universal (all five) and is the **only** good vector for **Amp**.
+- **Built-in OTEL with prompt content (C)** is Claude Code and Codex only, and both deliberately omit assistant response text from first-class events (Claude can include it via raw-body logging; neither exposes thinking).
+- **Wire interception (D)** is the only vector that yields the system prompt + tool definitions as-sent and thinking blocks; passive via base-URL/proxy for Claude Code (headless), Codex, Kimi; not available for Amp (server-brokered).
+
+## What the observability ecosystem already solved
+
+Agent observability tooling has converged on exactly these vectors, which validates the taxonomy and tells us which off-the-shelf ideas to borrow:
+
+- **Native-file readers** — `vibe-log` (Claude Code + Codex JSONL → reports, sanitized before optional sync), `claude-code-templates` observability dashboard, `claude-code-log`, `claude-JSONL-browser`. Same vector A, same per-provider-parser shape Déjà Vu uses.
+- **Hook fan-out** — `claude-code-hooks-multi-agent-observability` POSTs hook events to a local server in real time. Same vector B.
+- **Built-in OTEL collectors** — `claude-code-otel`, `claude_telemetry`/"claudia" (a drop-in `claude` wrapper that sets the OTEL env vars), and `Langfuse` ingesting Claude Code's OTLP directly. Same vector C.
+- **Wire-level tracers** — `claude-trace` (fetch-patch via `node --require`, captures system prompt + tool defs + thinking + raw req/resp pairs) and `claude-tap` (a cross-agent reverse/forward proxy covering Claude Code, Codex, Gemini, Cursor, OpenCode, Kimi). Same vector D — and proof that one proxy can capture *all* the agents jackin' runs.
+- **SDK/standard schema** — OpenLLMetry/Traceloop and Arize Phoenix/OpenInference instrument app code and emit the `gen_ai.*` / OpenInference conventions; relevant to Déjà Vu only as the normalized vocabulary to align the canonical record to.
+
+The takeaway: nobody has built the *cross-agent, host-side, browse-first archive* Déjà Vu targets, but every extraction primitive it needs is proven in the wild. Déjà Vu's novelty is the unification (one record, one browse surface, keyed by workspace/instance) and the integration with jackin's container ownership — not the act of extraction itself.
+
+## Decision: layered fallback, chosen per agent
+
+Capture is a layered fallback, selected per agent from the vectors above, in priority order:
+
+1. **Native session file (A) — source of truth.** Claude Code, Codex, Kimi, OpenCode. Read host-side from the restored per-instance home. Lossless, passive, captures historical sessions, no agent cooperation.
+2. **Vendor stream / API / export (E) — cloud and unstable-format agents.** Amp (`--stream-json`, captured live) has no file to read. Also the safe path for any agent whose file format the vendor declares unstable (Codex says exactly this) and OpenCode's `serve` API for live capture.
+3. **Hooks and built-in OTEL (B, C) — liveness and a vendor-blessed hedge.** Where present (Claude Code, Codex, Kimi, OpenCode plugins), subscribe for low-latency capture and as a signal that does not depend on reverse-engineering a file layout.
+4. **Wire interception (D) — when the exact model-facing payload or thinking is needed.** Optional, passive for most agents; headless-only for interactive Claude Code.
+5. **Multiplexer screen scrape (F) — last resort.** Only when none of A–D is available for a session (see below). Lossy and gated.
 
 Per-provider parsers normalize whichever source is used into one record shape, so the storage and browse layers never learn five formats.
+
+## Last-resort fallback: extract from the multiplexer
+
+jackin' owns the in-container PTY multiplexer (`jackin-capsule`), which gives it a capture vector SpecStory and the file-readers do not have: the rendered terminal itself. This is genuinely useful as a **last resort** — e.g. an Amp session started outside Déjà Vu's stream capture, or any agent whose session file is missing — but it is deliberately ranked below every structured vector, and the source confirms exactly why.
+
+What the multiplexer can actually see (validated in <RepoFile path="crates/jackin-capsule/src/session.rs" />):
+
+- Capsule keeps one `vt100::Parser` per session; its `Screen` is the source of truth, exposed via `screen()`. Raw PTY bytes are read in a blocking reader loop and fed to the parser byte-by-byte, then **dropped** — there is no raw-byte or asciicast log retained by default.
+- It retains **`SCROLLBACK_LEN = 10_000`** lines of native `vt100` scrollback per session (the comment cites exactly this use case: "Operators need scrollback to read Codex / Claude responses that exceed one viewport"), plus a separate `inline_scrollback` buffer for Codex-style top-anchored scroll regions that `vt100` does not record as scrollback. The dirty-row renderer in <RepoFile path="crates/jackin-capsule/src/render.rs" /> already reads cells from the `Screen`.
+
+So jackin' can scrape the conversation as **rendered cells across ~10k lines of scrollback**, not just the 24-row viewport. But the caveats are real and disqualify it as a primary vector:
+
+- **Post-render and lossy.** It is the styled text the operator saw, with TUI chrome, spinners, redraw artifacts, and box-drawing baked in — not structured turns. Tool inputs/outputs appear only as far as the agent printed them; token usage is absent.
+- **No durable raw log.** Raw bytes are dropped after parsing, so there is no lossless replay source unless [terminal observation and automation](/reference/roadmap/terminal-observation-automation/) adds opt-in recording first.
+- **~10k-line horizon.** Anything older than the retained scrollback is gone.
+- **Secrets.** Rendered terminal output can contain tokens, paths, and file contents; screen-scrape capture must be opt-in and redaction-aware, consistent with the recording stance in [terminal observation and automation](/reference/roadmap/terminal-observation-automation/).
+
+This fallback shares its substrate and its discipline with the [agent runtime status authority](/reference/roadmap/agent-runtime-status/) (the herdr-inspired status work), which already reads the `vt100::Screen` to detect agent state. That item's hard-won rule applies here verbatim: **read the current screen, never trust arbitrary scrollback as authority**, and prefer structured/reported signals over screen parsing. Déjà Vu's screen-scrape tier is the conversation-capture analogue of that status detector — same `vt100` source, same "structured first, screen last" ranking, same per-agent visible-chrome knowledge. Where the status authority asks *"is the agent working or blocked?"*, Déjà Vu's fallback asks *"what text was exchanged?"* — and both should reuse one screen-reading layer in Capsule rather than building two.
+
+The framing to keep straight: Déjà Vu's **default** capture does not scrape the terminal (it reads native files); screen scraping is an explicit, gated, last-resort tier for sessions where no structured surface exists.
 
 ## Storage shape
 
 ### The normalized record
 
-One canonical record per conversation captures: identity (workspace, instance/container, agent, native session id, captured-at), the ordered turns (role, author, the visible content the operator saw, timestamp), and optional enrichment (tool calls/results, model id, token usage) when the native source supplies it. Per-agent quirks (Claude's `parentUuid` tree, Kimi's `turnId`, Codex's `RolloutItem` variants) are flattened into this shape at parse time and preserved verbatim in an opaque `raw` blob so nothing is thrown away.
+One canonical record per conversation captures: identity (workspace, instance/container, agent, native session id, captured-at), the ordered turns (role, author, the visible content the operator saw, timestamp), and optional enrichment (tool calls/results, model id, token usage) when the source supplies it. Per-agent quirks (Claude's `parentUuid` tree, Kimi's `turnId`, Codex's `RolloutItem` variants, the vector each turn was captured by) are flattened into this shape at parse time and preserved verbatim in an opaque `raw` blob so nothing is thrown away. Aligning the field vocabulary to the OpenTelemetry GenAI conventions (`input.messages`/`output.messages`/`system_instructions`) keeps the record interoperable with the observability ecosystem above.
 
 ### Format: compact canonical blob + index + render-on-demand
 
@@ -103,7 +239,7 @@ The host-side capture runs at the moments that matter and never depends on the o
 
 - **On session end / eject (the safety net).** Before `jackin eject` / `jackin prune` reclaims a per-instance data dir, Déjà Vu normalizes and copies every conversation it finds into the purge-surviving archive. This directly fixes "exiting the instance cleans up the conversation I still needed."
 - **Periodically / on demand for live instances.** A `jackin deja-vu sync` re-reads the restored homes and upserts new turns, so long-running instances are captured incrementally without waiting for teardown.
-- **Optionally live via hooks.** Where hooks exist, capture can be near-real-time instead of poll-based.
+- **Optionally live via hooks / stream-json.** Where hooks exist, capture can be near-real-time; for Amp, live `--stream-json` capture is the only complete option.
 
 ## Browse surfaces
 
@@ -119,41 +255,45 @@ Three layers, mirroring how the rest of jackin' separates capsule / protocol / h
 
 | Layer | Owns | Does not own |
 |---|---|---|
-| Per-agent providers | Locating, reading, and parsing each agent's native session store (or export/API/hooks) into the normalized record | The archive format, the index, or the browse UI |
+| Per-agent providers | Locating, reading, and parsing each agent's chosen extraction vector (native file / stream-json / API / hooks / screen) into the normalized record | The archive format, the index, or the browse UI |
 | Archive + index | The canonical protobuf store, the SQLite index, capture timing, render-on-demand to Markdown/JSON | How any single agent encodes its own sessions |
 | Surfaces (TUI / CLI / MCP) | Operator and agent access: browse, search, show, export | Re-parsing native formats or writing native stores |
 
-The capture path is host-side and read-only against agent state: it reads the per-instance homes jackin' already restores and runs read-only vendor exports (`amp threads export`). The only writes are into Déjà Vu's own `~/.jackin/data/deja-vu/` tree.
+The default capture path is host-side and read-only against agent state: it reads the per-instance homes jackin' already restores and runs read-only vendor exports/streams (`amp threads`/`--stream-json`). The screen-scrape fallback consumes Capsule's existing `vt100` screen layer. The only writes are into Déjà Vu's own `~/.jackin/data/deja-vu/` tree.
 
 ## Host-side effects
 
 Per the [security model](/guides/security-model/) and the never-mutate-the-host-silently contract, this item is explicit about what it touches on the host:
 
-- **Reads** the per-instance agent homes under `~/.jackin/data/<container>/` (jackin's own data; reading is always allowed) and runs read-only network fetches of the operator's *own* Amp threads via `amp threads export` using the already-forwarded `AMP_API_KEY`.
+- **Reads** the per-instance agent homes under `~/.jackin/data/<container>/` (jackin's own data; reading is always allowed) and runs read-only network fetches of the operator's *own* Amp threads/streams using the already-forwarded `AMP_API_KEY`.
 - **Writes** only under `~/.jackin/data/deja-vu/` — jackin's own host root, the sanctioned location for jackin-owned state. It never writes into the operator's repositories, `~/.claude/`, `~/.codex/`, `~/.config/gh/`, dotfiles, or any non-jackin path.
-- Capture is **opt-in and surfaced** (config flag / CLI flag), and the archive location is reported, consistent with the host-effects contract. No container-side path is required for the file-reading path; if a future capsule-side capture point is added it lives under `/jackin/` (e.g. `/jackin/deja-vu/`), never under `/run`, `/var`, or `/tmp`.
+- Capture is **opt-in and surfaced** (config flag / CLI flag), and the archive location is reported, consistent with the host-effects contract. The wire-interception (D) and screen-scrape (F) vectors, because they can capture secrets and model-facing payloads, are additionally opt-in and redaction-aware. No container-side path is required for the file-reading path; if a future capsule-side capture point is added it lives under `/jackin/` (e.g. `/jackin/deja-vu/`), never under `/run`, `/var`, or `/tmp`.
 
 ## Phases
 
 ### Phase 0 — Normalized record + one provider
 
-Define the normalized record and the protobuf schema. Implement the Claude Code provider (richest, best-documented format) and a `jackin deja-vu show` that renders one captured conversation to Markdown. No archive yet — prove the parse → normalize → render path end to end.
+Define the normalized record and the protobuf schema. Implement the Claude Code native-file provider (richest, best-documented format) and a `jackin deja-vu show` that renders one captured conversation to Markdown. No archive yet — prove the parse → normalize → render path end to end.
 
 ### Phase 1 — Archive, index, and the eject safety net
 
 Add the `~/.jackin/data/deja-vu/` archive, the SQLite index, and capture-on-eject so the operator's pain point is fixed first. `jackin deja-vu list` and `jackin deja-vu sync`.
 
-### Phase 2 — Remaining providers
+### Phase 2 — Remaining native-file providers + Amp stream
 
-Codex, Kimi (`kimi-code`), and OpenCode native-file providers, plus the Amp export/API provider. Confirm each against a live in-container layout before trusting it.
+Codex, Kimi (`kimi-code`), and OpenCode native-file providers, plus the Amp live `--stream-json` provider. Confirm each against a live in-container layout before trusting it.
 
 ### Phase 3 — Browse TUI
 
 The `jackin deja-vu` console-style browser: workspace → instance/date → conversation → thread. The first surface most operators will actually use.
 
-### Phase 4 — Search and MCP
+### Phase 4 — Search, MCP, and liveness
 
-Index-backed search (`jackin deja-vu search`) and the MCP server exposing list/read/search to agents. This is the bridge toward cross-agent recall and orchestration.
+Index-backed search (`jackin deja-vu search`), the MCP server exposing list/read/search to agents, and live capture via hooks / stream-json / the OpenCode `serve` API for long-running instances.
+
+### Phase 5 — Optional deep-fidelity and fallback vectors
+
+Wire interception (D) for the exact system prompt / thinking where an operator wants it, and the multiplexer screen-scrape (F) last-resort tier sharing Capsule's `vt100` layer with the [agent runtime status authority](/reference/roadmap/agent-runtime-status/). Both opt-in and redaction-aware.
 
 ## Non-goals for V1
 
@@ -173,16 +313,19 @@ Named so later work has a home and V1 stays small:
 | Protobuf vs JSONL as the canonical store? | Protobuf for compactness + schema, per operator preference; JSONL is the documented fallback if codegen cost outweighs the benefit for V1. Decide in an ADR. |
 | Déjà Vu-private index vs a table in the persistent storage layer? | Prefer reusing the [persistent storage layer](/reference/roadmap/persistent-storage-layer/) once it lands; ship a small private SQLite index first if Déjà Vu moves earlier. |
 | Workspace-scoped vs instance-scoped archive? | Workspace-scoped under `~/.jackin/data/deja-vu/<workspace>/` so it survives per-instance purge — the explicit requirement. Instance and date are sub-keys, not the top key. |
+| Is reading the agent's native session file durable given vendors call the format internal? | Treat it as the primary vector but pair unstable-format agents (Codex explicitly) with a vendor-blessed vector (hooks / stream-json / OTEL) so a format change degrades rather than breaks capture. |
 | How is the Kimi `kimi-code` on-disk layout confirmed? | Verify live inside a running jackin' Kimi container (`ls ~/.kimi-code/sessions/…`); the shipped distribution may differ from both the documented `kimi-code` and the legacy Python `kimi-cli` trees. |
 | Capture on every eject by default, or opt-in? | Lean opt-in-but-default-on per workspace, surfaced in the launch summary, so the safety net is real without being a silent host write. |
-| Do we capture tool calls/diffs in V1? | Capture them when the native source provides them for free; never block the must-have (prompts + visible answers) on them. |
+| Do we capture tool calls/diffs/thinking in V1? | Capture them when the native source provides them for free; never block the must-have (prompts + visible answers) on them. Thinking and the model-facing system prompt need vector D and are deferred to Phase 5. |
+| Should the screen-scrape fallback and the status authority share one screen-reading layer? | Yes — both read Capsule's `vt100::Screen`; build one reusable screen-extraction layer rather than two. |
 
 ## Related roadmap items
 
 - [Session keep and resume](/reference/roadmap/session-keep-and-resume/) — the shipped mechanism that already restores agent conversation history onto the host; Déjà Vu's primary capture source.
 - [Persistent storage and workspace memory layer](/reference/roadmap/persistent-storage-layer/) — the index/DB home Déjà Vu should reuse, and the cross-agent memory direction it complements.
-- [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) — sibling capture surface (live terminal frames/recordings) vs Déjà Vu's structured conversation archive.
-- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — the five-runtime model whose per-agent quirks the providers normalize.
+- [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) — owns the PTY/`vt100` read APIs and opt-in recording the screen-scrape fallback would build on.
+- [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — the herdr-inspired status work; shares Capsule's `vt100` screen-reading substrate and the "structured signals first, screen last, never trust scrollback as authority" discipline.
+- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — the five-runtime model whose per-agent extraction surfaces the providers normalize.
 - [Host bridge](/reference/roadmap/host-bridge/) — the host-mediated MCP surface the agent-facing read tools plug into.
 - [jackin' daemon](/reference/roadmap/jackin-daemon/) — the future long-running host process that could own periodic/live capture.
 - [Agent workflow orchestration](/reference/roadmap/agent-workflow-orchestration/) — future consumer of the captured-conversation read surface.
