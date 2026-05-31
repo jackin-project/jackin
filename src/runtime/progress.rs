@@ -327,7 +327,7 @@ impl LaunchProgress {
         title: &str,
         default: Option<&str>,
         skippable: bool,
-    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+    ) -> anyhow::Result<jackin_launch::PromptResult> {
         self.with_rich_renderer("manifest env text prompt", |renderer| {
             renderer.prompt_text(title, default.unwrap_or_default(), skippable)
         })
@@ -339,7 +339,7 @@ impl LaunchProgress {
         options: &[String],
         default: Option<&str>,
         skippable: bool,
-    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+    ) -> anyhow::Result<jackin_launch::PromptResult> {
         self.with_rich_renderer("manifest env select prompt", |renderer| {
             renderer.prompt_select(title, options, default, skippable)
         })
@@ -832,7 +832,7 @@ impl RichRenderer {
         title: &str,
         initial: &str,
         skippable: bool,
-    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+    ) -> anyhow::Result<jackin_launch::PromptResult> {
         self.with_raw_mode("entering raw mode for launch env prompt", |renderer| {
             renderer.prompt_text_loop(title, initial, skippable)
         })
@@ -843,7 +843,7 @@ impl RichRenderer {
         title: &str,
         initial: &str,
         skippable: bool,
-    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+    ) -> anyhow::Result<jackin_launch::PromptResult> {
         use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let mut input = if skippable {
             TextInputState::new_allow_empty(title, initial)
@@ -865,10 +865,10 @@ impl RichRenderer {
                 }
                 match input.handle_key(key) {
                     ModalOutcome::Commit(value) if value.is_empty() && skippable => {
-                        return Ok(crate::env_resolver::PromptResult::Skipped);
+                        return Ok(jackin_launch::PromptResult::Skipped);
                     }
                     ModalOutcome::Commit(value) => {
-                        return Ok(crate::env_resolver::PromptResult::Value(value));
+                        return Ok(jackin_launch::PromptResult::Value(value));
                     }
                     ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
                     ModalOutcome::Continue => {}
@@ -883,7 +883,7 @@ impl RichRenderer {
         options: &[String],
         default: Option<&str>,
         skippable: bool,
-    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+    ) -> anyhow::Result<jackin_launch::PromptResult> {
         self.with_raw_mode("entering raw mode for launch env select", |renderer| {
             renderer.prompt_select_loop(title, options, default, skippable)
         })
@@ -895,7 +895,7 @@ impl RichRenderer {
         options: &[String],
         default: Option<&str>,
         skippable: bool,
-    ) -> anyhow::Result<crate::env_resolver::PromptResult> {
+    ) -> anyhow::Result<jackin_launch::PromptResult> {
         use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
         let mut items = options.to_vec();
         if skippable {
@@ -922,12 +922,10 @@ impl RichRenderer {
                 }
                 match picker.handle_key(key) {
                     ModalOutcome::Commit(index) if skippable && index == options.len() => {
-                        return Ok(crate::env_resolver::PromptResult::Skipped);
+                        return Ok(jackin_launch::PromptResult::Skipped);
                     }
                     ModalOutcome::Commit(index) => {
-                        return Ok(crate::env_resolver::PromptResult::Value(
-                            options[index].clone(),
-                        ));
+                        return Ok(jackin_launch::PromptResult::Value(options[index].clone()));
                     }
                     ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
                     ModalOutcome::Continue => {}
