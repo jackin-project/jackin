@@ -256,21 +256,9 @@ pub async fn run_console<H: InstanceActionHandler>(
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             needs_redraw |= manager::input::poll_background_loads(ms, &mut config, paths);
-            if let Some(result) = ms.poll_mount_info_refresh() {
-                needs_redraw |= manager::update_manager(
-                    ms,
-                    manager::ManagerMessage::MountInfoRefreshed(result),
-                )
-                .is_dirty();
+            for message in manager::poll_background_messages(ms, paths) {
+                needs_redraw |= manager::update_manager(ms, message).is_dirty();
             }
-            if let Some(result) = ms.poll_instance_refresh() {
-                needs_redraw |= manager::update_manager(
-                    ms,
-                    manager::ManagerMessage::InstancesRefreshed(result),
-                )
-                .is_dirty();
-            }
-            ms.request_instance_refresh(paths);
             // Poll the async drift check started by a save operation.
             // When ready, continue the save without blocking the reactor.
             if let Some((drift_check, detection)) = ms.poll_pending_drift_check() {
@@ -283,20 +271,6 @@ pub async fn run_console<H: InstanceActionHandler>(
                     detection,
                 );
                 needs_redraw = true;
-            }
-            // Poll the async 1Password read started when an op picker commits
-            // an OpRef from the auth form. The read runs on spawn_blocking so
-            // Touch ID / the 1Password desktop dialog don't freeze the TUI.
-            if let Some((op_ref, result, is_settings)) = ms.poll_pending_op_commit() {
-                needs_redraw |= manager::update_manager(
-                    ms,
-                    manager::ManagerMessage::OpCommitResolved {
-                        op_ref,
-                        result,
-                        is_settings,
-                    },
-                )
-                .is_dirty();
             }
         }
 

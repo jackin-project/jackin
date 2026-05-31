@@ -26,6 +26,6 @@ pub mod workspace_summary;
 
 pub use crate::console::tui::render::render;
 pub use input::{InputOutcome, handle_key};
-pub(crate) use message::{ManagerMessage, update_manager};
+pub(crate) use message::{ManagerMessage, poll_background_messages, update_manager};
 pub use pre_render::prepare_for_render;
 pub use state::{ManagerStage, ManagerState};

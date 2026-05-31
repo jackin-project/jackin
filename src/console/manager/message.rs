@@ -189,6 +189,28 @@ pub(crate) enum ManagerMessage {
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
 
+pub(crate) fn poll_background_messages(
+    state: &mut ManagerState<'_>,
+    paths: &crate::paths::JackinPaths,
+) -> Vec<ManagerMessage> {
+    let mut messages = Vec::new();
+    if let Some(result) = state.poll_mount_info_refresh() {
+        messages.push(ManagerMessage::MountInfoRefreshed(result));
+    }
+    if let Some(result) = state.poll_instance_refresh() {
+        messages.push(ManagerMessage::InstancesRefreshed(result));
+    }
+    state.request_instance_refresh(paths);
+    if let Some((op_ref, result, is_settings)) = state.poll_pending_op_commit() {
+        messages.push(ManagerMessage::OpCommitResolved {
+            op_ref,
+            result,
+            is_settings,
+        });
+    }
+    messages
+}
+
 #[allow(clippy::too_many_lines)]
 pub(crate) fn update_manager(
     state: &mut ManagerState<'_>,
