@@ -452,6 +452,9 @@ const SGR_NO_BUTTON_MOTION: u8 = 35;
 const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration = std::time::Duration::from_secs(2);
 /// One row reserved for the persistent hint bar shown in the main pane view.
 const CAPSULE_HINT_BAR_ROWS: u16 = 1;
+/// One blank separator row between the hint bar and the branch context bar,
+/// matching the console layout (hint → separator → chrome).
+const CAPSULE_HINT_SEPARATOR_ROWS: u16 = 1;
 /// One second is quick enough for operator-visible title/chrome updates after
 /// `git checkout` while avoiding a 10Hz daemon wake-up just to inspect local
 /// branch state.
@@ -468,7 +471,8 @@ impl Multiplexer {
         let content_rows = rows
             .saturating_sub(STATUS_BAR_ROWS)
             .saturating_sub(BRANCH_CONTEXT_BAR_ROWS)
-            .saturating_sub(CAPSULE_HINT_BAR_ROWS);
+            .saturating_sub(CAPSULE_HINT_BAR_ROWS)
+            .saturating_sub(CAPSULE_HINT_SEPARATOR_ROWS);
         let agents = launch_config.supported_agents();
         let zai_key = std::env::var("ZAI_API_KEY")
             .ok()
@@ -1926,8 +1930,8 @@ mod tests {
     fn branch_context_visibility_keeps_content_area_reserved() {
         let mut mux = test_mux(24, 100);
         let now = Instant::now();
-        // 24 rows − STATUS_BAR_ROWS(2) − BRANCH_CONTEXT_BAR_ROWS(1) − CAPSULE_HINT_BAR_ROWS(1) = 20
-        assert_eq!(mux.content_rows, 20);
+        // 24 rows − STATUS_BAR_ROWS(2) − BRANCH_CONTEXT_BAR_ROWS(1) − CAPSULE_HINT_BAR_ROWS(1) − CAPSULE_HINT_SEPARATOR_ROWS(1) = 19
+        assert_eq!(mux.content_rows, 19);
 
         mux.pull_request_context_cache.insert(
             branch("asa/pr-context"),
@@ -1938,7 +1942,7 @@ mod tests {
             },
         );
         assert!(mux.apply_git_branch_context(Some("asa/pr-context"), now));
-        assert_eq!(mux.content_rows, 20);
+        assert_eq!(mux.content_rows, 19);
         assert_eq!(
             mux.pull_request_context.as_deref().map(|pr| pr.number),
             Some(434)
@@ -1953,11 +1957,11 @@ mod tests {
             },
         );
         assert!(mux.apply_git_branch_context(Some("feature/no-pr"), now));
-        assert_eq!(mux.content_rows, 20);
+        assert_eq!(mux.content_rows, 19);
         assert!(mux.pull_request_context.is_none());
 
         assert!(mux.apply_git_branch_context(Some("main"), now));
-        assert_eq!(mux.content_rows, 20);
+        assert_eq!(mux.content_rows, 19);
         assert!(mux.pull_request_context.is_none());
     }
 
@@ -1968,8 +1972,8 @@ mod tests {
         mux.pull_request_context_branch = Some(branch("old/pr"));
         mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
         mux.reconcile_content_rows();
-        // 24 rows − STATUS_BAR_ROWS(2) − BRANCH_CONTEXT_BAR_ROWS(1) − CAPSULE_HINT_BAR_ROWS(1) = 20
-        assert_eq!(mux.content_rows, 20);
+        // 24 rows − STATUS_BAR_ROWS(2) − BRANCH_CONTEXT_BAR_ROWS(1) − CAPSULE_HINT_BAR_ROWS(1) − CAPSULE_HINT_SEPARATOR_ROWS(1) = 19
+        assert_eq!(mux.content_rows, 19);
 
         mux.pull_request_context_cache.insert(
             branch("new/local-branch"),
@@ -1986,7 +1990,7 @@ mod tests {
             Some("new/local-branch")
         );
         assert!(mux.pull_request_context.is_none());
-        assert_eq!(mux.content_rows, 20);
+        assert_eq!(mux.content_rows, 19);
     }
 
     #[test]

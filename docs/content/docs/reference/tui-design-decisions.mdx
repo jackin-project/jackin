@@ -171,6 +171,19 @@ Enforcement:
 
 Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in `jackin-tui` (`Key`, `Text`, `Sep`, `GroupSep`), and the styling rule is identical everywhere: `Key` is white + bold, `Text` is phosphor green (rendered with a leading space), `Sep` is a gray `" · "`, `GroupSep` is three spaces, and the row is centered. Ratatui surfaces render this through the shared `HintBar` component in <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" />; the in-container multiplexer still uses its raw-ANSI `render_hint_row` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> until the capsule Ratatui frame lands. Define a screen's hint as a `&[HintSpan]` constant and pass it to the renderer; do not assemble styled `Span`s, raw separator strings, or per-surface colour choices inline. A new hand-rolled hint row (its own `Span::styled` key/label pairs, its own `" · "` literal, or its own dim/green choice) is a design-decision violation: route it through the shared span list + renderer instead. This is what lets the cockpit picker, the build-log overlay, and every capsule dialog footer read identically.
 
+### Bottom chrome layout — mandatory row order
+
+Every full-screen TUI surface must follow this bottom-chrome order (bottom of terminal, counting upward):
+
+1. **Row: debug status bar** — only present when `--debug` is active. Background `DANGER_RED`, shows `[debug]  run: <run-id>`. This is the last (lowest) row.
+2. **Row: branch / instance context bar** — the white/dark bar showing the current branch, PR info, or container ID. Present on every surface where it applies.
+3. **Row: empty separator** — one blank row between the context bar and the hint bar. This visual gap makes the hint area feel separate from the system chrome below it.
+4. **Row: hint bar** — keyboard shortcuts for the current focus context. This is the first visible row above the chrome group.
+
+The host console matches this order. The capsule must also follow it: `MAIN_VIEW_HINT` renders above an empty separator row above the branch context bar. Any surface that collapses the separator or places hints directly adjacent to the system bar is a violation.
+
+**Implementation:** The separator row is a blank `PHOSPHOR_DARK` row, not an empty string — it must use the same background as the surrounding chrome so it reads as intentional spacing, not a rendering gap.
+
 ### Brand chrome is shared across every top-level screen
 
 Every full-screen jackin' surface — the workspace list, settings, the workspace editor, and the launch progress screen — renders the same brand header through one shared helper (`render_brand_header` / `brand_header_line` in <RepoFile path="src/console/widgets/mod.rs" />): the ` jackin' ` phosphor-green pill (black foreground, bold) pinned to the top-left, a `·` separator, then the screen label. The pill matches the in-container multiplexer status-bar brand pill (<RepoFile path="crates/jackin-capsule/src/statusbar.rs" />) so the logo never shifts position, colour, or weight as the operator transitions between screens. The header occupies two rows (brand row + one spacer); the screen body starts on the third row. New top-level screens must call the shared helper rather than hand-rolling a brand line — a divergent logo is a chrome-consistency bug.

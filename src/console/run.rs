@@ -37,18 +37,44 @@ fn split_debug_area(
     (main, Some(bar))
 }
 
-/// Render the 1-row `[debug]  run: <run_id>` status bar into `area`.
+/// Render the 1-row debug status bar: white bar with run ID as a red chip on the right.
+///
+/// Layout: white background across the full width; the run ID is right-aligned
+/// and rendered on a DANGER_RED background so it reads as a distinct chip.
+/// Only the chip is red — the rest of the bar matches the white status bar style.
 fn render_debug_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, run_id: &str) {
-    use ratatui::style::Style;
-    use ratatui::widgets::Paragraph;
-    let text = format!("  [debug]  run: {run_id}  ");
+    use ratatui::{
+        layout::{Constraint, Layout},
+        style::Style,
+        text::{Line, Span},
+        widgets::Paragraph,
+    };
+
+    let chip_text = format!(" {run_id} ");
+    let chip_width = chip_text.chars().count() as u16;
+    // Left: white background fills the remainder.
+    // Right: red chip exactly as wide as the run ID text.
+    let [left_area, chip_area] = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(chip_width),
+    ])
+    .areas(area);
+
+    let white_bg = Style::default()
+        .bg(jackin_tui::theme::WHITE)
+        .fg(jackin_tui::theme::PHOSPHOR_DARK);
+    let chip_style = Style::default()
+        .bg(jackin_tui::theme::DANGER_RED)
+        .fg(jackin_tui::theme::WHITE)
+        .add_modifier(ratatui::style::Modifier::BOLD);
+
     frame.render_widget(
-        Paragraph::new(text).style(
-            Style::default()
-                .bg(jackin_tui::theme::DANGER_RED)
-                .fg(jackin_tui::theme::WHITE),
-        ),
-        area,
+        Paragraph::new(Line::from(vec![Span::raw("")])).style(white_bg),
+        left_area,
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::styled(chip_text, chip_style)])),
+        chip_area,
     );
 }
 

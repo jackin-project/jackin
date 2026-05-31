@@ -142,15 +142,27 @@ impl Multiplexer {
                 return;
             }
 
-            // Hint bar: one row above the branch context bar (no dialog open).
+            // Hint bar: two rows above branch context bar with a blank separator row
+            // between them — consistent with console bottom chrome layout:
+            //   term_rows-1: branch context bar
+            //   term_rows-2: blank separator row
+            //   term_rows-3: hint bar
             let hint_spans = crate::dialog::main_view_hint(scrollback_active);
             let hint_area = RatatuiRect {
+                x: 0,
+                y: term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
+                width: term_cols,
+                height: 1,
+            };
+            jackin_tui::components::render_hint_bar(frame, hint_area, hint_spans);
+            // Separator row between hint bar and branch context bar.
+            let sep_area = RatatuiRect {
                 x: 0,
                 y: term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1),
                 width: term_cols,
                 height: 1,
             };
-            jackin_tui::components::render_hint_bar(frame, hint_area, hint_spans);
+            frame.render_widget(ratatui::widgets::Block::default(), sep_area);
 
             // Pane bodies + borders
             for pane in &panes {
@@ -334,7 +346,8 @@ impl Multiplexer {
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
         let hint_spans = crate::dialog::main_view_hint(scrollback_active);
-        let hint_row = self.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1);
+        // Hint row is 2 above branch context bar (separator row at +1 between them).
+        let hint_row = self.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);
         crate::dialog::render_hint_row(&mut buf, hint_row, self.term_cols, hint_spans);
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
