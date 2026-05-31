@@ -1762,6 +1762,7 @@ dependencies = [
 name = "jackin-tui"
 version = "0.6.0-dev"
 dependencies = [
+ "anstyle-parse",
  "base64",
  "crossterm",
  "ratatui",

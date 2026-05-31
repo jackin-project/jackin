@@ -8,6 +8,7 @@
 //! own domain state and compose these pieces instead of re-declaring
 //! palette values or reimplementing visual primitives.
 
+pub mod ansi_text;
 pub mod components;
 pub mod geometry;
 pub mod runtime;

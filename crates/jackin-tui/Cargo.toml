@@ -14,6 +14,7 @@ name = "jackin_tui"
 path = "src/lib.rs"
 
 [dependencies]
+anstyle-parse = "1.0"
 base64 = "0.22"
 crossterm = "0.29"
 ratatui = "0.30"
