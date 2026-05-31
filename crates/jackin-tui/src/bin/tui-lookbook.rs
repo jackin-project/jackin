@@ -27,9 +27,9 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{List, ListItem, ListState, Paragraph, Wrap},
 };
 
 const USAGE: &str =
@@ -109,12 +109,6 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
         terminal.draw(|frame| {
             let area = frame.area();
-
-            // Whole-screen black background.
-            frame.render_widget(
-                Block::default().style(Style::default().bg(Color::Black)),
-                area,
-            );
 
             // ── Global layout ─────────────────────────────────────────────────
             // brand(2) | main | hint(1)
@@ -232,32 +226,52 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             let preview_inner = preview_block.inner(preview_area);
             frame.render_widget(preview_block, preview_area);
 
-            // Fill preview inner with black.
+            // Fill the preview canvas with PHOSPHOR_DARK so the preview area
+            // is visually distinct from the transparent terminal background.
+            // This makes the component's boundaries immediately clear — the
+            // operator can see exactly where the preview canvas starts and ends.
             frame.render_widget(
-                Block::default().style(Style::default().bg(Color::Black)),
+                ratatui::widgets::Block::default()
+                    .style(ratatui::style::Style::default().bg(PHOSPHOR_DARK)),
                 preview_inner,
             );
 
-            // Centre component horizontally, clip vertically.
+            // Centre component both horizontally and vertically within the
+            // canvas. Vertical centering uses the story's natural height so a
+            // small component sits in the middle of the canvas rather than
+            // at the top edge.
+            let vp_width = preview_inner.width;
             let vp_height = preview_inner.height;
+            let content_width = story.width.min(vp_width);
             let content_height = story.height;
+
             let effective_scroll =
                 preview_scroll.min(max_offset(content_height as usize, vp_height as usize));
 
-            let cx = preview_inner.x + preview_inner.width.saturating_sub(story.width) / 2;
-            let cy = preview_inner
-                .y
-                .saturating_sub(effective_scroll)
-                .max(preview_inner.y);
+            // Horizontal: centred.
+            let cx = preview_inner.x + vp_width.saturating_sub(content_width) / 2;
 
-            let clamped_height = content_height
-                .saturating_sub(effective_scroll)
-                .min(vp_height);
+            // Vertical: centred when content fits; scrollable when it doesn't.
+            let cy = if content_height <= vp_height {
+                // Content fits — centre it.
+                preview_inner.y + vp_height.saturating_sub(content_height) / 2
+            } else {
+                // Content taller than viewport — apply scroll offset from top.
+                preview_inner.y.saturating_sub(effective_scroll)
+            };
+
+            let clamped_height = if content_height <= vp_height {
+                content_height
+            } else {
+                content_height
+                    .saturating_sub(effective_scroll)
+                    .min(vp_height)
+            };
 
             let component_rect = Rect {
                 x: cx,
-                y: cy,
-                width: story.width.min(preview_inner.width),
+                y: cy.max(preview_inner.y),
+                width: content_width,
                 height: clamped_height,
             };
 
