@@ -1,6 +1,7 @@
 //! Host console surface ownership and runtime helpers.
 
 pub mod terminal;
+pub mod widgets;
 pub mod workspace;
 
 pub trait ConsoleHostTerminal: Send + Sync {
