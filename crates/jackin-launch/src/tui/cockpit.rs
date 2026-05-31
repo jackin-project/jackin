@@ -3,11 +3,14 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::Clear;
+use std::io::Write as _;
 
 use crate::LaunchView;
 use crate::tui::build_log::render_build_log_dialog;
-use crate::tui::container_info::render_launch_container_info;
-use crate::tui::failure::render_failure_popup;
+use crate::tui::container_info::{
+    launch_container_info_rect, launch_container_info_state, render_launch_container_info,
+};
+use crate::tui::failure::{failure_popup_hyperlink_overlay, render_failure_popup};
 use crate::tui::footer::render_footer;
 use crate::tui::header::render_cockpit_header;
 use crate::tui::progress::render_progress;
@@ -90,4 +93,64 @@ fn render_body(
         .split(inner);
     render_rain(frame, parts[0], rain);
     render_progress(frame, parts[1], view, frozen);
+}
+
+pub fn emit_launch_hyperlink_overlays(
+    area: Rect,
+    view: &LaunchView,
+    run_id: &str,
+    run_log_path: &str,
+    debug_mode: bool,
+    jackin_version: &'static str,
+) {
+    emit_failure_popup_hyperlink_overlay(area, view, run_id);
+    emit_launch_container_info_hyperlink_overlay(
+        area,
+        view,
+        run_id,
+        run_log_path,
+        debug_mode,
+        jackin_version,
+    );
+}
+
+fn emit_launch_container_info_hyperlink_overlay(
+    area: Rect,
+    view: &LaunchView,
+    run_id: &str,
+    run_log_path: &str,
+    debug_mode: bool,
+    jackin_version: &'static str,
+) {
+    if !view.container_info_open || view.failure.is_some() || view.build_log_open {
+        return;
+    }
+    let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
+    let rect = launch_container_info_rect(area, &state);
+    let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, &state);
+    if overlay.is_empty() {
+        return;
+    }
+    let mut out = std::io::stdout();
+    let _ = out.write_all(&overlay);
+    let _ = out.flush();
+}
+
+fn emit_failure_popup_hyperlink_overlay(area: Rect, view: &LaunchView, run_id: &str) {
+    let Some(failure) = view.failure.as_ref() else {
+        return;
+    };
+    let overlay = failure_popup_hyperlink_overlay(
+        area,
+        failure,
+        run_id,
+        view.failure_copy_hover,
+        view.failure_copied,
+    );
+    if overlay.is_empty() {
+        return;
+    }
+    let mut stdout = std::io::stdout();
+    let _ = stdout.write_all(&overlay);
+    let _ = stdout.flush();
 }
