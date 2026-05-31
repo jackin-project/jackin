@@ -159,7 +159,7 @@ The interactive console lives in `src/console/`:
 - `src/console/manager/` — the workspace-manager TUI subsystem. The message boundary lives in <RepoFile path="src/console/manager/message.rs" /> (`ManagerMessage` enum + `update_manager`); render functions are pure (immutable model) and live under `src/console/manager/render/`; input handlers under `src/console/manager/input/` translate terminal events into `ManagerMessage` variants.
 - `src/console/widgets/` — host-console adapters and still-local modal widgets. Shared tokens and promoted components live in <RepoFile path="crates/jackin-tui/src/components.rs" />.
 - <RepoFile path="crates/jackin-tui/src/runtime.rs" /> — small shared runtime contracts such as `Dirty` and `UpdateResult`, used by host and launch update functions.
-- <RepoFile path="crates/jackin-tui/src/lookbook.rs" /> — renderable
+- <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> — renderable
   component stories used by the `tui-lookbook` generator to produce the
   [TUI Lookbook](/reference/tui-lookbook/) SVG previews.
 - <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" /> —
