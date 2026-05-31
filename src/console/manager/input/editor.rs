@@ -10,16 +10,24 @@ use super::super::super::widgets::{
     workdir_pick::WorkdirPickState,
 };
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::render::editor::{SecretsRow, secrets_flat_rows};
 use super::super::render::list::workspace_mounts_content_width;
 use super::super::state::{
     ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsScopeTag,
-    TextInputTarget,
+    FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow,
+    SecretsScopeTag, TextInputTarget,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+
+fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
+    jackin_console::editor::update::secrets_flat_rows(
+        &editor.pending.env,
+        &editor.pending.roles,
+        &editor.secrets_expanded,
+        |role| &role.env,
+    )
+}
 
 // Central keymap dispatch — table-like layout makes the keymap
 // readable at a glance; extracting per-key helpers just scatters it.
@@ -2300,12 +2308,12 @@ mod tests {
     //! bindings, and mount-row readonly toggle.
     use super::super::super::state::{
         ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
-        ManagerState, Modal, PendingRoleLoad, SecretsScopeTag, TextInputTarget,
+        ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
     };
     use super::super::test_support::{key, mount};
     use super::{
         apply_file_browser_to_editor, apply_role_input_with_runner, apply_text_input_to_pending,
-        env_key_input_state, handle_editor_modal, poll_role_load,
+        env_key_input_state, handle_editor_modal, poll_role_load, secrets_flat_rows,
     };
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
@@ -4368,13 +4376,12 @@ plugins = []
         editor.active_tab = EditorTab::Secrets;
         editor.tab_bar_focused = false;
         editor.secrets_expanded.insert("smith".into());
-        let role_key_row = super::super::super::render::editor::secrets_flat_rows(&editor)
+        let role_key_row = secrets_flat_rows(&editor)
             .iter()
             .position(|row| {
                 matches!(
                     row,
-                    super::super::super::render::editor::SecretsRow::RoleKeyRow { role, key }
-                        if role == "smith" && key == "API_TOKEN"
+                    SecretsRow::RoleKeyRow { role, key } if role == "smith" && key == "API_TOKEN"
                 )
             })
             .expect("role API_TOKEN row");
@@ -4412,8 +4419,6 @@ plugins = []
     /// blank-line-between-sections layout polish.
     #[test]
     fn cursor_skips_section_spacer_on_down_arrow() {
-        use super::super::super::render::editor::{SecretsRow, secrets_flat_rows};
-
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();

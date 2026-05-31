@@ -238,8 +238,8 @@ pub struct SettingsState<'a> {
 }
 
 pub use jackin_console::editor::state::{
-    CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget, SecretsScopeTag,
-    TextInputTarget,
+    CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget, SecretsRow,
+    SecretsScopeTag, TextInputTarget,
 };
 pub use jackin_console::settings::state::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,

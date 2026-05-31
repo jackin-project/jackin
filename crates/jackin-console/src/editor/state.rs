@@ -24,6 +24,24 @@ pub enum SecretsScopeTag {
     Role(String),
 }
 
+/// Flat row model for the Secrets tab; cursor is a single index.
+#[derive(Debug, Clone)]
+pub enum SecretsRow {
+    WorkspaceKeyRow(String),
+    WorkspaceAddSentinel,
+    RoleHeader {
+        role: String,
+        expanded: bool,
+    },
+    RoleKeyRow {
+        role: String,
+        key: String,
+    },
+    RoleAddSentinel(String),
+    /// Non-focusable; cursor Up/Down skips over it.
+    SectionSpacer,
+}
+
 #[derive(Debug, Clone)]
 pub struct PendingSaveCommit<M> {
     pub effective_removals: Vec<String>,

@@ -21,6 +21,7 @@ use super::{
     render_header,
 };
 use crate::config::AppConfig;
+pub(crate) use crate::console::manager::state::SecretsRow;
 use crate::console::manager::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, Modal, SecretsScopeTag,
 };
@@ -799,54 +800,13 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
     lines
 }
 
-/// Flat row model for the Secrets tab; cursor is a single index.
-#[derive(Debug, Clone)]
-pub(crate) enum SecretsRow {
-    WorkspaceKeyRow(String),
-    WorkspaceAddSentinel,
-    RoleHeader {
-        role: String,
-        expanded: bool,
-    },
-    RoleKeyRow {
-        role: String,
-        key: String,
-    },
-    RoleAddSentinel(String),
-    /// Non-focusable; cursor `↑`/`↓` skip over it.
-    SectionSpacer,
-}
-
 pub(crate) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    let mut rows = Vec::new();
-    for key in editor.pending.env.keys() {
-        rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
-    }
-    if !editor.pending.env.is_empty() {
-        rows.push(SecretsRow::SectionSpacer);
-    }
-    rows.push(SecretsRow::WorkspaceAddSentinel);
-    for role in editor.pending.roles.keys() {
-        rows.push(SecretsRow::SectionSpacer);
-        let expanded = editor.secrets_expanded.contains(role);
-        rows.push(SecretsRow::RoleHeader {
-            role: role.clone(),
-            expanded,
-        });
-        if expanded {
-            if let Some(ov) = editor.pending.roles.get(role) {
-                for key in ov.env.keys() {
-                    rows.push(SecretsRow::RoleKeyRow {
-                        role: role.clone(),
-                        key: key.clone(),
-                    });
-                }
-            }
-            rows.push(SecretsRow::SectionSpacer);
-            rows.push(SecretsRow::RoleAddSentinel(role.clone()));
-        }
-    }
-    rows
+    jackin_console::editor::update::secrets_flat_rows(
+        &editor.pending.env,
+        &editor.pending.roles,
+        &editor.secrets_expanded,
+        |role| &role.env,
+    )
 }
 
 /// Row-shape model for the Auth tab.
