@@ -14,7 +14,8 @@ use super::state::{
 use crate::config::AppConfig;
 use jackin_console::editor::update::{next_editor_tab, previous_editor_tab};
 use jackin_console::settings::update::{
-    move_general_selection, next_settings_tab, previous_settings_tab, toggle_general_selected,
+    move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
+    toggle_general_selected, toggle_trust_selected,
 };
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
@@ -609,9 +610,7 @@ fn toggle_settings_trust_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    if let Some(row) = settings.trust.pending.get_mut(settings.trust.selected) {
-        row.trusted = !row.trusted;
-    }
+    toggle_trust_selected(&mut settings.trust);
 }
 
 fn move_settings_auth_selection(state: &mut ManagerState<'_>, delta: isize) {
@@ -798,16 +797,7 @@ fn move_settings_trust_selection(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let max = settings.trust.pending.len().saturating_sub(1);
-    settings.trust.selected = if delta.is_negative() {
-        settings.trust.selected.saturating_sub(delta.unsigned_abs())
-    } else {
-        settings
-            .trust
-            .selected
-            .saturating_add(delta as usize)
-            .min(max)
-    };
+    move_trust_selection(&mut settings.trust, delta);
     settings.trust.scroll_y = super::render::cursor_scroll_for_panel(
         settings.trust.selected,
         settings.trust.scroll_y,

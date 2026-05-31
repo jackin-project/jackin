@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::state::{SettingsGeneralState, SettingsTab};
+use super::state::{SettingsGeneralState, SettingsTab, SettingsTrustState};
 
 #[must_use]
 pub const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
@@ -41,6 +41,21 @@ pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
             state.pending_dco = !state.pending_dco;
         }
         _ => {}
+    }
+}
+
+pub fn move_trust_selection(state: &mut SettingsTrustState, delta: isize) {
+    let max = state.pending.len().saturating_sub(1);
+    state.selected = if delta.is_negative() {
+        state.selected.saturating_sub(delta.unsigned_abs())
+    } else {
+        state.selected.saturating_add(delta as usize).min(max)
+    };
+}
+
+pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
+    if let Some(row) = state.pending.get_mut(state.selected) {
+        row.trusted = !row.trusted;
     }
 }
 
