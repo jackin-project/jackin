@@ -1,8 +1,6 @@
 //! Editor-stage dispatch: tab navigation, field focus, per-tab key
 //! handling, and the editor-level modal dispatcher.
 
-#[cfg(test)]
-use anyhow::Context as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures_util::FutureExt as _;
 
@@ -1862,7 +1860,7 @@ pub(super) fn poll_role_load(
 }
 
 #[cfg(test)]
-fn apply_role_input_with_runner(
+async fn apply_role_input_with_runner(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
@@ -1883,7 +1881,7 @@ fn apply_role_input_with_runner(
     crate::debug_log!("role", "parsed role selector: {selector}");
 
     let key = selector.key();
-    let result = (|| -> anyhow::Result<crate::config::RoleSource> {
+    let result = async {
         let source = candidate_role_source(config, &selector)?;
         crate::debug_log!(
             "role",
@@ -1897,21 +1895,20 @@ fn apply_role_input_with_runner(
             "registering role repo for key={key:?} git={git:?}",
             git = source.git.as_str()
         );
-        let registration = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .context("building tokio runtime for role registration")?;
-            rt.block_on(crate::runtime::register_agent_repo(
+        let registration = std::panic::AssertUnwindSafe(async {
+            crate::runtime::register_agent_repo(
                 paths,
                 &selector,
                 &source.git,
                 runner,
                 crate::tui::is_debug_mode(),
-            ))?;
+            )
+            .await?;
             persist_role_source_registration(config, paths, &key, &source_to_register)?;
             Ok::<_, anyhow::Error>(())
-        }));
+        })
+        .catch_unwind()
+        .await;
         match registration {
             Ok(result) => result?,
             Err(payload) => {
@@ -1929,7 +1926,8 @@ fn apply_role_input_with_runner(
             git = source.git.as_str()
         );
         Ok(source)
-    })();
+    }
+    .await;
 
     match result {
         Ok(source) if source.trusted => {
@@ -2888,8 +2886,8 @@ plugins = []
         }
     }
 
-    #[test]
-    fn role_input_resolves_then_persists_namespaced_role_after_trust() {
+    #[tokio::test]
+    async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -2913,7 +2911,8 @@ plugins = []
             &paths,
             "chainargos/agent-brown",
             &mut runner,
-        );
+        )
+        .await;
 
         assert!(
             runner.recorded.iter().any(|cmd| cmd
@@ -3086,8 +3085,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn role_input_trust_decline_keeps_registered_role_untrusted() {
+    #[tokio::test]
+    async fn role_input_trust_decline_keeps_registered_role_untrusted() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -3109,7 +3108,8 @@ plugins = []
             &paths,
             "chainargos/agent-brown",
             &mut runner,
-        );
+        )
+        .await;
         assert!(matches!(editor.modal, Some(Modal::Confirm { .. })));
 
         handle_modal_with(&mut editor, key(KeyCode::Char('n')), &mut config, &paths);
@@ -3140,8 +3140,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
+    #[tokio::test]
+    async fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -3171,7 +3171,8 @@ plugins = []
             &paths,
             "chainargos/agent-brown",
             &mut runner,
-        );
+        )
+        .await;
         assert!(matches!(
             editor.modal,
             Some(Modal::Confirm {
@@ -3203,8 +3204,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn role_input_trusted_existing_role_skips_trust_prompt() {
+    #[tokio::test]
+    async fn role_input_trusted_existing_role_skips_trust_prompt() {
         // When the config already has a trusted role source the editor
         // must register the cached repo and add it to the workspace
         // *without* re-prompting for trust (`Ok(source) if
@@ -3238,7 +3239,8 @@ plugins = []
             &paths,
             "chainargos/agent-brown",
             &mut runner,
-        );
+        )
+        .await;
 
         assert!(
             editor.modal.is_none(),
@@ -3255,8 +3257,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn role_input_clone_failure_reports_candidate_repository_url() {
+    #[tokio::test]
+    async fn role_input_clone_failure_reports_candidate_repository_url() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -3275,7 +3277,8 @@ plugins = []
             &paths,
             "the-architect2",
             &mut runner,
-        );
+        )
+        .await;
 
         match &editor.modal {
             Some(Modal::ErrorPopup { state }) => {
@@ -3319,8 +3322,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn role_input_invalid_repo_reports_role_contract_error() {
+    #[tokio::test]
+    async fn role_input_invalid_repo_reports_role_contract_error() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -3349,7 +3352,8 @@ plugins = []
             &paths,
             "chainargos/agent-brown",
             &mut runner,
-        );
+        )
+        .await;
 
         match &editor.modal {
             Some(Modal::ErrorPopup { state }) => {
@@ -3414,8 +3418,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn role_input_panic_in_registration_is_converted_to_error_popup() {
+    #[tokio::test]
+    async fn role_input_panic_in_registration_is_converted_to_error_popup() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -3435,7 +3439,8 @@ plugins = []
             &paths,
             "the-architect2",
             &mut runner,
-        );
+        )
+        .await;
 
         match &editor.modal {
             Some(Modal::ErrorPopup { state }) => {
