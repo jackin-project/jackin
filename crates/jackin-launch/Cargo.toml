@@ -1,0 +1,9 @@
+[package]
+name = "jackin-launch"
+version = "0.6.0-dev"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }

@@ -60,6 +60,18 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 - **Last verified:** 2026-05-31 — capsule rendering files live under `crates/jackin-capsule/src/tui/`; console rendering files live under `src/console/tui/`; `cargo check` and `cargo fmt --check` pass locally.
 - **Done when:** resolved on `feature/tui-architecture`; remove this follow-up after CI passes on the directory migration commit.
 
+#### `jackin-console-jackin-launch-extraction` — split TUI surfaces into dedicated crates
+
+- **What:** Extract the launch cockpit into `crates/jackin-launch/` and the workspace manager into `crates/jackin-console/`, matching the crate landscape in [`docs/content/docs/reference/roadmap/tui-architecture.mdx`](docs/content/docs/reference/roadmap/tui-architecture.mdx).
+- **Why:** `jackin-tui` is already the shared design system, but the launch and console surfaces still live inside the root `jackin` crate. Dedicated crates give each surface a clear Model/Update/View boundary, a fast `cargo build -p <surface>` path, and stop terminal UI code from depending on unrelated CLI/runtime modules by accident.
+- **Plan:**
+  1. Move launch public state/stage vocabulary into `jackin-launch`, keeping `src/runtime/progress.rs` as a compatibility facade while the remaining cockpit code moves.
+  2. Move launch update/model code (`LaunchView`, `LaunchMessage`, failure state, prompt result) into `jackin-launch`.
+  3. Move launch view/event-loop code (`RichRenderer`, rain, failure/build-log dialogs) into `jackin-launch`, replacing root-only dependencies with explicit adapters for diagnostics, build-log snapshots, terminal globals, and ANSI span parsing.
+  4. Extract `src/console/` into `crates/jackin-console/`, with per-screen state/update/tui modules and root `jackin` routing CLI/runtime integration into the crate.
+- **Last verified:** 2026-05-31 — `crates/jackin-launch` exists and owns the public launch model/stage vocabulary; root `runtime::progress` re-exports it for existing callers.
+- **Done when:** `cargo build -p jackin-launch` and `cargo build -p jackin-console` compile the real launch/console implementations, `src/runtime/progress.rs` no longer contains the cockpit implementation, root `src/console/` is replaced by a thin integration facade or removed, and the roadmap's Phase 10 status can be marked complete.
+
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check
 
 - **What:** the deploy job's `Check deployed docs links` step in [`.github/workflows/docs.yml`](.github/workflows/docs.yml) emits a one-line `[WARN] [Full Github Actions output]: No files found for this input source` from the lychee binary, then continues and reports `Total 4703 / Successful 4703 / Errors 0`. Identify which of the 46 sitemap input URLs triggered the warn and either fix the cause or filter the warn so the signal is clean.

@@ -1687,6 +1687,7 @@ dependencies = [
  "futures-util",
  "insta",
  "jackin-build-meta",
+ "jackin-launch",
  "jackin-protocol",
  "jackin-tui",
  "nix 0.31.3",
@@ -1739,6 +1740,13 @@ dependencies = [
  "url",
  "vt100",
  "vte",
+]
+
+[[package]]
+name = "jackin-launch"
+version = "0.6.0-dev"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
