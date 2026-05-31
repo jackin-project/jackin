@@ -116,7 +116,10 @@ mod tests {
             f.render_widget(block, area);
         })
         .unwrap();
-        term.backend().buffer()[(0u16, 0u16)].style().fg.unwrap_or(Color::Reset)
+        term.backend().buffer()[(0u16, 0u16)]
+            .style()
+            .fg
+            .unwrap_or(Color::Reset)
     }
 
     #[test]

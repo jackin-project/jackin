@@ -417,16 +417,18 @@ pub mod ansi {
         let col = term_cols.saturating_sub(width) / 2;
 
         // Top border with ` Label ` callout in WHITE+BOLD.
+        // Border uses PHOSPHOR_GREEN — this dialog is always the active
+        // focused container when visible (focus-visible rule).
         move_to(buf, row, col);
         buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
+        fg(buf, PHOSPHOR_GREEN);
         buf.extend_from_slice("┌─ ".as_bytes());
         fg(buf, WHITE);
         buf.extend_from_slice(BOLD.as_bytes());
         buf.extend_from_slice(label.as_bytes());
         buf.extend_from_slice(RESET.as_bytes());
         buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
+        fg(buf, PHOSPHOR_GREEN);
         buf.push(b' ');
         let consumed = 3 /* "┌─ " */ + label.chars().count() as u16 + 1 /* " " */;
         for _ in consumed..(width - 1) {
@@ -437,7 +439,7 @@ pub mod ansi {
         // Pad row above input.
         move_to(buf, row + 1, col);
         buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
+        fg(buf, PHOSPHOR_GREEN);
         buf.extend_from_slice("│".as_bytes());
         for _ in 1..(width - 1) {
             buf.push(b' ');
@@ -449,7 +451,7 @@ pub mod ansi {
         // the value doesn't touch the band's left edge.
         move_to(buf, row + 2, col);
         buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
+        fg(buf, PHOSPHOR_GREEN);
         buf.extend_from_slice("│".as_bytes());
         buf.push(b' ');
         bg(buf, INPUT_BG_DIM);
@@ -488,7 +490,7 @@ pub mod ansi {
         // Restore band style + right pad + right border.
         buf.extend_from_slice(RESET.as_bytes());
         buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
+        fg(buf, PHOSPHOR_GREEN);
         move_to(buf, row + 2, col + width - 2);
         buf.push(b' ');
         buf.extend_from_slice("│".as_bytes());
@@ -496,7 +498,7 @@ pub mod ansi {
         // Pad row below input.
         move_to(buf, row + 3, col);
         buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
+        fg(buf, PHOSPHOR_GREEN);
         buf.extend_from_slice("│".as_bytes());
         for _ in 1..(width - 1) {
             buf.push(b' ');
@@ -506,7 +508,7 @@ pub mod ansi {
         // Bottom border.
         move_to(buf, row + height - 1, col);
         buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
+        fg(buf, PHOSPHOR_GREEN);
         buf.extend_from_slice("└".as_bytes());
         for _ in 1..(width - 1) {
             buf.extend_from_slice("─".as_bytes());

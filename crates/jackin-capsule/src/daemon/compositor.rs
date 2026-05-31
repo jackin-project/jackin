@@ -146,7 +146,12 @@ impl Multiplexer {
                     .unwrap_or("");
 
                 let focused = Some(pane.id) == focused_id;
-                let highlight_focus = if zoomed { false } else { multi_pane };
+                // Always show the green focus border on the active pane —
+                // even in single-pane mode. The green border is the
+                // focus-visible indicator (WCAG 2.4.11); suppressing it in
+                // single-pane made tab switches invisible. Zoomed mode hides
+                // all chrome so there is nothing to highlight.
+                let highlight_focus = !zoomed;
 
                 // Pane border (outer rect)
                 let border_area = RatatuiRect {

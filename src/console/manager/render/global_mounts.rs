@@ -1,6 +1,6 @@
 use ratatui::{
-    layout::Rect,
     Frame,
+    layout::Rect,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
@@ -918,8 +918,7 @@ fn truncate(value: &str, width: usize) -> String {
 mod tests {
     use super::*;
     use crate::config::AppConfig;
-    use ratatui::{
-    layout::Rect,Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
     fn render_settings_to_dump(state: &SettingsState<'_>) -> String {
         let backend = TestBackend::new(90, 18);

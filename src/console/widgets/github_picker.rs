@@ -70,8 +70,8 @@ use ratatui::{
 };
 
 use super::{PHOSPHOR_DIM, WHITE};
-use jackin_tui::components::{Panel, PanelFocus};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
+use jackin_tui::components::{Panel, PanelFocus};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
     // Title style matches WorkdirPick — Panel::block() applies the correct

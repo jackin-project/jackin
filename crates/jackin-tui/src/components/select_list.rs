@@ -9,6 +9,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
 use crate::ModalOutcome;
 use crate::components::FilterInput;
+use crate::components::panel::{Panel, PanelFocus};
 use crate::scroll::{cursor_follow_offset, full_cell_thumb, is_scrollable};
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
@@ -151,13 +152,14 @@ impl<'a> SelectList<'a> {
 
 impl Widget for SelectList<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(PHOSPHOR_DARK))
-            .title(Span::styled(
-                format!(" {} ", self.title),
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ));
+        // SelectList is always a modal overlay — always the active container
+        // when visible. Use PHOSPHOR_GREEN border per the focus-visible rule.
+        // Build the title string first so the borrow lives long enough.
+        let title_str = format!(" {} ", self.title);
+        let block = Panel::new()
+            .title(&title_str)
+            .focus(PanelFocus::Focused)
+            .block();
         let inner = block.inner(area);
         Clear.render(area, buf);
         block.render(area, buf);

@@ -244,8 +244,9 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             // is visually distinct from the terminal background without the
             // green tint of PHOSPHOR_DARK.
             frame.render_widget(
-                ratatui::widgets::Block::default()
-                    .style(ratatui::style::Style::default().bg(ratatui::style::Color::Rgb(28, 28, 28))),
+                ratatui::widgets::Block::default().style(
+                    ratatui::style::Style::default().bg(ratatui::style::Color::Rgb(28, 28, 28)),
+                ),
                 preview_inner,
             );
 

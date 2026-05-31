@@ -3896,7 +3896,10 @@ plugins = []
         let backend = TestBackend::new(80, 10);
         let mut term = ratatui::Terminal::new(backend).unwrap();
         term.draw(|f| {
-            { let a = f.area(); crate::console::manager::render::render_editor(f, a, editor, &config, true); };
+            {
+                let a = f.area();
+                crate::console::manager::render::render_editor(f, a, editor, &config, true);
+            };
         })
         .unwrap();
         let buf = term.backend().buffer();

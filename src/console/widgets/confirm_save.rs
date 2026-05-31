@@ -16,10 +16,10 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use jackin_tui::components::{Panel, PanelFocus};
 use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
 };
+use jackin_tui::components::{Panel, PanelFocus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveChoice {
