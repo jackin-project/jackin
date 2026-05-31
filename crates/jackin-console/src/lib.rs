@@ -10,6 +10,7 @@ pub mod mount_info_cache;
 pub mod op_cache;
 pub mod provider_picker;
 pub mod run;
+pub mod settings;
 pub mod split;
 pub mod terminal;
 pub mod widgets;
