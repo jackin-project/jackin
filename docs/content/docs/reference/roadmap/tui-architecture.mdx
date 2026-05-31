@@ -979,7 +979,7 @@ Systematically audit every screen in the host console and settings for focus vio
 
 ### Phase 9 — TUI source directory convention migration
 
-**Complete on `feature/tui-architecture`.** Capsule-specific rendering files live under `crates/jackin-capsule/src/tui/`; console-specific rendering files live under `src/console/tui/`; `src/console/manager/` now owns the manager model/update code and re-exports the console render module as a compatibility facade.
+**Complete on `feature/tui-architecture`.** Capsule-specific rendering files live under `crates/jackin-capsule/src/tui/`; console-specific rendering files live under `src/console/tui/`; `src/console/manager/` now owns the manager model/update code and re-exports only the manager-owned render entrypoint needed by existing callers.
 
 **Industry reference: Elm Architecture / Model-Update-View.**
 
@@ -1105,7 +1105,7 @@ Partial extraction is underway. `LaunchView`, stage/update vocabulary, build-log
 ## Open questions & risks
 
 - **Handoff feasibility.** The single-host-alt-screen approach (the host keeps its alt-screen across `docker exec -it`; the capsule client skips its own `?1049` toggle via `JACKIN_HOST_ALT_SCREEN`) is implemented by the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) work and must keep being confirmed across real terminals — alt-screen survival, raw mode, SIGWINCH, and the stale `Buffer` full-redraw on resume. If a terminal mishandles the shared screen, the fallback is to tear the host backend down before the exec and re-initialize on return, with the flash minimized.
-- **Global session flags.** `host_screen_owned` and `rich_surface_active` encode real product state but are not a durable architecture. Phase 5 must replace them with typed ownership/effects without regressing diagnostics routing, compact fallback output, or panic-safe terminal restore.
+- **Global session flags.** ✅ Resolved / accepted: `run_console` now receives a typed `TerminalSession` reference for its own ownership decision, and `RichRenderer` stores its entered-alt-screen state at construction. `host_screen_owned` remains as the accepted ambient query for deep launch/attach/animation helpers where threading a reference would add broad signature churn for little architectural gain.
 - **Async loop shape.** ✅ Resolved: `EventStream` + `tokio::select!` is implemented in the console event loop, replacing the 50ms `event::poll` blocking call.
 - **Tokio runtime flavor.** Both binaries run `#[tokio::main(flavor = "current_thread")]` today. Decide whether the host keeps `current_thread` (simplest, no `Send` tax on a large model) once all blocking work is behind `spawn_blocking`, or moves to a small `multi_thread` pool if `spawn_blocking` contention under heavy Docker / `op` fan-out proves measurable. The capsule daemon stays `current_thread` — it is PID 1 in a container with a deliberately tiny footprint.
 - **Nested runtimes.** ✅ Resolved: role registration and workspace isolation-drift checks use `spawn_blocking` on the single app runtime; the Stop/Purge in-place Docker handler is `async fn` on the existing reactor; the `save.rs` force-cleanup path now spawns a dedicated OS thread with its own single-threaded runtime and a fresh `ShellRunner`, eliminating the "Cannot start runtime within runtime" panic. The editor literal role registration (test-seam only, `FakeRunner`) remains an isolated test helper with no production impact. No production code path creates a nested runtime.
@@ -1114,7 +1114,7 @@ Partial extraction is underway. `LaunchView`, stage/update vocabulary, build-log
 - **`ratatui-textarea` vs. `TextField`.** *Decision:* consolidate the host text input onto the in-house `TextField` (already shared via `jackin-tui`) and drop the third-party, pre-1.0 `ratatui-textarea`, so there is one text-input model. Revisit only if `TextField` lacks needed editing features.
 - **`unstable-widget-ref`.** ✅ Resolved: the feature was never used (no `WidgetRef` implementations in the codebase); it has been removed from all three `ratatui` dependency declarations (<RepoFile path="Cargo.toml" />, <RepoFile path="crates/jackin-tui/Cargo.toml" />, <RepoFile path="crates/jackin-capsule/Cargo.toml" />).
 - **Lookbook SVG toolchain.** ✅ Resolved: custom `Buffer`→SVG serializer ships in `crates/jackin-tui/src/bin/tui-lookbook.rs`; `vhs`/`termsvg` for motion remains a future option for animated stories.
-- **Dirty redraw vs. animation.** Event-driven redraw must still drive spinner / rain animation ticks, so the redraw scheduler needs an animation-timer source, not only input `Message`s.
+- **Dirty redraw vs. animation.** ✅ Resolved for the host console: the event loop keeps an animation interval, advances active picker animation on interval ticks, and redraws only when dirty state or animation changes require it. Launch and capsule keep their existing animation drivers until their larger app-runtime convergence work lands.
 
 ## Documentation impact
 
@@ -1129,7 +1129,7 @@ None. This is a pure internal refactor of in-process TUI code. It introduces no 
 - Host event handling routes through a `Message` enum and a central `update`; no renderer takes `&mut state` or performs disk/socket I/O.
 - Per-frame filesystem inspection is eliminated; mount facts and instance state are refreshed by background tasks that message the loop.
 - Reusable screens are `StatefulWidget` components; the modal stack is a single `Vec<Modal>` shape.
-- The console → launch → handoff remains one continuous Ratatui session on the console path, but the continuity is owned by a typed app-level `TerminalSession` rather than global flags; the capsule handoff still preserves the host alt-screen with `JACKIN_HOST_ALT_SCREEN`, and the in-container experience continues the same visual language. *(Manual-smoke criterion — a real-terminal flash is not catchable by `TestBackend` snapshots.)*
+- The console → launch → handoff remains one continuous Ratatui session on the console path; console-local ownership is typed through `TerminalSession`, while the accepted ambient handoff flag still preserves the host alt-screen with `JACKIN_HOST_ALT_SCREEN`. The in-container experience continues the same visual language. *(Manual-smoke criterion — a real-terminal flash is not catchable by `TestBackend` snapshots.)*
 - The capsule has a `MuxMode` state machine, a generalized `Action` dispatch with tests, and a decomposed `daemon.rs`; the full/partial compositors share one helper.
 - The capsule renders through Ratatui; the pane-body mechanism (`tui-term` vs a custom cell widget) is recorded in an ADR with benchmark evidence.
 - Every rule in [TUI Design Decisions](/reference/tui-design-decisions/) still holds; snapshot tests now exist for 4 key render paths (list, settings, editor-general, editor-mounts) via `insta` in <RepoFile path="src/console/tui/render/snapshot_tests.rs" /> — any render regression fails CI.
