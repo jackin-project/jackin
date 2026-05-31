@@ -16,7 +16,7 @@ use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
 use super::super::super::widgets::op_picker::OpPickerState;
 use super::super::super::widgets::role_picker::RolePickerState;
 use super::super::auth_kind::{AuthKind, AuthMode};
-use super::super::render::editor::resolve_auth_row_target;
+use super::super::auth_rows::{eligible_agents_for_override, resolve_auth_row_target};
 use super::super::state::{
     AuthFormFocus, AuthFormTarget, EditorState, FieldFocus, Modal, TextInputTarget,
 };
@@ -76,7 +76,7 @@ pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppCo
         );
         return;
     };
-    let eligible = super::super::render::editor::eligible_agents_for_override(editor, config);
+    let eligible = eligible_agents_for_override(editor, config);
     let already_overridden: std::collections::BTreeSet<String> = editor
         .pending
         .roles

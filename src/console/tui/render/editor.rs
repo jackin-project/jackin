@@ -21,6 +21,13 @@ use super::{
     render_header,
 };
 use crate::config::AppConfig;
+pub(crate) use crate::console::manager::auth_rows::{
+    auth_flat_rows, resolve_panel_mode, synthesize_appconfig_for_auth, workspace_name_for_panel,
+};
+#[cfg(test)]
+pub(crate) use crate::console::manager::auth_rows::{
+    eligible_agents_for_override, resolve_auth_row_target,
+};
 pub use crate::console::manager::state::AuthRow;
 pub(crate) use crate::console::manager::state::SecretsRow;
 use crate::console::manager::state::{
@@ -810,111 +817,6 @@ pub(crate) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     )
 }
 
-/// Build the row-shape vector for the Auth tab.
-///
-/// `config` supplies the global `[claude]` / `[codex]` / `[amp]` /
-/// `[github]` blocks. Synthesized config (workspace pending merged
-/// onto globals) is built once and reused for every credential-row
-/// check across expanded roles.
-pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
-    use crate::console::manager::auth_kind::AuthKind;
-    let synthesized = synthesize_appconfig_for_auth(editor, config);
-    let ws_name = workspace_name_for_panel(editor);
-    jackin_console::editor::update::auth_flat_rows(
-        editor.auth_selected_kind,
-        [
-            AuthKind::Claude,
-            AuthKind::Codex,
-            AuthKind::Amp,
-            AuthKind::Opencode,
-            AuthKind::Github,
-            AuthKind::Zai,
-        ],
-        &editor.pending.roles,
-        editor.pending.allowed_roles.len(),
-        &editor.auth_expanded,
-        |kind, role| kind.role_override_present(role),
-        |kind, role| effective_mode_needs_credential(&synthesized, &ws_name, role, *kind),
-    )
-}
-
-/// Whether the (workspace, role, kind) triple's effective mode (after
-/// merging globals + workspace + role overrides) requires a credential.
-/// `role = ""` checks the workspace-level effective mode.
-fn effective_mode_needs_credential(
-    synthesized: &AppConfig,
-    ws_name: &str,
-    role: &str,
-    kind: crate::console::manager::auth_kind::AuthKind,
-) -> bool {
-    let mode = resolve_panel_mode(synthesized, kind, ws_name, role);
-    kind.required_env_var(mode).is_some()
-}
-
-/// Resolve the effective auth mode for the panel via the kind-specific
-/// resolver in `crate::config`. Agent kinds go through `resolve_mode`;
-/// Github routes through `resolve_github_mode`.
-fn resolve_panel_mode(
-    cfg: &AppConfig,
-    kind: crate::console::manager::auth_kind::AuthKind,
-    workspace: &str,
-    role: &str,
-) -> crate::console::manager::auth_kind::AuthMode {
-    use crate::console::manager::auth_kind::{AuthKind, AuthMode};
-    match kind {
-        AuthKind::Claude
-        | AuthKind::Codex
-        | AuthKind::Amp
-        | AuthKind::Kimi
-        | AuthKind::Opencode => {
-            // kind.agent() returns Some for all runtime agent kinds; this
-            // arm only matches runtime kinds, so None is structurally
-            // unreachable. Degrade silently to Ignore rather than
-            // panicking on the render path.
-            let Some(agent) = kind.agent() else {
-                return AuthMode::Ignore;
-            };
-            let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
-            AuthMode::from_auth_forward(mode)
-        }
-        AuthKind::Github => {
-            let mode = crate::config::resolve_github_mode(cfg, workspace, role);
-            AuthMode::from_github(mode)
-        }
-        AuthKind::Zai => {
-            // Z.AI has no auth_forward block; mode is derived from whether
-            // ZAI_API_KEY is present in the effective env at this layer.
-            let key_present = crate::operator_env::lookup_operator_env_raw(
-                cfg,
-                (!role.is_empty()).then_some(role),
-                Some(workspace),
-                "ZAI_API_KEY",
-            )
-            .is_some();
-            if key_present {
-                AuthMode::ApiKey
-            } else {
-                AuthMode::Ignore
-            }
-        }
-    }
-}
-
-/// Mirrors launch-time semantics from
-/// [`crate::app::context::eligible_roles_for_workspace`]. Roles
-/// already carrying an override are NOT filtered — operators may add
-/// more keys to an existing override.
-pub(crate) fn eligible_agents_for_override(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
-) -> Vec<String> {
-    if editor.pending.allowed_roles.is_empty() {
-        config.roles.keys().cloned().collect()
-    } else {
-        editor.pending.allowed_roles.clone()
-    }
-}
-
 // Linear match per row kind reads better than scattered helpers.
 #[allow(clippy::too_many_lines)]
 fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
@@ -1548,68 +1450,6 @@ pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>
     if let Some(query) = parts.attribute_query {
         spans.push(Span::raw(" "));
         spans.push(Span::styled(query, dim));
-    }
-}
-
-/// Merge live global blocks with `editor.pending` for the active
-/// workspace so the Auth panel renders pending edits before save.
-pub(crate) fn synthesize_appconfig_for_auth(
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) -> AppConfig {
-    let mut synthesized = AppConfig {
-        claude: config.claude.clone(),
-        codex: config.codex.clone(),
-        amp: config.amp.clone(),
-        opencode: config.opencode.clone(),
-        github: config.github.clone(),
-        env: config.env.clone(),
-        roles: config.roles.clone(),
-        ..AppConfig::default()
-    };
-    let ws_name = workspace_name_for_panel(state);
-    synthesized
-        .workspaces
-        .insert(ws_name, state.pending.clone());
-    synthesized
-}
-
-/// Resolve the workspace key used by the Auth panel. In Edit mode this is
-/// the existing workspace name; in Create mode we use `pending_name` if set,
-/// otherwise a stable placeholder ("(new workspace)") so the panel can still
-/// render with the pending values populated.
-pub(crate) fn workspace_name_for_panel(state: &EditorState<'_>) -> String {
-    match &state.mode {
-        EditorMode::Edit { name } => state.pending_name.clone().unwrap_or_else(|| name.clone()),
-        EditorMode::Create => state
-            .pending_name
-            .clone()
-            .unwrap_or_else(|| "(new workspace)".to_string()),
-    }
-}
-
-/// Map a flattened auth row index (the cursor) into the
-/// `AuthFormTarget` the form modal should be opened against. Returns
-/// `None` for non-form rows (`AuthKindRow`, `RoleHeader`, `AddSentinel`,
-/// `Spacer`) so callers can dispatch them separately.
-pub(crate) fn resolve_auth_row_target(
-    state: &EditorState<'_>,
-    config: &AppConfig,
-    row: usize,
-) -> Option<crate::console::manager::state::AuthFormTarget> {
-    use crate::console::manager::state::AuthFormTarget;
-    let rows = auth_flat_rows(state, config);
-    match rows.get(row)? {
-        AuthRow::WorkspaceMode { kind } | AuthRow::WorkspaceSource { kind } => {
-            Some(AuthFormTarget::Workspace { kind: *kind })
-        }
-        AuthRow::RoleMode { role, kind } | AuthRow::RoleSource { role, kind } => {
-            Some(AuthFormTarget::WorkspaceRole {
-                role: role.clone(),
-                kind: *kind,
-            })
-        }
-        _ => None,
     }
 }
 

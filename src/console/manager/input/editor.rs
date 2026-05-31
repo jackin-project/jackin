@@ -673,7 +673,7 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
     use super::super::super::widgets::role_picker::RolePickerState;
     use crate::selector::RoleSelector;
     let eligible: Vec<RoleSelector> =
-        super::super::render::editor::eligible_agents_for_override(editor, config)
+        super::super::auth_rows::eligible_agents_for_override(editor, config)
             .into_iter()
             .filter_map(|name| RoleSelector::parse(&name).ok())
             .collect();

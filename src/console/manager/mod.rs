@@ -3,6 +3,7 @@
 
 pub mod agent_allow;
 pub mod auth_kind;
+pub(crate) mod auth_rows;
 mod create;
 pub(crate) mod github_mounts;
 pub mod input;
