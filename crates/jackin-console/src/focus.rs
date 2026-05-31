@@ -5,3 +5,34 @@ pub enum MountScrollFocus {
     RoleGlobal,
     Roles,
 }
+
+#[must_use]
+pub fn follow_cursor_y(
+    cursor: usize,
+    content_height: usize,
+    viewport_h: usize,
+    stored_scroll_y: u16,
+) -> u16 {
+    jackin_tui::components::scrollable_panel::cursor_follow_offset(
+        cursor,
+        content_height,
+        viewport_h,
+        stored_scroll_y,
+    )
+}
+
+#[must_use]
+pub fn cursor_scroll_for_panel(
+    cursor: usize,
+    scroll_y: u16,
+    term_height: u16,
+    footer_h: u16,
+) -> u16 {
+    // header(3) + tab-strip(2) + block-borders(2) + the renderer's dynamic footer.
+    let chrome = 7u16.saturating_add(footer_h);
+    let viewport_h = (term_height.saturating_sub(chrome) as usize).max(1);
+    // content_height - viewport_h = u16::MAX exactly: max_offset returns u16::MAX without
+    // tripping its debug_assert, while the upper clamp on cursor rows stays unreachable.
+    let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
+    follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
+}

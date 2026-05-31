@@ -27,10 +27,10 @@ pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 pub(crate) use jackin_tui::components::scrollable_panel::{
-    apply_scroll_delta, clamp_scroll_offset as clamp_scroll_x, cursor_follow_offset,
-    horizontal_scrollbar_area, is_scrollable, max_offset as max_scroll_offset,
-    scrollbar_offset_for_track_position, vertical_scrollbar_area,
-    viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
+    apply_scroll_delta, clamp_scroll_offset as clamp_scroll_x, horizontal_scrollbar_area,
+    is_scrollable, max_offset as max_scroll_offset, scrollbar_offset_for_track_position,
+    vertical_scrollbar_area, viewport_height as scroll_viewport_height,
+    viewport_width as scroll_viewport_width,
 };
 pub(super) use jackin_tui::components::scrollable_panel::{
     line_width, max_line_width, render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll,
@@ -56,33 +56,6 @@ pub(super) fn footer_height(items: &[HintSpan<'_>], width: u16) -> u16 {
 
 pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[HintSpan<'_>]) {
     jackin_tui::components::render_wrapped_hint_bar(frame, area, items);
-}
-
-/// Adjust stored `scroll_y` so the cursor row stays inside the viewport.
-/// Returns the effective (clamped, cursor-following) `scroll_y` to use for rendering.
-pub(super) fn follow_cursor_y(
-    cursor: usize,
-    content_height: usize,
-    viewport_h: usize,
-    stored_scroll_y: u16,
-) -> u16 {
-    cursor_follow_offset(cursor, content_height, viewport_h, stored_scroll_y)
-}
-
-/// Adjust `scroll_y` so `cursor` stays in the editor/settings content viewport.
-pub(crate) fn cursor_scroll_for_panel(
-    cursor: usize,
-    scroll_y: u16,
-    term: ratatui::layout::Rect,
-    footer_h: u16,
-) -> u16 {
-    // header(3) + tab-strip(2) + block-borders(2) + the renderer's dynamic footer.
-    let chrome = 7u16.saturating_add(footer_h);
-    let viewport_h = (term.height.saturating_sub(chrome) as usize).max(1);
-    // content_height - viewport_h = u16::MAX exactly: max_offset returns u16::MAX without
-    // tripping its debug_assert, while the upper clamp on cursor rows stays unreachable.
-    let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
-    follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
 }
 
 #[doc(hidden)]

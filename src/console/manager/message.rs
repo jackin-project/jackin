@@ -479,8 +479,12 @@ fn move_editor_field_selection(
         step_cursor_down(skipped_rows, candidate, max_row)
     };
     editor.active_field = FieldFocus::Row(next);
-    editor.tab_scroll_y =
-        super::render::cursor_scroll_for_panel(next, editor.tab_scroll_y, term, footer_h);
+    editor.tab_scroll_y = jackin_console::focus::cursor_scroll_for_panel(
+        next,
+        editor.tab_scroll_y,
+        term.height,
+        footer_h,
+    );
 }
 
 const fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
@@ -698,10 +702,10 @@ fn move_settings_global_mounts_selection(
             .saturating_add(delta as usize)
             .min(max)
     };
-    settings.mounts.scroll_y = super::render::cursor_scroll_for_panel(
+    settings.mounts.scroll_y = jackin_console::focus::cursor_scroll_for_panel(
         settings.mounts.selected,
         settings.mounts.scroll_y,
-        term,
+        term.height,
         footer_h,
     );
 }
@@ -735,10 +739,10 @@ fn move_settings_env_selection(
             matches!(rows.get(idx), Some(SettingsEnvRow::SectionSpacer))
         })
     };
-    settings.env.scroll_y = super::render::cursor_scroll_for_panel(
+    settings.env.scroll_y = jackin_console::focus::cursor_scroll_for_panel(
         settings.env.selected,
         settings.env.scroll_y,
-        term,
+        term.height,
         footer_h,
     );
 }
@@ -753,10 +757,10 @@ fn move_settings_trust_selection(
         return;
     };
     move_trust_selection(&mut settings.trust, delta);
-    settings.trust.scroll_y = super::render::cursor_scroll_for_panel(
+    settings.trust.scroll_y = jackin_console::focus::cursor_scroll_for_panel(
         settings.trust.selected,
         settings.trust.scroll_y,
-        term,
+        term.height,
         footer_h,
     );
 }
