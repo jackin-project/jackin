@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "../../agent-runtime-status",
+    "../../terminal-observation-automation",
     "../../launch-progress-tui",
     "../../console-agent-session-control",
     "../../session-keep-and-resume",
