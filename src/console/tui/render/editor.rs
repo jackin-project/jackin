@@ -4,10 +4,6 @@
 //! (General / Mounts / Roles / Secrets), and the contextual footer
 //! composition that varies with the active tab + cursor.
 
-use super::list::{
-    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache,
-    mount_path_width, render_mount_header,
-};
 use super::{
     PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE, footer_height, render_footer,
     render_header,
@@ -20,6 +16,9 @@ pub(crate) use crate::console::manager::auth_rows::{
 pub(crate) use crate::console::manager::auth_rows::{
     eligible_agents_for_override, resolve_auth_row_target,
 };
+use crate::console::manager::mount_display::{
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
+};
 pub use crate::console::manager::state::AuthRow;
 pub(crate) use crate::console::manager::state::SecretsRow;
 use crate::console::manager::state::{
@@ -28,6 +27,7 @@ use crate::console::manager::state::{
 use crate::console::widgets::editor_rows::{
     action_row_style, disclosure_style, render_secret_key_line, render_tab_strip,
 };
+use crate::console::widgets::mount_rows::render_mount_header;
 use crate::operator_env::EnvValue;
 use jackin_tui::theme::ACTION_ACCENT;
 use ratatui::{

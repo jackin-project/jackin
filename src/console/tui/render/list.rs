@@ -48,6 +48,7 @@ pub(super) use crate::console::manager::mount_display::{
 use crate::console::manager::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
+use crate::console::widgets::mount_rows::render_mount_header;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn render_list_body(
@@ -566,20 +567,6 @@ fn render_agent_picker_sidebar(
             .position(|agent| *agent == picker.focused),
     );
     frame.render_stateful_widget(list, area, &mut list_state);
-}
-
-pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
-    // Two-space gutter + two-space gaps match the data-row format so
-    // columns never run into each other.
-    let mode_col = format!("{:<mw$}", "Mode", mw = MOUNT_MODE_COL_WIDTH);
-    let iso_col = format!("{:<iw$}", "Isolation", iw = MOUNT_ISOLATION_COL_WIDTH);
-    Line::from(Span::styled(
-        format!(
-            "  {path:<path_w$}  {mode_col}  {iso_col}  Type",
-            path = "Destination"
-        ),
-        Style::default().fg(WHITE),
-    ))
 }
 
 pub(super) fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec<Line<'static>> {
@@ -1480,8 +1467,9 @@ mod list_name_scroll_tests {
 mod mount_table_tests {
     use super::{
         MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
-        mount_path_width, render_mount_header, render_mount_lines,
+        mount_path_width, render_mount_lines,
     };
+    use crate::console::widgets::mount_rows::render_mount_header;
     use crate::workspace::MountConfig;
 
     /// Collapse a `Line` into a single plain string (concat of all span contents).

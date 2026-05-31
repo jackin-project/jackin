@@ -19,6 +19,7 @@ pub(crate) mod editor_rows;
 pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;
+pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;
 pub mod role_picker;
