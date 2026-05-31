@@ -600,7 +600,7 @@ Both binaries already run on Tokio, and both use the **single-threaded** flavor:
 | Nested runtime per background action | <RepoFile path="src/console/manager/input/save.rs" />, <RepoFile path="src/console/manager/input/editor.rs" />, and <RepoFile path="src/app/mod.rs" /> each `std::thread::spawn` a thread that builds a fresh `Builder::new_current_thread().build()` and `block_on`s one future | reuse the app runtime: `tokio::spawn` / `spawn_blocking` an effect that returns a `Message`; never stand up a second runtime to run one call |
 | Unconditional full redraw | the console and the launch cockpit recompose every row and pane every tick with no dirty flag | explicit `Dirty` invalidation so an idle view does zero work |
 | Per-frame allocation | host renderers in <RepoFile path="src/console/tui/render/list.rs" /> rebuild picker `ListItem` vectors and mount-row `format!` chains on every draw | derive rows in `update`, render from borrowed prepared state |
-| `thread::sleep` on render-adjacent paths | shimmer / deploy-hold in <RepoFile path="src/tui/output.rs" />, retry pacing in <RepoFile path="src/runtime/snapshot.rs" />, poll pacing in <RepoFile path="src/runtime/logs.rs" />, worker spins in <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> | `tokio::time::sleep` / interval ticks / move off the loop (detailed in the inventory below) |
+| `thread::sleep` on render-adjacent paths | retry pacing in <RepoFile path="src/runtime/snapshot.rs" /> and poll pacing in <RepoFile path="src/runtime/logs.rs" /> still sleep synchronously; the old deploy-hold path now uses `tokio::time::sleep`, and op-picker sleeps are test-only drain helpers | `tokio::time::sleep` / interval ticks / move off the loop (detailed in the inventory below) |
 
 The nested-runtime pattern deserves emphasis: standing up a whole `current_thread` runtime inside a detached `std::thread` to run one `block_on` is both wasteful and a structure smell — it exists only because there is no effect system to hand the work to. Once `update` returns typed effects, that work becomes a `spawn_blocking` returning a `Message`, on the one runtime the app already owns.
 
@@ -638,10 +638,8 @@ The remaining migration target is different: fold the cockpit's parallel mini-ap
 
 | Site | Sleep | Note |
 |---|---|---|
-| <RepoFile path="src/tui/output.rs" /> | 25 ms shimmer · 1500 ms deploy hold | animation/pacing on the launch path — drive from an interval, not a blocking sleep |
 | <RepoFile path="src/runtime/snapshot.rs" /> | 20 ms · 10 ms | retry pacing |
 | <RepoFile path="src/runtime/logs.rs" /> | 250 ms | poll pacing |
-| <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> | 2 ms ×2 | worker poll pacing |
 
 **Capsule:** PTY and git/PR context already run on background tasks; the gap is the `std::thread` vs. `spawn_blocking` inconsistency the gap-analysis table notes, plus the compose path running on the loop. The Ratatui-frame move (Phase 6) puts the buffer diff on the framework and the compose work behind the same `Action`/update boundary.
 
