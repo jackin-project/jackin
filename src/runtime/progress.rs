@@ -15,7 +15,7 @@ use jackin_tui::components::{
     viewport_height, viewport_width,
 };
 use jackin_tui::theme::{
-    DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
+    DANGER_RED, DIALOG_BACKDROP, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
 };
 use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
@@ -24,6 +24,11 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 
+#[cfg(test)]
+use jackin_launch::tui::build_log::BUILD_LOG_WRAP_PREFIX;
+use jackin_launch::tui::build_log::{
+    build_log_scroll_filled, scroll_build_log, wrap_build_log_lines,
+};
 use jackin_launch::tui::failure::{
     failure_copy_payload, failure_copy_target_at, failure_popup_hyperlink_overlay,
     render_failure_popup,
@@ -460,27 +465,6 @@ pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> 
 
 const BUILD_LOG_SCROLL_STEP: usize = 3;
 const BUILD_LOG_PAGE_STEP: usize = 10;
-
-fn build_log_scroll_filled(area: Rect) -> usize {
-    let box_area = Rect {
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    let viewport_w = viewport_width(box_area);
-    let viewport_h = viewport_height(box_area);
-    let raw = jackin_launch::build_log::snapshot();
-    let line_count = if raw.is_empty() {
-        1
-    } else {
-        wrap_build_log_lines(raw, viewport_w).len()
-    };
-    jackin_tui::scroll::max_offset(line_count, viewport_h)
-}
-
-fn scroll_build_log(view: &mut LaunchView, area: Rect, delta: isize) {
-    let filled = build_log_scroll_filled(area);
-    view.build_log_scroll.scroll_by(filled, delta);
-}
 
 /// Whether `(col, row)` falls on the footer activity text ("Building Docker
 /// image…"). The footer is the last terminal row; the activity is left-aligned
@@ -1766,93 +1750,6 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     );
 
     render_hint_bar(frame, hint_area, BUILD_LOG_HINT);
-}
-
-const BUILD_LOG_WRAP_PREFIX: &str = "↳ ";
-
-fn wrap_build_log_lines(raw: Vec<String>, width: usize) -> Vec<Line<'static>> {
-    let width = width.max(1);
-    raw.into_iter()
-        .flat_map(|line| wrap_build_log_line(&line, width))
-        .collect()
-}
-
-fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
-    if line.is_empty() {
-        return vec![Line::from(String::new())];
-    }
-
-    let default_style = Style::default().fg(Color::Gray).bg(DIALOG_SURFACE);
-    let spans = jackin_tui::ansi_text::styled_spans(line.trim_end(), default_style);
-    wrap_build_log_spans(spans, width)
-}
-
-fn wrap_build_log_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
-    let mut cells: Vec<(char, Style)> = Vec::new();
-    for span in spans {
-        let style = span.style;
-        cells.extend(span.content.chars().map(|ch| (ch, style)));
-    }
-    if cells.is_empty() {
-        return vec![Line::from(String::new())];
-    }
-
-    let mut lines = Vec::new();
-    let continuation_width = width
-        .saturating_sub(BUILD_LOG_WRAP_PREFIX.chars().count())
-        .max(1);
-    let mut pos = 0;
-    let mut first_line = true;
-    while pos < cells.len() {
-        let limit = if first_line {
-            width
-        } else {
-            continuation_width
-        };
-        let hard_end = pos.saturating_add(limit).min(cells.len());
-        let (line_end, mut next) = if hard_end < cells.len()
-            && let Some(space) = (pos + 1..hard_end)
-                .rev()
-                .find(|idx| cells[*idx].0.is_whitespace())
-        {
-            (space, space + 1)
-        } else {
-            (hard_end, hard_end)
-        };
-        while next < cells.len() && cells[next].0.is_whitespace() {
-            next += 1;
-        }
-        let line_cells = if line_end == pos {
-            &cells[pos..hard_end]
-        } else {
-            &cells[pos..line_end]
-        };
-        push_wrapped_build_line(&mut lines, spans_from_cells(line_cells), first_line);
-        first_line = false;
-        pos = if line_end == pos { hard_end } else { next };
-    }
-    lines
-}
-
-fn spans_from_cells(cells: &[(char, Style)]) -> Vec<Span<'static>> {
-    coalesce_cells(cells.iter().copied())
-}
-
-fn push_wrapped_build_line(
-    lines: &mut Vec<Line<'static>>,
-    mut spans: Vec<Span<'static>>,
-    first_line: bool,
-) {
-    if !first_line {
-        spans.insert(
-            0,
-            Span::styled(
-                BUILD_LOG_WRAP_PREFIX,
-                Style::default().fg(PHOSPHOR_DIM).bg(DIALOG_SURFACE),
-            ),
-        );
-    }
-    lines.push(Line::from(spans));
 }
 
 fn draw_select(frame: &mut Frame<'_>, title: &str, context: &[Line<'_>], picker: &SelectListState) {
