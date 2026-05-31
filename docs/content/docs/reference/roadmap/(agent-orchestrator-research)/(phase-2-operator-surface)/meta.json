@@ -4,6 +4,7 @@
   "pages": [
     "../../agent-runtime-status",
     "../../terminal-observation-automation",
+    "../../deja-vu",
     "../../launch-progress-tui",
     "../../console-agent-session-control",
     "../../session-keep-and-resume",
