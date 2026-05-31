@@ -19,7 +19,7 @@ pub fn prepare_for_render(
     state.cached_term_size = area;
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
-            let footer = crate::console::tui::render::editor::editor_footer_items(
+            let footer = crate::console::manager::editor_footer::editor_footer_items(
                 editor,
                 config,
                 state.op_available,

@@ -4,14 +4,6 @@
 //! (General / Mounts / Roles / Secrets), and the contextual footer
 //! composition that varies with the active tab + cursor.
 
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-};
-use std::cmp::Ordering;
-
 use super::list::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache,
     mount_path_width, render_mount_header,
@@ -31,10 +23,15 @@ pub(crate) use crate::console::manager::auth_rows::{
 pub use crate::console::manager::state::AuthRow;
 pub(crate) use crate::console::manager::state::SecretsRow;
 use crate::console::manager::state::{
-    EditorMode, EditorState, EditorTab, FieldFocus, Modal, SecretsScopeTag,
+    EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
 };
 use crate::operator_env::EnvValue;
-use jackin_tui::HintSpan;
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+};
 
 // ── Editor stage ────────────────────────────────────────────────────
 
@@ -55,95 +52,6 @@ pub(super) fn disclosure_style() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-pub(crate) fn editor_footer_items(
-    state: &EditorState<'_>,
-    config: &AppConfig,
-    op_available: bool,
-) -> Vec<HintSpan<'static>> {
-    if let Some(modal) = &state.modal {
-        let mut items = crate::console::manager::modal_footer::modal_footer_items(modal);
-        // The auth-form `g`/`G` generate trigger is gated to the
-        // workspace-level Claude oauth_token slot in Edit mode; surface
-        // the hint only when that gate holds.
-        if matches!(modal, Modal::AuthForm { .. })
-            && crate::console::manager::input::auth::auth_form_can_generate_token(state)
-        {
-            items.extend([
-                HintSpan::GroupSep,
-                HintSpan::Key("G"),
-                HintSpan::Text("generate"),
-            ]);
-        }
-        return items;
-    }
-    if state.tab_bar_focused {
-        // General tab is read-only: Tab/↓ does not transfer focus into content.
-        // Show a neutral hint rather than the misleading "enter content" affordance.
-        let enter_content_hint = if state.active_tab == EditorTab::General {
-            &[][..]
-        } else {
-            &[
-                HintSpan::GroupSep,
-                HintSpan::Key("⇥/↓"),
-                HintSpan::Text("enter content"),
-            ][..]
-        };
-        let mut items = vec![
-            HintSpan::Key("\u{2190}\u{2192}"),
-            HintSpan::Text("switch tab"),
-        ];
-        items.extend_from_slice(enter_content_hint);
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("S"),
-            HintSpan::Text("save workspace"),
-        ]);
-        if state.is_dirty() {
-            items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
-        }
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            if state.is_dirty() {
-                HintSpan::Text("discard")
-            } else {
-                HintSpan::Text("back")
-            },
-        ]);
-        return items;
-    }
-    let mut items: Vec<HintSpan<'static>> = vec![
-        HintSpan::Key("\u{2191}\u{2193}"),
-        HintSpan::Text("navigate"),
-    ];
-    let row_items = contextual_row_items(state, config, op_available);
-    if !row_items.is_empty() {
-        items.push(HintSpan::GroupSep);
-        items.extend(row_items);
-    }
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("⇧Tab"),
-        HintSpan::Text("tab bar"),
-        HintSpan::GroupSep,
-        HintSpan::Key("S"),
-        HintSpan::Text("save workspace"),
-    ]);
-    if state.is_dirty() {
-        items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
-    }
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
-        if state.is_dirty() {
-            HintSpan::Text("discard")
-        } else {
-            HintSpan::Text("back")
-        },
-    ]);
-    items
-}
-
 pub(super) fn render_editor(
     frame: &mut Frame,
     area: Rect,
@@ -151,7 +59,8 @@ pub(super) fn render_editor(
     config: &AppConfig,
     op_available: bool,
 ) {
-    let items = editor_footer_items(state, config, op_available);
+    let items =
+        crate::console::manager::editor_footer::editor_footer_items(state, config, op_available);
     let footer_h = footer_height(&items, area.width).max(1);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -233,212 +142,6 @@ fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
         ])
         .split(area);
     chunks[2]
-}
-
-/// Compute a row-specific hint fragment based on the active tab and cursor.
-/// Returns an empty vec when the current position has no action.
-#[allow(clippy::too_many_lines)]
-fn contextual_row_items(
-    state: &EditorState<'_>,
-    config: &AppConfig,
-    op_available: bool,
-) -> Vec<HintSpan<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
-    match state.active_tab {
-        EditorTab::General => {
-            //   row 0 = Name        (editable — Enter opens rename)
-            //   row 1 = Working dir (editable — Enter opens workdir picker)
-            //   row 2 = Keep awake  (toggle — Space flips on/off)
-            //   row 3 = Git pull    (toggle — Space flips on/off)
-            match cursor {
-                0 => vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
-                // WorkdirPick requires at least one mount to choose from;
-                // suppress the hint when there are none so the key isn't
-                // advertised as available when Enter would be a no-op.
-                1 if !state.pending.mounts.is_empty() => {
-                    vec![HintSpan::Key("↵"), HintSpan::Text("pick working directory")]
-                }
-                2 | 3 => vec![HintSpan::Key("␣"), HintSpan::Text("toggle")],
-                _ => Vec::new(),
-            }
-        }
-        EditorTab::Mounts => {
-            let mount_count = state.pending.mounts.len();
-            match cursor.cmp(&mount_count) {
-                Ordering::Less => {
-                    let mut items = vec![
-                        HintSpan::Key("D"),
-                        HintSpan::Text("remove"),
-                        HintSpan::Sep,
-                        HintSpan::Key("A"),
-                        HintSpan::Text("add"),
-                    ];
-                    if state
-                        .pending
-                        .mounts
-                        .get(cursor)
-                        .and_then(|m| state.mount_info_cache.github_web_url(&m.src))
-                        .is_some()
-                    {
-                        items.push(HintSpan::Sep);
-                        items.push(HintSpan::Key("O"));
-                        items.push(HintSpan::Text("open in GitHub"));
-                    }
-                    items.push(HintSpan::Sep);
-                    items.push(HintSpan::Key("R"));
-                    items.push(HintSpan::Text("toggle ro/rw"));
-                    items.push(HintSpan::Sep);
-                    items.push(HintSpan::Key("I"));
-                    items.push(HintSpan::Text("cycle isolation"));
-                    items.push(HintSpan::Sep);
-                    items.push(HintSpan::Key("H/L"));
-                    items.push(HintSpan::Text("scroll"));
-                    items
-                }
-                Ordering::Equal => vec![HintSpan::Key("↵/A"), HintSpan::Text("add")],
-                Ordering::Greater => Vec::new(),
-            }
-        }
-        EditorTab::Roles => {
-            if cursor < config.roles.len() {
-                vec![
-                    HintSpan::Key("␣"),
-                    HintSpan::Text("allow/disallow"),
-                    HintSpan::Sep,
-                    HintSpan::Key("*"),
-                    HintSpan::Text("set/unset default"),
-                    HintSpan::Sep,
-                    HintSpan::Key("A"),
-                    HintSpan::Text("load role"),
-                ]
-            } else {
-                vec![HintSpan::Key("↵/A"), HintSpan::Text("load role")]
-            }
-        }
-        EditorTab::Secrets => {
-            // Row-specific hints depend on which SecretsRow kind the cursor
-            // is sitting on. Op:// rows are read-only at the value level —
-            // the operator deletes and re-adds via the source picker — so
-            // we drop `Enter edit` and `M mask/unmask` on those rows.
-            let rows = secrets_flat_rows(state);
-            // Determine if the focused key row carries an OpRef value.
-            let focused_value_is_op_ref = match rows.get(cursor) {
-                Some(SecretsRow::WorkspaceKeyRow(key)) => state
-                    .pending
-                    .env
-                    .get(key)
-                    .is_some_and(|v| matches!(v, EnvValue::OpRef(_))),
-                Some(SecretsRow::RoleKeyRow { role, key }) => state
-                    .pending
-                    .roles
-                    .get(role)
-                    .and_then(|ov| ov.env.get(key))
-                    .is_some_and(|v| matches!(v, EnvValue::OpRef(_))),
-                _ => false,
-            };
-            match rows.get(cursor) {
-                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. })
-                    if focused_value_is_op_ref =>
-                {
-                    let mut items = if op_available {
-                        vec![
-                            HintSpan::Key("↵"),
-                            HintSpan::Sep,
-                            HintSpan::Key("P"),
-                            HintSpan::Text("re-pick from 1Password"),
-                            HintSpan::Sep,
-                        ]
-                    } else {
-                        Vec::new()
-                    };
-                    items.extend([
-                        HintSpan::Key("D"),
-                        HintSpan::Text("delete"),
-                        HintSpan::Sep,
-                        HintSpan::Key("A"),
-                        HintSpan::Text("add"),
-                    ]);
-                    items
-                }
-                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. }) => {
-                    let mut items = vec![
-                        HintSpan::Key("↵"),
-                        HintSpan::Text("edit"),
-                        HintSpan::Sep,
-                        HintSpan::Key("D"),
-                        HintSpan::Text("delete"),
-                        HintSpan::Sep,
-                        HintSpan::Key("A"),
-                        HintSpan::Text("add"),
-                        HintSpan::Sep,
-                        HintSpan::Key("M"),
-                        HintSpan::Text("mask/unmask"),
-                    ];
-                    if op_available {
-                        items.extend([
-                            HintSpan::Sep,
-                            HintSpan::Key("P"),
-                            HintSpan::Text("1Password"),
-                        ]);
-                    }
-                    items
-                }
-                Some(SecretsRow::RoleHeader { .. }) => vec![
-                    HintSpan::Key("↵"),
-                    HintSpan::Text("expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("←/→"),
-                    HintSpan::Text("collapse/expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("A"),
-                    HintSpan::Text("add"),
-                ],
-                Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::RoleAddSentinel(_)) => {
-                    let mut items = vec![HintSpan::Key("↵"), HintSpan::Text("add")];
-                    if op_available {
-                        items.extend([
-                            HintSpan::Sep,
-                            HintSpan::Key("P"),
-                            HintSpan::Text("1Password"),
-                        ]);
-                    }
-                    items
-                }
-                // Cursor never lands on `SectionSpacer` (skipped by the
-                // `↑`/`↓` handlers), but if anything ever queries the
-                // hint for that index we degrade to a no-op empty set.
-                Some(SecretsRow::SectionSpacer) | None => vec![],
-            }
-        }
-        EditorTab::Auth => {
-            let flat = auth_flat_rows(state, config);
-            match flat.get(cursor) {
-                Some(AuthRow::AuthKindRow { .. }) => {
-                    vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")]
-                }
-                Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
-                    vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")]
-                }
-                Some(AuthRow::RoleHeader { .. }) => vec![
-                    HintSpan::Key("↵"),
-                    HintSpan::Text("expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("←/→"),
-                    HintSpan::Text("collapse/expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("D"),
-                    HintSpan::Text("reset"),
-                ],
-                Some(AuthRow::AddSentinel { .. }) => {
-                    vec![HintSpan::Key("↵/A"), HintSpan::Text("add override")]
-                }
-                Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
-                    vec![HintSpan::Key("↵"), HintSpan::Text("edit source")]
-                }
-                Some(AuthRow::Spacer) | None => Vec::new(),
-            }
-        }
-    }
 }
 
 fn render_editor_tab_strip(
@@ -1435,8 +1138,8 @@ pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>
 mod contextual_row_items_tests {
     //! Row-specific footer-hint composition for the editor tabs.
 
-    use super::contextual_row_items;
     use crate::config::{AppConfig, RoleSource};
+    use crate::console::manager::editor_footer::contextual_row_items;
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use jackin_tui::HintSpan;
