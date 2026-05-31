@@ -60,6 +60,11 @@ enum TextPromptMessage {
     Key(KeyEvent),
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ConfirmPromptMessage {
+    Key(KeyEvent),
+}
+
 fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) -> Option<usize> {
     match msg {
         SelectLoopMessage::Key(key) => {
@@ -70,6 +75,16 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
                 None
             }
         }
+    }
+}
+
+fn update_confirm_prompt(state: &mut ConfirmState, msg: ConfirmPromptMessage) -> Option<bool> {
+    match msg {
+        ConfirmPromptMessage::Key(key) => match state.handle_key(key) {
+            ModalOutcome::Commit(confirmed) => Some(confirmed),
+            ModalOutcome::Cancel => Some(false),
+            ModalOutcome::Continue => None,
+        },
     }
 }
 
@@ -377,10 +392,11 @@ impl RichRenderer {
             self.terminal
                 .draw(|frame| draw_confirm(frame, state))
                 .context("rendering launch confirmation")?;
-            match state.handle_key(read_pressed_key("reading launch confirmation input")?) {
-                ModalOutcome::Commit(confirmed) => return Ok(confirmed),
-                ModalOutcome::Cancel => return Ok(false),
-                ModalOutcome::Continue => {}
+            if let Some(result) = update_confirm_prompt(
+                state,
+                ConfirmPromptMessage::Key(read_pressed_key("reading launch confirmation input")?),
+            ) {
+                return Ok(result);
             }
         }
     }
@@ -515,5 +531,29 @@ mod tests {
         .expect("skip succeeds");
 
         assert_eq!(result, PromptResult::Skipped);
+    }
+
+    #[test]
+    fn confirm_prompt_message_commits_confirmation() {
+        let mut state = ConfirmState::new("continue?").with_focus_yes();
+
+        let result = update_confirm_prompt(
+            &mut state,
+            ConfirmPromptMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        );
+
+        assert_eq!(result, Some(true));
+    }
+
+    #[test]
+    fn confirm_prompt_message_cancel_returns_false() {
+        let mut state = ConfirmState::new("continue?");
+
+        let result = update_confirm_prompt(
+            &mut state,
+            ConfirmPromptMessage::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        );
+
+        assert_eq!(result, Some(false));
     }
 }
