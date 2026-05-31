@@ -78,6 +78,12 @@ pub enum AuthFormTarget<K> {
     WorkspaceRole { role: String, kind: K },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsAuthRow<K, M> {
+    pub kind: K,
+    pub mode: M,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SecretsScopeTag {
     Workspace,

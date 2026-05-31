@@ -252,6 +252,10 @@ pub type PendingSaveCommit =
 pub type EditorSaveFlow = jackin_console::model::EditorSaveFlow<PendingSaveCommit>;
 pub type AuthFormTarget =
     jackin_console::model::AuthFormTarget<crate::console::manager::auth_kind::AuthKind>;
+pub type SettingsAuthRow = jackin_console::model::SettingsAuthRow<
+    crate::console::manager::auth_kind::AuthKind,
+    crate::console::manager::auth_kind::AuthMode,
+>;
 
 #[derive(Debug)]
 pub struct SettingsEnvState<'a> {
@@ -323,12 +327,6 @@ pub struct SettingsAuthState {
     pub pending_op_commit: Option<PendingOpCommit>,
     pub scroll_y: u16,
     pub scroll_focused: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SettingsAuthRow {
-    pub kind: crate::console::manager::auth_kind::AuthKind,
-    pub mode: crate::console::manager::auth_kind::AuthMode,
 }
 
 #[derive(Debug)]
