@@ -12,7 +12,7 @@
 //! multi-account operator's reference resolves against the account it was
 //! authored under rather than whichever happens to be the `op` default.
 //!
-//! `OpStructRunner` calls run on background threads, results routed
+//! `OpStructRunner` calls run through blocking workers, results routed
 //! through an `mpsc` channel; the spinner ticks until the receiver
 //! yields. Probe / vault-list failures fork into four fatal panels
 //! (not installed, not signed in, no vaults, generic).
@@ -86,6 +86,16 @@ enum LoadResult {
     Vaults(anyhow::Result<Vec<OpVault>>),
     Items(anyhow::Result<Vec<OpItem>>),
     Fields(anyhow::Result<Vec<OpField>>),
+}
+
+#[cfg(not(test))]
+fn spawn_picker_worker(worker: impl FnOnce() + Send + 'static) {
+    tokio::task::spawn_blocking(worker);
+}
+
+#[cfg(test)]
+fn spawn_picker_worker(worker: impl FnOnce() + Send + 'static) {
+    std::thread::spawn(worker);
 }
 
 pub struct OpPickerState {
@@ -288,7 +298,7 @@ impl OpPickerState {
             .borrow()
             .get_accounts()
             .map(|accounts| LoadResult::Accounts(Ok(accounts)));
-        let runner = Arc::clone(&self.runner);
+        let runner = self.runner_clone_for_worker();
         self.start_worker_load(cached, move || LoadResult::Accounts(runner.account_list()));
     }
 
@@ -331,7 +341,7 @@ impl OpPickerState {
             .borrow()
             .get_vaults(account_id.as_deref())
             .map(|vaults| LoadResult::Vaults(Ok(vaults)));
-        let runner = self.runner_clone_for_thread();
+        let runner = self.runner_clone_for_worker();
         self.start_worker_load(cached, move || {
             LoadResult::Vaults(runner.vault_list(account_id.as_deref()))
         });
@@ -346,7 +356,7 @@ impl OpPickerState {
             .borrow()
             .get_items(account_id.as_deref(), &vault_id)
             .map(|items| LoadResult::Items(Ok(items)));
-        let runner = self.runner_clone_for_thread();
+        let runner = self.runner_clone_for_worker();
         self.start_worker_load(cached, move || {
             LoadResult::Items(runner.item_list(&vault_id, account_id.as_deref()))
         });
@@ -361,7 +371,7 @@ impl OpPickerState {
             .borrow()
             .get_fields(account_id.as_deref(), &vault_id, &item_id)
             .map(|fields| LoadResult::Fields(Ok(fields)));
-        let runner = self.runner_clone_for_thread();
+        let runner = self.runner_clone_for_worker();
         self.start_worker_load(cached, move || {
             LoadResult::Fields(runner.item_get(&item_id, &vault_id, account_id.as_deref()))
         });
@@ -378,7 +388,7 @@ impl OpPickerState {
             let _ = tx.send(cached);
             return;
         }
-        std::thread::spawn(move || {
+        spawn_picker_worker(move || {
             let _ = tx.send(worker());
         });
     }
@@ -393,7 +403,7 @@ impl OpPickerState {
 
     /// Clone the `Arc` so spawned workers share the same trait object
     /// (test-injected stubs included).
-    fn runner_clone_for_thread(&self) -> Arc<dyn OpStructRunner + Send + Sync> {
+    fn runner_clone_for_worker(&self) -> Arc<dyn OpStructRunner + Send + Sync> {
         Arc::clone(&self.runner)
     }
 
