@@ -9,9 +9,9 @@ use jackin_tui::centered_rect;
 use jackin_tui::components::{
     ConfirmState, ErrorPopupState, SelectListState, TextInputState, brand_header_line,
     confirm_required_height, confirm_width_pct, render_confirm_dialog, render_error_dialog,
-    render_hint_bar, render_scrollable_block, render_select_list, render_status_footer,
-    render_text_input, required_height as error_dialog_required_height,
-    status_footer_right_chip_rect, viewport_height, viewport_width,
+    render_hint_bar, render_scrollable_block, render_select_list, render_text_input,
+    required_height as error_dialog_required_height, status_footer_right_chip_rect,
+    viewport_height, viewport_width,
 };
 #[cfg(test)]
 use jackin_tui::theme::DANGER_RED;
@@ -39,6 +39,7 @@ use jackin_launch::tui::failure::{
 use jackin_launch::tui::failure::{
     failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
 };
+use jackin_launch::tui::footer::{footer_instance, format_activity, render_footer};
 use jackin_launch::tui::progress::render_progress;
 #[cfg(test)]
 use jackin_launch::tui::progress::{
@@ -1122,7 +1123,13 @@ fn render_launch_frame(
 
     render_cockpit_header(frame, rows[0], view, frozen);
     render_body(frame, rows[1], view, frozen, rain);
-    render_footer(frame, rows[2], view, run_id);
+    render_footer(
+        frame,
+        rows[2],
+        view,
+        run_id,
+        host_terminal().is_debug_mode(),
+    );
 
     if let Some(failure) = &view.failure {
         render_failure_popup(frame, area, view, failure, run_id);
@@ -1324,54 +1331,6 @@ fn coalesce_cells(cells: impl IntoIterator<Item = (char, Style)>) -> Vec<Span<'s
         spans.push(Span::styled(buf, prev));
     }
     spans
-}
-
-/// The status-bar activity text: the current step with an upper-cased first
-/// word and a trailing ellipsis (`wiring private network` -> `Wiring private
-/// network…`). The live build/step detail lives only here, never inside the
-/// box.
-fn format_activity(status: &str) -> String {
-    let trimmed = status
-        .trim()
-        .trim_end_matches('…')
-        .trim_end_matches("...")
-        .trim_end();
-    let mut chars = trimmed.chars();
-    let Some(first) = chars.next() else {
-        return String::new();
-    };
-    format!("{}{}…", first.to_uppercase(), chars.as_str())
-}
-
-fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {
-    let instance = footer_instance(view);
-    // The run id rides the status bar only in --debug, in amber, so the
-    // operator is never unsure whether they are in a debug run; the blue
-    // instance-id chip always shows once the container is named.
-    let debug_chip = host_terminal().is_debug_mode().then_some(run_id);
-    // Fade the bar up from black over the first ~30 frames so it appears
-    // gradually with the rain rather than popping in.
-    #[allow(clippy::cast_precision_loss)]
-    let alpha = (view.frame as f32 / 30.0).min(1.0);
-    render_status_footer(
-        frame,
-        area,
-        &format_activity(&view.status),
-        &instance,
-        debug_chip,
-        alpha,
-        view.footer_hover,
-    );
-}
-
-/// The container's short instance id once the container is named, else empty.
-fn footer_instance(view: &LaunchView) -> String {
-    view.identity
-        .as_ref()
-        .and_then(|identity| identity.container.as_deref())
-        .and_then(jackin_protocol::instance_id_from_container_base)
-        .map(str::to_string)
-        .unwrap_or_default()
 }
 
 fn emit_launch_container_info_hyperlink_overlay(
