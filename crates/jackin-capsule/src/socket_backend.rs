@@ -247,7 +247,12 @@ impl Backend for SocketBackend {
     }
 
     fn clear(&mut self) -> Result<(), Self::Error> {
-        self.output.extend_from_slice(b"\x1b[2J\x1b[H");
+        // Do NOT emit \x1b[2J here. This method is called by Ratatui's
+        // Terminal::clear() to reset the double-buffer so the next draw()
+        // produces a full diff (all cells "changed"). In the SocketBackend
+        // context we achieve the same effect by resetting style tracking and
+        // letting the full diff send every cell — no need for a screen-erase
+        // escape that would cause a momentary blank flash on the client.
         self.current_style = CellStyle::default();
         Ok(())
     }

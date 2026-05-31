@@ -36,37 +36,52 @@ impl<'a> PaneBodyWidget<'a> {
 impl Widget for PaneBodyWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let (screen_rows, screen_cols) = self.screen.size();
-        for row in 0..area.height.min(screen_rows) {
-            for col in 0..area.width.min(screen_cols) {
-                let Some(cell) = self.screen.cell(row, col) else {
-                    continue;
-                };
+
+        // Always fill the ENTIRE area so that cells outside the current vt100
+        // screen dimensions are explicitly blanked. Without this, Ratatui's
+        // double-buffer diff leaves old content from previous layouts in the
+        // buffer — visible as corrupted content from other panes bleeding into
+        // the newly-expanded pane after a tab close or layout change.
+        for row in 0..area.height {
+            for col in 0..area.width {
                 let buf_cell = &mut buf[(area.x + col, area.y + row)];
 
-                let contents = cell.contents();
-                if !contents.is_empty() {
-                    buf_cell.set_symbol(contents);
+                if row < screen_rows && col < screen_cols {
+                    let Some(cell) = self.screen.cell(row, col) else {
+                        buf_cell.reset();
+                        continue;
+                    };
+
+                    let contents = cell.contents();
+                    if !contents.is_empty() {
+                        buf_cell.set_symbol(contents);
+                    } else {
+                        buf_cell.set_char(' ');
+                    }
+
+                    buf_cell.set_fg(vt100_color(cell.fgcolor()));
+                    buf_cell.set_bg(vt100_color(cell.bgcolor()));
+
+                    let mut modifier = Modifier::empty();
+                    if cell.bold() {
+                        modifier |= Modifier::BOLD;
+                    }
+                    if cell.italic() {
+                        modifier |= Modifier::ITALIC;
+                    }
+                    if cell.underline() {
+                        modifier |= Modifier::UNDERLINED;
+                    }
+                    if cell.inverse() {
+                        modifier |= Modifier::REVERSED;
+                    }
+                    buf_cell.modifier = modifier;
                 } else {
-                    buf_cell.set_char(' ');
+                    // Outside the vt100 screen bounds (pane larger than the
+                    // parser has been resized to yet, or transitional state).
+                    // Reset to default so old buffer content is not retained.
+                    buf_cell.reset();
                 }
-
-                buf_cell.set_fg(vt100_color(cell.fgcolor()));
-                buf_cell.set_bg(vt100_color(cell.bgcolor()));
-
-                let mut modifier = Modifier::empty();
-                if cell.bold() {
-                    modifier |= Modifier::BOLD;
-                }
-                if cell.italic() {
-                    modifier |= Modifier::ITALIC;
-                }
-                if cell.underline() {
-                    modifier |= Modifier::UNDERLINED;
-                }
-                if cell.inverse() {
-                    modifier |= Modifier::REVERSED;
-                }
-                buf_cell.modifier = modifier;
             }
         }
     }

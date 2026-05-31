@@ -12,6 +12,14 @@ impl Multiplexer {
     pub(super) fn compose_pending_frame(&mut self) -> Vec<u8> {
         if let Some(reason) = self.pending_full_redraw.take() {
             self.dirty_panes.clear();
+            // Reset Ratatui's internal double-buffer before a full redraw so the
+            // diff treats every cell as "changed". Without this, a layout change
+            // (e.g. tab close) leaves stale cells from the previous layout in the
+            // buffer; the diff skips them because their values happen to match new
+            // content at the same screen position, causing visible corruption.
+            // SocketBackend::clear() deliberately does NOT emit \x1b[2J so this
+            // reset is flicker-free — the next draw() sends every cell instead.
+            let _ = self.ratatui_terminal.clear();
             // Use the Ratatui compositor for all full frames — dialogs are
             // now rendered via shared jackin-tui widgets inside compose_ratatui_frame.
             if let Some(ratatui_output) = self.compose_ratatui_frame() {
