@@ -17,7 +17,7 @@
 //! keymap (`h/l` / arrows / `s` / `Esc` handled directly instead of
 //! round-tripping through the explorer's event handler).
 
-pub(super) use super::{DANGER_RED, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+pub(super) use jackin_tui::theme::{DANGER_RED, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 /// Directories excluded from the listing when browsing $HOME.
 pub(super) const EXCLUDED: &[&str] = &[

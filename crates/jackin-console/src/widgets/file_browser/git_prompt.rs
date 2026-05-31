@@ -20,7 +20,7 @@ use ratatui::{
 
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-use crate::console::widgets::ModalOutcome;
+use crate::widgets::ModalOutcome;
 use jackin_tui::components::{Panel, PanelFocus};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
@@ -37,9 +37,9 @@ pub enum GitPromptFocus {
 /// Resolve the web URL for a git-repo path via `mount_info::inspect`.
 /// Returns `Some` only for GitHub remotes that have a parseable web URL.
 pub(super) fn resolve_git_url(path: &Path) -> Option<String> {
-    match crate::console::manager::mount_info::inspect(&path.display().to_string()) {
-        crate::console::manager::mount_info::MountKind::Git {
-            origin: Some(crate::console::manager::mount_info::GitOrigin::Github { web_url, .. }),
+    match crate::mount_info::inspect(&path.display().to_string()) {
+        crate::mount_info::MountKind::Git {
+            origin: Some(crate::mount_info::GitOrigin::Github { web_url, .. }),
             ..
         } => Some(web_url),
         _ => None,
@@ -78,10 +78,8 @@ impl FileBrowserState {
             // The overlay drops the `· O open` hint segment in the None case
             // so the keystroke is only advertised when it actually does something.
             KeyCode::Char('o' | 'O') => {
-                if let Some(url) = self.pending_git_url.as_deref()
-                    && let Err(e) = open::that_detached(url)
-                {
-                    crate::debug_log!("git_prompt", "open::that_detached({url:?}) failed: {e}");
+                if let Some(url) = self.pending_git_url.as_deref() {
+                    let _ = open::that_detached(url);
                 }
                 ModalOutcome::Continue
             }

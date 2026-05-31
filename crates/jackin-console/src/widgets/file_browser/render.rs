@@ -81,7 +81,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
     let title = format!(
         " {} ",
-        crate::tui::shorten_home(&state.cwd.display().to_string())
+        jackin_tui::shorten_home(&state.cwd.display().to_string())
     );
     // File browser is a modal picker — always active when visible — so its
     // border must be PHOSPHOR_GREEN (RULE 1: focus-visible border).

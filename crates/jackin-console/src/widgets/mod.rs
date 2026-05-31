@@ -5,6 +5,7 @@ pub use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub mod agent_choice;
 pub mod confirm_save;
+pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;
 pub mod role_picker;

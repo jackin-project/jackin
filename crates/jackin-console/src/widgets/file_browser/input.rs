@@ -7,7 +7,7 @@ use ratatui::layout::Rect;
 
 use super::git_prompt::{GitPromptFocus, git_prompt_url_row_rect, resolve_git_url};
 use super::state::{FileBrowserState, canonicalize_or_self, is_within_root};
-use crate::console::widgets::ModalOutcome;
+use crate::widgets::ModalOutcome;
 
 impl FileBrowserState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
