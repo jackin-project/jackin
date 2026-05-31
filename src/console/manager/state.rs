@@ -1936,6 +1936,16 @@ impl ManagerState<'_> {
         }
     }
 
+    pub(crate) fn open_list_error_popup(
+        &mut self,
+        title: impl Into<String>,
+        message: impl Into<String>,
+    ) {
+        self.list_modal = Some(Modal::ErrorPopup {
+            state: jackin_tui::components::ErrorPopupState::new(title, message),
+        });
+    }
+
     fn apply_instance_refresh_snapshot(&mut self, snapshot: InstanceRefreshSnapshot) {
         self.instances = snapshot.instances;
         self.instance_sessions = snapshot.sessions;
@@ -1969,12 +1979,7 @@ impl ManagerState<'_> {
         self.preview_focused = false;
         let message = format!("instance index error: {error}");
         if self.instances_last_error.as_deref() != Some(&message) {
-            self.list_modal = Some(Modal::ErrorPopup {
-                state: jackin_tui::components::ErrorPopupState::new(
-                    "Instance index error",
-                    &message,
-                ),
-            });
+            self.open_list_error_popup("Instance index error", &message);
             self.instances_last_error = Some(message);
         }
     }

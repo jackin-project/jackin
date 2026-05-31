@@ -326,9 +326,7 @@ pub(crate) fn update_manager(
             state.list_split_pct = pct;
         }
         ManagerMessage::OpenListErrorPopup { title, message } => {
-            state.list_modal = Some(super::state::Modal::ErrorPopup {
-                state: jackin_tui::components::ErrorPopupState::new(title, message),
-            });
+            state.open_list_error_popup(title, message);
         }
         ManagerMessage::OpenListContainerInfo { state: info } => {
             state.list_modal = Some(super::state::Modal::ContainerInfo { state: info });
