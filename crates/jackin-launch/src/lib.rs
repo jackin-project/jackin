@@ -24,3 +24,10 @@ pub trait LaunchDiagnostics: Send + Sync {
     fn compact(&self, kind: &str, message: &str);
     fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>);
 }
+
+pub trait LaunchHostTerminal: Send + Sync {
+    fn set_rich_surface_active(&self, active: bool);
+    fn host_screen_owned(&self) -> bool;
+    fn is_debug_mode(&self) -> bool;
+    fn emit_compact_line(&self, kind: &str, line: &str);
+}

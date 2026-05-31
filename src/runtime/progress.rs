@@ -24,12 +24,12 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-use jackin_launch::LaunchDiagnostics;
 pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, StageLabelTransition, StageStatus, StageView, active_stage_index, initial_view,
     update_launch_view, update_stage,
 };
+use jackin_launch::{LaunchDiagnostics, LaunchHostTerminal};
 
 impl LaunchDiagnostics for crate::diagnostics::RunDiagnostics {
     fn run_id(&self) -> &str {
@@ -51,6 +51,32 @@ impl LaunchDiagnostics for crate::diagnostics::RunDiagnostics {
     fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
         self.stage(kind, stage, message, detail);
     }
+}
+
+struct HostTerminal;
+
+impl LaunchHostTerminal for HostTerminal {
+    fn set_rich_surface_active(&self, active: bool) {
+        crate::tui::set_rich_surface_active(active);
+    }
+
+    fn host_screen_owned(&self) -> bool {
+        crate::tui::host_screen_owned()
+    }
+
+    fn is_debug_mode(&self) -> bool {
+        crate::tui::is_debug_mode()
+    }
+
+    fn emit_compact_line(&self, kind: &str, line: &str) {
+        crate::tui::emit_compact_line(kind, line);
+    }
+}
+
+static HOST_TERMINAL: HostTerminal = HostTerminal;
+
+fn host_terminal() -> &'static dyn LaunchHostTerminal {
+    &HOST_TERMINAL
 }
 
 type SharedView = Arc<std::sync::Mutex<LaunchView>>;
@@ -311,7 +337,7 @@ impl LaunchProgress {
             // The interactive attach must inherit the terminal, not be
             // captured, so clear the rich-surface flag now regardless of when
             // the task's renderer finally drops.
-            crate::tui::set_rich_surface_active(false);
+            host_terminal().set_rich_surface_active(false);
             self.renderer = Renderer::Done;
         }
     }
@@ -477,7 +503,7 @@ fn hit_footer_container_chip(
     if instance.is_empty() {
         return false;
     }
-    let debug_chip = crate::tui::is_debug_mode().then_some(run_id);
+    let debug_chip = host_terminal().is_debug_mode().then_some(run_id);
     status_footer_right_chip_rect(
         Rect {
             x: 0,
@@ -544,7 +570,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, area: Rect, run_id: &str, col: 
             if copy_ok {
                 v.failure_copied = Some(target);
             } else {
-                crate::tui::emit_compact_line(
+                host_terminal().emit_compact_line(
                     "failure-popup-copy",
                     "OSC 52 clipboard write failed — badge suppressed",
                 );
@@ -667,7 +693,7 @@ impl Drop for LaunchProgress {
         // terminal — the host-screen guard is the ultimate safety net.
         if let Renderer::Rich(driver) = &self.renderer {
             driver.stop.store(true, Ordering::Relaxed);
-            crate::tui::set_rich_surface_active(false);
+            host_terminal().set_rich_surface_active(false);
         }
     }
 }
@@ -694,7 +720,7 @@ impl RichRenderer {
         let mut stdout = std::io::stdout();
         // When the launch flow's host guard already owns the alternate screen,
         // draw into it; only enter it ourselves when running standalone.
-        let entered_alt_screen = !crate::tui::host_screen_owned();
+        let entered_alt_screen = !host_terminal().host_screen_owned();
         if entered_alt_screen {
             stdout.execute(EnterAlternateScreen)?;
         }
@@ -708,7 +734,7 @@ impl RichRenderer {
         terminal.clear().context("clearing launch screen")?;
         // Ancillary status printers (spinners) go silent while this surface
         // owns the alternate screen.
-        crate::tui::set_rich_surface_active(true);
+        host_terminal().set_rich_surface_active(true);
         Ok(Self {
             terminal,
             no_motion,
@@ -1013,7 +1039,7 @@ impl RichRenderer {
 
 impl Drop for RichRenderer {
     fn drop(&mut self) {
-        crate::tui::set_rich_surface_active(false);
+        host_terminal().set_rich_surface_active(false);
         let _ = self.terminal.backend_mut().execute(crossterm::cursor::Show);
         // Leave the alternate screen only when we entered it; under the host
         // guard the screen persists into the capsule attach.
@@ -1516,7 +1542,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &
     // The run id rides the status bar only in --debug, in amber, so the
     // operator is never unsure whether they are in a debug run; the blue
     // instance-id chip always shows once the container is named.
-    let debug_chip = crate::tui::is_debug_mode().then_some(run_id);
+    let debug_chip = host_terminal().is_debug_mode().then_some(run_id);
     // Fade the bar up from black over the first ~30 frames so it appears
     // gradually with the rain rather than popping in.
     #[allow(clippy::cast_precision_loss)]
@@ -1564,7 +1590,7 @@ fn launch_container_info_state(
         rows.push(ContainerInfoRow::new("Agent", &identity.agent));
         rows.push(ContainerInfoRow::new("Target", &identity.target_label));
     }
-    if crate::tui::is_debug_mode() {
+    if host_terminal().is_debug_mode() {
         rows.push(
             ContainerInfoRow::new("Run ID", run_id)
                 .copyable()
