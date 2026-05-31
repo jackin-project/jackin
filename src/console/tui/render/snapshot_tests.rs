@@ -116,6 +116,16 @@ mod tests {
         std::path::PathBuf::from("/workspace")
     }
 
+    fn list_with_modal<'a>(
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        modal: Modal<'a>,
+    ) -> ManagerState<'a> {
+        let mut state = ManagerState::from_config(config, cwd);
+        state.list_modal = Some(modal);
+        state
+    }
+
     #[test]
     fn snapshot_list_empty_80x24() {
         let config = AppConfig::default();
@@ -263,6 +273,150 @@ mod tests {
             state: jackin_tui::components::ConfirmState::new("Delete workspace?"),
         };
         cases.push(("list confirm delete", confirm_delete));
+
+        cases.push((
+            "list confirm modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::Confirm {
+                    target: crate::console::manager::state::ConfirmTarget::DeleteEnvVar {
+                        scope: crate::console::manager::state::SecretsScopeTag::Workspace,
+                        key: "TOKEN".into(),
+                    },
+                    state: jackin_tui::components::ConfirmState::new("Delete TOKEN?"),
+                },
+            ),
+        ));
+
+        cases.push((
+            "list save discard modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::SaveDiscardCancel {
+                    state: jackin_tui::components::SaveDiscardState::new("Save changes?"),
+                },
+            ),
+        ));
+
+        cases.push((
+            "list status modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::StatusPopup {
+                    state: jackin_tui::components::StatusPopupState::new(
+                        "Loading",
+                        "Resolving role",
+                    ),
+                },
+            ),
+        ));
+
+        cases.push((
+            "list file browser modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::FileBrowser {
+                    target: crate::console::manager::state::FileBrowserTarget::CreateFirstMountSrc,
+                    state: crate::console::widgets::file_browser::FileBrowserState::new_at(
+                        cwd.clone(),
+                        cwd.clone(),
+                    ),
+                },
+            ),
+        ));
+
+        cases.push((
+            "list mount dst choice modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::MountDstChoice {
+                    target: crate::console::manager::state::FileBrowserTarget::CreateFirstMountSrc,
+                    state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
+                        "/workspace",
+                    ),
+                },
+            ),
+        ));
+
+        cases.push((
+            "list workdir picker modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::WorkdirPick {
+                    state: crate::console::widgets::workdir_pick::WorkdirPickState::from_mounts(&[
+                        crate::workspace::MountConfig {
+                            src: "/workspace".into(),
+                            dst: "/workspace".into(),
+                            readonly: false,
+                            isolation: crate::isolation::MountIsolation::Shared,
+                        },
+                    ]),
+                },
+            ),
+        ));
+
+        cases.push((
+            "list github picker modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::GithubPicker {
+                    state: crate::console::widgets::github_picker::GithubPickerState::new(vec![
+                        crate::console::widgets::github_picker::GithubChoice {
+                            src: "/workspace".into(),
+                            branch: "main".into(),
+                            url: "https://github.com/example/repo".into(),
+                        },
+                    ]),
+                },
+            ),
+        ));
+
+        cases.push((
+            "list role picker modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::RolePicker {
+                    state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+                        crate::selector::RoleSelector::parse("chainargos/agent-smith")
+                            .expect("valid role selector"),
+                    ]),
+                },
+            ),
+        ));
+
+        cases.push((
+            "list source picker modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::SourcePicker {
+                    state: crate::console::widgets::source_picker::SourcePickerState::new(
+                        "TOKEN".into(),
+                        true,
+                    ),
+                    env_key: None,
+                },
+            ),
+        ));
+
+        cases.push((
+            "list scope picker modal",
+            list_with_modal(
+                &config,
+                &cwd,
+                Modal::ScopePicker {
+                    state: crate::console::widgets::scope_picker::ScopePickerState::new(),
+                },
+            ),
+        ));
 
         let mut editor_text = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());

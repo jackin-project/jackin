@@ -937,7 +937,7 @@ The container info dialog now opens from every status-bar/status-footer chip sur
 
 ### Phase 8b — Focus correctness audit
 
-**Partially implemented on `feature/tui-architecture` (2026-05-31):** fixed the editor General and settings Mounts border/cursor expression mismatches; added focused editor General regression coverage; added one-green-border-cluster tests for every host console content tab plus representative list/editor/settings modal states. Remaining work: exhaustively enumerate the remaining host console modal variants and list-view detail-panel transitions.
+**Partially implemented on `feature/tui-architecture` (2026-05-31):** fixed the editor General and settings Mounts border/cursor expression mismatches; added focused editor General regression coverage; added one-green-border-cluster tests for every host console content tab plus the main list modal variants (`Confirm`, `SaveDiscardCancel`, `StatusPopup`, file browser, destination choice, workdir picker, GitHub picker, role picker, source picker, and scope picker) and representative editor/settings modal states. Remaining work: enumerate the remaining editor-auth/1Password and global-mount submodal variants plus list-view detail-panel transitions.
 
 Systematically audit every screen in the host console and settings for focus violations:
 
