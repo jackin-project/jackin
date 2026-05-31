@@ -20,10 +20,10 @@ title: "TUI architecture — Ratatui application patterns"
 - Focus audit progress: editor General and settings Mounts now use the same focused expression for green borders and `▸` cursor visibility; focused editor General content has a regression test; host console content and representative modal states now have one-green-border-cluster regression coverage; the new-workspace description no longer carries an inline keyboard hint.
 - Console modal geometry now lives in `manager::modal_layout`, so render, mouse hit-testing, and container-info hyperlink overlays share one update-layer owner instead of borrowing modal rectangles through the render facade.
 - Mount display row derivation and width math now live in `manager::mount_display`, and Trust-tab width math lives in `jackin-console::settings::update`, so editor, settings, and mouse update paths no longer import render helpers for those scroll bounds.
-- Settings tab content-height calculations now live in `manager::settings_geometry`, removing the mouse/update dependency on settings render helpers for vertical scroll bounds.
-- List-name content width now lives in `manager::list_geometry`, including the shared trailing-padding rule for horizontal scroll bounds.
+- Settings tab content-height calculations and global-mount scroll clamping now live in `manager::settings_geometry`, removing the mouse/update dependency on settings render helpers for scroll bounds.
+- List-name content width now lives in `manager::list_geometry`, including the shared trailing-padding rule for horizontal scroll bounds; render tests import the geometry owner directly instead of a test-only render facade.
 - Sidebar input, layout, scroll-area, and list-scroll clamp geometry now live in `manager::list_geometry`, so production input/update paths no longer depend on the render facade for list/sidebar scroll bounds.
-- The readonly-mount render regression now lives with editor render tests, leaving manager input tests free of render-facade calls.
+- The readonly-mount render regression now lives with editor render tests, and render helpers that no caller outside the view layer needs are private or `pub(super)`, leaving manager input tests free of render-facade calls.
 - Container info is unified across surfaces: shared `jackin-tui` state/render/hit-test/OSC 8 overlay helpers back the host console and launch cockpit; capsule status-bar chip click opens the matching container-info dialog; OSC 52 copy works for copyable rows.
 - Launch failure paths now render as full wrapped plain text and receive OSC 8 `file://` hyperlink overlays for supporting terminals; overlay tests assert both diagnostics and docker-output links.
 
