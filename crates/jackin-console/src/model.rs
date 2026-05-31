@@ -72,6 +72,12 @@ pub enum AuthFormFocus {
     Reset,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthFormTarget<K> {
+    Workspace { kind: K },
+    WorkspaceRole { role: String, kind: K },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SecretsScopeTag {
     Workspace,

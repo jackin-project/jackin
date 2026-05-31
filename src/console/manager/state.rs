@@ -250,6 +250,8 @@ pub type SettingsEnvConfig =
 pub type PendingSaveCommit =
     jackin_console::model::PendingSaveCommit<crate::workspace::MountConfig>;
 pub type EditorSaveFlow = jackin_console::model::EditorSaveFlow<PendingSaveCommit>;
+pub type AuthFormTarget =
+    jackin_console::model::AuthFormTarget<crate::console::manager::auth_kind::AuthKind>;
 
 #[derive(Debug)]
 pub struct SettingsEnvState<'a> {
@@ -1165,37 +1167,6 @@ pub enum Modal<'a> {
         /// so the value isn't lost on cancel and the text-input
         /// modal can re-open pre-populated.
         literal_buffer: String,
-    },
-}
-
-/// Identifies the (scope, kind) pair an open `AuthForm` modal is editing.
-///
-/// Committing the form writes back into the matching slot on
-/// `editor.pending`:
-///
-///   - workspace `claude` / `codex` / `amp` / `github` field, or
-///   - workspace-role override `claude` / `codex` / `amp` / `github` field,
-///
-/// plus the credential env var when the chosen mode requires one.
-///
-/// Widened from `Agent` to [`AuthKind`] so the GitHub kind (which has
-/// no agent dimension because `.config/gh/` is shared by every agent
-/// in the container) can target the same modal flow.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AuthFormTarget {
-    /// `[workspaces.<ws>.<kind>].auth_forward` slot, with the credential
-    /// env var landing in `[workspaces.<ws>.env]` (Claude / Codex) or
-    /// `[workspaces.<ws>.github.env]` (Github).
-    Workspace {
-        kind: crate::console::manager::auth_kind::AuthKind,
-    },
-    /// `[workspaces.<ws>.roles.<role>.<kind>].auth_forward` slot, with
-    /// the credential env var landing in
-    /// `[workspaces.<ws>.roles.<role>.env]` (Claude / Codex) or
-    /// `[workspaces.<ws>.roles.<role>.github.env]` (Github).
-    WorkspaceRole {
-        role: String,
-        kind: crate::console::manager::auth_kind::AuthKind,
     },
 }
 
