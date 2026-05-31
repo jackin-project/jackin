@@ -273,47 +273,9 @@ pub struct SettingsState<'a> {
     pub cached_footer_h: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsTab {
-    General,
-    Mounts,
-    Environments,
-    Auth,
-    Trust,
-}
-
-impl SettingsTab {
-    pub const ALL: [Self; 5] = [
-        Self::General,
-        Self::Mounts,
-        Self::Environments,
-        Self::Auth,
-        Self::Trust,
-    ];
-
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::General => "General",
-            Self::Mounts => "Mounts",
-            Self::Environments => "Environments",
-            Self::Auth => "Auth",
-            Self::Trust => "Trust",
-        }
-    }
-
-    #[must_use]
-    pub fn next(self) -> Self {
-        let idx = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
-        Self::ALL[(idx + 1) % Self::ALL.len()]
-    }
-
-    #[must_use]
-    pub fn previous(self) -> Self {
-        let idx = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
-        Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
-    }
-}
+pub use jackin_console::model::{
+    CreateStep, EditorTab, ExitIntent, FieldFocus, SecretsScopeTag, SettingsTab,
+};
 
 #[derive(Debug)]
 pub struct SettingsEnvState<'a> {
@@ -1309,26 +1271,6 @@ pub enum EditorMode {
     Create,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditorTab {
-    General,
-    Mounts,
-    Roles,
-    Secrets,
-    /// Auth panel: opens on a kind-first picker (`Claude Code` /
-    /// `Codex`); selecting a kind drops into a focused view with the
-    /// workspace-level mode + optional credential source plus
-    /// per-role overrides for that kind only. The form modal lives in
-    /// `auth_panel`; the row enumeration is `auth_flat_rows` in
-    /// `render::editor`.
-    Auth,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FieldFocus {
-    Row(usize),
-}
-
 // `TextInputState` is ~600B while other variants are ~330B. Boxing the state
 // field would cascade through 19 construction/match sites (including wizard
 // step transitions that move state in and out of `Modal`). The ergonomic cost
@@ -1519,23 +1461,6 @@ pub enum ConfirmTarget {
     },
 }
 
-/// Separate from [`crate::config::editor::EnvScope`].
-///
-/// That type needs the workspace name, which Create mode hasn't
-/// captured until `pending_name` lands at save time. The full
-/// `EnvScope` is derived in `commit_editor_save`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SecretsScopeTag {
-    Workspace,
-    Role(String),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExitIntent {
-    Save,
-    Discard,
-}
-
 #[derive(Debug)]
 pub struct CreatePreludeState<'a> {
     pub step: CreateStep,
@@ -1551,14 +1476,6 @@ pub struct CreatePreludeState<'a> {
     /// Picks Esc-on-`WorkdirPick` rewind target: `TextInputDst` when
     /// the Edit-destination branch was used, else `MountDstChoice`.
     pub used_edit_dst: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CreateStep {
-    PickFirstMountSrc,
-    PickFirstMountDst,
-    PickWorkdir,
-    NameWorkspace,
 }
 
 // ── Impls ──────────────────────────────────────────────────────────
