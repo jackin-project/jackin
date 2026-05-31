@@ -144,6 +144,46 @@ pub struct SettingsTrustRow {
     pub trusted: bool,
 }
 
+#[derive(Debug)]
+pub struct SettingsTrustState {
+    pub selected: usize,
+    pub pending: Vec<SettingsTrustRow>,
+    pub original: Vec<SettingsTrustRow>,
+    pub error: Option<String>,
+    pub scroll_x: u16,
+    pub scroll_y: u16,
+    pub scroll_focused: bool,
+    /// Row the pointer is hovering.
+    pub hovered: Option<usize>,
+}
+
+impl SettingsTrustState {
+    #[must_use]
+    pub fn from_rows(pending: Vec<SettingsTrustRow>) -> Self {
+        Self {
+            selected: 0,
+            original: pending.clone(),
+            pending,
+            error: None,
+            scroll_x: 0,
+            scroll_y: 0,
+            scroll_focused: false,
+            hovered: None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original
+    }
+
+    pub fn discard(&mut self) {
+        self.pending = self.original.clone();
+        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
+        self.error = None;
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct GlobalMountDraft {
     pub name: String,

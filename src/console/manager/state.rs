@@ -241,7 +241,8 @@ pub use jackin_console::model::{
     AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
     GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SecretsScopeTag,
     SettingsEnvConfirm, SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab,
-    SettingsTrustRow, TextInputTarget, settings_map_change_count, settings_vec_change_count,
+    SettingsTrustRow, SettingsTrustState, TextInputTarget, settings_map_change_count,
+    settings_vec_change_count,
 };
 
 #[derive(Debug)]
@@ -345,19 +346,6 @@ pub enum SettingsAuthModal<'a> {
         focus: AuthFormFocus,
         literal_buffer: String,
     },
-}
-
-#[derive(Debug)]
-pub struct SettingsTrustState {
-    pub selected: usize,
-    pub pending: Vec<SettingsTrustRow>,
-    pub original: Vec<SettingsTrustRow>,
-    pub error: Option<String>,
-    pub scroll_x: u16,
-    pub scroll_y: u16,
-    pub scroll_focused: bool,
-    /// Row the pointer is hovering (lifts its background like a hovered tab).
-    pub hovered: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -700,7 +688,7 @@ impl SettingsState<'_> {
             mounts: GlobalMountsState::from_config(config),
             env: SettingsEnvState::from_config(config),
             auth: SettingsAuthState::from_config(config),
-            trust: SettingsTrustState::from_config(config),
+            trust: settings_trust_from_config(config),
             error_popup: None,
             pending_token_generate: None,
             cached_footer_h: 1,
@@ -1055,39 +1043,17 @@ impl SettingsAuthState {
     }
 }
 
-impl SettingsTrustState {
-    pub fn from_config(config: &AppConfig) -> Self {
-        let pending = config
-            .roles
-            .iter()
-            .map(|(role, source)| SettingsTrustRow {
-                role: role.clone(),
-                git: source.git.clone(),
-                trusted: source.trusted,
-            })
-            .collect::<Vec<_>>();
-        Self {
-            selected: 0,
-            original: pending.clone(),
-            pending,
-            error: None,
-            scroll_x: 0,
-            scroll_y: 0,
-            scroll_focused: false,
-            hovered: None,
-        }
-    }
-
-    #[must_use]
-    pub fn is_dirty(&self) -> bool {
-        self.pending != self.original
-    }
-
-    pub fn discard(&mut self) {
-        self.pending = self.original.clone();
-        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
-        self.error = None;
-    }
+fn settings_trust_from_config(config: &AppConfig) -> SettingsTrustState {
+    let pending = config
+        .roles
+        .iter()
+        .map(|(role, source)| SettingsTrustRow {
+            role: role.clone(),
+            git: source.git.clone(),
+            trusted: source.trusted,
+        })
+        .collect::<Vec<_>>();
+    SettingsTrustState::from_rows(pending)
 }
 
 fn validate_settings_env(
