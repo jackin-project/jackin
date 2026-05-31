@@ -256,6 +256,8 @@ pub type SettingsAuthRow = jackin_console::model::SettingsAuthRow<
     crate::console::manager::auth_kind::AuthKind,
     crate::console::manager::auth_kind::AuthMode,
 >;
+pub type ConfirmTarget =
+    jackin_console::model::ConfirmTarget<crate::config::RoleSource, PendingSaveCommit>;
 
 #[derive(Debug)]
 pub struct SettingsEnvState<'a> {
@@ -1165,28 +1167,6 @@ pub enum Modal<'a> {
         /// so the value isn't lost on cancel and the text-input
         /// modal can re-open pre-populated.
         literal_buffer: String,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub enum ConfirmTarget {
-    DeleteEnvVar {
-        scope: SecretsScopeTag,
-        key: String,
-    },
-    TrustRoleSource {
-        key: String,
-        source: crate::config::RoleSource,
-    },
-    /// Source-drift confirmation (Task 10.3): operator's edit changes the
-    /// `src` of one or more mounts that have preserved isolated state on
-    /// stopped containers. Carries the planner's pending save material so
-    /// the commit pass can run `force_cleanup_isolated` for each affected
-    /// container then write the edit through.
-    DeleteIsolatedAndSave {
-        plan: PendingSaveCommit,
-        exit_on_success: bool,
-        affected_containers: Vec<String>,
     },
 }
 

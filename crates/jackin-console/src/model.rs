@@ -159,6 +159,23 @@ impl<P> EditorSaveFlow<P> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ConfirmTarget<R, P> {
+    DeleteEnvVar {
+        scope: SecretsScopeTag,
+        key: String,
+    },
+    TrustRoleSource {
+        key: String,
+        source: R,
+    },
+    DeleteIsolatedAndSave {
+        plan: P,
+        exit_on_success: bool,
+        affected_containers: Vec<String>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalMountConfirm {
     Remove,
