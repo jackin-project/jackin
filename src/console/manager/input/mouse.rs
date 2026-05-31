@@ -13,7 +13,6 @@ use super::super::mount_display::settings_global_mounts_content_width;
 use super::super::mount_display::workspace_mounts_content_width;
 use super::super::render::global_mounts::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
-    trust_content_width,
 };
 use super::super::render::list::list_names_content_width;
 use super::super::state::{
@@ -1094,7 +1093,7 @@ fn scroll_active_panel(
                     );
                 }
                 SettingsTab::Trust => {
-                    let cw = trust_content_width(settings);
+                    let cw = jackin_console::settings::update::trust_content_width(&settings.trust);
                     apply_horizontal_scroll(&mut settings.trust.scroll_x, delta, content_area, cw);
                 }
                 _ => {}

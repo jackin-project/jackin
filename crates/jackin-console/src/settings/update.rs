@@ -53,6 +53,17 @@ pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
     }
 }
 
+#[must_use]
+pub fn trust_content_width(state: &SettingsTrustState) -> usize {
+    state
+        .pending
+        .iter()
+        .map(|row| 42 + jackin_tui::display_cols(&row.git))
+        .chain(["  Role                         Trust      Git".len()])
+        .max()
+        .unwrap_or(0)
+}
+
 pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, expanded: bool) {
     if expanded {
         expanded_roles.insert(role);

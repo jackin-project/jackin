@@ -197,11 +197,6 @@ fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui:
     );
 }
 
-/// Natural content width of the Trust tab (used by mouse scroll).
-pub(crate) fn trust_content_width(state: &SettingsState<'_>) -> usize {
-    super::max_line_width(&trust_lines(state))
-}
-
 pub(crate) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
     let mut height = global_mount_lines(
         &state.mounts.pending,

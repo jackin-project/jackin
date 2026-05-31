@@ -3,7 +3,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::mount_display::settings_global_mounts_content_width;
-use super::super::render::global_mounts::trust_content_width;
 use super::super::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
@@ -1050,7 +1049,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let footer_h = settings.cached_footer_h;
-    let content_width = trust_content_width(settings);
+    let content_width = jackin_console::settings::update::trust_content_width(&settings.trust);
     match key.code {
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             dispatch_manager(
