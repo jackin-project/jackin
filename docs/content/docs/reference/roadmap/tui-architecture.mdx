@@ -844,6 +844,22 @@ Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high
 
 Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, provides a real-terminal browser through `tui-lookbook --terminal`, one MDX page per component following the story shape above, and CI regeneration so previews never drift. The first generator lives at <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> and renders <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> stories from `TestBackend` buffers into committed assets under <RepoFile path="docs/public/tui-lookbook/panel-focused.svg" />, consumed by per-component [TUI Lookbook](/reference/tui-lookbook/) pages. The generated SVGs always carry a black terminal background so docs previews match real terminal use. CI runs `tui-lookbook --check` against those committed previews; every new shared TUI component must appear in both the docs lookbook and the terminal browser in the same PR. Reconcile the host/capsule drift table as components consolidate into shared widgets.
 
+### Phase 8f — Enforce remaining design-decision hard rules
+
+Several rules in [TUI Design Decisions](/reference/tui-design-decisions/) have no corresponding implementation phase. This phase audits and enforces them:
+
+**Navigation W3C ARIA Tabs pattern** — verify every tabbed surface (`ManagerStage::Editor`, `ManagerStage::Settings`) implements the full pattern: `←`/`→` cycle tabs when tab bar focused, `⇥`/`↓` enters content, `⇧Tab`/`Esc` returns to tab bar. Verify `tab_bar_focused: bool` exists on every tabbed state struct. Write a test for each surface that asserts the key bindings route correctly.
+
+**Space vs Enter semantics** — audit every toggle row (keep_awake, git_pull, trusted role, allowed role, DCO sign-off, co-author trailer). Each must respond to `Space` only (not `Enter`). Audit every action button (Save, Cancel, Yes, No, OK): `Enter` only. Add a test that asserts `Space` on a toggle row toggles the value and `Enter` does not.
+
+**Hints footer-only** — no widget may render its own internal hint row. Audit all files under `src/console/widgets/` for `Constraint::Length` rows containing hint text. Every hint must route through `render_hint_bar` / `render_wrapped_hint_bar` in the footer, never inside the widget body.
+
+**Error surface** — every error must use `ErrorPopup`. Audit all `eprintln!` calls, any `status_overlay` that surfaces errors, and any inline error text in render functions. Route all to `ManagerMessage::OpenListErrorPopup` or equivalent.
+
+**Dialog button spacing** — every dialog button row must have exactly one empty row above it. Audit the existing dialogs against the `content_rows + 5` formula. Write a `TestBackend` test per dialog that asserts the button row index.
+
+**Acceptance:** All five audits produce zero violations. New tests covering each rule are green in CI.
+
 ### Phase 8e — Long paths in dialogs: OSC 8 hyperlinks
 
 The launch failure popup renders "run diagnostics" and "docker output" paths that are truncated when they exceed the dialog width. This violates the "never silently truncate" rule.
@@ -880,16 +896,21 @@ Make both status bar chips fully interactive per the design decision rule:
 
 ### Phase 8c — Terminal resize visual correctness
 
-**Problem:** Resizing the terminal window (especially the capsule) produces visual corruption — wrong background colors, broken layout, stale cell artifacts from the previous size. The capsule's Ratatui double-buffer needs a full reset on resize to guarantee every cell is repainted at the new dimensions.
+**Problem:** Resizing the terminal (especially the capsule) produces visual corruption — wrong background colors (gray tint), stale cell artifacts from the previous size, broken layout geometry. The capsule's Ratatui double-buffer and SocketBackend cursor-tracking state are not reset on resize.
 
-**Root cause (known):** On resize, `SocketBackend`'s internal state (current cursor position, current style) may be out of sync with what the attached client expects after a resize. Additionally, the Ratatui terminal's previous-buffer is sized for the old geometry; without a reset, the diff only sends cells that changed value, leaving cells at positions that no longer exist in the new layout with their old content.
+**Root cause:** On `ClientFrame::Resize` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, `compose_full_frame` is called but `ratatui_terminal.clear()` is not. The diff then compares against a previous-buffer sized for the OLD geometry, leaving stale content at cells that no longer exist in the new layout. Additionally, `SocketBackend`'s `cursor_row`/`cursor_col` tracking carries stale coordinates across the resize boundary, causing the consecutive-cell optimization to skip position escapes that are now needed.
 
-**Required fix:**
-1. On `ClientFrame::Resize`, call `ratatui_terminal.clear()` (which resets the diff buffer without emitting `[2J`) before `compose_full_frame`. This is the same pattern used in `compose_pending_frame` for layout changes.
-2. Reset `SocketBackend`'s cursor position tracking so consecutive-cell optimization does not carry stale coordinates across the resize boundary.
-3. Verify the host console (`run_console`) also handles resize correctly — `terminal.autoresize()` plus the existing `terminal.resize()` approach should be sufficient; confirm no gray/wrong-color artifacts appear.
+**Required fix — three steps:**
 
-**Acceptance:** Dragging the terminal window to a smaller or larger size while the capsule multiplexer is running must produce a correct full repaint with no gray background, no stale cells, and no layout tears within one animation tick.
+1. **Reset Ratatui buffer on resize** — in the `ClientFrame::Resize` handler in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, add `let _ = mux.ratatui_terminal.clear();` before `compose_full_frame`. `SocketBackend::clear()` already does NOT emit `[2J` (from a prior fix), so this resets the diff buffer without a flash.
+
+2. **Reset SocketBackend cursor state on resize** — in <RepoFile path="crates/jackin-capsule/src/socket_backend.rs" />, the `resize` method currently only updates `self.size`. Add: `self.current_style = CellStyle::default();` and (if cursor tracking fields are added) reset cursor position. The resize invalidates all layout assumptions.
+
+3. **Host console** — verify `run_console` in <RepoFile path="src/console/run.rs" /> correctly handles `Event::Resize` by calling `terminal.autoresize()` (already done) and that the debug-bar area is recomputed on the next frame. The existing `split_debug_area(full_area)` already re-reads `frame.area()` each tick, so this should be correct — add a regression test with `TestBackend::resize`.
+
+**Files:** <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (resize handler), <RepoFile path="crates/jackin-capsule/src/socket_backend.rs" /> (clear/resize), <RepoFile path="src/console/run.rs" /> (verify).
+
+**Acceptance:** Dragging the terminal window to a smaller or larger size while the capsule multiplexer is running must produce a correct full repaint with no gray background, no stale cells, and no layout tears within one animation tick. Add a `TestBackend::resize` test that resizes a `Multiplexer` and asserts `compose_pending_frame` returns a non-empty output.
 
 ### Phase 8b — Focus correctness audit
 
@@ -961,6 +982,13 @@ None. This is a pure internal refactor of in-process TUI code. It introduces no 
 - Module-root files (`mod.rs` / `lib.rs`) are thin — declarations, the `pub use` facade, and `//!` docs only; no module root holds rendering, dispatch, or domain logic, and new TUI modules use the `foo.rs` + `foo/` (no-`mod.rs`) layout.
 - A `criterion` frame-time bench guards the host compose path against a named budget, and a capsule bytes-per-frame bench guards the move to Ratatui's `Buffer::diff`; both run in CI.
 - No render, update, or effect path can `unwrap` or `panic`; `clippy` (with the no-panic lints) and `rustfmt` run in CI for the TUI crates.
+- Every tabbed surface (`ManagerStage::Editor`, `ManagerStage::Settings`) implements the full W3C ARIA Tabs pattern: `←`/`→` cycle tabs, `⇥`/`↓` enters content, `⇧Tab`/`Esc` returns to tab bar.
+- Every toggle row responds to `Space` only; every action button responds to `Enter` only. No toggle responds to `Enter`; no action button responds to `Space`.
+- No widget renders an internal hint row; all hints appear in the shared footer via `render_hint_bar` or `render_wrapped_hint_bar`.
+- Every error surfaces through `ErrorPopup`; no `eprintln!` or status overlay is used for error display on any TUI surface.
+- Every dialog with a button row has exactly one empty separator row above the buttons (formula: `content_rows + 5` for outer height).
+- Clicking either status bar chip (instance ID or run ID) shows the correct dialog with all expected fields on every surface where the chip is visible.
+- Long values (file paths, URLs) in any dialog are either OSC 8 hyperlinks, word-wrapped, or accompanied by a scrollbar — never silently truncated.
 - Every screen has exactly one PHOSPHOR_GREEN border visible at any time; no screen state produces two green-bordered containers simultaneously. Focus transfers only via keyboard, mouse click, or scroll-hover — never via resize, content fitting, or navigation keys within a focused container.
 - Every `render_scrollable_block_at` / `render_scrollable_block` call passes a dynamic `focused` expression; no hardcoded `false` exists for content that can receive focus.
 - All surface-specific TUI rendering files live in designated `tui/` subdirectories: `crates/jackin-capsule/src/tui/` for capsule, `src/console/tui/` for host console. No terminal-rendering code exists outside these paths or `crates/jackin-tui/`.
