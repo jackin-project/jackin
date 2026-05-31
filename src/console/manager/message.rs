@@ -13,7 +13,9 @@ use super::state::{
 };
 use crate::config::AppConfig;
 use jackin_console::editor::update::{next_editor_tab, previous_editor_tab};
-use jackin_console::settings::update::{next_settings_tab, previous_settings_tab};
+use jackin_console::settings::update::{
+    move_general_selection, next_settings_tab, previous_settings_tab, toggle_general_selected,
+};
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -519,33 +521,14 @@ fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.general.selected = if delta.is_negative() {
-        settings
-            .general
-            .selected
-            .saturating_sub(delta.unsigned_abs())
-    } else {
-        settings
-            .general
-            .selected
-            .saturating_add(delta as usize)
-            .min(1)
-    };
+    move_general_selection(&mut settings.general, delta);
 }
 
-const fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
+fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    match settings.general.selected {
-        0 => {
-            settings.general.pending_coauthor_trailer = !settings.general.pending_coauthor_trailer;
-        }
-        1 => {
-            settings.general.pending_dco = !settings.general.pending_dco;
-        }
-        _ => {}
-    }
+    toggle_general_selected(&mut settings.general);
 }
 
 fn set_editor_auth_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {

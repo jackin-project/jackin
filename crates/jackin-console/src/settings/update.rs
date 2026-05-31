@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::state::SettingsTab;
+use super::state::{SettingsGeneralState, SettingsTab};
 
 #[must_use]
 pub const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
@@ -21,6 +21,26 @@ pub const fn next_settings_tab(tab: SettingsTab) -> SettingsTab {
         SettingsTab::Environments => SettingsTab::Auth,
         SettingsTab::Auth => SettingsTab::Trust,
         SettingsTab::Trust => SettingsTab::General,
+    }
+}
+
+pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
+    state.selected = if delta.is_negative() {
+        state.selected.saturating_sub(delta.unsigned_abs())
+    } else {
+        state.selected.saturating_add(delta as usize).min(1)
+    };
+}
+
+pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
+    match state.selected {
+        0 => {
+            state.pending_coauthor_trailer = !state.pending_coauthor_trailer;
+        }
+        1 => {
+            state.pending_dco = !state.pending_dco;
+        }
+        _ => {}
     }
 }
 
