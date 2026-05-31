@@ -24,19 +24,40 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-use crate::diagnostics::RunDiagnostics;
-
+use jackin_launch::LaunchDiagnostics;
 pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, StageLabelTransition, StageStatus, StageView, active_stage_index, initial_view,
     update_launch_view, update_stage,
 };
 
+impl LaunchDiagnostics for crate::diagnostics::RunDiagnostics {
+    fn run_id(&self) -> &str {
+        self.run_id()
+    }
+
+    fn path(&self) -> &std::path::Path {
+        self.path()
+    }
+
+    fn command_output_path(&self, name: &str) -> std::path::PathBuf {
+        self.command_output_path(name)
+    }
+
+    fn compact(&self, kind: &str, message: &str) {
+        self.compact(kind, message);
+    }
+
+    fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
+        self.stage(kind, stage, message, detail);
+    }
+}
+
 type SharedView = Arc<std::sync::Mutex<LaunchView>>;
 const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
 
 pub struct LaunchProgress {
-    diagnostics: Arc<RunDiagnostics>,
+    diagnostics: Arc<dyn LaunchDiagnostics>,
     renderer: Renderer,
     view: SharedView,
 }
@@ -121,7 +142,7 @@ impl RichDriver {
 }
 
 impl LaunchProgress {
-    pub fn new(diagnostics: Arc<RunDiagnostics>, no_motion: bool) -> anyhow::Result<Self> {
+    pub fn new(diagnostics: Arc<dyn LaunchDiagnostics>, no_motion: bool) -> anyhow::Result<Self> {
         require_rich_terminal()?;
         let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
         let rich = RichRenderer::enter(no_motion)?;
@@ -139,7 +160,7 @@ impl LaunchProgress {
     }
 
     #[cfg(test)]
-    pub fn for_test(diagnostics: Arc<RunDiagnostics>) -> Self {
+    pub fn for_test(diagnostics: Arc<dyn LaunchDiagnostics>) -> Self {
         Self {
             diagnostics,
             renderer: Renderer::Test,
@@ -2338,6 +2359,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    use crate::diagnostics::RunDiagnostics;
     use jackin_tui::components::StatusFooterHover;
     use ratatui::backend::TestBackend;
 
