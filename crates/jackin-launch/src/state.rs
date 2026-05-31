@@ -116,6 +116,8 @@ pub enum LaunchMessage {
     },
     StageFailed(LaunchFailure),
     FailureAcknowledged,
+    BuildLogOpened,
+    BuildLogClosed,
 }
 
 #[derive(Debug, Clone, Copy)]

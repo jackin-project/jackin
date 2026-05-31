@@ -103,16 +103,14 @@ fn handle_cockpit_mouse_down(
             }
         }
     } else if v.build_log_open {
-        v.build_log_open = false;
+        let _dirty = update_launch_view(v, LaunchMessage::BuildLogClosed);
     } else if hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode()) {
         v.container_info_open = true;
         v.container_info_copied = None;
         v.footer_hover.right = false;
         terminal.set_pointer_shape(false);
     } else if crate::build_log::len() > 0 && hit_activity(v, col, row) {
-        v.build_log_open = true;
-        v.build_log_scroll = jackin_tui::scroll::TailScroll::default();
-        v.footer_hover.left = false;
+        let _dirty = update_launch_view(v, LaunchMessage::BuildLogOpened);
         terminal.set_pointer_shape(false);
     }
 }
@@ -214,7 +212,9 @@ pub fn handle_cockpit_input(
                 terminal.set_pointer_shape(false);
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
-                KeyCode::Esc | KeyCode::Char('q') => v.build_log_open = false,
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
+                }
                 KeyCode::Up => scroll_build_log(&mut v, area, 1),
                 KeyCode::Down => scroll_build_log(&mut v, area, -1),
                 KeyCode::PageUp => {

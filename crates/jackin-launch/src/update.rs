@@ -71,6 +71,14 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.failure_ack = true;
             view.failure_copy_hover = None;
         }
+        LaunchMessage::BuildLogOpened => {
+            view.build_log_open = true;
+            view.build_log_scroll = jackin_tui::scroll::TailScroll::default();
+            view.footer_hover.left = false;
+        }
+        LaunchMessage::BuildLogClosed => {
+            view.build_log_open = false;
+        }
     }
     UpdateResult::redraw()
 }
@@ -159,5 +167,22 @@ mod tests {
 
         assert!(view.failure_ack);
         assert_eq!(view.failure_copy_hover, None);
+    }
+
+    #[test]
+    fn build_log_messages_open_reset_and_close_overlay() {
+        let mut view = initial_view();
+        view.footer_hover.left = true;
+        view.build_log_scroll = jackin_tui::scroll::TailScroll::new(4);
+
+        let _ = update_launch_view(&mut view, LaunchMessage::BuildLogOpened);
+
+        assert!(view.build_log_open);
+        assert_eq!(view.build_log_scroll.offset(), 0);
+        assert!(!view.footer_hover.left);
+
+        let _ = update_launch_view(&mut view, LaunchMessage::BuildLogClosed);
+
+        assert!(!view.build_log_open);
     }
 }
