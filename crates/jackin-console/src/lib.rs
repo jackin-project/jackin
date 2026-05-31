@@ -1,5 +1,6 @@
 //! Host console surface ownership and runtime helpers.
 
+pub mod github_mounts;
 pub mod mount_info;
 pub mod op_cache;
 pub mod terminal;
