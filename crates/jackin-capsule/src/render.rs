@@ -5,11 +5,10 @@
 use std::io::Write;
 
 use jackin_tui::ansi::{RESET, fg};
-use unicode_width::UnicodeWidthChar;
 use vt100::{Color, Screen};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-struct Attrs {
+pub(crate) struct Attrs {
     fg: ColorKey,
     bg: ColorKey,
     bold: bool,
@@ -38,15 +37,65 @@ impl From<Color> for ColorKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct CellSnapshot {
-    contents: String,
+pub(crate) struct CellSnapshot {
+    pub(crate) contents: String,
     attrs: Attrs,
-    width: u16,
+    pub(crate) width: u16,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct RowSnapshot {
-    cells: Vec<CellSnapshot>,
+pub(crate) struct RowSnapshot {
+    pub(crate) cells: Vec<CellSnapshot>,
+}
+
+impl RowSnapshot {
+    pub(crate) fn is_blank(&self) -> bool {
+        self.cells
+            .iter()
+            .all(|cell| cell.contents.trim_end().is_empty())
+    }
+
+    pub(crate) fn text_len(&self) -> usize {
+        self.cells.iter().map(|cell| cell.contents.len()).sum()
+    }
+
+    pub(crate) fn text_range(&self, from_col: u16, to_col: u16) -> String {
+        let mut out = String::new();
+        for cell in row_range_cells(self, from_col, to_col) {
+            out.push_str(&cell.contents);
+        }
+        out
+    }
+
+    fn clipped(&self, cols_to_draw: u16) -> Self {
+        let mut cells = Vec::with_capacity(usize::from(cols_to_draw));
+        let mut width = 0u16;
+        for cell in &self.cells {
+            if width >= cols_to_draw {
+                break;
+            }
+            let remaining = cols_to_draw - width;
+            if cell.width <= remaining {
+                cells.push(cell.clone());
+                width += cell.width;
+            } else {
+                cells.push(CellSnapshot {
+                    contents: " ".repeat(usize::from(remaining)),
+                    attrs: Attrs::default(),
+                    width: remaining,
+                });
+                width = cols_to_draw;
+            }
+        }
+        if width < cols_to_draw {
+            cells.push(CellSnapshot {
+                contents: " ".repeat(usize::from(cols_to_draw - width)),
+                attrs: Attrs::default(),
+                width: cols_to_draw - width,
+            });
+        }
+        Self { cells }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,10 +155,9 @@ impl PaneBodyCache {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn render_full_with_scrollback_prefix(
+    pub(crate) fn render_full_snapshot(
         &mut self,
-        screen: &Screen,
-        scrollback_prefix: &[String],
+        snapshot: Vec<RowSnapshot>,
         dest_row: u16,
         dest_col: u16,
         rect_rows: u16,
@@ -117,8 +165,6 @@ impl PaneBodyCache {
         dim: PaneBodyDim,
         buf: &mut Vec<u8>,
     ) -> PaneBodyRenderStats {
-        let snapshot =
-            pane_snapshot_with_scrollback_prefix(screen, scrollback_prefix, rect_rows, rect_cols);
         self.render_full_from_snapshot(snapshot, dest_row, dest_col, rect_rows, rect_cols, dim, buf)
     }
 
@@ -286,9 +332,9 @@ fn pane_snapshot(screen: &Screen, rect_rows: u16, rect_cols: u16) -> Vec<RowSnap
     pane_snapshot_with_scrollback_prefix(screen, &[], rect_rows, rect_cols)
 }
 
-fn pane_snapshot_with_scrollback_prefix(
+pub(crate) fn pane_snapshot_with_scrollback_prefix(
     screen: &Screen,
-    scrollback_prefix: &[String],
+    scrollback_prefix: &[RowSnapshot],
     rect_rows: u16,
     rect_cols: u16,
 ) -> Vec<RowSnapshot> {
@@ -301,7 +347,7 @@ fn pane_snapshot_with_scrollback_prefix(
         scrollback_prefix
             .iter()
             .take(prefix_rows)
-            .map(|row| snapshot_plain_row(row, cols_to_draw)),
+            .map(|row| row.clipped(cols_to_draw)),
     );
     snapshot.extend(
         (0..rows_to_draw.saturating_sub(prefix_rows as u16))
@@ -310,7 +356,7 @@ fn pane_snapshot_with_scrollback_prefix(
     snapshot
 }
 
-fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
+pub(crate) fn snapshot_screen_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
     let mut cells = Vec::with_capacity(cols_to_draw as usize);
     let mut col = 0;
     while col < cols_to_draw {
@@ -339,32 +385,8 @@ fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
     RowSnapshot { cells }
 }
 
-fn snapshot_plain_row(text: &str, cols_to_draw: u16) -> RowSnapshot {
-    let mut contents = String::new();
-    let mut width = 0u16;
-    for ch in text.chars() {
-        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0) as u16;
-        if ch_width == 0 {
-            contents.push(ch);
-            continue;
-        }
-        if width.saturating_add(ch_width) > cols_to_draw {
-            break;
-        }
-        contents.push(ch);
-        width += ch_width;
-    }
-    contents.extend(std::iter::repeat_n(
-        ' ',
-        usize::from(cols_to_draw.saturating_sub(width)),
-    ));
-    RowSnapshot {
-        cells: vec![CellSnapshot {
-            contents,
-            attrs: Attrs::default(),
-            width: cols_to_draw,
-        }],
-    }
+fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
+    snapshot_screen_row(screen, row, cols_to_draw)
 }
 
 fn render_snapshot_rows(
@@ -424,6 +446,60 @@ fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dim: PaneBodyDim) {
     emit_fg(buf, a.fg);
     emit_bg(buf, a.bg);
     buf.push(b'm');
+}
+
+pub(crate) fn render_row_range_inverse(
+    buf: &mut Vec<u8>,
+    row: &RowSnapshot,
+    from_col: u16,
+    to_col: u16,
+    dim: PaneBodyDim,
+) {
+    let mut last = Attrs::default();
+    let mut last_emitted = false;
+    for cell in row_range_cells(row, from_col, to_col) {
+        let mut attrs = cell.attrs;
+        attrs.inverse = !attrs.inverse;
+        if !last_emitted || attrs != last {
+            emit_sgr(buf, &attrs, dim);
+            last = attrs;
+            last_emitted = true;
+        }
+        buf.extend_from_slice(cell.contents.as_bytes());
+    }
+    buf.extend_from_slice(b"\x1b[0m");
+}
+
+fn row_range_cells(row: &RowSnapshot, from_col: u16, to_col: u16) -> Vec<CellSnapshot> {
+    if to_col < from_col {
+        return Vec::new();
+    }
+    let mut cells = Vec::new();
+    let mut col = 0u16;
+    for cell in &row.cells {
+        let cell_start = col;
+        let cell_end = col.saturating_add(cell.width).saturating_sub(1);
+        col = col.saturating_add(cell.width);
+        if cell_end < from_col {
+            continue;
+        }
+        if cell_start > to_col {
+            break;
+        }
+        if cell_start >= from_col && cell_end <= to_col {
+            cells.push(cell.clone());
+            continue;
+        }
+        let overlap_start = cell_start.max(from_col);
+        let overlap_end = cell_end.min(to_col);
+        let width = overlap_end.saturating_sub(overlap_start).saturating_add(1);
+        cells.push(CellSnapshot {
+            contents: " ".repeat(usize::from(width)),
+            attrs: cell.attrs,
+            width,
+        });
+    }
+    cells
 }
 
 /// Which SGR plane an emit targets. `Fg` uses the `3x`/`9x`/`38;…`

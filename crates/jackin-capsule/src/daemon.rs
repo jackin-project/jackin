@@ -3172,6 +3172,52 @@ mod tests {
     }
 
     #[test]
+    fn scrolled_inline_history_preserves_color_and_selection_highlight() {
+        let mut mux = single_pane_tab_mux_with_size(12, 40);
+        let (mut session, mut input_rx) = test_pane_session(8, 38, Some("codex"));
+        session.feed_pty(b"\x1b[1;5r\x1b[5;1H");
+        for i in 0..12 {
+            session.feed_pty(format!("\r\n\x1b[2K\x1b[31mred history {i}\x1b[0m").as_bytes());
+        }
+        session.feed_pty(b"\x1b[r\x1b[8;1Hlive prompt");
+        mux.sessions.insert(1, session);
+
+        let frame = mux
+            .handle_input(InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            })
+            .expect("inline history wheel should redraw");
+
+        assert!(
+            input_rx.try_recv().is_err(),
+            "Codex-style inline history scroll must not forward wheel bytes"
+        );
+        let rendered = String::from_utf8_lossy(&frame);
+        assert!(
+            rendered.contains("\x1b[0;31mred history"),
+            "scrolled Codex inline history should preserve red SGR styling: {rendered:?}"
+        );
+
+        let inner = mux.visible_panes()[0].inner;
+        mux.selection = Some(SelectionState {
+            session_id: 1,
+            inner,
+            anchor_row: 0,
+            anchor_col: 0,
+            end_row: 0,
+            end_col: 10,
+        });
+        let selected_frame = mux.compose_full_frame(FullRedrawReason::SelectionRepaint);
+        let selected = String::from_utf8_lossy(&selected_frame);
+        assert!(
+            selected.contains("\x1b[0;7;31mred history"),
+            "selection overlay should repaint scrolled inline history with inverse red styling: {selected:?}"
+        );
+    }
+
+    #[test]
     fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
         for (agent, pane_kind) in pane_kind_cases() {
             let mut mux = single_pane_tab_mux_with_size(12, 40);

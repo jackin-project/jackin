@@ -5,9 +5,11 @@
 //! highlight overlay that the compositor writes on top of pane bodies.
 
 use crate::layout::Rect;
+use crate::render::{PaneBodyDim, RowSnapshot, render_row_range_inverse};
 
 /// Active mouse text selection on a pane. Held until the operator
 /// releases the mouse button or the pane resizes.
+#[derive(Clone, Copy)]
 pub(crate) struct SelectionState {
     pub(crate) session_id: u64,
     /// Pane's inner content rectangle at selection-start time. Stays
@@ -28,13 +30,19 @@ pub(crate) struct SelectionState {
 ///
 /// Uses `canonical_selection` ordering and matches the bounds used by
 /// `paint_selection_highlight` so copied text and highlighted cells agree.
-pub(crate) fn selection_text(screen: &vt100::Screen, sel: &SelectionState) -> String {
+pub(crate) fn selection_text(rows: &[RowSnapshot], sel: &SelectionState) -> String {
     let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
-    let (screen_rows, _) = screen.size();
     // Must match `paint_selection_highlight`'s bound — without this
     // the painted highlight and the copied text disagree mid-resize.
     let cols_for_full_row = sel.inner.cols.saturating_sub(1);
-    let max_row = screen_rows.saturating_sub(1).min(end_row);
+    let Some(max_snapshot_row) = rows
+        .len()
+        .checked_sub(1)
+        .and_then(|row| u16::try_from(row).ok())
+    else {
+        return String::new();
+    };
+    let max_row = max_snapshot_row.min(end_row);
     if start_row > max_row {
         return String::new();
     }
@@ -46,19 +54,10 @@ pub(crate) fn selection_text(screen: &vt100::Screen, sel: &SelectionState) -> St
         } else {
             cols_for_full_row
         };
-        let mut row_text = String::new();
-        let mut c = from_col;
-        while c <= to_col {
-            if let Some(cell) = screen.cell(r, c)
-                && cell.has_contents()
-            {
-                row_text.push_str(cell.contents());
-                c += if cell.is_wide() { 2 } else { 1 };
-            } else {
-                row_text.push(' ');
-                c += 1;
-            }
-        }
+        let row_text = rows
+            .get(usize::from(r))
+            .map(|row| row.text_range(from_col, to_col))
+            .unwrap_or_default();
         out.push_str(row_text.trim_end());
         if r != max_row {
             out.push('\n');
@@ -85,12 +84,16 @@ pub(crate) fn canonical_selection(sel: &SelectionState) -> (u16, u16, u16, u16) 
 /// "this is selected" cue.
 pub(crate) fn paint_selection_highlight(
     buf: &mut Vec<u8>,
-    screen: &vt100::Screen,
+    rows: &[RowSnapshot],
     sel: &SelectionState,
+    dim: PaneBodyDim,
 ) {
     let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
     let inner = sel.inner;
     for r in start_row..=end_row {
+        let Some(row) = rows.get(usize::from(r)) else {
+            continue;
+        };
         let from_col = if r == start_row { start_col } else { 0 };
         let to_col = if r == end_row {
             end_col
@@ -104,21 +107,6 @@ pub(crate) fn paint_selection_highlight(
         let abs_col = inner.col + from_col;
         let _ =
             std::io::Write::write_fmt(buf, format_args!("\x1b[{};{}H", abs_row + 1, abs_col + 1));
-        // Inverse SGR — preserves whatever fg/bg the underlying cell
-        // carried so the operator still reads the selected text.
-        buf.extend_from_slice(b"\x1b[7m");
-        let mut c = from_col;
-        while c <= to_col {
-            if let Some(cell) = screen.cell(r, c)
-                && cell.has_contents()
-            {
-                buf.extend_from_slice(cell.contents().as_bytes());
-                c += if cell.is_wide() { 2 } else { 1 };
-            } else {
-                buf.push(b' ');
-                c += 1;
-            }
-        }
-        buf.extend_from_slice(b"\x1b[0m");
+        render_row_range_inverse(buf, row, from_col, to_col, dim);
     }
 }

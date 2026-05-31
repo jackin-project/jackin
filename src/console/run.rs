@@ -106,7 +106,7 @@ pub async fn run_console<H: InstanceActionHandler>(
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
-    use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
     use crate::console::manager::state::{ManagerStage, Modal};
 
@@ -298,21 +298,24 @@ pub async fn run_console<H: InstanceActionHandler>(
         // Async event wait: yield to the Tokio reactor until either a
         // terminal event arrives or the animation tick fires. This frees
         // the reactor between events so background tasks can progress
-        // instead of blocking for up to TICK_MS on event::poll.
-        use futures_util::StreamExt as _;
+        // instead of blocking for up to TICK_MS.
+        use futures_util::{FutureExt as _, StreamExt as _};
         let first = tokio::select! {
             event = event_stream.next() => event.map(|r| r.map_err(anyhow::Error::from)),
             _ = animation_tick.tick() => None,
         };
-        // Collect the first event then drain any remaining buffered events
-        // non-blocking (same batch-up-to-256 behaviour as the previous
-        // event::poll loop, so a burst of key/mouse events still coalesces
-        // into one render rather than one render per event).
+        // Collect the first event then drain any stream-ready events
+        // non-blocking (same batch-up-to-256 behavior as the previous
+        // poll loop, so a burst of key/mouse events still coalesces into
+        // one render rather than one render per event).
         let mut event_batch: Vec<Event> = Vec::new();
         if let Some(first_event) = first {
             event_batch.push(first_event?);
-            while event_batch.len() < MAX_EVENTS_PER_TICK && event::poll(Duration::ZERO)? {
-                event_batch.push(event::read()?);
+            while event_batch.len() < MAX_EVENTS_PER_TICK {
+                let Some(Some(event)) = event_stream.next().now_or_never() else {
+                    break;
+                };
+                event_batch.push(event?);
             }
         }
         for event in event_batch {

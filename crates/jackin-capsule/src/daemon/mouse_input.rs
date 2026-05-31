@@ -222,8 +222,9 @@ impl Multiplexer {
         // whatever character sat under the cursor — a silent host-
         // clipboard overwrite on every focus click.
         let dragged = sel.anchor_row != sel.end_row || sel.anchor_col != sel.end_col;
-        if dragged && let Some(session) = self.sessions.get(&sel.session_id) {
-            let text = selection_text(session.screen(), &sel);
+        if dragged && let Some(session) = self.sessions.get_mut(&sel.session_id) {
+            let rows = session.render_snapshot(sel.inner.rows, sel.inner.cols);
+            let text = selection_text(&rows, &sel);
             if !text.is_empty() && self.attached_out.is_some() {
                 let bytes = encode_osc52_clipboard_write(&text);
                 self.send_output(bytes);

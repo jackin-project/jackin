@@ -237,22 +237,28 @@ impl Multiplexer {
         let zoomed = self.active_zoomed_id().is_some();
         let mut pane_rows_emitted = 0usize;
         let mut pane_body_bytes = 0usize;
+        let mut selection_paint = None;
 
         for pane in &panes {
             let mut scrollbar = PaneScrollbar::default();
             let mut title = None;
+            let selection_for_pane = (!zoomed)
+                .then_some(())
+                .and_then(|()| self.selection.filter(|sel| sel.session_id == pane.id));
             if let Some(session) = self.sessions.get_mut(&pane.id) {
                 scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(display_title(session));
-                let scrollback_prefix = session.scrollback_render_prefix(pane.inner.rows);
+                let body_snapshot = session.render_snapshot(pane.inner.rows, pane.inner.cols);
+                if let Some(sel) = selection_for_pane {
+                    selection_paint = Some((body_snapshot.clone(), sel, pane.body_dim));
+                }
                 let before = buf.len();
                 let stats = self
                     .pane_body_caches
                     .entry(pane.id)
                     .or_default()
-                    .render_full_with_scrollback_prefix(
-                        session.screen(),
-                        &scrollback_prefix,
+                    .render_full_snapshot(
+                        body_snapshot,
                         pane.inner.row,
                         pane.inner.col,
                         pane.inner.rows,
@@ -275,16 +281,12 @@ impl Multiplexer {
             }
         }
 
-        if !zoomed {
+        if let Some((rows, sel, dim)) = selection_paint {
             // Paint the selection highlight on top of pane content
             // (but underneath the pane box so the inverse stops at
-            // the inner edge). The selection lives on a specific
-            // pane, so resolve the screen + inner rect once.
-            if let Some(sel) = &self.selection
-                && let Some(session) = self.sessions.get(&sel.session_id)
-            {
-                paint_selection_highlight(&mut buf, session.screen(), sel);
-            }
+            // the inner edge). The row snapshot is the exact content
+            // rendered above, including inline scrollback prefixes.
+            paint_selection_highlight(&mut buf, &rows, &sel, dim);
         }
 
         let pull_request_loading = self.pull_request_context_loading();

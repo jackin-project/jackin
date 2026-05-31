@@ -29,6 +29,7 @@ use tokio::sync::mpsc;
 use vt100::{Callbacks, Screen};
 
 use crate::protocol::AgentState;
+use crate::render::{RowSnapshot, pane_snapshot_with_scrollback_prefix, snapshot_screen_row};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const BLOCKED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
@@ -626,7 +627,7 @@ pub struct Session {
     /// top. `vt100` only records scrollback when the full screen
     /// scrolls, so jackin' captures those rows here before forwarding
     /// bytes to `vt100`.
-    inline_scrollback: VecDeque<String>,
+    inline_scrollback: VecDeque<RowSnapshot>,
     inline_scroll_region_tracker: InlineScrollRegionTracker,
     /// Most recently observed value of `Screen::bracketed_paste()`.
     /// The daemon compares this to the post-feed state to detect
@@ -1234,7 +1235,7 @@ impl Session {
     /// offset. Rendering this prefix in the shared pane renderer
     /// lets normal-screen panes with inline history use the same
     /// scrollbar chrome as vt100-scrollback panes.
-    pub fn scrollback_render_prefix(&mut self, viewport_rows: u16) -> Vec<String> {
+    pub(crate) fn scrollback_render_prefix(&mut self, viewport_rows: u16) -> Vec<RowSnapshot> {
         let vt_filled = self.vt_scrollback_filled();
         self.parser
             .screen_mut()
@@ -1252,6 +1253,20 @@ impl Session {
             .take(usize::from(viewport_rows))
             .cloned()
             .collect()
+    }
+
+    pub(crate) fn render_snapshot(
+        &mut self,
+        viewport_rows: u16,
+        viewport_cols: u16,
+    ) -> Vec<RowSnapshot> {
+        let scrollback_prefix = self.scrollback_render_prefix(viewport_rows);
+        pane_snapshot_with_scrollback_prefix(
+            self.screen(),
+            &scrollback_prefix,
+            viewport_rows,
+            viewport_cols,
+        )
     }
 
     pub fn send_input(&self, data: &[u8]) {
@@ -1437,11 +1452,8 @@ impl Session {
         };
 
         let removed_rows = usize::from(scroll_bottom).saturating_add(1).min(count);
-        let rows: Vec<_> = self
-            .parser
-            .screen()
-            .rows(0, screen_cols)
-            .take(removed_rows)
+        let rows: Vec<_> = (0..u16::try_from(removed_rows).unwrap_or(u16::MAX))
+            .map(|row| snapshot_screen_row(self.parser.screen(), row, screen_cols))
             .collect();
         for row in rows {
             self.push_inline_scrollback_row(row, "scroll-up");
@@ -1450,11 +1462,14 @@ impl Session {
 
     fn capture_visible_inline_scrollback_rows(&mut self, reason: &'static str) {
         let (_, screen_cols) = self.parser.screen().size();
-        let rows: Vec<_> = self.parser.screen().rows(0, screen_cols).collect();
-        let Some(first) = rows.iter().position(|row| !row.trim_end().is_empty()) else {
+        let (screen_rows, _) = self.parser.screen().size();
+        let rows: Vec<_> = (0..screen_rows)
+            .map(|row| snapshot_screen_row(self.parser.screen(), row, screen_cols))
+            .collect();
+        let Some(first) = rows.iter().position(|row| !row.is_blank()) else {
             return;
         };
-        let Some(last) = rows.iter().rposition(|row| !row.trim_end().is_empty()) else {
+        let Some(last) = rows.iter().rposition(|row| !row.is_blank()) else {
             return;
         };
 
@@ -1480,25 +1495,20 @@ impl Session {
             return;
         }
 
-        let row = self
-            .parser
-            .screen()
-            .rows(0, screen_cols)
-            .next()
-            .unwrap_or_default();
-        if self.inline_scrollback.is_empty() && row.trim_end().is_empty() {
+        let row = snapshot_screen_row(self.parser.screen(), 0, screen_cols);
+        if self.inline_scrollback.is_empty() && row.is_blank() {
             return;
         }
 
         self.push_inline_scrollback_row(row, "linefeed");
     }
 
-    fn push_inline_scrollback_row(&mut self, row: String, reason: &'static str) {
-        if self.inline_scrollback.is_empty() && row.trim_end().is_empty() {
+    fn push_inline_scrollback_row(&mut self, row: RowSnapshot, reason: &'static str) {
+        if self.inline_scrollback.is_empty() && row.is_blank() {
             return;
         }
 
-        let row_len = row.len();
+        let row_len = row.text_len();
         self.inline_scrollback.push_back(row);
         if self.scrollback_offset != 0 {
             self.scrollback_offset = self.scrollback_offset.saturating_add(1);
