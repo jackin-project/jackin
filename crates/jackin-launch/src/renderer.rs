@@ -1,0 +1,402 @@
+//! Launch rich terminal renderer and modal loops.
+
+use std::io::Write;
+
+use anyhow::Context;
+use crossterm::ExecutableCommand;
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use jackin_tui::ModalOutcome;
+use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
+use ratatui::layout::Rect;
+use ratatui::text::Line;
+
+use crate::tui::cockpit::{emit_launch_hyperlink_overlays, render_launch_frame};
+use crate::tui::prompts::{draw_confirm, draw_error_popup, draw_select, draw_text_prompt};
+use crate::{LaunchHostTerminal, LaunchView, PromptResult};
+
+pub struct RichRenderer {
+    terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
+    no_motion: bool,
+    /// Whether this renderer entered the alternate screen on construction.
+    /// Recorded so `drop` can leave it only when we entered it — under the
+    /// host `TerminalSession` guard the screen persists into the capsule attach.
+    entered_alt_screen: bool,
+    /// Shared digital-rain engine (the same one the intro/outro use), ticked
+    /// per frame and painted into the loading box. Sized to the terminal so
+    /// the box shows a window into one continuous rainfall.
+    rain: Option<crate::tui::rain::RainState>,
+    host: &'static dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+}
+
+impl RichRenderer {
+    fn enter_with_check(
+        no_motion: bool,
+        host: &'static dyn LaunchHostTerminal,
+        jackin_version: &'static str,
+        terminal_check: impl FnOnce() -> anyhow::Result<()>,
+    ) -> anyhow::Result<Self> {
+        terminal_check()?;
+        let mut stdout = std::io::stdout();
+        // When the launch flow's host guard already owns the alternate screen,
+        // draw into it; only enter it ourselves when running standalone.
+        let entered_alt_screen = !host.host_screen_owned();
+        if entered_alt_screen {
+            stdout.execute(EnterAlternateScreen)?;
+        }
+        stdout.execute(crossterm::cursor::Hide)?;
+        let backend = ratatui::backend::CrosstermBackend::new(stdout);
+        let mut terminal = ratatui::Terminal::new(backend)?;
+        // Wipe whatever the previous surface left on the screen and force a full
+        // first redraw. Under the host guard we skipped EnterAlternateScreen
+        // (which would have cleared), so the console's last frame is still on
+        // the inherited screen — clear it or the cockpit renders over it.
+        terminal.clear().context("clearing launch screen")?;
+        // Ancillary status printers (spinners) go silent while this surface
+        // owns the alternate screen.
+        host.set_rich_surface_active(true);
+        Ok(Self {
+            terminal,
+            no_motion,
+            entered_alt_screen,
+            rain: None,
+            host,
+            jackin_version,
+        })
+    }
+
+    pub fn enter(
+        no_motion: bool,
+        host: &'static dyn LaunchHostTerminal,
+        jackin_version: &'static str,
+    ) -> anyhow::Result<Self> {
+        Self::enter_with_check(no_motion, host, jackin_version, require_rich_terminal)
+    }
+
+    pub fn enter_dialog(
+        no_motion: bool,
+        host: &'static dyn LaunchHostTerminal,
+        jackin_version: &'static str,
+    ) -> anyhow::Result<Self> {
+        Self::enter_with_check(no_motion, host, jackin_version, || Ok(()))
+    }
+
+    pub fn no_motion(&self) -> bool {
+        self.no_motion
+    }
+
+    pub fn render(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        run_log_path: &str,
+    ) -> anyhow::Result<()> {
+        let no_motion = self.no_motion;
+        // Keep the rain engine sized to the terminal. Advance it every other
+        // render so the rainfall reads at the calmer main-branch speed while
+        // the frame still redraws smoothly (~30fps). Paused under no-motion.
+        if let Ok(size) = self.terminal.size() {
+            let (cols, rows) = (size.width as usize, size.height as usize);
+            let stale = self
+                .rain
+                .as_ref()
+                .is_none_or(|rain| rain.cols != cols || rain.rows != rows);
+            if stale && cols > 0 && rows > 0 {
+                self.rain = Some(crate::tui::rain::RainState::new(cols, rows));
+            }
+            if !no_motion
+                && !view.frame.is_multiple_of(3)
+                && let Some(rain) = &mut self.rain
+            {
+                crate::tui::rain::tick_rain(rain);
+            }
+        }
+        let rain = self.rain.as_ref();
+        let size = self.terminal.size().ok();
+        self.terminal
+            .draw(|frame| {
+                render_launch_frame(
+                    frame,
+                    view,
+                    run_id,
+                    run_log_path,
+                    no_motion,
+                    rain,
+                    self.host.is_debug_mode(),
+                    self.jackin_version,
+                );
+            })
+            .map(|_| ())
+            .context("rendering launch progress TUI")?;
+        if let Some(size) = size {
+            emit_launch_hyperlink_overlays(
+                Rect::new(0, 0, size.width, size.height),
+                view,
+                run_id,
+                run_log_path,
+                self.host.is_debug_mode(),
+                self.jackin_version,
+            );
+        }
+        Ok(())
+    }
+
+    /// Run a modal dialog loop with raw mode held for its duration so key
+    /// events arrive un-buffered, restoring it on every exit path. The host
+    /// guard already holds raw mode for the whole flow; only toggle it when
+    /// this renderer is running standalone. `Ctrl-C` aborts the launch.
+    fn with_raw_mode<T>(
+        &mut self,
+        context: &'static str,
+        f: impl FnOnce(&mut Self) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
+        let owns_raw = self.entered_alt_screen;
+        if owns_raw {
+            crossterm::terminal::enable_raw_mode().context(context)?;
+        }
+        let outcome = f(self);
+        if owns_raw {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
+        outcome
+    }
+
+    /// Present a forced-choice picker over the dimmed launch frame.
+    pub fn select(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+        self.with_raw_mode("entering raw mode for launch picker", |renderer| {
+            renderer.select_loop(title, &[], items)
+        })
+    }
+
+    /// Forced-choice picker with a descriptive `context` block above the
+    /// options. Used by the standalone post-attach cleanup prompt.
+    pub fn select_with_context(
+        &mut self,
+        title: &str,
+        context: &[Line<'_>],
+        items: Vec<String>,
+    ) -> anyhow::Result<usize> {
+        self.with_raw_mode("entering raw mode for cleanup picker", |renderer| {
+            renderer.select_loop(title, context, items)
+        })
+    }
+
+    pub fn error_popup(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
+        self.with_raw_mode("entering raw mode for error popup", |renderer| {
+            renderer.error_popup_loop(title, message)
+        })
+    }
+
+    fn select_loop(
+        &mut self,
+        title: &str,
+        context: &[Line<'_>],
+        items: Vec<String>,
+    ) -> anyhow::Result<usize> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let mut picker = SelectListState::new(items);
+        loop {
+            self.terminal
+                .draw(|frame| draw_select(frame, title, context, &picker))
+                .context("rendering launch picker")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch picker input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                // Esc reports Cancel; ignored here so the choice is forced.
+                if let ModalOutcome::Commit(index) = picker.handle_key(key) {
+                    return Ok(index);
+                }
+            }
+        }
+    }
+
+    pub fn prompt_text(
+        &mut self,
+        title: &str,
+        initial: &str,
+        skippable: bool,
+    ) -> anyhow::Result<PromptResult> {
+        self.with_raw_mode("entering raw mode for launch env prompt", |renderer| {
+            renderer.prompt_text_loop(title, initial, skippable)
+        })
+    }
+
+    fn prompt_text_loop(
+        &mut self,
+        title: &str,
+        initial: &str,
+        skippable: bool,
+    ) -> anyhow::Result<PromptResult> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let mut input = if skippable {
+            TextInputState::new_allow_empty(title, initial)
+        } else {
+            TextInputState::new(title, initial)
+        };
+        loop {
+            self.terminal
+                .draw(|frame| draw_text_prompt(frame, &input, skippable))
+                .context("rendering launch env text prompt")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch env prompt input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match input.handle_key(key) {
+                    ModalOutcome::Commit(value) if value.is_empty() && skippable => {
+                        return Ok(PromptResult::Skipped);
+                    }
+                    ModalOutcome::Commit(value) => {
+                        return Ok(PromptResult::Value(value));
+                    }
+                    ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
+                    ModalOutcome::Continue => {}
+                }
+            }
+        }
+    }
+
+    pub fn prompt_select(
+        &mut self,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<PromptResult> {
+        self.with_raw_mode("entering raw mode for launch env select", |renderer| {
+            renderer.prompt_select_loop(title, options, default, skippable)
+        })
+    }
+
+    fn prompt_select_loop(
+        &mut self,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<PromptResult> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let mut items = options.to_vec();
+        if skippable {
+            items.push("(skip)".to_string());
+        }
+        let mut picker = SelectListState::new(items);
+        if let Some(default) = default
+            && let Some(index) = options.iter().position(|option| option == default)
+        {
+            picker.select_index(index);
+        }
+        loop {
+            self.terminal
+                .draw(|frame| draw_select(frame, title, &[], &picker))
+                .context("rendering launch env select prompt")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch env select input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match picker.handle_key(key) {
+                    ModalOutcome::Commit(index) if skippable && index == options.len() => {
+                        return Ok(PromptResult::Skipped);
+                    }
+                    ModalOutcome::Commit(index) => {
+                        return Ok(PromptResult::Value(options[index].clone()));
+                    }
+                    ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
+                    ModalOutcome::Continue => {}
+                }
+            }
+        }
+    }
+
+    pub fn confirm(&mut self, mut state: ConfirmState) -> anyhow::Result<bool> {
+        self.with_raw_mode("entering raw mode for launch confirmation", |renderer| {
+            renderer.confirm_loop(&mut state)
+        })
+    }
+
+    fn confirm_loop(&mut self, state: &mut ConfirmState) -> anyhow::Result<bool> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        loop {
+            self.terminal
+                .draw(|frame| draw_confirm(frame, state))
+                .context("rendering launch confirmation")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading launch confirmation input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match state.handle_key(key) {
+                    ModalOutcome::Commit(confirmed) => return Ok(confirmed),
+                    ModalOutcome::Cancel => return Ok(false),
+                    ModalOutcome::Continue => {}
+                }
+            }
+        }
+    }
+
+    fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
+        use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+        let state = ErrorPopupState::new(title, message);
+        loop {
+            self.terminal
+                .draw(|frame| draw_error_popup(frame, &state))
+                .context("rendering launch error popup")?;
+            if let Event::Key(key) =
+                crossterm::event::read().context("reading error popup input")?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    anyhow::bail!("launch cancelled by operator");
+                }
+                match state.handle_key(key) {
+                    ModalOutcome::Cancel => return Ok(()),
+                    ModalOutcome::Continue => {}
+                    ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
+                }
+            }
+        }
+    }
+}
+
+impl Drop for RichRenderer {
+    fn drop(&mut self) {
+        self.host.set_rich_surface_active(false);
+        let _ = self.terminal.backend_mut().execute(crossterm::cursor::Show);
+        // Leave the alternate screen only when we entered it; under the host
+        // guard the screen persists into the capsule attach.
+        if self.entered_alt_screen {
+            let _ = self.terminal.backend_mut().execute(LeaveAlternateScreen);
+        }
+        let _ = std::io::stdout().flush();
+    }
+}
+
+fn require_rich_terminal() -> anyhow::Result<()> {
+    if !crate::terminal::rich_terminal_supported() {
+        anyhow::bail!(
+            "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
+        );
+    }
+    Ok(())
+}

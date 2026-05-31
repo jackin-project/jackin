@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub mod build_log;
 pub mod input;
+pub mod renderer;
 pub mod state;
 pub mod terminal;
 pub mod tui;
