@@ -99,6 +99,43 @@ pub enum SettingsEnvTextTarget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountConfirm {
+    Remove,
+    Save,
+    Sensitive,
+    Discard,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountTextTarget {
+    AddScope,
+    AddName,
+    AddSource,
+    AddDestination,
+    Source,
+    Destination,
+    Scope,
+    Rename,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextInputTarget {
+    Name,
+    Workdir,
+    MountDst,
+    Role,
+    EnvKey { scope: SecretsScopeTag },
+    EnvValue { scope: SecretsScopeTag, key: String },
+    AuthCredential,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileBrowserTarget {
+    CreateFirstMountSrc,
+    EditAddMountSrc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitIntent {
     Save,
     Discard,

@@ -277,8 +277,9 @@ pub struct SettingsState<'a> {
 }
 
 pub use jackin_console::model::{
-    AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, SecretsScopeTag,
-    SettingsEnvConfirm, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
+    AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
+    GlobalMountConfirm, GlobalMountTextTarget, SecretsScopeTag, SettingsEnvConfirm,
+    SettingsEnvScope, SettingsEnvTextTarget, SettingsTab, TextInputTarget,
 };
 
 #[derive(Debug)]
@@ -440,26 +441,6 @@ pub enum GlobalMountModal<'a> {
     PreviewSave {
         state: crate::console::widgets::confirm_save::ConfirmSaveState,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GlobalMountConfirm {
-    Remove,
-    Save,
-    Sensitive,
-    Discard,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GlobalMountTextTarget {
-    AddScope,
-    AddName,
-    AddSource,
-    AddDestination,
-    Source,
-    Destination,
-    Scope,
-    Rename,
 }
 
 /// A request to mint a Claude OAuth token and write it to the chosen
@@ -1365,23 +1346,6 @@ pub enum AuthFormTarget {
         role: String,
         kind: crate::console::manager::auth_kind::AuthKind,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TextInputTarget {
-    Name,
-    Workdir,
-    MountDst,
-    Role,
-    EnvKey { scope: SecretsScopeTag },
-    EnvValue { scope: SecretsScopeTag, key: String },
-    AuthCredential,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileBrowserTarget {
-    CreateFirstMountSrc,
-    EditAddMountSrc,
 }
 
 #[derive(Debug, Clone)]
