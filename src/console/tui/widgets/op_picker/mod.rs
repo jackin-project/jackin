@@ -407,10 +407,10 @@ impl OpPickerState {
     /// Discard any in-flight load result and force the picker into
     /// the `Ready` state. Intended for tests that seed picker state
     /// directly after the constructor's async probe has already been
-    /// kicked off — without this, `handle_key`'s leading `poll_load`
-    /// call can drain a stale `Err(...)` from the still-open
-    /// receiver and short-circuit the test through the Fatal-error
-    /// guard, racing the test against the probe thread.
+    /// kicked off — without this, the outer tick drainer can land a
+    /// stale `Err(...)` from the still-open receiver and short-circuit
+    /// the test through the Fatal-error guard, racing the test against
+    /// the probe thread.
     pub fn cancel_in_flight_load(&mut self) {
         self.rx = None;
         self.load_state = OpLoadState::Ready;
@@ -707,10 +707,6 @@ impl OpPickerState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
-        // Tests bypass render entirely so we drain here too, not just
-        // on tick.
-        self.poll_load();
-
         // Naming sub-stages are pure text input (no async load), so the
         // load-state guards must not swallow their keys.
         match self.stage {

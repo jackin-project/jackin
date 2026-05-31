@@ -22,9 +22,7 @@ use jackin_launch::tui::build_log::BUILD_LOG_WRAP_PREFIX;
 #[cfg(test)]
 use jackin_launch::tui::build_log::build_log_scroll_filled;
 #[cfg(test)]
-use jackin_launch::tui::build_log::{
-    render_build_log_dialog, scroll_build_log, wrap_build_log_lines,
-};
+use jackin_launch::tui::build_log::{render_build_log_dialog, wrap_build_log_lines};
 #[cfg(test)]
 use jackin_launch::tui::cockpit::render_launch_frame as render_launch_frame_view;
 #[cfg(test)]
@@ -748,7 +746,7 @@ mod tests {
             container_info_copied: None,
         };
 
-        scroll_build_log(&mut view, area, -1);
+        view.build_log_scroll.scroll_by(filled, -1);
 
         assert_eq!(view.build_log_scroll.offset(), filled - 1);
         assert_eq!(view.build_log_scroll.to_top_offset(20, 5), 1);
