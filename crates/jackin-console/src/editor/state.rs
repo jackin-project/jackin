@@ -7,6 +7,27 @@ pub enum EditorTab {
     Auth,
 }
 
+impl EditorTab {
+    pub const ALL: [Self; 5] = [
+        Self::General,
+        Self::Mounts,
+        Self::Roles,
+        Self::Secrets,
+        Self::Auth,
+    ];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::General => "General",
+            Self::Mounts => "Mounts",
+            Self::Roles => "Roles",
+            Self::Secrets => "Environments",
+            Self::Auth => "Auth",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },

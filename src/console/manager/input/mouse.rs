@@ -440,14 +440,9 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
 }
 
 fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
-    let labels: Vec<&str> = super::super::render::editor::EDITOR_TAB_LABELS
-        .iter()
-        .map(|(_, label)| *label)
-        .collect();
+    let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
     let idx = tab_cell_at(mouse, &labels)?;
-    super::super::render::editor::EDITOR_TAB_LABELS
-        .get(idx)
-        .map(|(tab, _)| *tab)
+    EditorTab::ALL.get(idx).copied()
 }
 
 /// Index of the tab cell under `mouse`, or `None` when the pointer is outside
@@ -471,10 +466,7 @@ fn tab_cell_at(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
 fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
     match &mut state.stage {
         ManagerStage::Editor(editor) if editor.modal.is_none() => {
-            let labels: Vec<&str> = super::super::render::editor::EDITOR_TAB_LABELS
-                .iter()
-                .map(|(_, label)| *label)
-                .collect();
+            let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
             editor.hovered_tab = tab_cell_at(mouse, &labels);
         }
         ManagerStage::Settings(settings)

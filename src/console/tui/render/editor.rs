@@ -445,16 +445,6 @@ fn contextual_row_items(
     }
 }
 
-/// Order/labels shared with mouse hit-testing; renderer and click code
-/// must measure the same strip.
-pub(crate) const EDITOR_TAB_LABELS: &[(EditorTab, &str)] = &[
-    (EditorTab::General, "General"),
-    (EditorTab::Mounts, "Mounts"),
-    (EditorTab::Roles, "Roles"),
-    (EditorTab::Secrets, "Environments"),
-    (EditorTab::Auth, "Auth"),
-];
-
 fn render_editor_tab_strip(
     frame: &mut Frame,
     area: Rect,
@@ -462,9 +452,9 @@ fn render_editor_tab_strip(
     tab_bar_focused: bool,
     hovered: Option<usize>,
 ) {
-    let labels: Vec<(&str, bool)> = EDITOR_TAB_LABELS
+    let labels: Vec<(&str, bool)> = EditorTab::ALL
         .iter()
-        .map(|(tab, label)| (*label, *tab == active))
+        .map(|tab| (tab.label(), *tab == active))
         .collect();
     render_tab_strip(frame, area, &labels, tab_bar_focused, hovered);
 }
