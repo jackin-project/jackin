@@ -211,45 +211,6 @@ pub struct GlobalMountsState<'a> {
     pub exit_requested: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)]
-pub struct SettingsGeneralState {
-    pub pending_coauthor_trailer: bool,
-    pub(super) original_coauthor_trailer: bool,
-    pub pending_dco: bool,
-    pub(super) original_dco: bool,
-    pub selected: usize,
-}
-
-impl SettingsGeneralState {
-    pub const fn from_config(config: &AppConfig) -> Self {
-        Self {
-            pending_coauthor_trailer: config.git.coauthor_trailer,
-            original_coauthor_trailer: config.git.coauthor_trailer,
-            pending_dco: config.git.dco,
-            original_dco: config.git.dco,
-            selected: 0,
-        }
-    }
-
-    #[must_use]
-    pub const fn is_dirty(&self) -> bool {
-        self.pending_coauthor_trailer != self.original_coauthor_trailer
-            || self.pending_dco != self.original_dco
-    }
-
-    pub const fn discard(&mut self) {
-        self.pending_coauthor_trailer = self.original_coauthor_trailer;
-        self.pending_dco = self.original_dco;
-    }
-
-    #[must_use]
-    pub fn change_count(&self) -> usize {
-        usize::from(self.pending_coauthor_trailer != self.original_coauthor_trailer)
-            + usize::from(self.pending_dco != self.original_dco)
-    }
-}
-
 #[derive(Debug)]
 pub struct SettingsState<'a> {
     pub active_tab: SettingsTab,
@@ -279,8 +240,8 @@ pub struct SettingsState<'a> {
 pub use jackin_console::model::{
     AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
     GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SecretsScopeTag,
-    SettingsEnvConfirm, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab, SettingsTrustRow,
-    TextInputTarget,
+    SettingsEnvConfirm, SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab,
+    SettingsTrustRow, TextInputTarget,
 };
 
 #[derive(Debug)]
@@ -735,7 +696,7 @@ impl SettingsState<'_> {
             active_tab: SettingsTab::General,
             tab_bar_focused: true,
             hovered_tab: None,
-            general: SettingsGeneralState::from_config(config),
+            general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
             mounts: GlobalMountsState::from_config(config),
             env: SettingsEnvState::from_config(config),
             auth: SettingsAuthState::from_config(config),
@@ -876,8 +837,7 @@ impl SettingsState<'_> {
         editor.set_git_dco(self.general.pending_dco);
 
         let config = editor.save()?;
-        self.general.original_coauthor_trailer = self.general.pending_coauthor_trailer;
-        self.general.original_dco = self.general.pending_dco;
+        self.general.mark_clean();
         self.mounts.original = self.mounts.pending.clone();
         self.env.original = self.env.pending.clone();
         self.auth.original = self.auth.pending.clone();

@@ -150,6 +150,51 @@ pub struct GlobalMountDraft {
     pub scope: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct SettingsGeneralState {
+    pub pending_coauthor_trailer: bool,
+    pub original_coauthor_trailer: bool,
+    pub pending_dco: bool,
+    pub original_dco: bool,
+    pub selected: usize,
+}
+
+impl SettingsGeneralState {
+    #[must_use]
+    pub const fn from_values(coauthor_trailer: bool, dco: bool) -> Self {
+        Self {
+            pending_coauthor_trailer: coauthor_trailer,
+            original_coauthor_trailer: coauthor_trailer,
+            pending_dco: dco,
+            original_dco: dco,
+            selected: 0,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_dirty(&self) -> bool {
+        self.pending_coauthor_trailer != self.original_coauthor_trailer
+            || self.pending_dco != self.original_dco
+    }
+
+    pub const fn discard(&mut self) {
+        self.pending_coauthor_trailer = self.original_coauthor_trailer;
+        self.pending_dco = self.original_dco;
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> usize {
+        usize::from(self.pending_coauthor_trailer != self.original_coauthor_trailer)
+            + usize::from(self.pending_dco != self.original_dco)
+    }
+
+    pub const fn mark_clean(&mut self) {
+        self.original_coauthor_trailer = self.pending_coauthor_trailer;
+        self.original_dco = self.pending_dco;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitIntent {
     Save,
