@@ -40,7 +40,7 @@ use jackin_tui::HintSpan;
 
 use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT};
 
-pub(crate) fn action_row_style(selected: bool) -> Style {
+pub(super) fn action_row_style(selected: bool) -> Style {
     let style = Style::default().fg(ACTION_ACCENT);
     if selected {
         style.add_modifier(Modifier::BOLD)
@@ -49,7 +49,7 @@ pub(crate) fn action_row_style(selected: bool) -> Style {
     }
 }
 
-pub(crate) fn disclosure_style() -> Style {
+pub(super) fn disclosure_style() -> Style {
     Style::default()
         .fg(DISCLOSURE_ACCENT)
         .add_modifier(Modifier::BOLD)
@@ -144,7 +144,7 @@ pub(super) fn editor_footer_items(
     items
 }
 
-pub fn render_editor(
+pub(super) fn render_editor(
     frame: &mut Frame,
     area: Rect,
     state: &EditorState<'_>,
@@ -187,7 +187,7 @@ pub fn render_editor(
     render_footer(frame, chunks[3], &items);
 }
 
-pub(crate) fn prepare_editor_for_render(
+pub(super) fn prepare_editor_for_render(
     area: Rect,
     state: &mut EditorState<'_>,
     config: &AppConfig,
@@ -196,11 +196,7 @@ pub(crate) fn prepare_editor_for_render(
     prepare_editor_tab_for_area(body, state, config);
 }
 
-pub(crate) fn prepare_editor_tab_for_area(
-    body: Rect,
-    state: &mut EditorState<'_>,
-    config: &AppConfig,
-) {
+fn prepare_editor_tab_for_area(body: Rect, state: &mut EditorState<'_>, config: &AppConfig) {
     let lines = editor_tab_lines(body, state, config);
     state.tab_content_width = super::max_line_width(&lines);
     state.tab_content_height = lines.len();
@@ -459,7 +455,7 @@ fn render_editor_tab_strip(
     render_tab_strip(frame, area, &labels, tab_bar_focused, hovered);
 }
 
-pub(crate) fn render_tab_strip(
+pub(super) fn render_tab_strip(
     frame: &mut Frame,
     area: Rect,
     labels: &[(&str, bool)],
@@ -790,7 +786,7 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
     lines
 }
 
-pub(crate) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
+fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     jackin_console::editor::update::secrets_flat_rows(
         &editor.pending.env,
         &editor.pending.roles,
@@ -981,7 +977,7 @@ fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
 /// optional `?attribute=...` query suffix renders in `PHOSPHOR_DIM` after
 /// the field. `Plain` rows render as a literal / masked value with no
 /// `[op]` marker.
-pub(crate) fn render_secrets_key_line(
+pub(super) fn render_secrets_key_line(
     selected: bool,
     cursor_col: &str,
     key: &str,
