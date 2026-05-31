@@ -181,6 +181,18 @@ Every interactive TUI state must make the current focus owner visually obvious. 
 
 #### Focus rules — quick reference
 
+**Hard rule: exactly one focus owner at any time.** There must never be two containers with a PHOSPHOR_GREEN border visible simultaneously on the same screen. One container owns focus; everything else is dark. This is non-negotiable.
+
+**How focus transfers — three and only three mechanisms:**
+
+1. **Keyboard.** A designated navigation key moves focus to an adjacent area: `⇥ Tab` moves forward to the next interactive area; `⇧Tab`/`Esc` moves back; `↓`/`↑` navigate within the current focused area (not between areas). Tab click via keyboard (`←`/`→` on the tab strip, then `⇥`/`↓` to enter content) follows W3C ARIA Tabs pattern.
+
+2. **Mouse click.** Clicking any focusable container immediately and visibly transfers focus to it — the clicked container gets the PHOSPHOR_GREEN border and the previously focused container loses it in the same frame. Clicking a tab in the tab strip transfers focus to the tab bar (underline turns PHOSPHOR_GREEN). Clicking a content block transfers focus to that block (block border turns PHOSPHOR_GREEN).
+
+3. **Scroll hover.** Moving the mouse pointer over a scrollable block and scrolling (mouse wheel) transfers focus to that block automatically — the operator has implicitly stated "I want to interact with this block." This mirrors how browsers and native apps treat scroll: hovering and scrolling is an unambiguous targeting gesture.
+
+No other mechanism may transfer or clear focus. In particular: navigation keys (`↑`/`↓`/`←`/`→`) within a focused container must NOT clear or move focus to another container — they navigate within the current owner. Resize events, content fitting within viewport, and workspace selection changes must NOT clear focus.
+
 - **Exactly one** `PHOSPHOR_GREEN` border visible per surface layer at any time.
 - **Click-to-focus**: clicking a focusable container immediately transfers focus to it and updates the hint bar.
 - **Non-focusable containers never steal focus**: if a block has no scroll capability and no interactive elements (no buttons, no picker, no text input), clicking it does nothing — focus stays on the previously focused container.
