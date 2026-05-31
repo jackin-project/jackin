@@ -75,17 +75,22 @@ impl RichDriver {
                     handle_cockpit_input(&view, &run_id, host, jackin_version);
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
-                            if !rr.no_motion() {
-                                v.frame = v.frame.wrapping_add(1);
-                            }
-                            if v.build_log_open {
+                            let build_log_filled = if v.build_log_open {
                                 let area = crossterm::terminal::size()
                                     .ok()
                                     .map(|(width, height)| Rect::new(0, 0, width, height))
                                     .unwrap_or_default();
-                                let filled = build_log_scroll_filled(area);
-                                v.build_log_scroll.clamp(filled);
-                            }
+                                Some(build_log_scroll_filled(area))
+                            } else {
+                                None
+                            };
+                            let _dirty = update_launch_view(
+                                &mut v,
+                                LaunchMessage::RenderTick {
+                                    advance_frame: !rr.no_motion(),
+                                    build_log_filled,
+                                },
+                            );
                             v.clone()
                         }
                         Err(_) => continue,

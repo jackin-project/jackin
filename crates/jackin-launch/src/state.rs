@@ -125,6 +125,10 @@ pub enum LaunchMessage {
         filled: usize,
         delta: isize,
     },
+    RenderTick {
+        advance_frame: bool,
+        build_log_filled: Option<usize>,
+    },
     ContainerInfoOpened,
     ContainerInfoClosed,
     ContainerInfoCopied(usize),

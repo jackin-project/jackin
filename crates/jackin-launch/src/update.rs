@@ -91,6 +91,17 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         LaunchMessage::BuildLogScrolled { filled, delta } => {
             view.build_log_scroll.scroll_by(filled, delta);
         }
+        LaunchMessage::RenderTick {
+            advance_frame,
+            build_log_filled,
+        } => {
+            if advance_frame {
+                view.frame = view.frame.wrapping_add(1);
+            }
+            if let Some(filled) = build_log_filled {
+                view.build_log_scroll.clamp(filled);
+            }
+        }
         LaunchMessage::ContainerInfoOpened => {
             view.container_info_open = true;
             view.container_info_copied = None;
@@ -264,6 +275,23 @@ mod tests {
             },
         );
 
+        assert_eq!(view.build_log_scroll.offset(), 3);
+    }
+
+    #[test]
+    fn render_tick_advances_frame_and_clamps_build_log_scroll() {
+        let mut view = initial_view();
+        view.build_log_scroll = jackin_tui::scroll::TailScroll::new(8);
+
+        let _ = update_launch_view(
+            &mut view,
+            LaunchMessage::RenderTick {
+                advance_frame: true,
+                build_log_filled: Some(3),
+            },
+        );
+
+        assert_eq!(view.frame, 1);
         assert_eq!(view.build_log_scroll.offset(), 3);
     }
 
