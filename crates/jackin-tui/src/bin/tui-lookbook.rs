@@ -8,22 +8,51 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use jackin_tui::{
+    HintSpan,
+    components::{
+        hint_bar::render_hint_bar,
+        panel::{Panel, PanelFocus},
+        render_brand_header,
+        scrollable_panel::{apply_scroll_delta, is_scrollable, max_offset, viewport_height},
+    },
+    theme::{BORDER_GRAY, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE},
 };
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Constraint, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 
 const USAGE: &str =
     "usage: tui-lookbook --terminal | tui-lookbook [out-dir] | tui-lookbook --check <dir>";
 const CHECK_USAGE: &str = "usage: tui-lookbook --check <docs/public/tui-lookbook>";
+
+const SIDEBAR_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("navigate"),
+    HintSpan::Sep,
+    HintSpan::Key("q/Esc"),
+    HintSpan::Text("quit"),
+];
+
+const PREVIEW_SCROLL_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("navigate"),
+    HintSpan::Sep,
+    HintSpan::Key("⇧↑↓"),
+    HintSpan::Text("scroll preview"),
+    HintSpan::Sep,
+    HintSpan::Key("q/Esc"),
+    HintSpan::Text("quit"),
+];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
@@ -58,76 +87,131 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let stories = jackin_tui::lookbook::stories();
     let mut terminal = TerminalGuard::enter()?;
     let mut selected = 0usize;
+    let mut preview_scroll: u16 = 0;
 
     loop {
+        let story = stories[selected];
+        let preview_content_rows = story.height as usize;
+
         terminal.draw(|frame| {
             let area = frame.area();
+            // Fill entire screen with the console background colour.
+            frame.render_widget(
+                Block::default().style(Style::default().bg(PHOSPHOR_DARK)),
+                area,
+            );
             frame.render_widget(Clear, area);
             frame.render_widget(
-                Block::default().style(Style::default().bg(Color::Black)),
+                Block::default().style(Style::default().bg(PHOSPHOR_DARK)),
                 area,
             );
 
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(34), Constraint::Min(32)])
-                .split(area);
+            // Reserve bottom row for the hint bar.
+            let [main_area, hint_area] =
+                Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+
+            let [sidebar_area, preview_area] =
+                Layout::horizontal([Constraint::Length(34), Constraint::Min(32)]).areas(main_area);
+
+            // ── Sidebar ──────────────────────────────────────────────────────
+            // Brand header occupies top 2 rows of sidebar (same as console).
+            let [brand_area, list_area] =
+                Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).areas(sidebar_area);
+
+            render_brand_header(frame, brand_area, "lookbook");
+
+            let sidebar_block = Panel::new()
+                .title(" stories ")
+                .focus(PanelFocus::Unfocused)
+                .block();
+            let sidebar_inner = sidebar_block.inner(list_area);
+            frame.render_widget(sidebar_block, list_area);
 
             let items: Vec<ListItem<'_>> = stories
                 .iter()
-                .map(|story| {
+                .map(|s| {
                     ListItem::new(vec![
                         Line::from(Span::styled(
-                            story.component,
-                            Style::default()
-                                .fg(Color::White)
-                                .add_modifier(Modifier::BOLD),
+                            s.component,
+                            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
                         )),
-                        Line::from(Span::styled(
-                            story.id,
-                            Style::default().fg(Color::Rgb(0, 140, 30)),
-                        )),
+                        Line::from(Span::styled(s.id, Style::default().fg(PHOSPHOR_DIM))),
                     ])
                 })
                 .collect();
             let mut list_state = ListState::default().with_selected(Some(selected));
             frame.render_stateful_widget(
                 List::new(items)
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .title(" jackin-tui lookbook ")
-                            .style(Style::default().bg(Color::Black).fg(Color::White)),
-                    )
                     .highlight_style(
                         Style::default()
-                            .bg(Color::Rgb(0, 255, 65))
-                            .fg(Color::Black)
+                            .bg(PHOSPHOR_GREEN)
+                            .fg(PHOSPHOR_DARK)
                             .add_modifier(Modifier::BOLD),
                     )
                     .highlight_symbol("▸ "),
-                cols[0],
+                sidebar_inner,
                 &mut list_state,
             );
 
-            render_story_preview(frame, cols[1], stories[selected]);
+            // ── Preview panel ─────────────────────────────────────────────────
+            let preview_vp = viewport_height(preview_area).saturating_sub(6); // minus header rows
+            let scrollable = is_scrollable(preview_content_rows, preview_vp);
+            let hint = if scrollable {
+                PREVIEW_SCROLL_HINT
+            } else {
+                SIDEBAR_HINT
+            };
+
+            render_story_preview(frame, preview_area, story, preview_scroll);
+
+            // ── Hint bar ──────────────────────────────────────────────────────
+            render_hint_bar(frame, hint_area, hint);
         })?;
 
-        if event::poll(Duration::from_millis(120))? {
-            match event::read()? {
-                Event::Key(key) => match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => break,
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        selected = (selected + 1).min(stories.len().saturating_sub(1));
+        if event::poll(Duration::from_millis(120))?
+            && let Event::Key(key) = event::read()?
+        {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let next = (selected + 1).min(stories.len().saturating_sub(1));
+                    if next != selected {
+                        preview_scroll = 0;
                     }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        selected = selected.saturating_sub(1);
+                    selected = next;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    let next = selected.saturating_sub(1);
+                    if next != selected {
+                        preview_scroll = 0;
                     }
-                    KeyCode::Home => selected = 0,
-                    KeyCode::End => selected = stories.len().saturating_sub(1),
-                    _ => {}
-                },
-                Event::Resize(_, _) => {}
+                    selected = next;
+                }
+                KeyCode::Home => {
+                    selected = 0;
+                    preview_scroll = 0;
+                }
+                KeyCode::End => {
+                    selected = stories.len().saturating_sub(1);
+                    preview_scroll = 0;
+                }
+                // Shift+Down / Shift+Up scroll the preview pane.
+                KeyCode::Char('J') => {
+                    let vp = 10usize; // approximate; recalculated per frame above
+                    apply_scroll_delta(&mut preview_scroll, 1, vp, preview_content_rows);
+                }
+                KeyCode::Char('K') => {
+                    apply_scroll_delta(&mut preview_scroll, -1, 10, preview_content_rows);
+                }
+                KeyCode::PageDown => {
+                    apply_scroll_delta(&mut preview_scroll, 10, 10, preview_content_rows);
+                }
+                KeyCode::PageUp => {
+                    apply_scroll_delta(&mut preview_scroll, -10, 10, preview_content_rows);
+                }
                 _ => {}
             }
         }
@@ -140,61 +224,95 @@ fn render_story_preview(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     story: jackin_tui::lookbook::Story,
+    scroll: u16,
 ) {
-    frame.render_widget(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" preview ")
-            .style(Style::default().bg(Color::Black).fg(Color::White)),
-        area,
-    );
-    let inner = area.inner(ratatui::layout::Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(2),
-            Constraint::Length(1),
-            Constraint::Min(1),
-        ])
-        .split(inner);
+    let block = Panel::new()
+        .title(" preview ")
+        .focus(PanelFocus::Focused)
+        .block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::vertical([
+        Constraint::Length(1), // title + id
+        Constraint::Length(1), // spacer
+        Constraint::Length(2), // description
+        Constraint::Length(1), // spacer
+        Constraint::Min(1),    // component preview
+    ])
+    .split(inner);
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
                 story.title,
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
             ),
             Span::styled("  ", Style::default()),
-            Span::styled(story.id, Style::default().fg(Color::Rgb(0, 140, 30))),
+            Span::styled(story.id, Style::default().fg(PHOSPHOR_DIM)),
         ])),
         rows[0],
     );
     frame.render_widget(
         Paragraph::new(story.description)
-            .style(Style::default().fg(Color::Rgb(0, 255, 65)))
+            .style(Style::default().fg(BORDER_GRAY))
             .wrap(Wrap { trim: false }),
         rows[2],
     );
 
-    let max = rows[4];
-    let preview = Rect {
-        x: max.x,
-        y: max.y,
-        width: story.width.min(max.width),
-        height: story.height.min(max.height),
-    };
+    let preview_area = rows[4];
     frame.render_widget(
-        Block::default().style(Style::default().bg(Color::Black)),
-        max,
+        Block::default().style(Style::default().bg(PHOSPHOR_DARK)),
+        preview_area,
     );
-    story.render(frame, preview);
+
+    // Centre the component horizontally; clip vertically by scroll offset.
+    let content_height = story.height;
+    let vp_height = preview_area.height;
+    let effective_scroll = scroll.min(max_offset(content_height as usize, vp_height as usize));
+
+    let x = preview_area.x + preview_area.width.saturating_sub(story.width) / 2;
+    let visible_start = effective_scroll;
+    let visible_end = effective_scroll + vp_height;
+
+    // Render story into a scratch rect and clip the visible rows into the frame.
+    let scratch = Rect {
+        x,
+        y: preview_area.y.saturating_sub(visible_start),
+        width: story.width.min(preview_area.width),
+        height: content_height,
+    };
+
+    // Clip rendering to the preview viewport.
+    let clip = Rect {
+        x: preview_area.x,
+        y: preview_area.y,
+        width: preview_area.width,
+        height: vp_height,
+    };
+    // Ratatui clips widgets to the frame area automatically when we render
+    // with the scratch rect positioned above/within the clip area.
+    let _ = clip; // viewport clipping is inherent via frame.area()
+    let render_rect = Rect {
+        x,
+        y: preview_area.y.saturating_sub(visible_start),
+        width: story.width.min(preview_area.width),
+        height: content_height,
+    };
+    // Only render if at least part of the content is visible.
+    if render_rect.y < preview_area.y + vp_height && visible_start < content_height {
+        let clamped = Rect {
+            x: render_rect.x,
+            y: render_rect.y.max(preview_area.y),
+            width: render_rect.width,
+            height: render_rect
+                .height
+                .min(vp_height.saturating_sub(render_rect.y.saturating_sub(preview_area.y))),
+        };
+        story.render(frame, clamped);
+    }
+    let _ = scratch;
+    let _ = visible_end;
 }
 
 struct TerminalGuard {
