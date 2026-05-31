@@ -147,7 +147,7 @@ pub fn git_prompt_rect(listing: Rect, has_url: bool) -> Option<Rect> {
 /// URL row isn't rendered then and a click there shouldn't open anything.
 ///
 /// Row order inside the overlay's inner (borders stripped) body is
-/// `[prompt][url?][spacer][buttons][spacer][hint]`, all Length(1). So the
+/// `[prompt][url?][spacer][buttons][spacer]`, all Length(1). So the
 /// URL row sits at `inner.y + 1 = overlay.y + 1 (top border) + 1 = overlay.y + 2`.
 pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<Rect> {
     let listing = super::render::listing_rect(modal_area, has_rejection);

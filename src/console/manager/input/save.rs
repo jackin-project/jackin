@@ -93,9 +93,9 @@ pub fn continue_save_after_drift_check(
 }
 
 /// Phase 1: validate, plan, open `ConfirmSave`. Validation failures
-/// route to `EditorSaveFlow::Error` as an inline banner (popup is
-/// reserved for phase-2 commit errors). The plan is stashed on the
-/// modal so commit doesn't re-run `plan_edit`/`plan_create`.
+/// route to `EditorSaveFlow::Error` and the shared `ErrorPopup`, same
+/// as phase-2 commit errors. The plan is stashed on the modal so
+/// commit doesn't re-run `plan_edit`/`plan_create`.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 pub(super) fn begin_editor_save(
     state: &mut ManagerState<'_>,
@@ -105,7 +105,7 @@ pub(super) fn begin_editor_save(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
-    // Clear any stale banner from a prior attempt.
+    // Clear any stale error from a prior attempt.
     editor.save_flow = EditorSaveFlow::Idle;
 
     // Classify first so mutating arms don't keep editor.mode borrowed.
@@ -124,9 +124,10 @@ pub(super) fn begin_editor_save(
     let (effective_removals, final_mounts, has_collapses, collapse_lines) = match &save_mode {
         SaveMode::Edit { original_name } => {
             let Some(current_ws) = config.workspaces.get(original_name).cloned() else {
-                editor.save_flow = EditorSaveFlow::Error {
-                    message: format!("workspace {original_name:?} no longer exists in config"),
-                };
+                open_save_error_popup(
+                    editor,
+                    &format!("workspace {original_name:?} no longer exists in config"),
+                );
                 return Ok(());
             };
             let edit_delta = build_workspace_edit(&editor.original, &editor.pending);
@@ -137,9 +138,7 @@ pub(super) fn begin_editor_save(
                 false,
             ) {
                 Err(e) => {
-                    editor.save_flow = EditorSaveFlow::Error {
-                        message: e.to_string(),
-                    };
+                    open_save_error_popup(editor, &e.to_string());
                     return Ok(());
                 }
                 Ok(plan) => {
@@ -157,13 +156,14 @@ pub(super) fn begin_editor_save(
                                 )
                             })
                             .collect();
-                        editor.save_flow = EditorSaveFlow::Error {
-                            message: format!(
+                        open_save_error_popup(
+                            editor,
+                            &format!(
                                 "pre-existing redundant mount(s) in this workspace: {}; \
                                  run `jackin' workspace prune {original_name}` to clean up",
                                 details.join(", "),
                             ),
-                        };
+                        );
                         return Ok(());
                     }
                     let has = !plan.edit_driven_collapses.is_empty();
@@ -174,16 +174,12 @@ pub(super) fn begin_editor_save(
         }
         SaveMode::Create => {
             if editor.pending_name.is_none() {
-                editor.save_flow = EditorSaveFlow::Error {
-                    message: "missing workspace name".into(),
-                };
+                open_save_error_popup(editor, "missing workspace name");
                 return Ok(());
             }
             match crate::workspace::planner::plan_create(&editor.pending.mounts) {
                 Err(e) => {
-                    editor.save_flow = EditorSaveFlow::Error {
-                        message: e.to_string(),
-                    };
+                    open_save_error_popup(editor, &e.to_string());
                     return Ok(());
                 }
                 Ok(plan) => {
@@ -1492,11 +1488,10 @@ mod tests {
     }
 
     #[test]
-    fn readonly_mismatch_produces_error_banner_no_write() {
+    fn readonly_mismatch_produces_error_popup_no_write() {
         // Add a rw /work that would subsume an existing ro /work/sub —
         // plan_edit must reject with ReadonlyMismatch. Per spec, hard
-        // planner errors surface as an inline banner, NOT as the new
-        // ErrorPopup (which is reserved for commit-time failures).
+        // planner errors surface through ErrorPopup, not ConfirmSave.
         let ws = WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
@@ -1516,14 +1511,17 @@ mod tests {
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert!(e.modal.is_none(), "no modal for hard planner errors");
-        let banner = e
+        assert!(
+            matches!(e.modal, Some(Modal::ErrorPopup { .. })),
+            "hard planner errors must use ErrorPopup",
+        );
+        let message = e
             .save_flow
             .error_message()
-            .expect("readonly mismatch should produce banner");
+            .expect("readonly mismatch should produce save error");
         assert!(
-            banner.contains("readonly"),
-            "banner should mention readonly: {banner}"
+            message.contains("readonly"),
+            "popup should mention readonly: {message}"
         );
         // On-disk config unchanged.
         let reloaded = AppConfig::load_or_init(&paths).unwrap();
@@ -1534,8 +1532,8 @@ mod tests {
     #[test]
     fn editor_save_create_with_no_name_routes_to_error_flow() {
         // begin_editor_save in Create mode must gate ConfirmSave on
-        // pending_name being set. Without a name the inline banner reads
-        // "missing workspace name" — gating prevents the operator from
+        // pending_name being set. Without a name the ErrorPopup reads
+        // "missing workspace name" - gating prevents the operator from
         // committing a nameless workspace.
         let ws = WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
@@ -1558,9 +1556,12 @@ mod tests {
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert!(e.modal.is_none(), "no confirm modal when name missing");
+        assert!(
+            matches!(e.modal, Some(Modal::ErrorPopup { .. })),
+            "missing name must use ErrorPopup",
+        );
         assert_eq!(
-            e.save_flow.error_message().expect("error banner expected"),
+            e.save_flow.error_message().expect("save error expected"),
             "missing workspace name"
         );
         // On-disk config unchanged.
@@ -1570,10 +1571,10 @@ mod tests {
 
     #[test]
     fn editor_save_create_with_invalid_mount_routes_to_error_flow() {
-        // Create-mode planner errors (here a ReadonlyMismatch — `/work/sub`
-        // ro under `/work` rw) surface as the inline banner, mirroring the
+        // Create-mode planner errors (here a ReadonlyMismatch - `/work/sub`
+        // ro under `/work` rw) surface through ErrorPopup, mirroring the
         // edit-mode behavior covered by
-        // `readonly_mismatch_produces_error_banner_no_write`.
+        // `readonly_mismatch_produces_error_popup_no_write`.
         let ws = WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/seed".into(),
@@ -1595,14 +1596,17 @@ mod tests {
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert!(e.modal.is_none(), "no confirm modal when planner rejects");
-        let banner = e
+        assert!(
+            matches!(e.modal, Some(Modal::ErrorPopup { .. })),
+            "planner rejects must use ErrorPopup",
+        );
+        let message = e
             .save_flow
             .error_message()
-            .expect("readonly mismatch should produce banner");
+            .expect("readonly mismatch should produce save error");
         assert!(
-            banner.contains("readonly"),
-            "banner should mention readonly: {banner}"
+            message.contains("readonly"),
+            "popup should mention readonly: {message}"
         );
         // On-disk config unchanged.
         let reloaded = AppConfig::load_or_init(&paths).unwrap();
@@ -1610,7 +1614,7 @@ mod tests {
     }
 
     #[test]
-    fn pre_existing_collapse_produces_prune_error_banner() {
+    fn pre_existing_collapse_produces_prune_error_popup() {
         let ws = WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work".into(),
@@ -1638,18 +1642,21 @@ mod tests {
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert!(e.modal.is_none(), "no confirm for pre-existing-only case");
-        let banner = e
+        assert!(
+            matches!(e.modal, Some(Modal::ErrorPopup { .. })),
+            "pre-existing-only case must use ErrorPopup",
+        );
+        let message = e
             .save_flow
             .error_message()
-            .expect("pre-existing collapse should produce banner");
+            .expect("pre-existing collapse should produce save error");
         assert!(
-            banner.contains("prune"),
-            "banner should reference `workspace prune`: {banner}"
+            message.contains("prune"),
+            "popup should reference `workspace prune`: {message}"
         );
         assert!(
-            banner.contains("legacy-workspace"),
-            "banner should name the workspace: {banner}"
+            message.contains("legacy-workspace"),
+            "popup should name the workspace: {message}"
         );
     }
 

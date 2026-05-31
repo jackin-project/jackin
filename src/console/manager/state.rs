@@ -884,9 +884,8 @@ impl std::fmt::Debug for PendingRoleLoad {
 /// `Idle` → (open `ConfirmSave`) `Confirming` → (stash plan)
 /// `PendingCommit` → (outer loop writes to disk) `Idle` or `Error`.
 /// `exit_on_success` is true when save came from `SaveDiscardCancel`
-/// — outer loop pops to list on success. Pre-commit validation
-/// errors land in `Error` and render as an inline banner instead of
-/// a modal.
+/// — outer loop pops to list on success. Save errors land in `Error`
+/// and surface through the shared `ErrorPopup`.
 #[derive(Debug, Clone, Default)]
 pub enum EditorSaveFlow {
     #[default]

@@ -11,13 +11,13 @@
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
     use crate::{
         config::AppConfig,
         console::manager::{
             prepare_for_render, render,
-            state::{EditorState, EditorTab, ManagerStage, ManagerState, SettingsState},
+            state::{EditorState, EditorTab, ManagerStage, ManagerState, Modal, SettingsState},
         },
         workspace::WorkspaceConfig,
     };
@@ -30,14 +30,7 @@ mod tests {
         width: u16,
         height: u16,
     ) -> String {
-        let area = Rect::new(0, 0, width, height);
-        let backend = TestBackend::new(width, height);
-        let mut terminal = Terminal::new(backend).unwrap();
-        prepare_for_render(state, config, cwd, area);
-        terminal
-            .draw(|frame| render(frame, area, state, config, cwd))
-            .unwrap();
-        let buf = terminal.backend().buffer();
+        let buf = render_manager_buffer(state, config, cwd, width, height);
         (0..height)
             .map(|y| {
                 (0..width)
@@ -46,6 +39,72 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn render_manager_buffer(
+        state: &mut ManagerState<'_>,
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        width: u16,
+        height: u16,
+    ) -> Buffer {
+        let area = Rect::new(0, 0, width, height);
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        prepare_for_render(state, config, cwd, area);
+        terminal
+            .draw(|frame| render(frame, area, state, config, cwd))
+            .unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn green_border_cluster_count(buf: &Buffer) -> usize {
+        let area = buf.area;
+        let mut seen = std::collections::BTreeSet::<(u16, u16)>::new();
+        let mut clusters = 0usize;
+
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                let coord = (x, y);
+                if seen.contains(&coord) || !is_green_border_cell(buf, coord) {
+                    continue;
+                }
+                clusters += 1;
+                let mut stack = vec![coord];
+                seen.insert(coord);
+                while let Some((cx, cy)) = stack.pop() {
+                    for next in neighbors(cx, cy, area) {
+                        if seen.insert(next) && is_green_border_cell(buf, next) {
+                            stack.push(next);
+                        }
+                    }
+                }
+            }
+        }
+
+        clusters
+    }
+
+    fn neighbors(x: u16, y: u16, area: Rect) -> impl Iterator<Item = (u16, u16)> {
+        let min_x = area.x;
+        let min_y = area.y;
+        let max_x = area.x + area.width - 1;
+        let max_y = area.y + area.height - 1;
+        [
+            x.checked_sub(1).map(|nx| (nx, y)),
+            (x < max_x).then_some((x + 1, y)),
+            y.checked_sub(1).map(|ny| (x, ny)),
+            (y < max_y).then_some((x, y + 1)),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(move |(nx, ny)| *nx >= min_x && *ny >= min_y)
+    }
+
+    fn is_green_border_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
+        let cell = &buf[coord];
+        cell.fg == crate::console::widgets::PHOSPHOR_GREEN
+            && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
     }
 
     fn test_cwd() -> std::path::PathBuf {
@@ -114,5 +173,86 @@ mod tests {
         state.stage = ManagerStage::Editor(editor);
         let rendered = render_manager_state(&mut state, &config, &cwd, 90, 20);
         insta::assert_snapshot!("editor_mounts_tab_90x20", rendered);
+    }
+
+    #[test]
+    fn host_console_content_states_have_one_green_border_cluster() {
+        let config = AppConfig::default();
+        let cwd = test_cwd();
+        let mut cases: Vec<(&str, ManagerState<'_>)> = Vec::new();
+
+        let mut list = ManagerState::from_config(&config, &cwd);
+        list.list_names_focused = true;
+        cases.push(("list", list));
+
+        for (name, tab) in [
+            ("editor general", EditorTab::General),
+            ("editor mounts", EditorTab::Mounts),
+            ("editor roles", EditorTab::Roles),
+            ("editor secrets", EditorTab::Secrets),
+            ("editor auth", EditorTab::Auth),
+        ] {
+            let mut state = ManagerState::from_config(&config, &cwd);
+            let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+            editor.active_tab = tab;
+            editor.tab_bar_focused = false;
+            editor.tab_content_scroll_focused = true;
+            editor.workspace_mounts_scroll_focused = tab == EditorTab::Mounts;
+            state.stage = ManagerStage::Editor(editor);
+            cases.push((name, state));
+        }
+
+        for tab in crate::console::manager::state::SettingsTab::ALL {
+            let mut state = ManagerState::from_config(&config, &cwd);
+            let mut settings = SettingsState::from_config(&config);
+            settings.active_tab = tab;
+            settings.tab_bar_focused = false;
+            settings.mounts.scroll_focused =
+                tab == crate::console::manager::state::SettingsTab::Mounts;
+            settings.env.scroll_focused =
+                tab == crate::console::manager::state::SettingsTab::Environments;
+            settings.auth.scroll_focused = tab == crate::console::manager::state::SettingsTab::Auth;
+            settings.trust.scroll_focused =
+                tab == crate::console::manager::state::SettingsTab::Trust;
+            state.stage = ManagerStage::Settings(settings);
+            cases.push((tab.label(), state));
+        }
+
+        for (name, mut state) in cases {
+            let buf = render_manager_buffer(&mut state, &config, &cwd, 100, 28);
+            assert_eq!(
+                green_border_cluster_count(&buf),
+                1,
+                "{name} must render exactly one PHOSPHOR_GREEN border cluster"
+            );
+        }
+    }
+
+    #[test]
+    fn host_console_modal_states_have_one_green_border_cluster() {
+        let config = AppConfig::default();
+        let cwd = test_cwd();
+
+        let mut editor_state = ManagerState::from_config(&config, &cwd);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.tab_bar_focused = false;
+        editor.modal = Some(Modal::ContainerInfo {
+            state: jackin_tui::components::ContainerInfoState::new(
+                "Container",
+                vec![jackin_tui::components::ContainerInfoRow::new(
+                    "Run ID", "abc",
+                )],
+            ),
+        });
+        editor_state.stage = ManagerStage::Editor(editor);
+
+        for (name, mut state) in [("editor container info", editor_state)] {
+            let buf = render_manager_buffer(&mut state, &config, &cwd, 100, 28);
+            assert_eq!(
+                green_border_cluster_count(&buf),
+                1,
+                "{name} must render exactly one PHOSPHOR_GREEN border cluster"
+            );
+        }
     }
 }

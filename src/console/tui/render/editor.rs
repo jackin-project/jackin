@@ -9,7 +9,6 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
 };
 use std::cmp::Ordering;
 
@@ -177,25 +176,6 @@ pub fn render_editor(
     }
 
     render_footer(frame, chunks[3], &items);
-
-    // Pre-commit validation surface; the popup handles commit errors.
-    if state.modal.is_none()
-        && let Some(err) = state.save_flow.error_message()
-    {
-        let banner_area = Rect {
-            x: chunks[2].x,
-            y: chunks[2].y,
-            width: chunks[2].width,
-            height: 1,
-        };
-        let banner = Paragraph::new(format!("✗ {err}")).style(
-            Style::default()
-                .fg(crate::console::widgets::DANGER_RED)
-                .add_modifier(Modifier::BOLD),
-        );
-        frame.render_widget(ratatui::widgets::Clear, banner_area);
-        frame.render_widget(banner, banner_area);
-    }
 }
 
 pub(crate) fn prepare_editor_for_render(

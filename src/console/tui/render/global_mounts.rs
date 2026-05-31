@@ -150,19 +150,12 @@ fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui
     } else {
         None
     };
-    let mut lines = global_mount_lines(
+    let lines = global_mount_lines(
         &state.mounts.pending,
         selected,
         true,
         &state.mounts.mount_info_cache,
     );
-    if let Some(err) = &state.mounts.error {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            format!("  {err}"),
-            Style::default().fg(crate::console::widgets::DANGER_RED),
-        )));
-    }
     super::render_scrollable_block_at(
         frame,
         area,
@@ -175,28 +168,14 @@ fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui
 }
 
 fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
-    let mut lines = env_lines(state, area.width);
-    if let Some(err) = &state.env.error {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            format!("  {err}"),
-            Style::default().fg(crate::console::widgets::DANGER_RED),
-        )));
-    }
+    let lines = env_lines(state, area.width);
     let focused = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
     super::render_scrollable_block_at(frame, area, lines, 0, state.env.scroll_y, focused, None);
 }
 
 fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let title = state.auth.selected_kind.map(|k| format!(" {} ", k.label()));
-    let mut lines = auth_lines(state);
-    if let Some(err) = &state.auth.error {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            format!("  {err}"),
-            Style::default().fg(crate::console::widgets::DANGER_RED),
-        )));
-    }
+    let lines = auth_lines(state);
     let focused = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     super::render_scrollable_block_at(
         frame,
@@ -210,14 +189,7 @@ fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::
 }
 
 fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
-    let mut lines = trust_lines(state);
-    if let Some(err) = &state.trust.error {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            format!("  {err}"),
-            Style::default().fg(crate::console::widgets::DANGER_RED),
-        )));
-    }
+    let lines = trust_lines(state);
     let focused = !state.tab_bar_focused
         && state.trust.scroll_focused
         && state.auth.modal.is_none()

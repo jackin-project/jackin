@@ -77,6 +77,13 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
             return;
         }
+        KeyCode::Esc if !settings.tab_bar_focused => {
+            if settings.auth.selected_kind.is_some() {
+                dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
+            }
+            dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
+            return;
+        }
         _ => {}
     }
 
@@ -2374,6 +2381,38 @@ mod tests {
         handle_settings_key(&mut state, key(KeyCode::Right));
         assert!(
             matches!(&state.stage, ManagerStage::Settings(settings) if settings.active_tab == SettingsTab::General)
+        );
+    }
+
+    #[test]
+    fn settings_tab_bar_follows_aria_focus_pattern() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
+
+        handle_settings_key(&mut state, key(KeyCode::Down));
+        assert!(
+            matches!(&state.stage, ManagerStage::Settings(settings) if !settings.tab_bar_focused),
+            "Down from focused tab bar must enter content",
+        );
+
+        handle_settings_key(&mut state, key(KeyCode::BackTab));
+        assert!(
+            matches!(&state.stage, ManagerStage::Settings(settings) if settings.tab_bar_focused),
+            "ShiftTab from content must return to tab bar",
+        );
+
+        handle_settings_key(&mut state, key(KeyCode::Tab));
+        assert!(
+            matches!(&state.stage, ManagerStage::Settings(settings) if !settings.tab_bar_focused),
+            "Tab from focused tab bar must enter content",
+        );
+
+        handle_settings_key(&mut state, key(KeyCode::Esc));
+        assert!(
+            matches!(&state.stage, ManagerStage::Settings(settings) if settings.tab_bar_focused),
+            "Esc from content must return to tab bar",
         );
     }
 

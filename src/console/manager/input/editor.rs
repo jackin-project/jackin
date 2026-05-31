@@ -50,6 +50,13 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Esc => {
             if let ManagerStage::Editor(editor) = &state.stage {
+                if !editor.tab_bar_focused {
+                    if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() {
+                        dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
+                    }
+                    dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
+                    return Ok(InputOutcome::Continue);
+                }
                 // Auth-tab in-tab pop: clears the focused-kind
                 // selection without dirty check (see EditorState
                 // field doc). A subsequent Esc on the picker view
@@ -3609,6 +3616,59 @@ plugins = []
         assert!(
             e.pending.default_role.is_none(),
             "`D` must no longer set the default role on the Roles tab",
+        );
+    }
+
+    #[test]
+    fn roles_tab_enter_does_not_toggle_allowed_agent() {
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Enter).unwrap();
+
+        assert_eq!(
+            pending_allowed(&state),
+            Vec::<String>::new(),
+            "Enter on Roles row must not toggle allowed_roles",
+        );
+    }
+
+    #[test]
+    fn editor_tab_bar_follows_aria_key_pattern() {
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut state = ManagerState::from_config(&config, std::path::Path::new("/"));
+        state.stage = ManagerStage::Editor(EditorState::new_edit(
+            "ws".into(),
+            WorkspaceConfig::default(),
+        ));
+
+        press(&mut state, &mut config, KeyCode::Right).unwrap();
+        assert!(
+            matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused && editor.active_tab == EditorTab::Mounts)
+        );
+
+        press(&mut state, &mut config, KeyCode::Left).unwrap();
+        assert!(
+            matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused && editor.active_tab == EditorTab::General)
+        );
+
+        press(&mut state, &mut config, KeyCode::Down).unwrap();
+        assert!(
+            matches!(&state.stage, ManagerStage::Editor(editor) if !editor.tab_bar_focused),
+            "Down from focused tab bar must enter content",
+        );
+
+        press(&mut state, &mut config, KeyCode::BackTab).unwrap();
+        assert!(
+            matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused),
+            "ShiftTab from content must return to tab bar",
+        );
+
+        press(&mut state, &mut config, KeyCode::Down).unwrap();
+        press(&mut state, &mut config, KeyCode::Esc).unwrap();
+        assert!(
+            matches!(&state.stage, ManagerStage::Editor(editor) if editor.tab_bar_focused),
+            "Esc from content must return to tab bar",
         );
     }
 
