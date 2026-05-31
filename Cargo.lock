@@ -1747,6 +1747,7 @@ name = "jackin-launch"
 version = "0.6.0-dev"
 dependencies = [
  "jackin-tui",
+ "ratatui",
  "serde",
 ]
 
