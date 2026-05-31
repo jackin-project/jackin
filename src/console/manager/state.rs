@@ -274,7 +274,7 @@ pub struct SettingsState<'a> {
 }
 
 pub use jackin_console::model::{
-    CreateStep, EditorTab, ExitIntent, FieldFocus, SecretsScopeTag, SettingsTab,
+    CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, SecretsScopeTag, SettingsTab,
 };
 
 #[derive(Debug)]
@@ -1263,12 +1263,6 @@ pub struct PendingSaveCommit {
     /// Defaults to `false` so the first commit attempt always runs the
     /// safety check.
     pub delete_isolated_acknowledged: bool,
-}
-
-#[derive(Debug, Clone)]
-pub enum EditorMode {
-    Edit { name: String },
-    Create,
 }
 
 // `TextInputState` is ~600B while other variants are ~330B. Boxing the state

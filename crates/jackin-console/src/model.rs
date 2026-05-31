@@ -49,6 +49,12 @@ pub enum EditorTab {
     Auth,
 }
 
+#[derive(Debug, Clone)]
+pub enum EditorMode {
+    Edit { name: String },
+    Create,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldFocus {
     Row(usize),
