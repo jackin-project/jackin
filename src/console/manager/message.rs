@@ -53,6 +53,11 @@ pub(crate) enum ManagerMessage {
     EnterSettings(SettingsState<'static>),
     InstancesRefreshed(Result<InstanceRefreshSnapshot, String>),
     MountInfoRefreshed(PendingMountInfoRefresh),
+    OpCommitResolved {
+        op_ref: crate::operator_env::OpRef,
+        result: anyhow::Result<()>,
+        is_settings: bool,
+    },
     FocusEditorContent,
     FocusEditorTabBar,
     FocusSettingsContent,
@@ -214,6 +219,11 @@ pub(crate) fn update_manager(
         ManagerMessage::MountInfoRefreshed(result) => {
             state.apply_mount_info_refresh(result);
         }
+        ManagerMessage::OpCommitResolved {
+            op_ref,
+            result,
+            is_settings,
+        } => apply_op_commit_result(state, op_ref, result, is_settings),
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
         ManagerMessage::FocusSettingsContent => set_settings_tab_bar_focus(state, false),
@@ -461,6 +471,48 @@ fn open_settings_error_popup(
         title.into(),
         message.into(),
     ));
+}
+
+fn apply_op_commit_result(
+    state: &mut ManagerState<'_>,
+    op_ref: crate::operator_env::OpRef,
+    result: anyhow::Result<()>,
+    is_settings: bool,
+) {
+    if is_settings {
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            return;
+        };
+        match result {
+            Ok(()) => {
+                crate::console::manager::input::apply_op_picker_to_settings_auth_form_committed(
+                    &mut settings.auth,
+                    op_ref,
+                );
+            }
+            Err(error) => {
+                crate::console::manager::input::apply_op_picker_settings_commit_failed(
+                    &mut settings.auth,
+                    &error,
+                );
+            }
+        }
+        return;
+    }
+
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    match result {
+        Ok(()) => {
+            crate::console::manager::input::auth::apply_op_picker_to_auth_form_committed(
+                editor, op_ref,
+            );
+        }
+        Err(error) => {
+            crate::console::manager::input::auth::apply_op_picker_commit_failed(editor, &error);
+        }
+    }
 }
 
 fn enter_settings_auth_kind(state: &mut ManagerState<'_>) {

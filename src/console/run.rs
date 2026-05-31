@@ -288,39 +288,15 @@ pub async fn run_console<H: InstanceActionHandler>(
             // an OpRef from the auth form. The read runs on spawn_blocking so
             // Touch ID / the 1Password desktop dialog don't freeze the TUI.
             if let Some((op_ref, result, is_settings)) = ms.poll_pending_op_commit() {
-                needs_redraw = true;
-                if is_settings {
-                    if let ManagerStage::Settings(s) = &mut ms.stage {
-                        match result {
-                            Ok(()) => {
-                                crate::console::manager::input::apply_op_picker_to_settings_auth_form_committed(
-                                    &mut s.auth,
-                                    op_ref,
-                                );
-                            }
-                            Err(e) => {
-                                crate::console::manager::input::apply_op_picker_settings_commit_failed(
-                                    &mut s.auth,
-                                    &e,
-                                );
-                            }
-                        }
-                    }
-                } else if let ManagerStage::Editor(ed) = &mut ms.stage {
-                    match result {
-                        Ok(()) => {
-                            crate::console::manager::input::auth::apply_op_picker_to_auth_form_committed(
-                                ed,
-                                op_ref,
-                            );
-                        }
-                        Err(e) => {
-                            crate::console::manager::input::auth::apply_op_picker_commit_failed(
-                                ed, &e,
-                            );
-                        }
-                    }
-                }
+                needs_redraw |= manager::update_manager(
+                    ms,
+                    manager::ManagerMessage::OpCommitResolved {
+                        op_ref,
+                        result,
+                        is_settings,
+                    },
+                )
+                .is_dirty();
             }
         }
 
