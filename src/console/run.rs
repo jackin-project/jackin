@@ -259,31 +259,39 @@ pub async fn run_console<H: InstanceActionHandler>(
                 manager::poll_background_messages(ms, &mut config, paths);
             needs_redraw |= background_dirty;
             for message in messages {
-                needs_redraw |= manager::update_manager(ms, message).is_dirty();
-            }
-            // Poll the async drift check started by a save operation.
-            // When ready, continue the save without blocking the reactor.
-            if let Some((drift_check, detection)) = ms.poll_pending_drift_check() {
-                let _ = manager::input::save::continue_save_after_drift_check(
-                    ms,
-                    &mut config,
-                    paths,
-                    cwd,
-                    drift_check,
-                    detection,
-                );
-                needs_redraw = true;
-            }
-            if let Some((cleanup, result)) = ms.poll_pending_isolation_cleanup() {
-                let _ = manager::input::save::continue_save_after_isolation_cleanup(
-                    ms,
-                    &mut config,
-                    paths,
-                    cwd,
-                    cleanup,
-                    result,
-                );
-                needs_redraw = true;
+                match message {
+                    manager::message::ManagerBackgroundEvent::Message(message) => {
+                        needs_redraw |= manager::update_manager(ms, message).is_dirty();
+                    }
+                    manager::message::ManagerBackgroundEvent::DriftCheckFinished {
+                        check,
+                        detection,
+                    } => {
+                        let _ = manager::input::save::continue_save_after_drift_check(
+                            ms,
+                            &mut config,
+                            paths,
+                            cwd,
+                            check,
+                            detection,
+                        );
+                        needs_redraw = true;
+                    }
+                    manager::message::ManagerBackgroundEvent::IsolationCleanupFinished {
+                        cleanup,
+                        result,
+                    } => {
+                        let _ = manager::input::save::continue_save_after_isolation_cleanup(
+                            ms,
+                            &mut config,
+                            paths,
+                            cwd,
+                            cleanup,
+                            result,
+                        );
+                        needs_redraw = true;
+                    }
+                }
             }
         }
 

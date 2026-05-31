@@ -7,8 +7,8 @@
 use super::auth_kind::AuthKind;
 use super::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
-    ManagerListRow, ManagerStage, ManagerState, MountScrollFocus, PendingMountInfoRefresh,
-    SecretsScopeTag, SettingsState, SettingsTab,
+    ManagerListRow, ManagerStage, ManagerState, MountScrollFocus, PendingDriftCheck,
+    PendingIsolationCleanup, PendingMountInfoRefresh, SecretsScopeTag, SettingsState, SettingsTab,
 };
 use crate::config::AppConfig;
 use jackin_console::editor::update::{
@@ -190,29 +190,55 @@ pub(crate) enum ManagerMessage {
 
 pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
 
+pub(crate) enum ManagerBackgroundEvent {
+    Message(ManagerMessage),
+    DriftCheckFinished {
+        check: PendingDriftCheck,
+        detection: anyhow::Result<crate::config::DriftDetection>,
+    },
+    IsolationCleanupFinished {
+        cleanup: PendingIsolationCleanup,
+        result: anyhow::Result<()>,
+    },
+}
+
 pub(crate) fn poll_background_messages(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
-) -> (Vec<ManagerMessage>, bool) {
+) -> (Vec<ManagerBackgroundEvent>, bool) {
     let mut dirty = false;
-    let mut messages = vec![ManagerMessage::PollPickerLoads];
+    let mut messages = vec![ManagerBackgroundEvent::Message(
+        ManagerMessage::PollPickerLoads,
+    )];
     if let ManagerStage::Editor(editor) = &mut state.stage {
         dirty |= super::input::editor::poll_role_load(editor, config, paths);
     }
     if let Some(result) = state.poll_mount_info_refresh() {
-        messages.push(ManagerMessage::MountInfoRefreshed(result));
+        messages.push(ManagerBackgroundEvent::Message(
+            ManagerMessage::MountInfoRefreshed(result),
+        ));
     }
     if let Some(result) = state.poll_instance_refresh() {
-        messages.push(ManagerMessage::InstancesRefreshed(result));
+        messages.push(ManagerBackgroundEvent::Message(
+            ManagerMessage::InstancesRefreshed(result),
+        ));
     }
     state.request_instance_refresh(paths);
     if let Some((op_ref, result, is_settings)) = state.poll_pending_op_commit() {
-        messages.push(ManagerMessage::OpCommitResolved {
-            op_ref,
-            result,
-            is_settings,
-        });
+        messages.push(ManagerBackgroundEvent::Message(
+            ManagerMessage::OpCommitResolved {
+                op_ref,
+                result,
+                is_settings,
+            },
+        ));
+    }
+    if let Some((check, detection)) = state.poll_pending_drift_check() {
+        messages.push(ManagerBackgroundEvent::DriftCheckFinished { check, detection });
+    }
+    if let Some((cleanup, result)) = state.poll_pending_isolation_cleanup() {
+        messages.push(ManagerBackgroundEvent::IsolationCleanupFinished { cleanup, result });
     }
     (messages, dirty)
 }
