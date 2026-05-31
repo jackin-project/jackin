@@ -552,7 +552,6 @@ impl Multiplexer {
     fn send_output(&mut self, bytes: Vec<u8>) {
         self.send_to_client(ServerFrame::Output(bytes));
     }
-
 }
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.

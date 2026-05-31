@@ -10,11 +10,11 @@ use crate::config::AppConfig;
 use jackin_tui::HintSpan;
 
 pub mod editor;
-#[cfg(test)]
-mod snapshot_tests;
 pub(super) mod global_mounts;
 pub(super) mod list;
 pub(super) mod modal;
+#[cfg(test)]
+mod snapshot_tests;
 
 // input::mouse has no path into the modal submodule — re-exported here so it
 // can reach modal_outer_rect via super::super::render.

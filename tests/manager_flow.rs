@@ -1163,7 +1163,10 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
     assert!(
         matches!(
             editor(&state).modal,
-            Some(Modal::SourcePicker { env_key: Some(_), .. })
+            Some(Modal::SourcePicker {
+                env_key: Some(_),
+                ..
+            })
         ),
         "EnvKey commit must embed (scope, key) in SourcePicker modal"
     );

@@ -129,12 +129,8 @@ impl Multiplexer {
     /// channel-closed `clog!` is uniform across callers so a future
     /// triage of "why didn't the bar refresh?" has the same shape
     /// regardless of which lookup misbehaved.
-    pub(super) fn spawn_context_lookup<F, T, E>(
-        &self,
-        label: &'static str,
-        work: F,
-        to_event: E,
-    ) where
+    pub(super) fn spawn_context_lookup<F, T, E>(&self, label: &'static str, work: F, to_event: E)
+    where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
         E: FnOnce(T) -> SessionEvent + Send + 'static,

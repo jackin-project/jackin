@@ -15,7 +15,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
-use jackin_tui::components::confirm_dialog::{render_confirm_dialog, ConfirmState};
+use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
 use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use ratatui::style::Color;
@@ -88,8 +88,12 @@ impl Dialog {
                 selected_yes: *selected_yes,
             },
 
-            Dialog::CommandPalette { selected, filter, close_label } => {
-                use crate::dialog::{PaletteCommand, PALETTE_ITEMS};
+            Dialog::CommandPalette {
+                selected,
+                filter,
+                close_label,
+            } => {
+                use crate::dialog::{PALETTE_ITEMS, PaletteCommand};
                 let needle = filter.to_ascii_lowercase();
                 let items: Vec<PickerItem> = PALETTE_ITEMS
                     .iter()
@@ -114,7 +118,12 @@ impl Dialog {
                 }
             }
 
-            Dialog::AgentPicker { agents, selected, intent, filter } => {
+            Dialog::AgentPicker {
+                agents,
+                selected,
+                intent,
+                filter,
+            } => {
                 use crate::dialog::PickerIntent;
                 let title = match intent {
                     PickerIntent::NewTab => "New tab".to_string(),
@@ -160,8 +169,7 @@ impl Dialog {
                 let items: Vec<PickerItem> = SPLIT_DIRECTION_ITEMS
                     .iter()
                     .filter(|dir| {
-                        needle.is_empty()
-                            || dir.label().to_ascii_lowercase().contains(&needle)
+                        needle.is_empty() || dir.label().to_ascii_lowercase().contains(&needle)
                     })
                     .map(|dir| PickerItem::Item(dir.label().to_string()))
                     .collect();
@@ -191,7 +199,12 @@ impl Dialog {
                 }
             }
 
-            Dialog::ProviderPicker { agent, providers, selected, .. } => {
+            Dialog::ProviderPicker {
+                agent,
+                providers,
+                selected,
+                ..
+            } => {
                 let title = agent
                     .as_deref()
                     .and_then(jackin_tui::agent_display_name)
@@ -260,7 +273,12 @@ impl Dialog {
                     .and_then(|p| p.checks.as_ref())
                     .map(|c| c.summary())
                     .unwrap_or_else(|| {
-                        if pr_loading { "resolving…" } else { "(unknown)" }.to_string()
+                        if pr_loading {
+                            "resolving…"
+                        } else {
+                            "(unknown)"
+                        }
+                        .to_string()
                     });
                 DialogRatatuiSnapshot::InfoRows {
                     dialog_title: "GitHub context".into(),
@@ -305,16 +323,35 @@ pub(crate) fn render_dialog_ratatui(
         return;
     }
     match snapshot {
-        DialogRatatuiSnapshot::ConfirmAction { title, body, selected_yes } => {
+        DialogRatatuiSnapshot::ConfirmAction {
+            title,
+            body,
+            selected_yes,
+        } => {
             render_confirm_action(frame, area, title, body, *selected_yes);
         }
-        DialogRatatuiSnapshot::FilterPicker { title, filter, items, selected } => {
+        DialogRatatuiSnapshot::FilterPicker {
+            title,
+            filter,
+            items,
+            selected,
+        } => {
             render_filter_picker(frame, area, title, filter, items, *selected);
         }
-        DialogRatatuiSnapshot::TextInputDialog { dialog_title, label, value, cursor } => {
+        DialogRatatuiSnapshot::TextInputDialog {
+            dialog_title,
+            label,
+            value,
+            cursor,
+        } => {
             render_text_input_dialog(frame, area, dialog_title, label, value, *cursor);
         }
-        DialogRatatuiSnapshot::InfoRows { dialog_title, rows, copy_row, copied } => {
+        DialogRatatuiSnapshot::InfoRows {
+            dialog_title,
+            rows,
+            copy_row,
+            copied,
+        } => {
             render_info_rows_dialog(frame, area, dialog_title, rows, *copy_row, *copied);
         }
     }
@@ -388,7 +425,9 @@ fn render_filter_picker(
                 let is_selected = i == selected;
                 let prefix = if is_selected { "\u{25b8} " } else { "  " };
                 let style = if is_selected {
-                    Style::default().fg(PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(PHOSPHOR_GREEN)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(WHITE)
                 };

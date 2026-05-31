@@ -56,7 +56,7 @@ impl Multiplexer {
     /// the Ratatui terminal fails to draw (falls back to raw-ANSI).
     pub(super) fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
         use crate::chrome_widget::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
-        use crate::dialog_widgets::{render_dialog_ratatui, DialogRatatuiSnapshot};
+        use crate::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
         use crate::pane_widget::PaneBodyWidget;
         use crate::title::display_title;
         use ratatui::layout::Rect as RatatuiRect;
@@ -82,19 +82,19 @@ impl Multiplexer {
             .collect();
 
         // Snapshot dialog state (fully owned) before the draw closure.
-        let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> =
-            if dialog_open {
-                let pr_branch = self.pull_request_context_branch.as_deref();
-                let pr_info = self.pull_request_context.as_deref();
-                let pr_loading = self.pull_request_context_loading();
-                self.dialog_top().map(|d| {
-                    let rect = d.box_rect(term_rows, term_cols);
-                    let snapshot = d.to_ratatui_snapshot(pr_branch, pr_info, pr_loading);
-                    (snapshot, rect)
-                })
-            } else {
-                None
-            };
+        let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> = if dialog_open
+        {
+            let pr_branch = self.pull_request_context_branch.as_deref();
+            let pr_info = self.pull_request_context.as_deref();
+            let pr_loading = self.pull_request_context_loading();
+            self.dialog_top().map(|d| {
+                let rect = d.box_rect(term_rows, term_cols);
+                let snapshot = d.to_ratatui_snapshot(pr_branch, pr_info, pr_loading);
+                (snapshot, rect)
+            })
+        } else {
+            None
+        };
 
         let sessions = &self.sessions;
         let status_bar = StatusBarWidget {
