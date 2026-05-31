@@ -159,6 +159,15 @@ Do not show two bright container borders in the same visible layer. If a dialog 
 
 This rule is broader than scroll focus. Scrollable blocks still use the overflow checks in the [Focusability](#focusability) section so a passive block whose content fits cannot pretend to be scrollable. But forms, dialogs, pickers, tab panels, and other interactive containers are focusable because they accept keys, not because they overflow; they still get the bright border when they own interaction focus.
 
+**Enforcement — use the canonical helpers, never inline border colors:** The correct border style is encoded in two reusable primitives in <RepoFile path="crates/jackin-tui/src/components/panel.rs" />:
+
+- `Panel::new().title("…").focus(PanelFocus::Focused).block()` — titled active container (modal, picker, form, tab panel).
+- `modal_block()` — untitled active container (dialog without a title bar).
+- `Panel::new().focus(PanelFocus::Unfocused).block()` / `unfocused_block()` — background container.
+- `render_scrollable_block(…, focused, …)` — passive scroll block; the helper applies the correct focus state automatically.
+
+Never construct `Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK))` for a modal — that silently produces a wrong (invisible) focus indicator. The focus-visible tests in `panel.rs` catch color regressions: `modal_block_uses_phosphor_green`, `panel_focused_uses_phosphor_green`, `unfocused_block_uses_phosphor_dark`.
+
 ### Launch Progress Surface
 
 `jackin load` and console-triggered launches share one launch progress surface. The launch renderer is event-driven: runtime code emits public stages (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) and the rich cockpit renders them. `jackin load` no longer has a compact/plain launch renderer; if stdin/stdout/stderr are not TTYs, `TERM=dumb`, CI is set, or the terminal is smaller than 80x24, launch fails before it can corrupt the screen with partial output. The launch surface is communication between jackin' and the operator, not just a stopwatch. Every visible stage must be acknowledged in sequence so the operator can tell what happened, where the launch is now, and whether the system finished or is still moving. Fast cache-hit commands are still real work from the product perspective; the UI must not skip them simply because the implementation completed before the next render tick. The rich renderer therefore intentionally gives each stage transition a short minimum-visible dwell, including the final `hardline` handoff, so fast paths still show a progress rail that starts at the beginning, reaches the final label, and matches the operator's mental model of the launch sequence.
