@@ -52,6 +52,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Launch env select prompt key handling now runs through a local message/update helper with regression coverage for value and skip commits.
 - Launch env text prompt key handling now runs through a local message/update helper with regression coverage for value and skip commits.
 - Launch confirmation prompt key handling now runs through a local message/update helper with regression coverage for confirm and cancel outcomes.
+- Launch error-popup key handling now runs through a local message/update helper with regression coverage for acknowledge and ignored navigation.
 - `LaunchProgress` no longer exposes a generic shared-view mutator; stage paths update the cockpit only by dispatching `LaunchMessage`.
 - Host instance refresh now exposes separate request/poll calls, making the run loop's worker subscription boundary explicit before promotion into the shared effect layer.
 

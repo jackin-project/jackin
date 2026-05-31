@@ -65,6 +65,11 @@ enum ConfirmPromptMessage {
     Key(KeyEvent),
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ErrorPromptMessage {
+    Key(KeyEvent),
+}
+
 fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) -> Option<usize> {
     match msg {
         SelectLoopMessage::Key(key) => {
@@ -75,6 +80,16 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
                 None
             }
         }
+    }
+}
+
+fn update_error_prompt(state: &ErrorPopupState, msg: ErrorPromptMessage) -> Option<()> {
+    match msg {
+        ErrorPromptMessage::Key(key) => match state.handle_key(key) {
+            ModalOutcome::Cancel => Some(()),
+            ModalOutcome::Continue => None,
+            ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
+        },
     }
 }
 
@@ -407,10 +422,13 @@ impl RichRenderer {
             self.terminal
                 .draw(|frame| draw_error_popup(frame, &state))
                 .context("rendering launch error popup")?;
-            match state.handle_key(read_pressed_key("reading error popup input")?) {
-                ModalOutcome::Cancel => return Ok(()),
-                ModalOutcome::Continue => {}
-                ModalOutcome::Commit(()) => unreachable!("error popup never commits"),
+            if update_error_prompt(
+                &state,
+                ErrorPromptMessage::Key(read_pressed_key("reading error popup input")?),
+            )
+            .is_some()
+            {
+                return Ok(());
             }
         }
     }
@@ -555,5 +573,29 @@ mod tests {
         );
 
         assert_eq!(result, Some(false));
+    }
+
+    #[test]
+    fn error_prompt_message_acknowledges_enter() {
+        let state = ErrorPopupState::new("Failed", "nope");
+
+        let result = update_error_prompt(
+            &state,
+            ErrorPromptMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        );
+
+        assert_eq!(result, Some(()));
+    }
+
+    #[test]
+    fn error_prompt_message_ignores_navigation() {
+        let state = ErrorPopupState::new("Failed", "nope");
+
+        let result = update_error_prompt(
+            &state,
+            ErrorPromptMessage::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
+        );
+
+        assert_eq!(result, None);
     }
 }
