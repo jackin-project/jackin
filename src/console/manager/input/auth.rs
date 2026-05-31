@@ -1110,7 +1110,8 @@ mod tests {
     use super::*;
     use crate::config::{AppConfig, AuthForwardMode, GithubAuthMode};
     use crate::console::manager::auth_kind::AuthKind;
-    use crate::console::manager::render::editor::{AuthRow, auth_flat_rows};
+    use crate::console::manager::auth_rows::auth_flat_rows;
+    use crate::console::manager::state::AuthRow;
     use crate::console::manager::state::{
         AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
     };

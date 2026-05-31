@@ -445,14 +445,6 @@ fn contextual_row_items(
     }
 }
 
-/// Total number of rendered rows in the auth panel, including spacers.
-/// Cursor stepping in the input layer skips spacer rows; callers using
-/// this for `max_row_for_tab` should be aware the result includes
-/// non-selectable rows.
-pub(crate) fn auth_row_count(state: &EditorState<'_>, config: &AppConfig) -> usize {
-    auth_flat_rows(state, config).len()
-}
-
 /// Order/labels shared with mouse hit-testing; renderer and click code
 /// must measure the same strip.
 pub(crate) const EDITOR_TAB_LABELS: &[(EditorTab, &str)] = &[

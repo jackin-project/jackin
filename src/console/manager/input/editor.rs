@@ -498,9 +498,7 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         EditorTab::Roles => config.roles.len(),
         // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
-        EditorTab::Auth => {
-            super::super::render::editor::auth_row_count(editor, config).saturating_sub(1)
-        }
+        EditorTab::Auth => auth_flat_rows(editor, config).len().saturating_sub(1),
     }
 }
 
