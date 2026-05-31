@@ -2,6 +2,7 @@
 
 pub mod focus;
 pub mod github_mounts;
+pub mod list_row;
 pub mod mount_info;
 pub mod mount_info_cache;
 pub mod op_cache;
