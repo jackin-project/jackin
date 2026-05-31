@@ -184,6 +184,20 @@ The host console matches this order. The capsule must also follow it: `MAIN_VIEW
 
 **Implementation:** The separator row is a blank `PHOSPHOR_DARK` row, not an empty string — it must use the same background as the surrounding chrome so it reads as intentional spacing, not a rendering gap.
 
+### Status bar is always white; debug run ID is a red chip
+
+**The bottom status bar must always render on a white background.** This is invariant regardless of debug mode, surface, or content. The white band is the visual anchor that separates TUI chrome from terminal content — a non-white status bar is a design violation.
+
+**The debug run ID is a compact red chip right-aligned on the status bar.** When `--debug` is active, the run ID appears as a `DANGER_RED` background chip on the right side of the status bar. Only the chip itself gets the red background. The rest of the bar stays white. The chip contains only the run ID string (e.g. `jk-run-740709`), nothing else.
+
+**Debug badge chip layout:**
+```
+  [white status bar content]          jk-run-740709
+^─────────────────── white ──────────^─── red chip ──^
+```
+
+This applies to the host console debug bar and any other surface that surfaces a run ID in debug mode.
+
 ### Brand chrome is shared across every top-level screen
 
 Every full-screen jackin' surface — the workspace list, settings, the workspace editor, and the launch progress screen — renders the same brand header through one shared helper (`render_brand_header` / `brand_header_line` in <RepoFile path="src/console/widgets/mod.rs" />): the ` jackin' ` phosphor-green pill (black foreground, bold) pinned to the top-left, a `·` separator, then the screen label. The pill matches the in-container multiplexer status-bar brand pill (<RepoFile path="crates/jackin-capsule/src/statusbar.rs" />) so the logo never shifts position, colour, or weight as the operator transitions between screens. The header occupies two rows (brand row + one spacer); the screen body starts on the third row. New top-level screens must call the shared helper rather than hand-rolling a brand line — a divergent logo is a chrome-consistency bug.
