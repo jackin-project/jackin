@@ -141,6 +141,46 @@ mod tests {
         state
     }
 
+    fn settings_env_with_modal<'a>(
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        modal: SettingsEnvModal<'a>,
+    ) -> ManagerState<'a> {
+        let mut state = ManagerState::from_config(config, cwd);
+        let mut settings = SettingsState::from_config(config);
+        settings.active_tab = crate::console::manager::state::SettingsTab::Environments;
+        settings.tab_bar_focused = false;
+        settings.env.scroll_focused = true;
+        settings.env.modal = Some(modal);
+        state.stage = ManagerStage::Settings(settings);
+        state
+    }
+
+    fn settings_auth_with_modal(
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        modal: crate::console::manager::state::SettingsAuthModal<'static>,
+    ) -> ManagerState<'static> {
+        let mut state = ManagerState::from_config(config, cwd);
+        let mut settings = SettingsState::from_config(config);
+        settings.active_tab = crate::console::manager::state::SettingsTab::Auth;
+        settings.tab_bar_focused = false;
+        settings.auth.scroll_focused = true;
+        settings.auth.modal = Some(modal);
+        state.stage = ManagerStage::Settings(settings);
+        state
+    }
+
+    fn auth_form_modal() -> Modal<'static> {
+        let kind = crate::console::manager::auth_kind::AuthKind::Claude;
+        Modal::AuthForm {
+            target: crate::console::manager::state::AuthFormTarget::Workspace { kind },
+            state: Box::new(crate::console::widgets::auth_panel::AuthForm::new(kind)),
+            focus: crate::console::manager::state::AuthFormFocus::Mode,
+            literal_buffer: String::new(),
+        }
+    }
+
     #[test]
     fn snapshot_list_empty_80x24() {
         let config = AppConfig::default();
@@ -458,6 +498,58 @@ mod tests {
         editor_state.stage = ManagerStage::Editor(editor);
         cases.push(("editor container info", editor_state));
 
+        let mut editor_op_picker = ManagerState::from_config(&config, &cwd);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.tab_bar_focused = false;
+        editor.modal = Some(Modal::OpPicker {
+            state: Box::new(crate::console::widgets::op_picker::OpPickerState::new()),
+        });
+        editor_op_picker.stage = ManagerStage::Editor(editor);
+        cases.push(("editor op picker", editor_op_picker));
+
+        let mut editor_role_override = ManagerState::from_config(&config, &cwd);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.tab_bar_focused = false;
+        editor.modal = Some(Modal::RoleOverridePicker {
+            state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+                crate::selector::RoleSelector::parse("chainargos/agent-smith")
+                    .expect("valid role selector"),
+            ]),
+        });
+        editor_role_override.stage = ManagerStage::Editor(editor);
+        cases.push(("editor role override picker", editor_role_override));
+
+        let mut editor_auth_role = ManagerState::from_config(&config, &cwd);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.tab_bar_focused = false;
+        editor.modal = Some(Modal::AuthRolePicker {
+            state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+                crate::selector::RoleSelector::parse("chainargos/agent-smith")
+                    .expect("valid role selector"),
+            ]),
+        });
+        editor_auth_role.stage = ManagerStage::Editor(editor);
+        cases.push(("editor auth role picker", editor_auth_role));
+
+        let mut editor_auth_source = ManagerState::from_config(&config, &cwd);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.tab_bar_focused = false;
+        editor.modal = Some(Modal::AuthSourcePicker {
+            state: crate::console::widgets::source_picker::SourcePickerState::new(
+                "CLAUDE_CODE_OAUTH_TOKEN".into(),
+                true,
+            ),
+        });
+        editor_auth_source.stage = ManagerStage::Editor(editor);
+        cases.push(("editor auth source picker", editor_auth_source));
+
+        let mut editor_auth_form = ManagerState::from_config(&config, &cwd);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.tab_bar_focused = false;
+        editor.modal = Some(auth_form_modal());
+        editor_auth_form.stage = ManagerStage::Editor(editor);
+        cases.push(("editor auth form", editor_auth_form));
+
         let mut settings_mounts_confirm = ManagerState::from_config(&config, &cwd);
         let mut settings = SettingsState::from_config(&config);
         settings.active_tab = crate::console::manager::state::SettingsTab::Mounts;
@@ -569,6 +661,68 @@ mod tests {
         settings_env_text.stage = ManagerStage::Settings(settings);
         cases.push(("settings env text", settings_env_text));
 
+        cases.push((
+            "settings env source picker",
+            settings_env_with_modal(
+                &config,
+                &cwd,
+                SettingsEnvModal::SourcePicker {
+                    state: crate::console::widgets::source_picker::SourcePickerState::new(
+                        "TOKEN".into(),
+                        true,
+                    ),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings env op picker",
+            settings_env_with_modal(
+                &config,
+                &cwd,
+                SettingsEnvModal::OpPicker {
+                    state: Box::new(crate::console::widgets::op_picker::OpPickerState::new()),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings env role picker",
+            settings_env_with_modal(
+                &config,
+                &cwd,
+                SettingsEnvModal::RolePicker {
+                    state: crate::console::widgets::role_picker::RolePickerState::new(vec![
+                        crate::selector::RoleSelector::parse("chainargos/agent-smith")
+                            .expect("valid role selector"),
+                    ]),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings env scope picker",
+            settings_env_with_modal(
+                &config,
+                &cwd,
+                SettingsEnvModal::ScopePicker {
+                    state: crate::console::widgets::scope_picker::ScopePickerState::new(),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings env confirm",
+            settings_env_with_modal(
+                &config,
+                &cwd,
+                SettingsEnvModal::Confirm {
+                    action: crate::console::manager::state::SettingsEnvConfirm::Delete,
+                    state: jackin_tui::components::ConfirmState::new("Delete env var?"),
+                },
+            ),
+        ));
+
         let mut settings_auth_text = ManagerState::from_config(&config, &cwd);
         let mut settings = SettingsState::from_config(&config);
         settings.active_tab = crate::console::manager::state::SettingsTab::Auth;
@@ -584,6 +738,46 @@ mod tests {
         );
         settings_auth_text.stage = ManagerStage::Settings(settings);
         cases.push(("settings auth text", settings_auth_text));
+
+        cases.push((
+            "settings auth source picker",
+            settings_auth_with_modal(
+                &config,
+                &cwd,
+                crate::console::manager::state::SettingsAuthModal::SourcePicker {
+                    state: crate::console::widgets::source_picker::SourcePickerState::new(
+                        "CLAUDE_CODE_OAUTH_TOKEN".into(),
+                        true,
+                    ),
+                },
+            ),
+        ));
+
+        cases.push((
+            "settings auth op picker",
+            settings_auth_with_modal(
+                &config,
+                &cwd,
+                crate::console::manager::state::SettingsAuthModal::OpPicker {
+                    state: Box::new(crate::console::widgets::op_picker::OpPickerState::new()),
+                },
+            ),
+        ));
+
+        let kind = crate::console::manager::auth_kind::AuthKind::Claude;
+        cases.push((
+            "settings auth form",
+            settings_auth_with_modal(
+                &config,
+                &cwd,
+                crate::console::manager::state::SettingsAuthModal::AuthForm {
+                    target: crate::console::manager::state::AuthFormTarget::Workspace { kind },
+                    state: Box::new(crate::console::widgets::auth_panel::AuthForm::new(kind)),
+                    focus: crate::console::manager::state::AuthFormFocus::Mode,
+                    literal_buffer: String::new(),
+                },
+            ),
+        ));
 
         for (name, mut state) in cases {
             let buf = render_manager_buffer(&mut state, &config, &cwd, 100, 28);
