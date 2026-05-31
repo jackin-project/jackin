@@ -413,7 +413,7 @@ fn build_log_scroll_filled(area: Rect) -> usize {
     };
     let viewport_w = viewport_width(box_area);
     let viewport_h = viewport_height(box_area);
-    let raw = crate::runtime::build_log::snapshot();
+    let raw = jackin_launch::build_log::snapshot();
     let line_count = if raw.is_empty() {
         1
     } else {
@@ -536,7 +536,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, area: Rect, run_id: &str, col: 
         v.container_info_copied = None;
         v.footer_hover.right = false;
         set_cockpit_pointer(false);
-    } else if crate::runtime::build_log::len() > 0 && hit_activity(v, col, row) {
+    } else if jackin_launch::build_log::len() > 0 && hit_activity(v, col, row) {
         v.build_log_open = true;
         v.build_log_scroll = jackin_tui::scroll::TailScroll::default();
         v.footer_hover.left = false;
@@ -557,7 +557,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, area: Rect, run_id: &str, col: 
         return;
     }
     let activity_hovering =
-        !v.build_log_open && crate::runtime::build_log::len() > 0 && hit_activity(v, col, row);
+        !v.build_log_open && jackin_launch::build_log::len() > 0 && hit_activity(v, col, row);
     let container_hovering = hit_footer_container_chip(v, run_id, area, col, row);
     if activity_hovering != v.footer_hover.left || container_hovering != v.footer_hover.right {
         v.footer_hover.left = activity_hovering;
@@ -2080,7 +2080,7 @@ fn dialog_backdrop(frame: &mut Frame<'_>, area: Rect) -> (Rect, Rect) {
 fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
     let (box_area, hint_area) = dialog_backdrop(frame, area);
 
-    let title = if crate::runtime::build_log::is_active() {
+    let title = if jackin_launch::build_log::is_active() {
         " Docker build · building… "
     } else {
         " Docker build "
@@ -2088,7 +2088,7 @@ fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView)
     // The full output drives the shared scrollable block so its proportional
     // scrollbar is correct. Cloning the (capped) buffer is acceptable here: the
     // overlay is a transient, operator-opened modal, not the steady cockpit.
-    let raw = crate::runtime::build_log::snapshot();
+    let raw = jackin_launch::build_log::snapshot();
     let viewport_w = viewport_width(box_area);
     let lines: Vec<Line<'_>> = if raw.is_empty() {
         vec![Line::from(Span::styled(
@@ -2823,12 +2823,12 @@ mod tests {
 
     #[test]
     fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
-        let _guard = crate::runtime::build_log::TEST_LOCK.lock().unwrap();
-        crate::runtime::build_log::begin();
-        crate::runtime::build_log::push_line(
+        let _guard = jackin_launch::build_log::TEST_LOCK.lock().unwrap();
+        jackin_launch::build_log::begin();
+        jackin_launch::build_log::push_line(
             "#4 FROM docker.io/projectjackin/jackin-the-architect:latest@sha256:08d62f4027f941d8f5ee1742b6b0ba9e8a3e276ab7626967b0e1de27917a0e94",
         );
-        crate::runtime::build_log::end();
+        jackin_launch::build_log::end();
 
         let backend = TestBackend::new(56, 12);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -2867,12 +2867,12 @@ mod tests {
 
     #[test]
     fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
-        let _guard = crate::runtime::build_log::TEST_LOCK.lock().unwrap();
-        crate::runtime::build_log::begin();
+        let _guard = jackin_launch::build_log::TEST_LOCK.lock().unwrap();
+        jackin_launch::build_log::begin();
         for idx in 0..20 {
-            crate::runtime::build_log::push_line(&format!("line {idx:02}"));
+            jackin_launch::build_log::push_line(&format!("line {idx:02}"));
         }
-        crate::runtime::build_log::end();
+        jackin_launch::build_log::end();
 
         let area = Rect::new(0, 0, 40, 8);
         let filled = build_log_scroll_filled(area);
