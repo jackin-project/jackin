@@ -8,6 +8,7 @@ pub(crate) mod github_mounts;
 pub mod input;
 pub mod message;
 pub mod mount_info;
+pub mod mount_info_cache;
 pub mod state;
 
 pub use crate::console::tui::render;

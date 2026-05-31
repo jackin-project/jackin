@@ -20,54 +20,7 @@ use crate::console::widgets::{
 };
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
 
-#[derive(Clone, Debug, Default)]
-pub struct MountInfoCache {
-    entries: Rc<RefCell<BTreeMap<String, crate::console::manager::mount_info::MountKind>>>,
-}
-
-impl MountInfoCache {
-    pub(crate) fn refresh_src(&self, src: &str) {
-        let kind = crate::console::manager::mount_info::inspect(src);
-        self.entries.borrow_mut().insert(src.to_string(), kind);
-    }
-
-    pub(crate) fn refresh_mounts(&self, mounts: &[crate::workspace::MountConfig]) {
-        for mount in mounts {
-            self.refresh_src(&mount.src);
-        }
-    }
-
-    pub(crate) fn refresh_global_rows(&self, rows: &[crate::config::GlobalMountRow]) {
-        for row in rows {
-            self.refresh_src(&row.mount.src);
-        }
-    }
-
-    fn inspect_cached(&self, src: &str) -> Option<crate::console::manager::mount_info::MountKind> {
-        self.entries.borrow().get(src).cloned()
-    }
-
-    pub(crate) fn label(&self, src: &str) -> String {
-        self.inspect_cached(src)
-            .map_or_else(|| "unknown".to_string(), |kind| kind.label())
-    }
-
-    pub(crate) fn github_web_url(&self, src: &str) -> Option<String> {
-        match self.inspect_cached(src)? {
-            crate::console::manager::mount_info::MountKind::Git {
-                origin: Some(crate::console::manager::mount_info::GitOrigin::Github { web_url, .. }),
-                ..
-            } => Some(web_url),
-            crate::console::manager::mount_info::MountKind::Missing
-            | crate::console::manager::mount_info::MountKind::Folder
-            | crate::console::manager::mount_info::MountKind::Git { .. } => None,
-        }
-    }
-
-    pub(crate) fn clear(&self) {
-        self.entries.borrow_mut().clear();
-    }
-}
+pub use crate::console::manager::mount_info_cache::MountInfoCache;
 
 /// Logical row in the manager list. Prefer over the raw `selected:
 /// usize` when reasoning about what the operator is pointing at.
