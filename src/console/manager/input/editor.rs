@@ -1,8 +1,10 @@
 //! Editor-stage dispatch: tab navigation, field focus, per-tab key
 //! handling, and the editor-level modal dispatcher.
 
+#[cfg(test)]
 use anyhow::Context as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use futures_util::FutureExt as _;
 
 use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
@@ -1709,24 +1711,23 @@ fn apply_role_input(
             "registering role repo for key={key:?} git={git:?}",
             git = source.git.as_str()
         );
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let mut runner = crate::docker::ShellRunner {
                 debug: crate::tui::is_debug_mode(),
             };
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .context("building tokio runtime for role registration")?;
-                rt.block_on(crate::runtime::register_agent_repo(
+            let result = std::panic::AssertUnwindSafe(async {
+                crate::runtime::register_agent_repo(
                     &thread_paths,
                     &selector,
                     &git_url,
                     &mut runner,
                     crate::tui::is_debug_mode(),
-                ))?;
+                )
+                .await?;
                 Ok::<_, anyhow::Error>(())
-            }))
+            })
+            .catch_unwind()
+            .await
             .unwrap_or_else(|payload| {
                 let panic_message = panic_payload_message(payload.as_ref());
                 Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
