@@ -833,8 +833,14 @@ async fn launch_role_runtime(
         "-e",
         &git_author_email,
     ]);
-    if *debug {
+    let debug_run_id_env = if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
+        crate::diagnostics::active_run().map(|r| format!("JACKIN_RUN_ID={}", r.run_id()))
+    } else {
+        None
+    };
+    if let Some(ref env) = debug_run_id_env {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
     }
     let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
         format!(

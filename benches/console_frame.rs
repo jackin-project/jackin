@@ -35,7 +35,7 @@ fn bench_list_render(c: &mut Criterion) {
             let mut state = build_list_state(&config);
             prepare_for_render(&mut state, &config, cwd, area);
             terminal
-                .draw(|frame| render(frame, &state, &config, cwd))
+                .draw(|frame| render(frame, area, &state, &config, cwd))
                 .unwrap();
         });
     });

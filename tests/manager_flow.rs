@@ -121,7 +121,7 @@ fn render_to_dump(state: &ManagerState<'_>, config: &AppConfig, cwd: &std::path:
     let backend = TestBackend::new(100, 30);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
-        jackin::console::manager::render(f, state, config, cwd);
+        jackin::console::manager::render(f, f.area(), state, config, cwd);
     })
     .unwrap();
     let buf = term.backend().buffer();

@@ -16,6 +16,42 @@ use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use crate::workspace::LoadWorkspaceInput;
 
+/// Split `area` into a main region and an optional 1-row debug bar at the
+/// bottom. Returns `(main_area, Some(debug_row))` when debug mode is on and
+/// the terminal has at least 2 rows; otherwise returns `(area, None)`.
+fn split_debug_area(
+    area: ratatui::layout::Rect,
+) -> (ratatui::layout::Rect, Option<ratatui::layout::Rect>) {
+    if !crate::tui::is_debug_mode() || area.height < 2 {
+        return (area, None);
+    }
+    let main = ratatui::layout::Rect {
+        height: area.height - 1,
+        ..area
+    };
+    let bar = ratatui::layout::Rect {
+        y: area.y + area.height - 1,
+        height: 1,
+        ..area
+    };
+    (main, Some(bar))
+}
+
+/// Render the 1-row `[debug]  run: <run_id>` status bar into `area`.
+fn render_debug_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, run_id: &str) {
+    use ratatui::style::Style;
+    use ratatui::widgets::Paragraph;
+    let text = format!("  [debug]  run: {run_id}  ");
+    frame.render_widget(
+        Paragraph::new(text).style(
+            Style::default()
+                .bg(jackin_tui::theme::DANGER_RED)
+                .fg(jackin_tui::theme::WHITE),
+        ),
+        area,
+    );
+}
+
 pub(super) fn quit_confirm_area(
     frame: ratatui::layout::Rect,
     confirm: &jackin_tui::components::ConfirmState,
@@ -279,14 +315,21 @@ pub async fn run_console<H: InstanceActionHandler>(
         }
 
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let area: ratatui::layout::Rect = terminal.size()?.into();
-            manager::prepare_for_render(ms, &config, cwd, area);
+            let full_area: ratatui::layout::Rect = terminal.size()?.into();
+            let (main_area, debug_bar_area) = split_debug_area(full_area);
+            manager::prepare_for_render(ms, &config, cwd, main_area);
             let confirm_state = state.quit_confirm.as_ref();
             terminal.draw(|frame| {
-                manager::render(frame, ms, &config, cwd);
+                manager::render(frame, main_area, ms, &config, cwd);
                 if let Some(confirm) = confirm_state {
-                    let area = quit_confirm_area(frame.area(), confirm);
+                    let area = quit_confirm_area(main_area, confirm);
                     jackin_tui::components::render_confirm_dialog(frame, area, confirm);
+                }
+                if let Some(bar_area) = debug_bar_area {
+                    let run_id = crate::diagnostics::active_run()
+                        .map(|r| r.run_id().to_string())
+                        .unwrap_or_default();
+                    render_debug_bar(frame, bar_area, &run_id);
                 }
             })?;
         }
@@ -476,7 +519,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                                         ),
                                     });
                                     terminal.draw(|frame| {
-                                        manager::render(frame, ms, &config, cwd);
+                                        let full_area = frame.area();
+                                        let (main_area, _debug_bar) = split_debug_area(full_area);
+                                        manager::render(frame, main_area, ms, &config, cwd);
                                     })?;
                                 }
                                 let result = action_handler.run_in_place(&container, action).await;

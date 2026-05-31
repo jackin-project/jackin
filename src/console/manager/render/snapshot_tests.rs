@@ -35,7 +35,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         prepare_for_render(state, config, cwd, area);
         terminal
-            .draw(|frame| render(frame, state, config, cwd))
+            .draw(|frame| render(frame, area, state, config, cwd))
             .unwrap();
         let buf = terminal.backend().buffer();
         (0..height)

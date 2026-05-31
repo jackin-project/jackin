@@ -176,7 +176,7 @@ where
         format!("Loading and resolving {}", role.key()),
     ));
     terminal.draw(|frame| {
-        manager::render(frame, ms, config, cwd);
+        manager::render(frame, frame.area(), ms, config, cwd);
     })?;
     ms.status_overlay = None;
     Ok(())

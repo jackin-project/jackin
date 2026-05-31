@@ -984,7 +984,13 @@ impl Dialog {
                 items + 4
             }
             Self::RenameTab { .. } => 5,
-            Self::ContainerInfo { .. } => 8,
+            Self::ContainerInfo { .. } => {
+                if crate::logging::debug_enabled() {
+                    10
+                } else {
+                    8
+                }
+            }
             Self::GitHubContext { .. } => 9,
             Self::ConfirmAction { .. } => 9,
             // No filter row: top border + items + bottom border.
@@ -2012,21 +2018,58 @@ fn render_container_info(
     copy_target_hovered: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "Container info");
-    let rows: [ContainerInfoRow; 4] = [
-        ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
-        ContainerInfoRow::new("Role", non_empty_or_dim(role)),
-        ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
-        ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
-    ];
-    render_info_rows(
-        buf,
-        box_row,
-        box_col,
-        width,
-        &rows,
-        copied.then_some(0),
-        copy_target_hovered.then_some(0),
-    );
+    if crate::logging::debug_enabled() {
+        let run_id = std::env::var("JACKIN_RUN_ID").unwrap_or_default();
+        let run_id_display = if run_id.is_empty() {
+            "(not set)".to_string()
+        } else {
+            run_id.clone()
+        };
+        let (run_log_display, run_log_href) = if run_id.is_empty() {
+            ("(not set)".to_string(), None)
+        } else {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+            let full_path = format!("{home}/.jackin/data/diagnostics/runs/{run_id}.jsonl");
+            let file_url = format!("file://{full_path}");
+            // Truncate display text to fit; the href always carries the full path.
+            let display = format!("~/.jackin/data/diagnostics/runs/{run_id}.jsonl");
+            (display, Some(file_url))
+        };
+        let run_log_href_ref = run_log_href.as_deref();
+        let rows: [ContainerInfoRow<'_>; 6] = [
+            ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
+            ContainerInfoRow::new("Role", non_empty_or_dim(role)),
+            ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
+            ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
+            ContainerInfoRow::new("Run ID", run_id_display),
+            ContainerInfoRow::new("Run log", run_log_display).hyperlink(run_log_href_ref),
+        ];
+        render_info_rows(
+            buf,
+            box_row,
+            box_col,
+            width,
+            &rows,
+            copied.then_some(0),
+            copy_target_hovered.then_some(0),
+        );
+    } else {
+        let rows: [ContainerInfoRow<'_>; 4] = [
+            ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
+            ContainerInfoRow::new("Role", non_empty_or_dim(role)),
+            ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
+            ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
+        ];
+        render_info_rows(
+            buf,
+            box_row,
+            box_col,
+            width,
+            &rows,
+            copied.then_some(0),
+            copy_target_hovered.then_some(0),
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

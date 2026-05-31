@@ -166,11 +166,11 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
 #[allow(clippy::too_many_lines)]
 pub fn render(
     frame: &mut Frame,
+    area: Rect,
     state: &ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    let area = frame.area();
     if let ManagerStage::Editor(editor) = &state.stage {
         editor::render_editor(frame, editor, config, state.op_available);
     } else if let ManagerStage::Settings(settings) = &state.stage {
