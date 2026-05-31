@@ -178,13 +178,14 @@ fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::l
             Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
+    let focused = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
         lines,
         0,
         state.env.scroll_y,
-        state.env.scroll_focused && state.env.modal.is_none(),
+        focused,
         None,
     );
 }
@@ -199,13 +200,14 @@ fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::
             Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
+    let focused = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
         lines,
         0,
         state.auth.scroll_y,
-        state.auth.scroll_focused && state.auth.modal.is_none(),
+        focused,
         title.as_deref(),
     );
 }
@@ -219,16 +221,18 @@ fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui:
             Style::default().fg(crate::console::widgets::DANGER_RED),
         )));
     }
+    let focused = !state.tab_bar_focused
+        && state.trust.scroll_focused
+        && state.auth.modal.is_none()
+        && state.env.modal.is_none()
+        && state.mounts.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
         lines,
         state.trust.scroll_x,
         state.trust.scroll_y,
-        state.trust.scroll_focused
-            && state.auth.modal.is_none()
-            && state.env.modal.is_none()
-            && state.mounts.modal.is_none(),
+        focused,
         None,
     );
 }

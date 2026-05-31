@@ -718,13 +718,14 @@ fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
 
 fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let lines = roles_tab_lines(state, config);
+    let focused = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
         lines,
         state.tab_scroll_x,
         state.tab_scroll_y,
-        state.tab_content_scroll_focused && state.modal.is_none(),
+        focused,
         None,
     );
 }
@@ -1067,13 +1068,14 @@ pub(in crate::console::manager) fn eligible_agents_for_override(
 #[allow(clippy::too_many_lines)]
 fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let lines = secrets_tab_lines(area, state, config);
+    let focused = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
         lines,
         state.tab_scroll_x,
         state.tab_scroll_y,
-        state.tab_content_scroll_focused && state.modal.is_none(),
+        focused,
         None,
     );
 }
@@ -1363,13 +1365,14 @@ pub(in crate::console::manager) fn render_secrets_key_line(
 fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let lines = auth_tab_lines(state, config);
     let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
+    let focused = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
         lines,
         state.tab_scroll_x,
         state.tab_scroll_y,
-        state.tab_content_scroll_focused && state.modal.is_none(),
+        focused,
         title.as_deref(),
     );
 }

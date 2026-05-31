@@ -172,6 +172,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'stat
                     &mut lines,
                     "Current directory",
                     is_selected,
+                    state.list_names_focused,
                     WHITE,
                     state.current_dir_expanded,
                     state.has_current_dir_active_instances(),
@@ -181,7 +182,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'stat
             ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
                 let instances = state.current_dir_active_instances();
                 if let Some(entry) = instances.get(*inst_idx) {
-                    push_tree_instance_line(&mut lines, entry, is_selected, &mut max_w);
+                    push_tree_instance_line(&mut lines, entry, is_selected, state.list_names_focused, &mut max_w);
                 }
             }
             ManagerListRow::SavedWorkspace(i) => {
@@ -192,6 +193,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'stat
                     &mut lines,
                     &ws.name,
                     is_selected,
+                    state.list_names_focused,
                     PHOSPHOR_GREEN,
                     expanded,
                     has_instances,
@@ -201,7 +203,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'stat
             ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
                 let instances = state.workspace_active_instances(*ws_idx);
                 if let Some(entry) = instances.get(*inst_idx) {
-                    push_tree_instance_line(&mut lines, entry, is_selected, &mut max_w);
+                    push_tree_instance_line(&mut lines, entry, is_selected, state.list_names_focused, &mut max_w);
                 }
             }
             ManagerListRow::NewWorkspace => {
@@ -209,6 +211,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'stat
                     &mut lines,
                     "+ New workspace",
                     is_selected,
+                    state.list_names_focused,
                     WHITE,
                     false,
                     false,
@@ -327,12 +330,13 @@ fn push_tree_workspace_line(
     lines: &mut Vec<Line<'static>>,
     name: &str,
     selected: bool,
+    show_cursor: bool,
     color: Color,
     expanded: bool,
     has_instances: bool,
     max_w: &mut usize,
 ) {
-    let cursor = if selected { "▸" } else { " " };
+    let cursor = if selected && show_cursor { "▸" } else { " " };
     // Build line as separate spans so line_width measures display columns
     // correctly for the ▶/▼ glyphs (same approach as the editor render).
     let line = if has_instances {
@@ -380,9 +384,10 @@ fn push_tree_instance_line(
     lines: &mut Vec<Line<'static>>,
     entry: &crate::instance::InstanceIndexEntry,
     selected: bool,
+    show_cursor: bool,
     max_w: &mut usize,
 ) {
-    let cursor = if selected { "▸" } else { " " };
+    let cursor = if selected && show_cursor { "▸" } else { " " };
     let label = format!("{}  {}", entry.instance_id, entry.role_key);
     let text_w = 1 + 4 + jackin_tui::display_cols(&label);
     *max_w = (*max_w).max(text_w);
