@@ -30,33 +30,70 @@ The host console uses a Ratatui-style Model/Update/View separation. This is a **
 
 ## TUI source code location — mandatory directory convention
 
-All code that directly renders, paints, or computes the terminal user interface must live in a designated TUI directory. This convention makes it possible to find every visual component in one place and prevents TUI logic from leaking into business-logic or I/O modules.
+All code for the terminal user interface (Model, Update, View, and event-loop wiring) lives in a single `tui/` directory per surface crate. Everything NOT in `tui/` is business logic — workspace resolution, Docker commands, config writes, network I/O, data models that have no visual representation.
 
-**Rule: TUI code has exactly three homes:**
+**The one rule:** if it is about what the operator sees and interacts with → `tui/`. If it is about data, Docker, or disk → outside `tui/`.
 
-1. **`crates/jackin-tui/`** — Shared components reused across surfaces (Panel, SelectList, HintBar, TabStrip, ScrollablePanel, etc.). Every shared widget lives here. Nothing in this crate is surface-specific.
+**Rule: TUI code has exactly two homes:**
 
-2. **`crates/<surface-crate>/src/tui/`** — Surface-specific TUI code for a crate that is not the shared library. Example: `crates/jackin-capsule/src/tui/` contains all capsule-specific rendering (status bar, pane borders, dialog rendering, socket backend, branch context bar). Example: `crates/jackin-tui-lookbook/src/` is already a dedicated TUI crate by definition.
+1. **`crates/jackin-tui/`** — Shared component library. Panels, pickers, scrollable blocks, hint bars, confirm dialogs, tab strips. Nothing surface-specific. Consumed by every other TUI crate.
 
-3. **`src/console/tui/`** — Console-specific TUI code for the host jackin binary. All workspace manager rendering, widget definitions, and terminal state management live here.
+2. **`crates/<surface-crate>/src/tui/`** — Everything TUI for that surface: Model (state structs), Update (message handlers, key dispatch), View (render functions, widgets), and event-loop wiring. For single-screen crates a flat layout is enough. For multi-screen crates (e.g. `jackin-console`), screens are sub-folders inside `tui/screens/`.
 
-**What belongs in a TUI directory:**
-- Ratatui widget implementations and `Widget` / `StatefulWidget` impls
-- Raw ANSI escape rendering functions
-- Screen layout and geometry helpers
-- Color token application and border rendering
-- Cursor management, focus state rendering, hint bar rendering
-- Lookbook stories for the surface's components
+**Single-screen crate layout** (`jackin-capsule`, `jackin-launch`):
+```
+src/tui/
+├── mod.rs          ← event-loop wiring
+├── model.rs        ← Model (state structs)
+├── update.rs       ← Update (message handlers, input dispatch)
+└── view/           ← View (render fns, pure &Model reads)
+    ├── statusbar.rs
+    ├── dialog.rs
+    └── ...
+```
 
-**What does NOT belong in a TUI directory:**
-- Business logic (workspace resolution, role loading, Docker commands)
-- Input event dispatch and key binding handlers (these live alongside business logic)
-- Network and I/O code
-- Config parsing
+**Multi-screen crate layout** (`jackin-console`):
+```
+src/tui/
+├── mod.rs          ← ConsoleState, event-loop wiring
+├── screens/
+│   ├── workspaces/ ← workspace list screen
+│   │   ├── model.rs
+│   │   ├── update.rs
+│   │   └── view.rs
+│   ├── editor/     ← workspace editor screen
+│   │   ├── model.rs
+│   │   ├── update.rs
+│   │   └── view.rs
+│   └── settings/   ← settings screen
+│       ├── model.rs
+│       ├── update.rs
+│       └── view.rs
+└── widgets/        ← surface-specific sub-components
+```
 
-**Enforcement:** Before adding a new file that renders to the terminal, check its location. If it goes into a module that is not a designated TUI directory, it is in the wrong place. Refactor it into the correct directory before the PR lands.
+**MUV contract inside `tui/`:**
+- `model.rs` — pure data structs; no rendering, no I/O.
+- `update.rs` — pure fn(Model + Message) → Effects; no rendering.
+- `view.rs` / `view/` — pure `&Model` reads; no mutations, no I/O, no side effects.
+- `mod.rs` / wiring — event loop that connects M + U + V; not M, U, or V itself.
 
-**Migration status (tracked in `TODO.md`):** The capsule and console TUI code is not yet reorganized into these directories. The migration is planned as a follow-up refactor. Until it lands, existing files stay in place; new TUI files must go into the correct directory.
+**What belongs in `tui/`** (everything TUI):
+- All three MUV layers for each screen
+- Ratatui widget implementations
+- Raw ANSI rendering functions
+- Focus state, scroll state, modal state
+- Event-loop wiring and terminal lifecycle
+
+**What does NOT belong in `tui/`** (stays outside as business logic):
+- Workspace resolution, role loading, Docker commands
+- Network and I/O calls
+- Config file writes and reads
+- Data models that have no visual representation (e.g. `session.rs` PTY management in the capsule)
+
+**Enforcement:** before adding any file, ask: "Would deleting this file affect workspace resolution, Docker, or config?" Yes → it does not go in `tui/`. No → it belongs in `tui/`.
+
+**Migration status:** Capsule `tui/` started (Phase 9). Console and launch surface migrations are Phase 10. New files must go into the correct directory now regardless of migration status.
 
 ---
 

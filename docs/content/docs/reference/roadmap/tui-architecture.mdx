@@ -1002,15 +1002,11 @@ When all phases complete, every TUI surface lives in its own crate with explicit
 | `jackin-launch` | 1 cockpit | `state.rs` (LaunchView) | `update.rs` (stages, pickers) | `tui/` (rain, rail, failure) | Phase 10 |
 | `jackin` binary | 0 | — | — | — routes CLI → crates | ongoing |
 
-**MUV contract in every crate:**
-- **Model** (`state.rs`) — pure data structs, no rendering, no I/O, no event handling.
-- **Update** (`update.rs` / `message.rs` / `input/`) — pure functions: receive Model + Message, mutate Model, return typed Effects. No rendering.
-- **View** (`tui/`) — pure reads of `&Model`, produce pixels. No mutations, no I/O, no side effects.
-- **Wiring** (`run.rs` / `daemon.rs`) — the event loop that calls all three. Not M, U, or V; just the runner.
+**The one rule:** if it is about what the operator sees and interacts with → `tui/`. If it is about data, Docker, or disk → outside `tui/`.
 
-**Rule for single-screen crates** (capsule, launch): one `tui/` at the crate root.
-**Rule for multi-screen crates** (console): split by screen first (`workspaces/`, `editor/`, `settings/`), then `tui/` inside each screen folder.
-**`jackin-tui`** is the shared View library — pure View primitives consumed by all crates; never contains screen-specific Model or Update code.
+`tui/` contains ALL THREE layers (Model, Update, View) plus event-loop wiring. The boundary is TUI experience vs. business logic, not View vs. Update+Model. For single-screen crates, `tui/` is flat. For multi-screen crates (console), screens are sub-folders inside `tui/screens/` — see [TUI Design Decisions](/reference/tui-design-decisions/#tui-source-code-location--mandatory-directory-convention) for the full layouts.
+
+**`jackin-tui`** is the shared component library — consumed by every crate; never contains surface-specific code.
 
 ### Phase 10 — Extract `jackin-console` and `jackin-launch` crates
 
