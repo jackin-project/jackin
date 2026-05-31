@@ -181,11 +181,6 @@ pub(super) fn render_list_body(
     }
 }
 
-#[cfg(test)]
-pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
-    crate::console::manager::list_geometry::list_names_content_width(state, viewport)
-}
-
 fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'static>>, usize) {
     let visual_rows = state.visual_rows_vec();
     let visual_selected = state.visual_selected();
@@ -1293,10 +1288,9 @@ fn render_agents_subpanel_scrollable(
 
 #[cfg(test)]
 mod list_name_scroll_tests {
-    use super::{
-        PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, list_names_content_width, render_list_body,
-    };
+    use super::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, render_list_body};
     use crate::config::AppConfig;
+    use crate::console::manager::list_geometry::list_names_content_width;
     use crate::console::manager::state::{ManagerListRow, ManagerState};
     use crate::workspace::WorkspaceConfig;
     use jackin_tui::components::scrollable_panel::max_offset;
