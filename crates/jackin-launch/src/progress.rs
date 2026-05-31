@@ -10,7 +10,7 @@ use crate::renderer::RichRenderer;
 use crate::tui::build_log::build_log_scroll_filled;
 use crate::{
     LaunchDiagnostics, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchMessage,
-    LaunchStage, LaunchView, PromptResult, StageStatus, initial_view, update_launch_view,
+    LaunchStage, PromptResult, StageStatus, initial_view, update_launch_view,
 };
 
 const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
@@ -152,18 +152,10 @@ impl LaunchProgress {
         self.diagnostics.run_id()
     }
 
-    /// Mutate the shared view; the background render task redraws it on its next
-    /// tick (≤33ms), so callers never block on drawing.
-    fn with_view(&self, f: impl FnOnce(&mut LaunchView)) {
-        if let Ok(mut view) = self.view.lock() {
-            f(&mut view);
-        }
-    }
-
     fn update_view(&self, msg: LaunchMessage) {
-        self.with_view(|view| {
-            let _dirty = update_launch_view(view, msg);
-        });
+        if let Ok(mut view) = self.view.lock() {
+            let _dirty = update_launch_view(&mut view, msg);
+        }
     }
 
     pub fn started(&mut self, identity: LaunchIdentity) {
