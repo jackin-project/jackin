@@ -16,7 +16,9 @@ use ratatui::{
 use crate::layout::Tab;
 
 use jackin_tui::{
-    PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE, components::FocusPalette, theme::color as tc,
+    PHOSPHOR_DARK,
+    components::{FocusPalette, TabStrip},
+    theme::color as tc,
 };
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
@@ -44,41 +46,18 @@ impl Widget for StatusBarWidget<'_> {
 
         // Row 0: brand pill + tabs
         let row0 = Rect { height: 1, ..area };
-        let mut spans: Vec<Span<'static>> = vec![
-            Span::styled(
-                BRAND_TEXT.to_string(),
-                Style::default()
-                    .bg(BRAND_BG_COLOR)
-                    .fg(BRAND_FG_COLOR)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" "),
-        ];
+        ratatui::widgets::Paragraph::new(Line::from(Span::styled(
+            BRAND_TEXT,
+            Style::default()
+                .bg(BRAND_BG_COLOR)
+                .fg(BRAND_FG_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )))
+        .style(Style::default().bg(Color::Black))
+        .render(row0, buf);
 
-        for (i, tab) in self.tabs.iter().enumerate() {
-            let active = i == self.active_tab;
-            let label = tab.label();
-            if active {
-                spans.push(Span::styled(
-                    format!(" {label} "),
-                    Style::default()
-                        .bg(tc(WHITE))
-                        .fg(Color::Black)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            } else {
-                spans.push(Span::styled(
-                    format!(" {label} "),
-                    Style::default().fg(tc(PHOSPHOR_GREEN)),
-                ));
-            }
-        }
-
-        ratatui::widgets::Paragraph::new(Line::from(spans))
-            .style(Style::default().bg(Color::Black))
-            .render(row0, buf);
-
-        // Row 1: underline separator
+        // Row 1: baseline separator. `TabStrip` renders over the active
+        // tab underline below, preserving one shared tab implementation.
         if area.height > 1 {
             let row1 = Rect {
                 y: area.y + 1,
@@ -91,6 +70,26 @@ impl Widget for StatusBarWidget<'_> {
                 Style::default().fg(tc(PHOSPHOR_DARK)),
             ))
             .render(row1, buf);
+        }
+
+        let brand_cols = u16::try_from(jackin_tui::display_cols(BRAND_TEXT)).unwrap_or(u16::MAX);
+        let tab_x = area.x.saturating_add(brand_cols).saturating_add(1);
+        if tab_x < area.right() {
+            let tab_area = Rect {
+                x: tab_x,
+                width: area.right().saturating_sub(tab_x),
+                ..area
+            };
+            let labels: Vec<(&str, bool)> = self
+                .tabs
+                .iter()
+                .enumerate()
+                .map(|(i, tab)| (tab.label(), i == self.active_tab))
+                .collect();
+            TabStrip::new(&labels)
+                .focused(false)
+                .paragraph()
+                .render(tab_area, buf);
         }
     }
 }
@@ -170,6 +169,30 @@ mod tests {
         // Brand pill should appear in row 0
         let row0: String = (0..5).map(|x| buf[(x, 0)].symbol().to_string()).collect();
         assert!(row0.contains("▓"), "brand pill missing: {row0:?}");
+    }
+
+    #[test]
+    fn status_bar_renders_shared_tab_underline() {
+        let tabs = [Tab::new_single("shell", 1), Tab::new_single("agent", 2)];
+        let backend = TestBackend::new(80, 2);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    StatusBarWidget {
+                        tabs: &tabs,
+                        active_tab: 0,
+                        cols: 80,
+                    },
+                    frame.area(),
+                );
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        let tab_start = u16::try_from(jackin_tui::display_cols(BRAND_TEXT)).unwrap() + 1;
+
+        assert_eq!(buf[(tab_start, 1)].symbol(), "━");
+        assert_eq!(buf[(tab_start, 1)].fg, tc(jackin_tui::WHITE));
     }
 
     #[test]
