@@ -202,6 +202,17 @@ The right side of every jackin' status bar carries up to two clickable chips:
 
 **Implementation applies to all status bar surfaces:** the capsule bottom bar, the host console bottom bar, and the launch cockpit status bar. Any status bar that shows an instance ID or run ID must wire the click handlers to the appropriate dialog.
 
+### Version display — two rows, consistent format
+
+Wherever the jackin' version and the capsule version appear together (ContainerInfo dialog, any info panel), they must appear on **separate rows** using the canonical names:
+
+```
+jackin:          0.6.0-dev+a7ada81
+jackin-capsule:  0.6.0-dev+d4998f5
+```
+
+This matches `jackin --version` output (which prints `jackin <version>`) and `jackin-capsule --version` output. Never combine them on one line with a separator (e.g. `host x · capsule y`) — the two-line format is cleaner and matches what the operator sees on the CLI.
+
 ### Status bar is always white; debug run ID is a red chip
 
 **The bottom status bar must always render on a white background.** This is invariant regardless of debug mode, surface, or content. The white band is the visual anchor that separates TUI chrome from terminal content — a non-white status bar is a design violation.

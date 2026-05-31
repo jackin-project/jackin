@@ -986,11 +986,11 @@ impl Dialog {
             Self::RenameTab { .. } => 5,
             Self::ContainerInfo { .. } => {
                 if crate::logging::debug_enabled() {
-                    // 4 base rows + Version + Run ID + Run log + box chrome (4)
-                    11
+                    // 4 base rows + jackin + jackin-capsule + Run ID + Run log + box chrome (4)
+                    12
                 } else {
-                    // 4 base rows + Version + box chrome (4)
-                    9
+                    // 4 base rows + jackin + jackin-capsule + box chrome (4)
+                    10
                 }
             }
             Self::GitHubContext { .. } => 9,
@@ -2056,7 +2056,6 @@ fn render_container_info(
 
     let capsule_ver = env!("JACKIN_CAPSULE_VERSION");
     let host_ver = std::env::var("JACKIN_HOST_VERSION").unwrap_or_else(|_| "unknown".to_string());
-    let version_display = format!("host {host_ver}  ·  capsule {capsule_ver}");
 
     if crate::logging::debug_enabled() {
         let run_id = std::env::var("JACKIN_RUN_ID").unwrap_or_default();
@@ -2075,12 +2074,13 @@ fn render_container_info(
             (display, Some(file_url))
         };
         let run_log_href_ref = run_log_href.as_deref();
-        let rows: [ContainerInfoRow<'_>; 7] = [
+        let rows: [ContainerInfoRow<'_>; 8] = [
             ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
             ContainerInfoRow::new("Role", non_empty_or_dim(role)),
             ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
             ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
-            ContainerInfoRow::new("Version", version_display),
+            ContainerInfoRow::new("jackin", host_ver.clone()),
+            ContainerInfoRow::new("jackin-capsule", capsule_ver.to_string()),
             ContainerInfoRow::new("Run ID", run_id_display),
             ContainerInfoRow::new("Run log", run_log_display).hyperlink(run_log_href_ref),
         ];
@@ -2094,12 +2094,13 @@ fn render_container_info(
             copy_target_hovered.then_some(0),
         );
     } else {
-        let rows: [ContainerInfoRow<'_>; 5] = [
+        let rows: [ContainerInfoRow<'_>; 6] = [
             ContainerInfoRow::new("Container ID", container_name.to_string()).emphasised(),
             ContainerInfoRow::new("Role", non_empty_or_dim(role)),
             ContainerInfoRow::new("Agent", non_empty_or_dim(focused_agent.unwrap_or(""))),
             ContainerInfoRow::new("Workdir", non_empty_or_dim(workdir)),
-            ContainerInfoRow::new("Version", version_display),
+            ContainerInfoRow::new("jackin", host_ver),
+            ContainerInfoRow::new("jackin-capsule", capsule_ver.to_string()),
         ];
         render_info_rows(
             buf,
