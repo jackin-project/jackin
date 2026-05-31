@@ -19,8 +19,8 @@ mod tests {
             prepare_for_render, render,
             state::{
                 EditorState, EditorTab, GlobalMountConfirm, GlobalMountModal, ManagerStage,
-                ManagerState, Modal, SettingsEnvModal, SettingsEnvScope, SettingsEnvTextTarget,
-                SettingsState,
+                ManagerState, Modal, MountScrollFocus, SettingsEnvModal, SettingsEnvScope,
+                SettingsEnvTextTarget, SettingsState,
             },
         },
         workspace::WorkspaceConfig,
@@ -114,6 +114,31 @@ mod tests {
     fn test_cwd() -> std::path::PathBuf {
         // Use a stable path so snapshots are reproducible.
         std::path::PathBuf::from("/workspace")
+    }
+
+    fn detail_config() -> AppConfig {
+        toml::from_str(
+            r#"
+[roles."chainargos/agent-smith"]
+git = "https://example.invalid/agent-smith.git"
+
+[docker.mounts]
+cache = { src = "/cache", dst = "/cache", readonly = false }
+
+[docker.mounts."chainargos/agent-smith"]
+secrets = { src = "/secrets", dst = "/secrets", readonly = true }
+
+[workspaces.ws]
+workdir = "/workspace"
+allowed_roles = ["chainargos/agent-smith"]
+
+[[workspaces.ws.mounts]]
+src = "/workspace"
+dst = "/workspace"
+readonly = false
+"#,
+        )
+        .expect("valid detail-pane config")
     }
 
     fn list_with_modal<'a>(
@@ -308,6 +333,74 @@ mod tests {
 
         for (name, mut state) in cases {
             let buf = render_manager_buffer(&mut state, &config, &cwd, 100, 28);
+            assert_eq!(
+                green_border_cluster_count(&buf),
+                1,
+                "{name} must render exactly one PHOSPHOR_GREEN border cluster"
+            );
+        }
+    }
+
+    #[test]
+    fn host_console_list_detail_transitions_have_one_green_border_cluster() {
+        let cwd = test_cwd();
+
+        let mut cases: Vec<(&str, AppConfig, ManagerState<'_>)> = Vec::new();
+
+        let config = detail_config();
+        let mut state = ManagerState::from_config(&config, &cwd);
+        state.selected = 0;
+        state.list_names_focused = true;
+        cases.push(("current dir list focus", config, state));
+
+        let config = detail_config();
+        let mut state = ManagerState::from_config(&config, &cwd);
+        state.selected = 0;
+        state.list_names_focused = false;
+        state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+        cases.push(("current dir mounts focus", config, state));
+
+        let config = detail_config();
+        let mut state = ManagerState::from_config(&config, &cwd);
+        state.selected = 0;
+        state.list_names_focused = false;
+        state.list_scroll_focus = Some(MountScrollFocus::Global);
+        cases.push(("current dir global mounts focus", config, state));
+
+        let config = detail_config();
+        let mut state = ManagerState::from_config(&config, &cwd);
+        state.selected = 1;
+        state.list_names_focused = true;
+        cases.push(("saved workspace list focus", config, state));
+
+        for (name, focus) in [
+            ("saved workspace mounts focus", MountScrollFocus::Workspace),
+            (
+                "saved workspace global mounts focus",
+                MountScrollFocus::Global,
+            ),
+            (
+                "saved workspace role global mounts focus",
+                MountScrollFocus::RoleGlobal,
+            ),
+            ("saved workspace roles focus", MountScrollFocus::Roles),
+        ] {
+            let config = detail_config();
+            let mut state = ManagerState::from_config(&config, &cwd);
+            state.selected = 1;
+            state.list_names_focused = false;
+            state.list_scroll_focus = Some(focus);
+            cases.push((name, config, state));
+        }
+
+        let config = detail_config();
+        let mut state = ManagerState::from_config(&config, &cwd);
+        state.selected = 2;
+        state.list_names_focused = true;
+        cases.push(("new workspace detail focus", config, state));
+
+        for (name, config, mut state) in cases {
+            let buf = render_manager_buffer(&mut state, &config, &cwd, 110, 30);
             assert_eq!(
                 green_border_cluster_count(&buf),
                 1,

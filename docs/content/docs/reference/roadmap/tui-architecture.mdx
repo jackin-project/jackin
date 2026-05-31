@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Substantially implemented — Phases 0–9 and key Phase 5 goals are complete on `feature/tui-architecture`; Phases 8c, 8d, and 8e are complete on 2026-05-31. Phase 10 is substantially implemented for `jackin-launch`; `jackin-console` extraction plus the remaining Phase 8b and 8f audit tails remain as planned follow-up work.
+**Status**: Substantially implemented — Phases 0–9 and key Phase 5 goals are complete on `feature/tui-architecture`; Phases 8b, 8c, 8d, and 8e are complete on 2026-05-31. Phase 10 is substantially implemented for `jackin-launch`; `jackin-console` extraction plus the remaining Phase 8f audit tail remain as planned follow-up work.
 
 **Completed:**
 - All host `ManagerMessage` update paths are wired: list navigation, editor/settings tabs, mouse selection, modal open/dismiss, inline picker dismissals, instance action errors.
@@ -937,7 +937,7 @@ The container info dialog now opens from every status-bar/status-footer chip sur
 
 ### Phase 8b — Focus correctness audit
 
-**Partially implemented on `feature/tui-architecture` (2026-05-31):** fixed the editor General and settings Mounts border/cursor expression mismatches; added focused editor General regression coverage; added one-green-border-cluster tests for every host console content tab plus the main list modal variants (`Confirm`, `SaveDiscardCancel`, `StatusPopup`, file browser, destination choice, workdir picker, GitHub picker, role picker, source picker, and scope picker), all global-mount submodal variants, and the editor/settings auth, source-picker, role-picker, 1Password-picker, and confirm submodal variants. Remaining work: enumerate list-view detail-panel transitions.
+**Complete on `feature/tui-architecture` (2026-05-31):** fixed the editor General and settings Mounts border/cursor expression mismatches; fixed stale list-detail scroll focus so fallback focus returns to the workspace list instead of leaving zero focused borders; added focused editor General regression coverage; added one-green-border-cluster tests for every host console content tab, list-detail focus transition, main list modal variant (`Confirm`, `SaveDiscardCancel`, `StatusPopup`, file browser, destination choice, workdir picker, GitHub picker, role picker, source picker, and scope picker), all global-mount submodal variants, and the editor/settings auth, source-picker, role-picker, 1Password-picker, and confirm submodal variants.
 
 Systematically audit every screen in the host console and settings for focus violations:
 
@@ -953,9 +953,7 @@ Systematically audit every screen in the host console and settings for focus vio
 
 5. **Modal steals focus from content block.** When a modal opens, all underlying content blocks must render with `focused = false` regardless of their scroll state — the modal is the sole focus owner.
 
-**Known violations already fixed on this branch:** settings General tab hardcoded `false`, tab click not setting `tab_bar_focused`, sidebar focus clearing on resize.
-
-**Known remaining gaps to audit:** all editor tabs under modal, all settings tabs under modal, list-view detail panels after workspace change, any surface added after this audit passes.
+**Known violations fixed on this branch:** settings General tab hardcoded `false`, tab click not setting `tab_bar_focused`, stale sidebar focus clearing on resize, and stale list-detail scroll focus clearing without returning ownership to the list.
 
 ### Phase 9 — TUI source directory convention migration
 

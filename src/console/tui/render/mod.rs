@@ -558,6 +558,9 @@ pub(crate) fn clamp_list_scroll_for_area(
         state.list_roles_scroll_x = 0;
         state.list_roles_scroll_y = 0;
         state.list_scroll_focus = None;
+        if !state.preview_focused {
+            state.list_names_focused = true;
+        }
     }
 
     // Fix 1: Clear stale scroll focus when the focused block no longer
@@ -567,6 +570,7 @@ pub(crate) fn clamp_list_scroll_for_area(
         && !focused_block_still_scrollable(focus, sidebar_areas.as_ref())
     {
         state.list_scroll_focus = None;
+        state.list_names_focused = true;
     }
 
     // Clamp left-pane name scroll to valid range.
