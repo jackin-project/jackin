@@ -683,6 +683,63 @@ pub(in crate::console) fn apply_op_picker_to_auth_form(
     apply_op_picker_to_auth_form_with_runner(editor, op_ref, &runner);
 }
 
+/// Apply a committed op picker selection after the 1Password read has already
+/// succeeded on the `spawn_blocking` thread. Called from the `run_console`
+/// poll loop — the read was verified asynchronously so Touch ID / the 1Password
+/// desktop dialog did not freeze the TUI reactor.
+///
+/// The auth form is on `editor.modal_parents` (it was stashed when the
+/// `OpPicker` opened) — pop it, set the `OpRef` without re-reading, and
+/// re-mount with focus on Save.
+pub(in crate::console) fn apply_op_picker_to_auth_form_committed(
+    editor: &mut EditorState<'_>,
+    op_ref: crate::operator_env::OpRef,
+) {
+    let Some(Modal::AuthForm {
+        target,
+        mut state,
+        focus,
+        literal_buffer,
+    }) = editor.modal_parents.pop()
+    else {
+        log_missing_return_path(
+            AUTH_MISSING_OP_COMMIT,
+            "apply_op_picker_to_auth_form_committed",
+            " — async OpRef commit dropped",
+        );
+        return;
+    };
+    // The read already succeeded; set the ref directly without re-reading.
+    state.set_op_ref(op_ref);
+    editor.modal = Some(Modal::AuthForm {
+        target,
+        state,
+        focus: AuthFormFocus::Save,
+        literal_buffer,
+    });
+    // `focus` from the destructuring above is not forwarded (we always land on
+    // Save after a successful commit), so suppress the unused-variable warning.
+    let _ = focus;
+}
+
+/// Called when the async 1Password read for an op picker commit fails
+/// (Touch ID rejected, network error, vault not found, etc.). Re-mounts the
+/// `ErrorPopup` over the stashed auth form so the operator sees the error;
+/// dismissing the popup restores the form via
+/// `restore_auth_form_after_op_picker_cancel`.
+///
+/// The auth form remains on `editor.modal_parents` (it was NOT popped by the
+/// async path before spawning) so the cancel/restore path can lift it back.
+pub(in crate::console) fn apply_op_picker_commit_failed(
+    editor: &mut EditorState<'_>,
+    error: anyhow::Error,
+) {
+    use jackin_tui::components::ErrorPopupState;
+    editor.modal = Some(Modal::ErrorPopup {
+        state: ErrorPopupState::new("1Password read failed", error.to_string()),
+    });
+}
+
 /// Restore the auth-form modal unchanged after the operator cancels
 /// the `OpPicker` or the literal `TextInput`. Both side modals share
 /// the same recovery shape, so the same helper handles both.

@@ -573,6 +573,11 @@ pub struct SettingsAuthState {
     /// global Claude) rather than a browse/provide pick.
     pub generating_token: bool,
     pub error: Option<String>,
+    /// In-flight 1Password read for an op-picker auth-form commit in the
+    /// settings panel. Spawned on `spawn_blocking` so Touch ID / the 1Password
+    /// desktop dialog don't freeze the TUI reactor. Polled each tick by the
+    /// outer console loop.
+    pub pending_op_commit: Option<PendingOpCommit>,
     pub scroll_y: u16,
     pub scroll_focused: bool,
 }
@@ -809,10 +814,34 @@ pub struct EditorState<'a> {
     /// completes. The outer console loop polls this each tick so the reactor is
     /// not blocked while the Docker/git check runs on the `spawn_blocking` pool.
     pub pending_drift_check: Option<PendingDriftCheck>,
+    /// In-flight 1Password read for an op-picker auth-form commit. Spawned on
+    /// `spawn_blocking` so Touch ID / the 1Password desktop dialog don't freeze
+    /// the TUI reactor. Polled each tick by the outer console loop.
+    pub pending_op_commit: Option<PendingOpCommit>,
     /// Footer height (rows) the renderer last laid out, cached so mouse
     /// hit-testing subtracts the same dynamic footer the frame drew rather than
     /// a stale constant — otherwise clicks near the bottom mis-map.
     pub cached_footer_h: u16,
+}
+
+/// In-flight 1Password read triggered by an op picker commit from the auth form.
+/// Spawned on a `spawn_blocking` thread so Touch ID / the 1Password desktop
+/// dialog don't freeze the TUI reactor. The receiver is polled each tick; on
+/// completion the result is applied via the `_committed` or `_failed` helpers.
+pub struct PendingOpCommit {
+    /// The op reference that was committed (preserved so the `_committed`
+    /// helper can set it on the form after the read succeeds).
+    pub op_ref: crate::operator_env::OpRef,
+    /// Oneshot receiver for the `spawn_blocking` result.
+    pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
+}
+
+impl std::fmt::Debug for PendingOpCommit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingOpCommit")
+            .field("op_ref", &self.op_ref)
+            .finish_non_exhaustive()
+    }
 }
 
 /// In-flight isolation-drift check for a save operation.
@@ -1291,6 +1320,7 @@ impl SettingsAuthState {
             modal_parents: Vec::new(),
             generating_token: false,
             error: None,
+            pending_op_commit: None,
             scroll_y: 0,
             scroll_focused: false,
         }
@@ -2252,6 +2282,57 @@ impl ManagerState<'_> {
         result.map(|r| (check, r))
     }
 
+    /// Poll the in-flight 1Password op-ref read for the auth-form op picker commit.
+    ///
+    /// Returns `Some((op_ref, result, is_settings))` when the read has finished,
+    /// taking ownership so the caller can apply it via `_committed` or `_failed`.
+    /// `is_settings` is `true` when the pending commit belongs to the Settings
+    /// auth state rather than the editor auth form.
+    /// Returns `None` when the read is still in progress or no commit is pending.
+    pub(crate) fn poll_pending_op_commit(
+        &mut self,
+    ) -> Option<(crate::operator_env::OpRef, anyhow::Result<()>, bool)> {
+        // Editor path.
+        if let ManagerStage::Editor(editor) = &mut self.stage {
+            if let Some(pending) = editor.pending_op_commit.as_mut() {
+                let result = match pending.rx.try_recv() {
+                    Ok(result) => Some(result),
+                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => None,
+                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                        Some(Err(anyhow::anyhow!("op read worker disconnected")))
+                    }
+                };
+                if result.is_some() {
+                    let ManagerStage::Editor(editor) = &mut self.stage else {
+                        unreachable!()
+                    };
+                    let pending = editor.pending_op_commit.take().expect("polled above");
+                    return result.map(|r| (pending.op_ref, r, false));
+                }
+            }
+        }
+        // Settings path.
+        if let ManagerStage::Settings(settings) = &mut self.stage {
+            if let Some(pending) = settings.auth.pending_op_commit.as_mut() {
+                let result = match pending.rx.try_recv() {
+                    Ok(result) => Some(result),
+                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => None,
+                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                        Some(Err(anyhow::anyhow!("op read worker disconnected")))
+                    }
+                };
+                if result.is_some() {
+                    let ManagerStage::Settings(settings) = &mut self.stage else {
+                        unreachable!()
+                    };
+                    let pending = settings.auth.pending_op_commit.take().expect("polled above");
+                    return result.map(|r| (pending.op_ref, r, true));
+                }
+            }
+        }
+        None
+    }
+
     fn spawn_instance_refresh_if_due(&mut self, paths: &crate::paths::JackinPaths) {
         const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
         if self.instances_refresh_rx.is_some() {
@@ -2672,6 +2753,7 @@ impl EditorState<'_> {
             pending_token_generate: None,
             pending_role_load: None,
             pending_drift_check: None,
+            pending_op_commit: None,
             cached_footer_h: 1,
         };
         state.refresh_mount_info_cache();
@@ -2712,6 +2794,7 @@ impl EditorState<'_> {
             pending_token_generate: None,
             pending_role_load: None,
             pending_drift_check: None,
+            pending_op_commit: None,
             cached_footer_h: 1,
         };
         state.refresh_mount_info_cache();

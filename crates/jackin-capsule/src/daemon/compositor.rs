@@ -104,6 +104,11 @@ impl Multiplexer {
             None
         };
 
+        // Snapshot scrollback state for the focused session before the draw closure.
+        let scrollback_active = focused_id
+            .and_then(|id| self.sessions.get(&id))
+            .is_some_and(|s| s.scrollback_offset != 0);
+
         let sessions = &self.sessions;
         let status_bar = StatusBarWidget {
             tabs,
@@ -136,6 +141,16 @@ impl Multiplexer {
                 }
                 return;
             }
+
+            // Hint bar: one row above the branch context bar (no dialog open).
+            let hint_spans = crate::dialog::main_view_hint(scrollback_active);
+            let hint_area = RatatuiRect {
+                x: 0,
+                y: term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1),
+                width: term_cols,
+                height: 1,
+            };
+            jackin_tui::components::render_hint_bar(frame, hint_area, hint_spans);
 
             // Pane bodies + borders
             for pane in &panes {
@@ -313,6 +328,14 @@ impl Multiplexer {
             self.status_bar.instance_id_label(),
             self.hover_target,
         );
+
+        // Hint bar: one row above the branch context bar.
+        let scrollback_active = focused_id
+            .and_then(|id| self.sessions.get(&id))
+            .is_some_and(|s| s.scrollback_offset != 0);
+        let hint_spans = crate::dialog::main_view_hint(scrollback_active);
+        let hint_row = self.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1);
+        crate::dialog::render_hint_row(&mut buf, hint_row, self.term_cols, hint_spans);
 
         self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
 

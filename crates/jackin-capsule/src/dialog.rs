@@ -1514,6 +1514,39 @@ fn step_selectable(rows: &[PickerRow], from: usize, forward: bool) -> usize {
 
 use jackin_tui::{HintSpan, hint_row_cols};
 
+/// Hint shown in the main pane view when no dialog is open.
+const MAIN_VIEW_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Ctrl+\\"),
+    HintSpan::Text("menu"),
+    HintSpan::GroupSep,
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("scroll"),
+    HintSpan::GroupSep,
+    HintSpan::Key("click"),
+    HintSpan::Text("focus pane"),
+];
+
+/// Hint shown when the operator is in scrollback mode.
+const SCROLLBACK_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("scroll"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("exit scrollback"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl+\\"),
+    HintSpan::Text("menu"),
+];
+
+/// Return the appropriate hint spans for the main view (no dialog open).
+pub(crate) fn main_view_hint(scrollback_active: bool) -> &'static [HintSpan<'static>] {
+    if scrollback_active {
+        SCROLLBACK_HINT
+    } else {
+        MAIN_VIEW_HINT
+    }
+}
+
 const PALETTE_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↑↓"),
     HintSpan::Text("navigate"),
@@ -2338,7 +2371,7 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
 
 /// Compute the visual column width of a hint span row. Matches the
 /// formatting in `render_hint_row` so centring is exact.
-fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
+pub(crate) fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
     let total = hint_row_cols(spans);
     let padded_total = total.saturating_add(4);
     if padded_total > term_cols as usize {

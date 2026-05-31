@@ -321,6 +321,7 @@ const TEXT_FILE_BUSY_OS_ERROR: i32 = 26;
 /// Tests inject a different runner (e.g. `TestOpRunner`) rather than
 /// using an env-var seam — keeps the crate `unsafe_code = "forbid"`
 /// lint intact and tests free of process-env mutation.
+#[derive(Clone)]
 pub struct OpCli {
     binary: String,
     timeout: std::time::Duration,

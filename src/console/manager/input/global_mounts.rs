@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::operator_env::OpRunner as _;
 
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::render::global_mounts::{
@@ -670,7 +671,26 @@ pub(super) fn handle_settings_auth_modal(
                 ) => unreachable!("settings-auth browse OpPicker runs in Browse mode"),
                 ModalOutcome::Commit(
                     crate::console::widgets::op_picker::OpPickerSelection::Existing(op_ref),
-                ) => apply_op_picker_to_settings_auth_form(auth, op_ref),
+                ) => {
+                    // Spawn the 1Password read on a blocking thread so Touch
+                    // ID / the 1Password desktop dialog don't freeze the TUI
+                    // reactor. The outer run_console loop polls the receiver
+                    // each tick and applies the result via _committed / _failed.
+                    let runner = crate::operator_env::OpCli::new()
+                        .with_account(op_ref.account.clone());
+                    let op = op_ref.op.clone();
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    tokio::task::spawn_blocking(move || {
+                        let result = runner.read(&op).map(|_| ());
+                        let _ = tx.send(result);
+                    });
+                    auth.pending_op_commit = Some(
+                        crate::console::manager::state::PendingOpCommit { op_ref, rx },
+                    );
+                    // Close the OpPicker — the auth form stays stashed on
+                    // modal_parents so the _committed / _failed helpers find it.
+                    auth.modal = None;
+                }
                 ModalOutcome::Cancel => restore_settings_auth_form(auth),
                 ModalOutcome::Continue => auth.modal = Some(modal),
             }
@@ -859,6 +879,53 @@ fn apply_op_picker_to_settings_auth_form_with_runner<R: crate::operator_env::OpR
             auth.error = Some(format!("1Password read failed: {err}"));
         }
     }
+}
+
+/// Apply a committed op picker selection to the settings auth form after the
+/// 1Password read has already succeeded on the `spawn_blocking` thread. Called
+/// from the `run_console` poll loop — the read was verified asynchronously so
+/// Touch ID / the 1Password desktop dialog did not freeze the TUI reactor.
+///
+/// The auth form is on `auth.modal_parents` — pop it, set the `OpRef` without
+/// re-reading, and re-mount with focus on Save.
+pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
+    auth: &mut super::super::state::SettingsAuthState,
+    op_ref: crate::operator_env::OpRef,
+) {
+    let Some(SettingsAuthModal::AuthForm {
+        target,
+        mut state,
+        literal_buffer,
+        ..
+    }) = auth.modal_parents.pop()
+    else {
+        crate::debug_log!(
+            "auth",
+            "apply_op_picker_to_settings_auth_form_committed: modal_parents missing \
+             — async OpRef commit dropped"
+        );
+        return;
+    };
+    // The read already succeeded; set the ref directly without re-reading.
+    state.set_op_ref(op_ref);
+    auth.modal = Some(SettingsAuthModal::AuthForm {
+        target,
+        state,
+        focus: crate::console::manager::state::AuthFormFocus::Save,
+        literal_buffer,
+    });
+}
+
+/// Called when the async 1Password read for a settings auth-form op picker
+/// commit fails (Touch ID rejected, network error, vault not found, etc.).
+/// Surfaces the error through `auth.error` (same slot the synchronous path
+/// used); the auth form stays stashed on `auth.modal_parents` so
+/// `restore_settings_auth_form` can bring it back on the next user action.
+pub(in crate::console) fn apply_op_picker_settings_commit_failed(
+    auth: &mut super::super::state::SettingsAuthState,
+    error: anyhow::Error,
+) {
+    auth.error = Some(format!("1Password read failed: {error}"));
 }
 
 fn persist_settings_auth_form(

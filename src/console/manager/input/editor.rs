@@ -3,6 +3,7 @@
 
 use anyhow::Context as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::operator_env::OpRunner as _;
 
 use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
@@ -1243,7 +1244,24 @@ pub(super) fn handle_editor_modal(
                     // `pending_auth_form_return` exactly when it's the
                     // caller, so the two paths can never collide.
                     if !editor.modal_parents.is_empty() {
-                        super::auth::apply_op_picker_to_auth_form(editor, op_ref);
+                        // Spawn the 1Password read on a blocking thread so Touch
+                        // ID / the 1Password desktop dialog don't freeze the TUI
+                        // reactor. The outer run_console loop polls the receiver
+                        // each tick and applies the result via _committed / _failed.
+                        let runner = crate::operator_env::OpCli::new()
+                            .with_account(op_ref.account.clone());
+                        let op = op_ref.op.clone();
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        tokio::task::spawn_blocking(move || {
+                            let result = runner.read(&op).map(|_| ());
+                            let _ = tx.send(result);
+                        });
+                        editor.pending_op_commit = Some(
+                            crate::console::manager::state::PendingOpCommit { op_ref, rx },
+                        );
+                        // Close the OpPicker — the auth form stays stashed on
+                        // modal_parents so the _committed / _failed helpers find it.
+                        editor.modal = None;
                         return;
                     }
                     // Operator picked a Vault → Item → Field path. The

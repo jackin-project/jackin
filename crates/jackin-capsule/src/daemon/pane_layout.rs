@@ -189,6 +189,7 @@ impl Multiplexer {
         self.term_rows
             .saturating_sub(STATUS_BAR_ROWS)
             .saturating_sub(BRANCH_CONTEXT_BAR_ROWS)
+            .saturating_sub(CAPSULE_HINT_BAR_ROWS)
     }
 
     pub(super) fn reconcile_content_rows(&mut self) -> bool {
