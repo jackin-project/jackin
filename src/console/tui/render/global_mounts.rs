@@ -74,7 +74,7 @@ pub(crate) fn settings_footer_items(
     state: &SettingsState<'_>,
     op_available: bool,
 ) -> Vec<HintSpan<'static>> {
-    use super::modal::{
+    use crate::console::manager::modal_footer::{
         settings_auth_modal_footer_items, settings_env_modal_footer_items,
         settings_mounts_modal_footer_items,
     };

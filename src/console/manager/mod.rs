@@ -9,6 +9,7 @@ pub(crate) mod github_mounts;
 pub mod input;
 pub(crate) mod list_geometry;
 pub mod message;
+pub(crate) mod modal_footer;
 pub(crate) mod modal_layout;
 pub mod mount_diff;
 pub(crate) mod mount_display;

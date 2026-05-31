@@ -61,7 +61,7 @@ pub(crate) fn editor_footer_items(
     op_available: bool,
 ) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
-        let mut items = super::modal::modal_footer_items(modal);
+        let mut items = crate::console::manager::modal_footer::modal_footer_items(modal);
         // The auth-form `g`/`G` generate trigger is gated to the
         // workspace-level Claude oauth_token slot in Edit mode; surface
         // the hint only when that gate holds.
