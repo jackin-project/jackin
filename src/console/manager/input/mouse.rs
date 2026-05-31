@@ -5,7 +5,10 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::super::super::widgets::file_browser::FileBrowserState;
-use super::super::list_geometry::list_names_content_width;
+use super::super::list_geometry::{
+    SidebarInputs, SidebarScrollAreas, compute_sidebar_scroll_areas, list_names_content_width,
+    sidebar_inputs_for_current_dir, sidebar_inputs_for_workspace,
+};
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::modal_layout::modal_outer_rect;
 #[cfg(test)]
@@ -1250,7 +1253,7 @@ fn list_scroll_areas(
     state: &ManagerState<'_>,
     term_size: Rect,
     config: Option<&crate::config::AppConfig>,
-) -> Option<super::super::render::list::SidebarScrollAreas> {
+) -> Option<SidebarScrollAreas> {
     let config = config?;
     let (right_x, right_w) = right_pane_dims(state.list_split_pct, term_size.width);
     let body_y = LIST_HEADER_HEIGHT;
@@ -1264,25 +1267,18 @@ fn list_scroll_areas(
     };
 
     let cwd_mounts;
-    let inputs: super::super::render::list::SidebarInputs<'_> = if state.is_current_dir_selected() {
+    let inputs: SidebarInputs<'_> = if state.is_current_dir_selected() {
         cwd_mounts = [current_dir_mount(state)];
-        super::super::render::list::sidebar_inputs_for_current_dir(
-            &state.current_dir,
-            &cwd_mounts,
-            config,
-            state,
-        )
+        sidebar_inputs_for_current_dir(&state.current_dir, &cwd_mounts, config, state)
     } else {
         let summary = state.selected_workspace_summary()?;
         // Ensure the workspace is still present in config — old summaries can
         // outlive a `jackin config workspace remove`.
         config.workspaces.get(&summary.name)?;
-        super::super::render::list::sidebar_inputs_for_workspace(summary, config, state)
+        sidebar_inputs_for_workspace(summary, config, state)
     };
 
-    Some(super::super::render::list::compute_sidebar_scroll_areas(
-        pane_area, &inputs, config,
-    ))
+    Some(compute_sidebar_scroll_areas(pane_area, &inputs, config))
 }
 
 fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig {

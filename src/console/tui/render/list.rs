@@ -31,12 +31,19 @@ use super::{
     CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 use crate::config::AppConfig;
+use crate::console::manager::list_geometry::{
+    SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
+    sidebar_inputs_for_workspace, split_global_mount_rows,
+};
+#[cfg(test)]
+pub(super) use crate::console::manager::list_geometry::{
+    global_mounts_content_height, mount_block_height,
+};
 #[cfg(test)]
 pub(super) use crate::console::manager::mount_display::format_mount_rows;
 pub(super) use crate::console::manager::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows_with_cache,
-    global_mounts_content_width_with_cache, mount_path_width, workspace_mounts_content_height,
-    workspace_mounts_content_width_with_cache,
+    mount_path_width, workspace_mounts_content_width_with_cache,
 };
 use crate::console::manager::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
@@ -174,6 +181,7 @@ pub(super) fn render_list_body(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     crate::console::manager::list_geometry::list_names_content_width(state, viewport)
 }
@@ -638,222 +646,6 @@ pub(super) fn render_global_mount_lines(
     lines
 }
 
-/// Shared inputs for the right-pane sidebar. Saved-workspace rows and the
-/// synthetic "Current directory" row both build one of these and feed it
-/// through `compute_sidebar_layout` → `render_sidebar_body` so the panel
-/// order, heights, and mouse hit-boxes can never drift between renderer
-/// and mouse handler.
-pub(crate) struct SidebarInputs<'a> {
-    pub workdir: &'a str,
-    pub mounts: &'a [crate::workspace::MountConfig],
-    pub mount_info_cache: MountInfoCache,
-    pub ws_config: Option<&'a crate::workspace::WorkspaceConfig>,
-    pub global_rows: Vec<crate::config::GlobalMountRow>,
-    pub picker_role_label: String,
-    pub instance_count: usize,
-    pub instance_expanded: bool,
-    pub inline_picker_active: bool,
-    pub show_envs: bool,
-    pub agent_count: usize,
-}
-
-/// Rect for each rendered block. `None` panels are skipped in both render
-/// and hit-test.
-pub(crate) struct SidebarLayout {
-    pub instances: Option<Rect>,
-    pub general: Rect,
-    pub mounts: Rect,
-    pub global: Option<Rect>,
-    pub role_global: Option<Rect>,
-    pub env: Option<Rect>,
-    pub roles: Option<Rect>,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct SidebarScrollArea {
-    pub area: Rect,
-    pub content_width: usize,
-    pub content_height: usize,
-}
-
-pub(crate) struct SidebarScrollAreas {
-    pub workspace: SidebarScrollArea,
-    pub global: SidebarScrollArea,
-    pub role_global: Option<SidebarScrollArea>,
-    pub roles: Option<SidebarScrollArea>,
-}
-
-pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> SidebarLayout {
-    let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
-    // Slot occupancy: show the unscoped-global header iff there is any
-    // global mount row AND (some are unscoped OR no role-scoped ones
-    // exist). The role-global header renders iff at least one
-    // role-scoped global row exists. `inputs.global_rows` is the
-    // combined input; `global_rows` is the unscoped subset from
-    // `split_global_mount_rows`. Empty-input case (no globals at all)
-    // makes show_global false because `inputs.global_rows.is_empty()`
-    // short-circuits, and show_role_global false too.
-    let show_global_header = !global_rows.is_empty() || role_global_rows.is_empty();
-    let show_global = !inputs.global_rows.is_empty() && show_global_header;
-    let show_role_global = !role_global_rows.is_empty();
-    let show_roles = !inputs.inline_picker_active;
-
-    let mut constraints = Vec::new();
-    if inputs.instance_count > 0 {
-        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
-    }
-    constraints.push(Constraint::Length(3));
-    constraints.push(Constraint::Length(mount_block_height(inputs.mounts)));
-    if show_global {
-        constraints.push(Constraint::Length(global_mount_rows_height(&global_rows)));
-    }
-    if show_role_global {
-        constraints.push(Constraint::Length(global_mount_rows_height(
-            &role_global_rows,
-        )));
-    }
-    if inputs.show_envs {
-        constraints.push(Constraint::Length(env_block_height(inputs.ws_config)));
-    }
-    if show_roles {
-        constraints.push(Constraint::Length(agents_block_height(inputs.agent_count)));
-    }
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-    let mut iter = rows.iter().copied();
-
-    SidebarLayout {
-        instances: (inputs.instance_count > 0).then(|| iter.next().expect("instances slot")),
-        general: iter.next().expect("general slot"),
-        mounts: iter.next().expect("mounts slot"),
-        global: show_global.then(|| iter.next().expect("global slot")),
-        role_global: show_role_global.then(|| iter.next().expect("role-global slot")),
-        env: inputs.show_envs.then(|| iter.next().expect("env slot")),
-        roles: show_roles.then(|| iter.next().expect("roles slot")),
-    }
-}
-
-pub(crate) fn compute_sidebar_scroll_areas(
-    area: Rect,
-    inputs: &SidebarInputs<'_>,
-    config: &AppConfig,
-) -> SidebarScrollAreas {
-    let layout = compute_sidebar_layout(area, inputs);
-    let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
-
-    SidebarScrollAreas {
-        workspace: SidebarScrollArea {
-            area: layout.mounts,
-            content_width: workspace_mounts_content_width_with_cache(
-                inputs.mounts,
-                &inputs.mount_info_cache,
-            ),
-            content_height: workspace_mounts_content_height(inputs.mounts),
-        },
-        global: SidebarScrollArea {
-            area: layout.global.unwrap_or(Rect {
-                x: area.x,
-                y: area.y,
-                width: area.width,
-                height: 0,
-            }),
-            content_width: global_mounts_content_width_from_rows(
-                &global_rows,
-                &inputs.mount_info_cache,
-            ),
-            content_height: global_mounts_content_height_from_rows(&global_rows),
-        },
-        role_global: layout.role_global.map(|area| SidebarScrollArea {
-            area,
-            content_width: global_mounts_content_width_from_rows(
-                &role_global_rows,
-                &inputs.mount_info_cache,
-            ),
-            content_height: global_mounts_content_height_from_rows(&role_global_rows),
-        }),
-        roles: layout.roles.map(|area| SidebarScrollArea {
-            area,
-            content_width: agents_block_content_width(inputs.ws_config, config),
-            content_height: 2 + agents_block_agent_count(inputs.ws_config, config),
-        }),
-    }
-}
-
-pub(crate) fn sidebar_inputs_for_workspace<'a>(
-    ws: &'a WorkspaceSummary,
-    config: &'a AppConfig,
-    state: &ManagerState<'_>,
-) -> SidebarInputs<'a> {
-    let ws_config = config.workspaces.get(&ws.name);
-    let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
-    // Shared with `clamp_list_scroll_for_area` and
-    // `focused_block_still_scrollable` via the `mod.rs` helpers so all
-    // three sites see the same picker role and the same set of global
-    // rows for any given selection state.
-    let picker_role = super::picker_role_from_state(state);
-    let global_rows = super::global_rows_for_selected_row(state, config);
-    let inline_picker_active =
-        state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
-    let agent_count = if inline_picker_active {
-        0
-    } else {
-        agents_block_agent_count(ws_config, config)
-    };
-    SidebarInputs {
-        workdir: ws.workdir.as_str(),
-        mounts,
-        mount_info_cache: state.mount_info_cache.clone(),
-        ws_config,
-        global_rows,
-        picker_role_label: picker_role
-            .as_ref()
-            .map_or_else(String::new, crate::selector::RoleSelector::key),
-        instance_count: workspace_active_count(
-            &state.instances,
-            Some(ws.name.as_str()),
-            &ws.name,
-            &ws.workdir,
-        ),
-        instance_expanded: state
-            .workspaces
-            .iter()
-            .position(|s| s.name == ws.name)
-            .is_some_and(|idx| state.is_workspace_expanded(idx)),
-        inline_picker_active,
-        show_envs: ws_config.is_some_and(workspace_has_any_env),
-        agent_count,
-    }
-}
-
-pub(crate) fn sidebar_inputs_for_current_dir<'a>(
-    cwd_str: &'a str,
-    mounts: &'a [crate::workspace::MountConfig],
-    config: &AppConfig,
-    state: &ManagerState<'_>,
-) -> SidebarInputs<'a> {
-    // Shared with `clamp_list_scroll_for_area` and
-    // `focused_block_still_scrollable` via the `mod.rs` helpers. The
-    // synthetic current-dir workspace has no role binding, so
-    // `global_rows_for_selected_row` returns the unscoped baseline —
-    // matches `current_dir_workspace` behaviour at launch time.
-    SidebarInputs {
-        workdir: cwd_str,
-        mounts,
-        mount_info_cache: state.mount_info_cache.clone(),
-        ws_config: None,
-        global_rows: super::global_rows_for_selected_row(state, config),
-        picker_role_label: String::new(),
-        instance_count: workspace_active_count(&state.instances, None, cwd_str, cwd_str),
-        instance_expanded: state.current_dir_expanded,
-        inline_picker_active: false,
-        show_envs: false,
-        agent_count: agents_block_agent_count(None, config),
-    }
-}
-
 fn render_sidebar_body(
     frame: &mut Frame,
     layout: &SidebarLayout,
@@ -937,113 +729,6 @@ fn render_details_pane(
     render_sidebar_body(frame, &layout, &inputs, config, state);
 }
 
-pub(crate) fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
-    !ws.env.is_empty() || ws.roles.values().any(|o| !o.env.is_empty())
-}
-
-pub(crate) fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
-    let data_rows = if mounts.is_empty() {
-        1
-    } else {
-        mounts
-            .iter()
-            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
-            .sum()
-    };
-    (data_rows + 2 + 1).min(12) as u16
-}
-
-fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
-    let content_height = if rows.is_empty() {
-        1
-    } else {
-        1 + rows
-            .iter()
-            .map(|row| if row.mount.src == row.mount.dst { 1 } else { 2 })
-            .sum::<usize>()
-    };
-    (content_height + 2).min(12) as u16
-}
-
-pub(crate) fn global_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
-    if mounts.is_empty() {
-        1
-    } else {
-        1 + mounts
-            .iter()
-            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
-            .sum::<usize>()
-    }
-}
-
-fn split_global_mount_rows(
-    rows: &[crate::config::GlobalMountRow],
-) -> (
-    Vec<&crate::config::GlobalMountRow>,
-    Vec<&crate::config::GlobalMountRow>,
-) {
-    rows.iter().partition(|row| row.scope.is_none())
-}
-
-fn global_mounts_content_width_from_rows(
-    rows: &[&crate::config::GlobalMountRow],
-    cache: &MountInfoCache,
-) -> usize {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_width_with_cache(&mounts, cache)
-}
-
-fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_height(&mounts)
-}
-
-/// Caller is expected to have gated on `workspace_has_any_env` —
-/// empty case omits the block entirely, not via placeholder.
-pub(crate) fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
-    let Some(ws) = ws_config else {
-        return 2;
-    };
-
-    let workspace_keys = ws.env.len();
-    let agent_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
-    let total_rows = workspace_keys + agent_keys;
-    (total_rows + 2).min(20) as u16
-}
-
-pub(crate) fn agents_block_agent_count(
-    ws_config: Option<&crate::workspace::WorkspaceConfig>,
-    config: &AppConfig,
-) -> usize {
-    let all_allowed = ws_config.is_none_or(crate::console::manager::agent_allow::allows_all_agents);
-    if all_allowed {
-        config.roles.len()
-    } else {
-        ws_config.map_or(0, |w| w.allowed_roles.len())
-    }
-}
-
-pub(crate) fn agents_block_height(agent_count: usize) -> u16 {
-    // Reserve at least one row even when empty so the block doesn't
-    // read as broken.
-    let agent_rows = agent_count.max(1);
-    (2 + 1 + 1 + agent_rows).min(14) as u16
-}
-
-pub(crate) fn agents_block_content_width(
-    _ws_config: Option<&crate::workspace::WorkspaceConfig>,
-    config: &AppConfig,
-) -> usize {
-    // 4 chars prefix + longest role name gives a good enough estimate for
-    // scroll range — avoids duplicating the full line-building logic here.
-    config.roles.keys().map(|k| k.len() + 4).max().unwrap_or(0)
-}
-
-/// Fixed height of the compact running-instances badge (borders + 1 text line).
-pub(crate) const COMPACT_INSTANCES_HEIGHT: u16 = 3;
-
 /// Cursor on the synthetic "Current directory" row — mirrors
 /// `workspace::current_dir_workspace`: src=dst=cwd, rw, any role.
 fn render_current_dir_details_pane(
@@ -1063,24 +748,6 @@ fn render_current_dir_details_pane(
     let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
     let layout = compute_sidebar_layout(area, &inputs);
     render_sidebar_body(frame, &layout, &inputs, config, state);
-}
-
-/// Count of Active/Running instances — used for the compact summary badge and
-/// mouse scroll-area Y calculations.
-pub(crate) fn workspace_active_count(
-    instances: &[crate::instance::InstanceIndexEntry],
-    workspace_name: Option<&str>,
-    workspace_label: &str,
-    workdir: &str,
-) -> usize {
-    let query = crate::instance::InstanceQuery {
-        workspace_name,
-        workspace_label,
-        workdir,
-        role_key: None,
-        agent_runtime: None,
-    };
-    crate::console::manager::state::active_instances_matching(instances, query).count()
 }
 
 /// Compact running-instances badge (3 rows: border + count line + border).

@@ -241,7 +241,7 @@ fn clamp_list_scroll_after_key(
         width: area.width,
         height: area.height.saturating_sub(4),
     };
-    super::super::render::clamp_list_scroll_for_area(body, state, config, cwd);
+    super::super::list_geometry::clamp_list_scroll_for_area(body, state, config, cwd);
 }
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {

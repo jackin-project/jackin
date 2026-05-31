@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::config::AppConfig;
+use crate::console::manager::list_geometry::clamp_list_scroll_for_area;
 use crate::console::manager::mount_display::settings_global_mounts_content_width_with_cache;
 use crate::console::manager::state::{ManagerListRow, ManagerStage, ManagerState};
 use jackin_tui::HintSpan;
@@ -26,7 +27,7 @@ pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 pub(crate) use jackin_tui::components::scrollable_panel::{
-    clamp_scroll_offset as clamp_scroll_x, is_scrollable, max_offset as max_scroll_offset,
+    clamp_scroll_offset as clamp_scroll_x, is_scrollable,
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
 pub(super) use jackin_tui::components::scrollable_panel::{
@@ -477,255 +478,22 @@ fn clamp_global_mounts_scroll_for_frame(
 }
 
 #[allow(clippy::too_many_lines)]
-pub(crate) fn clamp_list_scroll_for_area(
-    area: Rect,
-    state: &mut ManagerState<'_>,
-    config: &AppConfig,
-    cwd: &std::path::Path,
-) {
-    let left_pct = state.list_split_pct;
-    let right_pct = 100u16.saturating_sub(left_pct);
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(left_pct),
-            Constraint::Percentage(right_pct),
-        ])
-        .split(area);
-    let sidebar_areas = selected_sidebar_scroll_areas(columns[1], state, config, cwd);
-
-    if let Some(areas) = sidebar_areas.as_ref() {
-        clamp_scroll_area(areas.workspace, &mut state.list_mounts_scroll_x);
-        clamp_scroll_area_y(areas.workspace, &mut state.list_mounts_scroll_y);
-        clamp_scroll_area(areas.global, &mut state.list_global_mounts_scroll_x);
-        clamp_scroll_area_y(areas.global, &mut state.list_global_mounts_scroll_y);
-
-        if let Some(role_global) = areas.role_global {
-            clamp_scroll_area(role_global, &mut state.list_role_global_mounts_scroll_x);
-            clamp_scroll_area_y(role_global, &mut state.list_role_global_mounts_scroll_y);
-        } else {
-            state.list_role_global_mounts_scroll_x = 0;
-            state.list_role_global_mounts_scroll_y = 0;
-        }
-
-        if let Some(roles) = areas.roles {
-            clamp_scroll_area(roles, &mut state.list_roles_scroll_x);
-            clamp_scroll_area_y(roles, &mut state.list_roles_scroll_y);
-        } else {
-            state.list_roles_scroll_x = 0;
-            state.list_roles_scroll_y = 0;
-        }
-    } else {
-        state.list_mounts_scroll_x = 0;
-        state.list_mounts_scroll_y = 0;
-        state.list_global_mounts_scroll_x = 0;
-        state.list_global_mounts_scroll_y = 0;
-        state.list_role_global_mounts_scroll_x = 0;
-        state.list_role_global_mounts_scroll_y = 0;
-        state.list_roles_scroll_x = 0;
-        state.list_roles_scroll_y = 0;
-        state.list_scroll_focus = None;
-        if !state.preview_focused {
-            state.list_names_focused = true;
-        }
-    }
-
-    // Fix 1: Clear stale scroll focus when the focused block no longer
-    // overflows after a terminal resize. Checked every render frame so the
-    // green border disappears as soon as the content fits in the viewport.
-    if let Some(focus) = state.list_scroll_focus
-        && !focused_block_still_scrollable(focus, sidebar_areas.as_ref())
-    {
-        state.list_scroll_focus = None;
-        state.list_names_focused = true;
-    }
-
-    // Clamp left-pane name scroll to valid range.
-    let left_viewport_w = scroll_viewport_width(columns[0]);
-    if left_viewport_w == 0 {
-        state.list_names_scroll_x = 0;
-    } else {
-        let name_content_w = list::list_names_content_width(state, left_viewport_w);
-        if is_scrollable(name_content_w, left_viewport_w) {
-            let max = max_scroll_offset(name_content_w, left_viewport_w);
-            if state.list_names_scroll_x > max {
-                state.list_names_scroll_x = max;
-            }
-        } else {
-            state.list_names_scroll_x = 0;
-        }
-    }
-}
-
-fn selected_sidebar_scroll_areas(
-    right_pane: Rect,
-    state: &ManagerState<'_>,
-    config: &AppConfig,
-    cwd: &std::path::Path,
-) -> Option<list::SidebarScrollAreas> {
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
-            let cwd_str = cwd.display().to_string();
-            let mounts = [crate::workspace::MountConfig {
-                src: cwd_str.clone(),
-                dst: cwd_str.clone(),
-                readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
-            }];
-            let inputs = list::sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
-            Some(list::compute_sidebar_scroll_areas(
-                right_pane, &inputs, config,
-            ))
-        }
-        ManagerListRow::SavedWorkspace(i) => {
-            let summary = state.workspaces.get(i).cloned()?;
-            config.workspaces.get(&summary.name)?;
-            let inputs = list::sidebar_inputs_for_workspace(&summary, config, state);
-            Some(list::compute_sidebar_scroll_areas(
-                right_pane, &inputs, config,
-            ))
-        }
-        ManagerListRow::NewWorkspace
-        | ManagerListRow::WorkspaceInstance(_, _)
-        | ManagerListRow::CurrentDirectoryInstance(_) => None,
-    }
-}
-
-const fn clamp_scroll_area(area: list::SidebarScrollArea, value: &mut u16) {
-    clamp_scroll_x(area.content_width, scroll_viewport_width(area.area), value);
-}
-
-const fn clamp_scroll_area_y(area: list::SidebarScrollArea, value: &mut u16) {
-    clamp_scroll_x(
-        area.content_height,
-        scroll_viewport_height(area.area),
-        value,
-    );
-}
-
-const fn scroll_area_scrollable(area: list::SidebarScrollArea) -> bool {
-    is_scrollable(area.content_width, scroll_viewport_width(area.area))
-        || is_scrollable(area.content_height, scroll_viewport_height(area.area))
-}
-
-/// Returns `true` when the focused block still overflows the right pane
-/// (either horizontally or vertically) after a resize. Used to clear
-/// `list_scroll_focus` when the terminal grows large enough that the
-/// content fits without scrolling.
-fn focused_block_still_scrollable(
-    focus: crate::console::manager::state::MountScrollFocus,
-    areas: Option<&list::SidebarScrollAreas>,
-) -> bool {
-    let Some(areas) = areas else {
-        return false;
-    };
-    match focus {
-        crate::console::manager::state::MountScrollFocus::Workspace => {
-            scroll_area_scrollable(areas.workspace)
-        }
-        crate::console::manager::state::MountScrollFocus::Global => {
-            areas.global.area.height > 0 && scroll_area_scrollable(areas.global)
-        }
-        crate::console::manager::state::MountScrollFocus::RoleGlobal => {
-            areas.role_global.is_some_and(scroll_area_scrollable)
-        }
-        crate::console::manager::state::MountScrollFocus::Roles => {
-            areas.roles.is_some_and(scroll_area_scrollable)
-        }
-    }
-}
-
-/// Picker-role resolution shared by every render path that builds
-/// global-mount rows. Both the inline role picker (operator currently
-/// scrolling a role list) and the inline agent picker (operator
-/// drilling into a role's agents) advertise a role; either gives the
-/// per-role overlay for the global-mounts block. Returning `None` is
-/// the unscoped baseline — the case both "no picker active" and "current
-/// directory selected (no saved role binding)" reduce to.
-pub(super) fn picker_role_from_state(
-    state: &ManagerState<'_>,
-) -> Option<crate::selector::RoleSelector> {
-    state
-        .inline_role_picker
-        .as_ref()
-        .and_then(|picker| {
-            picker
-                .list_state
-                .selected
-                .and_then(|idx| picker.filtered.get(idx).cloned())
-        })
-        .or_else(|| {
-            state
-                .inline_agent_picker
-                .as_ref()
-                .map(|(role, _)| role.clone())
-        })
-}
-
-/// Global mount rows for whatever row the operator currently has
-/// selected on the workspace list. Single source of truth so the render
-/// side, the scroll-clamp, and the focused-block-scrollable check
-/// always agree on what the rendered block is showing. Returning an
-/// empty `Vec` matches "no global-mount block visible right now."
-///
-/// `CurrentDirectory` and `CurrentDirectoryInstance` reduce to the
-/// unscoped baseline because the synthetic current-dir workspace has
-/// no role binding — same rule `sidebar_inputs_for_current_dir`
-/// applies. `SavedWorkspace` adds the role-scoped overlay when a picker
-/// is active. `NewWorkspace` and `WorkspaceInstance` have no global block.
-pub(super) fn global_rows_for_selected_row(
-    state: &ManagerState<'_>,
-    config: &AppConfig,
-) -> Vec<crate::config::GlobalMountRow> {
-    use crate::console::manager::state::ManagerListRow;
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
-            global_rows_for(config, None)
-        }
-        ManagerListRow::SavedWorkspace(i) => {
-            let Some(summary) = state.workspaces.get(i) else {
-                return Vec::new();
-            };
-            if !config.workspaces.contains_key(&summary.name) {
-                return Vec::new();
-            }
-            global_rows_for(config, picker_role_from_state(state).as_ref())
-        }
-        ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => Vec::new(),
-    }
-}
-
-/// `None` role → unscoped rows only; `Some(role)` → merged scoped + unscoped.
-pub(super) fn global_rows_for(
-    config: &AppConfig,
-    picker_role: Option<&crate::selector::RoleSelector>,
-) -> Vec<crate::config::GlobalMountRow> {
-    picker_role.map_or_else(
-        || {
-            config
-                .list_mount_rows()
-                .into_iter()
-                .filter(|row| row.scope.is_none())
-                .collect()
-        },
-        |role| config.resolve_mount_rows(role),
-    )
-}
-
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
     jackin_tui::components::render_brand_header(frame, area, title);
 }
 
 #[cfg(test)]
 mod list_scroll_clamp_tests {
-    use super::{
-        clamp_list_scroll_for_area, max_scroll_offset, scroll_viewport_height,
-        selected_sidebar_scroll_areas,
-    };
     use crate::config::AppConfig;
+    use crate::console::manager::list_geometry::{
+        clamp_list_scroll_for_area, selected_sidebar_scroll_areas,
+    };
     use crate::console::manager::state::ManagerState;
     use crate::isolation::MountIsolation;
     use crate::workspace::{MountConfig, WorkspaceConfig};
+    use jackin_tui::components::scrollable_panel::{
+        max_offset as max_scroll_offset, viewport_height as scroll_viewport_height,
+    };
     use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
     fn split_mount(idx: usize) -> MountConfig {
