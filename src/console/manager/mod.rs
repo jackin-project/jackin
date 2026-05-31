@@ -8,6 +8,7 @@ mod create;
 pub(crate) mod github_mounts;
 pub mod input;
 pub mod message;
+pub(crate) mod modal_layout;
 pub mod mount_diff;
 pub mod mount_info;
 pub mod mount_info_cache;

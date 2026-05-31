@@ -6,6 +6,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::message::{ManagerMessage, update_manager};
+use super::super::modal_layout::modal_outer_rect;
 use super::super::render::global_mounts::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
     trust_content_width,
@@ -283,7 +284,7 @@ fn try_copy_container_info_value(
     let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
         return false;
     };
-    let area = super::super::render::modal_outer_rect(
+    let area = modal_outer_rect(
         &Modal::ContainerInfo {
             state: info.clone(),
         },
@@ -315,7 +316,7 @@ fn container_info_copyable_row_at(
     let Some(modal @ Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
         return false;
     };
-    let area = super::super::render::modal_outer_rect(modal, term_size);
+    let area = modal_outer_rect(modal, term_size);
     jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
         .is_some()
 }
@@ -356,7 +357,7 @@ fn file_browser_url_row_at(state: &ManagerState<'_>, mouse: MouseEvent, term_siz
     let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
         return false;
     };
-    let modal_area = super::super::render::modal_outer_rect(modal, term_size);
+    let modal_area = modal_outer_rect(modal, term_size);
     fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
 }
 
@@ -1334,9 +1335,8 @@ fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> us
 /// non-click events, and clicks outside the URL row all return `false`
 /// and the caller falls through to the list-view handler.
 ///
-/// Modal geometry comes from `render::modal_outer_rect` — the same
-/// helper `render_modal` uses — so mouse hit-testing can never drift
-/// out of sync with what was drawn.
+/// Modal geometry comes from the same helper `render_modal` uses, so mouse
+/// hit-testing can never drift out of sync with what was drawn.
 fn try_open_file_browser_git_url(
     state: &ManagerState<'_>,
     mouse: MouseEvent,
@@ -1345,7 +1345,7 @@ fn try_open_file_browser_git_url(
     let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
         return false;
     };
-    let modal_area = super::super::render::modal_outer_rect(modal, term_size);
+    let modal_area = modal_outer_rect(modal, term_size);
     fb_state.maybe_open_url_on_click(modal_area, mouse.column, mouse.row)
 }
 

@@ -14,6 +14,10 @@ use std::collections::BTreeMap;
 
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header};
 use crate::console::manager::auth_kind::AuthKind;
+use crate::console::manager::modal_layout::{
+    auth_form_rect, confirm_rect, mount_choice_rect, op_picker_rect, role_picker_rect,
+    scope_picker_rect, source_picker_rect, text_input_rect,
+};
 use crate::console::manager::render::list::{
     MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
@@ -755,7 +759,7 @@ fn trust_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
 pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountModal<'_>) {
     match modal {
         GlobalMountModal::Text { state, .. } => {
-            let area = super::modal::text_input_rect(frame.area());
+            let area = text_input_rect(frame.area());
             jackin_tui::components::render_text_input(frame, area, state);
         }
         GlobalMountModal::FileBrowser { state } => {
@@ -763,19 +767,19 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
             crate::console::widgets::file_browser::render(frame, area, state);
         }
         GlobalMountModal::MountDstChoice { state } => {
-            let area = super::modal::mount_choice_rect(frame.area());
+            let area = mount_choice_rect(frame.area());
             crate::console::widgets::mount_dst_choice::render(frame, area, state);
         }
         GlobalMountModal::ScopePicker { state } => {
-            let area = super::modal::scope_picker_rect(frame.area());
+            let area = scope_picker_rect(frame.area());
             crate::console::widgets::scope_picker::render(frame, area, state);
         }
         GlobalMountModal::RolePicker { state } => {
-            let area = super::modal::role_picker_rect(frame.area(), state);
+            let area = role_picker_rect(frame.area(), state);
             crate::console::widgets::role_picker::render(frame, area, state);
         }
         GlobalMountModal::Confirm { state, .. } => {
-            let area = super::modal::confirm_rect(frame.area(), state);
+            let area = confirm_rect(frame.area(), state);
             jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
         GlobalMountModal::PreviewSave { state } => {
@@ -790,27 +794,27 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
 pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvModal<'_>) {
     match modal {
         SettingsEnvModal::Text { state, .. } => {
-            let area = super::modal::text_input_rect(frame.area());
+            let area = text_input_rect(frame.area());
             jackin_tui::components::render_text_input(frame, area, state);
         }
         SettingsEnvModal::SourcePicker { state } => {
-            let area = super::modal::source_picker_rect(frame.area());
+            let area = source_picker_rect(frame.area());
             crate::console::widgets::source_picker::render(frame, area, state);
         }
         SettingsEnvModal::OpPicker { state } => {
-            let area = super::modal::op_picker_rect(frame.area());
+            let area = op_picker_rect(frame.area());
             crate::console::widgets::op_picker::render::render(frame, area, state);
         }
         SettingsEnvModal::RolePicker { state } => {
-            let area = super::modal::role_picker_rect(frame.area(), state);
+            let area = role_picker_rect(frame.area(), state);
             crate::console::widgets::role_picker::render(frame, area, state);
         }
         SettingsEnvModal::ScopePicker { state } => {
-            let area = super::modal::scope_picker_rect(frame.area());
+            let area = scope_picker_rect(frame.area());
             crate::console::widgets::scope_picker::render(frame, area, state);
         }
         SettingsEnvModal::Confirm { state, .. } => {
-            let area = super::modal::confirm_rect(frame.area(), state);
+            let area = confirm_rect(frame.area(), state);
             jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
     }
@@ -819,24 +823,24 @@ pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvMo
 pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuthModal<'_>) {
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
-            let area = super::modal::auth_form_rect(frame.area(), state);
+            let area = auth_form_rect(frame.area(), state);
             crate::console::widgets::auth_panel::render::render_form(frame, area, state, *focus);
         }
         SettingsAuthModal::SourcePicker { state } => {
-            let area = super::modal::source_picker_rect(frame.area());
+            let area = source_picker_rect(frame.area());
             crate::console::widgets::source_picker::render(frame, area, state);
         }
         SettingsAuthModal::TextInput { state } => {
-            let area = super::modal::text_input_rect(frame.area());
+            let area = text_input_rect(frame.area());
             jackin_tui::components::render_text_input(frame, area, state);
         }
         SettingsAuthModal::OpPicker { state } => {
             // A naming sub-stage is a plain input box, sized like every
             // other text-input modal; drill-down stages use the picker rect.
             let area = if state.naming_stage_input().is_some() {
-                super::modal::text_input_rect(frame.area())
+                text_input_rect(frame.area())
             } else {
-                super::modal::op_picker_rect(frame.area())
+                op_picker_rect(frame.area())
             };
             crate::console::widgets::op_picker::render::render(frame, area, state);
         }

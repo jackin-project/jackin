@@ -18,6 +18,7 @@ title: "TUI architecture — Ratatui application patterns"
 - `insta` snapshot tests for 4 key render paths.
 - Terminal resize correctness: capsule resize now resets the Ratatui double-buffer and `SocketBackend` style tracker before repaint; resize regression tests cover the repaint path.
 - Focus audit progress: editor General and settings Mounts now use the same focused expression for green borders and `▸` cursor visibility; focused editor General content has a regression test; host console content and representative modal states now have one-green-border-cluster regression coverage; the new-workspace description no longer carries an inline keyboard hint.
+- Console modal geometry now lives in `manager::modal_layout`, so render, mouse hit-testing, and container-info hyperlink overlays share one update-layer owner instead of borrowing modal rectangles through the render facade.
 - Container info is unified across surfaces: shared `jackin-tui` state/render/hit-test/OSC 8 overlay helpers back the host console and launch cockpit; capsule status-bar chip click opens the matching container-info dialog; OSC 52 copy works for copyable rows.
 - Launch failure paths now render as full wrapped plain text and receive OSC 8 `file://` hyperlink overlays for supporting terminals; overlay tests assert both diagnostics and docker-output links.
 

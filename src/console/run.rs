@@ -338,7 +338,7 @@ pub async fn run_console<H: InstanceActionHandler>(
             if let Some(modal @ manager::state::Modal::ContainerInfo { state: info }) =
                 ms.list_modal.as_ref()
             {
-                let rect = manager::render::modal_outer_rect(modal, main_area);
+                let rect = manager::modal_layout::modal_outer_rect(modal, main_area);
                 let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
                 if !overlay.is_empty() {
                     let mut out = std::io::stdout();

@@ -16,12 +16,10 @@ pub(crate) mod modal;
 #[cfg(test)]
 mod snapshot_tests;
 
-// input::mouse has no path into the modal submodule — re-exported here so it
-// can reach modal_outer_rect via super::super::render.
-pub(crate) use modal::modal_outer_rect;
 // Modal dismissal sequencing requires a render call across a module boundary;
 // re-exported here so input handlers can reach render_editor directly.
 pub use editor::render_editor;
+pub(super) use jackin_console::layout::centered_rect_fixed;
 
 pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
@@ -718,19 +716,6 @@ pub(super) fn global_rows_for(
 
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
     jackin_tui::components::render_brand_header(frame, area, title);
-}
-
-/// Like `centered_rect` but takes a fixed number of rows for the height.
-/// `pct_w` is still a percentage of the outer width. Rows are clamped to fit.
-pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
-    let w = outer.width * pct_w / 100;
-    let h = rows.min(outer.height);
-    Rect {
-        x: outer.x + outer.width.saturating_sub(w) / 2,
-        y: outer.y + outer.height.saturating_sub(h) / 2,
-        width: w,
-        height: h,
-    }
 }
 
 #[cfg(test)]
