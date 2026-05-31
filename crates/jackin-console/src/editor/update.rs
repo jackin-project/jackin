@@ -21,3 +21,31 @@ pub const fn next_editor_tab(tab: EditorTab) -> EditorTab {
         EditorTab::Auth => EditorTab::General,
     }
 }
+
+#[must_use]
+pub fn step_cursor_down(skipped_rows: &[usize], candidate: usize, max_row: usize) -> usize {
+    let mut idx = candidate;
+    while idx <= max_row {
+        if skipped_rows.contains(&idx) {
+            idx += 1;
+        } else {
+            return idx;
+        }
+    }
+    candidate
+}
+
+#[must_use]
+pub fn step_cursor_up(skipped_rows: &[usize], candidate: usize) -> usize {
+    let mut idx = candidate;
+    loop {
+        if skipped_rows.contains(&idx) {
+            if idx == 0 {
+                return 0;
+            }
+            idx -= 1;
+        } else {
+            return idx;
+        }
+    }
+}

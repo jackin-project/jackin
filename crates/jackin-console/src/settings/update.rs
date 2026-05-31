@@ -60,6 +60,40 @@ pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
 }
 
 #[must_use]
+pub fn step_cursor_down_by<F>(candidate: usize, max: usize, mut is_skipped: F) -> usize
+where
+    F: FnMut(usize) -> bool,
+{
+    let mut idx = candidate;
+    while idx <= max {
+        if is_skipped(idx) {
+            idx += 1;
+        } else {
+            return idx;
+        }
+    }
+    candidate
+}
+
+#[must_use]
+pub fn step_cursor_up_by<F>(candidate: usize, mut is_skipped: F) -> usize
+where
+    F: FnMut(usize) -> bool,
+{
+    let mut idx = candidate;
+    loop {
+        if is_skipped(idx) {
+            if idx == 0 {
+                return 0;
+            }
+            idx -= 1;
+        } else {
+            return idx;
+        }
+    }
+}
+
+#[must_use]
 pub fn settings_vec_change_count<T: PartialEq>(original: &[T], pending: &[T]) -> usize {
     let common_changes = original
         .iter()

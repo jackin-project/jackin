@@ -12,10 +12,12 @@ use super::state::{
     SettingsTab,
 };
 use crate::config::AppConfig;
-use jackin_console::editor::update::{next_editor_tab, previous_editor_tab};
+use jackin_console::editor::update::{
+    next_editor_tab, previous_editor_tab, step_cursor_down, step_cursor_up,
+};
 use jackin_console::settings::update::{
     move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
-    toggle_general_selected, toggle_trust_selected,
+    step_cursor_down_by, step_cursor_up_by, toggle_general_selected, toggle_trust_selected,
 };
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
@@ -480,32 +482,6 @@ fn move_editor_field_selection(
         super::render::cursor_scroll_for_panel(next, editor.tab_scroll_y, term, footer_h);
 }
 
-fn step_cursor_down(skipped_rows: &[usize], candidate: usize, max_row: usize) -> usize {
-    let mut idx = candidate;
-    while idx <= max_row {
-        if skipped_rows.contains(&idx) {
-            idx += 1;
-        } else {
-            return idx;
-        }
-    }
-    candidate
-}
-
-fn step_cursor_up(skipped_rows: &[usize], candidate: usize) -> usize {
-    let mut idx = candidate;
-    loop {
-        if skipped_rows.contains(&idx) {
-            if idx == 0 {
-                return 0;
-            }
-            idx -= 1;
-        } else {
-            return idx;
-        }
-    }
-}
-
 const fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
@@ -750,9 +726,13 @@ fn move_settings_env_selection(
             .min(max)
     };
     settings.env.selected = if delta.is_negative() {
-        step_settings_env_cursor_up(&rows, candidate)
+        step_cursor_up_by(candidate, |idx| {
+            matches!(rows.get(idx), Some(SettingsEnvRow::SectionSpacer))
+        })
     } else {
-        step_settings_env_cursor_down(&rows, candidate, max)
+        step_cursor_down_by(candidate, max, |idx| {
+            matches!(rows.get(idx), Some(SettingsEnvRow::SectionSpacer))
+        })
     };
     settings.env.scroll_y = super::render::cursor_scroll_for_panel(
         settings.env.selected,
@@ -760,32 +740,6 @@ fn move_settings_env_selection(
         term,
         footer_h,
     );
-}
-
-fn step_settings_env_cursor_down(rows: &[SettingsEnvRow], candidate: usize, max: usize) -> usize {
-    let mut idx = candidate;
-    while idx <= max {
-        match rows.get(idx) {
-            Some(SettingsEnvRow::SectionSpacer) => idx += 1,
-            _ => return idx,
-        }
-    }
-    candidate
-}
-
-fn step_settings_env_cursor_up(rows: &[SettingsEnvRow], candidate: usize) -> usize {
-    let mut idx = candidate;
-    loop {
-        match rows.get(idx) {
-            Some(SettingsEnvRow::SectionSpacer) => {
-                if idx == 0 {
-                    return 0;
-                }
-                idx -= 1;
-            }
-            _ => return idx,
-        }
-    }
 }
 
 fn move_settings_trust_selection(
