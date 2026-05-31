@@ -130,14 +130,14 @@ pub(super) fn render_list_body(
     } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container.as_str());
-        render_agent_picker_sidebar(frame, list_area, short_id, picker);
+        render_agent_picker_sidebar(frame, list_area, short_id, picker, state.list_names_focused);
     } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
-        render_agent_picker_sidebar(frame, list_area, &role.key(), picker);
+        render_agent_picker_sidebar(frame, list_area, &role.key(), picker, state.list_names_focused);
     } else if let Some(picker) = state.inline_role_picker.as_ref() {
         let title = state
             .selected_workspace_summary()
             .map_or("Current directory", |summary| summary.name.as_str());
-        render_role_picker_sidebar(frame, list_area, title, picker);
+        render_role_picker_sidebar(frame, list_area, title, picker, state.list_names_focused);
     } else {
         let (list_lines, content_width) =
             list_name_lines(state, super::scroll_viewport_width(list_area));
@@ -461,11 +461,12 @@ fn render_role_picker_sidebar(
     area: Rect,
     workspace_name: &str,
     picker: &crate::console::widgets::role_picker::RolePickerState,
+    focused: bool,
 ) {
     let title = format!(" {workspace_name} ");
     let block = Panel::new()
         .title(&title)
-        .focus(PanelFocus::Unfocused)
+        .focus(if focused { PanelFocus::Focused } else { PanelFocus::Unfocused })
         .block();
     let items: Vec<ListItem> = picker
         .filtered
@@ -487,11 +488,12 @@ fn render_agent_picker_sidebar(
     area: Rect,
     role_name: &str,
     picker: &crate::console::widgets::agent_choice::AgentChoiceState,
+    focused: bool,
 ) {
     let title = format!(" {role_name} ");
     let block = Panel::new()
         .title(&title)
-        .focus(PanelFocus::Unfocused)
+        .focus(if focused { PanelFocus::Focused } else { PanelFocus::Unfocused })
         .block();
     let items: Vec<ListItem> = picker
         .choices

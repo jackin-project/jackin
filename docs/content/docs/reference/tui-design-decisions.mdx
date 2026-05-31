@@ -490,7 +490,9 @@ Pass `None` for `title` to suppress the block title. Pass `Some(" Title ")` (wit
 
 ## Focus Persistence
 
-**Focus sustainability rule:** Focus on a container must persist as long as the operator is interacting within that container. Navigation keys (`↑`/`↓`/`←`/`→`) executed inside a focused container must never transfer or clear focus — they navigate within the current owner. Only an explicit user action (mouse click on a different area, `Tab` to another area, `Esc` to a parent screen) may move focus.
+**Focus sustainability rule (extended):** Focus on a container must persist as long as the operator is interacting within that container. This includes all inline sub-pickers — when an inline agent picker, role picker, or provider picker opens WITHIN a focused sidebar, the sidebar border must remain green because the picker is an inline extension of the sidebar's current action, not a separate container that steals focus. The picker receives keyboard input through the sidebar; it does not claim its own focus indicator.
+
+**Inline picker focus rule:** An inline picker rendered inside a parent container must use the parent's focus state for its panel border. Use `focused = parent.list_names_focused` (or equivalent), never hardcoded `PanelFocus::Unfocused`. The `▸` cursor inside an inline picker follows the same gating: only visible when the parent container is focused. Focus on a container must persist as long as the operator is interacting within that container. Navigation keys (`↑`/`↓`/`←`/`→`) executed inside a focused container must never transfer or clear focus — they navigate within the current owner. Only an explicit user action (mouse click on a different area, `Tab` to another area, `Esc` to a parent screen) may move focus.
 
 **`list_names_focused` (left sidebar) is cleared only when:**
 1. The user clicks in the right pane — `update_scroll_focus` sends `SetListNamesFocused(false)`.
