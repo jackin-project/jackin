@@ -20,6 +20,7 @@ use crate::console::widgets::{
 };
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
 
+pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_diffs};
 pub use crate::console::manager::mount_info_cache::MountInfoCache;
 pub use jackin_console::list_row::ManagerListRow;
 
@@ -2660,50 +2661,6 @@ impl EditorState<'_> {
             };
         }
     }
-}
-
-/// Per-mount classification used by both `change_count` and the
-/// Confirm Save mount-diff summary.
-///
-/// Same-`dst` matches with structural drift are reported as a single
-/// `Modified`, not as `Removed + Added` — operators perceive an
-/// isolation/readonly flip on an existing mount as one logical change,
-/// not two.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MountDiff<'a> {
-    Unchanged(&'a crate::workspace::MountConfig),
-    Added(&'a crate::workspace::MountConfig),
-    Removed(&'a crate::workspace::MountConfig),
-    Modified {
-        original: &'a crate::workspace::MountConfig,
-        pending: &'a crate::workspace::MountConfig,
-    },
-}
-
-/// Classify the mount-set delta. `dst` is the identity key (matches the
-/// upsert/remove semantics used everywhere else). `Unchanged` rows are
-/// returned too so callers can render them or filter as needed.
-pub fn classify_mount_diffs<'a>(
-    original: &'a [crate::workspace::MountConfig],
-    pending: &'a [crate::workspace::MountConfig],
-) -> Vec<MountDiff<'a>> {
-    let mut out = Vec::with_capacity(original.len() + pending.len());
-    for p in pending {
-        match original.iter().find(|o| o.dst == p.dst) {
-            Some(o) if o == p => out.push(MountDiff::Unchanged(p)),
-            Some(o) => out.push(MountDiff::Modified {
-                original: o,
-                pending: p,
-            }),
-            None => out.push(MountDiff::Added(p)),
-        }
-    }
-    for o in original {
-        if !pending.iter().any(|p| p.dst == o.dst) {
-            out.push(MountDiff::Removed(o));
-        }
-    }
-    out
 }
 
 fn env_change_count(
