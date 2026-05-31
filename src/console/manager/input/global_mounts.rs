@@ -2,13 +2,12 @@ use crate::operator_env::OpRunner as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::render::global_mounts::{
-    SettingsEnvRow, global_mounts_content_width, settings_env_flat_rows, trust_content_width,
-};
+use super::super::render::global_mounts::{global_mounts_content_width, trust_content_width};
 use super::super::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
-    SettingsEnvModal, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
+    SettingsEnvModal, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsState,
+    SettingsTab,
 };
 use crate::config::AppConfig;
 use crate::console::widgets::ModalOutcome;
@@ -19,6 +18,13 @@ use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
 use jackin_tui::components::{ConfirmState, TextInputState};
+
+fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
+    jackin_console::settings::update::settings_env_flat_rows(
+        &state.env.pending,
+        &state.env.expanded,
+    )
+}
 
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
 const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
