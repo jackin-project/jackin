@@ -989,6 +989,23 @@ Move all terminal-rendering source files into designated TUI directories so the 
 
 **Tracked in:** `TODO.md` → `tui-directory-migration`.
 
+### Planned crate landscape (full TUI ecosystem)
+
+When all phases complete, every TUI surface lives in its own crate with explicit MUV layers. This table is the target state:
+
+| Crate | Screens | MUV structure | Status |
+|---|---|---|---|
+| `jackin-tui` | 0 — shared component library | `components/`, `theme.rs`, `scroll.rs`, `geometry.rs` — View primitives only | ✅ exists, substantially complete |
+| `jackin-tui-lookbook` | 1 — component browser | `stories.rs` (Model), `interactors.rs` (Update), `main.rs` (wiring), `svg.rs` (non-TUI) | ✅ exists |
+| `jackin-capsule` | 1 — in-container multiplexer | `session.rs`/`mux_mode.rs` (Model), `action.rs`/`input.rs` (Update), `tui/` (View) | `tui/` started Phase 9 |
+| `jackin-console` | 3 — workspaces, editor, settings | per-screen: `workspaces/`, `editor/`, `settings/` each with `state.rs` + `update.rs` + `tui/` | Phase 10 |
+| `jackin-launch` | 1 — launch cockpit | `state.rs` (Model), `update.rs` (Update), `tui/` (View: rain, rail, failure) | Phase 10 |
+| `jackin` binary | 0 — orchestration only | routes CLI → crates; no TUI code after extractions | ongoing |
+
+**Rule for single-screen crates** (capsule, launch): one `tui/` at the crate root.
+**Rule for multi-screen crates** (console): split by screen first (`workspaces/`, `editor/`, `settings/`), then `tui/` inside each.
+**`jackin-tui`** is the shared View library — consumed by all other crates; never contains screen-specific code.
+
 ### Phase 10 — Extract `jackin-console` and `jackin-launch` crates
 
 Split the console and launch surfaces into dedicated crates, each following the per-screen Option B structure described in Phase 9.
