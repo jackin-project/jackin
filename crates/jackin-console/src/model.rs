@@ -100,6 +100,12 @@ pub enum SettingsEnvTextTarget {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsEnvConfig<V> {
+    pub env: BTreeMap<String, V>,
+    pub roles: BTreeMap<String, BTreeMap<String, V>>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalMountConfirm {
     Remove,

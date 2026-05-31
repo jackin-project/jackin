@@ -245,6 +245,9 @@ pub use jackin_console::model::{
     settings_vec_change_count,
 };
 
+pub type SettingsEnvConfig =
+    jackin_console::model::SettingsEnvConfig<crate::operator_env::EnvValue>;
+
 #[derive(Debug)]
 pub struct SettingsEnvState<'a> {
     pub selected: usize,
@@ -260,12 +263,6 @@ pub struct SettingsEnvState<'a> {
     pub error: Option<String>,
     pub scroll_y: u16,
     pub scroll_focused: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SettingsEnvConfig {
-    pub env: BTreeMap<String, crate::operator_env::EnvValue>,
-    pub roles: BTreeMap<String, BTreeMap<String, crate::operator_env::EnvValue>>,
 }
 
 #[derive(Debug)]
