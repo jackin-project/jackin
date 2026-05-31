@@ -6,9 +6,7 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::ModalOutcome;
-use jackin_tui::components::{
-    ConfirmState, ErrorPopupState, SelectListState, TextInputState, status_footer_right_chip_rect,
-};
+use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
 #[cfg(test)]
 use jackin_tui::theme::DANGER_RED;
 use ratatui::Frame;
@@ -17,21 +15,23 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::text::Line;
 
+use jackin_launch::input::handle_cockpit_input;
 #[cfg(test)]
 use jackin_launch::tui::build_log::BUILD_LOG_WRAP_PREFIX;
-use jackin_launch::tui::build_log::{build_log_scroll_filled, scroll_build_log};
+use jackin_launch::tui::build_log::build_log_scroll_filled;
 #[cfg(test)]
-use jackin_launch::tui::build_log::{render_build_log_dialog, wrap_build_log_lines};
+use jackin_launch::tui::build_log::{
+    render_build_log_dialog, scroll_build_log, wrap_build_log_lines,
+};
 use jackin_launch::tui::cockpit::render_launch_frame as render_launch_frame_view;
 use jackin_launch::tui::container_info::{launch_container_info_rect, launch_container_info_state};
-use jackin_launch::tui::failure::{
-    failure_copy_payload, failure_copy_target_at, failure_popup_hyperlink_overlay,
-};
+use jackin_launch::tui::failure::failure_popup_hyperlink_overlay;
+#[cfg(test)]
+use jackin_launch::tui::failure::{failure_copy_payload, failure_copy_target_at};
 #[cfg(test)]
 use jackin_launch::tui::failure::{
     failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
 };
-use jackin_launch::tui::footer::{footer_instance, format_activity};
 #[cfg(test)]
 use jackin_launch::tui::progress::{
     LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
@@ -84,6 +84,24 @@ impl LaunchHostTerminal for HostTerminal {
 
     fn emit_compact_line(&self, kind: &str, line: &str) {
         crate::tui::emit_compact_line(kind, line);
+    }
+
+    fn set_pointer_shape(&self, pointer: bool) {
+        let seq = if pointer {
+            jackin_tui::ansi::POINTER_HAND
+        } else {
+            jackin_tui::ansi::POINTER_DEFAULT
+        };
+        let mut out = std::io::stdout();
+        let _ = out.write_all(seq.as_bytes());
+        let _ = out.flush();
+    }
+
+    fn copy_to_clipboard(&self, payload: &str) -> bool {
+        let mut out = std::io::stdout();
+        out.write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(payload))
+            .and_then(|()| out.flush())
+            .is_ok()
     }
 }
 
@@ -151,7 +169,7 @@ impl RichDriver {
                     // Drain input only while this task owns the renderer — when
                     // a forced-choice picker holds it, the picker reads events
                     // itself and this poll would steal its keystrokes.
-                    handle_cockpit_input(&view, &run_id);
+                    handle_cockpit_input(&view, &run_id, host_terminal(), env!("JACKIN_VERSION"));
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             if !rr.no_motion {
@@ -462,226 +480,6 @@ pub fn standalone_select_with_context(
 pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> {
     let mut renderer = RichRenderer::enter_dialog(false)?;
     renderer.error_popup(title, message)
-}
-
-const BUILD_LOG_SCROLL_STEP: usize = 3;
-const BUILD_LOG_PAGE_STEP: usize = 10;
-
-/// Whether `(col, row)` falls on the footer activity text ("Building Docker
-/// image…"). The footer is the last terminal row; the activity is left-aligned
-/// and the right-side chips never overlap it, so a left-edge span is enough.
-fn hit_activity(view: &LaunchView, col: u16, row: u16) -> bool {
-    let Ok((_, rows)) = crossterm::terminal::size() else {
-        return false;
-    };
-    if rows == 0 || row != rows - 1 {
-        return false;
-    }
-    let width = u16::try_from(format_activity(&view.status).chars().count()).unwrap_or(u16::MAX);
-    // One column of slack for the band's left padding.
-    col <= width
-}
-
-fn hit_footer_container_chip(
-    view: &LaunchView,
-    run_id: &str,
-    area: Rect,
-    col: u16,
-    row: u16,
-) -> bool {
-    if view.build_log_open || view.failure.is_some() {
-        return false;
-    }
-    let instance = footer_instance(view);
-    if instance.is_empty() {
-        return false;
-    }
-    let debug_chip = host_terminal().is_debug_mode().then_some(run_id);
-    status_footer_right_chip_rect(
-        Rect {
-            x: 0,
-            y: area.height.saturating_sub(1),
-            width: area.width,
-            height: 1,
-        },
-        &instance,
-        debug_chip,
-    )
-    .is_some_and(|rect| {
-        row >= rect.y
-            && row < rect.y.saturating_add(rect.height)
-            && col >= rect.x
-            && col < rect.x.saturating_add(rect.width)
-    })
-}
-
-/// Switch the terminal pointer to the hand/`pointer` shape over a clickable
-/// element, or back to `default`, via OSC 22 — the same mechanism the
-/// in-container multiplexer uses. Terminals without OSC 22 support ignore the
-/// sequence harmlessly. Emitted between ratatui frames from the render task, so
-/// it never interleaves with a frame write.
-fn set_cockpit_pointer(pointer: bool) {
-    use std::io::Write as _;
-    let seq = if pointer {
-        jackin_tui::ansi::POINTER_HAND
-    } else {
-        jackin_tui::ansi::POINTER_DEFAULT
-    };
-    let mut out = std::io::stdout();
-    let _ = out.write_all(seq.as_bytes());
-    let _ = out.flush();
-}
-
-fn handle_cockpit_mouse_down(v: &mut LaunchView, area: Rect, run_id: &str, col: u16, row: u16) {
-    if v.container_info_open {
-        let state = launch_container_info_state(
-            v,
-            run_id,
-            "",
-            host_terminal().is_debug_mode(),
-            env!("JACKIN_VERSION"),
-        );
-        let rect = launch_container_info_rect(area, &state);
-        if let Some((row, payload)) =
-            jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
-        {
-            let mut out = std::io::stdout();
-            let copy_ok = out
-                .write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(&payload))
-                .and_then(|()| out.flush())
-                .is_ok();
-            if copy_ok {
-                v.container_info_copied = Some(row);
-            }
-        } else {
-            v.container_info_open = false;
-            v.container_info_copied = None;
-        }
-    } else if let Some(failure) = v.failure.as_ref() {
-        if let Some(target) = failure_copy_target_at(area, failure, run_id, col, row)
-            && let Some(payload) = failure_copy_payload(failure, run_id, target)
-        {
-            let mut out = std::io::stdout();
-            let copy_ok = out
-                .write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(&payload))
-                .and_then(|()| out.flush())
-                .is_ok();
-            if copy_ok {
-                v.failure_copied = Some(target);
-            } else {
-                host_terminal().emit_compact_line(
-                    "failure-popup-copy",
-                    "OSC 52 clipboard write failed — badge suppressed",
-                );
-            }
-        }
-    } else if v.build_log_open {
-        v.build_log_open = false;
-    } else if hit_footer_container_chip(v, run_id, area, col, row) {
-        v.container_info_open = true;
-        v.container_info_copied = None;
-        v.footer_hover.right = false;
-        set_cockpit_pointer(false);
-    } else if jackin_launch::build_log::len() > 0 && hit_activity(v, col, row) {
-        v.build_log_open = true;
-        v.build_log_scroll = jackin_tui::scroll::TailScroll::default();
-        v.footer_hover.left = false;
-        set_cockpit_pointer(false);
-    }
-}
-
-fn handle_cockpit_mouse_move(v: &mut LaunchView, area: Rect, run_id: &str, col: u16, row: u16) {
-    if v.container_info_open {
-        return;
-    }
-    if let Some(failure) = v.failure.as_ref() {
-        let hover = failure_copy_target_at(area, failure, run_id, col, row);
-        if hover != v.failure_copy_hover {
-            v.failure_copy_hover = hover;
-            set_cockpit_pointer(hover.is_some());
-        }
-        return;
-    }
-    let activity_hovering =
-        !v.build_log_open && jackin_launch::build_log::len() > 0 && hit_activity(v, col, row);
-    let container_hovering = hit_footer_container_chip(v, run_id, area, col, row);
-    if activity_hovering != v.footer_hover.left || container_hovering != v.footer_hover.right {
-        v.footer_hover.left = activity_hovering;
-        v.footer_hover.right = container_hovering;
-        set_cockpit_pointer(activity_hovering || container_hovering);
-    }
-}
-
-/// Drain queued terminal input and fold it into the build-log overlay / failure
-/// state.
-///
-/// Called only while the render task owns the renderer (no forced-choice picker
-/// is reading events), so this poll cannot steal a picker's keystrokes. Polling
-/// with a zero timeout keeps the 33 ms render cadence intact.
-fn handle_cockpit_input(view: &SharedView, run_id: &str) {
-    use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
-    let area = crossterm::terminal::size()
-        .ok()
-        .map(|(width, height)| Rect::new(0, 0, width, height))
-        .unwrap_or_default();
-    while event::poll(Duration::ZERO).unwrap_or(false) {
-        let Ok(ev) = event::read() else {
-            return;
-        };
-        let Ok(mut v) = view.lock() else {
-            return;
-        };
-        match ev {
-            Event::Mouse(m) => match m.kind {
-                MouseEventKind::Down(MouseButton::Left) => {
-                    handle_cockpit_mouse_down(&mut v, area, run_id, m.column, m.row);
-                }
-                MouseEventKind::Moved => {
-                    handle_cockpit_mouse_move(&mut v, area, run_id, m.column, m.row);
-                }
-                MouseEventKind::ScrollUp if v.build_log_open => {
-                    scroll_build_log(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
-                }
-                MouseEventKind::ScrollDown if v.build_log_open => {
-                    scroll_build_log(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
-                }
-                _ => {}
-            },
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
-                    && v.container_info_open
-                    && matches!(k.code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q')) =>
-            {
-                v.container_info_open = false;
-                v.footer_hover.right = false;
-                set_cockpit_pointer(false);
-            }
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
-                    && v.failure.is_some()
-                    && matches!(k.code, KeyCode::Enter | KeyCode::Esc) =>
-            {
-                // Failure popup is modal over the cockpit; Enter/Esc acknowledges
-                // it so the awaiting `stage_failed` returns.
-                v.failure_ack = true;
-                v.failure_copy_hover = None;
-                set_cockpit_pointer(false);
-            }
-            Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
-                KeyCode::Esc | KeyCode::Char('q') => v.build_log_open = false,
-                KeyCode::Up => scroll_build_log(&mut v, area, 1),
-                KeyCode::Down => scroll_build_log(&mut v, area, -1),
-                KeyCode::PageUp => {
-                    scroll_build_log(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
-                }
-                KeyCode::PageDown => {
-                    scroll_build_log(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
 }
 
 impl Drop for LaunchProgress {

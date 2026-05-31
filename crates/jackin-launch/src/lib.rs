@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 pub mod build_log;
+pub mod input;
 pub mod state;
 pub mod tui;
 pub mod update;
@@ -30,4 +31,6 @@ pub trait LaunchHostTerminal: Send + Sync {
     fn host_screen_owned(&self) -> bool;
     fn is_debug_mode(&self) -> bool;
     fn emit_compact_line(&self, kind: &str, line: &str);
+    fn set_pointer_shape(&self, pointer: bool);
+    fn copy_to_clipboard(&self, payload: &str) -> bool;
 }

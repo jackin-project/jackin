@@ -6,6 +6,7 @@ rust-version = "1.94"
 publish = false
 
 [dependencies]
+crossterm = "0.29"
 jackin-protocol = { path = "../jackin-protocol" }
 jackin-tui = { path = "../jackin-tui" }
 ratatui = "0.30"
