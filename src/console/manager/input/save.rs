@@ -320,32 +320,13 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                 // so the TUI reactor stays responsive while Docker/git runs.
                 // The event loop polls editor.pending_drift_check each tick
                 // and calls continue_save_after_drift_check when done.
-                let paths_clone = paths.clone();
-                let name = original_name.clone();
-                let mounts = prospective_mounts;
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                tokio::task::spawn_blocking(move || {
-                    let result = (|| -> anyhow::Result<crate::config::DriftDetection> {
-                        let rt = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()
-                            .context("building tokio runtime for drift check")?;
-                        let docker = crate::docker_client::BollardDockerClient::connect()?;
-                        rt.block_on(crate::config::detect_workspace_edit_drift(
-                            &paths_clone,
-                            &name,
-                            &mounts,
-                            &docker,
-                        ))
-                    })();
-                    let _ = tx.send(result);
-                });
-                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck {
-                    rx,
+                editor.pending_drift_check = Some(super::super::state::PendingDriftCheck::spawn(
+                    paths.clone(),
+                    original_name.clone(),
+                    prospective_mounts,
                     plan,
                     exit_on_success,
-                    original_name: original_name.clone(),
-                });
+                ));
                 editor.modal = Some(super::super::state::Modal::StatusPopup {
                     state: jackin_tui::components::StatusPopupState::new(
                         "Saving",

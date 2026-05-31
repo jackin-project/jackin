@@ -580,6 +580,43 @@ pub struct PendingDriftCheck {
     pub original_name: String,
 }
 
+impl PendingDriftCheck {
+    #[must_use]
+    pub fn spawn(
+        paths: crate::paths::JackinPaths,
+        original_name: String,
+        prospective_mounts: Vec<crate::workspace::MountConfig>,
+        plan: PendingSaveCommit,
+        exit_on_success: bool,
+    ) -> Self {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let worker_name = original_name.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = (|| -> anyhow::Result<crate::config::DriftDetection> {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(anyhow::Error::new)
+                    .context("building tokio runtime for drift check")?;
+                let docker = crate::docker_client::BollardDockerClient::connect()?;
+                rt.block_on(crate::config::detect_workspace_edit_drift(
+                    &paths,
+                    &worker_name,
+                    &prospective_mounts,
+                    &docker,
+                ))
+            })();
+            let _ = tx.send(result);
+        });
+        Self {
+            rx,
+            plan,
+            exit_on_success,
+            original_name,
+        }
+    }
+}
+
 impl std::fmt::Debug for PendingDriftCheck {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PendingDriftCheck")
