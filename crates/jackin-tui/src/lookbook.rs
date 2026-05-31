@@ -286,13 +286,24 @@ impl StoryInteraction for ScrollablePanelInteractor {
         if key.kind != KeyEventKind::Press {
             return false;
         }
+        let line_count = Self::lines().len();
         match key.code {
             KeyCode::Up => {
-                self.scroll_y = self.scroll_y.saturating_sub(1);
+                crate::components::scrollable_panel::apply_scroll_delta(
+                    &mut self.scroll_y,
+                    -1,
+                    10,
+                    line_count,
+                );
                 true
             }
             KeyCode::Down => {
-                self.scroll_y = self.scroll_y.saturating_add(1);
+                crate::components::scrollable_panel::apply_scroll_delta(
+                    &mut self.scroll_y,
+                    1,
+                    10,
+                    line_count,
+                );
                 true
             }
             _ => false,
@@ -300,13 +311,24 @@ impl StoryInteraction for ScrollablePanelInteractor {
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent, _preview_area: Rect) -> bool {
+        let line_count = Self::lines().len();
         match mouse.kind {
             MouseEventKind::ScrollUp => {
-                self.scroll_y = self.scroll_y.saturating_sub(1);
+                crate::components::scrollable_panel::apply_scroll_delta(
+                    &mut self.scroll_y,
+                    -1,
+                    10,
+                    line_count,
+                );
                 true
             }
             MouseEventKind::ScrollDown => {
-                self.scroll_y = self.scroll_y.saturating_add(1);
+                crate::components::scrollable_panel::apply_scroll_delta(
+                    &mut self.scroll_y,
+                    1,
+                    10,
+                    line_count,
+                );
                 true
             }
             _ => false,
@@ -345,18 +367,8 @@ impl StoryInteraction for ConfirmInteractor {
         if key.kind != KeyEventKind::Press {
             return false;
         }
-        match key.code {
-            KeyCode::Left
-            | KeyCode::Right
-            | KeyCode::Char('y' | 'Y' | 'n' | 'N')
-            | KeyCode::Tab
-            | KeyCode::BackTab
-            | KeyCode::Enter => {
-                self.state.handle_key(key);
-                true
-            }
-            _ => false,
-        }
+        self.state.handle_key(key);
+        true
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent, preview_area: Rect) -> bool {
@@ -405,19 +417,10 @@ impl StoryInteraction for TextInputInteractor {
         if key.kind != KeyEventKind::Press {
             return false;
         }
-        match key.code {
-            KeyCode::Char(_)
-            | KeyCode::Backspace
-            | KeyCode::Delete
-            | KeyCode::Left
-            | KeyCode::Right
-            | KeyCode::Home
-            | KeyCode::End => {
-                self.state.handle_key(key);
-                true
-            }
-            _ => false,
-        }
+        // Delegate everything to the real TextInputState — it handles what it
+        // knows and ignores the rest. We always return true so the preview redraws.
+        self.state.handle_key(key);
+        true
     }
 
     fn handle_mouse(&mut self, _mouse: MouseEvent, _preview_area: Rect) -> bool {
