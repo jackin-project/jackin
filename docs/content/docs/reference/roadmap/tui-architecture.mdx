@@ -17,7 +17,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Lookbook: 14 stories, real `TestBackend`-backed SVG previews, CI drift check; `unstable-widget-ref` feature removed.
 - `insta` snapshot tests for 4 key render paths.
 - Terminal resize correctness: capsule resize now resets the Ratatui double-buffer and `SocketBackend` style tracker before repaint; resize regression tests cover the repaint path.
-- Focus audit progress: editor General and settings Mounts now use the same focused expression for green borders and `▸` cursor visibility; focused editor General content has a regression test.
+- Focus audit progress: editor General and settings Mounts now use the same focused expression for green borders and `▸` cursor visibility; focused editor General content has a regression test; host console content and representative modal states now have one-green-border-cluster regression coverage.
 - Container info is unified across surfaces: shared `jackin-tui` state/render/hit-test/OSC 8 overlay helpers back the host console and launch cockpit; capsule status-bar chip click opens the matching container-info dialog; OSC 52 copy works for copyable rows.
 - Launch failure paths now render as full wrapped plain text and receive OSC 8 `file://` hyperlink overlays for supporting terminals; overlay tests assert both diagnostics and docker-output links.
 
@@ -935,7 +935,7 @@ The container info dialog now opens from every status-bar/status-footer chip sur
 
 ### Phase 8b — Focus correctness audit
 
-**Partially implemented on `feature/tui-architecture` (2026-05-31):** fixed the editor General and settings Mounts border/cursor expression mismatches and added a focused editor General regression test. Remaining work: exhaustive single-green-border cluster tests for every host console state.
+**Partially implemented on `feature/tui-architecture` (2026-05-31):** fixed the editor General and settings Mounts border/cursor expression mismatches; added focused editor General regression coverage; added one-green-border-cluster tests for every host console content tab plus representative list/editor/settings modal states. Remaining work: exhaustively enumerate the remaining host console modal variants and list-view detail-panel transitions.
 
 Systematically audit every screen in the host console and settings for focus violations:
 

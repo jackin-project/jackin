@@ -17,7 +17,11 @@ mod tests {
         config::AppConfig,
         console::manager::{
             prepare_for_render, render,
-            state::{EditorState, EditorTab, ManagerStage, ManagerState, Modal, SettingsState},
+            state::{
+                EditorState, EditorTab, GlobalMountConfirm, GlobalMountModal, ManagerStage,
+                ManagerState, Modal, SettingsEnvModal, SettingsEnvScope, SettingsEnvTextTarget,
+                SettingsState,
+            },
         },
         workspace::WorkspaceConfig,
     };
@@ -232,6 +236,25 @@ mod tests {
     fn host_console_modal_states_have_one_green_border_cluster() {
         let config = AppConfig::default();
         let cwd = test_cwd();
+        let mut cases: Vec<(&str, ManagerState<'_>)> = Vec::new();
+
+        let mut confirm_delete = ManagerState::from_config(&config, &cwd);
+        confirm_delete.stage = ManagerStage::ConfirmDelete {
+            name: "ws".to_string(),
+            state: jackin_tui::components::ConfirmState::new("Delete workspace?"),
+        };
+        cases.push(("list confirm delete", confirm_delete));
+
+        let mut editor_text = ManagerState::from_config(&config, &cwd);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.tab_bar_focused = false;
+        editor.tab_content_scroll_focused = true;
+        editor.modal = Some(Modal::TextInput {
+            target: crate::console::manager::state::TextInputTarget::Name,
+            state: jackin_tui::components::TextInputState::new("Name", "ws"),
+        });
+        editor_text.stage = ManagerStage::Editor(editor);
+        cases.push(("editor text input", editor_text));
 
         let mut editor_state = ManagerState::from_config(&config, &cwd);
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
@@ -245,8 +268,54 @@ mod tests {
             ),
         });
         editor_state.stage = ManagerStage::Editor(editor);
+        cases.push(("editor container info", editor_state));
 
-        for (name, mut state) in [("editor container info", editor_state)] {
+        let mut settings_mounts_confirm = ManagerState::from_config(&config, &cwd);
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = crate::console::manager::state::SettingsTab::Mounts;
+        settings.tab_bar_focused = false;
+        settings.mounts.scroll_focused = true;
+        settings.mounts.modal = Some(GlobalMountModal::Confirm {
+            action: GlobalMountConfirm::Remove,
+            state: jackin_tui::components::ConfirmState::new("Remove mount?"),
+        });
+        settings_mounts_confirm.stage = ManagerStage::Settings(settings);
+        cases.push(("settings mounts confirm", settings_mounts_confirm));
+
+        let mut settings_env_text = ManagerState::from_config(&config, &cwd);
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = crate::console::manager::state::SettingsTab::Environments;
+        settings.tab_bar_focused = false;
+        settings.env.scroll_focused = true;
+        settings.env.modal = Some(SettingsEnvModal::Text {
+            target: SettingsEnvTextTarget::EnvKey {
+                scope: SettingsEnvScope::Global,
+            },
+            state: Box::new(jackin_tui::components::TextInputState::new(
+                "Environment key",
+                "TOKEN",
+            )),
+        });
+        settings_env_text.stage = ManagerStage::Settings(settings);
+        cases.push(("settings env text", settings_env_text));
+
+        let mut settings_auth_text = ManagerState::from_config(&config, &cwd);
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = crate::console::manager::state::SettingsTab::Auth;
+        settings.tab_bar_focused = false;
+        settings.auth.scroll_focused = true;
+        settings.auth.modal = Some(
+            crate::console::manager::state::SettingsAuthModal::TextInput {
+                state: Box::new(jackin_tui::components::TextInputState::new(
+                    "Credential",
+                    "token",
+                )),
+            },
+        );
+        settings_auth_text.stage = ManagerStage::Settings(settings);
+        cases.push(("settings auth text", settings_auth_text));
+
+        for (name, mut state) in cases {
             let buf = render_manager_buffer(&mut state, &config, &cwd, 100, 28);
             assert_eq!(
                 green_border_cluster_count(&buf),
