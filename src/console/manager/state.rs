@@ -591,21 +591,18 @@ impl PendingDriftCheck {
     ) -> Self {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let worker_name = original_name.clone();
-        tokio::task::spawn_blocking(move || {
-            let result = (|| -> anyhow::Result<crate::config::DriftDetection> {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(anyhow::Error::new)
-                    .context("building tokio runtime for drift check")?;
+        tokio::spawn(async move {
+            let result = async {
                 let docker = crate::docker_client::BollardDockerClient::connect()?;
-                rt.block_on(crate::config::detect_workspace_edit_drift(
+                crate::config::detect_workspace_edit_drift(
                     &paths,
                     &worker_name,
                     &prospective_mounts,
                     &docker,
-                ))
-            })();
+                )
+                .await
+            }
+            .await;
             let _ = tx.send(result);
         });
         Self {
