@@ -692,6 +692,18 @@ Operators use both surfaces regularly. When Settings Auth scrolls but workspace 
 
 The **shared renderer** (`render_scrollable_block`, `render_scrollable_block_focused`) and **shared scroll helpers** (`scrollable.rs`) enforce visual consistency automatically. The state wiring and mouse handlers are the remaining surface where inconsistency can creep in — which is why this explicit audit rule exists.
 
+### Long values in dialogs — truncation is a design violation
+
+Any dialog or info panel that displays a long value (file path, container ID, URL, error message) must not silently truncate it with no way for the operator to see the full content. Three acceptable approaches, in priority order:
+
+1. **OSC 8 hyperlink** (preferred for file system paths and URLs). Render the path as a terminal hyperlink via `]8;;file:///full/path\visible text]8;;\`. The operator clicks to open the file. The visible text can be abbreviated; the href carries the full path. The failure popup's "run diagnostics" and "docker output" rows must use this approach.
+
+2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. The dialog height adjusts accordingly (the failure popup already computes height from row count).
+
+3. **Horizontal scroll**. Only use this when neither hyperlink nor wrap is feasible. Use `render_scrollable_block` so the shared scrollbar and clamp math apply.
+
+Never silently truncate: `path.display().to_string().chars().take(N).collect()` with no affordance is a design violation. If the operator cannot access the full value, the dialog is broken.
+
 ## Error Surface — ErrorPopup Only, No Ephemeral Overlays
 
 All error conditions surfaced to the operator must use the red-border `ErrorPopup` dialog (<RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" />). Ephemeral overlays (shimmer banners, auto-expiring toasts, single-line status strips) are banned for error display.

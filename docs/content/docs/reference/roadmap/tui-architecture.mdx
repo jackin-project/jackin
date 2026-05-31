@@ -844,6 +844,18 @@ Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high
 
 Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, provides a real-terminal browser through `tui-lookbook --terminal`, one MDX page per component following the story shape above, and CI regeneration so previews never drift. The first generator lives at <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> and renders <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> stories from `TestBackend` buffers into committed assets under <RepoFile path="docs/public/tui-lookbook/panel-focused.svg" />, consumed by per-component [TUI Lookbook](/reference/tui-lookbook/) pages. The generated SVGs always carry a black terminal background so docs previews match real terminal use. CI runs `tui-lookbook --check` against those committed previews; every new shared TUI component must appear in both the docs lookbook and the terminal browser in the same PR. Reconcile the host/capsule drift table as components consolidate into shared widgets.
 
+### Phase 8e — Long paths in dialogs: OSC 8 hyperlinks
+
+The launch failure popup renders "run diagnostics" and "docker output" paths that are truncated when they exceed the dialog width. This violates the "never silently truncate" rule.
+
+**Fix:** Render file paths in the failure popup as OSC 8 terminal hyperlinks (`file://` scheme). The visible text can be the shortened path; the href is the full absolute path. The operator clicks to open the file in their system default viewer. This is consistent with how `ContainerInfo` in the capsule already renders the "Run log" row.
+
+**Also audit:** Any other dialog row that displays a file path, URL, or long string. Apply the same OSC 8 approach to:
+- `failure_popup_rows` in <RepoFile path="src/runtime/progress.rs" /> — "run diagnostics" and "docker output" rows.
+- Any future info panel that shows a path.
+
+**Acceptance:** The failure popup rows for file paths render as clickable OSC 8 links in supporting terminals. Terminals that do not support OSC 8 fall back to the full path text (not truncated). No silent truncation anywhere in the failure popup.
+
 ### Phase 8d — Clickable status bar chips (instance ID + run ID)
 
 Make both status bar chips fully interactive per the design decision rule:
