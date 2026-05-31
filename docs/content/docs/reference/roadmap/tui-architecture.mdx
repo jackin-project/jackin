@@ -50,6 +50,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Launch rich-dialog loops now share one pressed-key/Ctrl-C cancellation gate before the remaining forced-choice picker conversion.
 - Launch forced-choice picker key handling now runs through a local message/update helper with regression coverage for commit-vs-cancel behavior.
 - Launch env select prompt key handling now runs through a local message/update helper with regression coverage for value and skip commits.
+- Launch env text prompt key handling now runs through a local message/update helper with regression coverage for value and skip commits.
 - `LaunchProgress` no longer exposes a generic shared-view mutator; stage paths update the cockpit only by dispatching `LaunchMessage`.
 - Host instance refresh now exposes separate request/poll calls, making the run loop's worker subscription boundary explicit before promotion into the shared effect layer.
 

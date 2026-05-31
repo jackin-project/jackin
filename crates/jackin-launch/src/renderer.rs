@@ -55,6 +55,11 @@ enum SelectPromptMessage {
     Key(KeyEvent),
 }
 
+#[derive(Debug, Clone, Copy)]
+enum TextPromptMessage {
+    Key(KeyEvent),
+}
+
 fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) -> Option<usize> {
     match msg {
         SelectLoopMessage::Key(key) => {
@@ -65,6 +70,23 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
                 None
             }
         }
+    }
+}
+
+fn update_text_prompt(
+    input: &mut TextInputState<'_>,
+    skippable: bool,
+    msg: TextPromptMessage,
+) -> Option<anyhow::Result<PromptResult>> {
+    match msg {
+        TextPromptMessage::Key(key) => match input.handle_key(key) {
+            ModalOutcome::Commit(value) if value.is_empty() && skippable => {
+                Some(Ok(PromptResult::Skipped))
+            }
+            ModalOutcome::Commit(value) => Some(Ok(PromptResult::Value(value))),
+            ModalOutcome::Cancel => Some(Err(anyhow::anyhow!("launch cancelled by operator"))),
+            ModalOutcome::Continue => None,
+        },
     }
 }
 
@@ -290,15 +312,12 @@ impl RichRenderer {
             self.terminal
                 .draw(|frame| draw_text_prompt(frame, &input, skippable))
                 .context("rendering launch env text prompt")?;
-            match input.handle_key(read_pressed_key("reading launch env prompt input")?) {
-                ModalOutcome::Commit(value) if value.is_empty() && skippable => {
-                    return Ok(PromptResult::Skipped);
-                }
-                ModalOutcome::Commit(value) => {
-                    return Ok(PromptResult::Value(value));
-                }
-                ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
-                ModalOutcome::Continue => {}
+            if let Some(result) = update_text_prompt(
+                &mut input,
+                skippable,
+                TextPromptMessage::Key(read_pressed_key("reading launch env prompt input")?),
+            ) {
+                return result;
             }
         }
     }
@@ -461,6 +480,36 @@ mod tests {
             &options,
             true,
             SelectPromptMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        )
+        .expect("enter commits")
+        .expect("skip succeeds");
+
+        assert_eq!(result, PromptResult::Skipped);
+    }
+
+    #[test]
+    fn text_prompt_message_commits_value() {
+        let mut input = TextInputState::new("name", "demo");
+
+        let result = update_text_prompt(
+            &mut input,
+            false,
+            TextPromptMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        )
+        .expect("enter commits")
+        .expect("commit succeeds");
+
+        assert_eq!(result, PromptResult::Value("demo".into()));
+    }
+
+    #[test]
+    fn text_prompt_message_commits_empty_as_skip_when_skippable() {
+        let mut input = TextInputState::new_allow_empty("name", "");
+
+        let result = update_text_prompt(
+            &mut input,
+            true,
+            TextPromptMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
         )
         .expect("enter commits")
         .expect("skip succeeds");
