@@ -7,12 +7,11 @@ use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::centered_rect;
 use jackin_tui::components::{
-    ConfirmState, ContainerInfoRow, ContainerInfoState, ErrorPopupState, SelectListState,
-    TextInputState, brand_header_line, confirm_required_height, confirm_width_pct,
-    render_confirm_dialog, render_container_info, render_error_dialog, render_hint_bar,
-    render_scrollable_block, render_select_list, render_status_footer, render_text_input,
-    required_height as error_dialog_required_height, status_footer_right_chip_rect,
-    viewport_height, viewport_width,
+    ConfirmState, ErrorPopupState, SelectListState, TextInputState, brand_header_line,
+    confirm_required_height, confirm_width_pct, render_confirm_dialog, render_error_dialog,
+    render_hint_bar, render_scrollable_block, render_select_list, render_status_footer,
+    render_text_input, required_height as error_dialog_required_height,
+    status_footer_right_chip_rect, viewport_height, viewport_width,
 };
 use jackin_tui::theme::{
     DANGER_RED, DIALOG_BACKDROP, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
@@ -28,6 +27,9 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use jackin_launch::tui::build_log::BUILD_LOG_WRAP_PREFIX;
 use jackin_launch::tui::build_log::{
     build_log_scroll_filled, scroll_build_log, wrap_build_log_lines,
+};
+use jackin_launch::tui::container_info::{
+    launch_container_info_rect, launch_container_info_state, render_launch_container_info,
 };
 use jackin_launch::tui::failure::{
     failure_copy_payload, failure_copy_target_at, failure_popup_hyperlink_overlay,
@@ -533,7 +535,13 @@ fn set_cockpit_pointer(pointer: bool) {
 
 fn handle_cockpit_mouse_down(v: &mut LaunchView, area: Rect, run_id: &str, col: u16, row: u16) {
     if v.container_info_open {
-        let state = launch_container_info_state(v, run_id, "");
+        let state = launch_container_info_state(
+            v,
+            run_id,
+            "",
+            host_terminal().is_debug_mode(),
+            env!("JACKIN_VERSION"),
+        );
         let rect = launch_container_info_rect(area, &state);
         if let Some((row, payload)) =
             jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
@@ -1124,7 +1132,15 @@ fn render_launch_frame(
     if let Some(failure) = &view.failure {
         render_failure_popup(frame, area, view, failure, run_id);
     } else if view.container_info_open {
-        render_launch_container_info(frame, area, view, run_id, run_log_path);
+        render_launch_container_info(
+            frame,
+            area,
+            view,
+            run_id,
+            run_log_path,
+            host_terminal().is_debug_mode(),
+            env!("JACKIN_VERSION"),
+        );
     }
 }
 
@@ -1560,58 +1576,6 @@ fn footer_instance(view: &LaunchView) -> String {
         .unwrap_or_default()
 }
 
-fn launch_container_info_state(
-    view: &LaunchView,
-    run_id: &str,
-    run_log_path: &str,
-) -> ContainerInfoState {
-    let identity = view.identity.as_ref();
-    let mut rows = vec![
-        ContainerInfoRow::new(
-            "Container ID",
-            identity
-                .and_then(|identity| identity.container.as_deref())
-                .unwrap_or("loading..."),
-        )
-        .copyable()
-        .emphasised(),
-        ContainerInfoRow::new("jackin version", env!("JACKIN_VERSION")),
-    ];
-    if let Some(identity) = identity {
-        rows.push(ContainerInfoRow::new("Role", &identity.role));
-        rows.push(ContainerInfoRow::new("Agent", &identity.agent));
-        rows.push(ContainerInfoRow::new("Target", &identity.target_label));
-    }
-    if host_terminal().is_debug_mode() {
-        rows.push(
-            ContainerInfoRow::new("Run ID", run_id)
-                .copyable()
-                .emphasised(),
-        );
-        rows.push(
-            ContainerInfoRow::new("Diagnostics log", run_log_path)
-                .hyperlink(format!("file://{run_log_path}")),
-        );
-    }
-    let mut state = ContainerInfoState::new("Container info", rows);
-    if let Some(row) = view.container_info_copied {
-        state.mark_copied(row);
-    }
-    state
-}
-
-fn render_launch_container_info(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    view: &LaunchView,
-    run_id: &str,
-    run_log_path: &str,
-) {
-    let state = launch_container_info_state(view, run_id, run_log_path);
-    let rect = launch_container_info_rect(area, &state);
-    render_container_info(frame, rect, &state);
-}
-
 fn emit_launch_container_info_hyperlink_overlay(
     area: Rect,
     view: &LaunchView,
@@ -1621,7 +1585,13 @@ fn emit_launch_container_info_hyperlink_overlay(
     if !view.container_info_open || view.failure.is_some() || view.build_log_open {
         return;
     }
-    let state = launch_container_info_state(view, run_id, run_log_path);
+    let state = launch_container_info_state(
+        view,
+        run_id,
+        run_log_path,
+        host_terminal().is_debug_mode(),
+        env!("JACKIN_VERSION"),
+    );
     let rect = launch_container_info_rect(area, &state);
     let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, &state);
     if overlay.is_empty() {
@@ -1630,12 +1600,6 @@ fn emit_launch_container_info_hyperlink_overlay(
     let mut out = std::io::stdout();
     let _ = out.write_all(&overlay);
     let _ = out.flush();
-}
-
-fn launch_container_info_rect(area: Rect, state: &ContainerInfoState) -> Rect {
-    let width = (area.width.saturating_mul(3) / 5).clamp(40, area.width.max(40));
-    let height = jackin_tui::components::container_info_required_height(state);
-    centered_rect(width, height.min(area.height), area)
 }
 
 fn emit_failure_popup_hyperlink_overlay(area: Rect, view: &LaunchView, run_id: &str) {
