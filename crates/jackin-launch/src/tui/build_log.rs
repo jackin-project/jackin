@@ -1,12 +1,17 @@
 //! Launch docker-build log overlay helpers.
 
-use jackin_tui::components::{viewport_height, viewport_width};
+use jackin_tui::HintSpan;
+use jackin_tui::components::{
+    render_hint_bar, render_scrollable_block, viewport_height, viewport_width,
+};
 use jackin_tui::theme::{DIALOG_SURFACE, PHOSPHOR_DIM};
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
 use crate::LaunchView;
+use crate::tui::dialog::dialog_backdrop;
 
 #[must_use]
 pub fn build_log_scroll_filled(area: Rect) -> usize {
@@ -28,6 +33,66 @@ pub fn build_log_scroll_filled(area: Rect) -> usize {
 pub fn scroll_build_log(view: &mut LaunchView, area: Rect, delta: isize) {
     let filled = build_log_scroll_filled(area);
     view.build_log_scroll.scroll_by(filled, delta);
+}
+
+/// Footer-hint keys for the build-log overlay. Shared `HintSpan` vocabulary,
+/// rendered by the shared host hint renderer so it matches every other footer.
+const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("scroll"),
+    HintSpan::GroupSep,
+    HintSpan::Key("PgUp/PgDn"),
+    HintSpan::Text("page"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("close"),
+];
+
+/// Full-screen opaque overlay over the live docker-build output, scrollable.
+/// Opened by clicking the footer activity; dismissed by `Esc`/`q` or a click.
+/// Long lines wrap inside the modal instead of requiring horizontal scroll;
+/// continuation rows carry a visible prefix so wrapped Docker output remains
+/// easy to distinguish from separate log lines. The key hint renders in the
+/// bottom footer row, never inside the box (TUI design rule).
+pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
+    let (box_area, hint_area) = dialog_backdrop(frame, area);
+
+    let title = if crate::build_log::is_active() {
+        " Docker build · building… "
+    } else {
+        " Docker build "
+    };
+    // The full output drives the shared scrollable block so its proportional
+    // scrollbar is correct. Cloning the (capped) buffer is acceptable here: the
+    // overlay is a transient, operator-opened modal, not the steady cockpit.
+    let raw = crate::build_log::snapshot();
+    let viewport_w = viewport_width(box_area);
+    let lines: Vec<Line<'_>> = if raw.is_empty() {
+        vec![Line::from(Span::styled(
+            "(waiting for docker build output…)",
+            Style::default().fg(PHOSPHOR_DIM),
+        ))]
+    } else {
+        wrap_build_log_lines(raw, viewport_w)
+    };
+
+    // `build_log_scroll` counts lines up from the tail (0 = follow newest).
+    // Convert through the shared tail adapter to the block's top-offset.
+    let viewport_h = viewport_height(box_area);
+    let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines.len(), viewport_h))
+        .unwrap_or(u16::MAX);
+    let mut scroll_x = 0u16;
+    render_scrollable_block(
+        frame,
+        box_area,
+        lines,
+        &mut scroll_x,
+        &mut scroll_y,
+        true,
+        Some(title),
+    );
+
+    render_hint_bar(frame, hint_area, BUILD_LOG_HINT);
 }
 
 pub const BUILD_LOG_WRAP_PREFIX: &str = "↳ ";

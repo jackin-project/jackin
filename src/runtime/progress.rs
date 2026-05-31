@@ -9,30 +9,30 @@ use jackin_tui::centered_rect;
 use jackin_tui::components::{
     ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
     confirm_width_pct, render_confirm_dialog, render_error_dialog, render_hint_bar,
-    render_scrollable_block, render_select_list, render_text_input,
-    required_height as error_dialog_required_height, status_footer_right_chip_rect,
-    viewport_height, viewport_width,
+    render_select_list, render_text_input, required_height as error_dialog_required_height,
+    status_footer_right_chip_rect,
 };
 #[cfg(test)]
 use jackin_tui::theme::DANGER_RED;
-use jackin_tui::theme::{DIALOG_BACKDROP, PHOSPHOR_DIM};
 use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 #[cfg(test)]
 use ratatui::style::Color;
-use ratatui::style::Style;
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear};
+use ratatui::text::Line;
+use ratatui::widgets::Clear;
 
 #[cfg(test)]
 use jackin_launch::tui::build_log::BUILD_LOG_WRAP_PREFIX;
+#[cfg(test)]
+use jackin_launch::tui::build_log::wrap_build_log_lines;
 use jackin_launch::tui::build_log::{
-    build_log_scroll_filled, scroll_build_log, wrap_build_log_lines,
+    build_log_scroll_filled, render_build_log_dialog, scroll_build_log,
 };
 use jackin_launch::tui::container_info::{
     launch_container_info_rect, launch_container_info_state, render_launch_container_info,
 };
+use jackin_launch::tui::dialog::dialog_backdrop;
 use jackin_launch::tui::failure::{
     failure_copy_payload, failure_copy_target_at, failure_popup_hyperlink_overlay,
     render_failure_popup,
@@ -1235,87 +1235,6 @@ const PICKER_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Ctrl-C"),
     HintSpan::Text("cancel"),
 ];
-
-/// Footer-hint keys for the build-log overlay. Shared `HintSpan` vocabulary,
-/// rendered by the shared host hint renderer so it matches every other footer.
-const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("scroll"),
-    HintSpan::GroupSep,
-    HintSpan::Key("PgUp/PgDn"),
-    HintSpan::Text("page"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("close"),
-];
-
-/// Full-screen opaque overlay over the live docker-build output, scrollable.
-/// Opened by clicking the footer activity; dismissed by `Esc`/`q` or a click.
-/// Long lines wrap inside the modal instead of requiring horizontal scroll;
-/// continuation rows carry a visible prefix so wrapped Docker output remains
-/// easy to distinguish from separate log lines. The key hint renders in the
-/// bottom footer row, never inside the box (TUI design rule).
-/// Paint the shared solid dialog backdrop over `area` (capsule modal
-/// convention — hide the cockpit, never dim it) and split off the bottom row
-/// for the footer hint. Returns `(box_area, hint_area)` so every launch dialog
-/// centers its box and renders its hint the same way.
-fn dialog_backdrop(frame: &mut Frame<'_>, area: Rect) -> (Rect, Rect) {
-    frame.render_widget(
-        Block::default().style(Style::default().bg(DIALOG_BACKDROP)),
-        area,
-    );
-    let box_area = Rect {
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    let hint_area = Rect {
-        y: area.y + area.height.saturating_sub(1),
-        height: 1,
-        ..area
-    };
-    (box_area, hint_area)
-}
-
-fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
-    let (box_area, hint_area) = dialog_backdrop(frame, area);
-
-    let title = if jackin_launch::build_log::is_active() {
-        " Docker build · building… "
-    } else {
-        " Docker build "
-    };
-    // The full output drives the shared scrollable block so its proportional
-    // scrollbar is correct. Cloning the (capped) buffer is acceptable here: the
-    // overlay is a transient, operator-opened modal, not the steady cockpit.
-    let raw = jackin_launch::build_log::snapshot();
-    let viewport_w = viewport_width(box_area);
-    let lines: Vec<Line<'_>> = if raw.is_empty() {
-        vec![Line::from(Span::styled(
-            "(waiting for docker build output…)",
-            Style::default().fg(PHOSPHOR_DIM),
-        ))]
-    } else {
-        wrap_build_log_lines(raw, viewport_w)
-    };
-
-    // `build_log_scroll` counts lines up from the tail (0 = follow newest).
-    // Convert through the shared tail adapter to the block's top-offset.
-    let viewport_h = viewport_height(box_area);
-    let mut scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines.len(), viewport_h))
-        .unwrap_or(u16::MAX);
-    let mut scroll_x = 0u16;
-    render_scrollable_block(
-        frame,
-        box_area,
-        lines,
-        &mut scroll_x,
-        &mut scroll_y,
-        true,
-        Some(title),
-    );
-
-    render_hint_bar(frame, hint_area, BUILD_LOG_HINT);
-}
 
 fn draw_select(frame: &mut Frame<'_>, title: &str, context: &[Line<'_>], picker: &SelectListState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
