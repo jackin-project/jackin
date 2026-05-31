@@ -47,7 +47,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Launch container-info open/close/copy state now routes through `LaunchMessage` instead of mutating the shared view directly from input.
 - Launch footer hover state now routes through `LaunchMessage` instead of mutating the shared view directly from input.
 - Launch render-tick frame advancement and build-log scroll clamping now route through `LaunchMessage` instead of mutating the shared view directly from the render task.
-- Launch rich-dialog loops now share one pressed-key/Ctrl-C cancellation gate before the remaining forced-choice picker conversion.
+- Launch rich-dialog loops now share one pressed-key/Ctrl-C cancellation gate before prompt-specific message/update conversion.
 - Launch forced-choice picker key handling now runs through a local message/update helper with regression coverage for commit-vs-cancel behavior.
 - Launch env select prompt key handling now runs through a local message/update helper with regression coverage for value and skip commits.
 - Launch env text prompt key handling now runs through a local message/update helper with regression coverage for value and skip commits.
@@ -65,6 +65,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Manager background completions for mount info, instance refresh, and 1Password commits now collect through one `poll_background_messages` subscription helper before update dispatch.
 - 1Password picker keys no longer poll local worker channels inline; picker load completions are drained by the manager tick path, while tests drive the explicit poll helper.
 - 1Password picker account/vault/item/field loads now share one local channel/spawn helper for cache hits and worker misses, narrowing the remaining lift to a shared typed subscription.
+- Mouse scroll-focus geometry now reuses the same selected-sidebar helper as render/clamp instead of rebuilding current-directory vs workspace detail inputs locally.
 
 **Resolved (Phase 5):** Typed session spine substantially complete. `run_console` accepts `parent_session: Option<&TerminalSession>` and uses `is_active()`. `RichRenderer` stores `entered_alt_screen: bool` at construction, eliminating two global reads. The `host_screen_owned` global remains as the ambient signal for four deep-call-stack subsystems (`runtime/attach.rs`, `tui/animation.rs`, `docker.rs`, `operator_env.rs`) where threading a typed reference would change ~12 function signatures for minimal benefit. Accepted as permanent ambient state. — `run_console` now accepts `parent_session: Option<&TerminalSession>` and uses `is_active()` instead of the global for its own screen-ownership decision. `RichRenderer` now stores `entered_alt_screen: bool` at construction and uses the stored flag in `Drop`/`with_raw_mode`, eliminating two global reads from the renderer lifecycle. The `host_screen_owned` global remains as the ambient query mechanism for subsystems that don't receive a session reference (`runtime/attach.rs` for `JACKIN_HOST_ALT_SCREEN`, `tui/animation.rs` animation helpers, `docker.rs`, `operator_env.rs`). `TerminalSession` owns the terminal lifecycle and manages the global; eliminating the global entirely would require threading the reference through the full launch stack.
 
@@ -439,7 +440,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 7. **Three coexisting modal-stack shapes.** — *resolved:* `AuthFormReturnPath` stash slots (`pending_auth_form_return` on both `EditorState` and `SettingsAuthState`) retired; `EditorState.pending_env_key` retired (now embedded in `Modal::SourcePicker { env_key: … }`); auth parent stack now `Vec<SettingsAuthModal>`. `SettingsEnvState.pending_env_key` for the settings env-add flow is a distinct field that remains intentionally.
 
-8. **DRY drift from symmetric variants.** `sidebar_inputs_for_workspace` vs. `sidebar_inputs_for_current_dir` in <RepoFile path="src/console/tui/render/list.rs" /> are near-identical bodies; the same workspace-vs-current-dir distinction is repeated in `focused_block_still_scrollable`, `clamp_list_scroll_for_area`, and the mouse `update_scroll_focus` handler — four call sites that must stay in lock-step.
+8. **DRY drift from symmetric variants.** `sidebar_inputs_for_workspace` vs. `sidebar_inputs_for_current_dir` in <RepoFile path="src/console/manager/list_geometry.rs" /> still carry parallel variant setup, but current-directory mount projection is centralized and render, clamp, and mouse scroll geometry now route through the shared `selected_sidebar_scroll_areas` / `current_dir_mount_config` helpers instead of each rebuilding the workspace-vs-current-dir distinction.
 
 9. **Component reuse was happening in the wrong layer.** The launch cockpit used to import host console widgets such as `select_list`, `status_bar`, `hints`, `scrollable`, and `error_popup`. This branch moved those pieces into <RepoFile path="crates/jackin-tui/Cargo.toml" /> and `jackin-launch` so every terminal surface consumes shared component or launch-surface crates instead of reaching sideways into `src/console/widgets`.
 

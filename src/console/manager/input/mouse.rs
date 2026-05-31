@@ -6,8 +6,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::list_geometry::{
-    SidebarInputs, SidebarScrollAreas, compute_sidebar_scroll_areas, current_dir_mount_config,
-    list_names_content_width, sidebar_inputs_for_current_dir, sidebar_inputs_for_workspace,
+    SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::modal_layout::modal_outer_rect;
@@ -1275,19 +1274,12 @@ fn list_scroll_areas(
             .saturating_sub(LIST_HEADER_HEIGHT + LIST_FOOTER_HEIGHT),
     };
 
-    let cwd_mounts;
-    let inputs: SidebarInputs<'_> = if state.is_current_dir_selected() {
-        cwd_mounts = [current_dir_mount_config(&state.current_dir)];
-        sidebar_inputs_for_current_dir(&state.current_dir, &cwd_mounts, config, state)
-    } else {
-        let summary = state.selected_workspace_summary()?;
-        // Ensure the workspace is still present in config — old summaries can
-        // outlive a `jackin config workspace remove`.
-        config.workspaces.get(&summary.name)?;
-        sidebar_inputs_for_workspace(summary, config, state)
-    };
-
-    Some(compute_sidebar_scroll_areas(pane_area, &inputs, config))
+    selected_sidebar_scroll_areas(
+        pane_area,
+        state,
+        config,
+        std::path::Path::new(&state.current_dir),
+    )
 }
 
 const fn editor_content_area(
