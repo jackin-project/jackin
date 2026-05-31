@@ -1379,12 +1379,12 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
     // Two stacked sub-panels so the section titles render as block titles
     // with the same PHOSPHOR_DARK border used by General/Mounts/Roles.
     // The "What is a workspace?" intro is short (fits in 4 rows); the
-    // rest of the area hosts the bullet list + closing hint.
+    // rest of the area hosts the bullet list.
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(5), // "What is a workspace?" intro (2 text rows + 2 borders + 1 pad)
-            Constraint::Min(9),    // "Why create one?" bullets + hint
+            Constraint::Min(9),    // "Why create one?" bullets
         ])
         .split(area);
 

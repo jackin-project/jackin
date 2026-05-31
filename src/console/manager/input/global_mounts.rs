@@ -2983,25 +2983,55 @@ mod tests {
     }
 
     #[test]
-    fn after_settings_event_promotes_mounts_error_to_error_popup() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = JackinPaths::for_tests(tmp.path());
-        paths.ensure_base_dirs().unwrap();
-        let config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut settings = SettingsState::from_config(&config);
-        settings.mounts.error = Some("mount error detail".into());
-        state.stage = ManagerStage::Settings(settings);
+    fn after_settings_event_promotes_subtab_errors_to_error_popup() {
+        fn set_mounts_error(settings: &mut SettingsState<'_>) {
+            settings.mounts.error = Some("mounts detail".into());
+        }
+        fn set_env_error(settings: &mut SettingsState<'_>) {
+            settings.env.error = Some("env detail".into());
+        }
+        fn set_auth_error(settings: &mut SettingsState<'_>) {
+            settings.auth.error = Some("auth detail".into());
+        }
+        fn set_trust_error(settings: &mut SettingsState<'_>) {
+            settings.trust.error = Some("trust detail".into());
+        }
 
-        after_settings_event(&mut state);
+        for (name, set_error) in [
+            ("mounts", set_mounts_error as fn(&mut SettingsState<'_>)),
+            ("env", set_env_error),
+            ("auth", set_auth_error),
+            ("trust", set_trust_error),
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            let paths = JackinPaths::for_tests(tmp.path());
+            paths.ensure_base_dirs().unwrap();
+            let config = AppConfig::default();
+            let mut state = ManagerState::from_config(&config, tmp.path());
+            let mut settings = SettingsState::from_config(&config);
+            set_error(&mut settings);
+            state.stage = ManagerStage::Settings(settings);
 
-        let ManagerStage::Settings(settings) = &state.stage else {
-            panic!("must stay in Settings stage");
-        };
-        assert!(
-            settings.error_popup.is_some(),
-            "error_popup must be set after after_settings_event"
-        );
+            after_settings_event(&mut state);
+
+            let ManagerStage::Settings(settings) = &state.stage else {
+                panic!("must stay in Settings stage");
+            };
+            let popup = settings
+                .error_popup
+                .as_ref()
+                .unwrap_or_else(|| panic!("{name} error must promote to ErrorPopup"));
+            assert_eq!(popup.title, "Settings error");
+            assert!(
+                popup.message.contains(name),
+                "{name} error detail must survive promotion: {:?}",
+                popup.message,
+            );
+            assert!(settings.mounts.error.is_none());
+            assert!(settings.env.error.is_none());
+            assert!(settings.auth.error.is_none());
+            assert!(settings.trust.error.is_none());
+        }
     }
 
     #[test]

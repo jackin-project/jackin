@@ -226,8 +226,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
 
     // Add a row when we have an origin URL to show under the title.
     let has_url = state.pending_git_url.is_some();
-    // Overlay widens to 80 cols so the three-button row and the canonical
-    // hint line both fit on one line without wrapping.
+    // Overlay widens to 80 cols so the three-button row fits on one line.
     let w = parent.width.saturating_sub(4).min(80);
     let base_h: u16 = if has_url { 7 } else { 6 };
     let h = base_h.min(parent.height);
