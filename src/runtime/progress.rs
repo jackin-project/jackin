@@ -5,6 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use jackin_tui::centered_rect;
 use jackin_tui::components::{
     ConfirmState, ContainerInfoRow, ContainerInfoState, ErrorPopupState, SelectListState,
     TextInputState, brand_header_line, confirm_required_height, confirm_width_pct,
@@ -2368,17 +2369,6 @@ const CONFIRM_HINT: &[HintSpan<'static>] = &[
 ];
 
 const ERROR_POPUP_HINT: &[HintSpan<'static>] = &[HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")];
-
-fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
-    let w = width.min(area.width.saturating_sub(2));
-    let h = height.min(area.height.saturating_sub(2));
-    Rect {
-        x: area.x + area.width.saturating_sub(w) / 2,
-        y: area.y + area.height.saturating_sub(h) / 2,
-        width: w,
-        height: h,
-    }
-}
 
 #[cfg(test)]
 mod tests {

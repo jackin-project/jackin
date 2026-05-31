@@ -1,5 +1,7 @@
 //! Text measurement, tab layout, and terminal-title helpers for jackin' TUI surfaces.
 
+use ratatui::layout::Rect;
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.
@@ -40,6 +42,20 @@ pub enum HintSpan<'a> {
     Sep,
     /// Three-space gap between hint groups.
     GroupSep,
+}
+
+/// Center a fixed-size rectangle inside `area`, leaving a one-cell margin
+/// where the terminal has room for it.
+#[must_use]
+pub fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let w = width.min(area.width.saturating_sub(2));
+    let h = height.min(area.height.saturating_sub(2));
+    Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w,
+        height: h,
+    }
 }
 
 impl HintSpan<'_> {
