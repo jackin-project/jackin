@@ -184,6 +184,26 @@ The host console matches this order. The capsule must also follow it: `MAIN_VIEW
 
 **Implementation:** The separator row is a blank `PHOSPHOR_DARK` row, not an empty string — it must use the same background as the surrounding chrome so it reads as intentional spacing, not a rendering gap.
 
+### Container info dialog — one shared dialog across all surfaces
+
+There is exactly **one** container info dialog across the entire jackin' experience. The same component, the same layout, the same behavior — regardless of whether the operator is on the jackin' console, the launch progress screen, or inside the capsule multiplexer.
+
+**What changes between surfaces is only the fields shown inside the dialog.** Each surface adds the information it knows at that point in the launch/session lifecycle:
+
+| Surface | Fields always shown | Fields added in debug mode |
+|---|---|---|
+| Launch screen | Container ID (or "loading…"), jackin version | run ID, diagnostics log path |
+| Capsule multiplexer | Container ID, role, agent, workdir, jackin version, capsule version | run ID, diagnostics log path, docker build log path |
+| Host console (debug bar chip) | run ID (debug mode only surface) | diagnostics log path |
+
+**Non-debug vs debug mode:**
+- Non-debug: container ID, role, agent, workdir, version rows only.
+- Debug mode: all non-debug rows plus run ID and every relevant diagnostics path. Debug mode does NOT produce a separate dialog — it enriches the same dialog with more rows. There is no "debug info dialog" and "container info dialog" — only one dialog with a variable field set.
+
+**Implementation rule:** The dialog must be a single shared component instantiated by every surface. The host console version lives in `jackin-tui` as a proper Ratatui widget (`ContainerInfoState` + `render_container_info`). The capsule version mirrors the identical layout in its own raw-ANSI renderer (same as the confirm dialog pattern — different binary, same visual contract). Any deviation in layout, padding, or border color between surfaces is a design violation.
+
+**Trigger:** A clickable chip in the status bar or status footer opens this dialog. The chip is always clickable — in non-debug mode it shows the instance/container ID chip; in debug mode it shows the combined `run_id:instance_id` chip. One click → one dialog.
+
 ### Status bar chips — instance ID and run ID
 
 The right side of every jackin' status bar carries up to two clickable chips:

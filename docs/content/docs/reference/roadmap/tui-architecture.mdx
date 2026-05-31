@@ -872,27 +872,34 @@ The launch failure popup renders "run diagnostics" and "docker output" paths tha
 
 **Acceptance:** The failure popup rows for file paths render as clickable OSC 8 links in supporting terminals. Terminals that do not support OSC 8 fall back to the full path text (not truncated). No silent truncation anywhere in the failure popup.
 
-### Phase 8d — Clickable status bar chips (instance ID + run ID)
+### Phase 8d — Unified container info dialog across all surfaces
 
-Make both status bar chips fully interactive per the design decision rule:
+Implement a single shared container info dialog that opens from every status bar chip click, on every surface. The same component, same layout, same behavior — fields vary by surface and debug mode (see TUI Design Decisions → Container info dialog).
 
-**Instance ID chip:**
-- Host console debug bar: the chip is already rendered; wire a click handler that opens a `StatusPopup` or info dialog showing the current container/instance details.
-- Capsule status bar: the instance ID already opens `ContainerInfo` via the command palette; add direct click-on-chip → `ContainerInfo` so it is accessible without the menu.
-- Launch progress cockpit: the instance ID chip in `StatusFooter` is already wired for hover + OSC 22 pointer; verify click opens `ContainerInfo`.
+**Current state:**
+- Capsule: `ContainerInfo` dialog exists in raw ANSI (`crates/jackin-capsule/src/dialog.rs`) and shows via command palette. Direct chip click not wired yet. Run ID / log path rows already added for debug mode.
+- Host console: debug bar chip click opens an `ErrorPopup` (wrong component — temporary).
+- Launch progress: `StatusFooter` chip has hover + OSC 22 pointer; click not wired.
 
-**Debug run ID chip:**
-- Host console: the run ID chip in the debug bar is rendered on the right; add click handler that shows a `StatusPopup` with the JSONL log path and (when available) the Docker build log path. The popup must include copy-to-clipboard for each path.
-- Capsule `ContainerInfo` dialog: run ID row already shows when `JACKIN_DEBUG=1` (from a prior commit); verify the row is emphasised and clickable for OSC 52 copy — the dialog itself serves as the run ID info surface for the capsule.
-- Launch progress: if the debug chip is shown in the status footer during launch, wire click → same debug info popup.
+**Required work:**
+
+1. **`jackin-tui` shared component** — create `ContainerInfoState` (rows: label + value + optional OSC 8 href + copy-target flag) + `render_container_info(frame, area, state)` in `crates/jackin-tui/src/components/` (new file alongside existing components). Same layout contract as capsule's existing `render_container_info` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" />: PHOSPHOR_GREEN border, label column + value column, emphasised rows clickable via OSC 52, debug rows conditional on `debug_enabled()`.
+
+2. **Host console** — replace the `ErrorPopup` opened by the debug bar chip click in <RepoFile path="src/console/run.rs" /> with a proper `ContainerInfoState` filled with: run ID, diagnostics log path (OSC 8 link). Add the `ManagerMessage` to open it as a `Modal::ContainerInfo`.
+
+3. **Capsule** — wire direct click on the instance ID / combined chip in the status bar row to push `Dialog::ContainerInfo` onto the dialog stack. The existing `ContainerInfo` dialog already has the right fields; this is purely the click-trigger wiring in the input dispatch.
+
+4. **Launch progress** — wire `StatusFooter` chip click to open `ContainerInfoState` with the fields available at that stage: container ID (if known), jackin version, run ID (debug). The launch cockpit already tracks `instance_id`; pass it.
+
+**Non-debug vs debug rows:** Non-debug: container ID, role, agent, workdir, versions. Debug: same + run ID (bold, copyable) + diagnostics path (OSC 8 link) + docker output path (OSC 8 link, if build failed).
 
 **Acceptance:**
-- Hovering either chip shows OSC 22 hand pointer.
-- Clicking instance ID → ContainerInfo dialog on every surface where a container is known.
-- Clicking run ID chip → debug info popup with copyable paths on every surface where `--debug` is active.
-- Both dialogs are distinct; the instance ID dialog does not show debug log paths unless debug mode is also on.
-
-**Tracked in:** `TODO.md` (add entry `status-bar-chip-clicks`).
+- Clicking any status bar chip on any surface opens the container info dialog.
+- The dialog renders identically (same border, column widths, row spacing) on every surface.
+- In non-debug mode: no run ID or log path rows visible.
+- In debug mode: run ID and log paths appear; paths are OSC 8 clickable links.
+- Hovering the chip shows OSC 22 hand pointer on all surfaces.
+- OSC 52 copy works on the container ID row and the run ID row.
 
 ### Phase 8c — Terminal resize visual correctness
 
