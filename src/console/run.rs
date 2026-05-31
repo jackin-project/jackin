@@ -255,8 +255,10 @@ pub async fn run_console<H: InstanceActionHandler>(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            needs_redraw |= manager::input::poll_background_loads(ms, &mut config, paths);
-            for message in manager::poll_background_messages(ms, paths) {
+            let (messages, background_dirty) =
+                manager::poll_background_messages(ms, &mut config, paths);
+            needs_redraw |= background_dirty;
+            for message in messages {
                 needs_redraw |= manager::update_manager(ms, message).is_dirty();
             }
             // Poll the async drift check started by a save operation.

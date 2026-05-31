@@ -1774,7 +1774,7 @@ fn apply_role_input(
     }
 }
 
-pub(super) fn poll_role_load(
+pub(in crate::console::manager) fn poll_role_load(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,

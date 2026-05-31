@@ -192,9 +192,14 @@ pub(crate) type ManagerUpdate = UpdateResult<NoEffect>;
 
 pub(crate) fn poll_background_messages(
     state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
-) -> Vec<ManagerMessage> {
+) -> (Vec<ManagerMessage>, bool) {
+    let mut dirty = false;
     let mut messages = vec![ManagerMessage::PollPickerLoads];
+    if let ManagerStage::Editor(editor) = &mut state.stage {
+        dirty |= super::input::editor::poll_role_load(editor, config, paths);
+    }
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerMessage::MountInfoRefreshed(result));
     }
@@ -209,7 +214,7 @@ pub(crate) fn poll_background_messages(
             is_settings,
         });
     }
-    messages
+    (messages, dirty)
 }
 
 #[allow(clippy::too_many_lines)]
