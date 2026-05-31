@@ -25,7 +25,11 @@ pub(crate) use crate::console::manager::state::SecretsRow;
 use crate::console::manager::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
 };
+use crate::console::widgets::editor_rows::{
+    action_row_style, disclosure_style, render_secret_key_line, render_tab_strip,
+};
 use crate::operator_env::EnvValue;
+use jackin_tui::theme::ACTION_ACCENT;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -34,23 +38,6 @@ use ratatui::{
 };
 
 // ── Editor stage ────────────────────────────────────────────────────
-
-use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT};
-
-pub(super) fn action_row_style(selected: bool) -> Style {
-    let style = Style::default().fg(ACTION_ACCENT);
-    if selected {
-        style.add_modifier(Modifier::BOLD)
-    } else {
-        style
-    }
-}
-
-pub(super) fn disclosure_style() -> Style {
-    Style::default()
-        .fg(DISCLOSURE_ACCENT)
-        .add_modifier(Modifier::BOLD)
-}
 
 pub(super) fn render_editor(
     frame: &mut Frame,
@@ -108,19 +95,6 @@ fn render_editor_tab_strip(
         .map(|tab| (tab.label(), *tab == active))
         .collect();
     render_tab_strip(frame, area, &labels, tab_bar_focused, hovered);
-}
-
-pub(super) fn render_tab_strip(
-    frame: &mut Frame,
-    area: Rect,
-    labels: &[(&str, bool)],
-    tab_bar_focused: bool,
-    hovered: Option<usize>,
-) {
-    jackin_tui::components::TabStrip::new(labels)
-        .focused(tab_bar_focused)
-        .hovered(hovered)
-        .render(frame, area);
 }
 
 fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
@@ -484,7 +458,7 @@ fn secrets_tab_lines(
                 let masked = !state
                     .unmasked_rows
                     .contains(&(SecretsScopeTag::Workspace, key.clone()));
-                lines.push(render_secrets_key_line(
+                lines.push(render_secret_key_line(
                     selected,
                     cursor_col,
                     key,
@@ -528,7 +502,7 @@ fn secrets_tab_lines(
                 let masked = !state
                     .unmasked_rows
                     .contains(&(SecretsScopeTag::Role(role.clone()), key.clone()));
-                lines.push(render_secrets_key_line(
+                lines.push(render_secret_key_line(
                     selected,
                     cursor_col,
                     key,
@@ -551,105 +525,6 @@ fn secrets_tab_lines(
     }
 
     lines
-}
-
-/// `OpRef` rows skip masking and render as a breadcrumb (3-segment:
-/// `vault / item → field`, 4-segment adds `section`). An optional
-/// `[subtitle]` annotation after the item renders in `PHOSPHOR_DIM`; an
-/// optional `?attribute=...` query suffix renders in `PHOSPHOR_DIM` after
-/// the field. `Plain` rows render as a literal / masked value with no
-/// `[op]` marker.
-pub(super) fn render_secrets_key_line(
-    selected: bool,
-    cursor_col: &str,
-    key: &str,
-    value: &EnvValue,
-    masked: bool,
-    area_width: u16,
-    label_width: usize,
-) -> Line<'static> {
-    const OP_MARKER: &str = "[op] ";
-    const NO_MARKER: &str = "     ";
-    const MASK: &str = "●●●●●●●●●●●";
-    const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
-
-    let label_style = if selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(WHITE)
-    };
-    let dim = Style::default().fg(PHOSPHOR_DIM);
-
-    // Variant-aware dispatch: only `OpRef` rows render with the `[op]`
-    // marker and breadcrumb. `Plain` values (including legacy bare
-    // `op://...` strings) render as literal / masked — the visual signal
-    // that the row needs re-picking to upgrade to a pinned `OpRef`.
-    let op_breadcrumb = match value {
-        EnvValue::OpRef(r) => {
-            crate::console::manager::op_breadcrumb::parse_path_breadcrumb(&r.path)
-        }
-        EnvValue::Plain(_) => None,
-    };
-    let marker = if op_breadcrumb.is_some() {
-        OP_MARKER
-    } else {
-        NO_MARKER
-    };
-    let mut spans = vec![
-        Span::raw(cursor_col.to_string()),
-        Span::styled(marker.to_string(), dim),
-        Span::styled(format!("{key:label_width$}"), label_style),
-        Span::raw("  "), // always at least two spaces between key and value
-    ];
-
-    // OpRef rows render as a breadcrumb regardless of `masked` — the
-    // path is not the credential, so masking it makes the row a
-    // less informative version of itself.
-    if op_breadcrumb.is_some()
-        && let EnvValue::OpRef(r) = value
-    {
-        crate::console::widgets::op_breadcrumb::push_op_breadcrumb_spans(&mut spans, &r.path);
-        return Line::from(spans);
-    }
-
-    // Plain branch: render as masked or literal value.
-    // For an OpRef whose path failed to parse (malformed / empty), show an
-    // explicit re-pick placeholder rather than leaking the UUID URI.
-    let plain_str = match value {
-        EnvValue::Plain(s) => s.as_str(),
-        EnvValue::OpRef(_) => OP_REF_REPICK_PLACEHOLDER,
-    };
-
-    let value_style = if masked {
-        Style::default().fg(PHOSPHOR_DIM)
-    } else if selected {
-        Style::default()
-            .fg(PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(PHOSPHOR_GREEN)
-    };
-
-    let rendered_value: String = if masked {
-        MASK.to_string()
-    } else {
-        // Truncate with `…` when the value exceeds the remaining width.
-        // Gap budget: prefix(2) + label_width + some breathing room + dirty
-        // marker. Approximate with `area_width - label_width - 8`.
-        let budget = (area_width as usize)
-            .saturating_sub(label_width)
-            .saturating_sub(8)
-            .max(1);
-        if plain_str.chars().count() > budget {
-            let mut s: String = plain_str.chars().take(budget.saturating_sub(1)).collect();
-            s.push('…');
-            s
-        } else {
-            plain_str.to_string()
-        }
-    };
-    spans.push(Span::styled(rendered_value, value_style));
-    Line::from(spans)
 }
 
 /// Render the Auth tab directly from [`auth_flat_rows`].

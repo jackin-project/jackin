@@ -15,6 +15,7 @@ pub(crate) const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", 
 pub mod agent_choice;
 pub mod auth_panel;
 pub mod confirm_save;
+pub(crate) mod editor_rows;
 pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;

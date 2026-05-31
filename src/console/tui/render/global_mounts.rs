@@ -51,7 +51,7 @@ pub(super) fn render_settings(
         .iter()
         .map(|tab| (tab.label(), *tab == state.active_tab))
         .collect::<Vec<_>>();
-    super::editor::render_tab_strip(
+    crate::console::widgets::editor_rows::render_tab_strip(
         frame,
         chunks[1],
         &labels,
@@ -236,7 +236,7 @@ fn global_mount_lines(
         }
         lines.push(Line::from(Span::styled(
             format!("{sentinel_prefix}+ Add mount"),
-            super::editor::action_row_style(sentinel_selected),
+            crate::console::widgets::editor_rows::action_row_style(sentinel_selected),
         )));
     }
     lines
@@ -260,20 +260,22 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
                     .env
                     .unmasked_rows
                     .contains(&(scope.clone(), key.clone()));
-                lines.push(super::editor::render_secrets_key_line(
-                    selected,
-                    cursor_col,
-                    key,
-                    value,
-                    masked,
-                    area_width,
-                    label_width,
-                ));
+                lines.push(
+                    crate::console::widgets::editor_rows::render_secret_key_line(
+                        selected,
+                        cursor_col,
+                        key,
+                        value,
+                        masked,
+                        area_width,
+                        label_width,
+                    ),
+                );
             }
             SettingsEnvRow::GlobalAddSentinel => {
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}+ Add environment variable"),
-                    super::editor::action_row_style(selected),
+                    crate::console::widgets::editor_rows::action_row_style(selected),
                 )));
             }
             SettingsEnvRow::RoleHeader { role, expanded } => {
@@ -281,17 +283,20 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
                 let count = state.env.pending.roles.get(role).map_or(0, BTreeMap::len);
                 lines.push(Line::from(vec![
                     Span::raw(cursor_col.to_string()),
-                    Span::styled(arrow.to_string(), super::editor::disclosure_style()),
+                    Span::styled(
+                        arrow.to_string(),
+                        crate::console::widgets::editor_rows::disclosure_style(),
+                    ),
                     Span::styled(
                         format!(" Role: {role}  ({count} vars)"),
-                        super::editor::disclosure_style(),
+                        crate::console::widgets::editor_rows::disclosure_style(),
                     ),
                 ]));
             }
             SettingsEnvRow::RoleAddSentinel(role) => {
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}+ Add {role} environment variable"),
-                    super::editor::action_row_style(selected),
+                    crate::console::widgets::editor_rows::action_row_style(selected),
                 )));
             }
             SettingsEnvRow::SectionSpacer => lines.push(Line::from("")),
