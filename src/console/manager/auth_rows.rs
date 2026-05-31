@@ -2,7 +2,7 @@ use crate::config::AppConfig;
 use crate::console::manager::auth_kind::{AuthKind, AuthMode};
 use crate::console::manager::state::{AuthFormTarget, AuthRow, EditorMode, EditorState};
 
-pub(crate) fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
+pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     let synthesized = synthesize_appconfig_for_auth(editor, config);
     let ws_name = workspace_name_for_panel(editor);
     jackin_console::editor::update::auth_flat_rows(

@@ -3,7 +3,7 @@
 
 pub mod agent_allow;
 pub mod auth_kind;
-pub(crate) mod auth_rows;
+pub mod auth_rows;
 mod create;
 pub(crate) mod github_mounts;
 pub mod input;
@@ -20,9 +20,8 @@ pub(crate) mod settings_geometry;
 pub mod state;
 pub mod workspace_summary;
 
-pub use crate::console::tui::render;
+pub use crate::console::tui::render::render;
 pub use input::{InputOutcome, handle_key};
 pub(crate) use message::{ManagerMessage, update_manager};
 pub use pre_render::prepare_for_render;
-pub use render::render;
 pub use state::{ManagerStage, ManagerState};
