@@ -12,7 +12,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Paragraph},
 };
 use std::{
     fs, io,
@@ -428,6 +428,92 @@ impl StoryInteraction for TextInputInteractor {
     }
 }
 
+// ── ButtonStrip interactor ────────────────────────────────────────────────────
+
+struct ButtonStripInteractor {
+    items: [ButtonStripItem<'static>; 4],
+    focused: usize,
+}
+
+impl ButtonStripInteractor {
+    fn new() -> Self {
+        Self {
+            items: [
+                ButtonStripItem::new("Save"),
+                ButtonStripItem::new("Discard"),
+                ButtonStripItem::disabled("Launch"),
+                ButtonStripItem::new("Cancel"),
+            ],
+            focused: 0,
+        }
+    }
+}
+
+impl StoryInteraction for ButtonStripInteractor {
+    fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        use ratatui::layout::{Constraint, Layout};
+        let [_, strip_area, _] = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+        .areas(area);
+        ButtonStrip::new(&self.items)
+            .focused(self.focused)
+            .render(frame, strip_area);
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if key.kind != KeyEventKind::Press {
+            return false;
+        }
+        match key.code {
+            KeyCode::Left => {
+                self.focused = self.focused.saturating_sub(1);
+                true
+            }
+            KeyCode::Right => {
+                self.focused = (self.focused + 1).min(self.items.len().saturating_sub(1));
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_mouse(&mut self, _mouse: MouseEvent, _preview_area: Rect) -> bool {
+        false
+    }
+}
+
+// ── SaveDiscard interactor ────────────────────────────────────────────────────
+
+struct SaveDiscardInteractor {
+    state: SaveDiscardState,
+}
+
+impl SaveDiscardInteractor {
+    fn new() -> Self {
+        Self {
+            state: SaveDiscardState::new("Save workspace changes before leaving?"),
+        }
+    }
+}
+
+impl StoryInteraction for SaveDiscardInteractor {
+    fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        render_save_discard_dialog(frame, area, &self.state);
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) -> bool {
+        self.state.handle_key(key);
+        true
+    }
+
+    fn handle_mouse(&mut self, _mouse: MouseEvent, _preview_area: Rect) -> bool {
+        false
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Story {
     pub id: &'static str,
@@ -477,6 +563,8 @@ impl Story {
             "confirm/default" => Box::new(ConfirmInteractor::default_story()),
             "confirm/role-trust" => Box::new(ConfirmInteractor::role_trust_story()),
             "text-input/workspace-name" => Box::new(TextInputInteractor::new()),
+            "button-strip/basic" => Box::new(ButtonStripInteractor::new()),
+            "save-discard/default" => Box::new(SaveDiscardInteractor::new()),
             _ => Box::new(StaticStory {
                 render_fn: self.render,
             }),
@@ -509,7 +597,7 @@ pub fn stories() -> Vec<Story> {
             "button-strip/basic",
             "Button strip",
             "ButtonStrip",
-            "Save flow actions with one focused and one disabled button.",
+            "Save flow actions. ← → to move focus.",
             54,
             3,
             story_button_strip,
@@ -818,16 +906,23 @@ fn story_panel_focused(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_button_strip(frame: &mut Frame<'_>, area: Rect) {
-    let block = Block::default().borders(Borders::ALL);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    use ratatui::layout::{Constraint, Layout};
     let items = [
         ButtonStripItem::new("Save"),
         ButtonStripItem::new("Discard"),
         ButtonStripItem::disabled("Launch"),
         ButtonStripItem::new("Cancel"),
     ];
-    ButtonStrip::new(&items).focused(1).render(frame, inner);
+    // ButtonStrip is a single-row widget; center it vertically in the story canvas.
+    let [_, strip_area, _] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(area);
+    ButtonStrip::new(&items)
+        .focused(0)
+        .render(frame, strip_area);
 }
 
 fn story_tab_strip(frame: &mut Frame<'_>, area: Rect) {
