@@ -994,7 +994,9 @@ impl Dialog {
                 }
             }
             Self::GitHubContext { .. } => 9,
-            Self::ConfirmAction { .. } => 9,
+            // 8 = border(2) + empty(1) + question(1) + empty(1) + message(1) + empty(1) + button(1)
+            // One empty row before button (not two).
+            Self::ConfirmAction { .. } => 8,
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
         };

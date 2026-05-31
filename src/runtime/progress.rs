@@ -1740,9 +1740,11 @@ fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailurePopup
 fn failure_popup_rect(area: Rect, row_count: usize) -> Rect {
     let popup_w = (area.width.saturating_mul(3) / 5)
         .clamp(40.min(area.width), area.width.saturating_sub(2).max(1));
+    // Height breakdown: border(2) + body rows + 1 empty separator + button(1) + bottom-pad(1)
+    // = row_count + 5. This gives exactly one blank row between the last data row and OK.
     let height = u16::try_from(row_count)
         .unwrap_or(u16::MAX)
-        .saturating_add(6)
+        .saturating_add(5)
         .min(area.height.saturating_sub(2).max(7));
     centered_rect(popup_w, height, area)
 }

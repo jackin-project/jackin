@@ -202,13 +202,14 @@ fn render_role_trust(
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(2),
-            Constraint::Length(1),
+            Constraint::Length(1), // rows[0]: role label
+            Constraint::Length(1), // rows[1]: separator
+            Constraint::Length(1), // rows[2]: repository line
+            Constraint::Length(1), // rows[3]: role line
+            Constraint::Length(1), // rows[4]: separator
+            Constraint::Length(2), // rows[5]: warning text (2 lines)
+            Constraint::Length(1), // rows[6]: empty row before buttons
+            Constraint::Length(1), // rows[7]: buttons
         ])
         .split(inner);
 
@@ -266,7 +267,7 @@ fn render_role_trust(
         inset(rows[5], 3),
     );
 
-    render_buttons(frame, rows[6], state);
+    render_buttons(frame, rows[7], state);
 }
 
 const fn inset(area: Rect, x: u16) -> Rect {
