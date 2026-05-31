@@ -4,13 +4,13 @@
 pub mod agent_allow;
 pub mod auth_kind;
 mod create;
-mod github_mounts;
+pub(crate) mod github_mounts;
 pub mod input;
 pub mod message;
 pub mod mount_info;
-pub mod render;
 pub mod state;
 
+pub use crate::console::tui::render;
 pub use input::{InputOutcome, handle_key};
 pub(crate) use message::{ManagerMessage, update_manager};
 pub use render::prepare_for_render;

@@ -13,7 +13,6 @@ use ratatui::{
 };
 use std::cmp::Ordering;
 
-use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, Modal, SecretsScopeTag};
 use super::list::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache,
     mount_path_width, render_mount_header,
@@ -23,6 +22,9 @@ use super::{
     render_header,
 };
 use crate::config::AppConfig;
+use crate::console::manager::state::{
+    EditorMode, EditorState, EditorTab, FieldFocus, Modal, SecretsScopeTag,
+};
 use crate::operator_env::EnvValue;
 use jackin_tui::HintSpan;
 
@@ -30,7 +32,7 @@ use jackin_tui::HintSpan;
 
 use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT};
 
-pub(in crate::console::manager) fn action_row_style(selected: bool) -> Style {
+pub(crate) fn action_row_style(selected: bool) -> Style {
     let style = Style::default().fg(ACTION_ACCENT);
     if selected {
         style.add_modifier(Modifier::BOLD)
@@ -39,7 +41,7 @@ pub(in crate::console::manager) fn action_row_style(selected: bool) -> Style {
     }
 }
 
-pub(in crate::console::manager) fn disclosure_style() -> Style {
+pub(crate) fn disclosure_style() -> Style {
     Style::default()
         .fg(DISCLOSURE_ACCENT)
         .add_modifier(Modifier::BOLD)
@@ -56,7 +58,7 @@ pub(super) fn editor_footer_items(
         // workspace-level Claude oauth_token slot in Edit mode; surface
         // the hint only when that gate holds.
         if matches!(modal, Modal::AuthForm { .. })
-            && super::super::input::auth::auth_form_can_generate_token(state)
+            && crate::console::manager::input::auth::auth_form_can_generate_token(state)
         {
             items.extend([
                 HintSpan::GroupSep,
@@ -196,7 +198,7 @@ pub fn render_editor(
     }
 }
 
-pub(in crate::console::manager) fn prepare_editor_for_render(
+pub(crate) fn prepare_editor_for_render(
     area: Rect,
     state: &mut EditorState<'_>,
     config: &AppConfig,
@@ -205,7 +207,7 @@ pub(in crate::console::manager) fn prepare_editor_for_render(
     prepare_editor_tab_for_area(body, state, config);
 }
 
-pub(in crate::console::manager) fn prepare_editor_tab_for_area(
+pub(crate) fn prepare_editor_tab_for_area(
     body: Rect,
     state: &mut EditorState<'_>,
     config: &AppConfig,
@@ -458,16 +460,13 @@ fn contextual_row_items(
 /// Cursor stepping in the input layer skips spacer rows; callers using
 /// this for `max_row_for_tab` should be aware the result includes
 /// non-selectable rows.
-pub(in crate::console::manager) fn auth_row_count(
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) -> usize {
+pub(crate) fn auth_row_count(state: &EditorState<'_>, config: &AppConfig) -> usize {
     auth_flat_rows(state, config).len()
 }
 
 /// Order/labels shared with mouse hit-testing; renderer and click code
 /// must measure the same strip.
-pub(in crate::console::manager) const EDITOR_TAB_LABELS: &[(EditorTab, &str)] = &[
+pub(crate) const EDITOR_TAB_LABELS: &[(EditorTab, &str)] = &[
     (EditorTab::General, "General"),
     (EditorTab::Mounts, "Mounts"),
     (EditorTab::Roles, "Roles"),
@@ -489,7 +488,7 @@ fn render_editor_tab_strip(
     render_tab_strip(frame, area, &labels, tab_bar_focused, hovered);
 }
 
-pub(in crate::console::manager) fn render_tab_strip(
+pub(crate) fn render_tab_strip(
     frame: &mut Frame,
     area: Rect,
     labels: &[(&str, bool)],
@@ -514,22 +513,23 @@ fn editor_tab_lines(area: Rect, state: &EditorState<'_>, config: &AppConfig) -> 
 
 fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     let rows = general_tab_lines(state);
+    let focused =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
         rows,
         state.tab_scroll_x,
         state.tab_scroll_y,
-        state.tab_content_scroll_focused && state.modal.is_none(),
+        focused,
         None,
     );
 }
 
 fn general_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
-    // General tab is non-focusable: Tab/↓ from the tab bar does not transfer
-    // focus into General content. The `▸` cursor is never shown here.
-    let show_cursor = false;
+    let show_cursor =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     let name_value = match &state.mode {
         EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
@@ -554,7 +554,13 @@ fn general_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     // unsaved-state indicator.
     let mut rows: Vec<Line> = Vec::new();
 
-    rows.push(render_editor_row(0, cursor, "Name", name_value, show_cursor));
+    rows.push(render_editor_row(
+        0,
+        cursor,
+        "Name",
+        name_value,
+        show_cursor,
+    ));
     let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
     rows.push(render_editor_row(
         1,
@@ -640,7 +646,8 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
 fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor = !state.tab_bar_focused && state.workspace_mounts_scroll_focused && state.modal.is_none();
+    let show_cursor =
+        !state.tab_bar_focused && state.workspace_mounts_scroll_focused && state.modal.is_none();
 
     // Build aligned table rows for all mounts.
     let rows = format_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
@@ -718,7 +725,8 @@ fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
 
 fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let lines = roles_tab_lines(state, config);
-    let focused = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+    let focused =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
@@ -732,10 +740,11 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
 
 fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+    let show_cursor =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     // Status line: "Allowed roles:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
-    let is_all = super::super::agent_allow::allows_all_agents(&state.pending);
+    let is_all = crate::console::manager::agent_allow::allows_all_agents(&state.pending);
     let total = config.roles.len();
     let allowed_count = state.pending.allowed_roles.len();
 
@@ -779,7 +788,10 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
     for (i, (role_name, _)) in config.roles.iter().enumerate() {
         let selected = show_cursor && (i == cursor);
         let effectively_allowed =
-            super::super::agent_allow::agent_is_effectively_allowed(&state.pending, role_name);
+            crate::console::manager::agent_allow::agent_is_effectively_allowed(
+                &state.pending,
+                role_name,
+            );
         let is_default = state.pending.default_role.as_deref() == Some(role_name.as_str());
         let check = if effectively_allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
@@ -809,7 +821,7 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
 
 /// Flat row model for the Secrets tab; cursor is a single index.
 #[derive(Debug, Clone)]
-pub(in crate::console::manager) enum SecretsRow {
+pub(crate) enum SecretsRow {
     WorkspaceKeyRow(String),
     WorkspaceAddSentinel,
     RoleHeader {
@@ -825,7 +837,7 @@ pub(in crate::console::manager) enum SecretsRow {
     SectionSpacer,
 }
 
-pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
+pub(crate) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     let mut rows = Vec::new();
     for key in editor.pending.env.keys() {
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
@@ -1053,7 +1065,7 @@ fn resolve_panel_mode(
 /// [`crate::app::context::eligible_roles_for_workspace`]. Roles
 /// already carrying an override are NOT filtered — operators may add
 /// more keys to an existing override.
-pub(in crate::console::manager) fn eligible_agents_for_override(
+pub(crate) fn eligible_agents_for_override(
     editor: &EditorState<'_>,
     config: &AppConfig,
 ) -> Vec<String> {
@@ -1068,7 +1080,8 @@ pub(in crate::console::manager) fn eligible_agents_for_override(
 #[allow(clippy::too_many_lines)]
 fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let lines = secrets_tab_lines(area, state, config);
-    let focused = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+    let focused =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
@@ -1086,7 +1099,8 @@ fn secrets_tab_lines(
     config: &AppConfig,
 ) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
-    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+    let show_cursor =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     let rows = secrets_flat_rows(state);
     let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
@@ -1244,7 +1258,7 @@ fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
 /// optional `?attribute=...` query suffix renders in `PHOSPHOR_DIM` after
 /// the field. `Plain` rows render as a literal / masked value with no
 /// `[op]` marker.
-pub(in crate::console::manager) fn render_secrets_key_line(
+pub(crate) fn render_secrets_key_line(
     selected: bool,
     cursor_col: &str,
     key: &str,
@@ -1365,7 +1379,8 @@ pub(in crate::console::manager) fn render_secrets_key_line(
 fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let lines = auth_tab_lines(state, config);
     let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
-    let focused = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+    let focused =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
     super::render_scrollable_block_at(
         frame,
         area,
@@ -1385,12 +1400,18 @@ fn auth_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'stat
     let FieldFocus::Row(cursor) = state.active_field;
     let max_idx = rows.len().saturating_sub(1);
     let cursor_clamped = cursor.min(max_idx);
-    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
+    let show_cursor =
+        !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
     rows.iter()
         .enumerate()
         .map(|(i, r)| {
-            render_auth_row(show_cursor && (i == cursor_clamped), r, &synthesized, &workspace_name)
+            render_auth_row(
+                show_cursor && (i == cursor_clamped),
+                r,
+                &synthesized,
+                &workspace_name,
+            )
         })
         .collect()
 }
@@ -1693,7 +1714,7 @@ pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>
 
 /// Merge live global blocks with `editor.pending` for the active
 /// workspace so the Auth panel renders pending edits before save.
-pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
+pub(crate) fn synthesize_appconfig_for_auth(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> AppConfig {
@@ -1718,7 +1739,7 @@ pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
 /// the existing workspace name; in Create mode we use `pending_name` if set,
 /// otherwise a stable placeholder ("(new workspace)") so the panel can still
 /// render with the pending values populated.
-pub(in crate::console::manager) fn workspace_name_for_panel(state: &EditorState<'_>) -> String {
+pub(crate) fn workspace_name_for_panel(state: &EditorState<'_>) -> String {
     match &state.mode {
         EditorMode::Edit { name } => state.pending_name.clone().unwrap_or_else(|| name.clone()),
         EditorMode::Create => state
@@ -1732,7 +1753,7 @@ pub(in crate::console::manager) fn workspace_name_for_panel(state: &EditorState<
 /// `AuthFormTarget` the form modal should be opened against. Returns
 /// `None` for non-form rows (`AuthKindRow`, `RoleHeader`, `AddSentinel`,
 /// `Spacer`) so callers can dispatch them separately.
-pub(in crate::console::manager) fn resolve_auth_row_target(
+pub(crate) fn resolve_auth_row_target(
     state: &EditorState<'_>,
     config: &AppConfig,
     row: usize,

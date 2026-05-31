@@ -4,7 +4,7 @@ use super::prompts::{
     key_debug_name, launch_with_committed_agent, prompt_committed_role,
 };
 use super::state::build_workspace_choice;
-use super::terminal::{
+use super::tui::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, resume_console_terminal,
     suspend_console_terminal,
 };
@@ -40,7 +40,7 @@ fn split_debug_area(
 /// Render the 1-row debug status bar.
 ///
 /// When `instance_id` is provided, shows `run_id:instance_id` as a single
-/// DANGER_RED chip right-aligned on a white bar. The combined chip is
+/// `DANGER_RED` chip right-aligned on a white bar. The combined chip is
 /// clickable — click it to view debug diagnostics info.
 fn render_debug_bar(
     frame: &mut ratatui::Frame,
@@ -55,18 +55,12 @@ fn render_debug_bar(
         widgets::Paragraph,
     };
 
-    let chip_text = if let Some(iid) = instance_id {
-        format!(" {run_id}:{iid} ")
-    } else {
-        format!(" {run_id} ")
-    };
+    let chip_text =
+        instance_id.map_or_else(|| format!(" {run_id} "), |iid| format!(" {run_id}:{iid} "));
     let chip_width = chip_text.chars().count() as u16;
 
-    let [left_area, chip_area] = Layout::horizontal([
-        Constraint::Min(0),
-        Constraint::Length(chip_width),
-    ])
-    .areas(area);
+    let [left_area, chip_area] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(chip_width)]).areas(area);
 
     let white_bg = Style::default()
         .bg(jackin_tui::theme::WHITE)
@@ -371,7 +365,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                             Err(e) => {
                                 crate::console::manager::input::apply_op_picker_settings_commit_failed(
                                     &mut s.auth,
-                                    e,
+                                    &e,
                                 );
                             }
                         }
@@ -386,7 +380,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         }
                         Err(e) => {
                             crate::console::manager::input::auth::apply_op_picker_commit_failed(
-                                ed, e,
+                                ed, &e,
                             );
                         }
                     }
@@ -420,6 +414,17 @@ pub async fn run_console<H: InstanceActionHandler>(
                     render_debug_bar(frame, bar_area, &run_id, None);
                 }
             })?;
+            if let Some(modal @ manager::state::Modal::ContainerInfo { state: info }) =
+                ms.list_modal.as_ref()
+            {
+                let rect = manager::render::modal_outer_rect(modal, main_area);
+                let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
+                if !overlay.is_empty() {
+                    let mut out = std::io::stdout();
+                    let _ = std::io::Write::write_all(&mut out, &overlay);
+                    let _ = std::io::Write::flush(&mut out);
+                }
+            }
         }
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
@@ -652,35 +657,36 @@ pub async fn run_console<H: InstanceActionHandler>(
                             console_location_debug(&state)
                         );
                     }
-                    // Debug chip click: open an info popup with the run ID and log path.
-                    if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
-                        if let Some(chip) = last_debug_chip_area {
-                            let col = mouse.column;
-                            let row = mouse.row;
-                            if col >= chip.x && col < chip.x + chip.width && row == chip.y {
-                                if let Some(run) = crate::diagnostics::active_run() {
-                                    let log_path = format!(
-                                        "~/.jackin/data/diagnostics/runs/{}.jsonl",
-                                        run.run_id()
-                                    );
-                                    let body = format!(
-                                        "Run ID:  {}
-Log:     {}",
-                                        run.run_id(),
-                                        log_path
-                                    );
-                                    if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                        use crate::console::manager::message::ManagerMessage;
-                                        let _ = manager::update_manager(
-                                            ms,
-                                            ManagerMessage::OpenListErrorPopup {
-                                                title: "Debug session".to_string(),
-                                                message: body,
-                                            },
-                                        );
-                                    }
-                                }
-                            }
+                    // Debug chip click: open the shared container/session info popup.
+                    if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
+                        && let Some(chip) = last_debug_chip_area
+                    {
+                        let col = mouse.column;
+                        let row = mouse.row;
+                        if col >= chip.x
+                            && col < chip.x + chip.width
+                            && row == chip.y
+                            && let Some(run) = crate::diagnostics::active_run()
+                            && let ConsoleStage::Manager(ms) = &mut state.stage
+                        {
+                            let log_path = run.path().display().to_string();
+                            ms.list_modal = Some(manager::state::Modal::ContainerInfo {
+                                state: jackin_tui::components::ContainerInfoState::new(
+                                    "Container info",
+                                    vec![
+                                        jackin_tui::components::ContainerInfoRow::new(
+                                            "Run ID",
+                                            run.run_id(),
+                                        )
+                                        .copyable()
+                                        .emphasised(),
+                                        jackin_tui::components::ContainerInfoRow::new(
+                                            "Run log", &log_path,
+                                        )
+                                        .hyperlink(format!("file://{log_path}")),
+                                    ],
+                                ),
+                            });
                         }
                     }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {

@@ -11,8 +11,7 @@ mod preview;
 mod prompts;
 pub mod run;
 pub mod state;
-pub mod terminal;
-pub mod widgets;
+pub mod tui;
 
 pub use op_cache::OpCache;
 #[cfg(test)]
@@ -25,7 +24,8 @@ pub use state::ConsoleStage;
 pub use state::ConsoleState;
 pub use state::WorkspaceChoice;
 pub use state::build_workspace_choice;
-pub use terminal::TerminalSession;
+pub use tui::terminal::TerminalSession;
+pub use tui::widgets;
 
 use crate::app::context::preferred_agent_index;
 use crate::config::AppConfig;

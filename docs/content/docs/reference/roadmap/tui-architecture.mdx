@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Substantially implemented — Phases 0–8 and key Phase 5 goals are complete on `feature/tui-architecture`. Phase 9 (directory convention migration) is in progress in this branch. Phases 8b–8f remain as planned follow-up work.
+**Status**: Substantially implemented — Phases 0–9 and key Phase 5 goals are complete on `feature/tui-architecture`; Phases 8c, 8d, and 8e are complete on 2026-05-31. Phase 10 (console/launch crate extraction) and Phases 8b and 8f remain as planned follow-up work.
 
 **Completed:**
 - All host `ManagerMessage` update paths are wired: list navigation, editor/settings tabs, mouse selection, modal open/dismiss, inline picker dismissals, instance action errors.
@@ -16,6 +16,10 @@ title: "TUI architecture — Ratatui application patterns"
 - `criterion` frame-time bench + capsule bytes-per-frame bench guard CI.
 - Lookbook: 14 stories, real `TestBackend`-backed SVG previews, CI drift check; `unstable-widget-ref` feature removed.
 - `insta` snapshot tests for 4 key render paths.
+- Terminal resize correctness: capsule resize now resets the Ratatui double-buffer and `SocketBackend` style tracker before repaint; resize regression tests cover the repaint path.
+- Focus audit progress: editor General and settings Mounts now use the same focused expression for green borders and `▸` cursor visibility; focused editor General content has a regression test.
+- Container info is unified across surfaces: shared `jackin-tui` state/render/hit-test/OSC 8 overlay helpers back the host console and launch cockpit; capsule status-bar chip click opens the matching container-info dialog; OSC 52 copy works for copyable rows.
+- Launch failure paths now render as full wrapped plain text and receive OSC 8 `file://` hyperlink overlays for supporting terminals; overlay tests assert both diagnostics and docker-output links.
 
 **Resolved (Phase 5):** Typed session spine substantially complete. `run_console` accepts `parent_session: Option<&TerminalSession>` and uses `is_active()`. `RichRenderer` stores `entered_alt_screen: bool` at construction, eliminating two global reads. The `host_screen_owned` global remains as the ambient signal for four deep-call-stack subsystems (`runtime/attach.rs`, `tui/animation.rs`, `docker.rs`, `operator_env.rs`) where threading a typed reference would change ~12 function signatures for minimal benefit. Accepted as permanent ambient state. — `run_console` now accepts `parent_session: Option<&TerminalSession>` and uses `is_active()` instead of the global for its own screen-ownership decision. `RichRenderer` now stores `entered_alt_screen: bool` at construction and uses the stored flag in `Drop`/`with_raw_mode`, eliminating two global reads from the renderer lifecycle. The `host_screen_owned` global remains as the ambient query mechanism for subsystems that don't receive a session reference (`runtime/attach.rs` for `JACKIN_HOST_ALT_SCREEN`, `tui/animation.rs` animation helpers, `docker.rs`, `operator_env.rs`). `TerminalSession` owns the terminal lifecycle and manages the global; eliminating the global entirely would require threading the reference through the full launch stack.
 
@@ -162,14 +166,14 @@ The codebase is not starting from zero. The useful shape already exists in fragm
 
 | Existing surface | Reusable thing hiding there | Migration target |
 |---|---|---|
-| <RepoFile path="src/console/widgets/role_picker.rs" />, <RepoFile path="src/console/widgets/github_picker.rs" />, <RepoFile path="src/console/widgets/workdir_pick.rs" /> | filtered list picker with local state, filter input, selected row, `ModalOutcome` | generic `FilterListPicker<T>` with typed row IDs and section headers |
-| <RepoFile path="src/console/widgets/agent_choice/mod.rs" />, <RepoFile path="src/console/widgets/source_picker.rs" />, <RepoFile path="src/console/widgets/scope_picker.rs" /> | small option chooser with button/list focus | `ChoiceDialog<T>` / `SegmentedChoice<T>` |
-| <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />, <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> | shared host/launch confirm dialog plus capsule raw-ANSI confirm action | extend `ConfirmDialog` with `severity`, `body`, and capsule-compatible variants once capsule renders through Ratatui |
+| <RepoFile path="src/console/tui/widgets/role_picker.rs" />, <RepoFile path="src/console/tui/widgets/github_picker.rs" />, <RepoFile path="src/console/tui/widgets/workdir_pick.rs" /> | filtered list picker with local state, filter input, selected row, `ModalOutcome` | generic `FilterListPicker<T>` with typed row IDs and section headers |
+| <RepoFile path="src/console/tui/widgets/agent_choice/mod.rs" />, <RepoFile path="src/console/tui/widgets/source_picker.rs" />, <RepoFile path="src/console/tui/widgets/scope_picker.rs" /> | small option chooser with button/list focus | `ChoiceDialog<T>` / `SegmentedChoice<T>` |
+| <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" /> | shared host/launch confirm dialog plus capsule confirm action | extend `ConfirmDialog` with `severity`, `body`, and capsule-compatible variants once capsule renders through Ratatui |
 | <RepoFile path="crates/jackin-tui/src/components/text_input.rs" />, <RepoFile path="crates/jackin-tui/src/lib.rs" /> | text-entry model plus rendered dialog | consolidate on `TextField` + Ratatui `TextInputDialog`; retire `ratatui-textarea` unless a feature gap remains |
 | <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" /> | scroll math, selected-line render helpers, proportional scrollbars | extend the shared `ScrollablePanel` / `Scrollbar` adapters as new surfaces adopt Ratatui |
-| <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" />, <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" />, <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> | footer hints, status bars, tab/chrome tokens | `HintBar`, `StatusFooter`, `TabStrip`, `BrandHeader` |
+| <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" />, <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/statusbar.rs" /> | footer hints, status bars, tab/chrome tokens | `HintBar`, `StatusFooter`, `TabStrip`, `BrandHeader` |
 | <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" />, <RepoFile path="src/runtime/progress.rs" /> | shared red-border error modal for host and launch | add capsule usage once capsule renders through Ratatui |
-| <RepoFile path="src/console/widgets/file_browser/mod.rs" />, <RepoFile path="src/console/widgets/op_picker/mod.rs" />, <RepoFile path="src/console/widgets/auth_panel/mod.rs" /> | larger composed flows built from list, text input, status, footer, and modal primitives | keep app/domain state local; replace private drawing with shared primitives |
+| <RepoFile path="src/console/tui/widgets/file_browser/mod.rs" />, <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" />, <RepoFile path="src/console/tui/widgets/auth_panel/mod.rs" /> | larger composed flows built from list, text input, status, footer, and modal primitives | keep app/domain state local; replace private drawing with shared primitives |
 
 The current file layout already proves the frontend-style component model is compatible with the codebase: most widgets have a state object, a key handler, a renderer, and narrow tests. The roadmap should therefore prefer **promotion and generalization** over replacement. The first refactor pass should move those pieces into `jackin-tui` with minimal behavior change, then make product screens consume them.
 
@@ -181,7 +185,7 @@ The same audit found concrete places where a component library would pay off imm
 |---|---|---|
 | Local palette constants | `Color::Rgb(0,255,65)` is re-declared in save/source/scope widgets, file browser, save input code, capsule dialogs/status bar, and runtime progress animation code | only token modules may define RGB values; all product code imports semantic tokens |
 | Runtime imports console widgets | <RepoFile path="src/runtime/progress.rs" /> uses console widget modules for launch UI | move reused widgets into `jackin-tui`; runtime imports the design crate only |
-| Capsule raw ANSI copies dialog chrome | <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> has its own `render_box`, filter input, row, hint row, confirm, and picker code | share models/tokens first; replace renderer once capsule has a Ratatui frame |
+| Capsule raw ANSI copies dialog chrome | <RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" /> has its own `render_box`, filter input, row, hint row, confirm, and picker code | share models/tokens first; replace renderer once capsule has a Ratatui frame |
 | Multiple picker implementations | host role/github/workdir pickers, launch select list, capsule palette/agent/split pickers | one generic picker primitive plus app-specific row adapters |
 | Multiple button-strip styles | host confirm, confirm-save, scope, source, mount-destination, and save/discard buttons now consume `ButtonStrip`; capsule menus still carry raw-ANSI strips until Ratatui lands | Continue routing remaining button rows through `ButtonStrip` until no surface declares focused/unfocused button styles locally |
 | Render mutates state | scroll clamping and geometry cache writes happen during draw | components expose `layout_snapshot`/`Geometry` outputs from update or post-render measurement, not hidden mutation in view |
@@ -285,7 +289,7 @@ This topology extends the deferred [Cargo workspace split](/reference/roadmap/ca
 
 ## Module & file structure — thin roots, flat trees, one file per thing
 
-A direct rule this item commits to, because the codebase's biggest readability problem is the opposite of it: **module-root files (`mod.rs`, `lib.rs`) are thin wiring files, never homes for logic.** A root file holds only module declarations, the intentional `pub use` re-export facade, `//!` orientation docs, and minimal glue — no rendering, dispatch, state machines, or domain logic. Today <RepoFile path="src/console/mod.rs" /> (~1,500 lines), <RepoFile path="src/console/widgets/mod.rs" />, and the capsule's <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (~6,900 lines) are the inverse — god-files that happen to sit at a module root — and they become orientation files over focused submodules.
+A direct rule this item commits to, because the codebase's biggest readability problem is the opposite of it: **module-root files (`mod.rs`, `lib.rs`) are thin wiring files, never homes for logic.** A root file holds only module declarations, the intentional `pub use` re-export facade, `//!` orientation docs, and minimal glue — no rendering, dispatch, state machines, or domain logic. Today <RepoFile path="src/console/mod.rs" /> (~1,500 lines), <RepoFile path="src/console/tui/widgets/mod.rs" />, and the capsule's <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (~6,900 lines) are the inverse — god-files that happen to sit at a module root — and they become orientation files over focused submodules.
 
 The conventions, all standard Rust practice:
 
@@ -319,8 +323,8 @@ The [Codebase readability program](/reference/roadmap/codebase-readability/) is 
 
 **Owned here (the TUI slice of the readability program):**
 
-- **TUI rendering deduplication** — the readability program's Phase 1.5 "TUI rendering deduplication" (the `titled_block` helper, the named style constants `BOLD_WHITE` / `DIM` / `GREEN` / `BORDER` / `DANGER` replacing ~296 `Style::default().fg(...)` chains, the centralized palette import that kills inline `Color::Rgb(...)` across <RepoFile path="src/console/manager/input/save.rs" /> / <RepoFile path="src/console/widgets/scope_picker.rs" /> / <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> / <RepoFile path="src/console/widgets/source_picker.rs" /> / <RepoFile path="src/console/widgets/file_browser/render.rs" />, the `app_layout` split helper, the breadcrumb-span dedup) *is* this item's token-and-primitive promotion into `jackin-tui`. It lands here, against the component seams — not as a standalone boilerplate pass.
-- **TUI file splits** — the Phase 2 splits of the terminal-surface files land against this item's Model/Update/View seams: <RepoFile path="src/console/manager/input/editor.rs" />, <RepoFile path="src/console/manager/render/editor.rs" />, <RepoFile path="src/console/manager/render/list.rs" />, <RepoFile path="src/console/manager/input/save.rs" />, <RepoFile path="src/console/manager/state.rs" />, <RepoFile path="src/console/widgets/op_picker/mod.rs" />, <RepoFile path="src/console/manager/input/global_mounts.rs" />, <RepoFile path="src/console/manager/input/mouse.rs" />, <RepoFile path="src/console/manager/input/auth.rs" />, <RepoFile path="src/console/manager/input/list.rs" />, <RepoFile path="src/console/manager/render/mod.rs" />, <RepoFile path="src/console/manager/render/global_mounts.rs" />, <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />, and the launch UI in <RepoFile path="src/runtime/progress.rs" />. The dedicated [Split `input/editor.rs`](/reference/roadmap/split-input-editor/) and [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) pages describe each per-file shape; this item supplies the *target* (component modules, not arbitrary smaller files).
+- **TUI rendering deduplication** — the readability program's Phase 1.5 "TUI rendering deduplication" (the `titled_block` helper, the named style constants `BOLD_WHITE` / `DIM` / `GREEN` / `BORDER` / `DANGER` replacing ~296 `Style::default().fg(...)` chains, the centralized palette import that kills inline `Color::Rgb(...)` across <RepoFile path="src/console/manager/input/save.rs" /> / <RepoFile path="src/console/tui/widgets/scope_picker.rs" /> / <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> / <RepoFile path="src/console/tui/widgets/source_picker.rs" /> / <RepoFile path="src/console/tui/widgets/file_browser/render.rs" />, the `app_layout` split helper, the breadcrumb-span dedup) *is* this item's token-and-primitive promotion into `jackin-tui`. It lands here, against the component seams — not as a standalone boilerplate pass.
+- **TUI file splits** — the Phase 2 splits of the terminal-surface files land against this item's Model/Update/View seams: <RepoFile path="src/console/manager/input/editor.rs" />, <RepoFile path="src/console/tui/render/editor.rs" />, <RepoFile path="src/console/tui/render/list.rs" />, <RepoFile path="src/console/manager/input/save.rs" />, <RepoFile path="src/console/manager/state.rs" />, <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" />, <RepoFile path="src/console/manager/input/global_mounts.rs" />, <RepoFile path="src/console/manager/input/mouse.rs" />, <RepoFile path="src/console/manager/input/auth.rs" />, <RepoFile path="src/console/manager/input/list.rs" />, <RepoFile path="src/console/tui/render/mod.rs" />, <RepoFile path="src/console/tui/render/global_mounts.rs" />, <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />, and the launch UI in <RepoFile path="src/runtime/progress.rs" />. The dedicated [Split `input/editor.rs`](/reference/roadmap/split-input-editor/) and [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) pages describe each per-file shape; this item supplies the *target* (component modules, not arbitrary smaller files).
 - **TUI `//!` coverage and magic numbers** — the `tui/` module is at 0% `//!` coverage and <RepoFile path="src/tui/animation.rs" /> carries 12+ inline millisecond values; the timing tokens move into `jackin-tui` and the modules earn orientation docs as they are promoted.
 - **The snapshot-test net** — [Snapshot tests for TUI render](/reference/roadmap/snapshot-tests-tui/) is the shared prerequisite (Phase 0 here) and the readability program's Phase 2 safety net; it is one body of work, not two.
 
@@ -366,8 +370,8 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 | <RepoFile path="src/app/mod.rs" /> | ~3,900 | Top-level command dispatch; `jackin console` now owns the host alt-screen guard before entering `run_console` and keeps it through launch + attach |
 | <RepoFile path="src/console/mod.rs" /> | ~1,500 | `run_console` entry point, standalone terminal ownership fallback, the single console event loop |
 | <RepoFile path="src/console/manager/state.rs" /> | ~3,100 | `ManagerState`, `EditorState`, `SettingsState`, all `Modal` enums, instance refresh |
-| <RepoFile path="src/console/manager/render/editor.rs" /> | ~3,300 | Workspace editor render — all five tabs |
-| <RepoFile path="src/console/manager/render/list.rs" /> | ~3,100 | List/details render, the `sidebar_inputs_for_*` split |
+| <RepoFile path="src/console/tui/render/editor.rs" /> | ~3,300 | Workspace editor render — all five tabs |
+| <RepoFile path="src/console/tui/render/list.rs" /> | ~3,100 | List/details render, the `sidebar_inputs_for_*` split |
 | <RepoFile path="src/console/manager/input/editor.rs" /> | ~4,300 | Editor key dispatch — the largest TUI file |
 | <RepoFile path="src/console/manager/input/mouse.rs" /> | ~2,200 | Mouse handling, seam-drag, scroll-focus |
 | <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" /> | ~800 | shared `render_scrollable_block`, selected-line helpers, scrollbar geometry |
@@ -390,7 +394,7 @@ The host console lives under `src/console/` (~28K lines of the production tree) 
 
 7. **Three coexisting modal-stack shapes.** — *resolved:* `AuthFormReturnPath` stash slots (`pending_auth_form_return` on both `EditorState` and `SettingsAuthState`) retired; `EditorState.pending_env_key` retired (now embedded in `Modal::SourcePicker { env_key: … }`); auth parent stack now `Vec<SettingsAuthModal>`. `SettingsEnvState.pending_env_key` for the settings env-add flow is a distinct field that remains intentionally.
 
-8. **DRY drift from symmetric variants.** `sidebar_inputs_for_workspace` vs. `sidebar_inputs_for_current_dir` in <RepoFile path="src/console/manager/render/list.rs" /> are near-identical bodies; the same workspace-vs-current-dir distinction is repeated in `focused_block_still_scrollable`, `clamp_list_scroll_for_area`, and the mouse `update_scroll_focus` handler — four call sites that must stay in lock-step.
+8. **DRY drift from symmetric variants.** `sidebar_inputs_for_workspace` vs. `sidebar_inputs_for_current_dir` in <RepoFile path="src/console/tui/render/list.rs" /> are near-identical bodies; the same workspace-vs-current-dir distinction is repeated in `focused_block_still_scrollable`, `clamp_list_scroll_for_area`, and the mouse `update_scroll_focus` handler — four call sites that must stay in lock-step.
 
 9. **Component reuse was happening in the wrong layer.** The launch cockpit used to import host console widgets such as `select_list`, `status_bar`, `hints`, `scrollable`, and `error_popup`. This branch is moving those pieces into <RepoFile path="crates/jackin-tui/Cargo.toml" /> so every terminal surface consumes the shared component crate instead of reaching sideways into `src/console/widgets`.
 
@@ -549,8 +553,8 @@ Both binaries already run on Tokio, and both use the **single-threaded** flavor:
 | Blocking `event::poll(50 ms)` + `event::read` | the console input loop in <RepoFile path="src/console/mod.rs" /> blocks the reactor up to 50 ms per tick and wakes 20×/s even when idle | `tokio::select!` over a crossterm `EventStream` and the `Message` channel; redraw on a message or animation tick, not a fixed 20 Hz spin |
 | Nested runtime per background action | <RepoFile path="src/console/manager/input/save.rs" />, <RepoFile path="src/console/manager/input/editor.rs" />, and <RepoFile path="src/app/mod.rs" /> each `std::thread::spawn` a thread that builds a fresh `Builder::new_current_thread().build()` and `block_on`s one future | reuse the app runtime: `tokio::spawn` / `spawn_blocking` an effect that returns a `Message`; never stand up a second runtime to run one call |
 | Unconditional full redraw | the console and the launch cockpit recompose every row and pane every tick with no dirty flag | explicit `Dirty` invalidation so an idle view does zero work |
-| Per-frame allocation | host renderers in <RepoFile path="src/console/manager/render/list.rs" /> rebuild picker `ListItem` vectors and mount-row `format!` chains on every draw | derive rows in `update`, render from borrowed prepared state |
-| `thread::sleep` on render-adjacent paths | shimmer / deploy-hold in <RepoFile path="src/tui/output.rs" />, retry pacing in <RepoFile path="src/runtime/snapshot.rs" />, poll pacing in <RepoFile path="src/runtime/logs.rs" />, worker spins in <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | `tokio::time::sleep` / interval ticks / move off the loop (detailed in the inventory below) |
+| Per-frame allocation | host renderers in <RepoFile path="src/console/tui/render/list.rs" /> rebuild picker `ListItem` vectors and mount-row `format!` chains on every draw | derive rows in `update`, render from borrowed prepared state |
+| `thread::sleep` on render-adjacent paths | shimmer / deploy-hold in <RepoFile path="src/tui/output.rs" />, retry pacing in <RepoFile path="src/runtime/snapshot.rs" />, poll pacing in <RepoFile path="src/runtime/logs.rs" />, worker spins in <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> | `tokio::time::sleep` / interval ticks / move off the loop (detailed in the inventory below) |
 
 The nested-runtime pattern deserves emphasis: standing up a whole `current_thread` runtime inside a detached `std::thread` to run one `block_on` is both wasteful and a structure smell — it exists only because there is no effect system to hand the work to. Once `update` returns typed effects, that work becomes a `spawn_blocking` returning a `Message`, on the one runtime the app already owns.
 
@@ -591,7 +595,7 @@ The remaining migration target is different: fold the cockpit's parallel mini-ap
 | <RepoFile path="src/tui/output.rs" /> | 25 ms shimmer · 1500 ms deploy hold | animation/pacing on the launch path — drive from an interval, not a blocking sleep |
 | <RepoFile path="src/runtime/snapshot.rs" /> | 20 ms · 10 ms | retry pacing |
 | <RepoFile path="src/runtime/logs.rs" /> | 250 ms | poll pacing |
-| <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | 2 ms ×2 | worker poll pacing |
+| <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> | 2 ms ×2 | worker poll pacing |
 
 **Capsule:** PTY and git/PR context already run on background tasks; the gap is the `std::thread` vs. `spawn_blocking` inconsistency the gap-analysis table notes, plus the compose path running on the loop. The Ratatui-frame move (Phase 6) puts the buffer diff on the framework and the compose work behind the same `Action`/update boundary.
 
@@ -703,13 +707,13 @@ The audit's patterns, grouped by atomic layer. This is the seed inventory the lo
 
 | Component | Represents | Look & feel | Reuse status today |
 |---|---|---|---|
-| `ConfirmDialog` | destructive Yes/No | title `" Confirm "`; question ends `?`; default focus **No** | host and launch share <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />; capsule `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> still waits for the Ratatui frame |
-| `FilterListPicker` | filter + list pick | filter row 0, spacer, items 2+; box `items + 4` | host <RepoFile path="src/console/widgets/role_picker.rs" /> + launch `select_list` + capsule palette / agent / split pickers — many impls |
+| `ConfirmDialog` | destructive Yes/No | title `" Confirm "`; question ends `?`; default focus **No** | host and launch share <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />; capsule `render_confirm_action` lives in <RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" /> |
+| `FilterListPicker` | filter + list pick | filter row 0, spacer, items 2+; box `items + 4` | host <RepoFile path="src/console/tui/widgets/role_picker.rs" /> + launch `select_list` + capsule palette / agent / split pickers — many impls |
 | `ErrorPopup` | the only error surface | red border + title; scrollable; dismissible | host and launch share <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" />; capsule has none |
 | `ConfirmSaveDialog` | diff-preview save | scrollable diff; default focus Save | host only |
 | `SaveDiscardStrip` | 3-button dirty-exit | standard strip; default Cancel | shared <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> |
 | `TextInputDialog` | modal text entry | 60% width clamp `[40,100]`, 5 rows | **already shared** via `render_text_input_dialog` in <RepoFile path="crates/jackin-tui/src/lib.rs" /> |
-| `InfoDialog` | read-only label/value | right-aligned labels; copy-target row emphasized + hover lift; `✓ Copied!` | capsule container-info / github-context in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> |
+| `InfoDialog` | read-only label/value | right-aligned labels; copy-target row emphasized + hover lift; `✓ Copied!` | capsule container-info / github-context in <RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" /> |
 
 **Chrome & motion (templates):**
 
@@ -852,7 +856,7 @@ Several rules in [TUI Design Decisions](/reference/tui-design-decisions/) have n
 
 **Space vs Enter semantics** — audit every toggle row (keep_awake, git_pull, trusted role, allowed role, DCO sign-off, co-author trailer). Each must respond to `Space` only (not `Enter`). Audit every action button (Save, Cancel, Yes, No, OK): `Enter` only. Add a test that asserts `Space` on a toggle row toggles the value and `Enter` does not.
 
-**Hints footer-only** — no widget may render its own internal hint row. Audit all files under `src/console/widgets/` for `Constraint::Length` rows containing hint text. Every hint must route through `render_hint_bar` / `render_wrapped_hint_bar` in the footer, never inside the widget body.
+**Hints footer-only** — no widget may render its own internal hint row. Audit all files under `src/console/tui/widgets/` for `Constraint::Length` rows containing hint text. Every hint must route through `render_hint_bar` / `render_wrapped_hint_bar` in the footer, never inside the widget body.
 
 **Error surface** — every error must use `ErrorPopup`. Audit all `eprintln!` calls, any `status_overlay` that surfaces errors, and any inline error text in render functions. Route all to `ManagerMessage::OpenListErrorPopup` or equivalent.
 
@@ -861,6 +865,8 @@ Several rules in [TUI Design Decisions](/reference/tui-design-decisions/) have n
 **Acceptance:** All five audits produce zero violations. New tests covering each rule are green in CI.
 
 ### Phase 8e — Long paths in dialogs: OSC 8 hyperlinks
+
+**Complete on `feature/tui-architecture` (2026-05-31).** The launch failure popup now wraps long path values instead of silently truncating them, keeps the full path visible in non-OSC-8 terminals, and emits OSC 8 `file://` overlays for the diagnostics and docker-output rows after the Ratatui draw. The OSC 8 open/close helpers live in `jackin-tui::ansi` and are reused by the capsule container-info dialog.
 
 The launch failure popup renders "run diagnostics" and "docker output" paths that are truncated when they exceed the dialog width. This violates the "never silently truncate" rule.
 
@@ -878,22 +884,19 @@ The launch failure popup renders "run diagnostics" and "docker output" paths tha
 
 ### Phase 8d — Unified container info dialog across all surfaces
 
-Implement a single shared container info dialog that opens from every status bar chip click, on every surface. The same component, same layout, same behavior — fields vary by surface and debug mode (see TUI Design Decisions → Container info dialog).
+**Complete on `feature/tui-architecture` (2026-05-31).**
 
-**Current state:**
-- Capsule: `ContainerInfo` dialog exists in raw ANSI (`crates/jackin-capsule/src/dialog.rs`) and shows via command palette. Direct chip click not wired yet. Run ID / log path rows already added for debug mode.
-- Host console: debug bar chip click opens an `ErrorPopup` (wrong component — temporary).
-- Launch progress: `StatusFooter` chip has hover + OSC 22 pointer; click not wired.
+The container info dialog now opens from every status-bar/status-footer chip surface. Host and launch use the shared <RepoFile path="crates/jackin-tui/src/components/container_info.rs" /> `ContainerInfoState` / `ContainerInfoRow` / `render_container_info` component, plus shared value hit-testing and OSC 8 hyperlink-overlay helpers. The capsule status-bar container-chip click opens the matching `Dialog::ContainerInfo` in <RepoFile path="crates/jackin-capsule/src/daemon/input_dispatch.rs" />. Copyable rows emit OSC 52, linked rows receive OSC 8 overlays, and hover uses the OSC 22 hand pointer.
 
 **Required work:**
 
-1. **`jackin-tui` shared component** — create `ContainerInfoState` (rows: label + value + optional OSC 8 href + copy-target flag) + `render_container_info(frame, area, state)` in `crates/jackin-tui/src/components/` (new file alongside existing components). Same layout contract as capsule's existing `render_container_info` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" />: PHOSPHOR_GREEN border, label column + value column, emphasised rows clickable via OSC 52, debug rows conditional on `debug_enabled()`.
+1. **`jackin-tui` shared component** — create `ContainerInfoState` (rows: label + value + optional OSC 8 href + copy-target flag) + `render_container_info(frame, area, state)` in `crates/jackin-tui/src/components/` (new file alongside existing components). Same layout contract as capsule's existing `render_container_info` in <RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" />: PHOSPHOR_GREEN border, label column + value column, emphasised rows clickable via OSC 52, debug rows conditional on `debug_enabled()`. Done.
 
-2. **Host console** — replace the `ErrorPopup` opened by the debug bar chip click in <RepoFile path="src/console/run.rs" /> with a proper `ContainerInfoState` filled with: run ID, diagnostics log path (OSC 8 link). Add the `ManagerMessage` to open it as a `Modal::ContainerInfo`.
+2. **Host console** — replace the `ErrorPopup` opened by the debug bar chip click in <RepoFile path="src/console/run.rs" /> with a proper `ContainerInfoState` filled with: run ID, diagnostics log path (OSC 8 link). Done, including click-to-copy and OSC 8 overlay behavior for that modal.
 
-3. **Capsule** — wire direct click on the instance ID / combined chip in the status bar row to push `Dialog::ContainerInfo` onto the dialog stack. The existing `ContainerInfo` dialog already has the right fields; this is purely the click-trigger wiring in the input dispatch.
+3. **Capsule** — wire direct click on the instance ID / combined chip in the status bar row to push `Dialog::ContainerInfo` onto the dialog stack. Done.
 
-4. **Launch progress** — wire `StatusFooter` chip click to open `ContainerInfoState` with the fields available at that stage: container ID (if known), jackin version, run ID (debug). The launch cockpit already tracks `instance_id`; pass it.
+4. **Launch progress** — wire `StatusFooter` chip click to open `ContainerInfoState` with the fields available at that stage: container ID (if known), jackin version, run ID (debug). Done, including click-to-copy and OSC 8 overlay behavior for linked rows.
 
 **Non-debug vs debug rows:** Non-debug: container ID, role, agent, workdir, versions. Debug: same + run ID (bold, copyable) + diagnostics path (OSC 8 link) + docker output path (OSC 8 link, if build failed).
 
@@ -912,23 +915,27 @@ Implement a single shared container info dialog that opens from every status bar
 
 ### Phase 8c — Terminal resize visual correctness
 
+**Complete on `feature/tui-architecture` (2026-05-31).**
+
 **Problem:** Resizing the terminal (especially the capsule) produces visual corruption — wrong background colors (gray tint), stale cell artifacts from the previous size, broken layout geometry. The capsule's Ratatui double-buffer and SocketBackend cursor-tracking state are not reset on resize.
 
 **Root cause:** On `ClientFrame::Resize` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, `compose_full_frame` is called but `ratatui_terminal.clear()` is not. The diff then compares against a previous-buffer sized for the OLD geometry, leaving stale content at cells that no longer exist in the new layout. Additionally, `SocketBackend`'s `cursor_row`/`cursor_col` tracking carries stale coordinates across the resize boundary, causing the consecutive-cell optimization to skip position escapes that are now needed.
 
-**Required fix — three steps:**
+**Completed fix — three steps:**
 
 1. **Reset Ratatui buffer on resize** — in the `ClientFrame::Resize` handler in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, add `let _ = mux.ratatui_terminal.clear();` before `compose_full_frame`. `SocketBackend::clear()` already does NOT emit `[2J` (from a prior fix), so this resets the diff buffer without a flash.
 
-2. **Reset SocketBackend cursor state on resize** — in <RepoFile path="crates/jackin-capsule/src/socket_backend.rs" />, the `resize` method currently only updates `self.size`. Add `self.current_style = CellStyle::default();`. The `draw()` method tracks `cursor_row`/`cursor_col` as local variables (not struct fields) — verify whether stale cursor position can carry over between resize and the next `draw()` call; if so, add state fields. `SocketBackend::clear()` does NOT emit `[2J` (verified: it only resets `current_style`).
+2. **Reset SocketBackend cursor state on resize** — in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" />, the `resize` method currently only updates `self.size`. Add `self.current_style = CellStyle::default();`. The `draw()` method tracks `cursor_row`/`cursor_col` as local variables (not struct fields) — verify whether stale cursor position can carry over between resize and the next `draw()` call; if so, add state fields. `SocketBackend::clear()` does NOT emit `[2J` (verified: it only resets `current_style`).
 
 3. **Host console** — verify `run_console` in <RepoFile path="src/console/run.rs" /> correctly handles `Event::Resize` by calling `terminal.autoresize()` (already done) and that the debug-bar area is recomputed on the next frame. The existing `split_debug_area(full_area)` already re-reads `frame.area()` each tick, so this should be correct — add a regression test with `TestBackend::resize`.
 
-**Files:** <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (resize handler), <RepoFile path="crates/jackin-capsule/src/socket_backend.rs" /> (clear/resize), <RepoFile path="src/console/run.rs" /> (verify).
+**Files:** <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (resize handler), <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" /> (clear/resize), <RepoFile path="src/console/run.rs" /> (verify).
 
-**Acceptance:** Dragging the terminal window to a smaller or larger size while the capsule multiplexer is running must produce a correct full repaint with no gray background, no stale cells, and no layout tears within one animation tick. Add a `TestBackend::resize` test that resizes a `Multiplexer` and asserts `compose_pending_frame` returns a non-empty output.
+**Acceptance:** Dragging the terminal window to a smaller or larger size while the capsule multiplexer is running must produce a correct full repaint with no gray background, no stale cells, and no layout tears within one animation tick. The regression tests cover `SocketBackend::resize` resetting style state and a `Multiplexer` resize followed by `compose_full_frame(FullRedrawReason::Resize)` producing a non-empty repaint.
 
 ### Phase 8b — Focus correctness audit
+
+**Partially implemented on `feature/tui-architecture` (2026-05-31):** fixed the editor General and settings Mounts border/cursor expression mismatches and added a focused editor General regression test. Remaining work: exhaustive single-green-border cluster tests for every host console state.
 
 Systematically audit every screen in the host console and settings for focus violations:
 
@@ -950,7 +957,7 @@ Systematically audit every screen in the host console and settings for focus vio
 
 ### Phase 9 — TUI source directory convention migration
 
-**In progress — started on `feature/tui-architecture`.** Capsule side partially done: 8 TUI rendering files moved via `git mv` into `crates/jackin-capsule/src/tui/`. This is the start of Phase 9, not the completion.
+**Complete on `feature/tui-architecture`.** Capsule-specific rendering files live under `crates/jackin-capsule/src/tui/`; console-specific rendering files live under `src/console/tui/`; `src/console/manager/` now owns the manager model/update code and re-exports the console render module as a compatibility facade.
 
 **Industry reference: Elm Architecture / Model-Update-View.**
 
@@ -981,12 +988,12 @@ The `tui/` directory is a strict rendering boundary. Every file inside it must s
 
 The Model/Update/View contract guarantees this: the update layer (`input/`, `message.rs`, `state.rs`) mutates state in response to events; the view layer (`tui/`) reads immutable state and produces pixels. These two must never mix in the same file. A file that both handles input events and renders output is a violation.
 
-**Remaining work (console side + full wiring):**
-- `src/console/manager/render/` → `src/console/tui/render/`
-- `src/console/widgets/` → `src/console/tui/widgets/`
-- `src/console/terminal.rs` → `src/console/tui/terminal.rs`
-- Update all `mod` declarations and `use` paths after the moves.
-- Verify build clean and tests pass.
+**Completed work:**
+- `src/console/manager/render/` moved to `src/console/tui/render/`.
+- `src/console/widgets/` moved to `src/console/tui/widgets/`.
+- `src/console/terminal.rs` moved to <RepoFile path="src/console/tui/terminal.rs" />.
+- `mod` declarations and `use` paths updated after the moves.
+- `cargo check` and `cargo fmt --check` pass locally after the migration.
 
 Use `git mv` for every file move to preserve history. New TUI files added before migration completes must go into the target directory immediately.
 
@@ -996,7 +1003,7 @@ Move all terminal-rendering source files into designated TUI directories so the 
 
 **Console migration** (`src/console/tui/`): move `manager/render/` → `tui/render/`, `widgets/` → `tui/widgets/`, `terminal.rs` → `tui/terminal.rs`. Update all `use` paths. The manager input handlers and state structs remain in `manager/` — they are not rendering code.
 
-**Done when:** `cargo build` is green, CI passes, and all surface-specific rendering files live under the designated `tui/` subdirectory. No rendering code outside these paths.
+**Done when:** complete. All surface-specific rendering files live under the designated `tui/` subdirectory; CI still needs to run the normal full matrix before merge.
 
 **Tracked in:** `TODO.md` → `tui-directory-migration`.
 
@@ -1008,7 +1015,7 @@ When all phases complete, every TUI surface lives in its own crate with explicit
 |---|---|---|---|---|---|
 | `jackin-tui` | 0 — shared lib | — | — | `components/`, `theme.rs`, `scroll.rs`, `geometry.rs` | ✅ done |
 | `jackin-tui-lookbook` | 1 browser | `stories.rs` | `interactors.rs` | `main.rs` (terminal), `svg.rs` | ✅ done |
-| `jackin-capsule` | 1 multiplexer | `session.rs`, `mux_mode.rs` | `action.rs`, `input.rs`, `daemon/` | `tui/` (statusbar, chrome, dialog…) | Phase 9 in progress |
+| `jackin-capsule` | 1 multiplexer | `session.rs`, `mux_mode.rs` | `action.rs`, `input.rs`, `daemon/` | `tui/` (statusbar, chrome, dialog…) | ✅ done |
 | `jackin-console` | 3 screens | per-screen `state.rs` | per-screen `update.rs` | per-screen `tui/` | Phase 10 |
 | `jackin-launch` | 1 cockpit | `state.rs` (LaunchView) | `update.rs` (stages, pickers) | `tui/` (rain, rail, failure) | Phase 10 |
 | `jackin` binary | 0 | — | — | — routes CLI → crates | ongoing |
@@ -1058,13 +1065,13 @@ crates/jackin-launch/src/
     └── failure.rs
 ```
 
-Currently `jackin-launch` content lives in `src/runtime/progress.rs` — one 2000+ line file mixing model, update, and view. Extracting it separates those layers and gives the cockpit its own `cargo build -p jackin-launch` fast path.
+Currently `jackin-launch` content lives in <RepoFile path="src/runtime/progress.rs" /> — one 2000+ line file mixing model, update, and view. Extracting it separates those layers and gives the cockpit its own `cargo build -p jackin-launch` fast path.
 
 **MUV contract reminder:** `tui/` in every crate is the View layer only. `run.rs` is the wiring loop. `update.rs` / `message.rs` is the Update layer. `state.rs` is the Model. Nothing crosses the boundary.
 
 **Rule for multiple screens (console):** split by screen first (`workspaces/`, `editor/`, `settings/`), then put `tui/` inside each screen folder. **Rule for single-screen crates (capsule, launch):** one `tui/` at the crate root is sufficient.
 
-**Prerequisite:** `src/runtime/progress.rs` and `src/console/` must not import each other's types; verify before extraction. Check how much `src/console/` currently imports from `src/runtime/`, `src/config/`, `src/instance/` — those deps must become explicit crate dependencies or trait abstractions.
+**Prerequisite:** <RepoFile path="src/runtime/progress.rs" /> and `src/console/` must not import each other's types; verify before extraction. Check how much `src/console/` currently imports from `src/runtime/`, `src/config/`, `src/instance/` — those deps must become explicit crate dependencies or trait abstractions.
 
 **Tracked in:** `TODO.md` (add entry `jackin-console-jackin-launch-extraction`).
 
@@ -1076,7 +1083,7 @@ Currently `jackin-launch` content lives in `src/runtime/progress.rs` — one 200
 - **Tokio runtime flavor.** Both binaries run `#[tokio::main(flavor = "current_thread")]` today. Decide whether the host keeps `current_thread` (simplest, no `Send` tax on a large model) once all blocking work is behind `spawn_blocking`, or moves to a small `multi_thread` pool if `spawn_blocking` contention under heavy Docker / `op` fan-out proves measurable. The capsule daemon stays `current_thread` — it is PID 1 in a container with a deliberately tiny footprint.
 - **Nested runtimes.** ✅ Resolved: role registration and workspace isolation-drift checks use `spawn_blocking` on the single app runtime; the Stop/Purge in-place Docker handler is `async fn` on the existing reactor; the `save.rs` force-cleanup path now spawns a dedicated OS thread with its own single-threaded runtime and a fresh `ShellRunner`, eliminating the "Cannot start runtime within runtime" panic. The editor literal role registration (test-seam only, `FakeRunner`) remains an isolated test helper with no production impact. No production code path creates a nested runtime.
 - **Crate-extraction timing.** Whether the `jackin-console` and `jackin-launch` crate extractions land inside this item's branch or wait for the [Cargo workspace split](/reference/roadmap/cargo-workspace-split/) ~150K-LOC trigger. The Model/Update/View module boundaries that map onto those crates land here regardless; only the physical `crates/` move is in question.
-- **Pane-body rendering cost.** ✅ Resolved: ADR-004 chooses the custom cell widget approach. tui-term is incompatible with the vt100 fork; the `PaneBodyWidget` at `crates/jackin-capsule/src/pane_widget.rs` renders `vt100::Screen` cells into the Ratatui Buffer. Benchmark: ~378µs per frame at 200×50 vs ~118µs for the raw-ANSI baseline — acceptable since Ratatui's Buffer::diff eliminates redundant writes at steady state. The capsule bytes-per-frame benchmark at `crates/jackin-capsule/benches/pane_body.rs` measures ~484µs for the full SocketBackend pipeline (first frame includes full diff; subsequent idle frames emit near-zero bytes).
+- **Pane-body rendering cost.** ✅ Resolved: ADR-004 chooses the custom cell widget approach. tui-term is incompatible with the vt100 fork; the `PaneBodyWidget` at `crates/jackin-capsule/src/tui/pane_widget.rs` renders `vt100::Screen` cells into the Ratatui Buffer. Benchmark: ~378µs per frame at 200×50 vs ~118µs for the raw-ANSI baseline — acceptable since Ratatui's Buffer::diff eliminates redundant writes at steady state. The capsule bytes-per-frame benchmark at `crates/jackin-capsule/benches/pane_body.rs` measures ~484µs for the full SocketBackend pipeline (first frame includes full diff; subsequent idle frames emit near-zero bytes).
 - **`ratatui-textarea` vs. `TextField`.** *Decision:* consolidate the host text input onto the in-house `TextField` (already shared via `jackin-tui`) and drop the third-party, pre-1.0 `ratatui-textarea`, so there is one text-input model. Revisit only if `TextField` lacks needed editing features.
 - **`unstable-widget-ref`.** ✅ Resolved: the feature was never used (no `WidgetRef` implementations in the codebase); it has been removed from all three `ratatui` dependency declarations (<RepoFile path="Cargo.toml" />, <RepoFile path="crates/jackin-tui/Cargo.toml" />, <RepoFile path="crates/jackin-capsule/Cargo.toml" />).
 - **Lookbook SVG toolchain.** ✅ Resolved: custom `Buffer`→SVG serializer ships in `crates/jackin-tui/src/bin/tui-lookbook.rs`; `vhs`/`termsvg` for motion remains a future option for animated stories.
@@ -1098,7 +1105,7 @@ None. This is a pure internal refactor of in-process TUI code. It introduces no 
 - The console → launch → handoff remains one continuous Ratatui session on the console path, but the continuity is owned by a typed app-level `TerminalSession` rather than global flags; the capsule handoff still preserves the host alt-screen with `JACKIN_HOST_ALT_SCREEN`, and the in-container experience continues the same visual language. *(Manual-smoke criterion — a real-terminal flash is not catchable by `TestBackend` snapshots.)*
 - The capsule has a `MuxMode` state machine, a generalized `Action` dispatch with tests, and a decomposed `daemon.rs`; the full/partial compositors share one helper.
 - The capsule renders through Ratatui; the pane-body mechanism (`tui-term` vs a custom cell widget) is recorded in an ADR with benchmark evidence.
-- Every rule in [TUI Design Decisions](/reference/tui-design-decisions/) still holds; snapshot tests now exist for 4 key render paths (list, settings, editor-general, editor-mounts) via `insta` in <RepoFile path="src/console/manager/render/snapshot_tests.rs" /> — any render regression fails CI.
+- Every rule in [TUI Design Decisions](/reference/tui-design-decisions/) still holds; snapshot tests now exist for 4 key render paths (list, settings, editor-general, editor-mounts) via `insta` in <RepoFile path="src/console/tui/render/snapshot_tests.rs" /> — any render regression fails CI.
 - Reusable patterns live in <RepoFile path="crates/jackin-tui/Cargo.toml" /> as single implementations; no visual pattern that appears on multiple terminal surfaces has two copies or a runtime dependency on `src/console/widgets`. The confirm dialog, picker, tab strip, scrollbar, panel, hint bar, status/footer bar, and modal frame each have exactly one implementation all surfaces consume.
 - Token and layout-helper unification lands without a rendering-backend change; full widget sharing follows the capsule's move to a Ratatui frame.
 - Every repeatable visual pattern is a named `jackin-tui` component with a lookbook page rendering its states from the real widget code; no host/capsule drift remains for shared patterns.

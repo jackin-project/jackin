@@ -88,6 +88,12 @@ pub fn handle_mouse_with_config(
     }
 
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+        && try_copy_container_info_value(state, mouse, term_size)
+    {
+        return;
+    }
+
+    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && try_select_editor_tab(state, mouse)
     {
         return;
@@ -249,6 +255,9 @@ pub fn clickable_at(
     if file_browser_url_row_at(state, mouse, term_size) {
         return true;
     }
+    if container_info_copyable_row_at(state, mouse, term_size) {
+        return true;
+    }
     match &state.stage {
         ManagerStage::Editor(editor) if editor.modal.is_none() => {
             editor_tab_at(mouse).is_some()
@@ -270,6 +279,51 @@ pub fn clickable_at(
         }
         _ => false,
     }
+}
+
+fn try_copy_container_info_value(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
+        return false;
+    };
+    let area = super::super::render::modal_outer_rect(
+        &Modal::ContainerInfo {
+            state: info.clone(),
+        },
+        term_size,
+    );
+    let Some((row, payload)) =
+        jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
+    else {
+        return false;
+    };
+    let mut out = std::io::stdout();
+    if std::io::Write::write_all(
+        &mut out,
+        &jackin_tui::ansi::encode_osc52_clipboard_write(&payload),
+    )
+    .and_then(|()| std::io::Write::flush(&mut out))
+    .is_ok()
+    {
+        info.mark_copied(row);
+    }
+    true
+}
+
+fn container_info_copyable_row_at(
+    state: &ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    let Some(modal @ Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
+        return false;
+    };
+    let area = super::super::render::modal_outer_rect(modal, term_size);
+    jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
+        .is_some()
 }
 
 /// Whether the pointer is inside the Settings → Trust content area (a click

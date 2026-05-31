@@ -65,6 +65,7 @@ impl SocketBackend {
     /// Update the terminal size. Called when the daemon receives a resize event.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         self.size = (cols, rows);
+        self.current_style = CellStyle::default();
     }
 
     /// Take the accumulated output, leaving the buffer empty.
@@ -212,7 +213,6 @@ impl Backend for SocketBackend {
             let width = sym.width() as u16;
             if width == 0 {
                 // Combining character: cursor didn't move.
-                cursor_col = cursor_col; // unchanged
             } else {
                 cursor_col = Some(col + width);
             }
@@ -297,11 +297,9 @@ impl Backend for SocketBackend {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{
-        Terminal, backend::Backend, layout::Rect, style::Style, text::Span, widgets::Paragraph,
-    };
+    use ratatui::{Terminal, backend::Backend, layout::Rect, text::Span, widgets::Paragraph};
 
-    use super::SocketBackend;
+    use super::{CellStyle, SocketBackend};
 
     #[test]
     fn backend_renders_text_to_output_buffer() {
@@ -326,15 +324,21 @@ mod tests {
     #[test]
     fn resize_updates_reported_size() {
         let mut backend = SocketBackend::new(80, 24);
+        backend.current_style = CellStyle {
+            fg: ratatui::style::Color::Red,
+            bg: ratatui::style::Color::Blue,
+            modifiers: ratatui::style::Modifier::BOLD,
+        };
         backend.resize(120, 40);
         let size = backend.size().unwrap();
         assert_eq!(size.width, 120);
         assert_eq!(size.height, 40);
+        assert_eq!(backend.current_style, CellStyle::default());
     }
 
     #[test]
     fn take_output_drains_buffer() {
-        let mut backend = SocketBackend::new(10, 1);
+        let backend = SocketBackend::new(10, 1);
         let terminal = Terminal::new(backend).unwrap();
         let _ = terminal; // do not call draw
         let mut backend = SocketBackend::new(10, 1);

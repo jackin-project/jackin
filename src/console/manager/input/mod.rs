@@ -3,11 +3,11 @@
 //! go to the active stage's handler.
 
 pub mod auth;
-pub(super) mod editor;
-pub(super) mod global_mounts;
-pub(super) mod list;
-pub(super) mod mouse;
-pub(super) mod prelude;
+pub(crate) mod editor;
+pub(crate) mod global_mounts;
+pub(crate) mod list;
+pub(crate) mod mouse;
+pub(crate) mod prelude;
 pub mod save;
 
 use crossterm::event::KeyEvent;

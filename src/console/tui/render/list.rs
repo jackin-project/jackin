@@ -1,6 +1,22 @@
 //! List-stage rendering: the left-column workspace list and right-pane
 //! details (saved workspace / current-directory / "+ New workspace"
 //! sentinel).
+#![expect(
+    clippy::redundant_pub_crate,
+    reason = "manager update code uses selected render geometry helpers through the moved tui facade"
+)]
+#![expect(
+    clippy::too_many_lines,
+    reason = "Phase 9 only moves render files; later component splits own shortening these helpers"
+)]
+#![expect(
+    clippy::too_many_arguments,
+    reason = "existing row-builder shape is preserved during the directory migration"
+)]
+#![expect(
+    clippy::fn_params_excessive_bools,
+    reason = "existing row-builder shape is preserved during the directory migration"
+)]
 
 use jackin_tui::components::{Panel, PanelFocus};
 use ratatui::{
@@ -11,13 +27,13 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use super::super::state::{
-    ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
-};
 use super::{
     CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 use crate::config::AppConfig;
+use crate::console::manager::state::{
+    ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
+};
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn render_list_body(
@@ -129,10 +145,16 @@ pub(super) fn render_list_body(
         );
     } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
-            .unwrap_or(container.as_str());
+            .unwrap_or(container);
         render_agent_picker_sidebar(frame, list_area, short_id, picker, state.list_names_focused);
     } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
-        render_agent_picker_sidebar(frame, list_area, &role.key(), picker, state.list_names_focused);
+        render_agent_picker_sidebar(
+            frame,
+            list_area,
+            &role.key(),
+            picker,
+            state.list_names_focused,
+        );
     } else if let Some(picker) = state.inline_role_picker.as_ref() {
         let title = state
             .selected_workspace_summary()
@@ -145,10 +167,7 @@ pub(super) fn render_list_body(
     }
 }
 
-pub(in crate::console::manager) fn list_names_content_width(
-    state: &ManagerState<'_>,
-    viewport: usize,
-) -> usize {
+pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     list_name_lines(state, viewport).1
 }
 
@@ -182,7 +201,13 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'stat
             ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
                 let instances = state.current_dir_active_instances();
                 if let Some(entry) = instances.get(*inst_idx) {
-                    push_tree_instance_line(&mut lines, entry, is_selected, state.list_names_focused, &mut max_w);
+                    push_tree_instance_line(
+                        &mut lines,
+                        entry,
+                        is_selected,
+                        state.list_names_focused,
+                        &mut max_w,
+                    );
                 }
             }
             ManagerListRow::SavedWorkspace(i) => {
@@ -203,7 +228,13 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'stat
             ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
                 let instances = state.workspace_active_instances(*ws_idx);
                 if let Some(entry) = instances.get(*inst_idx) {
-                    push_tree_instance_line(&mut lines, entry, is_selected, state.list_names_focused, &mut max_w);
+                    push_tree_instance_line(
+                        &mut lines,
+                        entry,
+                        is_selected,
+                        state.list_names_focused,
+                        &mut max_w,
+                    );
                 }
             }
             ManagerListRow::NewWorkspace => {
@@ -466,7 +497,11 @@ fn render_role_picker_sidebar(
     let title = format!(" {workspace_name} ");
     let block = Panel::new()
         .title(&title)
-        .focus(if focused { PanelFocus::Focused } else { PanelFocus::Unfocused })
+        .focus(if focused {
+            PanelFocus::Focused
+        } else {
+            PanelFocus::Unfocused
+        })
         .block();
     let items: Vec<ListItem> = picker
         .filtered
@@ -493,7 +528,11 @@ fn render_agent_picker_sidebar(
     let title = format!(" {role_name} ");
     let block = Panel::new()
         .title(&title)
-        .focus(if focused { PanelFocus::Focused } else { PanelFocus::Unfocused })
+        .focus(if focused {
+            PanelFocus::Focused
+        } else {
+            PanelFocus::Unfocused
+        })
         .block();
     let items: Vec<ListItem> = picker
         .choices
@@ -666,15 +705,13 @@ pub(super) fn render_global_mount_lines(
     lines
 }
 
-pub(in crate::console::manager) fn workspace_mounts_content_width(
-    mounts: &[crate::workspace::MountConfig],
-) -> usize {
+pub(crate) fn workspace_mounts_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
     let cache = MountInfoCache::default();
     cache.refresh_mounts(mounts);
     workspace_mounts_content_width_with_cache(mounts, &cache)
 }
 
-pub(in crate::console::manager) fn workspace_mounts_content_width_with_cache(
+pub(crate) fn workspace_mounts_content_width_with_cache(
     mounts: &[crate::workspace::MountConfig],
     cache: &MountInfoCache,
 ) -> usize {
@@ -685,9 +722,7 @@ pub(in crate::console::manager) fn workspace_mounts_content_width_with_cache(
     super::max_line_width(&lines)
 }
 
-pub(in crate::console::manager) fn workspace_mounts_content_height(
-    mounts: &[crate::workspace::MountConfig],
-) -> usize {
+pub(crate) fn workspace_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
     1 + mounts
         .iter()
         .map(|m| if m.src == m.dst { 1 } else { 2 })
@@ -695,7 +730,7 @@ pub(in crate::console::manager) fn workspace_mounts_content_height(
         .max(1)
 }
 
-pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
+pub(crate) fn global_mounts_content_width_with_cache(
     mounts: &[crate::workspace::MountConfig],
     cache: &MountInfoCache,
 ) -> usize {
@@ -707,9 +742,7 @@ pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
 }
 
 #[cfg(test)]
-pub(in crate::console::manager) fn global_mounts_content_width(
-    mounts: &[crate::workspace::MountConfig],
-) -> usize {
+pub(crate) fn global_mounts_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
     let cache = MountInfoCache::default();
     cache.refresh_mounts(mounts);
     global_mounts_content_width_with_cache(mounts, &cache)
@@ -720,7 +753,7 @@ pub(in crate::console::manager) fn global_mounts_content_width(
 /// through `compute_sidebar_layout` → `render_sidebar_body` so the panel
 /// order, heights, and mouse hit-boxes can never drift between renderer
 /// and mouse handler.
-pub(in crate::console::manager) struct SidebarInputs<'a> {
+pub(crate) struct SidebarInputs<'a> {
     pub workdir: &'a str,
     pub mounts: &'a [crate::workspace::MountConfig],
     pub mount_info_cache: MountInfoCache,
@@ -736,7 +769,7 @@ pub(in crate::console::manager) struct SidebarInputs<'a> {
 
 /// Rect for each rendered block. `None` panels are skipped in both render
 /// and hit-test.
-pub(in crate::console::manager) struct SidebarLayout {
+pub(crate) struct SidebarLayout {
     pub instances: Option<Rect>,
     pub general: Rect,
     pub mounts: Rect,
@@ -747,23 +780,20 @@ pub(in crate::console::manager) struct SidebarLayout {
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::console::manager) struct SidebarScrollArea {
+pub(crate) struct SidebarScrollArea {
     pub area: Rect,
     pub content_width: usize,
     pub content_height: usize,
 }
 
-pub(in crate::console::manager) struct SidebarScrollAreas {
+pub(crate) struct SidebarScrollAreas {
     pub workspace: SidebarScrollArea,
     pub global: SidebarScrollArea,
     pub role_global: Option<SidebarScrollArea>,
     pub roles: Option<SidebarScrollArea>,
 }
 
-pub(in crate::console::manager) fn compute_sidebar_layout(
-    area: Rect,
-    inputs: &SidebarInputs<'_>,
-) -> SidebarLayout {
+pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> SidebarLayout {
     let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
     // Slot occupancy: show the unscoped-global header iff there is any
     // global mount row AND (some are unscoped OR no role-scoped ones
@@ -816,7 +846,7 @@ pub(in crate::console::manager) fn compute_sidebar_layout(
     }
 }
 
-pub(in crate::console::manager) fn compute_sidebar_scroll_areas(
+pub(crate) fn compute_sidebar_scroll_areas(
     area: Rect,
     inputs: &SidebarInputs<'_>,
     config: &AppConfig,
@@ -862,7 +892,7 @@ pub(in crate::console::manager) fn compute_sidebar_scroll_areas(
     }
 }
 
-pub(in crate::console::manager) fn sidebar_inputs_for_workspace<'a>(
+pub(crate) fn sidebar_inputs_for_workspace<'a>(
     ws: &'a WorkspaceSummary,
     config: &'a AppConfig,
     state: &ManagerState<'_>,
@@ -908,7 +938,7 @@ pub(in crate::console::manager) fn sidebar_inputs_for_workspace<'a>(
     }
 }
 
-pub(in crate::console::manager) fn sidebar_inputs_for_current_dir<'a>(
+pub(crate) fn sidebar_inputs_for_current_dir<'a>(
     cwd_str: &'a str,
     mounts: &'a [crate::workspace::MountConfig],
     config: &AppConfig,
@@ -1017,15 +1047,11 @@ fn render_details_pane(
     render_sidebar_body(frame, &layout, &inputs, config, state);
 }
 
-pub(in crate::console::manager) fn workspace_has_any_env(
-    ws: &crate::workspace::WorkspaceConfig,
-) -> bool {
+pub(crate) fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
     !ws.env.is_empty() || ws.roles.values().any(|o| !o.env.is_empty())
 }
 
-pub(in crate::console::manager) fn mount_block_height(
-    mounts: &[crate::workspace::MountConfig],
-) -> u16 {
+pub(crate) fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
     let data_rows = if mounts.is_empty() {
         1
     } else {
@@ -1049,9 +1075,7 @@ fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
     (content_height + 2).min(12) as u16
 }
 
-pub(in crate::console::manager) fn global_mounts_content_height(
-    mounts: &[crate::workspace::MountConfig],
-) -> usize {
+pub(crate) fn global_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
     if mounts.is_empty() {
         1
     } else {
@@ -1088,9 +1112,7 @@ fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
 /// empty case omits the block entirely, not via placeholder.
-pub(in crate::console::manager) fn env_block_height(
-    ws_config: Option<&crate::workspace::WorkspaceConfig>,
-) -> u16 {
+pub(crate) fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
     let Some(ws) = ws_config else {
         return 2;
     };
@@ -1101,11 +1123,11 @@ pub(in crate::console::manager) fn env_block_height(
     (total_rows + 2).min(20) as u16
 }
 
-pub(in crate::console::manager) fn agents_block_agent_count(
+pub(crate) fn agents_block_agent_count(
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
-    let all_allowed = ws_config.is_none_or(super::super::agent_allow::allows_all_agents);
+    let all_allowed = ws_config.is_none_or(crate::console::manager::agent_allow::allows_all_agents);
     if all_allowed {
         config.roles.len()
     } else {
@@ -1113,14 +1135,14 @@ pub(in crate::console::manager) fn agents_block_agent_count(
     }
 }
 
-pub(in crate::console::manager) fn agents_block_height(agent_count: usize) -> u16 {
+pub(crate) fn agents_block_height(agent_count: usize) -> u16 {
     // Reserve at least one row even when empty so the block doesn't
     // read as broken.
     let agent_rows = agent_count.max(1);
     (2 + 1 + 1 + agent_rows).min(14) as u16
 }
 
-pub(in crate::console::manager) fn agents_block_content_width(
+pub(crate) fn agents_block_content_width(
     _ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
@@ -1130,7 +1152,7 @@ pub(in crate::console::manager) fn agents_block_content_width(
 }
 
 /// Fixed height of the compact running-instances badge (borders + 1 text line).
-pub(in crate::console::manager) const COMPACT_INSTANCES_HEIGHT: u16 = 3;
+pub(crate) const COMPACT_INSTANCES_HEIGHT: u16 = 3;
 
 /// Cursor on the synthetic "Current directory" row — mirrors
 /// `workspace::current_dir_workspace`: src=dst=cwd, rw, any role.
@@ -1155,7 +1177,7 @@ fn render_current_dir_details_pane(
 
 /// Count of Active/Running instances — used for the compact summary badge and
 /// mouse scroll-area Y calculations.
-pub(in crate::console::manager) fn workspace_active_count(
+pub(crate) fn workspace_active_count(
     instances: &[crate::instance::InstanceIndexEntry],
     workspace_name: Option<&str>,
     workspace_label: &str,
@@ -1168,7 +1190,7 @@ pub(in crate::console::manager) fn workspace_active_count(
         role_key: None,
         agent_runtime: None,
     };
-    super::super::state::active_instances_matching(instances, query).count()
+    crate::console::manager::state::active_instances_matching(instances, query).count()
 }
 
 /// Compact running-instances badge (3 rows: border + count line + border).
@@ -1660,7 +1682,7 @@ fn render_agents_subpanel_scrollable(
     focused: bool,
 ) {
     let allowed = ws_config.map_or(&[][..], |w| w.allowed_roles.as_slice());
-    let all_allowed = ws_config.is_none_or(super::super::agent_allow::allows_all_agents);
+    let all_allowed = ws_config.is_none_or(crate::console::manager::agent_allow::allows_all_agents);
     let default = ws_config.and_then(|w| w.default_role.as_deref());
 
     let mut lines: Vec<Line> = Vec::new();

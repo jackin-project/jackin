@@ -22,7 +22,12 @@ const FRAME_BUDGET_MS: u128 = 16;
 fn console_list_frame_220x50_completes_within_60hz_budget() {
     let config = AppConfig::default();
     let cwd = std::path::Path::new("/workspace/jackin-project/jackin");
-    let area = Rect { x: 0, y: 0, width: 220, height: 50 };
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 50,
+    };
     let backend = TestBackend::new(area.width, area.height);
     let mut terminal = Terminal::new(backend).unwrap();
 

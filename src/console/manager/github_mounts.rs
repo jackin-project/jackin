@@ -25,7 +25,7 @@ use super::mount_info::{GitBranch, GitOrigin, MountKind, inspect};
 /// Project `ws`'s mounts down to the list of GitHub-hosted sources that
 /// expose a resolvable web URL. Mounts with non-GitHub remotes, no
 /// remote at all, plain folders, or missing sources are omitted.
-pub(super) fn resolve_for_workspace(ws: &WorkspaceConfig) -> Vec<GithubChoice> {
+pub fn resolve_for_workspace(ws: &WorkspaceConfig) -> Vec<GithubChoice> {
     ws.mounts
         .iter()
         .filter_map(|m| {

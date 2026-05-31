@@ -18,7 +18,7 @@ use crate::console::widgets::{
     op_picker::OpPickerState, role_picker::RolePickerState, scope_picker::ScopePickerState,
     source_picker::SourcePickerState, workdir_pick::WorkdirPickState,
 };
-use jackin_tui::components::{ConfirmState, ErrorPopupState, TextInputState};
+use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
 
 #[derive(Clone, Debug, Default)]
 pub struct MountInfoCache {
@@ -825,6 +825,7 @@ pub struct EditorState<'a> {
 }
 
 /// In-flight 1Password read triggered by an op picker commit from the auth form.
+///
 /// Spawned on a `spawn_blocking` thread so Touch ID / the 1Password desktop
 /// dialog don't freeze the TUI reactor. The receiver is polled each tick; on
 /// completion the result is applied via the `_committed` or `_failed` helpers.
@@ -1535,6 +1536,9 @@ pub enum Modal<'a> {
     ErrorPopup {
         state: ErrorPopupState,
     },
+    ContainerInfo {
+        state: ContainerInfoState,
+    },
     StatusPopup {
         state: jackin_tui::components::StatusPopupState,
     },
@@ -1741,7 +1745,7 @@ impl WorkspaceSummary {
     }
 }
 
-pub(super) fn active_instances_matching<'a>(
+pub(crate) fn active_instances_matching<'a>(
     instances: &'a [crate::instance::InstanceIndexEntry],
     query: crate::instance::InstanceQuery<'a>,
 ) -> impl Iterator<Item = &'a crate::instance::InstanceIndexEntry> {
@@ -2289,6 +2293,10 @@ impl ManagerState<'_> {
     /// `is_settings` is `true` when the pending commit belongs to the Settings
     /// auth state rather than the editor auth form.
     /// Returns `None` when the read is still in progress or no commit is pending.
+    #[expect(
+        clippy::collapsible_if,
+        reason = "nested matches keep the mutable borrow short before taking pending ownership"
+    )]
     pub(crate) fn poll_pending_op_commit(
         &mut self,
     ) -> Option<(crate::operator_env::OpRef, anyhow::Result<()>, bool)> {
@@ -2325,7 +2333,11 @@ impl ManagerState<'_> {
                     let ManagerStage::Settings(settings) = &mut self.stage else {
                         unreachable!()
                     };
-                    let pending = settings.auth.pending_op_commit.take().expect("polled above");
+                    let pending = settings
+                        .auth
+                        .pending_op_commit
+                        .take()
+                        .expect("polled above");
                     return result.map(|r| (pending.op_ref, r, true));
                 }
             }

@@ -953,7 +953,7 @@ const fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
     editor.workspace_mounts_scroll_focused = true;
 }
 
-fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
+const fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };

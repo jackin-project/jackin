@@ -569,6 +569,13 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
+        Modal::ContainerInfo { state: info } => match info.handle_key(key) {
+            ModalOutcome::Commit(()) | ModalOutcome::Cancel => {
+                dispatch_manager(state, ManagerMessage::DismissListModal);
+                InputOutcome::Continue
+            }
+            ModalOutcome::Continue => InputOutcome::Continue,
+        },
         _ => {
             dispatch_manager(state, ManagerMessage::DismissListModal);
             InputOutcome::Continue

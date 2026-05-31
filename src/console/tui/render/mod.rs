@@ -5,20 +5,20 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use super::state::{ManagerListRow, ManagerStage, ManagerState};
 use crate::config::AppConfig;
+use crate::console::manager::state::{ManagerListRow, ManagerStage, ManagerState};
 use jackin_tui::HintSpan;
 
 pub mod editor;
-pub(super) mod global_mounts;
-pub(super) mod list;
-pub(super) mod modal;
+pub(crate) mod global_mounts;
+pub(crate) mod list;
+pub(crate) mod modal;
 #[cfg(test)]
 mod snapshot_tests;
 
 // input::mouse has no path into the modal submodule — re-exported here so it
 // can reach modal_outer_rect via super::super::render.
-pub(super) use modal::modal_outer_rect;
+pub(crate) use modal::modal_outer_rect;
 // Modal dismissal sequencing requires a render call across a module boundary;
 // re-exported here so input handlers can reach render_editor directly.
 pub use editor::render_editor;
@@ -26,7 +26,7 @@ pub use editor::render_editor;
 pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
-pub(in crate::console::manager) use jackin_tui::components::scrollable_panel::{
+pub(crate) use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset as clamp_scroll_x, cursor_follow_offset,
     horizontal_scrollbar_area, is_scrollable, max_offset as max_scroll_offset,
     scrollbar_offset_for_track_position, vertical_scrollbar_area,
@@ -70,7 +70,7 @@ pub(super) fn follow_cursor_y(
 }
 
 /// Adjust `scroll_y` so `cursor` stays in the editor/settings content viewport.
-pub(super) fn cursor_scroll_for_panel(
+pub(crate) fn cursor_scroll_for_panel(
     cursor: usize,
     scroll_y: u16,
     term: ratatui::layout::Rect,
@@ -138,7 +138,7 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
             }
         }
         ManagerStage::Settings(settings) => {
-            if let Some(super::state::GlobalMountModal::PreviewSave { state }) =
+            if let Some(crate::console::manager::state::GlobalMountModal::PreviewSave { state }) =
                 &mut settings.mounts.modal
             {
                 use crate::console::widgets::confirm_save;
@@ -146,12 +146,12 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
                 let modal_area = centered_rect_fixed(area, 80, height);
                 confirm_save::prepare_for_render(modal_area, state);
             }
-            if let Some(super::state::SettingsEnvModal::OpPicker { state }) =
+            if let Some(crate::console::manager::state::SettingsEnvModal::OpPicker { state }) =
                 &mut settings.env.modal
             {
                 state.tick();
             }
-            if let Some(super::state::SettingsAuthModal::OpPicker { state }) =
+            if let Some(crate::console::manager::state::SettingsAuthModal::OpPicker { state }) =
                 &mut settings.auth.modal
             {
                 state.tick();
@@ -300,14 +300,16 @@ pub fn render(
                             items
                         }
                     } else {
-                        let show_open_hint =
-                            matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
-                                && state
-                                    .selected_workspace_summary()
-                                    .and_then(|s| config.workspaces.get(&s.name))
-                                    .is_some_and(|ws| {
-                                        !super::github_mounts::resolve_for_workspace(ws).is_empty()
-                                    });
+                        let show_open_hint = matches!(
+                            state.selected_row(),
+                            ManagerListRow::SavedWorkspace(_)
+                        ) && state
+                            .selected_workspace_summary()
+                            .and_then(|s| config.workspaces.get(&s.name))
+                            .is_some_and(|ws| {
+                                !crate::console::manager::github_mounts::resolve_for_workspace(ws)
+                                    .is_empty()
+                            });
 
                         let is_saved =
                             matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_));
@@ -479,7 +481,7 @@ pub fn render(
 
 fn clamp_global_mounts_scroll_for_frame(
     area: Rect,
-    global: &mut super::state::GlobalMountsState<'_>,
+    global: &mut crate::console::manager::state::GlobalMountsState<'_>,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -501,7 +503,7 @@ fn clamp_global_mounts_scroll_for_frame(
 }
 
 #[allow(clippy::too_many_lines)]
-pub(in crate::console::manager) fn clamp_list_scroll_for_area(
+pub(crate) fn clamp_list_scroll_for_area(
     area: Rect,
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -633,21 +635,25 @@ const fn scroll_area_scrollable(area: list::SidebarScrollArea) -> bool {
 /// `list_scroll_focus` when the terminal grows large enough that the
 /// content fits without scrolling.
 fn focused_block_still_scrollable(
-    focus: super::state::MountScrollFocus,
+    focus: crate::console::manager::state::MountScrollFocus,
     areas: Option<&list::SidebarScrollAreas>,
 ) -> bool {
     let Some(areas) = areas else {
         return false;
     };
     match focus {
-        super::state::MountScrollFocus::Workspace => scroll_area_scrollable(areas.workspace),
-        super::state::MountScrollFocus::Global => {
+        crate::console::manager::state::MountScrollFocus::Workspace => {
+            scroll_area_scrollable(areas.workspace)
+        }
+        crate::console::manager::state::MountScrollFocus::Global => {
             areas.global.area.height > 0 && scroll_area_scrollable(areas.global)
         }
-        super::state::MountScrollFocus::RoleGlobal => {
+        crate::console::manager::state::MountScrollFocus::RoleGlobal => {
             areas.role_global.is_some_and(scroll_area_scrollable)
         }
-        super::state::MountScrollFocus::Roles => areas.roles.is_some_and(scroll_area_scrollable),
+        crate::console::manager::state::MountScrollFocus::Roles => {
+            areas.roles.is_some_and(scroll_area_scrollable)
+        }
     }
 }
 
@@ -693,7 +699,7 @@ pub(super) fn global_rows_for_selected_row(
     state: &ManagerState<'_>,
     config: &AppConfig,
 ) -> Vec<crate::config::GlobalMountRow> {
-    use super::state::ManagerListRow;
+    use crate::console::manager::state::ManagerListRow;
     match state.selected_row() {
         ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
             global_rows_for(config, None)

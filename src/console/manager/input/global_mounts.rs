@@ -1,5 +1,5 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::operator_env::OpRunner as _;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::render::global_mounts::{
@@ -436,9 +436,7 @@ fn open_settings_auth_form(
 /// generate trigger: an `AuthForm` showing the global Claude
 /// `oauth_token` slot. Settings generate is always global Claude, so —
 /// unlike the workspace editor — there is no per-target gate.
-pub(in crate::console::manager) fn settings_auth_can_generate_token(
-    auth: &super::super::state::SettingsAuthState,
-) -> bool {
+pub fn settings_auth_can_generate_token(auth: &super::super::state::SettingsAuthState) -> bool {
     matches!(
         auth.modal.as_ref(),
         Some(SettingsAuthModal::AuthForm { state, .. })
@@ -676,17 +674,16 @@ pub(super) fn handle_settings_auth_modal(
                     // ID / the 1Password desktop dialog don't freeze the TUI
                     // reactor. The outer run_console loop polls the receiver
                     // each tick and applies the result via _committed / _failed.
-                    let runner = crate::operator_env::OpCli::new()
-                        .with_account(op_ref.account.clone());
+                    let runner =
+                        crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
                     let op = op_ref.op.clone();
                     let (tx, rx) = tokio::sync::oneshot::channel();
                     tokio::task::spawn_blocking(move || {
                         let result = runner.read(&op).map(|_| ());
                         let _ = tx.send(result);
                     });
-                    auth.pending_op_commit = Some(
-                        crate::console::manager::state::PendingOpCommit { op_ref, rx },
-                    );
+                    auth.pending_op_commit =
+                        Some(crate::console::manager::state::PendingOpCommit { op_ref, rx });
                     // Close the OpPicker — the auth form stays stashed on
                     // modal_parents so the _committed / _failed helpers find it.
                     auth.modal = None;
@@ -923,7 +920,7 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
 /// `restore_settings_auth_form` can bring it back on the next user action.
 pub(in crate::console) fn apply_op_picker_settings_commit_failed(
     auth: &mut super::super::state::SettingsAuthState,
-    error: anyhow::Error,
+    error: &anyhow::Error,
 ) {
     auth.error = Some(format!("1Password read failed: {error}"));
 }
@@ -2471,6 +2468,63 @@ mod tests {
             panic!("expected settings stage");
         };
         assert_eq!(settings.general.selected, 0);
+    }
+
+    #[test]
+    fn general_tab_enter_does_not_toggle_rows() {
+        for selected in [0usize, 1usize] {
+            let tmp = tempfile::tempdir().unwrap();
+            let config = AppConfig::default();
+            let mut state = ManagerState::from_config(&config, tmp.path());
+            let mut settings = SettingsState::from_config(&config);
+            settings.active_tab = SettingsTab::General;
+            settings.tab_bar_focused = false;
+            settings.general.selected = selected;
+            state.stage = ManagerStage::Settings(settings);
+
+            handle_settings_key(&mut state, key(KeyCode::Enter));
+
+            let ManagerStage::Settings(settings) = &state.stage else {
+                panic!("expected settings stage");
+            };
+            assert!(
+                !settings.general.pending_coauthor_trailer,
+                "Enter on settings General row {selected} must not toggle co-author trailer",
+            );
+            assert!(
+                !settings.general.pending_dco,
+                "Enter on settings General row {selected} must not toggle DCO",
+            );
+        }
+    }
+
+    #[test]
+    fn trust_tab_enter_does_not_toggle_trusted_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "agent-smith".into(),
+            RoleSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".into(),
+                trusted: true,
+                env: BTreeMap::new(),
+            },
+        );
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Trust;
+        settings.tab_bar_focused = false;
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_settings_key(&mut state, key(KeyCode::Enter));
+
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(
+            settings.trust.pending[0].trusted,
+            "Enter on Trust row must not toggle trusted state",
+        );
     }
 
     #[test]

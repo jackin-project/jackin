@@ -193,14 +193,14 @@ pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
     ])
 }
 
-/// Build the canonical hint footer line for the git-repo prompt.
+/// Build the canonical footer hints for the git-repo prompt.
 ///
 /// When `has_url` is true:
 /// `M mount · P pick · O open · C/Esc cancel`.
 /// When `has_url` is false, the `· O open` segment is dropped so the
 /// hint doesn't advertise a disabled action:
 /// `M mount · P pick · C/Esc cancel`.
-pub(super) fn git_prompt_hint(has_url: bool) -> Line<'static> {
+pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan<'static>> {
     use jackin_tui::HintSpan;
     let mut spans = vec![
         HintSpan::Key("M"),
@@ -217,7 +217,7 @@ pub(super) fn git_prompt_hint(has_url: bool) -> Line<'static> {
         HintSpan::Key("C/Esc"),
         HintSpan::Text("cancel"),
     ]);
-    jackin_tui::components::hint_line(&spans)
+    spans
 }
 
 /// Overlay renderer for the in-browser "Git repository detected" prompt.
@@ -229,7 +229,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
     // Overlay widens to 80 cols so the three-button row and the canonical
     // hint line both fit on one line without wrapping.
     let w = parent.width.saturating_sub(4).min(80);
-    let base_h: u16 = if has_url { 8 } else { 7 };
+    let base_h: u16 = if has_url { 7 } else { 6 };
     let h = base_h.min(parent.height);
     let x = parent.x + parent.width.saturating_sub(w) / 2;
     let y = parent.y + parent.height.saturating_sub(h) / 2;
@@ -248,8 +248,8 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Row constraints: [prompt][url?][spacer][buttons][spacer][hint].
-    let row_count = if has_url { 6 } else { 5 };
+    // Row constraints: [prompt][url?][spacer][buttons][spacer].
+    let row_count = if has_url { 5 } else { 4 };
     let constraints: Vec<Constraint> = (0..row_count).map(|_| Constraint::Length(1)).collect();
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -265,7 +265,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
         rows[0],
     );
 
-    let (buttons_idx, hint_idx) = if has_url {
+    let buttons_idx = if has_url {
         let url = state.pending_git_url.as_deref().unwrap_or_default();
         frame.render_widget(
             Paragraph::new(Span::styled(
@@ -277,18 +277,14 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
             .alignment(Alignment::Center),
             rows[1],
         );
-        (3, 5)
+        3
     } else {
-        (2, 4)
+        2
     };
 
     frame.render_widget(
         Paragraph::new(git_prompt_buttons(state.pending_git_focus)).alignment(Alignment::Center),
         rows[buttons_idx],
-    );
-    frame.render_widget(
-        Paragraph::new(git_prompt_hint(has_url)).alignment(Alignment::Center),
-        rows[hint_idx],
     );
 }
 
@@ -551,8 +547,7 @@ mod tests {
     /// With `has_url == false` the hint must not advertise `O open`.
     #[test]
     fn git_prompt_hint_omits_open_segment_when_url_is_none() {
-        let line = git_prompt_hint(false);
-        let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let rendered = format!("{:?}", git_prompt_footer_items(false));
         assert!(
             !rendered.contains('O'),
             "hint should not mention O when no URL: {rendered:?}"
@@ -568,8 +563,7 @@ mod tests {
 
     #[test]
     fn git_prompt_hint_includes_open_segment_when_url_is_present() {
-        let line = git_prompt_hint(true);
-        let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let rendered = format!("{:?}", git_prompt_footer_items(true));
         assert!(
             rendered.contains('O'),
             "hint should mention O when URL resolved: {rendered:?}"

@@ -732,7 +732,7 @@ pub(in crate::console) fn apply_op_picker_to_auth_form_committed(
 /// async path before spawning) so the cancel/restore path can lift it back.
 pub(in crate::console) fn apply_op_picker_commit_failed(
     editor: &mut EditorState<'_>,
-    error: anyhow::Error,
+    error: &anyhow::Error,
 ) {
     use jackin_tui::components::ErrorPopupState;
     editor.modal = Some(Modal::ErrorPopup {

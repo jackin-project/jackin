@@ -2227,9 +2227,9 @@ fn render_info_rows(
         let value_cols = row.value.chars().count().min(available_value_cols);
         let value_take: String = row.value.chars().take(value_cols).collect();
         if let Some(href) = row.href {
-            emit_osc8_open(buf, href);
+            jackin_tui::ansi::emit_osc8_open(buf, href);
             buf.extend_from_slice(value_take.as_bytes());
-            emit_osc8_close(buf);
+            jackin_tui::ansi::emit_osc8_close(buf);
         } else {
             buf.extend_from_slice(value_take.as_bytes());
         }
@@ -2276,16 +2276,6 @@ impl<'a> ContainerInfoRow<'a> {
         self.href = href;
         self
     }
-}
-
-fn emit_osc8_open(buf: &mut Vec<u8>, href: &str) {
-    buf.extend_from_slice(b"\x1b]8;;");
-    buf.extend_from_slice(href.as_bytes());
-    buf.extend_from_slice(b"\x1b\\");
-}
-
-fn emit_osc8_close(buf: &mut Vec<u8>) {
-    buf.extend_from_slice(b"\x1b]8;;\x1b\\");
 }
 
 /// Show `"(none)"` for empty role / agent strings so a missing value

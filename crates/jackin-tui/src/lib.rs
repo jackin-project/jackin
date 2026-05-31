@@ -307,7 +307,7 @@ impl TextField {
 /// placement) in one place stops the two surfaces from drifting
 /// apart when one side picks up a tweak the other forgets.
 pub mod ansi {
-    use super::{DIALOG_SURFACE, INPUT_BG_DIM, PHOSPHOR_DARK, PHOSPHOR_GREEN, Rgb, WHITE};
+    use super::{DIALOG_SURFACE, INPUT_BG_DIM, PHOSPHOR_GREEN, Rgb, WHITE};
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use std::io::Write as _;
@@ -378,6 +378,19 @@ pub mod ansi {
         out.extend_from_slice(encoded.as_bytes());
         out.extend_from_slice(b"\x07");
         out
+    }
+
+    /// Open an OSC 8 hyperlink for subsequent terminal text. Call
+    /// [`emit_osc8_close`] after writing the linked text.
+    pub fn emit_osc8_open(buf: &mut Vec<u8>, href: &str) {
+        buf.extend_from_slice(b"\x1b]8;;");
+        buf.extend_from_slice(href.as_bytes());
+        buf.extend_from_slice(b"\x1b\\");
+    }
+
+    /// Close the active OSC 8 hyperlink.
+    pub fn emit_osc8_close(buf: &mut Vec<u8>) {
+        buf.extend_from_slice(b"\x1b]8;;\x1b\\");
     }
 
     /// Emit a `1;1`-origin cursor positioning sequence.

@@ -87,6 +87,24 @@ mod tests {
     }
 
     #[test]
+    fn editor_general_content_focus_shows_cursor() {
+        let config = AppConfig::default();
+        let cwd = test_cwd();
+        let mut state = ManagerState::from_config(&config, &cwd);
+        let mut editor = EditorState::new_edit("my-workspace".into(), WorkspaceConfig::default());
+        editor.tab_bar_focused = false;
+        editor.tab_content_scroll_focused = true;
+        state.stage = ManagerStage::Editor(editor);
+
+        let rendered = render_manager_state(&mut state, &config, &cwd, 90, 20);
+
+        assert!(
+            rendered.contains("▸ Name"),
+            "focused General tab must show the same cursor signal as its green border:\n{rendered}"
+        );
+    }
+
+    #[test]
     fn snapshot_editor_mounts_tab_90x20() {
         let config = AppConfig::default();
         let cwd = test_cwd();

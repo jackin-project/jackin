@@ -1,9 +1,9 @@
 //! Editor-stage dispatch: tab navigation, field focus, per-tab key
 //! handling, and the editor-level modal dispatcher.
 
+use crate::operator_env::OpRunner as _;
 use anyhow::Context as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crate::operator_env::OpRunner as _;
 
 use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
@@ -1075,7 +1075,7 @@ pub(super) fn handle_editor_modal(
             }
             ModalOutcome::Continue => {}
         },
-        Modal::StatusPopup { .. } => {}
+        Modal::StatusPopup { .. } | Modal::ContainerInfo { .. } => {}
         Modal::ScopePicker { state: scope_state } => {
             use crate::console::widgets::scope_picker::ScopeChoice;
             match scope_state.handle_key(key) {
@@ -1248,17 +1248,16 @@ pub(super) fn handle_editor_modal(
                         // ID / the 1Password desktop dialog don't freeze the TUI
                         // reactor. The outer run_console loop polls the receiver
                         // each tick and applies the result via _committed / _failed.
-                        let runner = crate::operator_env::OpCli::new()
-                            .with_account(op_ref.account.clone());
+                        let runner =
+                            crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
                         let op = op_ref.op.clone();
                         let (tx, rx) = tokio::sync::oneshot::channel();
                         tokio::task::spawn_blocking(move || {
                             let result = runner.read(&op).map(|_| ());
                             let _ = tx.send(result);
                         });
-                        editor.pending_op_commit = Some(
-                            crate::console::manager::state::PendingOpCommit { op_ref, rx },
-                        );
+                        editor.pending_op_commit =
+                            Some(crate::console::manager::state::PendingOpCommit { op_ref, rx });
                         // Close the OpPicker — the auth form stays stashed on
                         // modal_parents so the _committed / _failed helpers find it.
                         editor.modal = None;
@@ -4486,6 +4485,39 @@ plugins = []
             !e.pending.keep_awake.enabled,
             "second Space must toggle keep_awake back off",
         );
+    }
+
+    #[test]
+    fn enter_on_general_toggle_rows_does_not_toggle_flags() {
+        for (row, label) in [(2usize, "keep_awake"), (3usize, "git_pull_on_entry")] {
+            let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
+            if let ManagerStage::Editor(e) = &mut state.stage {
+                e.active_field = FieldFocus::Row(row);
+                assert!(!e.pending.keep_awake.enabled);
+                assert!(!e.pending.git_pull_on_entry);
+            }
+
+            handle_key(
+                &mut state,
+                &mut config,
+                &paths,
+                tmp.path(),
+                key(KeyCode::Enter),
+            )
+            .unwrap();
+
+            let ManagerStage::Editor(e) = &state.stage else {
+                panic!("editor stage expected");
+            };
+            assert!(
+                !e.pending.keep_awake.enabled,
+                "Enter on {label} row must not toggle keep_awake",
+            );
+            assert!(
+                !e.pending.git_pull_on_entry,
+                "Enter on {label} row must not toggle git_pull_on_entry",
+            );
+        }
     }
 
     #[test]

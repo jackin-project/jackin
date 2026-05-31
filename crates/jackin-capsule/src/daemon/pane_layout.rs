@@ -183,6 +183,11 @@ impl Multiplexer {
         self.content_rows = self.available_content_rows();
         self.resize_panes();
         self.ratatui_terminal.backend_mut().resize(cols, rows);
+        // A size change invalidates Ratatui's previous-buffer geometry. Clear
+        // only the double-buffer state; SocketBackend::clear() deliberately
+        // avoids emitting a screen erase, so the next frame is a full repaint
+        // without a blank flash.
+        let _ = self.ratatui_terminal.clear();
     }
 
     pub(super) fn available_content_rows(&self) -> u16 {

@@ -1,3 +1,8 @@
+#![expect(
+    clippy::redundant_pub_crate,
+    reason = "manager update code uses selected render geometry helpers through the moved tui facade"
+)]
+
 use ratatui::{
     Frame,
     layout::Rect,
@@ -19,15 +24,13 @@ use crate::console::manager::state::{
 use crate::operator_env::EnvValue;
 use jackin_tui::HintSpan;
 
-pub(in crate::console::manager) fn global_mounts_content_width(
-    rows: &[crate::config::GlobalMountRow],
-) -> usize {
+pub(crate) fn global_mounts_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
     let cache = MountInfoCache::default();
     cache.refresh_global_rows(rows);
     global_mounts_content_width_with_cache(rows, &cache)
 }
 
-pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
+pub(crate) fn global_mounts_content_width_with_cache(
     rows: &[crate::config::GlobalMountRow],
     cache: &MountInfoCache,
 ) -> usize {
@@ -140,7 +143,9 @@ fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
 fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     // Only show the cursor when the mounts content block is focused — not when
     // the tab bar owns focus. Pass None as `selected` to suppress `▸` entirely.
-    let selected = if !state.tab_bar_focused && state.mounts.scroll_focused && state.mounts.modal.is_none() {
+    let focused =
+        !state.tab_bar_focused && state.mounts.scroll_focused && state.mounts.modal.is_none();
+    let selected = if focused {
         Some(state.mounts.selected)
     } else {
         None
@@ -164,7 +169,7 @@ fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui
         lines,
         state.mounts.scroll_x,
         state.mounts.scroll_y,
-        state.mounts.scroll_focused && state.mounts.modal.is_none(),
+        focused,
         None,
     );
 }
@@ -179,15 +184,7 @@ fn render_env_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::l
         )));
     }
     let focused = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
-    super::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        0,
-        state.env.scroll_y,
-        focused,
-        None,
-    );
+    super::render_scrollable_block_at(frame, area, lines, 0, state.env.scroll_y, focused, None);
 }
 
 fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
@@ -238,11 +235,11 @@ fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui:
 }
 
 /// Natural content width of the Trust tab (used by mouse scroll).
-pub(in crate::console::manager) fn trust_content_width(state: &SettingsState<'_>) -> usize {
+pub(crate) fn trust_content_width(state: &SettingsState<'_>) -> usize {
     super::max_line_width(&trust_lines(state))
 }
 
-pub(in crate::console::manager) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
+pub(crate) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
     let mut height = global_mount_lines(
         &state.mounts.pending,
         Some(state.mounts.selected),
@@ -256,10 +253,7 @@ pub(in crate::console::manager) fn mounts_content_height(state: &SettingsState<'
     height
 }
 
-pub(in crate::console::manager) fn env_content_height(
-    state: &SettingsState<'_>,
-    area_width: u16,
-) -> usize {
+pub(crate) fn env_content_height(state: &SettingsState<'_>, area_width: u16) -> usize {
     let mut height = env_lines(state, area_width).len();
     if state.env.error.is_some() {
         height = height.saturating_add(2);
@@ -267,7 +261,7 @@ pub(in crate::console::manager) fn env_content_height(
     height
 }
 
-pub(in crate::console::manager) fn auth_content_height(state: &SettingsState<'_>) -> usize {
+pub(crate) fn auth_content_height(state: &SettingsState<'_>) -> usize {
     let mut height = auth_lines(state).len();
     if state.auth.error.is_some() {
         height = height.saturating_add(2);
@@ -275,7 +269,7 @@ pub(in crate::console::manager) fn auth_content_height(state: &SettingsState<'_>
     height
 }
 
-pub(in crate::console::manager) fn trust_content_height(state: &SettingsState<'_>) -> usize {
+pub(crate) fn trust_content_height(state: &SettingsState<'_>) -> usize {
     let mut height = trust_lines(state).len();
     if state.trust.error.is_some() {
         height = height.saturating_add(2);
@@ -566,7 +560,8 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
     let rows = settings_env_flat_rows(state);
     let mut lines = Vec::with_capacity(rows.len());
     let label_width = 22;
-    let show_cursor = !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
+    let show_cursor =
+        !state.tab_bar_focused && state.env.scroll_focused && state.env.modal.is_none();
     for (i, row) in rows.iter().enumerate() {
         let selected = show_cursor && (state.env.selected == i);
         let cursor_col = if selected { "▸ " } else { "  " };
@@ -620,7 +615,7 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::console::manager) enum SettingsEnvRow {
+pub(crate) enum SettingsEnvRow {
     Key {
         scope: SettingsEnvScope,
         key: String,
@@ -634,9 +629,7 @@ pub(in crate::console::manager) enum SettingsEnvRow {
     SectionSpacer,
 }
 
-pub(in crate::console::manager) fn settings_env_flat_rows(
-    state: &SettingsState<'_>,
-) -> Vec<SettingsEnvRow> {
+pub(crate) fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
     let mut rows = Vec::new();
     for key in state.env.pending.env.keys() {
         rows.push(SettingsEnvRow::Key {
@@ -705,7 +698,8 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let phosphor = Style::default().fg(PHOSPHOR_GREEN);
     let dim = Style::default().fg(PHOSPHOR_DIM);
-    let show_cursor = !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
+    let show_cursor =
+        !state.tab_bar_focused && state.auth.scroll_focused && state.auth.modal.is_none();
     let Some(kind) = state.auth.selected_kind else {
         return state
             .auth
@@ -935,7 +929,7 @@ fn truncate(value: &str, width: usize) -> String {
 mod tests {
     use super::*;
     use crate::config::AppConfig;
-    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn render_settings_to_dump(state: &SettingsState<'_>) -> String {
         let backend = TestBackend::new(90, 18);

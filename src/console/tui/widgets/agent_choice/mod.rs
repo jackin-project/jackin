@@ -5,7 +5,6 @@
 use crate::agent::Agent;
 use crate::console::widgets::ModalOutcome;
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_tui::HintSpan;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -104,7 +103,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
         .constraints([
             Constraint::Min(1),    // agent list
             Constraint::Length(1), // spacer
-            Constraint::Length(1), // hint footer
         ])
         .split(inner);
 
@@ -114,18 +112,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
         .map(|a| make_row(*a, agent_picker_label(*a)))
         .collect();
     frame.render_widget(Paragraph::new(lines), rows[0]);
-
-    jackin_tui::components::render_hint_bar(
-        frame,
-        rows[2],
-        &[
-            HintSpan::Key("↵"),
-            HintSpan::Text("commit"),
-            HintSpan::Sep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ],
-    );
 }
 
 #[cfg(test)]

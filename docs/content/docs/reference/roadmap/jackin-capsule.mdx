@@ -171,7 +171,7 @@ The hand-rolled emulator in `crates/jackin-capsule/src/terminal.rs` (deleted in 
 
 - Full DEC private mode handling — alt-screen, cursor visibility, application cursor keys, bracketed paste, mouse modes.
 - A `Screen` type with scrollback, attributes (fg, bg, bold, italic, underline, reverse, blink, strike, dim), and cursor state.
-- `Screen::contents_formatted()` and `Screen::contents_diff()` — emit ANSI for whole-screen origins. jackin' studied them, but pane offsets, borders, dimming, selection, and overlays require a compositor-aware row serializer in <RepoFile path="crates/jackin-capsule/src/render.rs" />.
+- `Screen::contents_formatted()` and `Screen::contents_diff()` — emit ANSI for whole-screen origins. jackin' studied them, but pane offsets, borders, dimming, selection, and overlays require a compositor-aware row serializer in <RepoFile path="crates/jackin-capsule/src/tui/render.rs" />.
 - `Screen::set_size(rows, cols)` — correct resize semantics including alt-screen and reflow handling.
 
 The Apache-2.0 license is compatible with `jackin-capsule`'s Apache-2.0. The crate is well-maintained, has no transitive dependency surprise, and is the canonical choice in the Rust ecosystem for this job — exactly the pattern `AGENTS.md`'s "Prefer libraries over hand-rolled parsers" rule demands.
@@ -257,7 +257,7 @@ The top rows of the host terminal are owned by the multiplexer. Layout left to r
  jackin'   [Claude ●]  [Codex]  [Shell]
 ```
 
-The ` jackin' ` brand pill uses the bright-green background defined in <RepoFile path="crates/jackin-capsule/src/statusbar.rs" /> (kept from the first attempt). Each tab is rendered as ` Label ` with the rolled-up state glyph appended *before* the click-region width is computed (the existing bug appends it after, so click regions drift on `●`/`○`). The active tab uses bold white text on a lifted graphite background plus the white underline so it does not visually merge with the brand pill; inactive tabs use dimmed grey.
+The ` jackin' ` brand pill uses the bright-green background defined in <RepoFile path="crates/jackin-capsule/src/tui/statusbar.rs" /> (kept from the first attempt). Each tab is rendered as ` Label ` with the rolled-up state glyph appended *before* the click-region width is computed (the existing bug appends it after, so click regions drift on `●`/`○`). The active tab uses bold white text on a lifted graphite background plus the white underline so it does not visually merge with the brand pill; inactive tabs use dimmed grey.
 
 The palette and prefix shortcuts remain active, but the top chrome does not render a menu or keybinding hint; those columns stay available for tabs.
 

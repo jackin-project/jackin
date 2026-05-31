@@ -19,8 +19,6 @@ use std::path::PathBuf;
 #[cfg(test)]
 use std::process::Command;
 use std::sync::Arc;
-#[cfg(test)]
-use std::sync::Mutex;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -58,12 +56,12 @@ use crate::git_context::{
 };
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
+#[cfg(test)]
+use crate::mouse_protocol::mouse_event_allowed_for_mode;
 use crate::mouse_protocol::{
     encode_mouse_for_protocol, encode_wheel_cursor_fallback, is_wheel_button,
     mouse_event_encoding_for_session, pane_wheel_cursor_fallback_reason,
 };
-#[cfg(test)]
-use crate::mouse_protocol::{mouse_event_allowed_for_mode, push_xterm_mouse_number};
 use crate::mux_mode::MuxMode;
 use crate::pr_context::gh_pull_request_info;
 use crate::protocol::attach::{
@@ -1547,6 +1545,24 @@ mod tests {
                 crate::terminal_geometry::DEFAULT_ROWS,
                 crate::terminal_geometry::DEFAULT_COLS
             )
+        );
+    }
+
+    #[test]
+    fn resize_then_full_frame_repaints_with_new_geometry() {
+        let mut mux = single_pane_tab_mux_with_size(24, 80);
+        assert!(
+            !mux.compose_full_frame(FullRedrawReason::FirstAttach)
+                .is_empty()
+        );
+
+        mux.resize(30, 100);
+        let frame = mux.compose_full_frame(FullRedrawReason::Resize);
+
+        assert_eq!((mux.term_rows, mux.term_cols), (30, 100));
+        assert!(
+            !frame.is_empty(),
+            "resize must produce a repaint for the attach client"
         );
     }
 

@@ -22,6 +22,7 @@ const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> 
         Modal::ConfirmSave { .. } => "ConfirmSave",
         Modal::ErrorPopup { .. } => "ErrorPopup",
         Modal::StatusPopup { .. } => "StatusPopup",
+        Modal::ContainerInfo { .. } => "ContainerInfo",
         Modal::OpPicker { .. } => "OpPicker",
         Modal::RolePicker { .. } => "RolePicker",
         Modal::RoleOverridePicker { .. } => "RoleOverridePicker",

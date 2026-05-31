@@ -7,10 +7,11 @@ use jackin_tui::{
     HintSpan,
     components::{
         ButtonStrip, ButtonStripItem, ConfirmState, ErrorPopupState, Panel, PanelFocus,
-        SaveDiscardFocus, SaveDiscardState, SelectListState, TabStrip, TextInputState,
-        render_brand_header, render_confirm_dialog, render_error_dialog, render_filter_input,
-        render_save_discard_dialog, render_scrollable_block, render_select_list,
-        render_status_footer, render_status_popup, render_text_input, render_wrapped_hint_bar,
+        SaveDiscardFocus, SaveDiscardState, SelectListState, StatusFooterHover, TabStrip,
+        TextInputState, render_brand_header, render_confirm_dialog, render_error_dialog,
+        render_filter_input, render_save_discard_dialog, render_scrollable_block,
+        render_select_list, render_status_footer, render_status_popup, render_text_input,
+        render_wrapped_hint_bar,
     },
     theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE},
 };
@@ -431,7 +432,10 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
         "s7f8a2c1",
         Some("jk-run-3d7e23"),
         1.0, // fully opaque — the real launch cockpit fades in over ~30 frames
-        true,
+        StatusFooterHover {
+            left: true,
+            right: false,
+        },
     );
 }
 

@@ -1,7 +1,7 @@
 //! Render helpers for the auth edit form.
 //!
 //! `render_form` renders the auth-edit modal. The flat-row Auth tab
-//! rendering lives in `src/console/manager/render/editor.rs`.
+//! rendering lives in `src/console/tui/render/editor.rs`.
 
 use ratatui::{
     Frame,
@@ -39,7 +39,7 @@ pub(crate) const fn mode_str(m: AuthMode) -> &'static str {
 ///   - mode picker row
 ///   - credential block (only when [`AuthForm::shows_credential_block`])
 ///     - one required env-var row that opens the shared source picker
-///   - action buttons and a compact key hint row
+///   - action buttons; key hints live in the screen footer
 ///
 /// Pure render — no input handling. Keystrokes are routed by
 /// `super::super::manager::input::auth::handle_auth_form_key`.

@@ -7,11 +7,12 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::components::{
-    ConfirmState, ErrorPopupState, SelectListState, TextInputState, brand_header_line,
-    confirm_required_height, confirm_width_pct, render_confirm_dialog, render_error_dialog,
+    ConfirmState, ContainerInfoRow, ContainerInfoState, ErrorPopupState, SelectListState,
+    StatusFooterHover, TextInputState, brand_header_line, confirm_required_height,
+    confirm_width_pct, render_confirm_dialog, render_container_info, render_error_dialog,
     render_hint_bar, render_scrollable_block, render_select_list, render_status_footer,
-    render_text_input, required_height as error_dialog_required_height, viewport_height,
-    viewport_width,
+    render_text_input, required_height as error_dialog_required_height,
+    status_footer_right_chip_rect, viewport_height, viewport_width,
 };
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use jackin_tui::theme::{
@@ -138,14 +139,17 @@ struct LaunchView {
     /// Lines scrolled up from the tail of the build log (0 = follow the
     /// newest output).
     build_log_scroll: jackin_tui::scroll::TailScroll,
-    /// Pointer is hovering the clickable footer activity (which opens the
-    /// build-log overlay). Lifts the activity to the link colour.
-    build_log_hover: bool,
+    /// Pointer hover state for clickable footer spans.
+    footer_hover: StatusFooterHover,
     label_transition: Option<StageLabelTransition>,
     /// Pointer is hovering a copyable value in the failure popup.
     failure_copy_hover: Option<FailureCopyTarget>,
     /// Last failure-popup value copied via OSC 52. Drives visible feedback.
     failure_copied: Option<FailureCopyTarget>,
+    /// Operator opened the shared container info dialog from the footer chip.
+    container_info_open: bool,
+    /// Last copied row in the container info dialog.
+    container_info_copied: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,7 +219,12 @@ struct RichDriver {
 }
 
 impl RichDriver {
-    fn spawn(renderer: RichRenderer, view: SharedView, run_id: String) -> Self {
+    fn spawn(
+        renderer: RichRenderer,
+        view: SharedView,
+        run_id: String,
+        run_log_path: String,
+    ) -> Self {
         use std::sync::atomic::Ordering;
         let renderer = Arc::new(std::sync::Mutex::new(renderer));
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -257,7 +266,7 @@ impl RichDriver {
                         }
                         Err(_) => continue,
                     };
-                    let _ = rr.render(&snapshot, &run_id);
+                    let _ = rr.render(&snapshot, &run_id, &run_log_path);
                 }
             })
         };
@@ -286,10 +295,12 @@ fn initial_view() -> LaunchView {
         frame: 0,
         build_log_open: false,
         build_log_scroll: jackin_tui::scroll::TailScroll::default(),
-        build_log_hover: false,
+        footer_hover: StatusFooterHover::default(),
         label_transition: None,
         failure_copy_hover: None,
         failure_copied: None,
+        container_info_open: false,
+        container_info_copied: None,
     }
 }
 
@@ -339,6 +350,7 @@ impl LaunchProgress {
             rich,
             view.clone(),
             diagnostics.run_id().to_string(),
+            diagnostics.path().display().to_string(),
         ));
         Ok(Self {
             diagnostics,
@@ -667,6 +679,39 @@ fn hit_activity(view: &LaunchView, col: u16, row: u16) -> bool {
     col <= width
 }
 
+fn hit_footer_container_chip(
+    view: &LaunchView,
+    run_id: &str,
+    area: Rect,
+    col: u16,
+    row: u16,
+) -> bool {
+    if view.build_log_open || view.failure.is_some() {
+        return false;
+    }
+    let instance = footer_instance(view);
+    if instance.is_empty() {
+        return false;
+    }
+    let debug_chip = crate::tui::is_debug_mode().then_some(run_id);
+    status_footer_right_chip_rect(
+        Rect {
+            x: 0,
+            y: area.height.saturating_sub(1),
+            width: area.width,
+            height: 1,
+        },
+        &instance,
+        debug_chip,
+    )
+    .is_some_and(|rect| {
+        row >= rect.y
+            && row < rect.y.saturating_add(rect.height)
+            && col >= rect.x
+            && col < rect.x.saturating_add(rect.width)
+    })
+}
+
 /// Switch the terminal pointer to the hand/`pointer` shape over a clickable
 /// element, or back to `default`, via OSC 22 — the same mechanism the
 /// in-container multiplexer uses. Terminals without OSC 22 support ignore the
@@ -682,6 +727,80 @@ fn set_cockpit_pointer(pointer: bool) {
     let mut out = std::io::stdout();
     let _ = out.write_all(seq.as_bytes());
     let _ = out.flush();
+}
+
+fn handle_cockpit_mouse_down(v: &mut LaunchView, area: Rect, run_id: &str, col: u16, row: u16) {
+    if v.container_info_open {
+        let state = launch_container_info_state(v, run_id, "");
+        let rect = launch_container_info_rect(area, &state);
+        if let Some((row, payload)) =
+            jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
+        {
+            let mut out = std::io::stdout();
+            let copy_ok = out
+                .write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(&payload))
+                .and_then(|()| out.flush())
+                .is_ok();
+            if copy_ok {
+                v.container_info_copied = Some(row);
+            }
+        } else {
+            v.container_info_open = false;
+            v.container_info_copied = None;
+        }
+    } else if let Some(failure) = v.failure.as_ref() {
+        if let Some(target) = failure_copy_target_at(area, failure, run_id, col, row)
+            && let Some(payload) = failure_copy_payload(failure, run_id, target)
+        {
+            let mut out = std::io::stdout();
+            let copy_ok = out
+                .write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(&payload))
+                .and_then(|()| out.flush())
+                .is_ok();
+            if copy_ok {
+                v.failure_copied = Some(target);
+            } else {
+                crate::tui::emit_compact_line(
+                    "failure-popup-copy",
+                    "OSC 52 clipboard write failed — badge suppressed",
+                );
+            }
+        }
+    } else if v.build_log_open {
+        v.build_log_open = false;
+    } else if hit_footer_container_chip(v, run_id, area, col, row) {
+        v.container_info_open = true;
+        v.container_info_copied = None;
+        v.footer_hover.right = false;
+        set_cockpit_pointer(false);
+    } else if crate::runtime::build_log::len() > 0 && hit_activity(v, col, row) {
+        v.build_log_open = true;
+        v.build_log_scroll = jackin_tui::scroll::TailScroll::default();
+        v.footer_hover.left = false;
+        set_cockpit_pointer(false);
+    }
+}
+
+fn handle_cockpit_mouse_move(v: &mut LaunchView, area: Rect, run_id: &str, col: u16, row: u16) {
+    if v.container_info_open {
+        return;
+    }
+    if let Some(failure) = v.failure.as_ref() {
+        let hover = failure_copy_target_at(area, failure, run_id, col, row);
+        if hover != v.failure_copy_hover {
+            v.failure_copy_hover = hover;
+            set_cockpit_pointer(hover.is_some());
+        }
+        return;
+    }
+    let activity_hovering =
+        !v.build_log_open && crate::runtime::build_log::len() > 0 && hit_activity(v, col, row);
+    let container_hovering = hit_footer_container_chip(v, run_id, area, col, row);
+    if activity_hovering != v.footer_hover.left || container_hovering != v.footer_hover.right {
+        v.footer_hover.left = activity_hovering;
+        v.footer_hover.right = container_hovering;
+        set_cockpit_pointer(activity_hovering || container_hovering);
+    }
 }
 
 /// Drain queued terminal input and fold it into the build-log overlay / failure
@@ -706,66 +825,10 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
         match ev {
             Event::Mouse(m) => match m.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
-                    if let Some(failure) = v.failure.as_ref() {
-                        if let Some(target) =
-                            failure_copy_target_at(area, failure, run_id, m.column, m.row)
-                            && let Some(payload) = failure_copy_payload(failure, run_id, target)
-                        {
-                            let mut out = std::io::stdout();
-                            let copy_ok = out
-                                .write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(
-                                    &payload,
-                                ))
-                                .and_then(|()| out.flush())
-                                .is_ok();
-                            if copy_ok {
-                                v.failure_copied = Some(target);
-                            } else {
-                                // Stdout detached or the terminal does not parse OSC 52
-                                // (e.g. VTE on the BEL form). Don't flash a "Copied!"
-                                // badge when nothing actually reached the clipboard;
-                                // land a breadcrumb in the diagnostics run for triage.
-                                crate::tui::emit_compact_line(
-                                    "failure-popup-copy",
-                                    "OSC 52 clipboard write failed — badge suppressed",
-                                );
-                            }
-                        }
-                    } else if v.build_log_open {
-                        // The overlay covers the whole screen, so any click
-                        // dismisses it back to the cockpit.
-                        v.build_log_open = false;
-                    } else if crate::runtime::build_log::len() > 0
-                        && hit_activity(&v, m.column, m.row)
-                    {
-                        v.build_log_open = true;
-                        v.build_log_scroll = jackin_tui::scroll::TailScroll::default();
-                        // Overlay now covers the activity; clear its hover lift
-                        // and drop the hand pointer.
-                        v.build_log_hover = false;
-                        set_cockpit_pointer(false);
-                    }
+                    handle_cockpit_mouse_down(&mut v, area, run_id, m.column, m.row);
                 }
                 MouseEventKind::Moved => {
-                    if let Some(failure) = v.failure.as_ref() {
-                        let hover = failure_copy_target_at(area, failure, run_id, m.column, m.row);
-                        if hover != v.failure_copy_hover {
-                            v.failure_copy_hover = hover;
-                            set_cockpit_pointer(hover.is_some());
-                        }
-                        continue;
-                    }
-                    // Hover the activity only while it is actually clickable
-                    // (overlay closed and there is a build log to show). Lift
-                    // its colour and switch to the hand pointer on enter; revert
-                    // on leave — the same affordance the tabs use.
-                    let hovering = !v.build_log_open
-                        && crate::runtime::build_log::len() > 0
-                        && hit_activity(&v, m.column, m.row);
-                    if hovering != v.build_log_hover {
-                        v.build_log_hover = hovering;
-                        set_cockpit_pointer(hovering);
-                    }
+                    handle_cockpit_mouse_move(&mut v, area, run_id, m.column, m.row);
                 }
                 MouseEventKind::ScrollUp if v.build_log_open => {
                     scroll_build_log(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
@@ -775,6 +838,15 @@ fn handle_cockpit_input(view: &SharedView, run_id: &str) {
                 }
                 _ => {}
             },
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && v.container_info_open
+                    && matches!(k.code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q')) =>
+            {
+                v.container_info_open = false;
+                v.footer_hover.right = false;
+                set_cockpit_pointer(false);
+            }
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.failure.is_some()
@@ -869,7 +941,12 @@ impl RichRenderer {
         Self::enter_with_check(no_motion, || Ok(()))
     }
 
-    fn render(&mut self, view: &LaunchView, run_id: &str) -> anyhow::Result<()> {
+    fn render(
+        &mut self,
+        view: &LaunchView,
+        run_id: &str,
+        run_log_path: &str,
+    ) -> anyhow::Result<()> {
         let no_motion = self.no_motion;
         // Keep the rain engine sized to the terminal. Advance it every other
         // render so the rainfall reads at the calmer main-branch speed while
@@ -891,10 +968,25 @@ impl RichRenderer {
             }
         }
         let rain = self.rain.as_ref();
+        let size = self.terminal.size().ok();
         self.terminal
-            .draw(|frame| render_launch_frame(frame, view, run_id, no_motion, rain))
+            .draw(|frame| render_launch_frame(frame, view, run_id, run_log_path, no_motion, rain))
             .map(|_| ())
-            .context("rendering launch progress TUI")
+            .context("rendering launch progress TUI")?;
+        if let Some(size) = size {
+            emit_failure_popup_hyperlink_overlay(
+                Rect::new(0, 0, size.width, size.height),
+                view,
+                run_id,
+            );
+            emit_launch_container_info_hyperlink_overlay(
+                Rect::new(0, 0, size.width, size.height),
+                view,
+                run_id,
+                run_log_path,
+            );
+        }
+        Ok(())
     }
 
     /// Run a modal dialog loop with raw mode held for its duration so key
@@ -1198,6 +1290,7 @@ fn render_launch_frame(
     frame: &mut Frame<'_>,
     view: &LaunchView,
     run_id: &str,
+    run_log_path: &str,
     no_motion: bool,
     rain: Option<&crate::tui::animation::RainState>,
 ) {
@@ -1230,6 +1323,8 @@ fn render_launch_frame(
 
     if let Some(failure) = &view.failure {
         render_failure_popup(frame, area, view, failure, run_id);
+    } else if view.container_info_open {
+        render_launch_container_info(frame, area, view, run_id, run_log_path);
     }
 }
 
@@ -1674,7 +1769,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &
         &instance,
         debug_chip,
         alpha,
-        view.build_log_hover,
+        view.footer_hover,
     );
 }
 
@@ -1688,11 +1783,90 @@ fn footer_instance(view: &LaunchView) -> String {
         .unwrap_or_default()
 }
 
+fn launch_container_info_state(
+    view: &LaunchView,
+    run_id: &str,
+    run_log_path: &str,
+) -> ContainerInfoState {
+    let identity = view.identity.as_ref();
+    let mut rows = vec![
+        ContainerInfoRow::new(
+            "Container ID",
+            identity
+                .and_then(|identity| identity.container.as_deref())
+                .unwrap_or("loading..."),
+        )
+        .copyable()
+        .emphasised(),
+        ContainerInfoRow::new("jackin version", env!("JACKIN_VERSION")),
+    ];
+    if let Some(identity) = identity {
+        rows.push(ContainerInfoRow::new("Role", &identity.role));
+        rows.push(ContainerInfoRow::new("Agent", &identity.agent));
+        rows.push(ContainerInfoRow::new("Target", &identity.target_label));
+    }
+    if crate::tui::is_debug_mode() {
+        rows.push(
+            ContainerInfoRow::new("Run ID", run_id)
+                .copyable()
+                .emphasised(),
+        );
+        rows.push(
+            ContainerInfoRow::new("Diagnostics log", run_log_path)
+                .hyperlink(format!("file://{run_log_path}")),
+        );
+    }
+    let mut state = ContainerInfoState::new("Container info", rows);
+    if let Some(row) = view.container_info_copied {
+        state.mark_copied(row);
+    }
+    state
+}
+
+fn render_launch_container_info(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &LaunchView,
+    run_id: &str,
+    run_log_path: &str,
+) {
+    let state = launch_container_info_state(view, run_id, run_log_path);
+    let rect = launch_container_info_rect(area, &state);
+    render_container_info(frame, rect, &state);
+}
+
+fn emit_launch_container_info_hyperlink_overlay(
+    area: Rect,
+    view: &LaunchView,
+    run_id: &str,
+    run_log_path: &str,
+) {
+    if !view.container_info_open || view.failure.is_some() || view.build_log_open {
+        return;
+    }
+    let state = launch_container_info_state(view, run_id, run_log_path);
+    let rect = launch_container_info_rect(area, &state);
+    let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, &state);
+    if overlay.is_empty() {
+        return;
+    }
+    let mut out = std::io::stdout();
+    let _ = out.write_all(&overlay);
+    let _ = out.flush();
+}
+
+fn launch_container_info_rect(area: Rect, state: &ContainerInfoState) -> Rect {
+    let width = (area.width.saturating_mul(3) / 5).clamp(40, area.width.max(40));
+    let height = jackin_tui::components::container_info_required_height(state);
+    centered_rect(width, height.min(area.height), area)
+}
+
 #[derive(Debug)]
 struct FailurePopupRow {
     label: &'static str,
     value: String,
     copy_target: Option<FailureCopyTarget>,
+    href: Option<String>,
 }
 
 fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailurePopupRow> {
@@ -1701,29 +1875,36 @@ fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailurePopup
             label: "message",
             value: failure.summary.clone(),
             copy_target: None,
+            href: None,
         },
         FailurePopupRow {
             label: "stage",
             value: failure.stage.label().to_string(),
             copy_target: None,
+            href: None,
         },
         FailurePopupRow {
             label: "run id",
             value: run_id.to_string(),
             copy_target: Some(FailureCopyTarget::RunId),
+            href: None,
         },
     ];
     if let Some(path) = &failure.diagnostics_path {
+        let value = path.display().to_string();
         rows.push(FailurePopupRow {
             label: "run diagnostics",
-            value: path.display().to_string(),
+            href: Some(format!("file://{value}")),
+            value,
             copy_target: Some(FailureCopyTarget::DiagnosticsPath),
         });
     }
     if let Some(path) = &failure.command_output_path {
+        let value = path.display().to_string();
         rows.push(FailurePopupRow {
             label: "docker output",
-            value: path.display().to_string(),
+            href: Some(format!("file://{value}")),
+            value,
             copy_target: Some(FailureCopyTarget::CommandOutputPath),
         });
     }
@@ -1732,6 +1913,7 @@ fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailurePopup
             label: "next",
             value: next.clone(),
             copy_target: None,
+            href: None,
         });
     }
     rows
@@ -1747,6 +1929,57 @@ fn failure_popup_rect(area: Rect, row_count: usize) -> Rect {
         .saturating_add(5)
         .min(area.height.saturating_sub(2).max(7));
     centered_rect(popup_w, height, area)
+}
+
+fn failure_popup_rect_for_rows(area: Rect, rows: &[FailurePopupRow]) -> Rect {
+    let popup_w = (area.width.saturating_mul(3) / 5)
+        .clamp(40.min(area.width), area.width.saturating_sub(2).max(1));
+    let probe = centered_rect(popup_w, area.height.saturating_sub(2).max(7), area);
+    let body = failure_popup_body_rect(probe);
+    failure_popup_rect(area, failure_popup_render_line_count(rows, body.width))
+}
+
+fn failure_popup_render_line_count(rows: &[FailurePopupRow], width: u16) -> usize {
+    rows.iter()
+        .map(|row| failure_popup_value_chunks(row, width, None).len())
+        .sum::<usize>()
+        .max(1)
+}
+
+fn failure_popup_value_chunks(
+    row: &FailurePopupRow,
+    width: u16,
+    copied: Option<FailureCopyTarget>,
+) -> Vec<String> {
+    let badge = row
+        .copy_target
+        .filter(|target| copied == Some(*target))
+        .map_or("", |_| "  Copied!");
+    let first_fixed_cols = FAILURE_POPUP_LABEL_WIDTH
+        + jackin_tui::display_cols(FAILURE_POPUP_SEP)
+        + jackin_tui::display_cols(badge);
+    let continuation_fixed_cols =
+        FAILURE_POPUP_LABEL_WIDTH + jackin_tui::display_cols(FAILURE_POPUP_SEP);
+    let first_cols = usize::from(width).saturating_sub(first_fixed_cols).max(1);
+    let continuation_cols = usize::from(width)
+        .saturating_sub(continuation_fixed_cols)
+        .max(1);
+    let mut rest = row.value.as_str();
+    let mut chunks = Vec::new();
+    let mut cols = first_cols;
+    while !rest.is_empty() {
+        let chunk = jackin_tui::take_display_cols(rest, cols);
+        if chunk.is_empty() {
+            break;
+        }
+        rest = &rest[chunk.len()..];
+        chunks.push(chunk);
+        cols = continuation_cols;
+    }
+    if chunks.is_empty() {
+        chunks.push(String::new());
+    }
+    chunks
 }
 
 /// Inner body rect (inside the border, plus one column of padding) where the
@@ -1765,32 +1998,59 @@ const fn failure_popup_body_rect(rect: Rect) -> Rect {
     }
 }
 
+#[cfg(test)]
 fn failure_popup_value_rect(
     rect: Rect,
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
 ) -> Option<Rect> {
+    failure_popup_value_rects(rect, rows, target)
+        .into_iter()
+        .next()
+}
+
+fn failure_popup_value_rects(
+    rect: Rect,
+    rows: &[FailurePopupRow],
+    target: FailureCopyTarget,
+) -> Vec<Rect> {
     let body = failure_popup_body_rect(rect);
-    let label_width = FAILURE_POPUP_LABEL_WIDTH;
-    rows.iter()
-        .position(|row| row.copy_target == Some(target))
-        .and_then(|idx| {
-            if idx >= usize::from(body.height) {
-                return None;
+    let x = body.x.saturating_add(
+        u16::try_from(FAILURE_POPUP_LABEL_WIDTH + jackin_tui::display_cols(FAILURE_POPUP_SEP))
+            .unwrap_or(u16::MAX),
+    );
+    let mut y = body.y;
+    let mut rects = Vec::new();
+    for row in rows {
+        let chunks = failure_popup_value_chunks(row, body.width, None);
+        if row.copy_target == Some(target) {
+            for chunk in &chunks {
+                if y >= body.y.saturating_add(body.height) {
+                    break;
+                }
+                let width = u16::try_from(jackin_tui::display_cols(chunk))
+                    .unwrap_or(u16::MAX)
+                    .max(1);
+                rects.push(Rect {
+                    x,
+                    y,
+                    width: body
+                        .x
+                        .saturating_add(body.width)
+                        .saturating_sub(x)
+                        .min(width),
+                    height: 1,
+                });
+                y = y.saturating_add(1);
             }
-            let x = body.x.saturating_add(
-                u16::try_from(label_width + jackin_tui::display_cols(FAILURE_POPUP_SEP))
-                    .unwrap_or(u16::MAX),
-            );
-            Some(Rect {
-                x,
-                y: body
-                    .y
-                    .saturating_add(u16::try_from(idx).unwrap_or(u16::MAX)),
-                width: body.x.saturating_add(body.width).saturating_sub(x),
-                height: 1,
-            })
-        })
+        } else {
+            y = y.saturating_add(u16::try_from(chunks.len()).unwrap_or(u16::MAX));
+        }
+        if y >= body.y.saturating_add(body.height) {
+            break;
+        }
+    }
+    rects
 }
 
 fn failure_copy_target_at(
@@ -1801,17 +2061,16 @@ fn failure_copy_target_at(
     row: u16,
 ) -> Option<FailureCopyTarget> {
     let rows = failure_popup_rows(failure, run_id);
-    let rect = failure_popup_rect(area, rows.len());
+    let rect = failure_popup_rect_for_rows(area, &rows);
     for entry in rows.iter().filter(|row| row.copy_target.is_some()) {
         let target = entry.copy_target?;
-        let value_rect = failure_popup_value_rect(rect, &rows, target)?;
-        let value_cols = u16::try_from(jackin_tui::display_cols(&entry.value)).unwrap_or(u16::MAX);
-        let hit_width = value_rect.width.min(value_cols.max(1));
-        if row == value_rect.y
-            && col >= value_rect.x
-            && col < value_rect.x.saturating_add(hit_width)
-        {
-            return Some(target);
+        for value_rect in failure_popup_value_rects(rect, &rows, target) {
+            if row == value_rect.y
+                && col >= value_rect.x
+                && col < value_rect.x.saturating_add(value_rect.width)
+            {
+                return Some(target);
+            }
         }
     }
     None
@@ -1832,12 +2091,12 @@ fn failure_copy_payload(
         .map(|row| row.value)
 }
 
-fn render_failure_popup_line(
+fn render_failure_popup_lines(
     row: &FailurePopupRow,
     width: u16,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
-) -> Line<'static> {
+) -> Vec<Line<'static>> {
     let label = Style::default().fg(PHOSPHOR_DIM);
     let value_style = match row.copy_target {
         Some(target) if hovered == Some(target) => Style::default()
@@ -1851,24 +2110,27 @@ fn render_failure_popup_line(
         .copy_target
         .filter(|target| copied == Some(*target))
         .map_or("", |_| "  Copied!");
-    let fixed_cols =
-        label_width + jackin_tui::display_cols(FAILURE_POPUP_SEP) + jackin_tui::display_cols(badge);
-    let value_cols = usize::from(width).saturating_sub(fixed_cols);
-    let value = jackin_tui::take_display_cols(&row.value, value_cols);
-    let mut spans = vec![
-        Span::styled(format!("{:<label_width$}", row.label), label),
-        Span::styled(FAILURE_POPUP_SEP, Style::default().fg(PHOSPHOR_DARK)),
-        Span::styled(value, value_style),
-    ];
-    if !badge.is_empty() {
-        spans.push(Span::styled(
-            badge,
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
-    Line::from(spans)
+    failure_popup_value_chunks(row, width, copied)
+        .into_iter()
+        .enumerate()
+        .map(|(idx, value)| {
+            let row_label = if idx == 0 { row.label } else { "" };
+            let mut spans = vec![
+                Span::styled(format!("{row_label:<label_width$}"), label),
+                Span::styled(FAILURE_POPUP_SEP, Style::default().fg(PHOSPHOR_DARK)),
+                Span::styled(value, value_style),
+            ];
+            if idx == 0 && !badge.is_empty() {
+                spans.push(Span::styled(
+                    badge,
+                    Style::default()
+                        .fg(PHOSPHOR_GREEN)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect()
 }
 
 const FAILURE_POPUP_LABEL_WIDTH: usize = 16;
@@ -1886,7 +2148,7 @@ fn render_failure_popup(
     run_id: &str,
 ) {
     let rows = failure_popup_rows(failure, run_id);
-    let rect = failure_popup_rect(area, rows.len());
+    let rect = failure_popup_rect_for_rows(area, &rows);
     let title = format!(" {} ", failure.title);
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1900,20 +2162,25 @@ fn render_failure_popup(
     frame.render_widget(block, rect);
 
     let body = failure_popup_body_rect(rect);
-    for (idx, row) in rows.iter().take(usize::from(body.height)).enumerate() {
-        let line = render_failure_popup_line(
-            row,
-            body.width,
-            view.failure_copy_hover,
-            view.failure_copied,
-        );
+    let lines = rows
+        .iter()
+        .flat_map(|row| {
+            render_failure_popup_lines(
+                row,
+                body.width,
+                view.failure_copy_hover,
+                view.failure_copied,
+            )
+        })
+        .collect::<Vec<_>>();
+    for (idx, line) in lines.iter().take(usize::from(body.height)).enumerate() {
         let row_area = Rect {
             x: body.x,
             y: body.y + u16::try_from(idx).unwrap_or(u16::MAX),
             width: body.width,
             height: 1,
         };
-        frame.render_widget(Paragraph::new(line), row_area);
+        frame.render_widget(Paragraph::new(line.clone()), row_area);
     }
 
     let focused_style = Style::default()
@@ -1940,6 +2207,71 @@ fn render_failure_popup(
         height: 1,
     };
     render_hint_bar(frame, hint_row, FAILURE_HINT);
+}
+
+fn failure_popup_hyperlink_overlay(
+    area: Rect,
+    failure: &LaunchFailure,
+    run_id: &str,
+    hovered: Option<FailureCopyTarget>,
+    copied: Option<FailureCopyTarget>,
+) -> Vec<u8> {
+    let rows = failure_popup_rows(failure, run_id);
+    let rect = failure_popup_rect_for_rows(area, &rows);
+    let body = failure_popup_body_rect(rect);
+    let x = body.x.saturating_add(
+        u16::try_from(FAILURE_POPUP_LABEL_WIDTH + jackin_tui::display_cols(FAILURE_POPUP_SEP))
+            .unwrap_or(u16::MAX),
+    );
+    let mut y = body.y;
+    let mut out = Vec::new();
+    for row in &rows {
+        let chunks = failure_popup_value_chunks(row, body.width, copied);
+        if let Some(href) = row.href.as_deref() {
+            for chunk in &chunks {
+                if y >= body.y.saturating_add(body.height) {
+                    break;
+                }
+                jackin_tui::ansi::move_to(&mut out, y, x);
+                out.extend_from_slice(jackin_tui::ansi::RESET.as_bytes());
+                jackin_tui::ansi::fg(&mut out, jackin_tui::LINK_BLUE);
+                out.extend_from_slice(jackin_tui::ansi::BOLD.as_bytes());
+                if hovered == row.copy_target {
+                    out.extend_from_slice(b"\x1b[4m");
+                }
+                jackin_tui::ansi::emit_osc8_open(&mut out, href);
+                out.extend_from_slice(chunk.as_bytes());
+                jackin_tui::ansi::emit_osc8_close(&mut out);
+                out.extend_from_slice(jackin_tui::ansi::RESET.as_bytes());
+                y = y.saturating_add(1);
+            }
+        } else {
+            y = y.saturating_add(u16::try_from(chunks.len()).unwrap_or(u16::MAX));
+        }
+        if y >= body.y.saturating_add(body.height) {
+            break;
+        }
+    }
+    out
+}
+
+fn emit_failure_popup_hyperlink_overlay(area: Rect, view: &LaunchView, run_id: &str) {
+    let Some(failure) = view.failure.as_ref() else {
+        return;
+    };
+    let overlay = failure_popup_hyperlink_overlay(
+        area,
+        failure,
+        run_id,
+        view.failure_copy_hover,
+        view.failure_copied,
+    );
+    if overlay.is_empty() {
+        return;
+    }
+    let mut stdout = std::io::stdout();
+    let _ = stdout.write_all(&overlay);
+    let _ = stdout.flush();
 }
 
 /// Footer-hint keys for the launch failure popup (dismiss only).
@@ -2766,10 +3098,12 @@ mod tests {
             frame: 0,
             build_log_open: true,
             build_log_scroll: jackin_tui::scroll::TailScroll::default(),
-            build_log_hover: false,
+            footer_hover: StatusFooterHover::default(),
             label_transition: None,
             failure_copy_hover: None,
             failure_copied: None,
+            container_info_open: false,
+            container_info_copied: None,
         };
         terminal
             .draw(|frame| render_build_log_dialog(frame, frame.area(), &view))
@@ -2809,10 +3143,12 @@ mod tests {
             frame: 0,
             build_log_open: true,
             build_log_scroll: jackin_tui::scroll::TailScroll::new(usize::MAX),
-            build_log_hover: false,
+            footer_hover: StatusFooterHover::default(),
             label_transition: None,
             failure_copy_hover: None,
             failure_copied: None,
+            container_info_open: false,
+            container_info_copied: None,
         };
 
         scroll_build_log(&mut view, area, -1);
@@ -2857,13 +3193,24 @@ mod tests {
             frame: 0,
             build_log_open: false,
             build_log_scroll: jackin_tui::scroll::TailScroll::default(),
-            build_log_hover: false,
+            footer_hover: StatusFooterHover::default(),
             label_transition: None,
             failure_copy_hover: None,
             failure_copied: None,
+            container_info_open: false,
+            container_info_copied: None,
         };
         terminal
-            .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true, None))
+            .draw(|frame| {
+                render_launch_frame(
+                    frame,
+                    &view,
+                    "jk-run-42f9aa",
+                    "/tmp/jk-run-42f9aa.jsonl",
+                    true,
+                    None,
+                );
+            })
             .unwrap();
 
         let rendered = format!("{:?}", terminal.backend().buffer());
@@ -2882,7 +3229,16 @@ mod tests {
             command_output_path: None,
         });
         terminal
-            .draw(|frame| render_launch_frame(frame, &view, "jk-run-42f9aa", true, None))
+            .draw(|frame| {
+                render_launch_frame(
+                    frame,
+                    &view,
+                    "jk-run-42f9aa",
+                    "/tmp/jk-run-42f9aa.jsonl",
+                    true,
+                    None,
+                );
+            })
             .unwrap();
         let rendered = format!("{:?}", terminal.backend().buffer());
         assert!(rendered.contains("Docker unavailable"));
@@ -2914,7 +3270,7 @@ mod tests {
         let failure = failure_with_paths();
         let run_id = "jk-run-testid";
         let rows = failure_popup_rows(&failure, run_id);
-        let rect = failure_popup_rect(area, rows.len());
+        let rect = failure_popup_rect_for_rows(area, &rows);
 
         for target in [
             FailureCopyTarget::RunId,
@@ -2939,6 +3295,52 @@ mod tests {
     }
 
     #[test]
+    fn launch_container_info_renders_from_footer_chip_state() {
+        crate::tui::set_debug_mode(true);
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let mut view = initial_view();
+        view.identity = Some(LaunchIdentity {
+            role: "agent-smith".to_string(),
+            agent: "codex".to_string(),
+            target_kind: LaunchTargetKind::Workspace,
+            target_label: "big-monorepo".to_string(),
+            mounts: Vec::new(),
+            image: None,
+            container: Some("jk-k7p9m2xq-bigmonorepo-agentsmith".to_string()),
+        });
+        view.container_info_open = true;
+        terminal
+            .draw(|frame| {
+                render_launch_frame(
+                    frame,
+                    &view,
+                    "jk-run-rendered",
+                    "/tmp/jk-run-rendered.jsonl",
+                    true,
+                    None,
+                );
+            })
+            .unwrap();
+        crate::tui::set_debug_mode(false);
+
+        let rendered = format!("{:?}", terminal.backend().buffer());
+        for needle in [
+            "Container info",
+            "jk-k7p9m2xq-bigmonorepo-agentsmith",
+            "jackin version",
+            "agent-smith",
+            "jk-run-rendered",
+            "/tmp/jk-run-rendered.jsonl",
+        ] {
+            assert!(
+                rendered.contains(needle),
+                "container info dialog must contain {needle:?}: {rendered}"
+            );
+        }
+    }
+
+    #[test]
     fn failure_copy_target_at_ignores_non_copyable_rows_and_absent_paths() {
         // The message row is non-copyable; a click on its y at the value
         // column must return None. An absent path produces no row, so its
@@ -2950,7 +3352,7 @@ mod tests {
         };
         let run_id = "jk-run-x";
         let rows = failure_popup_rows(&failure, run_id);
-        let rect = failure_popup_rect(area, rows.len());
+        let rect = failure_popup_rect_for_rows(area, &rows);
         let run_id_rect = failure_popup_value_rect(rect, &rows, FailureCopyTarget::RunId).unwrap();
         // Rows: message=0, stage=1, run id=2. The message row sits two rows
         // above the run-id row in the body.
@@ -3006,7 +3408,7 @@ mod tests {
         view.failure_copied = Some(FailureCopyTarget::RunId);
         let run_id = "jk-run-rendered";
         terminal
-            .draw(|frame| render_launch_frame(frame, &view, run_id, true, None))
+            .draw(|frame| render_launch_frame(frame, &view, run_id, "/tmp/run.jsonl", true, None))
             .unwrap();
         let rendered = format!("{:?}", terminal.backend().buffer());
 
@@ -3025,5 +3427,50 @@ mod tests {
                 "rendered failure popup must contain {needle:?}; got {rendered}",
             );
         }
+    }
+
+    #[test]
+    fn failure_popup_wraps_long_paths_without_dropping_tail() {
+        let backend = TestBackend::new(72, 28);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let long_path = "/jk/run/very/deep/path/with/a/long/docker-build-output-file.jsonl";
+        let mut view = initial_view();
+        view.failure = Some(LaunchFailure {
+            diagnostics_path: Some(PathBuf::from(long_path)),
+            ..failure_with_paths()
+        });
+        terminal
+            .draw(|frame| {
+                render_launch_frame(
+                    frame,
+                    &view,
+                    "jk-run-rendered",
+                    "/tmp/jk-run-rendered.jsonl",
+                    true,
+                    None,
+                );
+            })
+            .unwrap();
+        let rendered = format!("{:?}", terminal.backend().buffer());
+
+        for needle in ["/jk/run/very/deep/pa", "r-build-output-file.", "jsonl"] {
+            assert!(
+                rendered.contains(needle),
+                "long path segment must remain visible instead of being silently truncated: {rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn failure_popup_path_overlay_emits_osc8_file_links() {
+        let area = Rect::new(0, 0, 120, 28);
+        let failure = failure_with_paths();
+        let overlay =
+            failure_popup_hyperlink_overlay(area, &failure, "jk-run-rendered", None, None);
+        let text = String::from_utf8_lossy(&overlay);
+
+        assert!(text.contains("\x1b]8;;file:///jk/run/x.jsonl\x1b\\"));
+        assert!(text.contains("\x1b]8;;file:///jk/run/x.docker-build.log\x1b\\"));
+        assert!(text.contains("\x1b]8;;\x1b\\"));
     }
 }

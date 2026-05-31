@@ -3,6 +3,7 @@
 pub mod brand_header;
 pub mod button_strip;
 pub mod confirm_dialog;
+pub mod container_info;
 pub mod error_dialog;
 pub mod filter_input;
 pub mod hint_bar;
@@ -20,6 +21,11 @@ pub use button_strip::{ButtonStrip, ButtonStripItem, button_strip_line, button_s
 pub use confirm_dialog::{
     ConfirmFocus, ConfirmKind, ConfirmState, render_confirm_dialog,
     required_height as confirm_required_height, width_pct as confirm_width_pct,
+};
+pub use container_info::{
+    ContainerInfoRow, ContainerInfoState, copy_payload_at as container_info_copy_payload_at,
+    hyperlink_overlay as container_info_hyperlink_overlay, render_container_info,
+    required_height as container_info_required_height,
 };
 pub use error_dialog::{
     ErrorPopupState, estimated_message_rows, render_error_dialog, required_height,
@@ -42,7 +48,9 @@ pub use scrollable_panel::{
     vertical_scrollbar_area, viewport_height, viewport_width,
 };
 pub use select_list::{SelectList, SelectListState, render_select_list};
-pub use status_footer::{StatusFooter, render_status_footer};
+pub use status_footer::{
+    StatusFooter, StatusFooterHover, render_status_footer, status_footer_right_chip_rect,
+};
 pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_label_line, tab_underline_line};
 pub use text_input::{BorderStyle, TextInput, TextInputState, render_text_input};

@@ -237,7 +237,7 @@ Each pane owns one PTY and one `vt100::Parser<OscCapture>`. The parser maintains
 
 ### Dirty-output renderer
 
-`jackin-capsule` uses an internal dirty-row layer in <RepoFile path="crates/jackin-capsule/src/render.rs" /> rather than replacing `vt100` with a larger terminal engine. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
+`jackin-capsule` uses an internal dirty-row layer in <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> rather than replacing `vt100` with a larger terminal engine. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
 
 The crate options were evaluated as follows:
 

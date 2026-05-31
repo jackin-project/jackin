@@ -198,7 +198,7 @@ Summary:
 All keyboard hint text belongs in the footer bar at the bottom of the screen. Dialogs, modals, and overlays **must not** render their own internal hint line. When a modal is open, the main footer must show the modal's available keys instead of the keys for the content behind it.
 
 Enforcement:
-- Every widget in `src/console/widgets/` must expose a `footer_items` function (or equivalent) and remove its internal hint row.
+- Every widget in `src/console/tui/widgets/` must expose a `footer_items` function (or equivalent) and remove its internal hint row.
 - `render_editor` checks `state.modal` first; if a modal is open it calls `modal_footer_items(modal)` and skips the normal contextual items.
 - `render_settings` checks the three settings modal chains (`auth.modal`, `env.modal`, `mounts.modal`) in priority order; if any is `Some`, calls the corresponding `*_modal_footer_items` function.
 - No `Constraint::Length` row for a hint line may remain inside any widget layout.
@@ -206,7 +206,7 @@ Enforcement:
 
 ### Hints use one shared span vocabulary and one renderer per surface
 
-Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in `jackin-tui` (`Key`, `Text`, `Sep`, `GroupSep`), and the styling rule is identical everywhere: `Key` is white + bold, `Text` is phosphor green (rendered with a leading space), `Sep` is a gray `" · "`, `GroupSep` is three spaces, and the row is centered. Ratatui surfaces render this through the shared `HintBar` component in <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" />; the in-container multiplexer still uses its raw-ANSI `render_hint_row` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> until the capsule Ratatui frame lands. Define a screen's hint as a `&[HintSpan]` constant and pass it to the renderer; do not assemble styled `Span`s, raw separator strings, or per-surface colour choices inline. A new hand-rolled hint row (its own `Span::styled` key/label pairs, its own `" · "` literal, or its own dim/green choice) is a design-decision violation: route it through the shared span list + renderer instead. This is what lets the cockpit picker, the build-log overlay, and every capsule dialog footer read identically.
+Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in `jackin-tui` (`Key`, `Text`, `Sep`, `GroupSep`), and the styling rule is identical everywhere: `Key` is white + bold, `Text` is phosphor green (rendered with a leading space), `Sep` is a gray `" · "`, `GroupSep` is three spaces, and the row is centered. Ratatui surfaces render this through the shared `HintBar` component in <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" />; the in-container multiplexer renders dialog hints in <RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" />. Define a screen's hint as a `&[HintSpan]` constant and pass it to the renderer; do not assemble styled `Span`s, raw separator strings, or per-surface colour choices inline. A new hand-rolled hint row (its own `Span::styled` key/label pairs, its own `" · "` literal, or its own dim/green choice) is a design-decision violation: route it through the shared span list + renderer instead. This is what lets the cockpit picker, the build-log overlay, and every capsule dialog footer read identically.
 
 ### Bottom chrome layout — mandatory row order
 
@@ -253,9 +253,9 @@ The right side of every jackin' status bar carries up to two clickable chips:
 **Debug run ID chip** (shown only when `--debug` is active):
 - Displays the diagnostics run ID (e.g. `jk-run-2a6515`) on a `DANGER_RED` background.
 - Resting style: bold white text on DANGER_RED, OSC 22 hand pointer on hover.
-- Click → opens the **Debug Info dialog** showing the run ID, the full path to the JSONL diagnostics log, the Docker build log path (if applicable), and links to copy each path. This dialog provides the information the operator needs to share with an agent for triage.
+- Click → opens the same **ContainerInfo dialog**, enriched with the run ID, the full path to the JSONL diagnostics log, the Docker build log path (if applicable), and links to copy each path. These debug rows provide the information the operator needs to share with an agent for triage.
 
-**Both chips are distinct dialogs, not the same dialog:** The instance ID chip is always available and gives operational context (what is running). The run ID chip is debug-mode-only and gives diagnostics context (where to find the evidence). Do not conflate them into one dialog.
+**Both chips open the same dialog:** The instance ID chip is always available and gives operational context (what is running). The run ID chip is debug-mode-only and gives diagnostics context (where to find the evidence). They are triggers for the same `ContainerInfo` surface, not separate dialog types.
 
 **Implementation applies to all status bar surfaces:** the capsule bottom bar, the host console bottom bar, and the launch cockpit status bar. Any status bar that shows an instance ID or run ID must wire the click handlers to the appropriate dialog.
 
@@ -286,7 +286,7 @@ This applies to the host console debug bar and any other surface that surfaces a
 
 ### Brand chrome is shared across every top-level screen
 
-Every full-screen jackin' surface — the workspace list, settings, the workspace editor, and the launch progress screen — renders the same brand header through one shared helper (`render_brand_header` / `brand_header_line` in <RepoFile path="src/console/widgets/mod.rs" />): the ` jackin' ` phosphor-green pill (black foreground, bold) pinned to the top-left, a `·` separator, then the screen label. The pill matches the in-container multiplexer status-bar brand pill (<RepoFile path="crates/jackin-capsule/src/statusbar.rs" />) so the logo never shifts position, colour, or weight as the operator transitions between screens. The header occupies two rows (brand row + one spacer); the screen body starts on the third row. New top-level screens must call the shared helper rather than hand-rolling a brand line — a divergent logo is a chrome-consistency bug.
+Every full-screen jackin' surface — the workspace list, settings, the workspace editor, and the launch progress screen — renders the same brand header through one shared helper (`render_brand_header` / `brand_header_line` in <RepoFile path="src/console/tui/widgets/mod.rs" />): the ` jackin' ` phosphor-green pill (black foreground, bold) pinned to the top-left, a `·` separator, then the screen label. The pill matches the in-container multiplexer status-bar brand pill (<RepoFile path="crates/jackin-capsule/src/tui/statusbar.rs" />) so the logo never shifts position, colour, or weight as the operator transitions between screens. The header occupies two rows (brand row + one spacer); the screen body starts on the third row. New top-level screens must call the shared helper rather than hand-rolling a brand line — a divergent logo is a chrome-consistency bug.
 
 ### Focus-visible border: one active container owns bright green
 
@@ -652,7 +652,7 @@ For every modal that has a `Filter:` input (the host role picker, the host op pi
 | 1 (interior row 1) | blank spacer |
 | 2+ | list rows |
 
-Equivalently: the filter starts at `box_row + 1`, the spacer at `box_row + 2`, and the first list row at `box_row + 3`. The natural box height is `items + 4` (top border + filter + spacer + items + bottom border). Both the host pickers (<RepoFile path="src/console/widgets/role_picker.rs" /> and <RepoFile path="src/console/widgets/op_picker/render.rs" />) and the in-multiplexer pickers (<RepoFile path="crates/jackin-capsule/src/dialog.rs" />) honour this layout — an operator's eye must read identically across surfaces.
+Equivalently: the filter starts at `box_row + 1`, the spacer at `box_row + 2`, and the first list row at `box_row + 3`. The natural box height is `items + 4` (top border + filter + spacer + items + bottom border). Both the host pickers (<RepoFile path="src/console/tui/widgets/role_picker.rs" /> and <RepoFile path="src/console/tui/widgets/op_picker/render.rs" />) and the in-multiplexer pickers (<RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" />) honour this layout — an operator's eye must read identically across surfaces.
 
 Why this rule exists: a leading blank pad row pushes the filter one row down and visually disconnects it from the title in the top border. The eye reads it as "the filter is floating in the middle of the dialog," not as "type here to narrow the list" — a small but cumulative perceptual cost across the many dialogs jackin opens during a typical session. Drop the pad; keep the filter glued to the chrome.
 
@@ -673,7 +673,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 ### Confirmation dialogs use the canonical Yes/No layout
 
-**Every Yes/No confirmation rendered on any jackin' TUI surface — host console (<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />) and the in-container multiplexer (<RepoFile path="crates/jackin-capsule/src/dialog.rs" />'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.
+**Every Yes/No confirmation rendered on any jackin' TUI surface — host console (<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />) and the in-container multiplexer (<RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" />'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.
 
 The canonical layout, top to bottom, inside the dialog's interior columns:
 
@@ -684,7 +684,7 @@ The canonical layout, top to bottom, inside the dialog's interior columns:
 5. **Default focus = `No`.** Confirms exist because the action is destructive; Enter on a freshly-opened confirm must never fire the destructive arm. The operator has to deliberately Tab / Right / Y to commit Yes.
 6. **Key bindings (TUI design contract, not surface-specific):** Tab / Right / Left / Shift-Tab cycle focus, `Y` / `y` always commits Yes, `N` / `n` / Esc always cancels, Enter commits whichever button is focused. Mouse click on a button focuses + commits in one step (matches W3C button semantics).
 
-The reusable host widget is `<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />` (`ConfirmState` + `render`). In-container surfaces that cannot link the host crate (different binary, separate process) must mirror the layout in their own renderer — the in-container daemon's `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/dialog.rs" /> is the canonical copy and any other in-container confirm must call it (or a sibling helper with the same layout output) rather than rolling a third shape.
+The reusable host widget is `<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />` (`ConfirmState` + `render`). In-container confirms use the daemon's `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/tui/dialog.rs" />; any other in-container confirm must call it (or a sibling helper with the same layout output) rather than rolling a third shape.
 
 Why this rule exists: confirms are the operator's "are you sure?" gate. They appear at the worst moments — about to lose work, about to nuke a workspace, about to ship a destructive change. Surface-specific variants ("Yes, continue" / "No, go back" stacked vertically on one screen; "  Yes  " / "  No  " inline on the next) make the operator's eyes hunt for the right button under stress. The cost of one shared layout is small; the cost of mis-clicking a destructive confirm because the buttons moved is huge.
 
@@ -702,7 +702,7 @@ Concrete obligations:
 
 Three implementation shapes carry this contract today:
 
-1. **`Vec<Dialog>` stack** (canonical, used by `crates/jackin-capsule/src/dialog.rs`). `dialog_top()` is "is a dialog open"; entries land via `dialog_push`; back-nav arms call `dialog_pop_one`; terminal-action arms call `dialog_clear`.
+1. **`Vec<Dialog>` stack** (canonical, used by `crates/jackin-capsule/src/tui/dialog.rs`). `dialog_top()` is "is a dialog open"; entries land via `dialog_push`; back-nav arms call `dialog_pop_one`; terminal-action arms call `dialog_clear`.
 2. **`modal_parents` stacks on host console state** (used by workspace editor modals, settings global-mount modals, and settings environment modals). `open_sub_modal` stashes the visible modal as a parent, `pop_modal_chain` restores it on Esc, and `clear_modal_chain` closes the whole flow after a terminal commit.
 3. **Per-flow return-path stash** (legacy, used by host console for auth form side trips — `pending_auth_form_return`, `pending_env_key`, `pending_picker_target`). The parent's state is stashed in an `EditorState` / settings-auth field before the child modal mounts, and the child's cancel arm rebuilds the parent from the stash. Works for shallow chains but does not compose past two levels and is easy to forget when adding a new transition.
 
@@ -800,7 +800,7 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 1. **Every visual pattern that appears in more than one place must use one shared implementation.** A single widget, render function, or helper — not two near-copies. When the existing implementation cannot serve a new call site without modification, extend it (add a parameter, generalize a branch, add an enum variant) rather than forking it.
 
-2. **Components live in `src/console/widgets/`.** Before writing any new TUI state machine or renderer, `grep` the directory. If a widget handles the same visual pattern (drill-down picker, text input box, 2-button choice, yes/no confirm, filter list), extend that widget rather than creating a parallel one.
+2. **Components live in `src/console/tui/widgets/`.** Before writing any new TUI state machine or renderer, `grep` the directory. If a widget handles the same visual pattern (drill-down picker, text input box, 2-button choice, yes/no confirm, filter list), extend that widget rather than creating a parallel one.
 
 3. **A genuinely new component is only ever written once.** The first time a new UX pattern appears, it is acceptable to implement it in the most focused way that serves the immediate need. The second time the same pattern is needed somewhere else, the two implementations must be consolidated into one shared widget before the second PR lands — not "as a follow-up."
 
@@ -814,34 +814,34 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 Before adding any new TUI widget or state type:
 
-1. Run `grep -r 'struct.*State' src/console/widgets/` and `ls src/console/widgets/`. Read the matches. Is there a widget that already owns the pattern?
-2. Run `grep -r 'fn render_' src/console/widgets/` for the render-level equivalent.
+1. Run `grep -r 'struct.*State' src/console/tui/widgets/` and `ls src/console/tui/widgets/`. Read the matches. Is there a widget that already owns the pattern?
+2. Run `grep -r 'fn render_' src/console/tui/widgets/` for the render-level equivalent.
 3. If yes — extend the existing widget. Add a mode enum, a new bool flag, or a new variant. Do not create a second module.
-4. If no — propose the design first; get explicit approval; then implement. The first implementation goes into `src/console/widgets/` so the next caller can find it.
+4. If no — propose the design first; get explicit approval; then implement. The first implementation goes into `src/console/tui/widgets/` so the next caller can find it.
 
 ### Why this rule exists — canonical lesson
 
-A `token_store_picker` widget once duplicated the Account → Vault → Item navigation state machine from <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — a 1067-line copy of closely parallel code where every `op_picker` bug fix to navigation, filtering, R-key refresh, or section display had to be manually reproduced or the two implementations drifted. That copy has since been deleted and `op_picker` was extended instead: an opt-in `OpPickerMode::Create` turns on the `+ New item`, `+ New field`, and `+ New section` creation sentinels and the naming sub-stages, and the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`). One widget now serves both the browse and create call sites. This is the positive reference for the rule: when a new call site needs more, **extend the shared widget with a mode**, never fork it into a second drill-down. The remaining Claude-token work is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
+A `token_store_picker` widget once duplicated the Account → Vault → Item navigation state machine from <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> — a 1067-line copy of closely parallel code where every `op_picker` bug fix to navigation, filtering, R-key refresh, or section display had to be manually reproduced or the two implementations drifted. That copy has since been deleted and `op_picker` was extended instead: an opt-in `OpPickerMode::Create` turns on the `+ New item`, `+ New field`, and `+ New section` creation sentinels and the naming sub-stages, and the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`). One widget now serves both the browse and create call sites. This is the positive reference for the rule: when a new call site needs more, **extend the shared widget with a mode**, never fork it into a second drill-down. The remaining Claude-token work is tracked in the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) roadmap item.
 
 ---
 
 ## Reusable Component Catalog
 
-All shared TUI widgets live in `src/console/widgets/`. Use this table to identify the right component before writing new code.
+All shared TUI widgets live in `src/console/tui/widgets/`. Use this table to identify the right component before writing new code.
 
 | Component | Module | What it provides | When to use |
 |---|---|---|---|
-| Op picker (1Password drill-down) | <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
-| Role picker | <RepoFile path="src/console/widgets/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
+| Op picker (1Password drill-down) | <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
+| Role picker | <RepoFile path="src/console/tui/widgets/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
 | Text input box | <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> | Single-line labelled input box (`TextInputState` + `render`) with validation, duplicate detection, forbidden-char rules. This is the **"Credential" dialog** the operator sees when typing any single value. | Any flow needing one line of free text — env value, item name, field label, section name, workspace name |
-| Scope picker | <RepoFile path="src/console/widgets/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
-| Source picker | <RepoFile path="src/console/widgets/source_picker.rs" /> | Two-button horizontal strip: `Plain text` / `1Password` | Choosing whether a value is literal or an `op://` reference |
-| Agent choice | <RepoFile path="src/console/widgets/agent_choice/mod.rs" /> | Two-button agent selector used in the Auth-tab `+ Add` flow | Picking one agent from a small fixed set |
-| Mount destination choice | <RepoFile path="src/console/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
+| Scope picker | <RepoFile path="src/console/tui/widgets/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
+| Source picker | <RepoFile path="src/console/tui/widgets/source_picker.rs" /> | Two-button horizontal strip: `Plain text` / `1Password` | Choosing whether a value is literal or an `op://` reference |
+| Agent choice | <RepoFile path="src/console/tui/widgets/agent_choice/mod.rs" /> | Two-button agent selector used in the Auth-tab `+ Add` flow | Picking one agent from a small fixed set |
+| Mount destination choice | <RepoFile path="src/console/tui/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
 | Confirm dialog | <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule) | Any destructive or irreversible action |
 | Save / discard strip | <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> | Save / Discard two-button strip, designed for form footers | Bottom of any editable form |
-| File browser | <RepoFile path="src/console/widgets/file_browser/mod.rs" /> | Host filesystem navigation | Any flow needing to pick a local file or directory |
-| GitHub picker | <RepoFile path="src/console/widgets/github_picker.rs" /> | GitHub org/repo drill-down | Any flow needing to select a GitHub repository |
+| File browser | <RepoFile path="src/console/tui/widgets/file_browser/mod.rs" /> | Host filesystem navigation | Any flow needing to pick a local file or directory |
+| GitHub picker | <RepoFile path="src/console/tui/widgets/github_picker.rs" /> | GitHub org/repo drill-down | Any flow needing to select a GitHub repository |
 | Error popup | <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" /> | Scrollable red-border error modal (see Error Surface rule) | All error display |
 | Panel rain | Background rain animation | Background decoration |
 
@@ -854,7 +854,7 @@ All shared TUI widgets live in `src/console/widgets/`. Use this table to identif
 
 The lookbook is the visual regression surface for every component in the catalog — ensure lookbook stories for new components exercise their focused and unfocused states so color regressions are caught before they reach production.
 
-**Render primitives**: `modal_block`, `breadcrumb_title`, `render_fatal` (<RepoFile path="src/console/widgets/op_picker/render.rs" />), `render_filter_row` (<RepoFile path="src/console/widgets/mod.rs" />), and `render_scrollable_block` (<RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />) — use these building blocks when composing new modals rather than hand-rolling border + layout from scratch.
+**Render primitives**: `modal_block`, `breadcrumb_title`, `render_fatal` (<RepoFile path="src/console/tui/widgets/op_picker/render.rs" />), `render_filter_row` (<RepoFile path="src/console/tui/widgets/mod.rs" />), and `render_scrollable_block` (<RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs" />) — use these building blocks when composing new modals rather than hand-rolling border + layout from scratch.
 
 ### Two-button choice pattern
 
@@ -872,9 +872,9 @@ The lookbook is the visual regression surface for every component in the catalog
 
 jackin' has **one** convention for "add a new thing to this list": a sentinel row rendered at the bottom of the list with a leading `+ ` and the action label. It is the same across every surface:
 
-- `+ New workspace` — list stage (<RepoFile path="src/console/manager/render/list.rs" />)
-- `+ Add role` — workspace editor Roles tab (<RepoFile path="src/console/manager/render/editor.rs" />)
-- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="src/console/manager/render/global_mounts.rs" />)
+- `+ New workspace` — list stage (<RepoFile path="src/console/tui/render/list.rs" />)
+- `+ Add role` — workspace editor Roles tab (<RepoFile path="src/console/tui/render/editor.rs" />)
+- `+ Add mount`, `+ Add environment variable`, `+ Add {role} environment variable` — settings/editor mount + env tabs (<RepoFile path="src/console/tui/render/global_mounts.rs" />)
 - `+ Override for a role` — Auth tab per-role override
 
 Selecting a creation sentinel opens the next step in the flow — usually the **text input box** to name the new thing, or a two-button choice. Any new "add an item to this list" affordance MUST render as a `+ ` sentinel row in the same position and style, and MUST route its selection through the text input box (for naming) or a picker (for choosing). Do not invent a different add-affordance (no separate "New…" button floating elsewhere, no key-only shortcut without a visible row).
@@ -919,7 +919,7 @@ After the source/location choice, the console suspends, runs the `claude setup-t
 
 Every "create" affordance in this branch is the same `+ ` sentinel row, and every "name it" prompt is the same text input box. Nothing new is drawn.
 
-**Implementation contract.** These sentinels are shipped in `op_picker` behind the opt-in `OpPickerMode::Create` mode parameter that turns the creation rows on; the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`) instead of only the plain `op://` reference string. This capability now lives in the shared <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — it MUST NOT be reimplemented by forking `op_picker` into a second module.
+**Implementation contract.** These sentinels are shipped in `op_picker` behind the opt-in `OpPickerMode::Create` mode parameter that turns the creation rows on; the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`) instead of only the plain `op://` reference string. This capability now lives in the shared <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> — it MUST NOT be reimplemented by forking `op_picker` into a second module.
 
 ### Rich TUI lives in the console; the CLI stays plain CLI
 

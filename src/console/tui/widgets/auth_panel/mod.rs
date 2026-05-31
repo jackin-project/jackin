@@ -6,7 +6,7 @@
 //!     production rendering uses explicit `WorkspaceSource` /
 //!     `RoleSource` rows on the Auth tab.
 //!
-//! Flat-row Auth tab rendering lives in `src/console/manager/render/editor.rs`.
+//! Flat-row Auth tab rendering lives in `src/console/tui/render/editor.rs`.
 
 pub mod form;
 pub mod render;

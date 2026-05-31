@@ -76,7 +76,6 @@ impl Multiplexer {
         let panes = self.visible_panes();
         let focused_id = self.active_focused_id();
         let zoomed = self.active_zoomed_id().is_some();
-        let multi_pane = panes.len() > 1;
         let dialog_open = self.dialog_open();
 
         // Snapshot session display titles before the draw closure borrows self.

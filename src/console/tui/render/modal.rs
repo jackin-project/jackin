@@ -1,6 +1,10 @@
 //! Modal dispatcher: per-variant size computation (`modal_outer_rect`)
 //! and the widget-dispatch wrapper (`render_modal`) that draws the active
 //! modal at the computed geometry.
+#![expect(
+    clippy::redundant_pub_crate,
+    reason = "manager input code uses modal hit-test geometry through the moved tui facade"
+)]
 
 use ratatui::{Frame, layout::Rect};
 
@@ -8,41 +12,37 @@ use super::super::super::widgets::{
     auth_panel, confirm_save, file_browser, github_picker, mount_dst_choice, op_picker,
     role_picker, scope_picker, source_picker, workdir_pick,
 };
-use super::super::state::{GlobalMountModal, Modal, SettingsAuthModal, SettingsEnvModal};
 use super::centered_rect_fixed;
+use crate::console::manager::state::{
+    GlobalMountModal, Modal, SettingsAuthModal, SettingsEnvModal,
+};
 use jackin_tui::HintSpan;
 use jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT;
 
 // ── Modal dispatcher ────────────────────────────────────────────────
 
-pub(in crate::console::manager) fn text_input_rect(outer: Rect) -> Rect {
+pub(crate) fn text_input_rect(outer: Rect) -> Rect {
     centered_rect_fixed(outer, 60, 5)
 }
 
-pub(in crate::console::manager) fn source_picker_rect(outer: Rect) -> Rect {
+pub(crate) fn source_picker_rect(outer: Rect) -> Rect {
     centered_rect_fixed(outer, 50, 5)
 }
 
-pub(in crate::console::manager) fn scope_picker_rect(outer: Rect) -> Rect {
+pub(crate) fn scope_picker_rect(outer: Rect) -> Rect {
     centered_rect_fixed(outer, 50, 5)
 }
 
-pub(in crate::console::manager) fn op_picker_rect(outer: Rect) -> Rect {
+pub(crate) fn op_picker_rect(outer: Rect) -> Rect {
     centered_rect_fixed(outer, 80, 22)
 }
 
-pub(in crate::console::manager) fn role_picker_rect(
-    outer: Rect,
-    state: &role_picker::RolePickerState,
-) -> Rect {
+pub(crate) fn role_picker_rect(outer: Rect, state: &role_picker::RolePickerState) -> Rect {
     let rows = (state.filtered.len() as u16).saturating_add(6).min(15);
     centered_rect_fixed(outer, 50, rows)
 }
 
-pub(in crate::console::manager) fn confirm_rect(
-    outer: Rect,
-    state: &jackin_tui::components::ConfirmState,
-) -> Rect {
+pub(crate) fn confirm_rect(outer: Rect, state: &jackin_tui::components::ConfirmState) -> Rect {
     centered_rect_fixed(
         outer,
         jackin_tui::components::confirm_width_pct(state),
@@ -50,7 +50,7 @@ pub(in crate::console::manager) fn confirm_rect(
     )
 }
 
-pub(in crate::console::manager) fn mount_choice_rect(outer: Rect) -> Rect {
+pub(crate) fn mount_choice_rect(outer: Rect) -> Rect {
     let w = outer.width.min(80);
     let h = 6.min(outer.height);
     Rect {
@@ -61,17 +61,14 @@ pub(in crate::console::manager) fn mount_choice_rect(outer: Rect) -> Rect {
     }
 }
 
-pub(in crate::console::manager) fn auth_form_rect(
-    outer: Rect,
-    state: &auth_panel::AuthForm,
-) -> Rect {
+pub(crate) fn auth_form_rect(outer: Rect, state: &auth_panel::AuthForm) -> Rect {
     centered_rect_fixed(outer, 80, auth_panel::required_height(state))
 }
 
 /// Single source of truth for modal size + placement;
 /// `input::file_browser_modal_rect` re-uses it for mouse hit-testing
 /// so the two views stay in sync.
-pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
+pub(crate) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
     if matches!(modal, Modal::MountDstChoice { .. }) {
         return mount_choice_rect(outer);
     }
@@ -102,6 +99,10 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
                 jackin_tui::components::error_dialog::required_height(state, inner_width, max_rows),
             )
         }
+        Modal::ContainerInfo { state } => (
+            60,
+            jackin_tui::components::container_info_required_height(state),
+        ),
         Modal::StatusPopup { .. } => (50, 7),
         // A naming sub-stage is a plain labelled input box, sized like
         // every other text-input modal; the drill-down stages use the
@@ -158,6 +159,9 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::ConfirmSave { state } => confirm_save::render(frame, modal_area, state),
         Modal::ErrorPopup { state } => {
             jackin_tui::components::render_error_dialog(frame, modal_area, state);
+        }
+        Modal::ContainerInfo { state } => {
+            jackin_tui::components::render_container_info(frame, modal_area, state);
         }
         Modal::StatusPopup { state } => {
             jackin_tui::components::render_status_popup(frame, modal_area, state);
@@ -271,6 +275,13 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Text("cancel"),
         ],
         Modal::ErrorPopup { .. } => vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")],
+        Modal::ContainerInfo { .. } => vec![
+            HintSpan::Key("↵/Esc"),
+            HintSpan::Text("dismiss"),
+            HintSpan::GroupSep,
+            HintSpan::Key("click"),
+            HintSpan::Text("copy value"),
+        ],
         Modal::StatusPopup { .. } => vec![HintSpan::Text("working")],
         // A naming sub-stage is a plain input box: confirm / cancel only.
         Modal::OpPicker { state } if state.naming_stage_input().is_some() => {

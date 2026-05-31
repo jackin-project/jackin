@@ -169,13 +169,7 @@ impl FileBrowserState {
     pub fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>> {
         use jackin_tui::HintSpan;
         if self.pending_git_prompt.is_some() {
-            vec![
-                HintSpan::Key("↵"),
-                HintSpan::Text("confirm"),
-                HintSpan::GroupSep,
-                HintSpan::Key("Esc"),
-                HintSpan::Text("cancel"),
-            ]
+            super::git_prompt::git_prompt_footer_items(self.pending_git_url.is_some())
         } else {
             vec![
                 HintSpan::Key("\u{2191}\u{2193}"),
