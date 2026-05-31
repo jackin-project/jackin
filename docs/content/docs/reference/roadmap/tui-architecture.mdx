@@ -1042,8 +1042,6 @@ The Model/Update/View contract guarantees this: the update layer (`input/`, `mes
 - `mod` declarations and `use` paths updated after the moves.
 - `cargo check` and `cargo fmt --check` pass locally after the migration.
 
-Use `git mv` for every file move to preserve history. New TUI files added before migration completes must go into the target directory immediately.
-
 Move all terminal-rendering source files into designated TUI directories so the location of any visual component is unambiguous. The rule: TUI code lives in exactly three homes — `crates/jackin-tui/` (shared), `crates/<crate>/src/tui/` (crate-specific), or `src/console/tui/` (host console). A developer or agent changing a visual behavior must know the exact directory to open without searching.
 
 **Capsule migration** (`crates/jackin-capsule/src/tui/`): move `statusbar.rs`, `chrome_widget.rs`, `dialog.rs`, `dialog_widgets.rs`, `pane_widget.rs`, `socket_backend.rs`, `render.rs`, `branch_context_bar.rs` from the crate root into `src/tui/`. The `daemon/compositor.rs` render methods stay in `daemon/` since they are render+state boundary code, but their rendering primitives (helpers they call) move into `tui/`. Add a `tui/mod.rs` that re-exports what `lib.rs` currently exposes.
@@ -1051,8 +1049,6 @@ Move all terminal-rendering source files into designated TUI directories so the 
 **Console migration** (`src/console/tui/`): move `manager/render/` → `tui/render/`, `widgets/` → `tui/widgets/`, `terminal.rs` → `tui/terminal.rs`. Update all `use` paths. The manager input handlers and state structs remain in `manager/` — they are not rendering code.
 
 **Done when:** complete. All surface-specific rendering files live under the designated `tui/` subdirectory; CI still needs to run the normal full matrix before merge.
-
-**Tracked in:** `TODO.md` → `tui-directory-migration`.
 
 ### Planned crate landscape (full TUI ecosystem)
 
