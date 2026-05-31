@@ -1851,7 +1851,7 @@ impl ManagerState<'_> {
             list_roles_scroll_y: 0,
             list_scroll_focus: None,
             list_names_scroll_x: 0,
-            list_names_focused: false,
+            list_names_focused: true,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             hovered_list_row: None,
