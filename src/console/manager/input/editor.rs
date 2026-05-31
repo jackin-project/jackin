@@ -11,7 +11,7 @@ use super::super::super::widgets::{
 };
 use super::super::auth_rows::auth_flat_rows;
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::mount_display::workspace_mounts_content_width;
+use super::super::mount_display::workspace_mounts_content_width_with_cache;
 use super::super::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow,
@@ -150,7 +150,10 @@ pub(super) fn handle_editor_key(
                     ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
                         delta: -8,
                         term_width,
-                        content_width: workspace_mounts_content_width(&editor.pending.mounts),
+                        content_width: workspace_mounts_content_width_with_cache(
+                            &editor.pending.mounts,
+                            &editor.mount_info_cache,
+                        ),
                     },
                 );
                 return Ok(InputOutcome::Continue);
@@ -161,7 +164,10 @@ pub(super) fn handle_editor_key(
                     ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
                         delta: 8,
                         term_width,
-                        content_width: workspace_mounts_content_width(&editor.pending.mounts),
+                        content_width: workspace_mounts_content_width_with_cache(
+                            &editor.pending.mounts,
+                            &editor.mount_info_cache,
+                        ),
                     },
                 );
                 return Ok(InputOutcome::Continue);

@@ -70,6 +70,7 @@ pub(crate) fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
         .max("Destination".len())
 }
 
+#[cfg(test)]
 pub(crate) fn workspace_mounts_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
     let cache = MountInfoCache::default();
     cache.refresh_mounts(mounts);
@@ -125,14 +126,6 @@ pub(crate) fn global_mounts_content_width_with_cache(
         .chain([global_mount_header_width(path_w)])
         .max()
         .unwrap_or(0)
-}
-
-pub(crate) fn settings_global_mounts_content_width(
-    rows: &[crate::config::GlobalMountRow],
-) -> usize {
-    let cache = MountInfoCache::default();
-    cache.refresh_global_rows(rows);
-    settings_global_mounts_content_width_with_cache(rows, &cache)
 }
 
 pub(crate) fn settings_global_mounts_content_width_with_cache(

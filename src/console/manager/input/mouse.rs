@@ -13,8 +13,11 @@ use super::super::message::{ManagerMessage, update_manager};
 use super::super::modal_layout::modal_outer_rect;
 #[cfg(test)]
 use super::super::mount_display::global_mounts_content_width;
-use super::super::mount_display::settings_global_mounts_content_width;
+#[cfg(test)]
 use super::super::mount_display::workspace_mounts_content_width;
+use super::super::mount_display::{
+    settings_global_mounts_content_width_with_cache, workspace_mounts_content_width_with_cache,
+};
 use super::super::settings_geometry::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
 };
@@ -696,7 +699,10 @@ fn try_drag_horizontal_scrollbar(
                         SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT + LIST_FOOTER_HEIGHT,
                     ),
                 },
-                global_mount_rows_content_width(&settings.mounts.pending),
+                global_mount_rows_content_width(
+                    &settings.mounts.pending,
+                    &settings.mounts.mount_info_cache,
+                ),
             )
         }
         ManagerStage::CreatePrelude(_)
@@ -1092,7 +1098,10 @@ fn scroll_active_panel(
                         &mut settings.mounts.scroll_x,
                         delta,
                         content_area,
-                        global_mount_rows_content_width(&settings.mounts.pending),
+                        global_mount_rows_content_width(
+                            &settings.mounts.pending,
+                            &settings.mounts.mount_info_cache,
+                        ),
                     );
                 }
                 SettingsTab::Trust => {
@@ -1310,7 +1319,10 @@ fn editor_scroll_area(
 ) -> ScrollArea {
     ScrollArea {
         area: editor_content_area(editor, term_size),
-        content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
+        content_width: workspace_mounts_content_width_with_cache(
+            editor.pending.mounts.as_slice(),
+            &editor.mount_info_cache,
+        ),
     }
 }
 
@@ -1318,10 +1330,13 @@ const fn editor_content_height(editor: &super::super::state::EditorState<'_>) ->
     editor.tab_content_height
 }
 
-fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
+fn global_mount_rows_content_width(
+    rows: &[crate::config::GlobalMountRow],
+    cache: &super::super::state::MountInfoCache,
+) -> usize {
     // Settings mounts render Destination + Mode + Type columns, unlike the
     // sidebar's Destination + Mode variant.
-    settings_global_mounts_content_width(rows)
+    settings_global_mounts_content_width_with_cache(rows, cache)
 }
 
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`
