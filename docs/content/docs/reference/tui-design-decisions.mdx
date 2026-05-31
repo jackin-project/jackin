@@ -184,6 +184,24 @@ The host console matches this order. The capsule must also follow it: `MAIN_VIEW
 
 **Implementation:** The separator row is a blank `PHOSPHOR_DARK` row, not an empty string — it must use the same background as the surrounding chrome so it reads as intentional spacing, not a rendering gap.
 
+### Status bar chips — instance ID and run ID
+
+The right side of every jackin' status bar carries up to two clickable chips:
+
+**Instance ID chip** (always shown when a container exists):
+- Displays the short container instance ID (e.g. `wsvjk4ak`).
+- Resting style: blue link chip (distinct from surrounding white bar) with an OSC 22 hand pointer on hover.
+- Click → opens the **ContainerInfo dialog** showing container ID, role, agent, workdir, and version. In debug mode, also shows the run ID and a clickable path to the run log file.
+
+**Debug run ID chip** (shown only when `--debug` is active):
+- Displays the diagnostics run ID (e.g. `jk-run-2a6515`) on a `DANGER_RED` background.
+- Resting style: bold white text on DANGER_RED, OSC 22 hand pointer on hover.
+- Click → opens the **Debug Info dialog** showing the run ID, the full path to the JSONL diagnostics log, the Docker build log path (if applicable), and links to copy each path. This dialog provides the information the operator needs to share with an agent for triage.
+
+**Both chips are distinct dialogs, not the same dialog:** The instance ID chip is always available and gives operational context (what is running). The run ID chip is debug-mode-only and gives diagnostics context (where to find the evidence). Do not conflate them into one dialog.
+
+**Implementation applies to all status bar surfaces:** the capsule bottom bar, the host console bottom bar, and the launch cockpit status bar. Any status bar that shows an instance ID or run ID must wire the click handlers to the appropriate dialog.
+
 ### Status bar is always white; debug run ID is a red chip
 
 **The bottom status bar must always render on a white background.** This is invariant regardless of debug mode, surface, or content. The white band is the visual anchor that separates TUI chrome from terminal content — a non-white status bar is a design violation.

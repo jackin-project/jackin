@@ -844,6 +844,28 @@ Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high
 
 Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, provides a real-terminal browser through `tui-lookbook --terminal`, one MDX page per component following the story shape above, and CI regeneration so previews never drift. The first generator lives at <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> and renders <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> stories from `TestBackend` buffers into committed assets under <RepoFile path="docs/public/tui-lookbook/panel-focused.svg" />, consumed by per-component [TUI Lookbook](/reference/tui-lookbook/) pages. The generated SVGs always carry a black terminal background so docs previews match real terminal use. CI runs `tui-lookbook --check` against those committed previews; every new shared TUI component must appear in both the docs lookbook and the terminal browser in the same PR. Reconcile the host/capsule drift table as components consolidate into shared widgets.
 
+### Phase 8d — Clickable status bar chips (instance ID + run ID)
+
+Make both status bar chips fully interactive per the design decision rule:
+
+**Instance ID chip:**
+- Host console debug bar: the chip is already rendered; wire a click handler that opens a `StatusPopup` or info dialog showing the current container/instance details.
+- Capsule status bar: the instance ID already opens `ContainerInfo` via the command palette; add direct click-on-chip → `ContainerInfo` so it is accessible without the menu.
+- Launch progress cockpit: the instance ID chip in `StatusFooter` is already wired for hover + OSC 22 pointer; verify click opens `ContainerInfo`.
+
+**Debug run ID chip:**
+- Host console: the run ID chip in the debug bar is rendered on the right; add click handler that shows a `StatusPopup` with the JSONL log path and (when available) the Docker build log path. The popup must include copy-to-clipboard for each path.
+- Capsule `ContainerInfo` dialog: run ID row already shows when `JACKIN_DEBUG=1` (from a prior commit); verify the row is emphasised and clickable for OSC 52 copy — the dialog itself serves as the run ID info surface for the capsule.
+- Launch progress: if the debug chip is shown in the status footer during launch, wire click → same debug info popup.
+
+**Acceptance:**
+- Hovering either chip shows OSC 22 hand pointer.
+- Clicking instance ID → ContainerInfo dialog on every surface where a container is known.
+- Clicking run ID chip → debug info popup with copyable paths on every surface where `--debug` is active.
+- Both dialogs are distinct; the instance ID dialog does not show debug log paths unless debug mode is also on.
+
+**Tracked in:** `TODO.md` (add entry `status-bar-chip-clicks`).
+
 ### Phase 8c — Terminal resize visual correctness
 
 **Problem:** Resizing the terminal window (especially the capsule) produces visual corruption — wrong background colors, broken layout, stale cell artifacts from the previous size. The capsule's Ratatui double-buffer needs a full reset on resize to guarantee every cell is repainted at the new dimensions.

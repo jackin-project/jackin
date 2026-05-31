@@ -37,12 +37,17 @@ fn split_debug_area(
     (main, Some(bar))
 }
 
-/// Render the 1-row debug status bar: white bar with run ID as a red chip on the right.
+/// Render the 1-row debug status bar.
 ///
-/// Layout: white background across the full width; the run ID is right-aligned
-/// and rendered on a DANGER_RED background so it reads as a distinct chip.
-/// Only the chip is red — the rest of the bar matches the white status bar style.
-fn render_debug_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, run_id: &str) {
+/// When `instance_id` is provided, shows `run_id:instance_id` as a single
+/// DANGER_RED chip right-aligned on a white bar. The combined chip is
+/// clickable — click it to view debug diagnostics info.
+fn render_debug_bar(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    run_id: &str,
+    instance_id: Option<&str>,
+) {
     use ratatui::{
         layout::{Constraint, Layout},
         style::Style,
@@ -50,10 +55,13 @@ fn render_debug_bar(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, run
         widgets::Paragraph,
     };
 
-    let chip_text = format!(" {run_id} ");
+    let chip_text = if let Some(iid) = instance_id {
+        format!(" {run_id}:{iid} ")
+    } else {
+        format!(" {run_id} ")
+    };
     let chip_width = chip_text.chars().count() as u16;
-    // Left: white background fills the remainder.
-    // Right: red chip exactly as wide as the run ID text.
+
     let [left_area, chip_area] = Layout::horizontal([
         Constraint::Min(0),
         Constraint::Length(chip_width),
@@ -195,6 +203,9 @@ pub async fn run_console<H: InstanceActionHandler>(
     // the op-picker panel rain, and other animations stay live.
     let mut animation_tick = tokio::time::interval(Duration::from_millis(TICK_MS));
     animation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    // Track the debug chip rect for click hit-testing. Updated after each draw.
+    let mut last_debug_chip_area: Option<ratatui::layout::Rect> = None;
 
     let result = 'main: loop {
         // Drain a pending token-generate request before render: suspend
@@ -398,7 +409,15 @@ pub async fn run_console<H: InstanceActionHandler>(
                     let run_id = crate::diagnostics::active_run()
                         .map(|r| r.run_id().to_string())
                         .unwrap_or_default();
-                    render_debug_bar(frame, bar_area, &run_id);
+                    let chip_width = (run_id.chars().count() + 2) as u16;
+                    let chip_rect = ratatui::layout::Rect {
+                        x: bar_area.x + bar_area.width.saturating_sub(chip_width),
+                        y: bar_area.y,
+                        width: chip_width.min(bar_area.width),
+                        height: 1,
+                    };
+                    last_debug_chip_area = Some(chip_rect);
+                    render_debug_bar(frame, bar_area, &run_id, None);
                 }
             })?;
         }
@@ -632,6 +651,37 @@ pub async fn run_console<H: InstanceActionHandler>(
                             "mouse={mouse:?} location={}",
                             console_location_debug(&state)
                         );
+                    }
+                    // Debug chip click: open an info popup with the run ID and log path.
+                    if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
+                        if let Some(chip) = last_debug_chip_area {
+                            let col = mouse.column;
+                            let row = mouse.row;
+                            if col >= chip.x && col < chip.x + chip.width && row == chip.y {
+                                if let Some(run) = crate::diagnostics::active_run() {
+                                    let log_path = format!(
+                                        "~/.jackin/data/diagnostics/runs/{}.jsonl",
+                                        run.run_id()
+                                    );
+                                    let body = format!(
+                                        "Run ID:  {}
+Log:     {}",
+                                        run.run_id(),
+                                        log_path
+                                    );
+                                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                                        use crate::console::manager::message::ManagerMessage;
+                                        let _ = manager::update_manager(
+                                            ms,
+                                            ManagerMessage::OpenListErrorPopup {
+                                                title: "Debug session".to_string(),
+                                                message: body,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         manager::input::handle_mouse_with_config(
