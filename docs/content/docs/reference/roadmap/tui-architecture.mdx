@@ -941,6 +941,35 @@ Systematically audit every screen in the host console and settings for focus vio
 
 **In progress — started on `feature/tui-architecture`.** Capsule side partially done: 8 TUI rendering files moved via `git mv` into `crates/jackin-capsule/src/tui/`. This is the start of Phase 9, not the completion.
 
+**Industry reference: Elm Architecture / Model-Update-View.**
+
+The TUI community (Ratatui, tui-rs, Elm, The Elm Architecture, Cursive, builtins in terminal frameworks) has converged on one structural pattern for complex TUI applications: **Model / Update / View** (MUV). jackin' follows this pattern explicitly:
+
+- **Model** — the application state structs (`ManagerState`, `EditorState`, `SettingsState`, `Multiplexer`). Pure data, no rendering, no I/O.
+- **Update** — the message handlers (`update_manager`, input dispatch, `handle_mouse`). Pure functions: take a model + event, return a new model + effect requests.
+- **View** — the rendering layer (`render`, widgets, raw ANSI paint functions). Pure reads of immutable model; no mutations, no I/O, no side effects.
+
+This pattern is the industry standard for TUI correctness and testability. The `tui/` directory enforces the View boundary: it contains ONLY the View layer. Model lives in `state.rs`; Update lives in `input/` and `message.rs`. Mixing them is a design violation.
+
+**Hard rule for the tui/ directory: rendering only, no business logic.**
+
+The `tui/` directory is a strict rendering boundary. Every file inside it must satisfy this test: *"If this file were deleted, would any workspace resolution, role loading, Docker command, network call, config write, or data-model mutation be affected?"* If yes, the file does not belong in `tui/`. The separation maps directly to the Model/Update/View architecture: `tui/` is the View layer only.
+
+**What belongs in `tui/`** (from [TUI Design Decisions](/reference/tui-design-decisions/#tui-source-code-location--mandatory-directory-convention)):
+- Ratatui widget implementations (`Widget` / `StatefulWidget` impls)
+- Raw ANSI escape rendering functions
+- Screen layout and geometry helpers
+- Color token application, border rendering, cursor management
+- Focus state rendering, hint bar rendering, lookbook stories
+
+**What must NOT be in `tui/`** (stays alongside the business layer):
+- Business logic — workspace resolution, role loading, Docker commands, config parsing
+- Input event dispatch and key binding handlers
+- Network and I/O code
+- State mutation logic (update layer)
+
+The Model/Update/View contract guarantees this: the update layer (`input/`, `message.rs`, `state.rs`) mutates state in response to events; the view layer (`tui/`) reads immutable state and produces pixels. These two must never mix in the same file. A file that both handles input events and renders output is a violation.
+
 **Remaining work (console side + full wiring):**
 - `src/console/manager/render/` → `src/console/tui/render/`
 - `src/console/widgets/` → `src/console/tui/widgets/`
