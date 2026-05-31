@@ -20,10 +20,11 @@ use std::{
 };
 
 use crate::components::{
-    BrandHeader, ButtonStrip, ButtonStripItem, ConfirmState, ErrorPopupState, FilterInput, HintBar,
-    Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectList, SelectListState,
-    StatusFooter, StatusPopupState, TabStrip, TextInput, TextInputState, render_confirm_dialog,
-    render_error_dialog, render_save_discard_dialog, render_scrollable_block, render_status_popup,
+    BrandHeader, ButtonStrip, ButtonStripItem, ConfirmState, ErrorPopupState, Panel, PanelFocus,
+    SaveDiscardFocus, SaveDiscardState, SelectList, SelectListState, StatusPopupState, TabStrip,
+    TextInput, TextInputState, render_brand_header, render_confirm_dialog, render_error_dialog,
+    render_filter_input, render_save_discard_dialog, render_scrollable_block, render_select_list,
+    render_status_footer, render_status_popup, render_text_input, render_wrapped_hint_bar,
 };
 use crate::{
     HintSpan, lay_out_tabs,
@@ -854,7 +855,7 @@ fn escape_xml(value: &str) -> String {
 }
 
 fn story_brand_header_console(frame: &mut Frame<'_>, area: Rect) {
-    frame.render_widget(BrandHeader::new("Console · workspace editor"), area);
+    render_brand_header(frame, area, "Console · workspace editor");
 }
 
 fn story_panel_focused(frame: &mut Frame<'_>, area: Rect) {
@@ -970,7 +971,7 @@ fn story_status_popup_default(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_filter_input_populated(frame: &mut Frame<'_>, area: Rect) {
-    frame.render_widget(FilterInput::new("cod"), area);
+    render_filter_input(frame, area, "cod");
 }
 
 fn story_hint_bar_manager_footer(frame: &mut Frame<'_>, area: Rect) {
@@ -990,7 +991,7 @@ fn story_hint_bar_manager_footer(frame: &mut Frame<'_>, area: Rect) {
         HintSpan::Key("Esc"),
         HintSpan::Text("back"),
     ];
-    frame.render_widget(HintBar::new(&spans).wrapped(), area);
+    render_wrapped_hint_bar(frame, area, &spans);
 }
 
 fn story_select_list_agent_picker(frame: &mut Frame<'_>, area: Rect) {
@@ -1018,10 +1019,7 @@ fn story_select_list_agent_picker(frame: &mut Frame<'_>, area: Rect) {
             Span::styled("rust", Style::default().fg(PHOSPHOR_GREEN)),
         ]),
     ];
-    frame.render_widget(
-        SelectList::new(&state, "Choose agent").context(&context),
-        area,
-    );
+    render_select_list(frame, area, &state, "Choose agent", &context);
 }
 
 fn story_scrollable_panel_mounts(frame: &mut Frame<'_>, area: Rect) {
@@ -1051,18 +1049,20 @@ fn story_scrollable_panel_mounts(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
-    frame.render_widget(
-        StatusFooter::new("Building role image: rust-dev")
-            .right("s7f8a2c1")
-            .right_debug(Some("jk-run-3d7e23"))
-            .left_hover(true),
+    render_status_footer(
+        frame,
         area,
+        "Building role image: rust-dev",
+        "s7f8a2c1",
+        Some("jk-run-3d7e23"),
+        1.0, // fully opaque — the real launch cockpit fades in over ~30 frames
+        true,
     );
 }
 
 fn story_text_input_workspace_name(frame: &mut Frame<'_>, area: Rect) {
     let state = TextInputState::new("Workspace name", "jackin-core");
-    frame.render_widget(TextInput::new(&state), area);
+    render_text_input(frame, area, &state);
 }
 
 #[cfg(test)]
