@@ -5,13 +5,13 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::super::super::widgets::file_browser::FileBrowserState;
+use super::super::list_geometry::list_names_content_width;
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::modal_layout::modal_outer_rect;
 #[cfg(test)]
 use super::super::mount_display::global_mounts_content_width;
 use super::super::mount_display::settings_global_mounts_content_width;
 use super::super::mount_display::workspace_mounts_content_width;
-use super::super::render::list::list_names_content_width;
 use super::super::settings_geometry::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
 };

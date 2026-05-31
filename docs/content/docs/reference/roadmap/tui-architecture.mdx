@@ -21,6 +21,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Console modal geometry now lives in `manager::modal_layout`, so render, mouse hit-testing, and container-info hyperlink overlays share one update-layer owner instead of borrowing modal rectangles through the render facade.
 - Mount display row derivation and width math now live in `manager::mount_display`, and Trust-tab width math lives in `jackin-console::settings::update`, so editor, settings, and mouse update paths no longer import render helpers for those scroll bounds.
 - Settings tab content-height calculations now live in `manager::settings_geometry`, removing the mouse/update dependency on settings render helpers for vertical scroll bounds.
+- List-name content width now lives in `manager::list_geometry`, including the shared trailing-padding rule for horizontal scroll bounds.
 - Container info is unified across surfaces: shared `jackin-tui` state/render/hit-test/OSC 8 overlay helpers back the host console and launch cockpit; capsule status-bar chip click opens the matching container-info dialog; OSC 52 copy works for copyable rows.
 - Launch failure paths now render as full wrapped plain text and receive OSC 8 `file://` hyperlink overlays for supporting terminals; overlay tests assert both diagnostics and docker-output links.
 

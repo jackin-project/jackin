@@ -175,7 +175,7 @@ pub(super) fn render_list_body(
 }
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
-    list_name_lines(state, viewport).1
+    crate::console::manager::list_geometry::list_names_content_width(state, viewport)
 }
 
 fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> (Vec<Line<'static>>, usize) {
