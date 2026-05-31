@@ -58,6 +58,7 @@ pub(crate) enum ManagerMessage {
         result: anyhow::Result<()>,
         is_settings: bool,
     },
+    PollPickerLoads,
     FocusEditorContent,
     FocusEditorTabBar,
     FocusSettingsContent,
@@ -246,6 +247,11 @@ pub(crate) fn update_manager(
             result,
             is_settings,
         } => apply_op_commit_result(state, op_ref, result, is_settings),
+        ManagerMessage::PollPickerLoads => {
+            if state.poll_picker_loads() {
+                return ManagerUpdate::redraw();
+            }
+        }
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
         ManagerMessage::FocusSettingsContent => set_settings_tab_bar_focus(state, false),

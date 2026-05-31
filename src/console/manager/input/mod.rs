@@ -25,7 +25,7 @@ pub fn poll_background_loads(
     config: &mut AppConfig,
     paths: &JackinPaths,
 ) -> bool {
-    let mut dirty = state.poll_picker_loads();
+    let mut dirty = update_manager(state, ManagerMessage::PollPickerLoads).is_dirty();
     if let ManagerStage::Editor(editor) = &mut state.stage {
         dirty |= editor::poll_role_load(editor, config, paths);
     }
