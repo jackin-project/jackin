@@ -15,7 +15,9 @@ use ratatui::{
 
 use crate::layout::Tab;
 
-use jackin_tui::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE, theme::color as tc};
+use jackin_tui::{
+    PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE, components::FocusPalette, theme::color as tc,
+};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -103,11 +105,17 @@ pub struct PaneBorderWidget {
 
 impl Widget for PaneBorderWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let border_style = if self.focused {
-            Style::default().fg(tc(PHOSPHOR_GREEN))
+        // Use the capsule pane palette (gray ramp) rather than the console's
+        // PHOSPHOR green. Green focus rings clash with agent terminal output;
+        // near-white/gray provides clear focused/unfocused contrast without
+        // the distraction.
+        let palette = FocusPalette::CAPSULE_PANE;
+        let border_color = if self.focused {
+            palette.focused
         } else {
-            Style::default().fg(tc(PHOSPHOR_DARK))
+            palette.unfocused
         };
+        let border_style = Style::default().fg(border_color);
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(border_style)
