@@ -1752,6 +1752,7 @@ dependencies = [
  "jackin-tui",
  "nix 0.31.3",
  "ratatui",
+ "tui-widget-list",
 ]
 
 [[package]]
