@@ -621,9 +621,9 @@ The async-first principle becomes actionable as a concrete list. Every site belo
 | Site | What blocks | Target |
 |---|---|---|
 | `mount_info::inspect` (<RepoFile path="crates/jackin-console/src/mount_info.rs" />) | visible mount rows read only cached facts during render, but cache refresh still runs synchronously on state construction/input paths | typed `MountFacts`, refreshed by a background `MountInspected` message |
-| instance refresh (<RepoFile path="src/console/manager/state.rs" />) | index/manifest reads + per-container socket fan-out now run on a worker thread and land through `ManagerMessage::InstancesRefreshed`; the spawn/poll side is still bespoke instead of a shared effect/subscription | typed subscription/effect producer for `InstancesRefreshed` |
-| 1Password loads | synchronous `OpRunner` calls invoked from input handlers | background task → result message |
-| `event::poll(50 ms)` loop | wakes 20×/s even when idle; full-frame redraw every tick | `tokio::select!` over an `EventStream` + the `Message` channel; dirty/animation-tick redraw |
+| instance refresh (<RepoFile path="src/console/manager/state.rs" />) | index/manifest reads + per-container socket fan-out now run on a worker thread and land through `ManagerMessage::InstancesRefreshed`; run-loop polling now collects through `poll_background_messages` | promote the explicit request/poll helper into a typed subscription/effect producer |
+| 1Password loads | auth-form commit reads now spawn through `PendingOpCommit::spawn`, poll through `poll_background_messages`, and land through `ManagerMessage::OpCommitResolved`; picker list loading still has local worker/poll plumbing | shared typed subscription/effect producer for picker loads and commit reads |
+| `EventStream` + 50 ms animation interval | host console now uses `tokio::select!` over `EventStream` and an animation tick, with dirty redraw gating; remaining worker polling still happens from the loop body | fold background completions and animation ticks into the final shared subscription runtime |
 
 **Launch flow — the cockpit render cadence:**
 
