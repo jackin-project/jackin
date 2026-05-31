@@ -278,7 +278,7 @@ pub struct SettingsState<'a> {
 
 pub use jackin_console::model::{
     AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, SecretsScopeTag,
-    SettingsTab,
+    SettingsEnvConfirm, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
 };
 
 #[derive(Debug)]
@@ -304,12 +304,6 @@ pub struct SettingsEnvConfig {
     pub roles: BTreeMap<String, BTreeMap<String, crate::operator_env::EnvValue>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SettingsEnvScope {
-    Global,
-    Role(String),
-}
-
 #[derive(Debug)]
 pub enum SettingsEnvModal<'a> {
     Text {
@@ -331,22 +325,6 @@ pub enum SettingsEnvModal<'a> {
     Confirm {
         action: SettingsEnvConfirm,
         state: ConfirmState,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsEnvConfirm {
-    Delete,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SettingsEnvTextTarget {
-    EnvKey {
-        scope: SettingsEnvScope,
-    },
-    EnvValue {
-        scope: SettingsEnvScope,
-        key: String,
     },
 }
 

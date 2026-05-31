@@ -76,6 +76,28 @@ pub enum SecretsScopeTag {
     Role(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SettingsEnvScope {
+    Global,
+    Role(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvConfirm {
+    Delete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvTextTarget {
+    EnvKey {
+        scope: SettingsEnvScope,
+    },
+    EnvValue {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitIntent {
     Save,
