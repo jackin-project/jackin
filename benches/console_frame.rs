@@ -43,3 +43,4 @@ fn bench_list_render(c: &mut Criterion) {
 
 criterion_group!(benches, bench_list_render);
 criterion_main!(benches);
+
