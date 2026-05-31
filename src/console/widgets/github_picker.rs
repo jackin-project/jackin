@@ -67,23 +67,19 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders},
 };
 
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_DIM, WHITE};
+use jackin_tui::components::{Panel, PanelFocus};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
-    // Title style matches WorkdirPick (WHITE + BOLD) so the modal feels
-    // native next to the rest of the launch TUI.
-    let title = Span::styled(
-        " Open in GitHub ",
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    );
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(title);
+    // Title style matches WorkdirPick — Panel::block() applies the correct
+    // modal focus styling (PHOSPHOR_GREEN border, WHITE + BOLD title).
+    let block = Panel::new()
+        .title(" Open in GitHub ")
+        .focus(PanelFocus::Focused)
+        .block();
 
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);

@@ -104,23 +104,20 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::components::{Panel, PanelFocus};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
     // Filter row stays out of the title — see RULES.md "TUI List
     // Modals" for the canonical layout.
-    let title = Span::styled(
-        " Select Role ",
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    );
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(title);
+    let block = Panel::new()
+        .title(" Select Role ")
+        .focus(PanelFocus::Focused)
+        .block();
 
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);

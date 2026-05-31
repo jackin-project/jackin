@@ -66,21 +66,15 @@ impl ScopePickerState {
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders},
 };
 
-use super::{PHOSPHOR_GREEN, WHITE};
+use jackin_tui::components::{Panel, PanelFocus};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(Span::styled(
-            state.title,
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let block = Panel::new()
+        .title(state.title)
+        .focus(PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);

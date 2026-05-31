@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use super::form::{AuthForm, CredentialInput};
@@ -17,6 +17,7 @@ use crate::console::manager::render::editor::push_op_breadcrumb_spans;
 use crate::console::manager::state::AuthFormFocus;
 
 use super::super::{DANGER_RED, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::components::{Panel, PanelFocus};
 // Width chosen so the longest credential env-var name
 // (`CLAUDE_CODE_OAUTH_TOKEN`, 23 chars) fits without overflow and the
 // Mode value column lines up with the credential value column when
@@ -44,14 +45,10 @@ pub(crate) const fn mode_str(m: AuthMode) -> &'static str {
 /// `super::super::manager::input::auth::handle_auth_form_key`.
 pub fn render_form(frame: &mut Frame, area: Rect, form: &AuthForm, focus: AuthFormFocus) {
     frame.render_widget(ratatui::widgets::Clear, area);
-    let title_span = Span::styled(
-        " Edit auth ",
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    );
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(title_span);
+    let block = Panel::new()
+        .title(" Edit auth ")
+        .focus(PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 

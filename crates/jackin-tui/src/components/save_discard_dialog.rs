@@ -6,15 +6,13 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::Span,
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
-use crate::{
-    ModalOutcome,
-    theme::{PHOSPHOR_GREEN, WHITE},
-};
+use crate::{ModalOutcome, theme::WHITE};
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
+use super::panel::modal_block;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveDiscardChoice {
@@ -77,13 +75,10 @@ impl SaveDiscardState {
 }
 
 pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &SaveDiscardState) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(Span::styled(
-            " Unsaved changes ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let block = modal_block().title(Span::styled(
+        " Unsaved changes ",
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    ));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);

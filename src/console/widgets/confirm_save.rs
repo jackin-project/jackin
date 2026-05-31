@@ -10,14 +10,13 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders},
 };
 
 use super::ModalOutcome;
 
-use super::{PHOSPHOR_GREEN, WHITE};
+use jackin_tui::components::{Panel, PanelFocus};
 use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
 };
@@ -138,13 +137,10 @@ pub fn prepare_for_render(area: Rect, state: &mut ConfirmSaveState) {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(Span::styled(
-            " Confirm changes ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let block = Panel::new()
+        .title(" Confirm changes ")
+        .focus(PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);

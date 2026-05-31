@@ -11,10 +11,11 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::Span,
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
-use super::{ModalOutcome, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{ModalOutcome, PHOSPHOR_DIM, WHITE};
+use jackin_tui::components::{Panel, PanelFocus};
 
 /// Outcome of the mount-destination modal.
 ///
@@ -85,13 +86,10 @@ impl MountDstChoiceState {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(Span::styled(
-            " Mount destination ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let block = Panel::new()
+        .title(" Mount destination ")
+        .focus(PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);

@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use crate::operator_env::OpField;
@@ -73,12 +73,14 @@ pub fn breadcrumb_title(
     }
 }
 
-pub fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
+pub fn modal_block(title: impl Into<String>) -> ratatui::widgets::Block<'static> {
+    use ratatui::widgets::{Block, Borders};
     let title_text: String = title.into();
     let title_span = Span::styled(
         format!(" {title_text} "),
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
     );
+    // Delegates to Panel's canonical styling — PHOSPHOR_GREEN border + WHITE BOLD title.
     Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_GREEN))

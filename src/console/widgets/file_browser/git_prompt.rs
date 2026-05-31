@@ -15,12 +15,13 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::console::widgets::ModalOutcome;
+use jackin_tui::components::{Panel, PanelFocus};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,13 +240,10 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
         height: h,
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(Span::styled(
-            " Git repository detected ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let block = Panel::new()
+        .title(" Git repository detected ")
+        .focus(PanelFocus::Focused)
+        .block();
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);

@@ -10,7 +10,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use crate::{
@@ -19,6 +19,7 @@ use crate::{
 };
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
+use super::panel::modal_block;
 
 const WARNING_YELLOW: Color = Color::Rgb(255, 216, 94);
 
@@ -147,13 +148,11 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
 }
 
 pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(Span::styled(
-            format!(" {} ", state.title),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    let title = format!(" {} ", state.title);
+    let block = modal_block().title(Span::styled(
+        title,
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    ));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
