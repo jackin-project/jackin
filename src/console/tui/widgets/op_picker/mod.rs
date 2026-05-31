@@ -34,25 +34,9 @@ use jackin_tui::components::TextInputState;
 
 pub mod render;
 
-/// Browse-only (existing behaviour) vs. creation-enabled. Creation rows
-/// and the naming sub-stages are gated entirely on `Create`.
-#[derive(Debug, Clone)]
-pub enum OpPickerMode {
-    /// Pick an existing field only. No creation rows. Commit = `Existing(OpRef)`.
-    Browse,
-    /// Enable `+ New item` (Item stage), `+ New field` / `+ New section`
-    /// (Field stage) creation rows and the naming sub-stages.
-    Create {
-        item_name_default: String,
-        field_label_default: String,
-    },
-}
-
-impl OpPickerMode {
-    const fn is_create(&self) -> bool {
-        matches!(self, Self::Create { .. })
-    }
-}
+pub use jackin_console::widgets::op_picker::{
+    FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerMode, OpPickerStage,
+};
 
 /// What the operator chose when the picker commits.
 #[derive(Debug, Clone)]
@@ -80,24 +64,6 @@ pub enum OpPickerSelection {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OpPickerStage {
-    Account,
-    Vault,
-    Item,
-    /// Section picker between Item and Field (Create mode only). Browse
-    /// mode never lands here — it goes Item → Field with a flat,
-    /// collapsible-header field list.
-    Section,
-    Field,
-    /// Text input for a brand-new item's title (Create mode).
-    NewItemName,
-    /// Text input for a field label (Create mode).
-    FieldLabel,
-    /// Text input for a new section name (Create mode).
-    NewSectionName,
-}
-
 /// Which stage the operator was on when they entered the `FieldLabel`
 /// text-input sub-stage. Drives the `FieldLabel` Esc back-nav so it
 /// returns to the correct origin (Create mode has three).
@@ -111,49 +77,6 @@ enum FieldLabelOrigin {
     NewField,
     /// `+ New section` on the `Section` stage → `NewSectionName` → `FieldLabel`.
     NewSection,
-}
-
-#[derive(Debug, Clone)]
-pub enum OpLoadState {
-    Idle,
-    Loading { spinner_tick: u8 },
-    Ready,
-    Error(OpPickerError),
-}
-
-/// `Fatal` panels block all navigation but Esc; `Recoverable` shows
-/// inline so the operator can navigate back and retry.
-#[derive(Debug, Clone)]
-pub enum OpPickerError {
-    Fatal(OpPickerFatalState),
-    Recoverable { message: String },
-}
-
-/// Each variant maps to a distinct instructional panel in
-/// [`render::render`].
-#[derive(Debug, Clone)]
-pub enum OpPickerFatalState {
-    NotInstalled,
-    NotSignedIn,
-    NoVaults,
-    GenericFatal { message: String },
-}
-
-/// A single row in the field-picker display list.
-///
-/// Section headers (which toggle collapse/expand on Enter or ←/→) are
-/// interleaved with selectable field rows.  `field_idx` values inside
-/// `Field` rows index into `OpPickerState::filtered_fields()`.
-#[derive(Debug, Clone)]
-pub enum FieldDisplayRow {
-    /// A collapsible section header derived from `OpField::reference`.
-    SectionHeader { name: String, field_count: usize },
-    /// A selectable field row.
-    Field { field_idx: usize },
-    /// `+ New field` creation row (Create mode only, appended last).
-    NewFieldSentinel,
-    /// `+ New section` creation row (Create mode only, appended last).
-    NewSectionSentinel,
 }
 
 /// Pane-specific so the `try_recv` drainer can route to the right
