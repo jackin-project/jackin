@@ -3,7 +3,6 @@
 pub mod editor;
 pub mod focus;
 pub mod github_mounts;
-pub mod list_row;
 pub mod model;
 pub mod mount_diff;
 pub mod mount_info;
@@ -16,7 +15,6 @@ pub mod split;
 pub mod terminal;
 pub mod widgets;
 pub mod workspace;
-pub mod workspace_summary;
 pub mod workspaces;
 
 pub trait ConsoleHostTerminal: Send + Sync {

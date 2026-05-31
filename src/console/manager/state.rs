@@ -24,7 +24,7 @@ pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_d
 pub use crate::console::manager::mount_info_cache::MountInfoCache;
 pub use crate::console::manager::workspace_summary::WorkspaceSummary;
 use crate::console::manager::workspace_summary::workspace_summary_from_config;
-pub use jackin_console::list_row::ManagerListRow;
+pub use jackin_console::workspaces::state::ManagerListRow;
 
 /// Provider picker bound to its follow-up context.
 ///

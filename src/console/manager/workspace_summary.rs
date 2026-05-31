@@ -1,4 +1,4 @@
-pub use jackin_console::workspace_summary::{WorkspaceSummary, WorkspaceSummarySource};
+pub use jackin_console::workspaces::state::{WorkspaceSummary, WorkspaceSummarySource};
 
 impl WorkspaceSummarySource for crate::workspace::WorkspaceConfig {
     fn workdir(&self) -> &str {
