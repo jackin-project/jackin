@@ -220,7 +220,7 @@ pub fn stories() -> Vec<Story> {
             "TextInput",
             "Workspace rename dialog with current value and cursor.",
             58,
-            7,
+            5,
             story_text_input_workspace_name,
         ),
     ]
