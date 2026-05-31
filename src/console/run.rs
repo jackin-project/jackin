@@ -260,13 +260,14 @@ pub async fn run_console<H: InstanceActionHandler>(
                 )
                 .is_dirty();
             }
-            if let Some(result) = ms.poll_instance_refresh(paths) {
+            if let Some(result) = ms.poll_instance_refresh() {
                 needs_redraw |= manager::update_manager(
                     ms,
                     manager::ManagerMessage::InstancesRefreshed(result),
                 )
                 .is_dirty();
             }
+            ms.request_instance_refresh(paths);
             // Poll the async drift check started by a save operation.
             // When ready, continue the save without blocking the reactor.
             if let Some((drift_check, detection)) = ms.poll_pending_drift_check() {

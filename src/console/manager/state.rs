@@ -1694,13 +1694,14 @@ impl ManagerState<'_> {
         }
     }
 
+    pub(crate) fn request_instance_refresh(&mut self, paths: &crate::paths::JackinPaths) {
+        self.spawn_instance_refresh_if_due(paths);
+    }
+
     pub(crate) fn poll_instance_refresh(
         &mut self,
-        paths: &crate::paths::JackinPaths,
     ) -> Option<Result<InstanceRefreshSnapshot, String>> {
-        let result = self.drain_instance_refresh();
-        self.spawn_instance_refresh_if_due(paths);
-        result
+        self.drain_instance_refresh()
     }
 
     pub(crate) fn request_active_mount_info_refresh(&mut self) {
