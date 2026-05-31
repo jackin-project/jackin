@@ -19,7 +19,9 @@ use jackin_tui::theme::{DIALOG_BACKDROP, PHOSPHOR_DIM};
 use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Style};
+#[cfg(test)]
+use ratatui::style::Color;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear};
 
@@ -47,6 +49,7 @@ use jackin_launch::tui::progress::{
     LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
     display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
 };
+use jackin_launch::tui::rain::render_rain;
 pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, StageLabelTransition, StageStatus, StageView, active_stage_index, initial_view,
@@ -1172,67 +1175,6 @@ fn render_body(
         .split(inner);
     render_rain(frame, parts[0], rain);
     render_progress(frame, parts[1], view, frozen);
-}
-
-/// Paint the shared rain engine's grid into `area`. The grid is sized to the
-/// whole terminal, so `area` is a window onto a continuous rainfall; each cell
-/// maps to its glyph and the engine's green age fade — the same palette as the
-/// intro/outro rain.
-fn render_rain(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    rain: Option<&jackin_launch::tui::rain::RainState>,
-) {
-    let Some(rain) = rain else {
-        return;
-    };
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    // Fade the whole field up from black over the first ~30 ticks so the rain
-    // eases in smoothly instead of popping on at full brightness.
-    let fade_in = (rain.frame as f32 / 30.0).min(1.0);
-    // Fade the rain to black over the bottom rows so it dissolves into a gap
-    // above the progress bar instead of colliding with it: the bottommost row
-    // is fully extinguished and brightness ramps back to full a few rows up.
-    let fade_rows = (area.height / 3).clamp(3, 7);
-    // Write each cell straight into the frame buffer rather than building a
-    // `Vec<Line<Span>>`: at 30fps a full field is width × height spans, each its
-    // own `String`, every frame. RAIN_CHARS is ASCII (width-1), so one cell maps
-    // to one buffer cell. An empty cell only sets its symbol so it keeps the
-    // background already painted behind the rain.
-    let buf = frame.buffer_mut();
-    for y in 0..area.height {
-        let grid_y = usize::from(area.y + y);
-        let rows_from_bottom = area.height - 1 - y;
-        let fade = if rows_from_bottom >= fade_rows {
-            1.0
-        } else {
-            f32::from(rows_from_bottom) / f32::from(fade_rows)
-        };
-        let dim = |c: u8| (f32::from(c) * fade * fade_in) as u8;
-        for x in 0..area.width {
-            let grid_x = usize::from(area.x + x);
-            let lit = rain
-                .grid
-                .get(grid_y)
-                .and_then(|row| row.get(grid_x))
-                .and_then(|cell| cell.as_ref())
-                .and_then(|cell| {
-                    jackin_launch::tui::rain::age_to_color(cell.age).map(|rgb| (cell.ch, rgb))
-                });
-            let cell = &mut buf[(area.x + x, area.y + y)];
-            match lit {
-                Some((ch, (r, g, b))) => {
-                    cell.set_char(ch);
-                    cell.set_style(Style::default().fg(Color::Rgb(dim(r), dim(g), dim(b))));
-                }
-                None => {
-                    cell.set_char(' ');
-                }
-            }
-        }
-    }
 }
 
 fn emit_launch_container_info_hyperlink_overlay(
