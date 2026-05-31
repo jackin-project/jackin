@@ -170,7 +170,7 @@ impl FileBrowserState {
         use jackin_tui::HintSpan;
         if self.pending_git_prompt.is_some() {
             vec![
-                HintSpan::Key("Enter"),
+                HintSpan::Key("↵"),
                 HintSpan::Text("confirm"),
                 HintSpan::GroupSep,
                 HintSpan::Key("Esc"),
@@ -181,7 +181,7 @@ impl FileBrowserState {
                 HintSpan::Key("\u{2191}\u{2193}"),
                 HintSpan::Text("navigate"),
                 HintSpan::GroupSep,
-                HintSpan::Key("Enter"),
+                HintSpan::Key("↵"),
                 HintSpan::Text("open"),
                 HintSpan::GroupSep,
                 HintSpan::Key("H/\u{2190}"),

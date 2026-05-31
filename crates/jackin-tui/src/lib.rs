@@ -617,7 +617,7 @@ mod tests {
     #[test]
     fn hint_span_display_cols_match_render_contract() {
         // Key spans render the glyph(s) unchanged.
-        assert_eq!(HintSpan::Key("Enter").display_cols(), 5);
+        assert_eq!(HintSpan::Key("↵").display_cols(), 1);
         // Text spans render with a leading space.
         assert_eq!(HintSpan::Text("save").display_cols(), 5);
         // Separators occupy three columns each.
@@ -630,13 +630,13 @@ mod tests {
     #[test]
     fn hint_row_cols_sums_spans() {
         let spans = [
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("save"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
             HintSpan::Text("cancel"),
         ];
-        assert_eq!(hint_row_cols(&spans), 5 + 5 + 3 + 3 + 7);
+        assert_eq!(hint_row_cols(&spans), 1 + 5 + 3 + 3 + 7);
     }
 
     #[test]

@@ -1512,7 +1512,7 @@ const PALETTE_HINT: &[HintSpan<'static>] = &[
     HintSpan::GroupSep,
     HintSpan::Text("type filter"),
     HintSpan::GroupSep,
-    HintSpan::Key("Enter"),
+    HintSpan::Key("↵"),
     HintSpan::Text("select"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
@@ -1525,7 +1525,7 @@ const PICKER_HINT: &[HintSpan<'static>] = &[
     HintSpan::GroupSep,
     HintSpan::Text("type filter"),
     HintSpan::GroupSep,
-    HintSpan::Key("Enter"),
+    HintSpan::Key("↵"),
     HintSpan::Text("launch"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
@@ -1533,7 +1533,7 @@ const PICKER_HINT: &[HintSpan<'static>] = &[
 ];
 
 const RENAME_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
+    HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
@@ -1543,7 +1543,7 @@ const RENAME_HINT: &[HintSpan<'static>] = &[
 ];
 
 const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
+    HintSpan::Key("↵"),
     HintSpan::Text("copy container ID"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
@@ -1551,7 +1551,7 @@ const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
 ];
 
 const GITHUB_CONTEXT_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
+    HintSpan::Key("↵"),
     HintSpan::Text("copy GitHub URL"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),

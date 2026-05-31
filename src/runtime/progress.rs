@@ -1945,7 +1945,7 @@ const FAILURE_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("click"),
     HintSpan::Text("copy value"),
     HintSpan::GroupSep,
-    HintSpan::Key("Enter/Esc"),
+    HintSpan::Key("↵/Esc"),
     HintSpan::Text("dismiss"),
 ];
 
@@ -1956,7 +1956,7 @@ const PICKER_HINT: &[HintSpan<'static>] = &[
     HintSpan::GroupSep,
     HintSpan::Text("type to filter"),
     HintSpan::GroupSep,
-    HintSpan::Key("Enter"),
+    HintSpan::Key("↵"),
     HintSpan::Text("select"),
 ];
 
@@ -2216,7 +2216,7 @@ const fn text_prompt_hint(skippable: bool) -> &'static [HintSpan<'static>] {
 }
 
 const TEXT_PROMPT_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
+    HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
     HintSpan::Key("Ctrl-C"),
@@ -2224,7 +2224,7 @@ const TEXT_PROMPT_HINT: &[HintSpan<'static>] = &[
 ];
 
 const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Enter"),
+    HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
     HintSpan::Key("empty"),
@@ -2241,12 +2241,11 @@ const CONFIRM_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("N/Esc"),
     HintSpan::Text("no"),
     HintSpan::GroupSep,
-    HintSpan::Key("Tab"),
+    HintSpan::Key("⇥"),
     HintSpan::Text("focus"),
 ];
 
-const ERROR_POPUP_HINT: &[HintSpan<'static>] =
-    &[HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")];
+const ERROR_POPUP_HINT: &[HintSpan<'static>] = &[HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")];
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let w = width.min(area.width.saturating_sub(2));
@@ -2401,7 +2400,7 @@ mod tests {
         let rendered = format!("{:?}", terminal.backend().buffer());
         assert!(rendered.contains("Branch name"), "{rendered}");
         assert!(rendered.contains("main"), "{rendered}");
-        assert!(rendered.contains("Enter"), "{rendered}");
+        assert!(rendered.contains("↵"), "{rendered}");
     }
 
     #[test]

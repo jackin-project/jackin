@@ -1,6 +1,5 @@
 ---
 source: src/console/manager/render/snapshot_tests.rs
-assertion_line: 63
 expression: rendered
 ---
  jackin'  · workspaces                                                          
@@ -25,4 +24,4 @@ expression: rendered
 │                      │                                                        
 │                      │                                                        
 └──────────────────────┘                                                        
-                 ↑↓ · Enter launch   N new · S settings   Q quit
+                   ↑↓ · ↵ launch   N new · S settings   Q quit

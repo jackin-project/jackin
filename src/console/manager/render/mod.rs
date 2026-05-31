@@ -197,7 +197,7 @@ pub fn render(
                     let mut items = vec![
                         HintSpan::Key("\u{2191}\u{2193}"),
                         HintSpan::Sep,
-                        HintSpan::Key("Enter"),
+                        HintSpan::Key("↵"),
                         HintSpan::Text("launch"),
                         HintSpan::GroupSep,
                         HintSpan::Key("Esc"),
@@ -239,7 +239,7 @@ pub fn render(
                                 HintSpan::Key("\u{2191}\u{2193}"),
                                 HintSpan::Text("navigate panes"),
                                 HintSpan::Sep,
-                                HintSpan::Key("Enter"),
+                                HintSpan::Key("↵"),
                                 HintSpan::Text("attach focused pane"),
                                 HintSpan::GroupSep,
                                 HintSpan::Key("Esc"),
@@ -269,7 +269,7 @@ pub fn render(
                             let mut items = vec![
                                 HintSpan::Key("\u{2191}\u{2193}"),
                                 HintSpan::Sep,
-                                HintSpan::Key("Enter"),
+                                HintSpan::Key("↵"),
                                 HintSpan::Text("reconnect"),
                                 HintSpan::Sep,
                                 HintSpan::Key("N"),
@@ -286,7 +286,7 @@ pub fn render(
                             ];
                             if has_snapshot {
                                 items.push(HintSpan::Sep);
-                                items.push(HintSpan::Key("Tab"));
+                                items.push(HintSpan::Key("⇥"));
                                 items.push(HintSpan::Text("into preview"));
                             }
                             items.extend([
@@ -329,7 +329,7 @@ pub fn render(
                                 HintSpan::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
                                 HintSpan::Text("scroll block"),
                                 HintSpan::GroupSep,
-                                HintSpan::Key("Enter"),
+                                HintSpan::Key("↵"),
                                 HintSpan::Text("launch"),
                                 HintSpan::GroupSep,
                             ]
@@ -337,7 +337,7 @@ pub fn render(
                             vec![
                                 HintSpan::Key("\u{2191}\u{2193}"),
                                 HintSpan::Sep,
-                                HintSpan::Key("Enter"),
+                                HintSpan::Key("↵"),
                                 HintSpan::Text("launch"),
                                 HintSpan::GroupSep,
                             ]

@@ -193,7 +193,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
     match modal {
         Modal::AuthForm { state, focus, .. } => auth_form_footer_items(state.as_ref(), *focus),
         Modal::TextInput { .. } => vec![
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("confirm"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -210,7 +210,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("C/Esc"),
@@ -221,7 +221,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
                 HintSpan::Key("\u{2190}/\u{2192}"),
                 HintSpan::Text("move"),
                 HintSpan::GroupSep,
-                HintSpan::Key("Enter"),
+                HintSpan::Key("↵"),
                 HintSpan::Text("select"),
                 HintSpan::GroupSep,
                 HintSpan::Key("Esc"),
@@ -232,7 +232,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Key("\u{2191}\u{2193}"),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -242,7 +242,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Key("\u{2191}\u{2193}"),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("confirm"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -275,11 +275,11 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Key("C/Esc"),
             HintSpan::Text("cancel"),
         ],
-        Modal::ErrorPopup { .. } => vec![HintSpan::Key("Enter/Esc"), HintSpan::Text("dismiss")],
+        Modal::ErrorPopup { .. } => vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")],
         Modal::StatusPopup { .. } => vec![HintSpan::Text("working")],
         // A naming sub-stage is a plain input box: confirm / cancel only.
         Modal::OpPicker { state } if state.naming_stage_input().is_some() => vec![
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("confirm"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -292,7 +292,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
                 HintSpan::Key("\u{2191}\u{2193}"),
                 HintSpan::Text("navigate"),
                 HintSpan::GroupSep,
-                HintSpan::Key("Enter"),
+                HintSpan::Key("↵"),
                 HintSpan::Text("select"),
                 HintSpan::GroupSep,
                 HintSpan::Key("Esc"),
@@ -309,7 +309,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Key("R"),
             HintSpan::Text("refresh"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -324,7 +324,7 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
             HintSpan::Key("type"),
             HintSpan::Text("filter"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -346,7 +346,7 @@ pub(super) fn settings_mounts_modal_footer_items(
 ) -> Vec<HintSpan<'static>> {
     match modal {
         GlobalMountModal::Text { .. } => vec![
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("confirm"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -363,7 +363,7 @@ pub(super) fn settings_mounts_modal_footer_items(
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("C/Esc"),
@@ -373,7 +373,7 @@ pub(super) fn settings_mounts_modal_footer_items(
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -386,7 +386,7 @@ pub(super) fn settings_mounts_modal_footer_items(
             HintSpan::Key("type"),
             HintSpan::Text("filter"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -424,7 +424,7 @@ pub(super) fn settings_env_modal_footer_items(
 ) -> Vec<HintSpan<'static>> {
     match modal {
         SettingsEnvModal::Text { .. } => vec![
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("confirm"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -434,7 +434,7 @@ pub(super) fn settings_env_modal_footer_items(
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -447,7 +447,7 @@ pub(super) fn settings_env_modal_footer_items(
             HintSpan::Key("type"),
             HintSpan::Text("filter"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -486,7 +486,7 @@ pub(super) fn settings_auth_modal_footer_items(
             items
         }
         SettingsAuthModal::TextInput { .. } => vec![
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("confirm"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -496,7 +496,7 @@ pub(super) fn settings_auth_modal_footer_items(
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -504,7 +504,7 @@ pub(super) fn settings_auth_modal_footer_items(
         ],
         // A naming sub-stage is a plain input box: confirm / cancel only.
         SettingsAuthModal::OpPicker { state } if state.naming_stage_input().is_some() => vec![
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("confirm"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -517,7 +517,7 @@ pub(super) fn settings_auth_modal_footer_items(
                 HintSpan::Key("\u{2191}\u{2193}"),
                 HintSpan::Text("navigate"),
                 HintSpan::GroupSep,
-                HintSpan::Key("Enter"),
+                HintSpan::Key("↵"),
                 HintSpan::Text("select"),
                 HintSpan::GroupSep,
                 HintSpan::Key("Esc"),
@@ -531,7 +531,7 @@ pub(super) fn settings_auth_modal_footer_items(
             HintSpan::Key("type"),
             HintSpan::Text("filter"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
@@ -548,7 +548,7 @@ fn auth_form_footer_items(
     use crate::console::manager::state::AuthFormFocus;
     let mut items: Vec<HintSpan<'static>> = match focus {
         AuthFormFocus::Mode => {
-            let mut v = vec![HintSpan::Key("Space"), HintSpan::Text("cycle")];
+            let mut v = vec![HintSpan::Key("␣"), HintSpan::Text("cycle")];
             if form.shows_credential_block() {
                 v.extend([
                     HintSpan::Sep,
@@ -558,29 +558,29 @@ fn auth_form_footer_items(
             }
             v.extend([
                 HintSpan::GroupSep,
-                HintSpan::Key("Tab"),
+                HintSpan::Key("⇥"),
                 HintSpan::Text("button row"),
             ]);
             v
         }
         AuthFormFocus::CredentialSource => vec![
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("set"),
             HintSpan::Sep,
             HintSpan::Key("\u{2191}"),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
-            HintSpan::Key("Tab"),
+            HintSpan::Key("⇥"),
             HintSpan::Text("button row"),
         ],
         AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
-            HintSpan::Key("Tab"),
+            HintSpan::Key("⇥"),
             HintSpan::Text("fields"),
             HintSpan::GroupSep,
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("select"),
         ],
     };

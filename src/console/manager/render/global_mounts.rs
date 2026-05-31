@@ -269,7 +269,7 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
             HintSpan::Key("\u{2190}\u{2192}"),
             HintSpan::Text("switch tab"),
             HintSpan::GroupSep,
-            HintSpan::Key("Tab/\u{2193}"),
+            HintSpan::Key("⇥/↓"),
             HintSpan::Text("enter content"),
         ];
         items.extend([
@@ -302,7 +302,7 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
 
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key("BackTab"),
+        HintSpan::Key("⇧Tab"),
         HintSpan::Text("tab bar"),
         HintSpan::GroupSep,
     ]);
@@ -326,7 +326,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
                 HintSpan::Key("\u{2191}\u{2193}"),
                 HintSpan::Text("navigate"),
                 HintSpan::Sep,
-                HintSpan::Key("Space"),
+                HintSpan::Key("␣"),
                 HintSpan::Text("toggle"),
             ]
         }
@@ -334,7 +334,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
             let cursor = state.mounts.selected;
             let mount_count = state.mounts.pending.len();
             if cursor == mount_count {
-                vec![HintSpan::Key("Enter/A"), HintSpan::Text("add")]
+                vec![HintSpan::Key("↵/A"), HintSpan::Text("add")]
             } else {
                 let mut items = vec![
                     HintSpan::Key("D"),
@@ -384,7 +384,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
                     if settings_env_value_is_op_ref(state, scope, key) =>
                 {
                     let mut items = vec![
-                        HintSpan::Key("Enter"),
+                        HintSpan::Key("↵"),
                         HintSpan::Sep,
                         HintSpan::Key("P"),
                         HintSpan::Text("re-pick from 1Password"),
@@ -405,7 +405,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
                 }
                 Some(SettingsEnvRow::Key { .. }) => {
                     let mut items = vec![
-                        HintSpan::Key("Enter"),
+                        HintSpan::Key("↵"),
                         HintSpan::Text("edit"),
                         HintSpan::Sep,
                         HintSpan::Key("D"),
@@ -425,7 +425,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
                     items
                 }
                 Some(SettingsEnvRow::RoleHeader { .. }) => vec![
-                    HintSpan::Key("Enter"),
+                    HintSpan::Key("↵"),
                     HintSpan::Text("expand"),
                     HintSpan::Sep,
                     HintSpan::Key("←/→"),
@@ -435,7 +435,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
                     HintSpan::Text("add"),
                 ],
                 Some(SettingsEnvRow::GlobalAddSentinel | SettingsEnvRow::RoleAddSentinel(_)) => {
-                    let mut items = vec![HintSpan::Key("Enter"), HintSpan::Text("add")];
+                    let mut items = vec![HintSpan::Key("↵"), HintSpan::Text("add")];
                     if op_available {
                         items.extend([
                             HintSpan::Sep,
@@ -450,13 +450,13 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
         }
         SettingsTab::Auth => {
             if state.auth.selected_kind.is_none() {
-                vec![HintSpan::Key("Enter"), HintSpan::Text("manage auth")]
+                vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")]
             } else if state.auth.selected == 0 {
                 // Esc here pops back to the auth list; the global footer already
                 // shows Esc for the settings-level exit — omit it here to avoid duplication.
-                vec![HintSpan::Key("Enter"), HintSpan::Text("edit mode")]
+                vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")]
             } else {
-                vec![HintSpan::Key("Enter"), HintSpan::Text("edit source")]
+                vec![HintSpan::Key("↵"), HintSpan::Text("edit source")]
             }
         }
         SettingsTab::Trust => {
@@ -464,7 +464,7 @@ fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<Hi
                 Vec::new()
             } else {
                 vec![
-                    HintSpan::Key("Space"),
+                    HintSpan::Key("␣"),
                     HintSpan::Text("trust/untrust"),
                     HintSpan::Sep,
                     HintSpan::Key("H/L"),

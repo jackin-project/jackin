@@ -466,7 +466,7 @@ fn story_hint_bar_manager_footer(frame: &mut Frame<'_>, area: Rect) {
         HintSpan::Key("↑↓"),
         HintSpan::Text("select"),
         HintSpan::Sep,
-        HintSpan::Key("Enter"),
+        HintSpan::Key("↵"),
         HintSpan::Text("open"),
         HintSpan::Sep,
         HintSpan::Key("D"),

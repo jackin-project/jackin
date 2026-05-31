@@ -121,7 +121,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
         frame,
         rows[2],
         &[
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("commit"),
             HintSpan::Sep,
             HintSpan::Key("Esc"),

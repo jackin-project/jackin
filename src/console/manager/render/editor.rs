@@ -71,7 +71,7 @@ pub(super) fn editor_footer_items(
             HintSpan::Key("\u{2190}\u{2192}"),
             HintSpan::Text("switch tab"),
             HintSpan::GroupSep,
-            HintSpan::Key("Tab/\u{2193}"),
+            HintSpan::Key("⇥/↓"),
             HintSpan::Text("enter content"),
             HintSpan::GroupSep,
             HintSpan::Key("S"),
@@ -102,7 +102,7 @@ pub(super) fn editor_footer_items(
     }
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key("BackTab"),
+        HintSpan::Key("⇧Tab"),
         HintSpan::Text("tab bar"),
         HintSpan::GroupSep,
         HintSpan::Key("S"),
@@ -253,15 +253,14 @@ fn contextual_row_items(
             //   row 2 = Keep awake  (toggle — Space flips on/off)
             //   row 3 = Git pull    (toggle — Space flips on/off)
             match cursor {
-                0 => vec![HintSpan::Key("Enter"), HintSpan::Text("rename")],
+                0 => vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
                 // WorkdirPick requires at least one mount to choose from;
                 // suppress the hint when there are none so the key isn't
                 // advertised as available when Enter would be a no-op.
-                1 if !state.pending.mounts.is_empty() => vec![
-                    HintSpan::Key("Enter"),
-                    HintSpan::Text("pick working directory"),
-                ],
-                2 | 3 => vec![HintSpan::Key("Space"), HintSpan::Text("toggle")],
+                1 if !state.pending.mounts.is_empty() => {
+                    vec![HintSpan::Key("↵"), HintSpan::Text("pick working directory")]
+                }
+                2 | 3 => vec![HintSpan::Key("␣"), HintSpan::Text("toggle")],
                 _ => Vec::new(),
             }
         }
@@ -298,14 +297,14 @@ fn contextual_row_items(
                     items.push(HintSpan::Text("scroll"));
                     items
                 }
-                Ordering::Equal => vec![HintSpan::Key("Enter/A"), HintSpan::Text("add")],
+                Ordering::Equal => vec![HintSpan::Key("↵/A"), HintSpan::Text("add")],
                 Ordering::Greater => Vec::new(),
             }
         }
         EditorTab::Roles => {
             if cursor < config.roles.len() {
                 vec![
-                    HintSpan::Key("Space"),
+                    HintSpan::Key("␣"),
                     HintSpan::Text("allow/disallow"),
                     HintSpan::Sep,
                     HintSpan::Key("*"),
@@ -315,7 +314,7 @@ fn contextual_row_items(
                     HintSpan::Text("load role"),
                 ]
             } else {
-                vec![HintSpan::Key("Enter/A"), HintSpan::Text("load role")]
+                vec![HintSpan::Key("↵/A"), HintSpan::Text("load role")]
             }
         }
         EditorTab::Secrets => {
@@ -345,7 +344,7 @@ fn contextual_row_items(
                 {
                     let mut items = if op_available {
                         vec![
-                            HintSpan::Key("Enter"),
+                            HintSpan::Key("↵"),
                             HintSpan::Sep,
                             HintSpan::Key("P"),
                             HintSpan::Text("re-pick from 1Password"),
@@ -365,7 +364,7 @@ fn contextual_row_items(
                 }
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. }) => {
                     let mut items = vec![
-                        HintSpan::Key("Enter"),
+                        HintSpan::Key("↵"),
                         HintSpan::Text("edit"),
                         HintSpan::Sep,
                         HintSpan::Key("D"),
@@ -387,7 +386,7 @@ fn contextual_row_items(
                     items
                 }
                 Some(SecretsRow::RoleHeader { .. }) => vec![
-                    HintSpan::Key("Enter"),
+                    HintSpan::Key("↵"),
                     HintSpan::Text("expand"),
                     HintSpan::Sep,
                     HintSpan::Key("←/→"),
@@ -397,7 +396,7 @@ fn contextual_row_items(
                     HintSpan::Text("add"),
                 ],
                 Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::RoleAddSentinel(_)) => {
-                    let mut items = vec![HintSpan::Key("Enter"), HintSpan::Text("add")];
+                    let mut items = vec![HintSpan::Key("↵"), HintSpan::Text("add")];
                     if op_available {
                         items.extend([
                             HintSpan::Sep,
@@ -417,13 +416,13 @@ fn contextual_row_items(
             let flat = auth_flat_rows(state, config);
             match flat.get(cursor) {
                 Some(AuthRow::AuthKindRow { .. }) => {
-                    vec![HintSpan::Key("Enter"), HintSpan::Text("manage auth")]
+                    vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")]
                 }
                 Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
-                    vec![HintSpan::Key("Enter"), HintSpan::Text("edit mode")]
+                    vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")]
                 }
                 Some(AuthRow::RoleHeader { .. }) => vec![
-                    HintSpan::Key("Enter"),
+                    HintSpan::Key("↵"),
                     HintSpan::Text("expand"),
                     HintSpan::Sep,
                     HintSpan::Key("←/→"),
@@ -433,10 +432,10 @@ fn contextual_row_items(
                     HintSpan::Text("reset"),
                 ],
                 Some(AuthRow::AddSentinel { .. }) => {
-                    vec![HintSpan::Key("Enter/A"), HintSpan::Text("add override")]
+                    vec![HintSpan::Key("↵/A"), HintSpan::Text("add override")]
                 }
                 Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
-                    vec![HintSpan::Key("Enter"), HintSpan::Text("edit source")]
+                    vec![HintSpan::Key("↵"), HintSpan::Text("edit source")]
                 }
                 Some(AuthRow::Spacer) | None => Vec::new(),
             }

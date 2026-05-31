@@ -212,7 +212,7 @@ mod tests {
             HintSpan::Key("R"),
             HintSpan::Text("toggle ro/rw"),
             HintSpan::GroupSep,
-            HintSpan::Key("Tab"),
+            HintSpan::Key("⇥"),
             HintSpan::Text("switch tab"),
             HintSpan::GroupSep,
             HintSpan::Key("S"),
