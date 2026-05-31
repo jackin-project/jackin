@@ -70,6 +70,21 @@ pub enum SettingsEnvScope {
     Role(String),
 }
 
+#[derive(Debug, Clone)]
+pub enum SettingsEnvRow {
+    Key {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    GlobalAddSentinel,
+    RoleHeader {
+        role: String,
+        expanded: bool,
+    },
+    RoleAddSentinel(String),
+    SectionSpacer,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsEnvConfirm {
     Delete,

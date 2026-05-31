@@ -17,6 +17,7 @@ use crate::console::manager::auth_kind::AuthKind;
 use crate::console::manager::render::list::{
     MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
+pub(crate) use crate::console::manager::state::SettingsEnvRow;
 use crate::console::manager::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
     SettingsState, SettingsTab,
@@ -586,57 +587,11 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
     lines
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum SettingsEnvRow {
-    Key {
-        scope: SettingsEnvScope,
-        key: String,
-    },
-    GlobalAddSentinel,
-    RoleHeader {
-        role: String,
-        expanded: bool,
-    },
-    RoleAddSentinel(String),
-    SectionSpacer,
-}
-
 pub(crate) fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    let mut rows = Vec::new();
-    for key in state.env.pending.env.keys() {
-        rows.push(SettingsEnvRow::Key {
-            scope: SettingsEnvScope::Global,
-            key: key.clone(),
-        });
-    }
-    if !state.env.pending.env.is_empty() {
-        rows.push(SettingsEnvRow::SectionSpacer);
-    }
-    rows.push(SettingsEnvRow::GlobalAddSentinel);
-    for (role, role_env) in &state.env.pending.roles {
-        if role_env.is_empty() {
-            continue;
-        }
-        rows.push(SettingsEnvRow::SectionSpacer);
-        let expanded = state.env.expanded.contains(role);
-        rows.push(SettingsEnvRow::RoleHeader {
-            role: role.clone(),
-            expanded,
-        });
-        if expanded {
-            if let Some(env) = state.env.pending.roles.get(role) {
-                for key in env.keys() {
-                    rows.push(SettingsEnvRow::Key {
-                        scope: SettingsEnvScope::Role(role.clone()),
-                        key: key.clone(),
-                    });
-                }
-            }
-            rows.push(SettingsEnvRow::SectionSpacer);
-            rows.push(SettingsEnvRow::RoleAddSentinel(role.clone()));
-        }
-    }
-    rows
+    jackin_console::settings::update::settings_env_flat_rows(
+        &state.env.pending,
+        &state.env.expanded,
+    )
 }
 
 fn settings_env_value<'a>(

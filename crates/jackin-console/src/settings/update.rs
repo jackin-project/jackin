@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::state::{SettingsGeneralState, SettingsTab, SettingsTrustState};
+use super::state::{
+    SettingsEnvConfig, SettingsEnvRow, SettingsEnvScope, SettingsGeneralState, SettingsTab,
+    SettingsTrustState,
+};
 
 #[must_use]
 pub const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
@@ -60,6 +63,54 @@ pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, ex
 
 pub fn toggle_readonly(readonly: &mut bool) {
     *readonly = !*readonly;
+}
+
+#[must_use]
+pub fn settings_env_flat_rows<V>(
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+) -> Vec<SettingsEnvRow> {
+    let mut rows = Vec::new();
+    for key in pending.env.keys() {
+        rows.push(SettingsEnvRow::Key {
+            scope: SettingsEnvScope::Global,
+            key: key.clone(),
+        });
+    }
+    if !pending.env.is_empty() {
+        rows.push(SettingsEnvRow::SectionSpacer);
+    }
+    rows.push(SettingsEnvRow::GlobalAddSentinel);
+    for (role, role_env) in &pending.roles {
+        if role_env.is_empty() {
+            continue;
+        }
+        rows.push(SettingsEnvRow::SectionSpacer);
+        let expanded = expanded_roles.contains(role);
+        rows.push(SettingsEnvRow::RoleHeader {
+            role: role.clone(),
+            expanded,
+        });
+        if expanded {
+            for key in role_env.keys() {
+                rows.push(SettingsEnvRow::Key {
+                    scope: SettingsEnvScope::Role(role.clone()),
+                    key: key.clone(),
+                });
+            }
+            rows.push(SettingsEnvRow::SectionSpacer);
+            rows.push(SettingsEnvRow::RoleAddSentinel(role.clone()));
+        }
+    }
+    rows
+}
+
+#[must_use]
+pub fn settings_env_flat_row_count<V>(
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+) -> usize {
+    settings_env_flat_rows(pending, expanded_roles).len()
 }
 
 #[must_use]
@@ -125,4 +176,57 @@ pub fn settings_map_change_count<V: PartialEq>(
         }
     }
     count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_config() -> SettingsEnvConfig<&'static str> {
+        SettingsEnvConfig {
+            env: BTreeMap::from([("GLOBAL".to_string(), "x")]),
+            roles: BTreeMap::from([
+                (
+                    "alpha".to_string(),
+                    BTreeMap::from([("ROLE_A".to_string(), "x"), ("ROLE_B".to_string(), "x")]),
+                ),
+                ("empty".to_string(), BTreeMap::new()),
+            ]),
+        }
+    }
+
+    #[test]
+    fn settings_env_flat_rows_include_expanded_role_entries() {
+        let expanded = BTreeSet::from(["alpha".to_string()]);
+        let rows = settings_env_flat_rows(&env_config(), &expanded);
+        assert!(matches!(rows[0], SettingsEnvRow::Key { .. }));
+        assert!(matches!(rows[1], SettingsEnvRow::SectionSpacer));
+        assert!(matches!(rows[2], SettingsEnvRow::GlobalAddSentinel));
+        assert!(
+            rows.iter()
+                .any(|row| matches!(row, SettingsEnvRow::RoleHeader { role, expanded: true } if role == "alpha"))
+        );
+        assert!(
+            rows.iter()
+                .any(|row| matches!(row, SettingsEnvRow::RoleAddSentinel(role) if role == "alpha"))
+        );
+        assert!(
+            !rows.iter().any(
+                |row| matches!(row, SettingsEnvRow::RoleHeader { role, .. } if role == "empty")
+            )
+        );
+    }
+
+    #[test]
+    fn settings_env_flat_rows_collapse_role_entries() {
+        let rows = settings_env_flat_rows(&env_config(), &BTreeSet::new());
+        assert!(rows.iter().any(
+            |row| matches!(row, SettingsEnvRow::RoleHeader { role, expanded: false } if role == "alpha")
+        ));
+        assert!(
+            !rows
+                .iter()
+                .any(|row| matches!(row, SettingsEnvRow::RoleAddSentinel(role) if role == "alpha"))
+        );
+    }
 }

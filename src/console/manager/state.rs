@@ -243,8 +243,8 @@ pub use jackin_console::editor::state::{
 };
 pub use jackin_console::settings::state::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
-    SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab, SettingsTrustRow,
-    SettingsTrustState,
+    SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget, SettingsGeneralState, SettingsTab,
+    SettingsTrustRow, SettingsTrustState,
 };
 pub use jackin_console::settings::update::{settings_map_change_count, settings_vec_change_count};
 
@@ -835,9 +835,13 @@ impl SettingsEnvState<'_> {
 
     pub fn discard(&mut self) {
         self.pending = self.original.clone();
-        self.selected = self
-            .selected
-            .min(settings_env_flat_row_count(self).saturating_sub(1));
+        self.selected = self.selected.min(
+            jackin_console::settings::update::settings_env_flat_row_count(
+                &self.pending,
+                &self.expanded,
+            )
+            .saturating_sub(1),
+        );
         self.modal = None;
         self.modal_parents.clear();
 
@@ -1053,24 +1057,6 @@ fn validate_settings_env_keys<'a>(
         }
     }
     Ok(())
-}
-
-fn settings_env_flat_row_count(env: &SettingsEnvState<'_>) -> usize {
-    let mut rows = env.pending.env.len();
-    if !env.pending.env.is_empty() {
-        rows += 1;
-    }
-    rows += 1;
-    for (role, role_env) in &env.pending.roles {
-        if role_env.is_empty() {
-            continue;
-        }
-        rows += 2;
-        if env.expanded.contains(role) {
-            rows += role_env.len() + 2;
-        }
-    }
-    rows
 }
 
 // `TextInputState` is ~600B while other variants are ~330B. Boxing the state

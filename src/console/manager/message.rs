@@ -5,7 +5,6 @@
 //! messages instead of mutating `ManagerState` inline.
 
 use super::auth_kind::AuthKind;
-use super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
 use super::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
     ManagerListRow, ManagerStage, ManagerState, MountScrollFocus, SecretsScopeTag, SettingsState,
@@ -19,10 +18,12 @@ use jackin_console::editor::update::{
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
 use jackin_console::focus::moved_selection;
+use jackin_console::settings::state::SettingsEnvRow;
 use jackin_console::settings::update::{
     move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
-    set_role_expanded as set_settings_role_expanded, step_cursor_down_by, step_cursor_up_by,
-    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    set_role_expanded as set_settings_role_expanded, settings_env_flat_rows, step_cursor_down_by,
+    step_cursor_up_by, toggle_general_selected, toggle_readonly as toggle_settings_readonly,
+    toggle_trust_selected,
 };
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
@@ -696,7 +697,7 @@ fn move_settings_env_selection(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let rows = settings_env_flat_rows(settings);
+    let rows = settings_env_flat_rows(&settings.env.pending, &settings.env.expanded);
     let max = rows.len().saturating_sub(1);
     let candidate = if delta.is_negative() {
         settings.env.selected.saturating_sub(delta.unsigned_abs())
