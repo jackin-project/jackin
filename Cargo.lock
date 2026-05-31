@@ -1753,6 +1753,7 @@ dependencies = [
  "jackin-tui",
  "nix 0.31.3",
  "ratatui",
+ "tempfile",
  "tui-widget-list",
 ]
 

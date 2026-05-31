@@ -13,3 +13,6 @@ jackin-tui = { path = "../jackin-tui" }
 nix = { version = "0.31", features = ["term"] }
 ratatui = "0.30"
 tui-widget-list = "0.15"
+
+[dev-dependencies]
+tempfile = "3.20"

@@ -1,5 +1,6 @@
 //! Host console surface ownership and runtime helpers.
 
+pub mod mount_info;
 pub mod terminal;
 pub mod widgets;
 pub mod workspace;
