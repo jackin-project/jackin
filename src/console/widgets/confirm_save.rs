@@ -17,10 +17,10 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::scrollable::{
+use super::{PHOSPHOR_DARK, WHITE};
+use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
 };
-use super::{PHOSPHOR_DARK, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveChoice {

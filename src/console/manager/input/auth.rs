@@ -26,9 +26,9 @@ use crate::config::{
     OpencodeAuthConfig,
 };
 use crate::console::op_cache::OpCache;
-use crate::console::widgets::text_input::TextInputState;
 use crate::operator_env::EnvValue;
 use crate::workspace::WorkspaceRoleOverride;
+use jackin_tui::components::TextInputState;
 
 /// Open the auth-edit form modal for the row currently under the
 /// cursor on the Auth tab. Pre-populates the form from the row's
@@ -717,7 +717,7 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
     op_ref: crate::operator_env::OpRef,
     runner: &R,
 ) {
-    use crate::console::widgets::error_popup::ErrorPopupState;
+    use jackin_tui::components::ErrorPopupState;
 
     let Some(Modal::AuthForm {
         target,

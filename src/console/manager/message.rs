@@ -304,7 +304,7 @@ pub(crate) fn update_manager(
         }
         ManagerMessage::OpenListErrorPopup { title, message } => {
             state.list_modal = Some(super::state::Modal::ErrorPopup {
-                state: crate::console::widgets::error_popup::ErrorPopupState::new(title, message),
+                state: jackin_tui::components::ErrorPopupState::new(title, message),
             });
         }
         ManagerMessage::DismissListModal => {
@@ -365,7 +365,7 @@ const fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
 
 fn enter_confirm_delete(state: &mut ManagerState<'_>, name: String) {
     state.stage = ManagerStage::ConfirmDelete {
-        state: crate::console::widgets::confirm::ConfirmState::new(format!("Delete \"{name}\"?")),
+        state: jackin_tui::components::ConfirmState::new(format!("Delete \"{name}\"?")),
         name,
     };
 }
@@ -377,7 +377,7 @@ fn enter_confirm_instance_purge(state: &mut ManagerState<'_>, container: String,
     state.stage = ManagerStage::ConfirmInstancePurge {
         container,
         label,
-        state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+        state: jackin_tui::components::ConfirmState::new(prompt),
     };
 }
 
@@ -1023,7 +1023,7 @@ mod tests {
         SettingsTab,
     };
     use crate::console::widgets::auth_panel::AuthForm;
-    use crate::console::widgets::error_popup::ErrorPopupState;
+    use jackin_tui::components::ErrorPopupState;
     use ratatui::layout::Rect;
 
     fn state_with_saved_count(count: usize) -> ManagerState<'static> {
@@ -1473,7 +1473,7 @@ mod tests {
         let mut state = state_with_saved_count(0);
         state.stage = ManagerStage::ConfirmDelete {
             name: "workspace".into(),
-            state: crate::console::widgets::confirm::ConfirmState::new("delete?"),
+            state: jackin_tui::components::ConfirmState::new("delete?"),
         };
 
         assert!(update_manager(&mut state, ManagerMessage::ReturnToList).is_dirty());

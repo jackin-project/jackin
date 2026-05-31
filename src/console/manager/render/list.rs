@@ -1738,8 +1738,8 @@ mod list_name_scroll_tests {
     };
     use crate::config::AppConfig;
     use crate::console::manager::state::{ManagerListRow, ManagerState};
-    use crate::console::widgets::scrollable::max_offset;
     use crate::workspace::WorkspaceConfig;
+    use jackin_tui::components::scrollable_panel::max_offset;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;

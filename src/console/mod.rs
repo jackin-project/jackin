@@ -172,11 +172,9 @@ mod quit_confirm_tests {
     use crate::console::manager::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
-    use crate::console::widgets::{
-        ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
-        text_input::TextInputState,
-    };
+    use crate::console::widgets::{ModalOutcome, file_browser::FileBrowserState};
     use crate::paths::JackinPaths;
+    use jackin_tui::components::{ConfirmState, TextInputState};
 
     fn fresh_state() -> ConsoleState {
         let cwd = std::env::temp_dir();

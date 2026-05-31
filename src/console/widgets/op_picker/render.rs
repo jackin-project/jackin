@@ -10,11 +10,11 @@ use ratatui::{
 
 use crate::operator_env::OpField;
 
-use super::super::scrollable::render_selected_lines_in_area;
 use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, SPINNER_FRAMES, WHITE};
 use super::{
     FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState,
 };
+use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -101,7 +101,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     // Naming sub-stages are a plain labelled input box — the same shared
     // dialog every "type one value" prompt uses. No breadcrumb frame.
     if let Some(input) = state.naming_stage_input() {
-        crate::console::widgets::text_input::render(frame, area, input);
+        jackin_tui::components::text_input::render_text_input(frame, area, input);
         return;
     }
 
@@ -140,7 +140,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         frame.render_widget(Paragraph::new(line), rows[0]);
     }
 
-    super::super::render_filter_row(frame, rows[1], &state.filter_buf);
+    jackin_tui::components::render_filter_input(frame, rows[1], &state.filter_buf);
 
     // List rows. Naming sub-stages are handled above and never reach here.
     let list_lines: Vec<Line<'static>> = match state.stage {

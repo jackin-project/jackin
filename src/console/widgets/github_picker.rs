@@ -70,8 +70,8 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use super::scrollable::render_selected_lines_in_area;
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, WHITE};
+use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
     // Title style matches WorkdirPick (WHITE + BOLD) so the modal feels

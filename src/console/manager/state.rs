@@ -12,12 +12,12 @@ use crate::console::op_cache::OpCache;
 use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{
-    auth_panel::AuthForm, confirm::ConfirmState, confirm_save::ConfirmSaveState,
-    error_popup::ErrorPopupState, file_browser::FileBrowserState, github_picker::GithubPickerState,
-    mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState, role_picker::RolePickerState,
-    scope_picker::ScopePickerState, source_picker::SourcePickerState, text_input::TextInputState,
-    workdir_pick::WorkdirPickState,
+    auth_panel::AuthForm, confirm_save::ConfirmSaveState, file_browser::FileBrowserState,
+    github_picker::GithubPickerState, mount_dst_choice::MountDstChoiceState,
+    op_picker::OpPickerState, role_picker::RolePickerState, scope_picker::ScopePickerState,
+    source_picker::SourcePickerState, workdir_pick::WorkdirPickState,
 };
+use jackin_tui::components::{ConfirmState, ErrorPopupState, TextInputState};
 
 #[derive(Clone, Debug, Default)]
 pub struct MountInfoCache {
@@ -193,7 +193,7 @@ pub struct ManagerState<'a> {
     /// Passive overlay drawn on top of `list_modal` for the duration of
     /// a single frame while a blocking async operation runs (currently
     /// the console role-resolution path). Input handlers do not see it.
-    pub status_overlay: Option<crate::console::widgets::status_popup::StatusPopupState>,
+    pub status_overlay: Option<jackin_tui::components::StatusPopupState>,
     pub inline_role_picker: Option<RolePickerState>,
     pub inline_agent_picker: Option<(
         crate::selector::RoleSelector,
@@ -1492,7 +1492,7 @@ pub enum Modal<'a> {
         state: ConfirmState,
     },
     SaveDiscardCancel {
-        state: crate::console::widgets::save_discard::SaveDiscardState,
+        state: jackin_tui::components::SaveDiscardState,
     },
     /// Workspace list, when ≥2 GitHub mounts and operator pressed `o`.
     GithubPicker {
@@ -1505,7 +1505,7 @@ pub enum Modal<'a> {
         state: ErrorPopupState,
     },
     StatusPopup {
-        state: crate::console::widgets::status_popup::StatusPopupState,
+        state: jackin_tui::components::StatusPopupState,
     },
     /// Boxed because the picker's `Vec`s + runner + channel are
     /// substantially larger than other variants.
@@ -2340,7 +2340,7 @@ impl ManagerState<'_> {
         let message = format!("instance index error: {error}");
         if self.instances_last_error.as_deref() != Some(&message) {
             self.list_modal = Some(Modal::ErrorPopup {
-                state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                state: jackin_tui::components::ErrorPopupState::new(
                     "Instance index error",
                     &message,
                 ),

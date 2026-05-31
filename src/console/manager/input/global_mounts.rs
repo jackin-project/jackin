@@ -12,13 +12,12 @@ use super::super::state::{
 use crate::config::AppConfig;
 use crate::console::widgets::ModalOutcome;
 use crate::console::widgets::auth_panel::{AuthForm, CredentialInput};
-use crate::console::widgets::confirm::ConfirmState;
 use crate::console::widgets::file_browser::FileBrowserState;
 use crate::console::widgets::role_picker::RolePickerState;
-use crate::console::widgets::text_input::TextInputState;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
+use jackin_tui::components::{ConfirmState, TextInputState};
 
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
 const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
@@ -1993,9 +1992,10 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
             .or_else(|| settings.trust.error.take());
         let exit = std::mem::take(&mut settings.mounts.exit_requested);
         if let Some(msg) = error {
-            settings.error_popup = Some(
-                crate::console::widgets::error_popup::ErrorPopupState::new("Settings error", msg),
-            );
+            settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
+                "Settings error",
+                msg,
+            ));
         }
         settings.mounts.refresh_mount_info_cache();
         exit

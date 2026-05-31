@@ -107,8 +107,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::scrollable::render_selected_lines_in_area;
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
     // Filter row stays out of the title — see RULES.md "TUI List

@@ -813,7 +813,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
     match modal {
         GlobalMountModal::Text { state, .. } => {
             let area = super::modal::text_input_rect(frame.area());
-            crate::console::widgets::text_input::render(frame, area, state);
+            jackin_tui::components::render_text_input(frame, area, state);
         }
         GlobalMountModal::FileBrowser { state } => {
             let area = super::centered_rect_fixed(frame.area(), 70, 22);
@@ -833,7 +833,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
         }
         GlobalMountModal::Confirm { state, .. } => {
             let area = super::modal::confirm_rect(frame.area(), state);
-            crate::console::widgets::confirm::render(frame, area, state);
+            jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
         GlobalMountModal::PreviewSave { state } => {
             use crate::console::widgets::confirm_save;
@@ -848,7 +848,7 @@ pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvMo
     match modal {
         SettingsEnvModal::Text { state, .. } => {
             let area = super::modal::text_input_rect(frame.area());
-            crate::console::widgets::text_input::render(frame, area, state);
+            jackin_tui::components::render_text_input(frame, area, state);
         }
         SettingsEnvModal::SourcePicker { state } => {
             let area = super::modal::source_picker_rect(frame.area());
@@ -868,7 +868,7 @@ pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvMo
         }
         SettingsEnvModal::Confirm { state, .. } => {
             let area = super::modal::confirm_rect(frame.area(), state);
-            crate::console::widgets::confirm::render(frame, area, state);
+            jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
     }
 }
@@ -885,7 +885,7 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuth
         }
         SettingsAuthModal::TextInput { state } => {
             let area = super::modal::text_input_rect(frame.area());
-            crate::console::widgets::text_input::render(frame, area, state);
+            jackin_tui::components::render_text_input(frame, area, state);
         }
         SettingsAuthModal::OpPicker { state } => {
             // A naming sub-stage is a plain input box, sized like every

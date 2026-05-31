@@ -42,7 +42,7 @@ pub struct ConsoleState {
     pub op_available: bool,
     /// Lifted to `ConsoleState` (not `ManagerState`) so it overlays
     /// any sub-stage uniformly.
-    pub quit_confirm: Option<crate::console::widgets::confirm::ConfirmState>,
+    pub quit_confirm: Option<jackin_tui::components::ConfirmState>,
 }
 
 impl ConsoleState {

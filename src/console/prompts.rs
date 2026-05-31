@@ -7,7 +7,6 @@ use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
 use super::manager;
 use super::preview;
-use super::widgets;
 use super::{ConsoleOutcome, ConsoleStage, ConsoleState, build_workspace_choice};
 
 const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> &'static str {
@@ -172,7 +171,7 @@ where
     B::Error: std::error::Error + Send + Sync + 'static,
 {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.status_overlay = Some(widgets::status_popup::StatusPopupState::new(
+    ms.status_overlay = Some(jackin_tui::components::StatusPopupState::new(
         "Resolving agent role",
         format!("Loading and resolving {}", role.key()),
     ));

@@ -8,7 +8,6 @@ use super::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, resume_console_terminal,
     suspend_console_terminal,
 };
-use super::widgets;
 use super::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
 };
@@ -19,10 +18,10 @@ use crate::workspace::LoadWorkspaceInput;
 
 pub(super) fn quit_confirm_area(
     frame: ratatui::layout::Rect,
-    confirm: &crate::console::widgets::confirm::ConfirmState,
+    confirm: &jackin_tui::components::ConfirmState,
 ) -> ratatui::layout::Rect {
     let width: u16 = 44.min(frame.width.saturating_sub(4));
-    let height: u16 = crate::console::widgets::confirm::required_height(confirm)
+    let height: u16 = jackin_tui::components::confirm_required_height(confirm)
         .min(frame.height.saturating_sub(2));
     let x = frame.x + frame.width.saturating_sub(width) / 2;
     let y = frame.y + frame.height.saturating_sub(height) / 2;
@@ -233,22 +232,19 @@ pub async fn run_console<H: InstanceActionHandler>(
                         match &mut ms.stage {
                             ManagerStage::Editor(ed) => {
                                 ed.modal = Some(Modal::ErrorPopup {
-                                    state:
-                                        crate::console::widgets::error_popup::ErrorPopupState::new(
-                                            "Token generation failed",
-                                            e.to_string(),
-                                        ),
+                                    state: jackin_tui::components::ErrorPopupState::new(
+                                        "Token generation failed",
+                                        e.to_string(),
+                                    ),
                                 });
                             }
                             // Settings surfaces errors through its top-level
                             // error popup slot (same widget as the editor).
                             ManagerStage::Settings(s) => {
-                                s.error_popup = Some(
-                                    crate::console::widgets::error_popup::ErrorPopupState::new(
-                                        "Token generation failed",
-                                        e.to_string(),
-                                    ),
-                                );
+                                s.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
+                                    "Token generation failed",
+                                    e.to_string(),
+                                ));
                             }
                             _ => {}
                         }
@@ -290,7 +286,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                 manager::render(frame, ms, &config, cwd);
                 if let Some(confirm) = confirm_state {
                     let area = quit_confirm_area(frame.area(), confirm);
-                    crate::console::widgets::confirm::render(frame, area, confirm);
+                    jackin_tui::components::render_confirm_dialog(frame, area, confirm);
                 }
             })?;
         }
@@ -354,9 +350,8 @@ pub async fn run_console<H: InstanceActionHandler>(
                         && !is_on_main_screen(&state)
                         && !consumes_letter_input(&state)
                     {
-                        state.quit_confirm = Some(
-                            crate::console::widgets::confirm::ConfirmState::new("Exit jackin'?"),
-                        );
+                        state.quit_confirm =
+                            Some(jackin_tui::components::ConfirmState::new("Exit jackin'?"));
                         continue;
                     }
 
@@ -476,7 +471,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                     };
                                     let busy_body = format!("{busy_title} {container}…");
                                     ms.list_modal = Some(manager::state::Modal::ErrorPopup {
-                                        state: widgets::error_popup::ErrorPopupState::new(
+                                        state: jackin_tui::components::ErrorPopupState::new(
                                             busy_title, busy_body,
                                         ),
                                     });

@@ -69,7 +69,7 @@ pub fn continue_save_after_drift_check(
                         exit_on_success: drift_check.exit_on_success,
                         affected_containers,
                     },
-                    state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+                    state: jackin_tui::components::ConfirmState::new(prompt),
                 });
                 editor.save_flow = EditorSaveFlow::Confirming {
                     exit_on_success: drift_check.exit_on_success,
@@ -351,7 +351,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                     original_name: original_name.clone(),
                 });
                 editor.modal = Some(super::super::state::Modal::StatusPopup {
-                    state: crate::console::widgets::status_popup::StatusPopupState::new(
+                    state: jackin_tui::components::StatusPopupState::new(
                         "Saving",
                         "Checking isolation records...",
                     ),
@@ -391,7 +391,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                                 exit_on_success,
                                 affected_containers,
                             },
-                            state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+                            state: jackin_tui::components::ConfirmState::new(prompt),
                         });
                         // Park the save flow until the operator answers the
                         // modal. The modal handler re-stashes the plan
@@ -619,10 +619,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
 
 pub(super) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
     editor.modal = Some(Modal::ErrorPopup {
-        state: crate::console::widgets::error_popup::ErrorPopupState::new(
-            "Save failed",
-            message.to_string(),
-        ),
+        state: jackin_tui::components::ErrorPopupState::new("Save failed", message.to_string()),
     });
     editor.save_flow = EditorSaveFlow::Error {
         message: message.to_string(),

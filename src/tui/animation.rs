@@ -201,8 +201,8 @@ pub(crate) fn random_char(seed: &mut u64) -> char {
 }
 
 /// Advance the rain state by one tick: age existing cells and move column
-/// heads forward. This is the simulation step; call `render_rain_frame`
-/// afterward to draw the result.
+/// heads forward. This is the simulation step; callers render the result
+/// after ticking.
 pub(crate) fn tick_rain(state: &mut RainState) {
     let RainState {
         grid,
@@ -261,48 +261,6 @@ pub(crate) fn tick_rain(state: &mut RainState) {
     }
 
     *frame += 1;
-}
-
-/// Render a single frame of digital rain into a bounded area.
-/// Used by `digital_rain` (fullscreen) and by the panel-rain widget
-/// (area-bounded). Does not clear the background — callers that need
-/// a clear should emit it before calling this.
-pub(crate) fn render_rain_frame(state: &RainState, area: (u16, u16, u16, u16)) {
-    use std::cell::RefCell;
-    use std::fmt::Write as _;
-    let (col_start, row_start, width, height) = area;
-
-    // Build the whole frame into one buffer and emit a single write, rather than
-    // one syscall per cell (width × height per frame on the hot animation path).
-    // The buffer is reused across frames so the per-frame allocation is paid
-    // once, not on every tick.
-    thread_local! {
-        static SCRATCH: RefCell<String> = const { RefCell::new(String::new()) };
-    }
-    SCRATCH.with_borrow_mut(|out| {
-        out.clear();
-        for r in 0..height as usize {
-            let _ = write!(
-                out,
-                "\x1b[{};{}H",
-                row_start as usize + r + 1,
-                col_start + 1
-            );
-            for c in 0..width as usize {
-                match state.grid.get(r).and_then(|row| row.get(c)) {
-                    None | Some(None) => out.push(' '),
-                    Some(Some(cell)) => match age_to_color(cell.age) {
-                        None => out.push(' '),
-                        Some((red, g, b)) => {
-                            let _ = write!(out, "{}", cell.ch.color(owo_colors::Rgb(red, g, b)));
-                        }
-                    },
-                }
-            }
-        }
-        eprint!("{out}");
-    });
-    let _ = io::stderr().flush();
 }
 
 // ── Session warp (hyperspace intro / outro) ───────────────────────────────

@@ -62,8 +62,8 @@ pub(super) fn handle_prelude_modal(
     prelude: &mut super::super::state::CreatePreludeState<'_>,
     key: KeyEvent,
 ) {
-    use super::super::super::widgets::text_input::TextInputState;
     use super::super::state::{FileBrowserTarget, TextInputTarget};
+    use jackin_tui::components::TextInputState;
 
     // Determine which step we're on by inspecting the modal discriminant,
     // then dispatch. We do this with a discriminant enum so we can end the
@@ -503,10 +503,7 @@ mod tests {
         prelude.accept_workdir("/home/user/project".into());
         prelude.modal = Some(Modal::TextInput {
             target: super::super::super::state::TextInputTarget::Name,
-            state: crate::console::widgets::text_input::TextInputState::new(
-                "Name this workspace",
-                "project",
-            ),
+            state: jackin_tui::components::TextInputState::new("Name this workspace", "project"),
         });
 
         handle_prelude_modal(&mut prelude, key(KeyCode::Esc));

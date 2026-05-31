@@ -1441,10 +1441,9 @@ mod mouse_drag_tests {
         GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal,
         MountScrollFocus, SecretsScopeTag, SettingsState, SettingsTab,
     };
-    use crate::console::widgets::confirm::ConfirmState;
-    use crate::console::widgets::save_discard::SaveDiscardState;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use jackin_tui::components::{ConfirmState, SaveDiscardState};
     use ratatui::layout::Rect;
 
     /// Build a `ManagerState` in the List stage at the default split,

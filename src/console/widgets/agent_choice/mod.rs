@@ -117,7 +117,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
         .collect();
     frame.render_widget(Paragraph::new(lines), rows[0]);
 
-    crate::console::widgets::hints::render(
+    jackin_tui::components::render_hint_bar(
         frame,
         rows[2],
         &[

@@ -29,8 +29,8 @@ use tui_widget_list::ListState;
 use crate::console::op_cache::OpCache;
 use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
-use super::text_input::TextInputState;
 use super::{ModalOutcome, cycle_select};
+use jackin_tui::components::TextInputState;
 
 pub mod render;
 
@@ -759,7 +759,9 @@ impl OpPickerState {
     /// picker is in a list stage. Single source for the stage → input
     /// mapping shared by the renderer, the modal sizing, and the footer
     /// so a naming stage renders as the standard labelled input dialog.
-    pub const fn naming_stage_input(&self) -> Option<&super::text_input::TextInputState<'static>> {
+    pub const fn naming_stage_input(
+        &self,
+    ) -> Option<&jackin_tui::components::TextInputState<'static>> {
         match self.stage {
             OpPickerStage::NewItemName => Some(&self.item_name_input),
             OpPickerStage::FieldLabel => Some(&self.field_label_input),

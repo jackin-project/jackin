@@ -528,7 +528,7 @@ mod tests {
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut settings = super::super::state::SettingsState::from_config(&config);
-        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+        settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
             "Test", "details",
         ));
         state.stage = ManagerStage::Settings(settings);
@@ -563,7 +563,7 @@ mod tests {
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut settings = super::super::state::SettingsState::from_config(&config);
-        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+        settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
             "Test", "details",
         ));
         state.stage = ManagerStage::Settings(settings);

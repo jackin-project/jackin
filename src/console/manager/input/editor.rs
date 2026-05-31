@@ -61,7 +61,7 @@ pub(super) fn handle_editor_key(
                 if dirty {
                     if let ManagerStage::Editor(editor) = &mut state.stage {
                         editor.modal = Some(Modal::SaveDiscardCancel {
-                            state: crate::console::widgets::save_discard::SaveDiscardState::new(
+                            state: jackin_tui::components::SaveDiscardState::new(
                                 "Save changes before leaving?",
                             ),
                         });
@@ -430,7 +430,7 @@ pub(super) fn handle_editor_key(
                 if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
                     if let Err(e) = open::that_detached(&web_url) {
                         editor.modal = Some(Modal::ErrorPopup {
-                            state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                            state: jackin_tui::components::ErrorPopupState::new(
                                 "Failed to open URL",
                                 e.to_string(),
                             ),
@@ -438,7 +438,7 @@ pub(super) fn handle_editor_key(
                     }
                 } else {
                     editor.modal = Some(Modal::ErrorPopup {
-                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                        state: jackin_tui::components::ErrorPopupState::new(
                             "No GitHub URL",
                             "This mount has no GitHub remote URL.\n\nOnly git repositories with a GitHub origin support browser preview.",
                         ),
@@ -535,7 +535,7 @@ fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, Stri
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
-    use super::super::super::widgets::text_input::TextInputState;
+    use jackin_tui::components::TextInputState;
     if editor.active_tab == EditorTab::General {
         let FieldFocus::Row(n) = editor.active_field;
         match n {
@@ -562,7 +562,7 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
 }
 
 fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
-    use super::super::super::widgets::text_input::TextInputState;
+    use jackin_tui::components::TextInputState;
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
@@ -670,7 +670,7 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
 }
 
 fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
-    use super::super::super::widgets::text_input::TextInputState;
+    use jackin_tui::components::TextInputState;
 
     let trusted_roles: Vec<String> = config
         .roles
@@ -692,7 +692,7 @@ fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
 }
 
 fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
-    use crate::console::widgets::confirm::ConfirmState;
+    use jackin_tui::components::ConfirmState;
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
@@ -980,7 +980,7 @@ pub(super) fn handle_editor_modal(
             dispatch_editor_mount_dst_choice(editor, target, &src, &outcome);
         }
         Modal::SaveDiscardCancel { state: modal_state } => {
-            use crate::console::widgets::save_discard::SaveDiscardChoice;
+            use jackin_tui::components::SaveDiscardChoice;
             match modal_state.handle_key(key) {
                 ModalOutcome::Commit(SaveDiscardChoice::Save) => {
                     editor.clear_modal_chain();
@@ -1110,7 +1110,7 @@ pub(super) fn handle_editor_modal(
             env_key,
         } => {
             use crate::console::widgets::source_picker::SourceChoice;
-            use crate::console::widgets::text_input::TextInputState;
+            use jackin_tui::components::TextInputState;
             match source.handle_key(key) {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
                     let Some((scope, key)) = env_key.take() else {
@@ -1507,8 +1507,8 @@ fn env_key_input_state<'a>(
     scope: &SecretsScopeTag,
     label: impl Into<String>,
     initial: impl Into<String>,
-) -> super::super::super::widgets::text_input::TextInputState<'a> {
-    use super::super::super::widgets::text_input::TextInputState;
+) -> jackin_tui::components::TextInputState<'a> {
+    use jackin_tui::components::TextInputState;
     let mut state =
         TextInputState::new_with_forbidden(label, initial, forbidden_keys_for_scope(editor, scope));
     state.forbidden_label = forbidden_label_for_scope(scope);
@@ -1739,7 +1739,7 @@ fn apply_role_input(
                 rx,
             });
             editor.modal = Some(Modal::StatusPopup {
-                state: crate::console::widgets::status_popup::StatusPopupState::new(
+                state: jackin_tui::components::StatusPopupState::new(
                     "Loading role",
                     format!("Loading role {key}"),
                 ),
@@ -2003,17 +2003,14 @@ fn open_role_resolution_error(
         },
     );
     editor.modal = Some(Modal::ErrorPopup {
-        state: crate::console::widgets::error_popup::ErrorPopupState::new(
-            "Load role failed",
-            message,
-        ),
+        state: jackin_tui::components::ErrorPopupState::new("Load role failed", message),
     });
 }
 
 fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
     crate::debug_log!("editor", "failed to apply confirmed editor action: {err}");
     editor.modal = Some(Modal::ErrorPopup {
-        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+        state: jackin_tui::components::ErrorPopupState::new(
             "Could not apply change",
             format!("The change could not be saved.\n\n{err}"),
         ),
@@ -2023,10 +2020,7 @@ fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Di
 fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
     crate::debug_log!("role", "showing direct role-load error popup: {message}");
     editor.modal = Some(Modal::ErrorPopup {
-        state: crate::console::widgets::error_popup::ErrorPopupState::new(
-            "Load role failed",
-            message,
-        ),
+        state: jackin_tui::components::ErrorPopupState::new("Load role failed", message),
     });
 }
 
@@ -2095,8 +2089,7 @@ fn open_role_trust_confirm(
     key: String,
     source: crate::config::RoleSource,
 ) {
-    let state =
-        crate::console::widgets::confirm::ConfirmState::role_trust(key.clone(), source.git.clone());
+    let state = jackin_tui::components::ConfirmState::role_trust(key.clone(), source.git.clone());
     editor.modal = Some(Modal::Confirm {
         target: ConfirmTarget::TrustRoleSource { key, source },
         state,
@@ -2238,10 +2231,7 @@ fn dispatch_editor_mount_dst_choice(
                 });
                 editor.open_sub_modal(Modal::TextInput {
                     target: super::super::state::TextInputTarget::MountDst,
-                    state: crate::console::widgets::text_input::TextInputState::new(
-                        "Destination",
-                        src,
-                    ),
+                    state: jackin_tui::components::TextInputState::new("Destination", src),
                 });
             } else {
                 editor.clear_modal_chain();
@@ -2944,7 +2934,7 @@ plugins = []
         match &editor.modal {
             Some(Modal::Confirm { target, state }) => {
                 assert_eq!(state.title(), "Trust role source");
-                let crate::console::widgets::confirm::ConfirmKind::RoleTrust { role, repository } =
+                let jackin_tui::components::ConfirmKind::RoleTrust { role, repository } =
                     state.kind()
                 else {
                     panic!("expected RoleTrust kind, got {:?}", state.kind());
@@ -3047,7 +3037,7 @@ plugins = []
             rx,
         });
         editor.modal = Some(Modal::StatusPopup {
-            state: crate::console::widgets::status_popup::StatusPopupState::new(
+            state: jackin_tui::components::StatusPopupState::new(
                 "Loading role",
                 "Loading role chainargos/agent-brown",
             ),
@@ -3393,7 +3383,7 @@ plugins = []
         let mut editor = EditorState::new_edit("ws".into(), empty_ws());
         editor.modal = Some(Modal::TextInput {
             target: TextInputTarget::Role,
-            state: crate::console::widgets::text_input::TextInputState::new(
+            state: jackin_tui::components::TextInputState::new(
                 "Load role",
                 "Chain Argus Agent Brown",
             ),

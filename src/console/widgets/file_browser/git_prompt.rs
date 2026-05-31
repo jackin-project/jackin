@@ -216,7 +216,7 @@ pub(super) fn git_prompt_hint(has_url: bool) -> Line<'static> {
         HintSpan::Key("C/Esc"),
         HintSpan::Text("cancel"),
     ]);
-    crate::console::widgets::hints::line(&spans)
+    jackin_tui::components::hint_line(&spans)
 }
 
 /// Overlay renderer for the in-browser "Git repository detected" prompt.

@@ -23,26 +23,26 @@ pub(super) use modal::modal_outer_rect;
 // re-exported here so input handlers can reach render_editor directly.
 pub use editor::render_editor;
 
-pub(in crate::console::manager) use crate::console::widgets::scrollable::{
+pub(super) use crate::console::widgets::{
+    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
+};
+pub(in crate::console::manager) use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset as clamp_scroll_x, cursor_follow_offset,
     horizontal_scrollbar_area, is_scrollable, max_offset as max_scroll_offset,
     scrollbar_offset_for_track_position, vertical_scrollbar_area,
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
-pub(super) use crate::console::widgets::scrollable::{
+pub(super) use jackin_tui::components::scrollable_panel::{
     line_width, max_line_width, render_horizontal_scrollbar, render_line_with_fixed_prefix_scroll,
     render_scrollable_block_at, render_vertical_scrollbar,
-};
-pub(super) use crate::console::widgets::{
-    PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 pub(super) use jackin_tui::theme::{CYAN, CYAN_DIM};
 
 // ── Footer hints ───────────────────────────────────────────────────
 //
 // Footer hints use the shared `HintSpan` vocabulary (jackin-tui) and the
-// shared host renderer in `console::widgets::hints`, so the manager footer,
-// the launch cockpit, and the in-container multiplexer all read identically.
+// shared `jackin_tui::components` renderers, so the manager footer, the launch
+// cockpit, and the in-container multiplexer all read identically.
 // Call sites build `Vec<HintSpan<'static>>` directly so the grouping is
 // explicit, then hand it to `render_footer`. The manager footer can be long,
 // so it uses the wrapped (multi-row) variant of the shared renderer.
@@ -51,11 +51,11 @@ pub(super) use jackin_tui::theme::{CYAN, CYAN_DIM};
 /// columns. Minimum 1. Callers use this to size the footer area before layout.
 #[must_use]
 pub(super) fn footer_height(items: &[HintSpan<'_>], width: u16) -> u16 {
-    crate::console::widgets::hints::wrapped_height(items, width)
+    jackin_tui::components::wrapped_height(items, width)
 }
 
 pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[HintSpan<'_>]) {
-    crate::console::widgets::hints::render_wrapped(frame, area, items);
+    jackin_tui::components::render_wrapped_hint_bar(frame, area, items);
 }
 
 /// Adjust stored `scroll_y` so the cursor row stays inside the viewport.
@@ -435,7 +435,7 @@ pub fn render(
                 // ConfirmState is a top-level field on the variant, not wrapped
                 // in Modal::Confirm, so render it directly.
                 let modal_area = centered_rect_fixed(area, 60, 7);
-                super::super::widgets::confirm::render(frame, modal_area, confirm_state);
+                jackin_tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
             ManagerStage::ConfirmInstancePurge {
                 state: confirm_state,
@@ -444,7 +444,7 @@ pub fn render(
                 // The two-line prompt is taller than ConfirmDelete's
                 // single line, so allocate more rows for the modal.
                 let modal_area = centered_rect_fixed(area, 70, 9);
-                super::super::widgets::confirm::render(frame, modal_area, confirm_state);
+                jackin_tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
             ManagerStage::List => {
                 // Handled above via the `is_list_stage` early branch.
@@ -453,13 +453,13 @@ pub fn render(
                 if let Some(popup) = &settings.error_popup {
                     let inner_width = (area.width * 60 / 100).saturating_sub(4);
                     let max_rows = area.height.saturating_sub(2);
-                    let h = crate::console::widgets::error_popup::required_height(
+                    let h = jackin_tui::components::error_dialog::required_height(
                         popup,
                         inner_width,
                         max_rows,
                     );
                     let popup_area = centered_rect_fixed(area, 60, h);
-                    crate::console::widgets::error_popup::render(frame, popup_area, popup);
+                    jackin_tui::components::render_error_dialog(frame, popup_area, popup);
                 } else if let Some(modal) = &settings.mounts.modal {
                     global_mounts::render_global_mount_modal(frame, modal);
                 } else if let Some(modal) = &settings.env.modal {
@@ -473,7 +473,7 @@ pub fn render(
 
     if let Some(overlay) = &state.status_overlay {
         let overlay_area = centered_rect_fixed(area, 50, 7);
-        super::super::widgets::status_popup::render(frame, overlay_area, overlay);
+        jackin_tui::components::render_status_popup(frame, overlay_area, overlay);
     }
 }
 
@@ -730,7 +730,7 @@ pub(super) fn global_rows_for(
 }
 
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
-    crate::console::widgets::render_brand_header(frame, area, title);
+    jackin_tui::components::render_brand_header(frame, area, title);
 }
 
 /// Like `centered_rect` but takes a fixed number of rows for the height.

@@ -9,46 +9,19 @@ pub(crate) use jackin_tui::theme::{
     DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER,
     WHITE,
 };
-use ratatui::Frame;
-use ratatui::layout::Rect;
-
-/// Render the shared brand header left-aligned at the top of `area`. `area`
-/// is normally two rows tall (brand row + one spacer) so the body below
-/// sits one clear line under the logo.
-pub(crate) fn render_brand_header(frame: &mut Frame, area: Rect, label: &str) {
-    jackin_tui::components::render_brand_header(frame, area, label);
-}
-
-/// The canonical `Filter: ░░░█` input row drawn directly under a list modal's
-/// top border: dotted `░` placeholders when empty, the typed text plus a
-/// blinking `█` cursor otherwise. Shared by every filterable list modal (the
-/// op-picker drill-down, the generic `select_list`) so the row is identical.
-pub(crate) fn render_filter_row(frame: &mut Frame, area: Rect, filter: &str) {
-    jackin_tui::components::render_filter_input(frame, area, filter);
-}
-
 /// Braille spinner animation shared across all modal loading panels.
 pub(crate) const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub mod agent_choice;
 pub mod auth_panel;
-pub mod confirm;
 pub mod confirm_save;
-pub mod error_popup;
 pub mod file_browser;
 pub mod github_picker;
-pub mod hints;
 pub mod mount_dst_choice;
 pub mod op_picker;
-pub mod panel_rain;
 pub mod role_picker;
-pub mod save_discard;
 pub mod scope_picker;
-pub mod scrollable;
-pub mod select_list;
 pub mod source_picker;
-pub mod status_popup;
-pub mod text_input;
 pub mod workdir_pick;
 
 /// Wrap-around cursor move for any list-style picker. `delta` is `-1`
@@ -161,7 +134,7 @@ mod consistency_tests {
     /// Build and render the `SaveDiscardCancel` modal into a full-area
     /// buffer. Returns (buffer, area).
     fn render_save_discard() -> (Buffer, Rect) {
-        use super::save_discard::{SaveDiscardState, render};
+        use jackin_tui::components::{SaveDiscardState, render_save_discard_dialog as render};
         let area = Rect::new(0, 0, 70, 7);
         let state = SaveDiscardState::new("Save changes?");
         let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -169,7 +142,7 @@ mod consistency_tests {
     }
 
     fn render_confirm() -> (Buffer, Rect) {
-        use super::confirm::{ConfirmState, render};
+        use jackin_tui::components::{ConfirmState, render_confirm_dialog as render};
         let area = Rect::new(0, 0, 60, 7);
         let state = ConfirmState::new("Delete workspace?");
         let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -185,7 +158,7 @@ mod consistency_tests {
     }
 
     fn render_text_input() -> (Buffer, Rect) {
-        use super::text_input::{TextInputState, render};
+        use jackin_tui::components::{TextInputState, render_text_input as render};
         let area = Rect::new(0, 0, 60, 6);
         let state = TextInputState::new("Name this workspace", "demo");
         let buf = draw(area.width, area.height, |f| render(f, area, &state));
