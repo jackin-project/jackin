@@ -123,20 +123,6 @@ pub(super) fn render_tab_strip(
         .render(frame, area);
 }
 
-pub(crate) fn editor_tab_lines(
-    area: Rect,
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) -> Vec<Line<'static>> {
-    match state.active_tab {
-        EditorTab::General => general_tab_lines(state),
-        EditorTab::Mounts => mounts_tab_lines(state),
-        EditorTab::Roles => roles_tab_lines(state, config),
-        EditorTab::Secrets => secrets_tab_lines(area, state, config),
-        EditorTab::Auth => auth_tab_lines(state, config),
-    }
-}
-
 fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     let rows = general_tab_lines(state);
     let focused =
