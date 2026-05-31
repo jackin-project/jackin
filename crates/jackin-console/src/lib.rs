@@ -17,6 +17,7 @@ pub mod terminal;
 pub mod widgets;
 pub mod workspace;
 pub mod workspace_summary;
+pub mod workspaces;
 
 pub trait ConsoleHostTerminal: Send + Sync {
     fn begin_debug_buffering(&self);
