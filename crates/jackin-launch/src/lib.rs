@@ -5,7 +5,10 @@
 //! update, and event-loop pieces move here in follow-up slices.
 
 pub mod state;
+pub mod update;
 
 pub use state::{
-    LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind, PromptResult, StageStatus,
+    FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
+    LaunchView, PromptResult, StageLabelTransition, StageStatus, StageView,
 };
+pub use update::{active_stage_index, initial_view, update_launch_view, update_stage};

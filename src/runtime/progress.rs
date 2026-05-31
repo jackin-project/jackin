@@ -13,7 +13,6 @@ use jackin_tui::components::{
     render_text_input, required_height as error_dialog_required_height,
     status_footer_right_chip_rect, viewport_height, viewport_width,
 };
-use jackin_tui::runtime::{NoEffect, UpdateResult};
 use jackin_tui::theme::{
     DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
     PHOSPHOR_GREEN, WHITE,
@@ -28,74 +27,10 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use crate::diagnostics::RunDiagnostics;
 
 pub use jackin_launch::{
-    LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind, StageStatus,
+    FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
+    LaunchView, StageLabelTransition, StageStatus, StageView, active_stage_index, initial_view,
+    update_launch_view, update_stage,
 };
-
-#[derive(Debug, Clone)]
-struct StageView {
-    stage: LaunchStage,
-    status: StageStatus,
-    detail: String,
-}
-
-#[derive(Debug, Clone)]
-struct LaunchView {
-    identity: Option<LaunchIdentity>,
-    stages: Vec<StageView>,
-    status: String,
-    failure: Option<LaunchFailure>,
-    /// Operator dismissed the failure popup (Enter/Esc). The render task owns
-    /// input, so it sets this flag; [`LaunchProgress::stage_failed`] awaits it
-    /// rather than reading stdin itself (which would freeze the single-threaded
-    /// executor and never let the render task draw the popup).
-    failure_ack: bool,
-    frame: usize,
-    /// Operator opened the live docker-build log overlay (by clicking the
-    /// footer activity). While open it hides the cockpit behind an opaque
-    /// scrollable view of [`crate::runtime::build_log`].
-    build_log_open: bool,
-    /// Lines scrolled up from the tail of the build log (0 = follow the
-    /// newest output).
-    build_log_scroll: jackin_tui::scroll::TailScroll,
-    /// Pointer hover state for clickable footer spans.
-    footer_hover: StatusFooterHover,
-    label_transition: Option<StageLabelTransition>,
-    /// Pointer is hovering a copyable value in the failure popup.
-    failure_copy_hover: Option<FailureCopyTarget>,
-    /// Last failure-popup value copied via OSC 52. Drives visible feedback.
-    failure_copied: Option<FailureCopyTarget>,
-    /// Operator opened the shared container info dialog from the footer chip.
-    container_info_open: bool,
-    /// Last copied row in the container info dialog.
-    container_info_copied: Option<usize>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FailureCopyTarget {
-    RunId,
-    DiagnosticsPath,
-    CommandOutputPath,
-}
-
-#[derive(Debug, Clone)]
-enum LaunchMessage {
-    Started(LaunchIdentity),
-    IdentityUpdated(LaunchIdentity),
-    StageStatus {
-        stage: LaunchStage,
-        status: StageStatus,
-        detail: String,
-        set_activity: bool,
-    },
-    StageFailed(LaunchFailure),
-}
-
-#[derive(Debug, Clone, Copy)]
-struct StageLabelTransition {
-    from: usize,
-    to: usize,
-    start_frame: usize,
-}
 
 type SharedView = Arc<std::sync::Mutex<LaunchView>>;
 const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
@@ -183,69 +118,6 @@ impl RichDriver {
             handle: Some(handle),
         }
     }
-}
-
-fn initial_view() -> LaunchView {
-    LaunchView {
-        identity: None,
-        stages: LaunchStage::ALL
-            .into_iter()
-            .map(|stage| StageView {
-                stage,
-                status: StageStatus::Queued,
-                detail: "queued".to_string(),
-            })
-            .collect(),
-        status: "preparing launch".to_string(),
-        failure: None,
-        failure_ack: false,
-        frame: 0,
-        build_log_open: false,
-        build_log_scroll: jackin_tui::scroll::TailScroll::default(),
-        footer_hover: StatusFooterHover::default(),
-        label_transition: None,
-        failure_copy_hover: None,
-        failure_copied: None,
-        container_info_open: false,
-        container_info_copied: None,
-    }
-}
-
-type LaunchUpdate = UpdateResult<NoEffect>;
-
-fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUpdate {
-    match msg {
-        LaunchMessage::Started(identity) => {
-            let preposition = identity.target_kind.launch_preposition();
-            view.status = format!("loading {} {preposition}", identity.role);
-            view.identity = Some(identity);
-        }
-        LaunchMessage::IdentityUpdated(identity) => {
-            view.identity = Some(identity);
-        }
-        LaunchMessage::StageStatus {
-            stage,
-            status,
-            detail,
-            set_activity,
-        } => {
-            update_stage(view, stage, status, &detail);
-            if set_activity {
-                view.status = detail;
-            }
-        }
-        LaunchMessage::StageFailed(failure) => {
-            let stage = failure.stage;
-            let summary = failure.summary.clone();
-            update_stage(view, stage, StageStatus::Failed, &summary);
-            view.status = summary;
-            view.failure_ack = false;
-            view.failure_copy_hover = None;
-            view.failure_copied = None;
-            view.failure = Some(failure);
-        }
-    }
-    UpdateResult::redraw()
 }
 
 impl LaunchProgress {
@@ -529,22 +401,6 @@ pub fn standalone_select_with_context(
 pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> {
     let mut renderer = RichRenderer::enter_dialog(false)?;
     renderer.error_popup(title, message)
-}
-
-fn update_stage(view: &mut LaunchView, stage: LaunchStage, status: StageStatus, detail: &str) {
-    let previous_active = active_stage_index(view);
-    if let Some(row) = view.stages.iter_mut().find(|row| row.stage == stage) {
-        row.status = status;
-        row.detail = detail.to_string();
-    }
-    let next_active = active_stage_index(view);
-    if previous_active != next_active {
-        view.label_transition = Some(StageLabelTransition {
-            from: previous_active,
-            to: next_active,
-            start_frame: view.frame,
-        });
-    }
 }
 
 const BUILD_LOG_SCROLL_STEP: usize = 3;
@@ -1630,33 +1486,6 @@ fn format_activity(status: &str) -> String {
         return String::new();
     };
     format!("{}{}…", first.to_uppercase(), chars.as_str())
-}
-
-fn active_stage_index(view: &LaunchView) -> usize {
-    if let Some(failed) = view
-        .stages
-        .iter()
-        .position(|row| row.status == StageStatus::Failed)
-    {
-        return failed;
-    }
-
-    let first_incomplete = view
-        .stages
-        .iter()
-        .position(|row| !matches!(row.status, StageStatus::Done | StageStatus::Skipped));
-    let Some(frontier) = first_incomplete else {
-        return view.stages.len().saturating_sub(1);
-    };
-    if view.stages[frontier].status == StageStatus::Running {
-        return frontier;
-    }
-
-    view.stages
-        .iter()
-        .position(|row| row.status == StageStatus::Running)
-        .filter(|running| *running < frontier)
-        .unwrap_or_else(|| frontier.saturating_sub(1))
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, run_id: &str) {

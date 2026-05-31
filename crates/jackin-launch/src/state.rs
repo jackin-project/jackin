@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use jackin_tui::components::StatusFooterHover;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum LaunchStage {
     Identity,
@@ -58,6 +60,68 @@ pub enum StageStatus {
     Skipped,
     Failed,
     Blocked,
+}
+
+#[derive(Debug, Clone)]
+pub struct StageView {
+    pub stage: LaunchStage,
+    pub status: StageStatus,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LaunchView {
+    pub identity: Option<LaunchIdentity>,
+    pub stages: Vec<StageView>,
+    pub status: String,
+    pub failure: Option<LaunchFailure>,
+    /// Operator dismissed the failure popup (Enter/Esc). The render task owns
+    /// input, so it sets this flag; `LaunchProgress::stage_failed` awaits it
+    /// rather than reading stdin itself.
+    pub failure_ack: bool,
+    pub frame: usize,
+    /// Operator opened the live docker-build log overlay.
+    pub build_log_open: bool,
+    /// Lines scrolled up from the tail of the build log (0 = follow newest).
+    pub build_log_scroll: jackin_tui::scroll::TailScroll,
+    /// Pointer hover state for clickable footer spans.
+    pub footer_hover: StatusFooterHover,
+    pub label_transition: Option<StageLabelTransition>,
+    /// Pointer is hovering a copyable value in the failure popup.
+    pub failure_copy_hover: Option<FailureCopyTarget>,
+    /// Last failure-popup value copied via OSC 52. Drives visible feedback.
+    pub failure_copied: Option<FailureCopyTarget>,
+    /// Operator opened the shared container info dialog from the footer chip.
+    pub container_info_open: bool,
+    /// Last copied row in the container info dialog.
+    pub container_info_copied: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureCopyTarget {
+    RunId,
+    DiagnosticsPath,
+    CommandOutputPath,
+}
+
+#[derive(Debug, Clone)]
+pub enum LaunchMessage {
+    Started(LaunchIdentity),
+    IdentityUpdated(LaunchIdentity),
+    StageStatus {
+        stage: LaunchStage,
+        status: StageStatus,
+        detail: String,
+        set_activity: bool,
+    },
+    StageFailed(LaunchFailure),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StageLabelTransition {
+    pub from: usize,
+    pub to: usize,
+    pub start_frame: usize,
 }
 
 #[derive(Debug, Clone)]
