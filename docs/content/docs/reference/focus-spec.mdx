@@ -67,7 +67,52 @@ Layout: workspace list sidebar (left) + detail panels on the right (General, Mou
 
 ### Workspace editor screen
 
-_To be documented._
+The editor has a tab strip (General, Mounts, Roles, Secrets, …) above the active tab's content panels.
+
+#### Tab strip focus
+
+The tab strip has **no border**, so it has no PHOSPHOR_GREEN border ring. Instead, the active tab is indicated by its underline — this is the tab strip's own focus cue, consistent with the W3C ARIA Tabs pattern (the selected tab has a visually distinct state via underline rather than a border).
+
+**Clicking any tab always steals focus immediately from whatever block currently owns it.** There is no exception — even if a scrollable panel inside the tab content is focused, clicking a tab transfers focus to the tab strip layer and the previously focused panel loses its green border. The underline on the clicked tab is the visible confirmation.
+
+This is an intentional design decision: tab strips own the keyboard when active, and the content below them does not get to keep focus while the operator is navigating tabs.
+
+#### Tab strip as focus owner
+
+While the tab strip owns focus:
+- `←` / `→` navigate between tabs.
+- Hint bar shows tab-navigation hints.
+- No panel inside the current tab has a green border.
+
+#### Transferring focus into tab content
+
+After selecting a tab, focus automatically moves from the tab strip into the tab's primary interactive container (the first scrollable or interactive panel in the tab). If the tab's content has no scrollable or interactive panel, the tab strip retains focus.
+
+#### Click on tab content panel
+
+Clicking a scrollable panel inside the active tab transfers focus from the tab strip to that panel. The panel shows the green border; the tab strip underline remains (it still shows which tab is selected) but the tab strip no longer owns keyboard input.
+
+#### Tab key flow within the editor
+
+| Current focus | Key | Result |
+|---|---|---|
+| Tab strip | `⇥ Tab` or `↓` | Focus moves to the tab's content panel; content panel shows green border. |
+| Tab strip | `←` / `→` | Navigate tabs; content panel has no green border while tab strip owns focus. |
+| Content panel | `⇧Tab` or any tab-strip click | Focus returns to tab strip; content panel loses green border; underline confirms active tab. |
+
+This means focus always has exactly one visible owner: **either** the tab strip underline (tab strip focused) **or** the content panel green border (content focused). Both are never active simultaneously.
+
+#### Which content panels are focusable in the editor
+
+| Tab | Content panel | Focusable? | Condition |
+|---|---|---|---|
+| General | Summary fields | **No** | Read-only display. `⇥` from tab strip does nothing. |
+| Mounts | Mount list | **Yes** | List with selectable rows, `A`/`D`/`R`/`I` actions. Always focusable when the Mounts tab is active. |
+| Roles | Role list | **Yes, when scrollable** | Focusable only if the list overflows its panel height. |
+| Environments | Env list | **Yes** | Interactive rows. |
+| Auth | Auth form | **Yes** | Interactive form. |
+
+When `⇥ Tab` is pressed and the active tab's content panel is **not focusable** (e.g. General), focus stays on the tab strip.
 
 ### Settings screen
 
