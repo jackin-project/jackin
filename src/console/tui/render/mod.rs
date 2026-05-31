@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::config::AppConfig;
 use crate::console::manager::list_geometry::clamp_list_scroll_for_area;
-use crate::console::manager::mount_display::settings_global_mounts_content_width_with_cache;
+use crate::console::manager::settings_geometry::clamp_global_mounts_scroll_for_frame;
 use crate::console::manager::state::{ManagerListRow, ManagerStage, ManagerState};
 use jackin_tui::HintSpan;
 
@@ -452,26 +452,6 @@ pub fn render(
         let overlay_area = centered_rect_fixed(area, 50, 7);
         jackin_tui::components::render_status_popup(frame, overlay_area, overlay);
     }
-}
-
-fn clamp_global_mounts_scroll_for_frame(
-    area: Rect,
-    global: &mut crate::console::manager::state::GlobalMountsState<'_>,
-) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(10),
-            Constraint::Length(2),
-        ])
-        .split(area);
-    clamp_scroll_x(
-        settings_global_mounts_content_width_with_cache(&global.pending, &global.mount_info_cache),
-        scroll_viewport_width(chunks[2]),
-        &mut global.scroll_x,
-    );
 }
 
 #[allow(clippy::too_many_lines)]
