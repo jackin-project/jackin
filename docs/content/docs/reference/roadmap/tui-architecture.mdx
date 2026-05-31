@@ -844,6 +844,18 @@ Benchmark `tui-term` against a thin custom cell widget for pane bodies on a high
 
 Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` component and its states to SVG from the real widget code, provides a real-terminal browser through `tui-lookbook --terminal`, one MDX page per component following the story shape above, and CI regeneration so previews never drift. The first generator lives at <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> and renders <RepoFile path="crates/jackin-tui-lookbook/src/stories.rs" /> stories from `TestBackend` buffers into committed assets under <RepoFile path="docs/public/tui-lookbook/panel-focused.svg" />, consumed by per-component [TUI Lookbook](/reference/tui-lookbook/) pages. The generated SVGs always carry a black terminal background so docs previews match real terminal use. CI runs `tui-lookbook --check` against those committed previews; every new shared TUI component must appear in both the docs lookbook and the terminal browser in the same PR. Reconcile the host/capsule drift table as components consolidate into shared widgets.
 
+### Phase 9 — TUI source directory convention migration
+
+Move all terminal-rendering source files into designated TUI directories so the location of any visual component is unambiguous. The rule: TUI code lives in exactly three homes — `crates/jackin-tui/` (shared), `crates/<crate>/src/tui/` (crate-specific), or `src/console/tui/` (host console). A developer or agent changing a visual behavior must know the exact directory to open without searching.
+
+**Capsule migration** (`crates/jackin-capsule/src/tui/`): move `statusbar.rs`, `chrome_widget.rs`, `dialog.rs`, `dialog_widgets.rs`, `pane_widget.rs`, `socket_backend.rs`, `render.rs`, `branch_context_bar.rs` from the crate root into `src/tui/`. The `daemon/compositor.rs` render methods stay in `daemon/` since they are render+state boundary code, but their rendering primitives (helpers they call) move into `tui/`. Add a `tui/mod.rs` that re-exports what `lib.rs` currently exposes.
+
+**Console migration** (`src/console/tui/`): move `manager/render/` → `tui/render/`, `widgets/` → `tui/widgets/`, `terminal.rs` → `tui/terminal.rs`. Update all `use` paths. The manager input handlers and state structs remain in `manager/` — they are not rendering code.
+
+**Done when:** `cargo build` is green, CI passes, and all surface-specific rendering files live under the designated `tui/` subdirectory. No rendering code outside these paths.
+
+**Tracked in:** `TODO.md` → `tui-directory-migration`.
+
 ## Open questions & risks
 
 - **Handoff feasibility.** The single-host-alt-screen approach (the host keeps its alt-screen across `docker exec -it`; the capsule client skips its own `?1049` toggle via `JACKIN_HOST_ALT_SCREEN`) is implemented by the [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) work and must keep being confirmed across real terminals — alt-screen survival, raw mode, SIGWINCH, and the stale `Buffer` full-redraw on resume. If a terminal mishandles the shared screen, the fallback is to tear the host backend down before the exec and re-initialize on return, with the flash minimized.
@@ -884,6 +896,7 @@ None. This is a pure internal refactor of in-process TUI code. It introduces no 
 - Module-root files (`mod.rs` / `lib.rs`) are thin — declarations, the `pub use` facade, and `//!` docs only; no module root holds rendering, dispatch, or domain logic, and new TUI modules use the `foo.rs` + `foo/` (no-`mod.rs`) layout.
 - A `criterion` frame-time bench guards the host compose path against a named budget, and a capsule bytes-per-frame bench guards the move to Ratatui's `Buffer::diff`; both run in CI.
 - No render, update, or effect path can `unwrap` or `panic`; `clippy` (with the no-panic lints) and `rustfmt` run in CI for the TUI crates.
+- All surface-specific TUI rendering files live in designated `tui/` subdirectories: `crates/jackin-capsule/src/tui/` for capsule, `src/console/tui/` for host console. No terminal-rendering code exists outside these paths or `crates/jackin-tui/`.
 - No background action stands up a nested Tokio runtime; all blocking work runs as a `spawn_blocking` effect on the single app runtime and returns a `Message`.
 - The whole item ships as one branch and one pull request of small, always-green commits; no phase is merged on its own.
 - No phase introduces an operator-visible behavior change.
