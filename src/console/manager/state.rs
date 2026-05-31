@@ -279,7 +279,7 @@ pub struct SettingsState<'a> {
 pub use jackin_console::model::{
     AuthFormFocus, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
     GlobalMountConfirm, GlobalMountTextTarget, SecretsScopeTag, SettingsEnvConfirm,
-    SettingsEnvScope, SettingsEnvTextTarget, SettingsTab, TextInputTarget,
+    SettingsEnvScope, SettingsEnvTextTarget, SettingsTab, SettingsTrustRow, TextInputTarget,
 };
 
 #[derive(Debug)]
@@ -396,13 +396,6 @@ pub struct SettingsTrustState {
     pub scroll_focused: bool,
     /// Row the pointer is hovering (lifts its background like a hovered tab).
     pub hovered: Option<usize>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SettingsTrustRow {
-    pub role: String,
-    pub git: String,
-    pub trusted: bool,
 }
 
 #[derive(Debug, Default)]

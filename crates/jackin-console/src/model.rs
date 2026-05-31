@@ -135,6 +135,13 @@ pub enum FileBrowserTarget {
     EditAddMountSrc,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsTrustRow {
+    pub role: String,
+    pub git: String,
+    pub trusted: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitIntent {
     Save,
