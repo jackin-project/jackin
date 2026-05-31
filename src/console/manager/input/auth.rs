@@ -16,9 +16,11 @@ use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
 use super::super::super::widgets::op_picker::OpPickerState;
 use super::super::super::widgets::role_picker::RolePickerState;
 use super::super::auth_kind::{AuthKind, AuthMode};
-use super::super::auth_rows::{eligible_agents_for_override, resolve_auth_row_target};
+use super::super::auth_rows::{
+    auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
+};
 use super::super::state::{
-    AuthFormFocus, AuthFormTarget, EditorState, FieldFocus, Modal, TextInputTarget,
+    AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
 };
 use crate::config::AppConfig;
 use crate::config::{
@@ -123,23 +125,17 @@ pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
 /// - Anything else (`AuthKindRow`, `AddSentinel`, `Spacer`) → no-op.
 pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = super::super::render::editor::auth_flat_rows(editor, config);
+    let rows = auth_flat_rows(editor, config);
     match rows.get(n).cloned() {
-        Some(super::super::render::editor::AuthRow::RoleHeader { role, .. }) => {
+        Some(AuthRow::RoleHeader { role, .. }) => {
             if let Some(kind) = editor.auth_selected_kind {
                 clear_role_kind(editor, &role, kind);
             }
         }
-        Some(
-            super::super::render::editor::AuthRow::RoleMode { role, kind }
-            | super::super::render::editor::AuthRow::RoleSource { role, kind },
-        ) => {
+        Some(AuthRow::RoleMode { role, kind } | AuthRow::RoleSource { role, kind }) => {
             clear_role_kind(editor, &role, kind);
         }
-        Some(
-            super::super::render::editor::AuthRow::WorkspaceMode { kind }
-            | super::super::render::editor::AuthRow::WorkspaceSource { kind },
-        ) => {
+        Some(AuthRow::WorkspaceMode { kind } | AuthRow::WorkspaceSource { kind }) => {
             clear_workspace_kind(&mut editor.pending, kind);
         }
         _ => {}

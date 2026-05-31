@@ -9,11 +9,12 @@ use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
     workdir_pick::WorkdirPickState,
 };
+use super::super::auth_rows::auth_flat_rows;
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::render::list::workspace_mounts_content_width;
 use super::super::state::{
-    ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow,
+    AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
+    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow,
     SecretsScopeTag, TextInputTarget,
 };
 use super::InputOutcome;
@@ -249,10 +250,8 @@ pub(super) fn handle_editor_key(
             }
             KeyCode::Right if editor.active_tab == EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor, config);
-                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
-                    rows.get(n).cloned()
-                {
+                let rows = auth_flat_rows(editor, config);
+                if let Some(AuthRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if !expanded {
                         dispatch_manager(
                             state,
@@ -267,10 +266,8 @@ pub(super) fn handle_editor_key(
             }
             KeyCode::Left if editor.active_tab == EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor, config);
-                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
-                    rows.get(n).cloned()
-                {
+                let rows = auth_flat_rows(editor, config);
+                if let Some(AuthRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if expanded {
                         dispatch_manager(
                             state,
@@ -285,10 +282,8 @@ pub(super) fn handle_editor_key(
             }
             KeyCode::Enter if editor.active_tab == EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor, config);
-                if let Some(super::super::render::editor::AuthRow::AuthKindRow { kind }) =
-                    rows.get(n)
-                {
+                let rows = auth_flat_rows(editor, config);
+                if let Some(AuthRow::AuthKindRow { kind }) = rows.get(n) {
                     dispatch_manager(state, ManagerMessage::EnterEditorAuthKind { kind: *kind });
                     return Ok(InputOutcome::Continue);
                 }
@@ -359,19 +354,19 @@ pub(super) fn handle_editor_key(
             }
             EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor, config);
+                let rows = auth_flat_rows(editor, config);
                 match rows.get(n) {
-                    Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {
+                    Some(AuthRow::AddSentinel { .. }) => {
                         super::auth::open_auth_role_picker(editor, config);
                     }
-                    Some(super::super::render::editor::AuthRow::RoleHeader { role, .. }) => {
+                    Some(AuthRow::RoleHeader { role, .. }) => {
                         super::auth::toggle_role_expand(editor, role.clone());
                     }
                     Some(
-                        super::super::render::editor::AuthRow::WorkspaceMode { .. }
-                        | super::super::render::editor::AuthRow::WorkspaceSource { .. }
-                        | super::super::render::editor::AuthRow::RoleMode { .. }
-                        | super::super::render::editor::AuthRow::RoleSource { .. },
+                        AuthRow::WorkspaceMode { .. }
+                        | AuthRow::WorkspaceSource { .. }
+                        | AuthRow::RoleMode { .. }
+                        | AuthRow::RoleSource { .. },
                     ) => {
                         super::auth::open_auth_form_modal(editor, config);
                     }
@@ -479,13 +474,11 @@ fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usi
             (rows.len().saturating_sub(1), skipped_rows)
         }
         EditorTab::Auth => {
-            let rows = super::super::render::editor::auth_flat_rows(editor, config);
+            let rows = auth_flat_rows(editor, config);
             let skipped_rows = rows
                 .iter()
                 .enumerate()
-                .filter_map(|(idx, row)| {
-                    matches!(row, super::super::render::editor::AuthRow::Spacer).then_some(idx)
-                })
+                .filter_map(|(idx, row)| matches!(row, AuthRow::Spacer).then_some(idx))
                 .collect::<Vec<_>>();
             (max_row_for_tab(editor, config), skipped_rows)
         }
@@ -844,31 +837,16 @@ fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
 }
 
 #[cfg(test)]
-fn step_auth_cursor_down(
-    rows: &[super::super::render::editor::AuthRow],
-    mut candidate: usize,
-    max_row: usize,
-) -> usize {
-    while matches!(
-        rows.get(candidate),
-        Some(super::super::render::editor::AuthRow::Spacer)
-    ) && candidate < max_row
-    {
+fn step_auth_cursor_down(rows: &[AuthRow], mut candidate: usize, max_row: usize) -> usize {
+    while matches!(rows.get(candidate), Some(AuthRow::Spacer)) && candidate < max_row {
         candidate += 1;
     }
     candidate
 }
 
 #[cfg(test)]
-fn step_auth_cursor_up(
-    rows: &[super::super::render::editor::AuthRow],
-    mut candidate: usize,
-) -> usize {
-    while matches!(
-        rows.get(candidate),
-        Some(super::super::render::editor::AuthRow::Spacer)
-    ) && candidate > 0
-    {
+fn step_auth_cursor_up(rows: &[AuthRow], mut candidate: usize) -> usize {
+    while matches!(rows.get(candidate), Some(AuthRow::Spacer)) && candidate > 0 {
         candidate -= 1;
     }
     candidate
@@ -4702,7 +4680,7 @@ mod auth_cursor_step_tests {
     //! `Spacer` rows are intentionally non-selectable so the cursor
     //! never lands on a blank line in the rendered list.
     use super::super::super::auth_kind::AuthKind;
-    use super::super::super::render::editor::AuthRow;
+    use super::super::super::state::AuthRow;
     use super::{step_auth_cursor_down, step_auth_cursor_up};
 
     fn rows() -> Vec<AuthRow> {
