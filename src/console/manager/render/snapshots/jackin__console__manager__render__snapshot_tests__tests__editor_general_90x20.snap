@@ -8,7 +8,7 @@ expression: rendered
  General   Mounts   Roles   Environments   Auth                                           
 ━━━━━━━━━                                                                                 
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│▸ Name           my-workspace                                                           │
+│  Name           my-workspace                                                           │
 │  Working dir                                                                           │
 │  Keep awake     disabled                                                               │
 │  Git pull       disabled                                                               │

@@ -119,9 +119,10 @@ fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
         (1, "DCO sign-off", state.general.pending_dco),
     ];
 
+    let show_cursor = !state.tab_bar_focused;
     rows.iter()
         .map(|(i, label, pending)| {
-            let selected = state.general.selected == *i;
+            let selected = show_cursor && (state.general.selected == *i);
             let prefix = if selected { "\u{25b8} " } else { "  " };
             let ls = if selected { label_bold } else { label_normal };
             let vs = if selected { value_bold } else { value_normal };
@@ -136,9 +137,16 @@ fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
 }
 
 fn render_mounts_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
+    // Only show the cursor when the mounts content block is focused — not when
+    // the tab bar owns focus. Pass None as `selected` to suppress `▸` entirely.
+    let selected = if !state.tab_bar_focused && state.mounts.scroll_focused {
+        Some(state.mounts.selected)
+    } else {
+        None
+    };
     let mut lines = global_mount_lines(
         &state.mounts.pending,
-        Some(state.mounts.selected),
+        selected,
         true,
         &state.mounts.mount_info_cache,
     );
@@ -550,8 +558,9 @@ fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
     let rows = settings_env_flat_rows(state);
     let mut lines = Vec::with_capacity(rows.len());
     let label_width = 22;
+    let show_cursor = !state.tab_bar_focused && state.env.scroll_focused;
     for (i, row) in rows.iter().enumerate() {
-        let selected = state.env.selected == i;
+        let selected = show_cursor && (state.env.selected == i);
         let cursor_col = if selected { "▸ " } else { "  " };
         match row {
             SettingsEnvRow::Key { scope, key } => {
@@ -688,6 +697,7 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let phosphor = Style::default().fg(PHOSPHOR_GREEN);
     let dim = Style::default().fg(PHOSPHOR_DIM);
+    let show_cursor = !state.tab_bar_focused && state.auth.scroll_focused;
     let Some(kind) = state.auth.selected_kind else {
         return state
             .auth
@@ -695,7 +705,7 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
             .iter()
             .enumerate()
             .map(|(i, row)| {
-                let selected = state.auth.selected == i;
+                let selected = show_cursor && (state.auth.selected == i);
                 let cursor_col = if selected { "▸ " } else { "  " };
                 Line::from(Span::styled(
                     format!("{cursor_col}{}", row.kind.label()),
@@ -708,32 +718,26 @@ fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
         return Vec::new();
     };
     let mut lines = Vec::new();
-    let mode_style = if state.auth.selected == 0 {
+    let mode_selected = show_cursor && (state.auth.selected == 0);
+    let mode_style = if mode_selected {
         phosphor.add_modifier(Modifier::BOLD)
     } else {
         phosphor
     };
-    let cursor_col = if state.auth.selected == 0 {
-        "▸ "
-    } else {
-        "  "
-    };
+    let cursor_col = if mode_selected { "▸ " } else { "  " };
     lines.push(Line::from(vec![
         Span::styled(cursor_col, mode_style),
         Span::styled(format!("{:<14}", "Mode"), bold_white),
         Span::styled(mode_str(row.mode).to_string(), mode_style),
     ]));
     if let Some(env_name) = kind.required_env_var(row.mode) {
-        let source_style = if state.auth.selected == 1 {
+        let source_selected = show_cursor && (state.auth.selected == 1);
+        let source_style = if source_selected {
             dim.add_modifier(Modifier::BOLD)
         } else {
             dim
         };
-        let cursor_col = if state.auth.selected == 1 {
-            "▸ "
-        } else {
-            "  "
-        };
+        let cursor_col = if source_selected { "▸ " } else { "  " };
         let mut spans = vec![
             Span::styled(cursor_col, source_style),
             Span::styled(format!("{:<14}", "Source"), bold_white),
@@ -785,8 +789,9 @@ fn trust_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
             Style::default().fg(PHOSPHOR_DIM),
         )));
     }
+    let show_cursor = !state.tab_bar_focused && state.trust.scroll_focused;
     for (i, row) in state.trust.pending.iter().enumerate() {
-        let selected = state.trust.selected == i;
+        let selected = show_cursor && (state.trust.selected == i);
         let mut style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)

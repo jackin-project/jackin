@@ -527,6 +527,9 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
 fn general_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
+    // General tab is non-focusable: Tab/↓ from the tab bar does not transfer
+    // focus into General content. The `▸` cursor is never shown here.
+    let show_cursor = false;
 
     let name_value = match &state.mode {
         EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
@@ -551,13 +554,14 @@ fn general_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     // unsaved-state indicator.
     let mut rows: Vec<Line> = Vec::new();
 
-    rows.push(render_editor_row(0, cursor, "Name", name_value));
+    rows.push(render_editor_row(0, cursor, "Name", name_value, show_cursor));
     let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
     rows.push(render_editor_row(
         1,
         cursor,
         "Working dir",
         &workdir_display,
+        show_cursor,
     ));
     // Keep-awake row. The "(macOS only)" suffix when enabled mirrors the
     // CLI `workspace show` output, surfacing the platform constraint
@@ -572,20 +576,35 @@ fn general_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
         cursor,
         "Keep awake",
         keep_awake_display,
+        show_cursor,
     ));
     let git_pull_display = if state.pending.git_pull_on_entry {
         "enabled"
     } else {
         "disabled"
     };
-    rows.push(render_editor_row(3, cursor, "Git pull", git_pull_display));
+    rows.push(render_editor_row(
+        3,
+        cursor,
+        "Git pull",
+        git_pull_display,
+        show_cursor,
+    ));
 
     rows
 }
 
-/// Render a field row with cursor highlight when `row == cursor`.
-fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Line<'static> {
-    let selected = row == cursor;
+/// Render a field row with cursor highlight when `row == cursor` and the
+/// content block is focused. Pass `show_cursor = false` whenever the tab bar
+/// owns focus so the `▸` prefix is suppressed.
+fn render_editor_row(
+    row: usize,
+    cursor: usize,
+    label: &str,
+    value: &str,
+    show_cursor: bool,
+) -> Line<'static> {
+    let selected = show_cursor && (row == cursor);
     let prefix = if selected { "▸ " } else { "  " };
     // Labels stay white regardless of focus — focus is signalled by the
     // `▸` prefix and the bold weight, not by a colour shift.
@@ -621,6 +640,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
 fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
+    let show_cursor = !state.tab_bar_focused && state.workspace_mounts_scroll_focused;
 
     // Build aligned table rows for all mounts.
     let rows = format_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
@@ -631,7 +651,7 @@ fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
 
     for (i, row) in rows.iter().enumerate() {
-        let selected = i == cursor;
+        let selected = show_cursor && (i == cursor);
         // Hover lift: graphite background on the hovered (non-selected) mount
         // row, matching the tab/list hover cue. Applied to every span (and the
         // column gaps) so the row's background is contiguous.
@@ -683,7 +703,7 @@ fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
 
     // Sentinel row: + Add mount — selectable, styled distinctly from mounts.
     let sentinel_idx = state.pending.mounts.len();
-    let sentinel_selected = cursor == sentinel_idx;
+    let sentinel_selected = show_cursor && (cursor == sentinel_idx);
     let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
     if !state.pending.mounts.is_empty() {
         lines.push(Line::from(""));
@@ -711,6 +731,7 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
 
 fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
+    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused;
 
     // Status line: "Allowed roles:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
     let is_all = super::super::agent_allow::allows_all_agents(&state.pending);
@@ -755,7 +776,7 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
     // mode every row renders `[x]`. Otherwise only roles named in the
     // list render `[x]`.
     for (i, (role_name, _)) in config.roles.iter().enumerate() {
-        let selected = i == cursor;
+        let selected = show_cursor && (i == cursor);
         let effectively_allowed =
             super::super::agent_allow::agent_is_effectively_allowed(&state.pending, role_name);
         let is_default = state.pending.default_role.as_deref() == Some(role_name.as_str());
@@ -773,7 +794,7 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
         lines.push(Line::from(Span::styled(text, style)));
     }
     let sentinel_idx = config.roles.len();
-    let sentinel_selected = cursor == sentinel_idx;
+    let sentinel_selected = show_cursor && (cursor == sentinel_idx);
     let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
     if !config.roles.is_empty() {
         lines.push(Line::from(""));
@@ -1063,6 +1084,7 @@ fn secrets_tab_lines(
     config: &AppConfig,
 ) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
+    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused;
 
     let rows = secrets_flat_rows(state);
     let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
@@ -1071,7 +1093,7 @@ fn secrets_tab_lines(
     let label_width: usize = 22;
 
     for (i, row) in rows.iter().enumerate() {
-        let selected = i == cursor;
+        let selected = show_cursor && (i == cursor);
         // 7-char prefix: 2-char cursor col + 5-char op-marker col.
         // The marker col is blank on non-op rows so [op] keys line up.
         let cursor_col = if selected { "▸ " } else { "  " };
@@ -1359,11 +1381,14 @@ fn auth_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'stat
 
     let FieldFocus::Row(cursor) = state.active_field;
     let max_idx = rows.len().saturating_sub(1);
-    let selected = cursor.min(max_idx);
+    let cursor_clamped = cursor.min(max_idx);
+    let show_cursor = !state.tab_bar_focused && state.tab_content_scroll_focused;
 
     rows.iter()
         .enumerate()
-        .map(|(i, r)| render_auth_row(i == selected, r, &synthesized, &workspace_name))
+        .map(|(i, r)| {
+            render_auth_row(show_cursor && (i == cursor_clamped), r, &synthesized, &workspace_name)
+        })
         .collect()
 }
 
