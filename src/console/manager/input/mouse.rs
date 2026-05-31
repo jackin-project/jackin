@@ -13,18 +13,19 @@ use super::super::render::global_mounts::{
 #[cfg(test)]
 use super::super::render::list::global_mounts_content_width;
 use super::super::render::list::{list_names_content_width, workspace_mounts_content_width};
-#[cfg(test)]
-use super::super::render::max_scroll_offset;
-use super::super::render::{
-    apply_scroll_delta, horizontal_scrollbar_area, is_scrollable, scroll_viewport_height,
-    scroll_viewport_width, scrollbar_offset_for_track_position, vertical_scrollbar_area,
-};
 use super::super::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
 };
 use jackin_console::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
+};
+#[cfg(test)]
+use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
+use jackin_tui::components::scrollable_panel::{
+    apply_scroll_delta, horizontal_scrollbar_area, is_scrollable,
+    scrollbar_offset_for_track_position, vertical_scrollbar_area,
+    viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
 
 /// Minimum terminal width (in columns) at which the list/details seam is
