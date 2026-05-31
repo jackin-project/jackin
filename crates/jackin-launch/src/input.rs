@@ -10,7 +10,7 @@ use crate::tui::build_log::scroll_build_log;
 use crate::tui::container_info::{launch_container_info_rect, launch_container_info_state};
 use crate::tui::failure::{failure_copy_payload, failure_copy_target_at};
 use crate::tui::footer::{footer_instance, format_activity};
-use crate::{LaunchHostTerminal, LaunchView};
+use crate::{LaunchHostTerminal, LaunchMessage, LaunchView, update_launch_view};
 
 const BUILD_LOG_SCROLL_STEP: usize = 3;
 const BUILD_LOG_PAGE_STEP: usize = 10;
@@ -210,8 +210,7 @@ pub fn handle_cockpit_input(
             {
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
                 // it so the awaiting `stage_failed` returns.
-                v.failure_ack = true;
-                v.failure_copy_hover = None;
+                let _dirty = update_launch_view(&mut v, LaunchMessage::FailureAcknowledged);
                 terminal.set_pointer_shape(false);
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {

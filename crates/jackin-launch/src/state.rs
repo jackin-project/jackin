@@ -115,6 +115,7 @@ pub enum LaunchMessage {
         set_activity: bool,
     },
     StageFailed(LaunchFailure),
+    FailureAcknowledged,
 }
 
 #[derive(Debug, Clone, Copy)]

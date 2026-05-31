@@ -67,6 +67,10 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.failure_copied = None;
             view.failure = Some(failure);
         }
+        LaunchMessage::FailureAcknowledged => {
+            view.failure_ack = true;
+            view.failure_copy_hover = None;
+        }
     }
     UpdateResult::redraw()
 }
@@ -113,4 +117,47 @@ pub fn active_stage_index(view: &LaunchView) -> usize {
         .position(|row| row.status == StageStatus::Running)
         .filter(|running| *running < frontier)
         .unwrap_or_else(|| frontier.saturating_sub(1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{LaunchFailure, LaunchTargetKind};
+    use std::path::PathBuf;
+
+    fn identity() -> crate::LaunchIdentity {
+        crate::LaunchIdentity {
+            role: "architect".into(),
+            agent: "claude".into(),
+            target_kind: LaunchTargetKind::Workspace,
+            target_label: "demo".into(),
+            mounts: Vec::new(),
+            image: None,
+            container: None,
+        }
+    }
+
+    #[test]
+    fn failure_acknowledged_clears_hover_and_sets_ack() {
+        let mut view = initial_view();
+        let _ = update_launch_view(&mut view, LaunchMessage::Started(identity()));
+        let _ = update_launch_view(
+            &mut view,
+            LaunchMessage::StageFailed(LaunchFailure {
+                title: "Build failed".into(),
+                summary: "docker build failed".into(),
+                detail: None,
+                next_step: None,
+                stage: LaunchStage::DerivedImage,
+                diagnostics_path: Some(PathBuf::from("/tmp/run.log")),
+                command_output_path: None,
+            }),
+        );
+        view.failure_copy_hover = Some(crate::FailureCopyTarget::DiagnosticsPath);
+
+        let _ = update_launch_view(&mut view, LaunchMessage::FailureAcknowledged);
+
+        assert!(view.failure_ack);
+        assert_eq!(view.failure_copy_hover, None);
+    }
 }
