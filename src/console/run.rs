@@ -314,7 +314,7 @@ pub async fn run_console<H: InstanceActionHandler>(
         }
 
         if let ConsoleStage::Manager(ms) = &mut state.stage
-            && (needs_redraw || ms.has_active_animation())
+            && needs_redraw
         {
             let full_area: ratatui::layout::Rect = terminal.size()?.into();
             let (main_area, debug_bar_area) =
@@ -369,11 +369,8 @@ pub async fn run_console<H: InstanceActionHandler>(
                 None
             },
         };
-        if tick_fired
-            && let ConsoleStage::Manager(ms) = &state.stage
-            && ms.has_active_animation()
-        {
-            needs_redraw = true;
+        if tick_fired && let ConsoleStage::Manager(ms) = &mut state.stage {
+            needs_redraw |= ms.tick_active_animation();
         }
         // Collect the first event then drain any stream-ready events
         // non-blocking (same batch-up-to-256 behavior as the previous

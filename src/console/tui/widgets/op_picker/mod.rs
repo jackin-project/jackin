@@ -533,16 +533,12 @@ impl OpPickerState {
     }
 
     pub fn tick(&mut self) -> bool {
-        let mut dirty = false;
         if let OpLoadState::Loading { spinner_tick } = &mut self.load_state {
             *spinner_tick = spinner_tick.wrapping_add(1);
-            dirty = true;
+            true
+        } else {
+            false
         }
-        dirty | self.poll_load()
-    }
-
-    pub const fn is_animating(&self) -> bool {
-        matches!(self.load_state, OpLoadState::Loading { .. })
     }
 
     pub fn filtered_accounts(&self) -> Vec<&OpAccount> {

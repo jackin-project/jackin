@@ -7,9 +7,7 @@ use crate::console::manager::editor_geometry::prepare_editor_for_render;
 use crate::console::manager::list_geometry::clamp_list_scroll_for_area;
 use crate::console::manager::modal_layout::modal_outer_rect;
 use crate::console::manager::settings_geometry::clamp_global_mounts_scroll_for_frame;
-use crate::console::manager::state::{
-    GlobalMountModal, ManagerStage, ManagerState, Modal, SettingsAuthModal, SettingsEnvModal,
-};
+use crate::console::manager::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};
 
 pub fn prepare_for_render(
     state: &mut ManagerState<'_>,
@@ -80,12 +78,6 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
                 let modal_area = jackin_console::layout::centered_rect_fixed(area, 80, height);
                 confirm_save::prepare_for_render(modal_area, state);
             }
-            if let Some(SettingsEnvModal::OpPicker { state }) = &mut settings.env.modal {
-                let _ = state.tick();
-            }
-            if let Some(SettingsAuthModal::OpPicker { state }) = &mut settings.auth.modal {
-                let _ = state.tick();
-            }
         }
         ManagerStage::List
         | ManagerStage::ConfirmDelete { .. }
@@ -96,9 +88,6 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
 fn prepare_modal(outer: Rect, modal: &mut Modal<'_>) {
     let modal_area = modal_outer_rect(modal, outer);
     match modal {
-        Modal::OpPicker { state } => {
-            let _ = state.tick();
-        }
         Modal::ConfirmSave { state } => {
             crate::console::widgets::confirm_save::prepare_for_render(modal_area, state);
         }

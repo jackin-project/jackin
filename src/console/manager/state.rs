@@ -1909,33 +1909,31 @@ impl ManagerState<'_> {
         dirty
     }
 
-    pub(crate) fn has_active_animation(&self) -> bool {
-        if let Some(Modal::OpPicker { state }) = self.list_modal.as_ref()
-            && state.is_animating()
-        {
-            return true;
+    pub(crate) fn tick_active_animation(&mut self) -> bool {
+        let mut dirty = false;
+        if let Some(Modal::OpPicker { state }) = self.list_modal.as_mut() {
+            dirty |= state.tick();
         }
-        match &self.stage {
+        match &mut self.stage {
             ManagerStage::Editor(editor) => {
-                matches!(
-                    editor.modal.as_ref(),
-                    Some(Modal::OpPicker { state }) if state.is_animating()
-                )
+                if let Some(Modal::OpPicker { state }) = editor.modal.as_mut() {
+                    dirty |= state.tick();
+                }
             }
             ManagerStage::Settings(settings) => {
-                matches!(
-                    settings.env.modal.as_ref(),
-                    Some(SettingsEnvModal::OpPicker { state }) if state.is_animating()
-                ) || matches!(
-                    settings.auth.modal.as_ref(),
-                    Some(SettingsAuthModal::OpPicker { state }) if state.is_animating()
-                )
+                if let Some(SettingsEnvModal::OpPicker { state }) = settings.env.modal.as_mut() {
+                    dirty |= state.tick();
+                }
+                if let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal.as_mut() {
+                    dirty |= state.tick();
+                }
             }
             ManagerStage::List
             | ManagerStage::CreatePrelude(_)
             | ManagerStage::ConfirmDelete { .. }
-            | ManagerStage::ConfirmInstancePurge { .. } => false,
+            | ManagerStage::ConfirmInstancePurge { .. } => {}
         }
+        dirty
     }
 }
 
