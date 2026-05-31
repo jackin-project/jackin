@@ -23,6 +23,9 @@ use super::super::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
 };
+use jackin_console::layout::{
+    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
+};
 
 /// Minimum terminal width (in columns) at which the list/details seam is
 /// draggable. Below this, the 20/80 clamp bounds leave the right pane
@@ -34,16 +37,6 @@ const MIN_DRAGGABLE_WIDTH: u16 = 40;
 /// don't accidentally start a drag while clicking in either pane.
 const SEAM_HIT_SLACK: u16 = 1;
 
-/// Height of the header chunk in the list-view chrome. Mirrors
-/// `Constraint::Length(2)` in `render::render` (brand pill row + one
-/// spacer row). Used by mouse hit-testing to convert a terminal row
-/// into a list item index.
-const LIST_HEADER_HEIGHT: u16 = 2;
-/// Height of the footer chunk in the list-view chrome. Mirrors
-/// `Constraint::Length(2)` in `render::render`.
-const LIST_FOOTER_HEIGHT: u16 = 2;
-const EDITOR_HEADER_HEIGHT: u16 = 3;
-const EDITOR_TAB_STRIP_HEIGHT: u16 = 2;
 const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 1;
 const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
 
@@ -450,8 +443,8 @@ fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
 /// (` label ` cell, one-column gap, from col 0) so the host console's hit-test
 /// and the in-container multiplexer's stay in lock-step.
 fn tab_cell_at(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
-    if mouse.row < EDITOR_HEADER_HEIGHT
-        || mouse.row >= EDITOR_HEADER_HEIGHT.saturating_add(EDITOR_TAB_STRIP_HEIGHT)
+    if mouse.row < SCREEN_HEADER_HEIGHT
+        || mouse.row >= SCREEN_HEADER_HEIGHT.saturating_add(TAB_STRIP_HEIGHT)
     {
         return None;
     }
@@ -691,10 +684,10 @@ fn try_drag_horizontal_scrollbar(
                 mouse,
                 Rect {
                     x: 0,
-                    y: EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT,
+                    y: SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT,
                     width: term_size.width,
                     height: term_size.height.saturating_sub(
-                        EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + LIST_FOOTER_HEIGHT,
+                        SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT + LIST_FOOTER_HEIGHT,
                     ),
                 },
                 global_mount_rows_content_width(&settings.mounts.pending),
@@ -799,11 +792,11 @@ const fn settings_content_area(
 ) -> Rect {
     Rect {
         x: 0,
-        y: EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT,
+        y: SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT,
         width: term_size.width,
-        height: term_size.height.saturating_sub(
-            EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + settings.cached_footer_h,
-        ),
+        height: term_size
+            .height
+            .saturating_sub(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT + settings.cached_footer_h),
     }
 }
 
@@ -1304,11 +1297,11 @@ const fn editor_content_area(
 ) -> Rect {
     Rect {
         x: 0,
-        y: EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT,
+        y: SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT,
         width: term_size.width,
-        height: term_size.height.saturating_sub(
-            EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + editor.cached_footer_h,
-        ),
+        height: term_size
+            .height
+            .saturating_sub(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT + editor.cached_footer_h),
     }
 }
 
@@ -1506,8 +1499,7 @@ mod mouse_drag_tests {
     #[test]
     fn content_areas_exclude_the_cached_footer() {
         use super::{
-            EDITOR_HEADER_HEIGHT, EDITOR_TAB_STRIP_HEIGHT, editor_content_area,
-            settings_content_area,
+            SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT, editor_content_area, settings_content_area,
         };
         use crate::console::manager::state::SettingsState;
         let term = Rect::new(0, 0, 80, 24);
@@ -1515,7 +1507,7 @@ mod mouse_drag_tests {
         let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
         settings.cached_footer_h = 3;
         let s = settings_content_area(&settings, term);
-        assert_eq!(s.y, EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT);
+        assert_eq!(s.y, SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT);
         assert_eq!(
             s.y + s.height,
             term.height - 3,
