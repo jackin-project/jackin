@@ -1,7 +1,6 @@
 //! Editor-stage dispatch: tab navigation, field focus, per-tab key
 //! handling, and the editor-level modal dispatcher.
 
-use crate::operator_env::OpRunner as _;
 use anyhow::Context as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -1245,16 +1244,9 @@ pub(super) fn handle_editor_modal(
                         // ID / the 1Password desktop dialog don't freeze the TUI
                         // reactor. The outer run_console loop polls the receiver
                         // each tick and applies the result via _committed / _failed.
-                        let runner =
-                            crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
-                        let op = op_ref.op.clone();
-                        let (tx, rx) = tokio::sync::oneshot::channel();
-                        tokio::task::spawn_blocking(move || {
-                            let result = runner.read(&op).map(|_| ());
-                            let _ = tx.send(result);
-                        });
-                        editor.pending_op_commit =
-                            Some(crate::console::manager::state::PendingOpCommit { op_ref, rx });
+                        editor.pending_op_commit = Some(
+                            crate::console::manager::state::PendingOpCommit::spawn(op_ref),
+                        );
                         // Close the OpPicker — the auth form stays stashed on
                         // modal_parents so the _committed / _failed helpers find it.
                         editor.modal = None;

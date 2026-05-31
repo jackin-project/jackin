@@ -526,6 +526,20 @@ pub struct PendingOpCommit {
     pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
 }
 
+impl PendingOpCommit {
+    #[must_use]
+    pub fn spawn(op_ref: crate::operator_env::OpRef) -> Self {
+        let runner = crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
+        let op = op_ref.op.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let result = crate::operator_env::OpRunner::read(&runner, &op).map(|_| ());
+            let _ = tx.send(result);
+        });
+        Self { op_ref, rx }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct PendingMountInfoRefresh {
     target: MountInfoRefreshTarget,

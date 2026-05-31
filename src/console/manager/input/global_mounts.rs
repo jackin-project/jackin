@@ -1,4 +1,3 @@
-use crate::operator_env::OpRunner as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::message::{ManagerMessage, update_manager};
@@ -690,16 +689,9 @@ pub(super) fn handle_settings_auth_modal(
                     // ID / the 1Password desktop dialog don't freeze the TUI
                     // reactor. The outer run_console loop polls the receiver
                     // each tick and applies the result via _committed / _failed.
-                    let runner =
-                        crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
-                    let op = op_ref.op.clone();
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    tokio::task::spawn_blocking(move || {
-                        let result = runner.read(&op).map(|_| ());
-                        let _ = tx.send(result);
-                    });
-                    auth.pending_op_commit =
-                        Some(crate::console::manager::state::PendingOpCommit { op_ref, rx });
+                    auth.pending_op_commit = Some(
+                        crate::console::manager::state::PendingOpCommit::spawn(op_ref),
+                    );
                     // Close the OpPicker — the auth form stays stashed on
                     // modal_parents so the _committed / _failed helpers find it.
                     auth.modal = None;
