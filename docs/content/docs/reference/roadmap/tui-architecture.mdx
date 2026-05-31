@@ -34,6 +34,7 @@ title: "TUI architecture — Ratatui application patterns"
 - The manager module no longer re-exports the entire render module as a facade; callers use the manager-owned `render` function or the direct state/auth-row owners instead.
 - The readonly-mount render regression now lives with editor render tests, and render helpers that no caller outside the view layer needs are private or `pub(super)`, leaving manager input tests free of render-facade calls.
 - Capsule Ratatui chrome now renders its active tab row through the shared `jackin-tui` `TabStrip`, with regression coverage for the shared active-tab underline.
+- Capsule Ratatui chrome now consumes the shared `jackin-tui` PHOSPHOR brand token instead of redeclaring the brand RGB inline.
 - Container info is unified across surfaces: shared `jackin-tui` state/render/hit-test/OSC 8 overlay helpers back the host console and launch cockpit; capsule status-bar chip click opens the matching container-info dialog; OSC 52 copy works for copyable rows.
 - Launch failure paths now render as full wrapped plain text and receive OSC 8 `file://` hyperlink overlays for supporting terminals; overlay tests assert both diagnostics and docker-output links.
 

@@ -35,7 +35,6 @@ pub struct StatusBarWidget<'a> {
 }
 
 const BRAND_TEXT: &str = "▓▓▓▓ ";
-const BRAND_BG_COLOR: Color = Color::Rgb(0, 255, 65); // PHOSPHOR_GREEN
 const BRAND_FG_COLOR: Color = Color::Black;
 
 impl Widget for StatusBarWidget<'_> {
@@ -49,7 +48,7 @@ impl Widget for StatusBarWidget<'_> {
         ratatui::widgets::Paragraph::new(Line::from(Span::styled(
             BRAND_TEXT,
             Style::default()
-                .bg(BRAND_BG_COLOR)
+                .bg(jackin_tui::theme::PHOSPHOR_GREEN)
                 .fg(BRAND_FG_COLOR)
                 .add_modifier(Modifier::BOLD),
         )))
