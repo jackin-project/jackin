@@ -663,6 +663,7 @@ fn render_sidebar_body(
                 area,
                 " Global mounts ",
                 &global_rows,
+                &inputs.mount_info_cache,
                 state.list_global_mounts_scroll_x,
                 state.list_global_mounts_scroll_y,
                 global_focused == Some(MountScrollFocus::Global),
@@ -675,6 +676,7 @@ fn render_sidebar_body(
                 area,
                 &title,
                 &role_global_rows,
+                &inputs.mount_info_cache,
                 state.list_role_global_mounts_scroll_x,
                 state.list_role_global_mounts_scroll_y,
                 global_focused == Some(MountScrollFocus::RoleGlobal),
@@ -1028,6 +1030,7 @@ fn render_global_mount_rows_section(
     area: Rect,
     title: &str,
     rows: &[&crate::config::GlobalMountRow],
+    cache: &MountInfoCache,
     scroll_x: u16,
     scroll_y: u16,
     focused: bool,
@@ -1041,8 +1044,6 @@ fn render_global_mount_rows_section(
     } else {
         let mounts: Vec<crate::workspace::MountConfig> =
             rows.iter().map(|row| row.mount.clone()).collect();
-        let cache = MountInfoCache::default();
-        cache.refresh_mounts(&mounts);
         let display_rows = format_mount_rows_with_cache(&mounts, &cache);
         let path_w = mount_path_width(&display_rows);
         lines.push(render_global_mount_header(path_w));
