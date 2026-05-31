@@ -247,6 +247,9 @@ pub use jackin_console::model::{
 
 pub type SettingsEnvConfig =
     jackin_console::model::SettingsEnvConfig<crate::operator_env::EnvValue>;
+pub type PendingSaveCommit =
+    jackin_console::model::PendingSaveCommit<crate::workspace::MountConfig>;
+pub type EditorSaveFlow = jackin_console::model::EditorSaveFlow<PendingSaveCommit>;
 
 #[derive(Debug)]
 pub struct SettingsEnvState<'a> {
@@ -555,45 +558,6 @@ impl std::fmt::Debug for PendingRoleLoad {
             .field("key", &self.key)
             .field("source", &self.source)
             .finish_non_exhaustive()
-    }
-}
-
-/// Save cycle state machine.
-///
-/// `Idle` → (open `ConfirmSave`) `Confirming` → (stash plan)
-/// `PendingCommit` → (outer loop writes to disk) `Idle` or `Error`.
-/// `exit_on_success` is true when save came from `SaveDiscardCancel`
-/// — outer loop pops to list on success. Save errors land in `Error`
-/// and surface through the shared `ErrorPopup`.
-#[derive(Debug, Clone, Default)]
-pub enum EditorSaveFlow {
-    #[default]
-    Idle,
-    Confirming {
-        exit_on_success: bool,
-    },
-    PendingCommit {
-        plan: PendingSaveCommit,
-        exit_on_success: bool,
-    },
-    Error {
-        message: String,
-    },
-}
-
-impl EditorSaveFlow {
-    #[must_use]
-    pub const fn is_error(&self) -> bool {
-        matches!(self, Self::Error { .. })
-    }
-
-    #[must_use]
-    pub const fn error_message(&self) -> Option<&str> {
-        if let Self::Error { message } = self {
-            Some(message.as_str())
-        } else {
-            None
-        }
     }
 }
 
@@ -1102,19 +1066,6 @@ fn settings_env_flat_row_count(env: &SettingsEnvState<'_>) -> usize {
         }
     }
     rows
-}
-
-#[derive(Debug, Clone)]
-pub struct PendingSaveCommit {
-    pub effective_removals: Vec<String>,
-    pub final_mounts: Option<Vec<crate::workspace::MountConfig>>,
-    /// `true` when the operator has already confirmed the source-drift
-    /// modal in this save cycle (Task 10.3). Causes
-    /// `commit_editor_save` to skip the drift-detection check and go
-    /// straight to `force_cleanup_isolated` + the on-disk write.
-    /// Defaults to `false` so the first commit attempt always runs the
-    /// safety check.
-    pub delete_isolated_acknowledged: bool,
 }
 
 // `TextInputState` is ~600B while other variants are ~330B. Boxing the state

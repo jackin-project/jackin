@@ -106,6 +106,47 @@ pub struct SettingsEnvConfig<V> {
     pub roles: BTreeMap<String, BTreeMap<String, V>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PendingSaveCommit<M> {
+    pub effective_removals: Vec<String>,
+    pub final_mounts: Option<Vec<M>>,
+    /// True when the operator has already confirmed isolated-state cleanup
+    /// for source drift in this save cycle.
+    pub delete_isolated_acknowledged: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum EditorSaveFlow<P> {
+    #[default]
+    Idle,
+    Confirming {
+        exit_on_success: bool,
+    },
+    PendingCommit {
+        plan: P,
+        exit_on_success: bool,
+    },
+    Error {
+        message: String,
+    },
+}
+
+impl<P> EditorSaveFlow<P> {
+    #[must_use]
+    pub const fn is_error(&self) -> bool {
+        matches!(self, Self::Error { .. })
+    }
+
+    #[must_use]
+    pub const fn error_message(&self) -> Option<&str> {
+        if let Self::Error { message } = self {
+            Some(message.as_str())
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalMountConfirm {
     Remove,
