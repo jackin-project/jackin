@@ -1,4 +1,6 @@
-use super::state::EditorTab;
+use std::collections::BTreeSet;
+
+use super::state::{EditorTab, SecretsScopeTag};
 
 #[must_use]
 pub const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
@@ -59,5 +61,28 @@ pub fn toggle_general_selected(
         2 => *keep_awake_enabled = !*keep_awake_enabled,
         3 => *git_pull_on_entry = !*git_pull_on_entry,
         _ => {}
+    }
+}
+
+pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, expanded: bool) {
+    if expanded {
+        expanded_roles.insert(role);
+    } else {
+        expanded_roles.remove(&role);
+    }
+}
+
+pub fn toggle_mount_readonly(readonly: &mut bool) {
+    *readonly = !*readonly;
+}
+
+pub fn toggle_secret_mask(
+    unmasked_rows: &mut BTreeSet<(SecretsScopeTag, String)>,
+    scope: SecretsScopeTag,
+    key: String,
+) {
+    let entry = (scope, key);
+    if !unmasked_rows.remove(&entry) {
+        unmasked_rows.insert(entry);
     }
 }

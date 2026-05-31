@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::state::{SettingsGeneralState, SettingsTab, SettingsTrustState};
 
@@ -57,6 +57,18 @@ pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
     if let Some(row) = state.pending.get_mut(state.selected) {
         row.trusted = !row.trusted;
     }
+}
+
+pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, expanded: bool) {
+    if expanded {
+        expanded_roles.insert(role);
+    } else {
+        expanded_roles.remove(&role);
+    }
+}
+
+pub fn toggle_readonly(readonly: &mut bool) {
+    *readonly = !*readonly;
 }
 
 #[must_use]

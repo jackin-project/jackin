@@ -13,12 +13,15 @@ use super::state::{
 };
 use crate::config::AppConfig;
 use jackin_console::editor::update::{
-    next_editor_tab, previous_editor_tab, step_cursor_down, step_cursor_up,
-    toggle_general_selected as toggle_editor_general_row,
+    next_editor_tab, previous_editor_tab, set_role_expanded as set_editor_role_expanded,
+    step_cursor_down, step_cursor_up, toggle_general_selected as toggle_editor_general_row,
+    toggle_mount_readonly as toggle_editor_mount_readonly,
+    toggle_secret_mask as toggle_editor_secret_mask_row,
 };
 use jackin_console::settings::update::{
     move_general_selection, move_trust_selection, next_settings_tab, previous_settings_tab,
-    step_cursor_down_by, step_cursor_up_by, toggle_general_selected, toggle_trust_selected,
+    set_role_expanded as set_settings_role_expanded, step_cursor_down_by, step_cursor_up_by,
+    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 use ratatui::layout::Rect;
@@ -517,22 +520,14 @@ fn set_editor_auth_role_expanded(state: &mut ManagerState<'_>, role: String, exp
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    if expanded {
-        editor.auth_expanded.insert(role);
-    } else {
-        editor.auth_expanded.remove(&role);
-    }
+    set_editor_role_expanded(&mut editor.auth_expanded, role, expanded);
 }
 
 fn set_editor_secrets_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    if expanded {
-        editor.secrets_expanded.insert(role);
-    } else {
-        editor.secrets_expanded.remove(&role);
-    }
+    set_editor_role_expanded(&mut editor.secrets_expanded, role, expanded);
 }
 
 fn toggle_editor_general_selected(state: &mut ManagerState<'_>) {
@@ -553,7 +548,7 @@ fn toggle_editor_mount_readonly_selected(state: &mut ManagerState<'_>) {
     };
     let FieldFocus::Row(row) = editor.active_field;
     if let Some(mount) = editor.pending.mounts.get_mut(row) {
-        mount.readonly = !mount.readonly;
+        toggle_editor_mount_readonly(&mut mount.readonly);
     }
 }
 
@@ -561,21 +556,14 @@ fn toggle_editor_secret_mask(state: &mut ManagerState<'_>, scope: SecretsScopeTa
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    let entry = (scope, key);
-    if !editor.unmasked_rows.remove(&entry) {
-        editor.unmasked_rows.insert(entry);
-    }
+    toggle_editor_secret_mask_row(&mut editor.unmasked_rows, scope, key);
 }
 
 fn set_settings_env_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    if expanded {
-        settings.env.expanded.insert(role);
-    } else {
-        settings.env.expanded.remove(&role);
-    }
+    set_settings_role_expanded(&mut settings.env.expanded, role, expanded);
 }
 
 fn toggle_settings_global_mount_readonly(state: &mut ManagerState<'_>) {
@@ -583,7 +571,7 @@ fn toggle_settings_global_mount_readonly(state: &mut ManagerState<'_>) {
         return;
     };
     if let Some(row) = settings.mounts.pending.get_mut(settings.mounts.selected) {
-        row.mount.readonly = !row.mount.readonly;
+        toggle_settings_readonly(&mut row.mount.readonly);
     }
 }
 
