@@ -2,7 +2,8 @@ use crate::operator_env::OpRunner as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::render::global_mounts::{global_mounts_content_width, trust_content_width};
+use super::super::mount_display::settings_global_mounts_content_width;
+use super::super::render::global_mounts::trust_content_width;
 use super::super::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
@@ -167,7 +168,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let term_width = state.cached_term_size.width;
-    let content_width = global_mounts_content_width(&settings.mounts.pending);
+    let content_width = settings_global_mounts_content_width(&settings.mounts.pending);
     let footer_h = settings.cached_footer_h;
     match key.code {
         KeyCode::Char('h' | 'H') => {

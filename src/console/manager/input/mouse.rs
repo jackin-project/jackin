@@ -9,6 +9,7 @@ use super::super::message::{ManagerMessage, update_manager};
 use super::super::modal_layout::modal_outer_rect;
 #[cfg(test)]
 use super::super::mount_display::global_mounts_content_width;
+use super::super::mount_display::settings_global_mounts_content_width;
 use super::super::mount_display::workspace_mounts_content_width;
 use super::super::render::global_mounts::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
@@ -1323,10 +1324,9 @@ const fn editor_content_height(editor: &super::super::state::EditorState<'_>) ->
 }
 
 fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
-    // Settings renders with global_mount_lines (Destination + Mode + Type columns).
-    // list.rs::global_mounts_content_width only covers Destination + Mode — using it
-    // here would underestimate content_width, clamping scroll before the right edge.
-    super::super::render::global_mounts::global_mounts_content_width(rows)
+    // Settings mounts render Destination + Mode + Type columns, unlike the
+    // sidebar's Destination + Mode variant.
+    settings_global_mounts_content_width(rows)
 }
 
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`

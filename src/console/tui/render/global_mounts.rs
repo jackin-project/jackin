@@ -29,20 +29,6 @@ use crate::console::manager::state::{
 use crate::operator_env::EnvValue;
 use jackin_tui::HintSpan;
 
-pub(crate) fn global_mounts_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
-    let cache = MountInfoCache::default();
-    cache.refresh_global_rows(rows);
-    global_mounts_content_width_with_cache(rows, &cache)
-}
-
-pub(crate) fn global_mounts_content_width_with_cache(
-    rows: &[crate::config::GlobalMountRow],
-    cache: &MountInfoCache,
-) -> usize {
-    let lines = global_mount_lines(rows, None, false, cache);
-    super::max_line_width(&lines)
-}
-
 pub(super) fn render_settings(
     frame: &mut Frame,
     area: Rect,

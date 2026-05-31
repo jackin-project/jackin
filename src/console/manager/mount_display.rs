@@ -127,6 +127,34 @@ pub(crate) fn global_mounts_content_width_with_cache(
         .unwrap_or(0)
 }
 
+pub(crate) fn settings_global_mounts_content_width(
+    rows: &[crate::config::GlobalMountRow],
+) -> usize {
+    let cache = MountInfoCache::default();
+    cache.refresh_global_rows(rows);
+    settings_global_mounts_content_width_with_cache(rows, &cache)
+}
+
+pub(crate) fn settings_global_mounts_content_width_with_cache(
+    rows: &[crate::config::GlobalMountRow],
+    cache: &MountInfoCache,
+) -> usize {
+    let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
+    let display_rows = format_mount_rows_with_cache(&mounts, cache);
+    let path_w = mount_path_width(&display_rows);
+    display_rows
+        .iter()
+        .flat_map(|row| {
+            [
+                settings_global_mount_row_width(path_w, row),
+                row.host_source.as_ref().map_or(0, |_| 2 + path_w),
+            ]
+        })
+        .chain((!display_rows.is_empty()).then_some(settings_global_mount_header_width(path_w)))
+        .max()
+        .unwrap_or(0)
+}
+
 fn workspace_mount_header_width(path_w: usize) -> usize {
     2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + MOUNT_ISOLATION_COL_WIDTH + 2 + "Type".len()
 }
@@ -147,4 +175,12 @@ fn global_mount_header_width(path_w: usize) -> usize {
 
 fn global_mount_row_width(path_w: usize, _row: &MountDisplayRow) -> usize {
     2 + path_w + 2 + 2
+}
+
+fn settings_global_mount_header_width(path_w: usize) -> usize {
+    2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + "Type".len()
+}
+
+fn settings_global_mount_row_width(path_w: usize, row: &MountDisplayRow) -> usize {
+    2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + jackin_tui::display_cols(&row.kind)
 }

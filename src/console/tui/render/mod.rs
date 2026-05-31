@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::config::AppConfig;
+use crate::console::manager::mount_display::settings_global_mounts_content_width_with_cache;
 use crate::console::manager::state::{ManagerListRow, ManagerStage, ManagerState};
 use jackin_tui::HintSpan;
 
@@ -469,10 +470,7 @@ fn clamp_global_mounts_scroll_for_frame(
         ])
         .split(area);
     clamp_scroll_x(
-        global_mounts::global_mounts_content_width_with_cache(
-            &global.pending,
-            &global.mount_info_cache,
-        ),
+        settings_global_mounts_content_width_with_cache(&global.pending, &global.mount_info_cache),
         scroll_viewport_width(chunks[2]),
         &mut global.scroll_x,
     );
