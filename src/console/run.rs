@@ -11,91 +11,11 @@ use super::tui::terminal::{
 use super::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
 };
+use jackin_console::run::{quit_confirm_area, render_debug_bar, split_debug_area};
 
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use crate::workspace::LoadWorkspaceInput;
-
-/// Split `area` into a main region and an optional 1-row debug bar at the
-/// bottom. Returns `(main_area, Some(debug_row))` when debug mode is on and
-/// the terminal has at least 2 rows; otherwise returns `(area, None)`.
-fn split_debug_area(
-    area: ratatui::layout::Rect,
-) -> (ratatui::layout::Rect, Option<ratatui::layout::Rect>) {
-    if !crate::tui::is_debug_mode() || area.height < 2 {
-        return (area, None);
-    }
-    let main = ratatui::layout::Rect {
-        height: area.height - 1,
-        ..area
-    };
-    let bar = ratatui::layout::Rect {
-        y: area.y + area.height - 1,
-        height: 1,
-        ..area
-    };
-    (main, Some(bar))
-}
-
-/// Render the 1-row debug status bar.
-///
-/// When `instance_id` is provided, shows `run_id:instance_id` as a single
-/// `DANGER_RED` chip right-aligned on a white bar. The combined chip is
-/// clickable — click it to view debug diagnostics info.
-fn render_debug_bar(
-    frame: &mut ratatui::Frame,
-    area: ratatui::layout::Rect,
-    run_id: &str,
-    instance_id: Option<&str>,
-) {
-    use ratatui::{
-        layout::{Constraint, Layout},
-        style::Style,
-        text::{Line, Span},
-        widgets::Paragraph,
-    };
-
-    let chip_text =
-        instance_id.map_or_else(|| format!(" {run_id} "), |iid| format!(" {run_id}:{iid} "));
-    let chip_width = chip_text.chars().count() as u16;
-
-    let [left_area, chip_area] =
-        Layout::horizontal([Constraint::Min(0), Constraint::Length(chip_width)]).areas(area);
-
-    let white_bg = Style::default()
-        .bg(jackin_tui::theme::WHITE)
-        .fg(jackin_tui::theme::PHOSPHOR_DARK);
-    let chip_style = Style::default()
-        .bg(jackin_tui::theme::DANGER_RED)
-        .fg(jackin_tui::theme::WHITE)
-        .add_modifier(ratatui::style::Modifier::BOLD);
-
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::raw("")])).style(white_bg),
-        left_area,
-    );
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(chip_text, chip_style)])),
-        chip_area,
-    );
-}
-
-pub(super) fn quit_confirm_area(
-    frame: ratatui::layout::Rect,
-    confirm: &jackin_tui::components::ConfirmState,
-) -> ratatui::layout::Rect {
-    let width: u16 = 44.min(frame.width.saturating_sub(4));
-    let height: u16 = jackin_tui::components::confirm_required_height(confirm)
-        .min(frame.height.saturating_sub(2));
-    let x = frame.x + frame.width.saturating_sub(width) / 2;
-    let y = frame.y + frame.height.saturating_sub(height) / 2;
-    ratatui::layout::Rect {
-        x,
-        y,
-        width,
-        height,
-    }
-}
 
 /// Bare `Q` exits silently only on the main list — anywhere else
 /// (editor, prelude, confirm, list modal) pops the exit prompt.
@@ -390,7 +310,8 @@ pub async fn run_console<H: InstanceActionHandler>(
 
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             let full_area: ratatui::layout::Rect = terminal.size()?.into();
-            let (main_area, debug_bar_area) = split_debug_area(full_area);
+            let (main_area, debug_bar_area) =
+                split_debug_area(full_area, crate::tui::is_debug_mode());
             manager::prepare_for_render(ms, &config, cwd, main_area);
             let confirm_state = state.quit_confirm.as_ref();
             terminal.draw(|frame| {
@@ -613,7 +534,10 @@ pub async fn run_console<H: InstanceActionHandler>(
                                     });
                                     terminal.draw(|frame| {
                                         let full_area = frame.area();
-                                        let (main_area, _debug_bar) = split_debug_area(full_area);
+                                        let (main_area, _debug_bar) = split_debug_area(
+                                            full_area,
+                                            crate::tui::is_debug_mode(),
+                                        );
                                         manager::render(frame, main_area, ms, &config, cwd);
                                     })?;
                                 }
