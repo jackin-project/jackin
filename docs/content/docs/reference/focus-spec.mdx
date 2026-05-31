@@ -11,9 +11,11 @@ For the implementation primitives, see `Panel`, `PanelFocus`, `modal_block()` in
 ## Rules recap
 
 - **Exactly one** PHOSPHOR_GREEN border visible per surface layer at any time.
-- Clicking a container transfers focus to it immediately.
+- **Click-to-focus**: clicking a focusable container immediately transfers focus to it and updates the hint bar.
+- **Non-focusable containers never steal focus**: if a block has no scroll capability and no interactive elements (no buttons, no picker, no text input), clicking it does nothing — focus stays on the previously focused container.
+- **Scroll = focusable** for passive detail blocks: a block is only focusable if its content overflows its viewport in at least one axis (the scrollbar appears). A block whose content fits entirely is not focusable and must not show the green border.
+- **Hint bar is focus-scoped**: the bottom hint bar recalculates on every focus change and shows only the actions relevant to the currently focused container. Switching focus is never silent — the hint bar visually confirms which container owns the keyboard.
 - Pressing `Esc` / committing a modal returns focus to the container that was focused before the modal opened.
-- A container that is not scrollable in any direction does **not** gain the green border from a scroll-focus click (scroll affordance rule — see TUI Design Decisions).
 - Dialogs/modals always have PHOSPHOR_GREEN borders — they are always the active container when visible.
 
 ---
@@ -22,7 +24,46 @@ For the implementation primitives, see `Panel`, `PanelFocus`, `modal_block()` in
 
 ### Workspace list screen
 
-_To be documented._
+Layout: workspace list sidebar (left) + detail panels on the right (General, Mounts, Global mounts, Roles).
+
+#### Initial state (on launch)
+
+- **Workspace list sidebar** owns focus. PHOSPHOR_GREEN border on the sidebar block.
+- All right-hand detail panels show PHOSPHOR_DARK borders.
+- Hint bar shows workspace-list actions: `↑↓ · ↵ launch   E edit · N new · D delete · S settings · O open in GitHub   Q quit`.
+
+#### Focusable containers on this screen
+
+| Container | Focusable? | Condition |
+|---|---|---|
+| Workspace list sidebar | **Yes** | Always — it is the primary navigation container. |
+| Mounts block | **Yes, when scrollable** | Content overflows viewport → scrollbar appears → click focuses it. |
+| Global mounts block | **Yes, when scrollable** | Same rule. Content is typically long enough to overflow. |
+| General block | **No** | Contains only read-only summary fields. No scroll, no buttons. Clicking it does nothing. |
+| Roles block | **No** | Same — short read-only list. Clicking it does nothing. |
+
+#### Mouse interactions
+
+- **Click on workspace list sidebar** → focus stays or returns to sidebar; border stays green.
+- **Click on Mounts block (when scrollable)** → focus moves to Mounts; its border turns green; sidebar border turns dark; hint bar updates to scroll hints for Mounts.
+- **Click on Global mounts block (when scrollable)** → same pattern; focus moves to Global mounts; hint bar updates to scroll hints for Global mounts.
+- **Click on General block** → no focus change; no visual response; General never shows a green border.
+- **Click on Roles block** → no focus change; Roles never shows a green border.
+
+#### Keyboard when workspace list is focused
+
+- `↑` / `↓` — navigate workspace entries.
+- `↵` — launch selected workspace.
+- `E` — open workspace editor (focus transfers to editor screen).
+- `N` — new workspace modal.
+- `D` — delete confirmation modal.
+- `S` — settings modal.
+- `Q` — quit.
+
+#### Keyboard when Mounts or Global mounts is focused
+
+- `↑` / `↓` / `H` / `L` / scroll wheel — scroll the focused detail block.
+- `Esc` — return focus to workspace list sidebar; sidebar border turns green; hint bar returns to workspace-list actions.
 
 ### Workspace editor screen
 
