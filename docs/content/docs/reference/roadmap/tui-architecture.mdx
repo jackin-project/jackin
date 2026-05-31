@@ -1054,7 +1054,7 @@ crates/jackin-console/src/
     └── tui/
 ```
 
-Partial extraction is underway. The `jackin-console` crate now exists and owns the terminal-session lifecycle in <RepoFile path="crates/jackin-console/src/terminal.rs" /> behind a `ConsoleHostTerminal` adapter. The root bridge in <RepoFile path="src/console/tui/terminal.rs" /> supplies jackin'-specific debug-buffering and host-screen globals while preserving the old call sites. Remaining extraction work is the substantial part: moving the console event loop, screen model/update state, and view modules out of `src/console/`.
+Partial extraction is underway. The `jackin-console` crate now exists and owns the terminal-session lifecycle in <RepoFile path="crates/jackin-console/src/terminal.rs" /> behind a `ConsoleHostTerminal` adapter. It also owns the reusable workspace role-access rule in <RepoFile path="crates/jackin-console/src/workspace.rs" />, while <RepoFile path="src/console/manager/agent_allow.rs" /> adapts the root `WorkspaceConfig` type. The root bridge in <RepoFile path="src/console/tui/terminal.rs" /> supplies jackin'-specific debug-buffering and host-screen globals while preserving the old call sites. Remaining extraction work is the substantial part: moving the console event loop, screen model/update state, and view modules out of `src/console/`.
 
 **`jackin-launch`** — the launch progress cockpit (digital rain, stage rail, failure popup):
 

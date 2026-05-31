@@ -5,20 +5,28 @@
 //! editor, the details pane, and the save-confirmation summary all agree
 //! on what a config means.
 
+use jackin_console::workspace::WorkspaceRoleAccess;
+
 use crate::workspace::WorkspaceConfig;
+
+impl WorkspaceRoleAccess for WorkspaceConfig {
+    fn allowed_roles(&self) -> &[String] {
+        &self.allowed_roles
+    }
+}
 
 /// True when `ws` uses the "all roles allowed" shorthand — i.e. the
 /// `allowed_roles` list is empty.
 #[must_use]
-pub const fn allows_all_agents(ws: &WorkspaceConfig) -> bool {
-    ws.allowed_roles.is_empty()
+pub fn allows_all_agents(ws: &WorkspaceConfig) -> bool {
+    jackin_console::workspace::allows_all_agents(ws)
 }
 
 /// True when `role` is effectively allowed to run in `ws`. Covers both
 /// the explicit membership case and the "empty = all" shorthand.
 #[must_use]
 pub fn agent_is_effectively_allowed(ws: &WorkspaceConfig, role: &str) -> bool {
-    ws.allowed_roles.is_empty() || ws.allowed_roles.iter().any(|a| a == role)
+    jackin_console::workspace::agent_is_effectively_allowed(ws, role)
 }
 
 #[cfg(test)]

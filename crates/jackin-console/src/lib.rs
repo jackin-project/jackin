@@ -1,6 +1,7 @@
 //! Host console surface ownership and runtime helpers.
 
 pub mod terminal;
+pub mod workspace;
 
 pub trait ConsoleHostTerminal: Send + Sync {
     fn begin_debug_buffering(&self);
