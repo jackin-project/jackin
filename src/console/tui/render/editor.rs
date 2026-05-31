@@ -818,79 +818,24 @@ pub(crate) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
 /// check across expanded roles.
 pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     use crate::console::manager::auth_kind::AuthKind;
-    let Some(kind) = editor.auth_selected_kind else {
-        // Root view — one row per kind, fixed order. `Github` is purely a
-        // panel-layer kind (no `Agent` peer); see
-        // `crate::console::manager::auth_kind` for the design notes.
-        return vec![
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Claude,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Codex,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Amp,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Opencode,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Github,
-            },
-            AuthRow::AuthKindRow {
-                kind: AuthKind::Zai,
-            },
-        ];
-    };
-
-    let override_roles: Vec<String> = editor
-        .pending
-        .roles
-        .iter()
-        .filter(|(_, ro)| kind.role_override_present(ro))
-        .map(|(name, _)| name.clone())
-        .collect();
-
     let synthesized = synthesize_appconfig_for_auth(editor, config);
     let ws_name = workspace_name_for_panel(editor);
-
-    let mut rows = vec![AuthRow::WorkspaceMode { kind }];
-    if effective_mode_needs_credential(&synthesized, &ws_name, "", kind) {
-        rows.push(AuthRow::WorkspaceSource { kind });
-    }
-    rows.push(AuthRow::Spacer);
-    for role in &override_roles {
-        let expanded = editor.auth_expanded.contains(role);
-        rows.push(AuthRow::RoleHeader {
-            role: role.clone(),
-            expanded,
-        });
-        if expanded {
-            rows.push(AuthRow::RoleMode {
-                role: role.clone(),
-                kind,
-            });
-            if effective_mode_needs_credential(&synthesized, &ws_name, role, kind) {
-                rows.push(AuthRow::RoleSource {
-                    role: role.clone(),
-                    kind,
-                });
-            }
-        }
-    }
-    let eligible_remaining = editor
-        .pending
-        .allowed_roles
-        .len()
-        .saturating_sub(override_roles.len());
-    if !override_roles.is_empty() {
-        rows.push(AuthRow::Spacer);
-    }
-    rows.push(AuthRow::AddSentinel {
-        eligible: eligible_remaining,
-    });
-    rows
+    jackin_console::editor::update::auth_flat_rows(
+        editor.auth_selected_kind,
+        [
+            AuthKind::Claude,
+            AuthKind::Codex,
+            AuthKind::Amp,
+            AuthKind::Opencode,
+            AuthKind::Github,
+            AuthKind::Zai,
+        ],
+        &editor.pending.roles,
+        editor.pending.allowed_roles.len(),
+        &editor.auth_expanded,
+        |kind, role| kind.role_override_present(role),
+        |kind, role| effective_mode_needs_credential(&synthesized, &ws_name, role, *kind),
+    )
 }
 
 /// Whether the (workspace, role, kind) triple's effective mode (after

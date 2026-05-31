@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::state::{EditorTab, SecretsRow, SecretsScopeTag};
+use super::state::{AuthRow, EditorTab, SecretsRow, SecretsScopeTag};
 
 #[must_use]
 pub const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
@@ -123,6 +123,66 @@ pub fn secrets_flat_rows<R, V>(
     rows
 }
 
+#[must_use]
+pub fn auth_flat_rows<K, R>(
+    selected_kind: Option<K>,
+    root_kinds: impl IntoIterator<Item = K>,
+    roles: &BTreeMap<String, R>,
+    allowed_role_count: usize,
+    expanded_roles: &BTreeSet<String>,
+    role_override_present: impl Fn(&K, &R) -> bool,
+    effective_mode_needs_credential: impl Fn(&K, &str) -> bool,
+) -> Vec<AuthRow<K>>
+where
+    K: Clone,
+{
+    let Some(kind) = selected_kind else {
+        return root_kinds
+            .into_iter()
+            .map(|kind| AuthRow::AuthKindRow { kind })
+            .collect();
+    };
+
+    let override_roles: Vec<String> = roles
+        .iter()
+        .filter(|(_, role)| role_override_present(&kind, role))
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let mut rows = vec![AuthRow::WorkspaceMode { kind: kind.clone() }];
+    if effective_mode_needs_credential(&kind, "") {
+        rows.push(AuthRow::WorkspaceSource { kind: kind.clone() });
+    }
+    rows.push(AuthRow::Spacer);
+    for role in &override_roles {
+        let expanded = expanded_roles.contains(role);
+        rows.push(AuthRow::RoleHeader {
+            role: role.clone(),
+            expanded,
+        });
+        if expanded {
+            rows.push(AuthRow::RoleMode {
+                role: role.clone(),
+                kind: kind.clone(),
+            });
+            if effective_mode_needs_credential(&kind, role) {
+                rows.push(AuthRow::RoleSource {
+                    role: role.clone(),
+                    kind: kind.clone(),
+                });
+            }
+        }
+    }
+    let eligible_remaining = allowed_role_count.saturating_sub(override_roles.len());
+    if !override_roles.is_empty() {
+        rows.push(AuthRow::Spacer);
+    }
+    rows.push(AuthRow::AddSentinel {
+        eligible: eligible_remaining,
+    });
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +240,86 @@ mod tests {
         assert!(!rows.iter().any(
             |row| matches!(row, SecretsRow::RoleKeyRow { role, key } if role == "alpha" && key == "ROLE_KEY")
         ));
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TestAuthKind {
+        Claude,
+        Github,
+    }
+
+    struct RoleAuth {
+        override_present: bool,
+        needs_source: bool,
+    }
+
+    #[test]
+    fn auth_flat_rows_root_view_lists_kinds() {
+        let rows = auth_flat_rows::<TestAuthKind, RoleAuth>(
+            None,
+            [TestAuthKind::Claude, TestAuthKind::Github],
+            &BTreeMap::new(),
+            0,
+            &BTreeSet::new(),
+            |_, _| false,
+            |_, _| false,
+        );
+        assert_eq!(
+            rows,
+            vec![
+                AuthRow::AuthKindRow {
+                    kind: TestAuthKind::Claude
+                },
+                AuthRow::AuthKindRow {
+                    kind: TestAuthKind::Github
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn auth_flat_rows_detail_view_expands_role_source_rows() {
+        let roles = BTreeMap::from([(
+            "alpha".to_string(),
+            RoleAuth {
+                override_present: true,
+                needs_source: true,
+            },
+        )]);
+        let rows = auth_flat_rows(
+            Some(TestAuthKind::Claude),
+            [TestAuthKind::Claude, TestAuthKind::Github],
+            &roles,
+            3,
+            &BTreeSet::from(["alpha".to_string()]),
+            |_, role| role.override_present,
+            |_, role| role.is_empty() || roles[role].needs_source,
+        );
+        assert_eq!(
+            rows,
+            vec![
+                AuthRow::WorkspaceMode {
+                    kind: TestAuthKind::Claude
+                },
+                AuthRow::WorkspaceSource {
+                    kind: TestAuthKind::Claude
+                },
+                AuthRow::Spacer,
+                AuthRow::RoleHeader {
+                    role: "alpha".to_string(),
+                    expanded: true,
+                },
+                AuthRow::RoleMode {
+                    role: "alpha".to_string(),
+                    kind: TestAuthKind::Claude
+                },
+                AuthRow::RoleSource {
+                    role: "alpha".to_string(),
+                    kind: TestAuthKind::Claude
+                },
+                AuthRow::Spacer,
+                AuthRow::AddSentinel { eligible: 2 },
+            ]
+        );
     }
 }
