@@ -77,6 +77,9 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         LaunchMessage::FailureCopied(target) => {
             view.failure_copied = Some(target);
         }
+        LaunchMessage::FooterHoverChanged(hover) => {
+            view.footer_hover = hover;
+        }
         LaunchMessage::BuildLogOpened => {
             view.build_log_open = true;
             view.build_log_scroll = jackin_tui::scroll::TailScroll::default();
@@ -211,6 +214,22 @@ mod tests {
             view.failure_copied,
             Some(crate::FailureCopyTarget::DiagnosticsPath)
         );
+    }
+
+    #[test]
+    fn footer_hover_message_replaces_hover_state() {
+        let mut view = initial_view();
+
+        let _ = update_launch_view(
+            &mut view,
+            LaunchMessage::FooterHoverChanged(StatusFooterHover {
+                left: true,
+                right: false,
+            }),
+        );
+
+        assert!(view.footer_hover.left);
+        assert!(!view.footer_hover.right);
     }
 
     #[test]

@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+use jackin_tui::components::StatusFooterHover;
 use ratatui::layout::Rect;
 
 use crate::tui::build_log::scroll_build_log;
@@ -135,9 +136,12 @@ fn handle_cockpit_mouse_move(
         !v.build_log_open && crate::build_log::len() > 0 && hit_activity(v, col, row);
     let container_hovering =
         hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode());
-    if activity_hovering != v.footer_hover.left || container_hovering != v.footer_hover.right {
-        v.footer_hover.left = activity_hovering;
-        v.footer_hover.right = container_hovering;
+    let hover = StatusFooterHover {
+        left: activity_hovering,
+        right: container_hovering,
+    };
+    if hover != v.footer_hover {
+        let _dirty = update_launch_view(v, LaunchMessage::FooterHoverChanged(hover));
         terminal.set_pointer_shape(activity_hovering || container_hovering);
     }
 }
