@@ -67,16 +67,27 @@ pub(super) fn editor_footer_items(
         return items;
     }
     if state.tab_bar_focused {
+        // General tab is read-only: Tab/↓ does not transfer focus into content.
+        // Show a neutral hint rather than the misleading "enter content" affordance.
+        let enter_content_hint = if state.active_tab == EditorTab::General {
+            &[][..]
+        } else {
+            &[
+                HintSpan::GroupSep,
+                HintSpan::Key("⇥/↓"),
+                HintSpan::Text("enter content"),
+            ][..]
+        };
         let mut items = vec![
             HintSpan::Key("\u{2190}\u{2192}"),
             HintSpan::Text("switch tab"),
-            HintSpan::GroupSep,
-            HintSpan::Key("⇥/↓"),
-            HintSpan::Text("enter content"),
+        ];
+        items.extend_from_slice(enter_content_hint);
+        items.extend([
             HintSpan::GroupSep,
             HintSpan::Key("S"),
             HintSpan::Text("save workspace"),
-        ];
+        ]);
         if state.is_dirty() {
             items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
         }

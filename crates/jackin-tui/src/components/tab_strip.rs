@@ -10,7 +10,10 @@ use ratatui::{
 
 use crate::{
     TabCell, lay_out_tabs,
-    theme::{TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER, WHITE},
+    theme::{
+        PHOSPHOR_GREEN, TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER,
+        WHITE,
+    },
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -90,10 +93,13 @@ pub fn tab_underline_line(cells: &[TabCell<'_>], focused: bool) -> Line<'static>
             } else {
                 " ".repeat(usize::from(cell.cell_cols))
             };
+            // Active tab underline uses PHOSPHOR_GREEN when tab bar is focused
+            // — consistent with the "focused = bright green" rule across all
+            // surfaces. WHITE was too subtle against the dark background.
             spans.push(Span::styled(
                 bar_text,
                 if cell.active {
-                    Style::default().fg(WHITE)
+                    Style::default().fg(PHOSPHOR_GREEN)
                 } else {
                     Style::default()
                 },
