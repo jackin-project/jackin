@@ -61,6 +61,10 @@ pub(crate) enum ManagerMessage {
     ExpandSelectedTree,
     ClearSettingsAuthKind,
     DismissSettingsErrorPopup,
+    OpenSettingsErrorPopup {
+        title: String,
+        message: String,
+    },
     EnterSettingsAuthKind,
     ScrollEditorTabHorizontal {
         delta: i16,
@@ -218,6 +222,9 @@ pub(crate) fn update_manager(
         ManagerMessage::ExpandSelectedTree => expand_selected_tree(state),
         ManagerMessage::ClearSettingsAuthKind => clear_settings_auth_kind(state),
         ManagerMessage::DismissSettingsErrorPopup => dismiss_settings_error_popup(state),
+        ManagerMessage::OpenSettingsErrorPopup { title, message } => {
+            open_settings_error_popup(state, title, message);
+        }
         ManagerMessage::EnterSettingsAuthKind => enter_settings_auth_kind(state),
         ManagerMessage::ScrollEditorTabHorizontal {
             delta,
@@ -440,6 +447,20 @@ fn dismiss_settings_error_popup(state: &mut ManagerState<'_>) {
     };
     settings.error_popup = None;
     settings.auth.restore_pending_auth_form();
+}
+
+fn open_settings_error_popup(
+    state: &mut ManagerState<'_>,
+    title: impl Into<String>,
+    message: impl Into<String>,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
+        title.into(),
+        message.into(),
+    ));
 }
 
 fn enter_settings_auth_kind(state: &mut ManagerState<'_>) {

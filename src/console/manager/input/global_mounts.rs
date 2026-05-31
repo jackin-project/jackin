@@ -2057,7 +2057,7 @@ fn set_settings_env_value_typed(
 /// Promote any pending error from a settings sub-tab to `settings.error_popup`,
 /// pop back to the workspace list when a handler set `exit_requested`.
 pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
-    let exit = {
+    let (exit, error) = {
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return;
         };
@@ -2071,14 +2071,17 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
             .or_else(|| settings.auth.error.take())
             .or_else(|| settings.trust.error.take());
         let exit = std::mem::take(&mut settings.mounts.exit_requested);
-        if let Some(msg) = error {
-            settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
-                "Settings error",
-                msg,
-            ));
-        }
-        exit
+        (exit, error)
     };
+    if let Some(msg) = error {
+        dispatch_manager(
+            state,
+            ManagerMessage::OpenSettingsErrorPopup {
+                title: "Settings error".into(),
+                message: msg,
+            },
+        );
+    }
     if exit {
         dispatch_manager(state, ManagerMessage::ReturnToList);
     } else {

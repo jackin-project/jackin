@@ -235,11 +235,14 @@ pub async fn run_console<H: InstanceActionHandler>(
                             }
                             // Settings surfaces errors through its top-level
                             // error popup slot (same widget as the editor).
-                            ManagerStage::Settings(s) => {
-                                s.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
-                                    "Token generation failed",
-                                    e.to_string(),
-                                ));
+                            ManagerStage::Settings(_) => {
+                                let _ = manager::update_manager(
+                                    ms,
+                                    manager::ManagerMessage::OpenSettingsErrorPopup {
+                                        title: "Token generation failed".into(),
+                                        message: e.to_string(),
+                                    },
+                                );
                             }
                             _ => {}
                         }
