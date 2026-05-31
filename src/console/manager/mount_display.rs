@@ -155,6 +155,19 @@ pub(crate) fn settings_global_mounts_content_width_with_cache(
         .unwrap_or(0)
 }
 
+pub(crate) fn settings_global_mounts_content_height(
+    rows: &[crate::config::GlobalMountRow],
+) -> usize {
+    if rows.is_empty() {
+        return 1;
+    }
+    let row_lines = rows
+        .iter()
+        .map(|row| if row.mount.src == row.mount.dst { 1 } else { 2 })
+        .sum::<usize>();
+    row_lines + 3
+}
+
 fn workspace_mount_header_width(path_w: usize) -> usize {
     2 + path_w + 2 + MOUNT_MODE_COL_WIDTH + 2 + MOUNT_ISOLATION_COL_WIDTH + 2 + "Type".len()
 }

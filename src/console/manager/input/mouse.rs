@@ -11,10 +11,10 @@ use super::super::modal_layout::modal_outer_rect;
 use super::super::mount_display::global_mounts_content_width;
 use super::super::mount_display::settings_global_mounts_content_width;
 use super::super::mount_display::workspace_mounts_content_width;
-use super::super::render::global_mounts::{
+use super::super::render::list::list_names_content_width;
+use super::super::settings_geometry::{
     auth_content_height, env_content_height, mounts_content_height, trust_content_height,
 };
-use super::super::render::list::list_names_content_width;
 use super::super::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
@@ -945,7 +945,7 @@ fn try_drag_vertical_scrollbar(
             let content_height = match settings.active_tab {
                 SettingsTab::General => 0,
                 SettingsTab::Mounts => mounts_content_height(settings),
-                SettingsTab::Environments => env_content_height(settings, area.width),
+                SettingsTab::Environments => env_content_height(settings),
                 SettingsTab::Auth => auth_content_height(settings),
                 SettingsTab::Trust => trust_content_height(settings),
             };
@@ -1139,7 +1139,7 @@ fn scroll_active_panel_vertical(
                     );
                 }
                 SettingsTab::Environments => {
-                    let content_height = env_content_height(settings, content_area.width);
+                    let content_height = env_content_height(settings);
                     apply_vertical_scroll(
                         &mut settings.env.scroll_y,
                         delta,

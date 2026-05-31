@@ -197,44 +197,6 @@ fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui:
     );
 }
 
-pub(crate) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
-    let mut height = global_mount_lines(
-        &state.mounts.pending,
-        Some(state.mounts.selected),
-        true,
-        &state.mounts.mount_info_cache,
-    )
-    .len();
-    if state.mounts.error.is_some() {
-        height = height.saturating_add(2);
-    }
-    height
-}
-
-pub(crate) fn env_content_height(state: &SettingsState<'_>, area_width: u16) -> usize {
-    let mut height = env_lines(state, area_width).len();
-    if state.env.error.is_some() {
-        height = height.saturating_add(2);
-    }
-    height
-}
-
-pub(crate) fn auth_content_height(state: &SettingsState<'_>) -> usize {
-    let mut height = auth_lines(state).len();
-    if state.auth.error.is_some() {
-        height = height.saturating_add(2);
-    }
-    height
-}
-
-pub(crate) fn trust_content_height(state: &SettingsState<'_>) -> usize {
-    let mut height = trust_lines(state).len();
-    if state.trust.error.is_some() {
-        height = height.saturating_add(2);
-    }
-    height
-}
-
 fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
     if state.tab_bar_focused {
         // Tab bar has focus: show tab-navigation keys, then global actions.

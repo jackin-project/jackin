@@ -13,6 +13,7 @@ pub mod mount_diff;
 pub(crate) mod mount_display;
 pub mod mount_info;
 pub mod mount_info_cache;
+pub(crate) mod settings_geometry;
 pub mod state;
 pub mod workspace_summary;
 
