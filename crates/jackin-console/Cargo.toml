@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 anyhow = "1.0"
 crossterm = "0.29"
+directories = "6.0"
 jackin-tui = { path = "../jackin-tui" }
 nix = { version = "0.31", features = ["term"] }
 ratatui = "0.30"

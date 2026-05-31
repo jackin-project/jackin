@@ -1749,6 +1749,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "crossterm",
+ "directories",
  "jackin-tui",
  "nix 0.31.3",
  "ratatui",

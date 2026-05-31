@@ -7,6 +7,7 @@ pub mod github_picker;
 pub mod mount_dst_choice;
 pub mod scope_picker;
 pub mod source_picker;
+pub mod workdir_pick;
 
 /// Wrap-around cursor move for any list-style picker. `delta` is `-1`
 /// for Up, `+1` for Down. No-op when `count == 0`.
