@@ -10,6 +10,8 @@
     "schema-versions",
     "codebase-map",
     "tui-lookbook",
+    "tui-design-decisions",
+    "focus-spec",
     "claude-token-orchestrator",
     "jackin-capsule",
     "multiplexer-design-rules",

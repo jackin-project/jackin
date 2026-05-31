@@ -1,0 +1,73 @@
+---
+title: Focus Behavior Specification
+description: Screen-by-screen definition of focus state, transitions, and visual indicators across all jackin' surfaces.
+---
+
+This document is the authoritative spec for focus behavior in jackin'.
+For the design principles behind the rules, see [TUI Design Decisions](/reference/tui-design-decisions/).
+For the implementation primitives, see `Panel`, `PanelFocus`, `modal_block()` in
+<RepoFile path="crates/jackin-tui/src/components/panel.rs" />.
+
+## Rules recap
+
+- **Exactly one** PHOSPHOR_GREEN border visible per surface layer at any time.
+- Clicking a container transfers focus to it immediately.
+- Pressing `Esc` / committing a modal returns focus to the container that was focused before the modal opened.
+- A container that is not scrollable in any direction does **not** gain the green border from a scroll-focus click (scroll affordance rule — see TUI Design Decisions).
+- Dialogs/modals always have PHOSPHOR_GREEN borders — they are always the active container when visible.
+
+---
+
+## jackin console
+
+### Workspace list screen
+
+_To be documented._
+
+### Workspace editor screen
+
+_To be documented._
+
+### Settings screen
+
+_To be documented._
+
+---
+
+## Launch cockpit
+
+_To be documented._
+
+---
+
+## jackin-capsule (in-container multiplexer)
+
+### Single-pane layout
+
+_To be documented._
+
+### Multi-pane layout
+
+_To be documented._
+
+### Dialogs / command palette
+
+_To be documented._
+
+---
+
+## jackin-tui lookbook
+
+### Sidebar / story list
+
+- Focus starts here on launch.
+- Green border on the story list panel.
+- `↑` / `↓` navigate stories.
+- `Tab` or click anywhere in the preview panel transfers focus to Preview.
+
+### Preview panel
+
+- Green border when focused.
+- Click anywhere inside the preview panel area to focus it.
+- `Esc` / `Tab` / `⇧Tab` returns focus to Sidebar.
+- Keyboard events route to the active component interactor.
