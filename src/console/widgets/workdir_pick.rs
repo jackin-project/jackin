@@ -113,7 +113,7 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, WHITE};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
@@ -125,7 +125,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
     );
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(title);
 
     let inner = block.inner(area);

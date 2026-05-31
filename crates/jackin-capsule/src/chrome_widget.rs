@@ -106,7 +106,7 @@ impl Widget for PaneBorderWidget {
         let border_style = if self.focused {
             Style::default().fg(tc(PHOSPHOR_GREEN))
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(tc(PHOSPHOR_DARK))
         };
         let block = Block::default()
             .borders(Borders::ALL)

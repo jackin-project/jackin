@@ -71,12 +71,12 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use super::{PHOSPHOR_DARK, WHITE};
+use super::{PHOSPHOR_GREEN, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             state.title,
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

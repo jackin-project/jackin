@@ -17,7 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::{PHOSPHOR_DARK, WHITE};
+use super::{PHOSPHOR_GREEN, WHITE};
 use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
 };
@@ -140,7 +140,7 @@ pub fn prepare_for_render(area: Rect, state: &mut ConfirmSaveState) {
 pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             " Confirm changes ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

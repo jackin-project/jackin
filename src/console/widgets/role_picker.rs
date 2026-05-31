@@ -119,7 +119,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
     );
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(title);
 
     let inner = block.inner(area);

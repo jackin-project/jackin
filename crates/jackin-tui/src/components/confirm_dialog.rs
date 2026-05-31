@@ -15,7 +15,7 @@ use ratatui::{
 
 use crate::{
     ModalOutcome,
-    theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE},
+    theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE},
 };
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
@@ -149,7 +149,7 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
 pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             format!(" {} ", state.title),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

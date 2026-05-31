@@ -75,13 +75,13 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::{PHOSPHOR_DARK, WHITE};
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
     let title = format!(" Source for {} ", state.key);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             title,
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

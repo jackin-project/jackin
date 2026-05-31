@@ -11,7 +11,7 @@ use ratatui::{
 
 use crate::{
     ModalOutcome,
-    theme::{PHOSPHOR_DARK, WHITE},
+    theme::{PHOSPHOR_GREEN, WHITE},
 };
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
@@ -79,7 +79,7 @@ impl SaveDiscardState {
 pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &SaveDiscardState) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             " Unsaved changes ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

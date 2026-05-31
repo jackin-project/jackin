@@ -45,14 +45,14 @@ pub(crate) fn cycle_select(list_state: &mut tui_widget_list::ListState, count: u
 mod consistency_tests {
     //! Cross-widget visual-consistency pins.
     //!
-    //! Every modal renders with the same chrome: `PHOSPHOR_DARK` border
-    //! (RGB 0/80/18), a title wrapped in leading + trailing spaces so
-    //! `┌ Title ─...` renders with breathing room, and a hint footer
-    //! whose separator glyphs use `PHOSPHOR_DARK`. These tests pin that
+    //! Every modal renders with the same chrome: `PHOSPHOR_GREEN` border
+    //! (RGB 0/255/65) — dialogs and modal pickers are always the active/focused
+    //! container when visible. A title wrapped in leading + trailing spaces so
+    //! `┌ Title ─...` renders with breathing room. These tests pin that
     //! contract so a future drift doesn't silently degrade the look.
     use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
-    use super::{PHOSPHOR_DARK, WHITE};
+    use super::{PHOSPHOR_GREEN, WHITE};
 
     /// Render a closure into a fresh `TestBackend` and return the resulting
     /// buffer. Size is chosen to comfortably fit every modal under test.
@@ -91,9 +91,10 @@ mod consistency_tests {
     }
 
     /// Assert every cell on the top and bottom border rows uses
-    /// `PHOSPHOR_DARK` as its foreground colour (title cells are exempt —
-    /// they're WHITE+BOLD).
-    fn assert_border_is_phosphor_dark(buf: &Buffer, area: Rect, widget: &str) {
+    /// `PHOSPHOR_GREEN` as its foreground colour (title cells are exempt —
+    /// they're WHITE+BOLD). Modals are always the active/focused container
+    /// when visible, so they always use the active border colour.
+    fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
         // Top border, skipping the title span.
         for x in area.x..area.x + area.width {
             let cell = &buf[(x, area.y)];
@@ -105,12 +106,12 @@ mod consistency_tests {
                 continue;
             }
             assert_eq!(
-                cell.fg, PHOSPHOR_DARK,
-                "{widget}: top-border cell at ({x},{}) fg={:?}, expected PHOSPHOR_DARK",
+                cell.fg, PHOSPHOR_GREEN,
+                "{widget}: top-border cell at ({x},{}) fg={:?}, expected PHOSPHOR_GREEN",
                 area.y, cell.fg,
             );
         }
-        // Bottom border — should be all PHOSPHOR_DARK.
+        // Bottom border — should be all PHOSPHOR_GREEN.
         let by = area.y + area.height - 1;
         for x in area.x..area.x + area.width {
             let cell = &buf[(x, by)];
@@ -118,8 +119,8 @@ mod consistency_tests {
                 continue;
             }
             assert_eq!(
-                cell.fg, PHOSPHOR_DARK,
-                "{widget}: bottom-border cell at ({x},{by}) fg={:?}, expected PHOSPHOR_DARK",
+                cell.fg, PHOSPHOR_GREEN,
+                "{widget}: bottom-border cell at ({x},{by}) fg={:?}, expected PHOSPHOR_GREEN",
                 cell.fg,
             );
         }
@@ -262,9 +263,10 @@ mod consistency_tests {
         }
     }
 
-    /// Every modal's top and bottom border runs in `PHOSPHOR_DARK`.
+    /// Every modal's top and bottom border runs in `PHOSPHOR_GREEN` —
+    /// dialogs and modal pickers are always the active/focused container.
     #[test]
-    fn all_modal_borders_are_phosphor_dark() {
+    fn all_modal_borders_are_phosphor_green() {
         for (name, (buf, area)) in [
             ("SaveDiscardCancel", render_save_discard()),
             ("Confirm", render_confirm()),
@@ -277,7 +279,7 @@ mod consistency_tests {
             ("ConfirmSave", render_confirm_save()),
             ("AgentChoice", render_agent_choice()),
         ] {
-            assert_border_is_phosphor_dark(&buf, area, name);
+            assert_border_is_phosphor_green(&buf, area, name);
         }
     }
 

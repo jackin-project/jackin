@@ -2293,7 +2293,7 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
     // Top border with white-bold title.
     move_to(buf, row, col);
     buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_BORDER.as_bytes());
+    buf.extend_from_slice(FG_GREEN.as_bytes());
     buf.extend_from_slice("┌".as_bytes());
     buf.extend_from_slice("─".as_bytes());
     buf.push(b' ');
@@ -2302,7 +2302,7 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
     buf.extend_from_slice(title.as_bytes());
     buf.extend_from_slice(RESET.as_bytes());
     buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_BORDER.as_bytes());
+    buf.extend_from_slice(FG_GREEN.as_bytes());
     buf.push(b' ');
     let title_cols = title.chars().count() as u16;
     let consumed = 1 /* ┌ */ + 1 /* ─ */ + 1 /* space */ + title_cols + 1 /* space */;
@@ -2315,7 +2315,7 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
     for r in 1..(height - 1) {
         move_to(buf, row + r, col);
         buf.extend_from_slice(BG_DARK.as_bytes());
-        buf.extend_from_slice(FG_BORDER.as_bytes());
+        buf.extend_from_slice(FG_GREEN.as_bytes());
         buf.extend_from_slice("│".as_bytes());
         for _ in 1..(width - 1) {
             buf.push(b' ');
@@ -2327,7 +2327,7 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
     // Bottom border.
     move_to(buf, row + height - 1, col);
     buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_BORDER.as_bytes());
+    buf.extend_from_slice(FG_GREEN.as_bytes());
     buf.extend_from_slice("└".as_bytes());
     for _ in 1..(width - 1) {
         buf.extend_from_slice("─".as_bytes());

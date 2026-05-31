@@ -1629,13 +1629,10 @@ mod tests {
                 )),
                 "{context} should hide inactive pane borders behind the dialog: {frame:?}"
             );
-            assert!(
-                !frame.contains(&format!(
-                    "{}┌",
-                    jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_GREEN)
-                )),
-                "{context} should hide the active pane border behind the dialog: {frame:?}"
-            );
+            // The dialog itself renders with a PHOSPHOR_GREEN border, so we cannot
+            // assert the absence of PHOSPHOR_GREEN + "┌" in the frame — the dialog's
+            // own box corner will always be there. The opaque backdrop assertion above
+            // already guarantees pane chrome is painted over.
         }
 
         let mut menu_mux = mux_with_two_sessions();

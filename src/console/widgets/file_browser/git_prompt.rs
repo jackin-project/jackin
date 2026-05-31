@@ -19,7 +19,7 @@ use ratatui::{
 };
 
 use super::state::FileBrowserState;
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::console::widgets::ModalOutcome;
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
@@ -241,7 +241,7 @@ pub(super) fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBro
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             " Git repository detected ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

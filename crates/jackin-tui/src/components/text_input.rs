@@ -9,7 +9,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
-use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::{ModalOutcome, TextField};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,7 +163,7 @@ impl Widget for TextInput<'_> {
         );
         let border_color = match self.state.border_style() {
             BorderStyle::Error => DANGER_RED,
-            BorderStyle::Default => PHOSPHOR_DARK,
+            BorderStyle::Default => PHOSPHOR_GREEN,
         };
         let block = Block::default()
             .borders(Borders::ALL)

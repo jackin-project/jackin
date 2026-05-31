@@ -12,7 +12,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use super::{PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone)]
 pub struct AgentChoiceState {
@@ -91,7 +91,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             " Pick Agent ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

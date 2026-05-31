@@ -14,7 +14,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::{ModalOutcome, PHOSPHOR_DARK, PHOSPHOR_DIM, WHITE};
+use super::{ModalOutcome, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 /// Outcome of the mount-destination modal.
 ///
@@ -87,7 +87,7 @@ impl MountDstChoiceState {
 pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             " Mount destination ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
