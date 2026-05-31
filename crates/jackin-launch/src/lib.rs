@@ -4,6 +4,7 @@
 //! boundary is the public launch model used by runtime orchestration; render,
 //! update, and event-loop pieces move here in follow-up slices.
 
+pub mod build_log;
 pub mod state;
 pub mod tui;
 pub mod update;

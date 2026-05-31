@@ -19,7 +19,7 @@ pub struct RunOptions {
     /// active.
     pub interactive: bool,
     /// Tee captured output, line by line as it arrives, into the global
-    /// [`crate::runtime::build_log`] sink so the loading cockpit can show a
+    /// [`jackin_launch::build_log`] sink so the loading cockpit can show a
     /// live view. Only the derived-image `docker build` sets this.
     pub tee_to_build_log: bool,
 }

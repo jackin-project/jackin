@@ -6,4 +6,5 @@ rust-version = "1.94"
 publish = false
 
 [dependencies]
+jackin-tui = { path = "../jackin-tui" }
 serde = { version = "1.0", features = ["derive"] }
