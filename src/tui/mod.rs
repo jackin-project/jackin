@@ -187,7 +187,6 @@ const fn palette_tuple(color: jackin_tui::Rgb) -> (u8, u8, u8) {
 const WHITE: (u8, u8, u8) = palette_tuple(jackin_tui::WHITE);
 const PHOSPHOR_GREEN: (u8, u8, u8) = palette_tuple(jackin_tui::PHOSPHOR_GREEN);
 const PHOSPHOR_DIM: (u8, u8, u8) = palette_tuple(jackin_tui::PHOSPHOR_DIM);
-const PHOSPHOR_DARK: (u8, u8, u8) = palette_tuple(jackin_tui::PHOSPHOR_DARK);
 
 const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
     owo_colors::Rgb(color.0, color.1, color.2)

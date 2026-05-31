@@ -5,6 +5,7 @@
 //! update, and event-loop pieces move here in follow-up slices.
 
 pub mod state;
+pub mod tui;
 pub mod update;
 
 pub use state::{

@@ -7,11 +7,11 @@ use crossterm::ExecutableCommand;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::components::{
     ConfirmState, ContainerInfoRow, ContainerInfoState, ErrorPopupState, SelectListState,
-    StatusFooterHover, TextInputState, brand_header_line, confirm_required_height,
-    confirm_width_pct, render_confirm_dialog, render_container_info, render_error_dialog,
-    render_hint_bar, render_scrollable_block, render_select_list, render_status_footer,
-    render_text_input, required_height as error_dialog_required_height,
-    status_footer_right_chip_rect, viewport_height, viewport_width,
+    TextInputState, brand_header_line, confirm_required_height, confirm_width_pct,
+    render_confirm_dialog, render_container_info, render_error_dialog, render_hint_bar,
+    render_scrollable_block, render_select_list, render_status_footer, render_text_input,
+    required_height as error_dialog_required_height, status_footer_right_chip_rect,
+    viewport_height, viewport_width,
 };
 use jackin_tui::theme::{
     DANGER_RED, DIALOG_BACKDROP, DIALOG_SURFACE, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM,
@@ -661,7 +661,7 @@ struct RichRenderer {
     /// Shared digital-rain engine (the same one the intro/outro use), ticked
     /// per frame and painted into the loading box. Sized to the terminal so
     /// the box shows a window into one continuous rainfall.
-    rain: Option<crate::tui::animation::RainState>,
+    rain: Option<jackin_launch::tui::rain::RainState>,
 }
 
 impl RichRenderer {
@@ -721,13 +721,13 @@ impl RichRenderer {
                 .as_ref()
                 .is_none_or(|rain| rain.cols != cols || rain.rows != rows);
             if stale && cols > 0 && rows > 0 {
-                self.rain = Some(crate::tui::animation::RainState::new(cols, rows));
+                self.rain = Some(jackin_launch::tui::rain::RainState::new(cols, rows));
             }
             if !no_motion
                 && !view.frame.is_multiple_of(3)
                 && let Some(rain) = &mut self.rain
             {
-                crate::tui::animation::tick_rain(rain);
+                jackin_launch::tui::rain::tick_rain(rain);
             }
         }
         let rain = self.rain.as_ref();
@@ -1055,7 +1055,7 @@ fn render_launch_frame(
     run_id: &str,
     run_log_path: &str,
     no_motion: bool,
-    rain: Option<&crate::tui::animation::RainState>,
+    rain: Option<&jackin_launch::tui::rain::RainState>,
 ) {
     let area = frame.area();
     frame.render_widget(Clear, area);
@@ -1096,7 +1096,7 @@ fn render_body(
     area: Rect,
     view: &LaunchView,
     frozen: bool,
-    rain: Option<&crate::tui::animation::RainState>,
+    rain: Option<&jackin_launch::tui::rain::RainState>,
 ) {
     // No border — the rain fills the whole body; a one-cell side margin keeps
     // glyphs off the screen edge.
@@ -1122,7 +1122,11 @@ fn render_body(
 /// whole terminal, so `area` is a window onto a continuous rainfall; each cell
 /// maps to its glyph and the engine's green age fade — the same palette as the
 /// intro/outro rain.
-fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::animation::RainState>) {
+fn render_rain(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    rain: Option<&jackin_launch::tui::rain::RainState>,
+) {
     let Some(rain) = rain else {
         return;
     };
@@ -1159,7 +1163,7 @@ fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&crate::tui::anim
                 .and_then(|row| row.get(grid_x))
                 .and_then(|cell| cell.as_ref())
                 .and_then(|cell| {
-                    crate::tui::animation::age_to_color(cell.age).map(|rgb| (cell.ch, rgb))
+                    jackin_launch::tui::rain::age_to_color(cell.age).map(|rgb| (cell.ch, rgb))
                 });
             let cell = &mut buf[(area.x + x, area.y + y)];
             match lit {
@@ -2336,6 +2340,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    use jackin_tui::components::StatusFooterHover;
     use ratatui::backend::TestBackend;
 
     fn test_diagnostics() -> std::sync::Arc<RunDiagnostics> {
