@@ -194,7 +194,7 @@ pub(crate) fn poll_background_messages(
     state: &mut ManagerState<'_>,
     paths: &crate::paths::JackinPaths,
 ) -> Vec<ManagerMessage> {
-    let mut messages = Vec::new();
+    let mut messages = vec![ManagerMessage::PollPickerLoads];
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerMessage::MountInfoRefreshed(result));
     }
