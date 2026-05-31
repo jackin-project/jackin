@@ -125,11 +125,11 @@ pub(super) fn editor_footer_items(
 
 pub fn render_editor(
     frame: &mut Frame,
+    area: Rect,
     state: &EditorState<'_>,
     config: &AppConfig,
     op_available: bool,
 ) {
-    let area = frame.area();
     let items = editor_footer_items(state, config, op_available);
     let footer_h = footer_height(&items, area.width).max(1);
     let chunks = Layout::default()

@@ -1,4 +1,5 @@
 use ratatui::{
+    layout::Rect,
     Frame,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
@@ -34,8 +35,12 @@ pub(in crate::console::manager) fn global_mounts_content_width_with_cache(
     super::max_line_width(&lines)
 }
 
-pub(super) fn render_settings(frame: &mut Frame, state: &SettingsState<'_>, op_available: bool) {
-    let area = frame.area();
+pub(super) fn render_settings(
+    frame: &mut Frame,
+    area: Rect,
+    state: &SettingsState<'_>,
+    op_available: bool,
+) {
     let footer = settings_footer_items(state, op_available);
     let footer_h = footer_height(&footer, area.width).max(1);
     let chunks = Layout::default()
@@ -913,12 +918,13 @@ fn truncate(value: &str, width: usize) -> String {
 mod tests {
     use super::*;
     use crate::config::AppConfig;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{
+    layout::Rect,Terminal, backend::TestBackend};
 
     fn render_settings_to_dump(state: &SettingsState<'_>) -> String {
         let backend = TestBackend::new(90, 18);
         let mut term = Terminal::new(backend).unwrap();
-        term.draw(|frame| render_settings(frame, state, false))
+        term.draw(|frame| render_settings(frame, frame.area(), state, false))
             .unwrap();
         let buf = term.backend().buffer();
         let mut out = String::new();

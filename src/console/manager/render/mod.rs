@@ -172,9 +172,9 @@ pub fn render(
     cwd: &std::path::Path,
 ) {
     if let ManagerStage::Editor(editor) = &state.stage {
-        editor::render_editor(frame, editor, config, state.op_available);
+        editor::render_editor(frame, area, editor, config, state.op_available);
     } else if let ManagerStage::Settings(settings) = &state.stage {
-        global_mounts::render_settings(frame, settings, state.op_available);
+        global_mounts::render_settings(frame, area, settings, state.op_available);
     } else {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
