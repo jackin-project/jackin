@@ -35,6 +35,32 @@ async fn main() -> Result<()> {
                 println!("jackin-capsule {}", env!("JACKIN_CAPSULE_VERSION"));
                 Ok(())
             }
+            Some("--help") | Some("-h") => {
+                println!(
+                    "jackin-capsule {version}
+
+USAGE:
+    jackin-capsule [SUBCOMMAND]
+
+SUBCOMMANDS:
+    (no subcommand)                Connect to the running multiplexer (client mode)
+    new [<agent>]                  Spawn a new agent session (default: shell)
+    status                         Print daemon status to stdout
+    snapshot                       Write a screen snapshot to stdout
+    --focus <session_id>           Connect and focus the given session
+    runtime-setup                  First-boot environment setup (run by entrypoint)
+    prepare-commit-msg <file>      Git hook integration
+
+OPTIONS:
+    --version, -V                  Print version and exit
+    --help, -h                     Print this help and exit
+
+When invoked as PID 1 the binary starts the multiplexer daemon instead of
+connecting as a client.",
+                    version = env!("JACKIN_CAPSULE_VERSION")
+                );
+                Ok(())
+            }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
             Some("runtime-setup") => runtime_setup::run(),
@@ -81,7 +107,7 @@ async fn main() -> Result<()> {
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -119,7 +145,8 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "runtime-setup" | "prepare-commit-msg" | "--version" | "-V",
+            "status" | "snapshot" | "runtime-setup" | "prepare-commit-msg" | "--version" | "-V"
+            | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.
