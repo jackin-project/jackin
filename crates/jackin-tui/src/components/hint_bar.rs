@@ -47,20 +47,20 @@ impl Widget for HintBar<'_> {
     }
 }
 
-/// `↵ confirm · Esc cancel`
+/// `↵ confirm   Esc cancel`
 pub const CONFIRM_DISMISS_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("confirm"),
-    HintSpan::Sep,
+    HintSpan::GroupSep,
     HintSpan::Key("Esc"),
     HintSpan::Text("cancel"),
 ];
 
-/// `↵ select · Esc cancel`
+/// `↵ select   Esc cancel`
 pub const SELECT_CANCEL_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("select"),
-    HintSpan::Sep,
+    HintSpan::GroupSep,
     HintSpan::Key("Esc"),
     HintSpan::Text("cancel"),
 ];
@@ -68,11 +68,11 @@ pub const SELECT_CANCEL_HINT: &[HintSpan<'static>] = &[
 /// `↵ dismiss`
 pub const DISMISS_HINT: &[HintSpan<'static>] = &[HintSpan::Key("↵"), HintSpan::Text("dismiss")];
 
-/// `↵ dismiss · Esc cancel`
+/// `↵ dismiss   Esc cancel`
 pub const DISMISS_CANCEL_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("dismiss"),
-    HintSpan::Sep,
+    HintSpan::GroupSep,
     HintSpan::Key("Esc"),
     HintSpan::Text("cancel"),
 ];

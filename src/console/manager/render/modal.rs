@@ -11,6 +11,7 @@ use super::super::super::widgets::{
 use super::super::state::{GlobalMountModal, Modal, SettingsAuthModal, SettingsEnvModal};
 use super::centered_rect_fixed;
 use jackin_tui::HintSpan;
+use jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT;
 
 // ── Modal dispatcher ────────────────────────────────────────────────
 
@@ -192,13 +193,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
 pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
     match modal {
         Modal::AuthForm { state, focus, .. } => auth_form_footer_items(state.as_ref(), *focus),
-        Modal::TextInput { .. } => vec![
-            HintSpan::Key("↵"),
-            HintSpan::Text("confirm"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ],
+        Modal::TextInput { .. } => CONFIRM_DISMISS_HINT.to_vec(),
         Modal::FileBrowser { state, .. } => state.footer_items(),
         Modal::MountDstChoice { .. } => vec![
             HintSpan::Key("M"),
@@ -278,13 +273,9 @@ pub(super) fn modal_footer_items(modal: &Modal<'_>) -> Vec<HintSpan<'static>> {
         Modal::ErrorPopup { .. } => vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")],
         Modal::StatusPopup { .. } => vec![HintSpan::Text("working")],
         // A naming sub-stage is a plain input box: confirm / cancel only.
-        Modal::OpPicker { state } if state.naming_stage_input().is_some() => vec![
-            HintSpan::Key("↵"),
-            HintSpan::Text("confirm"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ],
+        Modal::OpPicker { state } if state.naming_stage_input().is_some() => {
+            CONFIRM_DISMISS_HINT.to_vec()
+        }
         Modal::OpPicker { state }
             if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
         {
@@ -345,13 +336,7 @@ pub(super) fn settings_mounts_modal_footer_items(
     modal: &GlobalMountModal<'_>,
 ) -> Vec<HintSpan<'static>> {
     match modal {
-        GlobalMountModal::Text { .. } => vec![
-            HintSpan::Key("↵"),
-            HintSpan::Text("confirm"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ],
+        GlobalMountModal::Text { .. } => CONFIRM_DISMISS_HINT.to_vec(),
         GlobalMountModal::FileBrowser { state } => state.footer_items(),
         GlobalMountModal::MountDstChoice { .. } => vec![
             HintSpan::Key("M"),
@@ -423,13 +408,7 @@ pub(super) fn settings_env_modal_footer_items(
     modal: &SettingsEnvModal<'_>,
 ) -> Vec<HintSpan<'static>> {
     match modal {
-        SettingsEnvModal::Text { .. } => vec![
-            HintSpan::Key("↵"),
-            HintSpan::Text("confirm"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ],
+        SettingsEnvModal::Text { .. } => CONFIRM_DISMISS_HINT.to_vec(),
         SettingsEnvModal::SourcePicker { .. } | SettingsEnvModal::ScopePicker { .. } => vec![
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
@@ -485,13 +464,7 @@ pub(super) fn settings_auth_modal_footer_items(
             }
             items
         }
-        SettingsAuthModal::TextInput { .. } => vec![
-            HintSpan::Key("↵"),
-            HintSpan::Text("confirm"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ],
+        SettingsAuthModal::TextInput { .. } => CONFIRM_DISMISS_HINT.to_vec(),
         SettingsAuthModal::SourcePicker { .. } => vec![
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
@@ -503,13 +476,9 @@ pub(super) fn settings_auth_modal_footer_items(
             HintSpan::Text("cancel"),
         ],
         // A naming sub-stage is a plain input box: confirm / cancel only.
-        SettingsAuthModal::OpPicker { state } if state.naming_stage_input().is_some() => vec![
-            HintSpan::Key("↵"),
-            HintSpan::Text("confirm"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("cancel"),
-        ],
+        SettingsAuthModal::OpPicker { state } if state.naming_stage_input().is_some() => {
+            CONFIRM_DISMISS_HINT.to_vec()
+        }
         SettingsAuthModal::OpPicker { state }
             if state.stage == crate::console::widgets::op_picker::OpPickerStage::Section =>
         {
