@@ -50,6 +50,11 @@ enum SelectLoopMessage {
     Key(KeyEvent),
 }
 
+#[derive(Debug, Clone, Copy)]
+enum SelectPromptMessage {
+    Key(KeyEvent),
+}
+
 fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) -> Option<usize> {
     match msg {
         SelectLoopMessage::Key(key) => {
@@ -60,6 +65,24 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
                 None
             }
         }
+    }
+}
+
+fn update_select_prompt(
+    picker: &mut SelectListState,
+    options: &[String],
+    skippable: bool,
+    msg: SelectPromptMessage,
+) -> Option<anyhow::Result<PromptResult>> {
+    match msg {
+        SelectPromptMessage::Key(key) => match picker.handle_key(key) {
+            ModalOutcome::Commit(index) if skippable && index == options.len() => {
+                Some(Ok(PromptResult::Skipped))
+            }
+            ModalOutcome::Commit(index) => Some(Ok(PromptResult::Value(options[index].clone()))),
+            ModalOutcome::Cancel => Some(Err(anyhow::anyhow!("launch cancelled by operator"))),
+            ModalOutcome::Continue => None,
+        },
     }
 }
 
@@ -313,15 +336,13 @@ impl RichRenderer {
             self.terminal
                 .draw(|frame| draw_select(frame, title, &[], &picker))
                 .context("rendering launch env select prompt")?;
-            match picker.handle_key(read_pressed_key("reading launch env select input")?) {
-                ModalOutcome::Commit(index) if skippable && index == options.len() => {
-                    return Ok(PromptResult::Skipped);
-                }
-                ModalOutcome::Commit(index) => {
-                    return Ok(PromptResult::Value(options[index].clone()));
-                }
-                ModalOutcome::Cancel => anyhow::bail!("launch cancelled by operator"),
-                ModalOutcome::Continue => {}
+            if let Some(result) = update_select_prompt(
+                &mut picker,
+                options,
+                skippable,
+                SelectPromptMessage::Key(read_pressed_key("reading launch env select input")?),
+            ) {
+                return result;
             }
         }
     }
@@ -409,5 +430,41 @@ mod tests {
         );
 
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn select_prompt_message_commits_option_value() {
+        let options = vec!["alpha".into(), "beta".into()];
+        let mut picker = SelectListState::new(options.clone());
+        picker.select_index(1);
+
+        let result = update_select_prompt(
+            &mut picker,
+            &options,
+            false,
+            SelectPromptMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        )
+        .expect("enter commits")
+        .expect("commit succeeds");
+
+        assert_eq!(result, PromptResult::Value("beta".into()));
+    }
+
+    #[test]
+    fn select_prompt_message_commits_skip_row_when_skippable() {
+        let options = vec!["alpha".into(), "beta".into()];
+        let mut picker = SelectListState::new(vec!["alpha".into(), "beta".into(), "(skip)".into()]);
+        picker.select_index(2);
+
+        let result = update_select_prompt(
+            &mut picker,
+            &options,
+            true,
+            SelectPromptMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        )
+        .expect("enter commits")
+        .expect("skip succeeds");
+
+        assert_eq!(result, PromptResult::Skipped);
     }
 }

@@ -141,7 +141,7 @@ pub struct StageLabelTransition {
     pub start_frame: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptResult {
     Value(String),
     Skipped,
