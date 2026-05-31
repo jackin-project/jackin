@@ -4,6 +4,8 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 
+use jackin_tui::{RAIN_BODY, RAIN_DARK, RAIN_DIM, RAIN_FRESH, RAIN_HEAD, RAIN_MID, Rgb};
+
 #[derive(Debug, Clone)]
 pub struct RainCell {
     pub ch: char,
@@ -67,14 +69,14 @@ impl RainState {
 }
 
 #[must_use]
-pub const fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
+pub const fn age_to_color(age: u16) -> Option<Rgb> {
     match age {
-        0 => Some((255, 255, 255)),
-        1..=2 => Some((180, 255, 180)),
-        3..=5 => Some((0, 255, 65)),
-        6..=10 => Some((0, 200, 50)),
-        11..=16 => Some((0, 140, 30)),
-        17..=24 => Some((0, 80, 18)),
+        0 => Some(RAIN_HEAD),
+        1..=2 => Some(RAIN_FRESH),
+        3..=5 => Some(RAIN_BODY),
+        6..=10 => Some(RAIN_MID),
+        11..=16 => Some(RAIN_DIM),
+        17..=24 => Some(RAIN_DARK),
         _ => None,
     }
 }
@@ -209,7 +211,7 @@ pub fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&RainState>) 
                 .and_then(|cell| age_to_color(cell.age).map(|rgb| (cell.ch, rgb)));
             let cell = &mut buf[(area.x + x, area.y + y)];
             match lit {
-                Some((ch, (r, g, b))) => {
+                Some((ch, Rgb { r, g, b })) => {
                     cell.set_char(ch);
                     cell.set_style(Style::default().fg(Color::Rgb(dim(r), dim(g), dim(b))));
                 }
@@ -218,5 +220,21 @@ pub fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&RainState>) 
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn age_to_color_uses_shared_rain_tokens() {
+        assert_eq!(age_to_color(0), Some(RAIN_HEAD));
+        assert_eq!(age_to_color(1), Some(RAIN_FRESH));
+        assert_eq!(age_to_color(3), Some(RAIN_BODY));
+        assert_eq!(age_to_color(6), Some(RAIN_MID));
+        assert_eq!(age_to_color(11), Some(RAIN_DIM));
+        assert_eq!(age_to_color(17), Some(RAIN_DARK));
+        assert_eq!(age_to_color(25), None);
     }
 }

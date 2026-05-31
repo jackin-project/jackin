@@ -84,6 +84,24 @@ pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_GREEN;
 /// Scroll track and unfocused dialog border colour.
 pub const DIALOG_SCROLL_TRACK: Rgb = PHOSPHOR_DARK;
 
+/// Bright white rain head used by the launch digital-rain animation.
+pub const RAIN_HEAD: Rgb = WHITE;
+
+/// Fresh rain trail immediately behind the head.
+pub const RAIN_FRESH: Rgb = Rgb::new(180, 255, 180);
+
+/// Brand-green rain trail at normal brightness.
+pub const RAIN_BODY: Rgb = PHOSPHOR_GREEN;
+
+/// Mid-bright rain trail between the brand and dim greens.
+pub const RAIN_MID: Rgb = Rgb::new(0, 200, 50);
+
+/// Dim rain trail.
+pub const RAIN_DIM: Rgb = PHOSPHOR_DIM;
+
+/// Dark trailing rain tail.
+pub const RAIN_DARK: Rgb = PHOSPHOR_DARK;
+
 /// White used for titles, hotkey glyphs, and the active-tab underline.
 pub const WHITE: Rgb = Rgb::new(255, 255, 255);
 
