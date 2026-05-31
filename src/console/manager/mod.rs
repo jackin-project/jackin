@@ -10,6 +10,7 @@ pub mod input;
 pub mod message;
 pub(crate) mod modal_layout;
 pub mod mount_diff;
+pub(crate) mod mount_display;
 pub mod mount_info;
 pub mod mount_info_cache;
 pub mod state;

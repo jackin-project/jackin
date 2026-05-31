@@ -11,7 +11,7 @@ use super::super::super::widgets::{
 };
 use super::super::auth_rows::auth_flat_rows;
 use super::super::message::{ManagerMessage, update_manager};
-use super::super::render::list::workspace_mounts_content_width;
+use super::super::mount_display::workspace_mounts_content_width;
 use super::super::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow,

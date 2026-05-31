@@ -31,6 +31,13 @@ use super::{
     CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,
 };
 use crate::config::AppConfig;
+#[cfg(test)]
+pub(super) use crate::console::manager::mount_display::format_mount_rows;
+pub(super) use crate::console::manager::mount_display::{
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows_with_cache,
+    global_mounts_content_width_with_cache, mount_path_width, workspace_mounts_content_height,
+    workspace_mounts_content_width_with_cache,
+};
 use crate::console::manager::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
@@ -558,80 +565,6 @@ fn render_agent_picker_sidebar(
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-/// Pre-formatted mount row. `host_source` is `Some` only when src != dst
-/// (rendered as a continuation line).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct MountDisplayRow {
-    pub(super) destination: String,
-    pub(super) host_source: Option<String>,
-    pub(super) mode: &'static str,
-    pub(super) isolation: &'static str,
-    pub(super) kind: String,
-}
-
-pub(super) fn mount_display_paths(
-    mount: &crate::workspace::MountConfig,
-) -> (String, Option<String>) {
-    let src = crate::tui::shorten_home(&mount.src);
-    let dst = crate::tui::shorten_home(&mount.dst);
-    if mount.src == mount.dst {
-        (dst, None)
-    } else {
-        (dst, Some(format!("host: {src}")))
-    }
-}
-
-#[cfg(test)]
-pub(super) fn format_mount_rows(mounts: &[crate::workspace::MountConfig]) -> Vec<MountDisplayRow> {
-    let cache = MountInfoCache::default();
-    cache.refresh_mounts(mounts);
-    format_mount_rows_with_cache(mounts, &cache)
-}
-
-pub(super) fn format_mount_rows_with_cache(
-    mounts: &[crate::workspace::MountConfig],
-    cache: &MountInfoCache,
-) -> Vec<MountDisplayRow> {
-    mounts
-        .iter()
-        .map(|m| {
-            let (destination, host_source) = mount_display_paths(m);
-            let mode: &'static str = if m.readonly { "ro" } else { "rw" };
-            let iso: &'static str = m.isolation.as_str();
-            let kind = cache.label(&m.src);
-            MountDisplayRow {
-                destination,
-                host_source,
-                mode,
-                isolation: iso,
-                kind,
-            }
-        })
-        .collect()
-}
-
-/// "Mode" header is 4 chars; pad row values so the Type column
-/// stays aligned across header and data rows.
-pub(super) const MOUNT_MODE_COL_WIDTH: usize = 4;
-
-/// Width of the `Isolation` column. Pinned to the wider of the
-/// "Isolation" header label (9 chars) and the longest data value
-/// "worktree" (8 chars), so header and data rows always align without
-/// the downstream `Type` column shifting.
-pub(super) const MOUNT_ISOLATION_COL_WIDTH: usize = 9;
-
-/// Width of the `Destination` column, sized to fit the widest path plus
-/// the header label. Floored at 10 so short-path tables still look tabular.
-pub(super) fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
-    rows.iter()
-        .flat_map(|row| std::iter::once(&row.destination).chain(row.host_source.as_ref()))
-        .map(|p| p.chars().count())
-        .max()
-        .unwrap_or(0)
-        .max(10)
-        .max("Destination".len())
-}
-
 pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
     // Two-space gutter + two-space gaps match the data-row format so
     // columns never run into each other.
@@ -703,49 +636,6 @@ pub(super) fn render_global_mount_lines(
         }
     }
     lines
-}
-
-pub(crate) fn workspace_mounts_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
-    let cache = MountInfoCache::default();
-    cache.refresh_mounts(mounts);
-    workspace_mounts_content_width_with_cache(mounts, &cache)
-}
-
-pub(crate) fn workspace_mounts_content_width_with_cache(
-    mounts: &[crate::workspace::MountConfig],
-    cache: &MountInfoCache,
-) -> usize {
-    let rows = format_mount_rows_with_cache(mounts, cache);
-    let path_w = mount_path_width(&rows);
-    let mut lines = vec![render_mount_header(path_w)];
-    lines.extend(render_mount_lines(&rows, path_w));
-    super::max_line_width(&lines)
-}
-
-pub(crate) fn workspace_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
-    1 + mounts
-        .iter()
-        .map(|m| if m.src == m.dst { 1 } else { 2 })
-        .sum::<usize>()
-        .max(1)
-}
-
-pub(crate) fn global_mounts_content_width_with_cache(
-    mounts: &[crate::workspace::MountConfig],
-    cache: &MountInfoCache,
-) -> usize {
-    let rows = format_mount_rows_with_cache(mounts, cache);
-    let path_w = mount_path_width(&rows);
-    let mut lines = vec![render_global_mount_header(path_w)];
-    lines.extend(render_global_mount_lines(&rows, path_w));
-    super::max_line_width(&lines)
-}
-
-#[cfg(test)]
-pub(crate) fn global_mounts_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
-    let cache = MountInfoCache::default();
-    cache.refresh_mounts(mounts);
-    global_mounts_content_width_with_cache(mounts, &cache)
 }
 
 /// Shared inputs for the right-pane sidebar. Saved-workspace rows and the
