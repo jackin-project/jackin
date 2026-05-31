@@ -151,7 +151,8 @@ jobs:
       # Build (but don't run) the frame-time and pane-body benchmarks to
       # ensure they compile on every CI run. Full criterion runs happen
       # locally or in dedicated perf workflows.
-      - run: cargo build --bench console_frame --bench pane_body -p jackin-capsule
+      - run: cargo build --bench console_frame -p jackin
+      - run: cargo build --bench pane_body -p jackin-capsule
 
   msrv:
     needs: changes
