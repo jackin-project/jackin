@@ -316,7 +316,7 @@ pub fn host_path_fingerprint(path: &str) -> String {
 }
 
 impl InstanceIndexEntry {
-    fn from_manifest(manifest: &InstanceManifest) -> Self {
+    pub(crate) fn from_manifest(manifest: &InstanceManifest) -> Self {
         Self {
             instance_id: manifest.instance_id.clone(),
             container_base: manifest.container_base.clone(),

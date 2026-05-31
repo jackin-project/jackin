@@ -2949,7 +2949,14 @@ fn write_instance_attach_outcome(
     manifest: &mut InstanceManifest,
     outcome: crate::isolation::finalize::AttachOutcome,
 ) -> anyhow::Result<()> {
-    manifest.touch();
+    if matches!(
+        outcome,
+        crate::isolation::finalize::AttachOutcome::StillRunning
+    ) {
+        manifest.mark_status(InstanceStatus::Running);
+    } else {
+        manifest.touch();
+    }
     manifest.last_attach_outcome = Some(format_attach_outcome(outcome));
     manifest.write(state_dir)?;
     InstanceIndex::update_manifest(&paths.data_dir, manifest)?;
@@ -8769,6 +8776,34 @@ plugins = []
 
         let manifest = InstanceManifest::read(&paths.data_dir.join(container_name)).unwrap();
         assert_eq!(manifest.last_attach_outcome.as_deref(), Some("exit:137"));
+    }
+
+    #[tokio::test]
+    async fn record_running_attach_outcome_restores_running_status() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+        let mut manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            crate::agent::Agent::Claude,
+        );
+        manifest.mark_status(InstanceStatus::RestoreAvailable);
+        write_indexed_manifest(&paths, &manifest);
+
+        record_instance_attach_outcome(
+            &paths,
+            container_name,
+            crate::isolation::finalize::AttachOutcome::still_running(),
+        )
+        .unwrap();
+
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container_name)).unwrap();
+        assert_eq!(manifest.status, InstanceStatus::Running);
+        assert_eq!(manifest.last_attach_outcome.as_deref(), Some("running"));
+        let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(index.instances[0].status, InstanceStatus::Running);
     }
 
     #[tokio::test]

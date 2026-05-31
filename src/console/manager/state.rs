@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use anyhow::Context as _;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
@@ -2398,11 +2399,14 @@ fn load_instance_refresh_snapshot(
 ) -> Result<InstanceRefreshSnapshot, String> {
     let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
         .map_err(|error| error.to_string())?;
+    let mut instances = index.instances;
+    reconcile_live_running_instances(paths, &mut instances);
+
     let mut sessions = HashMap::new();
     let mut session_errors = HashSet::new();
     let mut snapshot_targets: Vec<String> = Vec::new();
 
-    for entry in &index.instances {
+    for entry in &instances {
         if matches!(
             entry.status,
             crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
@@ -2441,11 +2445,91 @@ fn load_instance_refresh_snapshot(
     }
 
     Ok(InstanceRefreshSnapshot {
-        instances: index.instances,
+        instances,
         sessions,
         session_errors,
         snapshots,
     })
+}
+
+fn reconcile_live_running_instances(
+    paths: &crate::paths::JackinPaths,
+    instances: &mut Vec<crate::instance::InstanceIndexEntry>,
+) {
+    let running = match docker_cli_running_role_containers() {
+        Ok(running) => running,
+        Err(error) => {
+            crate::debug_log!(
+                "console",
+                "live instance reconciliation skipped: docker ps failed: {error:#}"
+            );
+            return;
+        }
+    };
+    overlay_running_instances(paths, instances, &running);
+}
+
+fn docker_cli_running_role_containers() -> anyhow::Result<Vec<String>> {
+    let output = std::process::Command::new("docker")
+        .args([
+            "ps",
+            "--filter",
+            "label=jackin.kind=role",
+            "--format",
+            "{{.Names}}",
+        ])
+        .output()
+        .map_err(anyhow::Error::new)
+        .context("starting docker ps for live instance reconciliation")?;
+    anyhow::ensure!(
+        output.status.success(),
+        "docker ps exited with status {:?}: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect())
+}
+
+fn overlay_running_instances(
+    paths: &crate::paths::JackinPaths,
+    instances: &mut Vec<crate::instance::InstanceIndexEntry>,
+    running_containers: &[String],
+) {
+    if running_containers.is_empty() {
+        return;
+    }
+
+    let mut known: HashSet<String> = instances
+        .iter()
+        .map(|entry| entry.container_base.clone())
+        .collect();
+    for container in running_containers {
+        if let Some(entry) = instances
+            .iter_mut()
+            .find(|entry| entry.container_base == *container)
+        {
+            entry.status = crate::instance::InstanceStatus::Running;
+            continue;
+        }
+
+        let state_dir = paths.data_dir.join(container);
+        let Some(manifest) =
+            crate::instance::InstanceManifest::read_or_log(&state_dir, "overlay_running_instances")
+        else {
+            continue;
+        };
+        if !known.insert(container.clone()) {
+            continue;
+        }
+        let mut entry = crate::instance::InstanceIndexEntry::from_manifest(&manifest);
+        entry.status = crate::instance::InstanceStatus::Running;
+        instances.push(entry);
+    }
 }
 
 /// Fan-out snapshot fetches in parallel so the render thread's
@@ -2921,6 +3005,93 @@ mod tests {
         assert_eq!(
             state.instances[0].status,
             crate::instance::InstanceStatus::RestoreAvailable
+        );
+    }
+
+    #[test]
+    fn live_running_overlay_makes_restore_available_instance_visible() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let mut manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: "jk-k7p9m2xq-demo-alpha",
+                workspace_name: Some("demo"),
+                workspace_label: "demo",
+                workdir: "/workspace/demo",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "alpha",
+                role_display_name: "Alpha",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/alpha.git",
+                role_source_ref: None,
+                image_tag: "jk_alpha",
+                docker: crate::instance::DockerResources {
+                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                },
+            });
+        manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
+        crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        let mut instances = crate::instance::InstanceIndex::read(&paths.data_dir)
+            .unwrap()
+            .instances;
+        overlay_running_instances(
+            &paths,
+            &mut instances,
+            &["jk-k7p9m2xq-demo-alpha".to_string()],
+        );
+
+        assert_eq!(instances.len(), 1);
+        assert_eq!(
+            instances[0].status,
+            crate::instance::InstanceStatus::Running
+        );
+    }
+
+    #[test]
+    fn live_running_overlay_backfills_manifest_missing_from_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let mut manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: "jk-k7p9m2xq-demo-alpha",
+                workspace_name: Some("demo"),
+                workspace_label: "demo",
+                workdir: "/workspace/demo",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "alpha",
+                role_display_name: "Alpha",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/alpha.git",
+                role_source_ref: None,
+                image_tag: "jk_alpha",
+                docker: crate::instance::DockerResources {
+                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                },
+            });
+        manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
+        manifest
+            .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
+            .unwrap();
+        let mut instances = Vec::new();
+
+        overlay_running_instances(
+            &paths,
+            &mut instances,
+            &["jk-k7p9m2xq-demo-alpha".to_string()],
+        );
+
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].container_base, "jk-k7p9m2xq-demo-alpha");
+        assert_eq!(
+            instances[0].status,
+            crate::instance::InstanceStatus::Running
         );
     }
 
