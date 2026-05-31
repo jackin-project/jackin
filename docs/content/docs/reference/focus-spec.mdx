@@ -65,6 +65,18 @@ Layout: workspace list sidebar (left) + detail panels on the right (General, Mou
 - `↑` / `↓` / `H` / `L` / scroll wheel — scroll the focused detail block.
 - `Esc` — return focus to workspace list sidebar; sidebar border turns green; hint bar returns to workspace-list actions.
 
+#### Focus during inline pickers (agent / role selection)
+
+When the operator selects a workspace and the agent picker or role picker appears inline in the right pane, **focus stays on the workspace list sidebar**. The sidebar is still the active container because the operator is still navigating within the launch flow — they selected a workspace, must choose an agent, then optionally a provider. The inline picker receives keyboard input because the sidebar routes selection keys to it, but the green border stays on the sidebar block. This is intentional: the sidebar IS the focus owner; the picker is an inline extension of the current list action, not a separate container that steals focus.
+
+#### Focus during full-screen modals (new workspace, delete confirm, settings)
+
+When a modal overlay opens (new workspace, delete confirm, settings form, op-picker), focus immediately transfers to the modal. The modal shows a PHOSPHOR_GREEN border. The sidebar loses its green border. Closing the modal returns focus to the sidebar.
+
+#### Dialog/modal hints
+
+Every time focus changes — including when a modal opens or closes — the hint bar recalculates immediately. The hint bar always reflects only the actions available to the currently focused container. There is never a stale hint row that belongs to a previously focused container.
+
 ### Workspace editor screen
 
 The editor has a tab strip (General, Mounts, Roles, Secrets, …) above the active tab's content panels.
