@@ -5,6 +5,7 @@ pub mod mount_info;
 pub mod mount_info_cache;
 pub mod op_cache;
 pub mod provider_picker;
+pub mod split;
 pub mod terminal;
 pub mod widgets;
 pub mod workspace;
