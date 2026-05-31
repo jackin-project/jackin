@@ -19,6 +19,10 @@ impl MountInfoCache {
         self.entries.borrow_mut().insert(src.to_string(), kind);
     }
 
+    pub fn store_entries(&self, entries: impl IntoIterator<Item = (String, MountKind)>) {
+        self.entries.borrow_mut().extend(entries);
+    }
+
     pub fn refresh_mounts(&self, mounts: &[impl MountSource]) {
         for mount in mounts {
             self.refresh_src(mount.mount_src());

@@ -2077,11 +2077,12 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
                 msg,
             ));
         }
-        settings.mounts.refresh_mount_info_cache();
         exit
     };
     if exit {
         dispatch_manager(state, ManagerMessage::ReturnToList);
+    } else {
+        state.request_active_mount_info_refresh();
     }
 }
 

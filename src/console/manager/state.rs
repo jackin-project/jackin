@@ -118,6 +118,7 @@ pub struct ManagerState<'a> {
     instances_refresh_generation: u64,
     instances_refresh_rx:
         Option<tokio::sync::oneshot::Receiver<(u64, Result<InstanceRefreshSnapshot, String>)>>,
+    mount_info_refresh_rx: Option<tokio::sync::oneshot::Receiver<PendingMountInfoRefresh>>,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.
@@ -523,6 +524,30 @@ pub struct PendingOpCommit {
     pub op_ref: crate::operator_env::OpRef,
     /// Oneshot receiver for the `spawn_blocking` result.
     pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
+}
+
+#[derive(Debug)]
+pub(crate) struct PendingMountInfoRefresh {
+    target: MountInfoRefreshTarget,
+    entries: Vec<(String, jackin_console::mount_info::MountKind)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum MountInfoRefreshTarget {
+    Editor,
+    SettingsMounts,
+}
+
+fn load_mount_info_entries(
+    sources: Vec<String>,
+) -> Vec<(String, jackin_console::mount_info::MountKind)> {
+    sources
+        .into_iter()
+        .map(|src| {
+            let kind = crate::console::manager::mount_info::inspect(&src);
+            (src, kind)
+        })
+        .collect()
 }
 
 impl std::fmt::Debug for PendingOpCommit {
@@ -1305,6 +1330,7 @@ impl ManagerState<'_> {
             instances_last_refresh: None,
             instances_refresh_generation: 0,
             instances_refresh_rx: None,
+            mount_info_refresh_rx: None,
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
             current_dir_expanded: false,
@@ -1675,6 +1701,94 @@ impl ManagerState<'_> {
         let result = self.drain_instance_refresh();
         self.spawn_instance_refresh_if_due(paths);
         result
+    }
+
+    pub(crate) fn request_active_mount_info_refresh(&mut self) {
+        if self.mount_info_refresh_rx.is_some() {
+            return;
+        }
+        let Some((target, sources)) = self.active_mount_info_sources() else {
+            return;
+        };
+        if tokio::runtime::Handle::try_current().is_err() {
+            let entries = load_mount_info_entries(sources);
+            let _ = self.apply_mount_info_refresh(PendingMountInfoRefresh { target, entries });
+            return;
+        }
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let entries = load_mount_info_entries(sources);
+            let _ = tx.send(PendingMountInfoRefresh { target, entries });
+        });
+        self.mount_info_refresh_rx = Some(rx);
+    }
+
+    pub(crate) fn poll_mount_info_refresh(&mut self) -> bool {
+        let Some(rx) = self.mount_info_refresh_rx.as_mut() else {
+            return false;
+        };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return false,
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                self.mount_info_refresh_rx = None;
+                return false;
+            }
+        };
+        self.mount_info_refresh_rx = None;
+        self.apply_mount_info_refresh(result)
+    }
+
+    fn apply_mount_info_refresh(&mut self, result: PendingMountInfoRefresh) -> bool {
+        match result.target {
+            MountInfoRefreshTarget::Editor => {
+                let ManagerStage::Editor(editor) = &mut self.stage else {
+                    return false;
+                };
+                editor.mount_info_cache.store_entries(result.entries);
+            }
+            MountInfoRefreshTarget::SettingsMounts => {
+                let ManagerStage::Settings(settings) = &mut self.stage else {
+                    return false;
+                };
+                settings
+                    .mounts
+                    .mount_info_cache
+                    .store_entries(result.entries);
+            }
+        }
+        true
+    }
+
+    fn active_mount_info_sources(&self) -> Option<(MountInfoRefreshTarget, Vec<String>)> {
+        match &self.stage {
+            ManagerStage::Editor(editor) => {
+                let sources = editor
+                    .pending
+                    .mounts
+                    .iter()
+                    .map(|mount| mount.src.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                (!sources.is_empty()).then_some((MountInfoRefreshTarget::Editor, sources))
+            }
+            ManagerStage::Settings(settings) => {
+                let sources = settings
+                    .mounts
+                    .pending
+                    .iter()
+                    .map(|row| row.mount.src.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                (!sources.is_empty()).then_some((MountInfoRefreshTarget::SettingsMounts, sources))
+            }
+            ManagerStage::List
+            | ManagerStage::CreatePrelude(_)
+            | ManagerStage::ConfirmDelete { .. }
+            | ManagerStage::ConfirmInstancePurge { .. } => None,
+        }
     }
 
     /// Poll the in-flight drift check started by a save operation.
