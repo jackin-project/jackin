@@ -10,6 +10,8 @@ use crate::console::manager::mount_display::{
 use crate::console::manager::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
+use crate::isolation::MountIsolation;
+use crate::workspace::MountConfig;
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     let visual_selected = state.visual_selected();
@@ -116,12 +118,7 @@ pub(crate) fn selected_sidebar_scroll_areas(
     match state.selected_row() {
         ManagerListRow::CurrentDirectory => {
             let cwd_str = cwd.display().to_string();
-            let mounts = [crate::workspace::MountConfig {
-                src: cwd_str.clone(),
-                dst: cwd_str.clone(),
-                readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
-            }];
+            let mounts = [current_dir_mount_config(&cwd_str)];
             let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
             Some(compute_sidebar_scroll_areas(right_pane, &inputs, config))
         }
@@ -134,6 +131,15 @@ pub(crate) fn selected_sidebar_scroll_areas(
         ManagerListRow::NewWorkspace
         | ManagerListRow::WorkspaceInstance(_, _)
         | ManagerListRow::CurrentDirectoryInstance(_) => None,
+    }
+}
+
+pub(crate) fn current_dir_mount_config(cwd_str: &str) -> MountConfig {
+    MountConfig {
+        src: cwd_str.to_string(),
+        dst: cwd_str.to_string(),
+        readonly: false,
+        isolation: MountIsolation::Shared,
     }
 }
 

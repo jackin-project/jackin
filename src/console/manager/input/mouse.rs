@@ -6,8 +6,8 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::list_geometry::{
-    SidebarInputs, SidebarScrollAreas, compute_sidebar_scroll_areas, list_names_content_width,
-    sidebar_inputs_for_current_dir, sidebar_inputs_for_workspace,
+    SidebarInputs, SidebarScrollAreas, compute_sidebar_scroll_areas, current_dir_mount_config,
+    list_names_content_width, sidebar_inputs_for_current_dir, sidebar_inputs_for_workspace,
 };
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::modal_layout::modal_outer_rect;
@@ -1277,7 +1277,7 @@ fn list_scroll_areas(
 
     let cwd_mounts;
     let inputs: SidebarInputs<'_> = if state.is_current_dir_selected() {
-        cwd_mounts = [current_dir_mount(state)];
+        cwd_mounts = [current_dir_mount_config(&state.current_dir)];
         sidebar_inputs_for_current_dir(&state.current_dir, &cwd_mounts, config, state)
     } else {
         let summary = state.selected_workspace_summary()?;
@@ -1288,15 +1288,6 @@ fn list_scroll_areas(
     };
 
     Some(compute_sidebar_scroll_areas(pane_area, &inputs, config))
-}
-
-fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig {
-    crate::workspace::MountConfig {
-        src: state.current_dir.clone(),
-        dst: state.current_dir.clone(),
-        readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
-    }
 }
 
 const fn editor_content_area(
