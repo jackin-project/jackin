@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 pub mod build_log;
 pub mod input;
 pub mod state;
+pub mod terminal;
 pub mod tui;
 pub mod update;
 
