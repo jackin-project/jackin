@@ -71,6 +71,12 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.failure_ack = true;
             view.failure_copy_hover = None;
         }
+        LaunchMessage::FailureCopyHovered(target) => {
+            view.failure_copy_hover = target;
+        }
+        LaunchMessage::FailureCopied(target) => {
+            view.failure_copied = Some(target);
+        }
         LaunchMessage::BuildLogOpened => {
             view.build_log_open = true;
             view.build_log_scroll = jackin_tui::scroll::TailScroll::default();
@@ -180,6 +186,31 @@ mod tests {
 
         assert!(view.failure_ack);
         assert_eq!(view.failure_copy_hover, None);
+    }
+
+    #[test]
+    fn failure_copy_messages_track_hover_and_copied_target() {
+        let mut view = initial_view();
+
+        let _ = update_launch_view(
+            &mut view,
+            LaunchMessage::FailureCopyHovered(Some(crate::FailureCopyTarget::RunId)),
+        );
+
+        assert_eq!(
+            view.failure_copy_hover,
+            Some(crate::FailureCopyTarget::RunId)
+        );
+
+        let _ = update_launch_view(
+            &mut view,
+            LaunchMessage::FailureCopied(crate::FailureCopyTarget::DiagnosticsPath),
+        );
+
+        assert_eq!(
+            view.failure_copied,
+            Some(crate::FailureCopyTarget::DiagnosticsPath)
+        );
     }
 
     #[test]

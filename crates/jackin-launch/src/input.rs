@@ -93,7 +93,7 @@ fn handle_cockpit_mouse_down(
             && let Some(payload) = failure_copy_payload(failure, run_id, target)
         {
             if terminal.copy_to_clipboard(&payload) {
-                v.failure_copied = Some(target);
+                let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
             } else {
                 terminal.emit_compact_line(
                     "failure-popup-copy",
@@ -126,7 +126,7 @@ fn handle_cockpit_mouse_move(
     if let Some(failure) = v.failure.as_ref() {
         let hover = failure_copy_target_at(area, failure, run_id, col, row);
         if hover != v.failure_copy_hover {
-            v.failure_copy_hover = hover;
+            let _dirty = update_launch_view(v, LaunchMessage::FailureCopyHovered(hover));
             terminal.set_pointer_shape(hover.is_some());
         }
         return;

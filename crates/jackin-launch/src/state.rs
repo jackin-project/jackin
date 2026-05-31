@@ -116,6 +116,8 @@ pub enum LaunchMessage {
     },
     StageFailed(LaunchFailure),
     FailureAcknowledged,
+    FailureCopyHovered(Option<FailureCopyTarget>),
+    FailureCopied(FailureCopyTarget),
     BuildLogOpened,
     BuildLogClosed,
     ContainerInfoOpened,
