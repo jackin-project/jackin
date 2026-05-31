@@ -1,6 +1,7 @@
 //! Launch cockpit view helpers.
 
 pub mod build_log;
+pub mod cockpit;
 pub mod container_info;
 pub mod dialog;
 pub mod failure;

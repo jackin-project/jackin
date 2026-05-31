@@ -12,40 +12,32 @@ use jackin_tui::components::{
 #[cfg(test)]
 use jackin_tui::theme::DANGER_RED;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 #[cfg(test)]
 use ratatui::style::Color;
 use ratatui::text::Line;
-use ratatui::widgets::Clear;
 
 #[cfg(test)]
 use jackin_launch::tui::build_log::BUILD_LOG_WRAP_PREFIX;
+use jackin_launch::tui::build_log::{build_log_scroll_filled, scroll_build_log};
 #[cfg(test)]
-use jackin_launch::tui::build_log::wrap_build_log_lines;
-use jackin_launch::tui::build_log::{
-    build_log_scroll_filled, render_build_log_dialog, scroll_build_log,
-};
-use jackin_launch::tui::container_info::{
-    launch_container_info_rect, launch_container_info_state, render_launch_container_info,
-};
+use jackin_launch::tui::build_log::{render_build_log_dialog, wrap_build_log_lines};
+use jackin_launch::tui::cockpit::render_launch_frame as render_launch_frame_view;
+use jackin_launch::tui::container_info::{launch_container_info_rect, launch_container_info_state};
 use jackin_launch::tui::failure::{
     failure_copy_payload, failure_copy_target_at, failure_popup_hyperlink_overlay,
-    render_failure_popup,
 };
 #[cfg(test)]
 use jackin_launch::tui::failure::{
     failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
 };
-use jackin_launch::tui::footer::{footer_instance, format_activity, render_footer};
-use jackin_launch::tui::header::render_cockpit_header;
-use jackin_launch::tui::progress::render_progress;
+use jackin_launch::tui::footer::{footer_instance, format_activity};
 #[cfg(test)]
 use jackin_launch::tui::progress::{
     LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
     display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
 };
 use jackin_launch::tui::prompts::{draw_confirm, draw_error_popup, draw_select, draw_text_prompt};
-use jackin_launch::tui::rain::render_rain;
 pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, StageLabelTransition, StageStatus, StageView, active_stage_index, initial_view,
@@ -1098,79 +1090,16 @@ fn render_launch_frame(
     no_motion: bool,
     rain: Option<&jackin_launch::tui::rain::RainState>,
 ) {
-    let area = frame.area();
-    frame.render_widget(Clear, area);
-
-    // The build-log overlay owns the whole screen behind an opaque backdrop,
-    // matching the capsule modal convention (hide everything, don't dim).
-    if view.build_log_open {
-        render_build_log_dialog(frame, area, view);
-        return;
-    }
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2), // brand header (pill + spacer) — shared chrome
-            Constraint::Min(8),    // launch body
-            Constraint::Length(1), // status / diagnostics
-        ])
-        .split(area);
-
-    // Freeze animated accents while a failure popup owns the screen so no
-    // live cue keeps moving behind the modal.
-    let frozen = no_motion || view.failure.is_some();
-
-    render_cockpit_header(frame, rows[0], view, frozen);
-    render_body(frame, rows[1], view, frozen, rain);
-    render_footer(
+    render_launch_frame_view(
         frame,
-        rows[2],
         view,
         run_id,
+        run_log_path,
+        no_motion,
+        rain,
         host_terminal().is_debug_mode(),
+        env!("JACKIN_VERSION"),
     );
-
-    if let Some(failure) = &view.failure {
-        render_failure_popup(frame, area, view, failure, run_id);
-    } else if view.container_info_open {
-        render_launch_container_info(
-            frame,
-            area,
-            view,
-            run_id,
-            run_log_path,
-            host_terminal().is_debug_mode(),
-            env!("JACKIN_VERSION"),
-        );
-    }
-}
-
-fn render_body(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    view: &LaunchView,
-    frozen: bool,
-    rain: Option<&jackin_launch::tui::rain::RainState>,
-) {
-    // No border — the rain fills the whole body; a one-cell side margin keeps
-    // glyphs off the screen edge.
-    let inner = area.inner(ratatui::layout::Margin {
-        horizontal: 1,
-        vertical: 0,
-    });
-    // Digital rain fills the space; the block progress + stage words sit above
-    // a blank gap so the bar does not stick to the status bar.
-    let parts = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),    // rain
-            Constraint::Length(2), // progress blocks + stage words
-            Constraint::Length(2), // gap above the status bar
-        ])
-        .split(inner);
-    render_rain(frame, parts[0], rain);
-    render_progress(frame, parts[1], view, frozen);
 }
 
 fn emit_launch_container_info_hyperlink_overlay(
