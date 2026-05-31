@@ -603,7 +603,7 @@ fn build_confirm_save_lines(
                 )));
                 for m in &editor.pending.mounts {
                     out.push(Line::from(Span::styled(
-                        format!("  \u{2022} {}", mount_summary(m)),
+                        format!("  \u{2022} {}", mount_summary(m, &editor.mount_info_cache)),
                         value,
                     )));
                 }
@@ -689,13 +689,13 @@ fn build_confirm_save_lines(
                     match diff {
                         super::super::state::MountDiff::Added(m) => {
                             out.push(Line::from(Span::styled(
-                                format!("  + {}", mount_summary(m)),
+                                format!("  + {}", mount_summary(m, &editor.mount_info_cache)),
                                 value,
                             )));
                         }
                         super::super::state::MountDiff::Removed(m) => {
                             out.push(Line::from(Span::styled(
-                                format!("  - {}", mount_summary(m)),
+                                format!("  - {}", mount_summary(m, &editor.mount_info_cache)),
                                 dim,
                             )));
                         }
@@ -705,11 +705,14 @@ fn build_confirm_save_lines(
                             // see exactly what changed without reading a
                             // remove + add pair.
                             out.push(Line::from(Span::styled(
-                                format!("  ~ {}", mount_summary(pending)),
+                                format!("  ~ {}", mount_summary(pending, &editor.mount_info_cache)),
                                 value,
                             )));
                             out.push(Line::from(Span::styled(
-                                format!("      was: {}", mount_summary(original)),
+                                format!(
+                                    "      was: {}",
+                                    mount_summary(original, &editor.mount_info_cache)
+                                ),
                                 dim,
                             )));
                         }
@@ -809,9 +812,11 @@ fn build_confirm_save_lines(
     out
 }
 
-fn mount_summary(m: &crate::workspace::MountConfig) -> String {
+fn mount_summary(
+    m: &crate::workspace::MountConfig,
+    cache: &super::super::mount_info_cache::MountInfoCache,
+) -> String {
     let dst = crate::tui::shorten_home(&m.dst);
-    let kind = super::super::mount_info::inspect(&m.src);
     let rw = if m.readonly { "ro" } else { "rw" };
     let isolation = m.isolation.as_str();
     let host = if m.src == m.dst {
@@ -819,7 +824,7 @@ fn mount_summary(m: &crate::workspace::MountConfig) -> String {
     } else {
         format!("  host: {}", crate::tui::shorten_home(&m.src))
     };
-    format!("{dst}{host}  ({rw}, {isolation}, {})", kind.label())
+    format!("{dst}{host}  ({rw}, {isolation}, {})", cache.label(&m.src))
 }
 
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
