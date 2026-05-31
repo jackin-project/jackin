@@ -1723,23 +1723,23 @@ impl ManagerState<'_> {
         self.mount_info_refresh_rx = Some(rx);
     }
 
-    pub(crate) fn poll_mount_info_refresh(&mut self) -> bool {
+    pub(crate) fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {
         let Some(rx) = self.mount_info_refresh_rx.as_mut() else {
-            return false;
+            return None;
         };
         let result = match rx.try_recv() {
             Ok(result) => result,
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return false,
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return None,
             Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
                 self.mount_info_refresh_rx = None;
-                return false;
+                return None;
             }
         };
         self.mount_info_refresh_rx = None;
-        self.apply_mount_info_refresh(result)
+        Some(result)
     }
 
-    fn apply_mount_info_refresh(&mut self, result: PendingMountInfoRefresh) -> bool {
+    pub(super) fn apply_mount_info_refresh(&mut self, result: PendingMountInfoRefresh) -> bool {
         match result.target {
             MountInfoRefreshTarget::Editor => {
                 let ManagerStage::Editor(editor) = &mut self.stage else {

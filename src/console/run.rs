@@ -253,7 +253,13 @@ pub async fn run_console<H: InstanceActionHandler>(
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             needs_redraw |= manager::input::poll_background_loads(ms, &mut config, paths);
-            needs_redraw |= ms.poll_mount_info_refresh();
+            if let Some(result) = ms.poll_mount_info_refresh() {
+                needs_redraw |= manager::update_manager(
+                    ms,
+                    manager::ManagerMessage::MountInfoRefreshed(result),
+                )
+                .is_dirty();
+            }
             if let Some(result) = ms.poll_instance_refresh(paths) {
                 needs_redraw |= manager::update_manager(
                     ms,

@@ -7,8 +7,8 @@
 use super::auth_kind::AuthKind;
 use super::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, InstanceRefreshSnapshot,
-    ManagerListRow, ManagerStage, ManagerState, MountScrollFocus, SecretsScopeTag, SettingsState,
-    SettingsTab,
+    ManagerListRow, ManagerStage, ManagerState, MountScrollFocus, PendingMountInfoRefresh,
+    SecretsScopeTag, SettingsState, SettingsTab,
 };
 use crate::config::AppConfig;
 use jackin_console::editor::update::{
@@ -52,6 +52,7 @@ pub(crate) enum ManagerMessage {
     },
     EnterSettings(SettingsState<'static>),
     InstancesRefreshed(Result<InstanceRefreshSnapshot, String>),
+    MountInfoRefreshed(PendingMountInfoRefresh),
     FocusEditorContent,
     FocusEditorTabBar,
     FocusSettingsContent,
@@ -200,6 +201,9 @@ pub(crate) fn update_manager(
             state.stage = ManagerStage::Settings(settings);
         }
         ManagerMessage::InstancesRefreshed(result) => state.apply_instance_refresh(result),
+        ManagerMessage::MountInfoRefreshed(result) => {
+            state.apply_mount_info_refresh(result);
+        }
         ManagerMessage::FocusEditorContent => set_editor_tab_bar_focus(state, false),
         ManagerMessage::FocusEditorTabBar => set_editor_tab_bar_focus(state, true),
         ManagerMessage::FocusSettingsContent => set_settings_tab_bar_focus(state, false),
