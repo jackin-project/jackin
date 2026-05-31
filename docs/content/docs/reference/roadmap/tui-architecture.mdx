@@ -2,7 +2,7 @@
 title: "TUI architecture — Ratatui application patterns"
 ---
 
-**Status**: Substantially implemented — Phases 0–9 and key Phase 5 goals are complete on `feature/tui-architecture`; Phases 8c, 8d, and 8e are complete on 2026-05-31. Phase 10 is substantially implemented for `jackin-launch`; `jackin-console` extraction and Phases 8b and 8f remain as planned follow-up work.
+**Status**: Substantially implemented — Phases 0–9 and key Phase 5 goals are complete on `feature/tui-architecture`; Phases 8c, 8d, and 8e are complete on 2026-05-31. Phase 10 is substantially implemented for `jackin-launch`; `jackin-console` extraction plus the remaining Phase 8b and 8f audit tails remain as planned follow-up work.
 
 **Completed:**
 - All host `ManagerMessage` update paths are wired: list navigation, editor/settings tabs, mouse selection, modal open/dismiss, inline picker dismissals, instance action errors.
@@ -17,7 +17,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Lookbook: 14 stories, real `TestBackend`-backed SVG previews, CI drift check; `unstable-widget-ref` feature removed.
 - `insta` snapshot tests for 4 key render paths.
 - Terminal resize correctness: capsule resize now resets the Ratatui double-buffer and `SocketBackend` style tracker before repaint; resize regression tests cover the repaint path.
-- Focus audit progress: editor General and settings Mounts now use the same focused expression for green borders and `▸` cursor visibility; focused editor General content has a regression test; host console content and representative modal states now have one-green-border-cluster regression coverage.
+- Focus audit progress: editor General and settings Mounts now use the same focused expression for green borders and `▸` cursor visibility; focused editor General content has a regression test; host console content and representative modal states now have one-green-border-cluster regression coverage; the new-workspace description no longer carries an inline keyboard hint.
 - Container info is unified across surfaces: shared `jackin-tui` state/render/hit-test/OSC 8 overlay helpers back the host console and launch cockpit; capsule status-bar chip click opens the matching container-info dialog; OSC 52 copy works for copyable rows.
 - Launch failure paths now render as full wrapped plain text and receive OSC 8 `file://` hyperlink overlays for supporting terminals; overlay tests assert both diagnostics and docker-output links.
 
@@ -851,6 +851,8 @@ Stand up the lookbook: a `tui-lookbook` binary that renders each `jackin-tui` co
 ### Phase 8f — Enforce remaining design-decision hard rules
 
 Several rules in [TUI Design Decisions](/reference/tui-design-decisions/) have no corresponding implementation phase. This phase audits and enforces them:
+
+**Partially implemented on `feature/tui-architecture` (2026-05-31):** modal button-spacing tests already cover action dialogs, the main modal tests already enforce green modal borders and padded titles, and the new-workspace description now routes the Enter/setup hint through the footer instead of an inline body row. Remaining work: complete the ARIA tab, Space-vs-Enter, error-surface, and full footer-only audits listed below.
 
 **Navigation W3C ARIA Tabs pattern** — verify every tabbed surface (`ManagerStage::Editor`, `ManagerStage::Settings`) implements the full pattern: `←`/`→` cycle tabs when tab bar focused, `⇥`/`↓` enters content, `⇧Tab`/`Esc` returns to tab bar. Verify `tab_bar_focused: bool` exists on every tabbed state struct. Write a test for each surface that asserts the key bindings route correctly.
 

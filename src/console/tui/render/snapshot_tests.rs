@@ -127,6 +127,25 @@ mod tests {
     }
 
     #[test]
+    fn new_workspace_hints_stay_in_footer() {
+        let config = AppConfig::default();
+        let cwd = test_cwd();
+        let mut state = ManagerState::from_config(&config, &cwd);
+        state.selected = 1;
+
+        let rendered = render_manager_state(&mut state, &config, &cwd, 90, 24);
+
+        assert!(
+            !rendered.contains("Press Enter"),
+            "new-workspace body must not render keyboard hints inline:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("setup"),
+            "footer must own the Enter/setup hint:\n{rendered}"
+        );
+    }
+
+    #[test]
     fn snapshot_settings_general_90x20() {
         let config = AppConfig::default();
         let cwd = test_cwd();

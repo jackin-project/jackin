@@ -326,13 +326,20 @@ pub fn render(
                         );
                         let scroll_focused = state.list_scroll_focus.is_some();
 
+                        let enter_label =
+                            if matches!(state.selected_row(), ManagerListRow::NewWorkspace) {
+                                "setup"
+                            } else {
+                                "launch"
+                            };
+
                         let mut items: Vec<HintSpan<'static>> = if scroll_focused {
                             vec![
                                 HintSpan::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
                                 HintSpan::Text("scroll block"),
                                 HintSpan::GroupSep,
                                 HintSpan::Key("↵"),
-                                HintSpan::Text("launch"),
+                                HintSpan::Text(enter_label),
                                 HintSpan::GroupSep,
                             ]
                         } else {
@@ -340,7 +347,7 @@ pub fn render(
                                 HintSpan::Key("\u{2191}\u{2193}"),
                                 HintSpan::Sep,
                                 HintSpan::Key("↵"),
-                                HintSpan::Text("launch"),
+                                HintSpan::Text(enter_label),
                                 HintSpan::GroupSep,
                             ]
                         };

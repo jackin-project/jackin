@@ -1420,17 +1420,10 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
         "Set a default role or restrict which classes apply",
         "Let `jackin console` auto-detect and preselect it",
     ];
-    let mut why_lines: Vec<Line<'static>> = bullets
+    let why_lines: Vec<Line<'static>> = bullets
         .iter()
         .map(|b| Line::from(Span::styled(format!("  \u{2022} {b}"), bullet_style)))
         .collect();
-    why_lines.push(Line::from(""));
-    why_lines.push(Line::from(Span::styled(
-        "  Press Enter to start the setup wizard.",
-        Style::default()
-            .fg(PHOSPHOR_DIM)
-            .add_modifier(Modifier::ITALIC),
-    )));
     frame.render_widget(Paragraph::new(why_lines).block(why_block), rows[1]);
 }
 
