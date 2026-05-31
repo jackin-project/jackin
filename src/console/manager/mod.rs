@@ -16,6 +16,7 @@ pub(crate) mod mount_display;
 pub mod mount_info;
 pub mod mount_info_cache;
 mod pre_render;
+pub(crate) mod settings_footer;
 pub(crate) mod settings_geometry;
 pub mod state;
 pub mod workspace_summary;

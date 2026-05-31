@@ -28,7 +28,7 @@ pub fn prepare_for_render(
             crate::console::tui::render::editor::prepare_editor_for_render(area, editor, config);
         }
         ManagerStage::Settings(settings) => {
-            let footer = crate::console::tui::render::global_mounts::settings_footer_items(
+            let footer = crate::console::manager::settings_footer::settings_footer_items(
                 settings,
                 state.op_available,
             );

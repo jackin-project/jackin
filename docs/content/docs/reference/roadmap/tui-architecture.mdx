@@ -25,6 +25,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Sidebar input, layout, scroll-area, and list-scroll clamp geometry now live in `manager::list_geometry`, so production input/update paths no longer depend on the render facade for list/sidebar scroll bounds.
 - The top-level pre-render state preparation entrypoint now lives in `manager::pre_render`, so terminal-size caching, footer-height caching, modal tick/prep, and list/settings scroll clamps are no longer owned by `tui/render/mod.rs`.
 - Modal footer-hint selection now lives in `manager::modal_footer`; `tui/render/modal.rs` only dispatches widget drawing for the active modal.
+- Settings footer-hint selection now lives in `manager::settings_footer`; `tui/render/global_mounts.rs` only renders settings pixels and uses the manager-owned footer model.
 - The manager module no longer re-exports the entire render module as a facade; callers use the manager-owned `render` function or the direct state/auth-row owners instead.
 - The readonly-mount render regression now lives with editor render tests, and render helpers that no caller outside the view layer needs are private or `pub(super)`, leaving manager input tests free of render-facade calls.
 - Capsule Ratatui chrome now renders its active tab row through the shared `jackin-tui` `TabStrip`, with regression coverage for the shared active-tab underline.

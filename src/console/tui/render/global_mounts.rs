@@ -27,7 +27,6 @@ use crate::console::tui::render::list::{
     MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
 use crate::operator_env::EnvValue;
-use jackin_tui::HintSpan;
 
 pub(super) fn render_settings(
     frame: &mut Frame,
@@ -35,7 +34,8 @@ pub(super) fn render_settings(
     state: &SettingsState<'_>,
     op_available: bool,
 ) {
-    let footer = settings_footer_items(state, op_available);
+    let footer =
+        crate::console::manager::settings_footer::settings_footer_items(state, op_available);
     let footer_h = footer_height(&footer, area.width).max(1);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -68,27 +68,6 @@ pub(super) fn render_settings(
     }
 
     render_footer(frame, chunks[3], &footer);
-}
-
-pub(crate) fn settings_footer_items(
-    state: &SettingsState<'_>,
-    op_available: bool,
-) -> Vec<HintSpan<'static>> {
-    use crate::console::manager::modal_footer::{
-        settings_auth_modal_footer_items, settings_env_modal_footer_items,
-        settings_mounts_modal_footer_items,
-    };
-    // When a modal is open, show its keys in the footer (the "behind" keys are unreachable).
-    // Check in priority order: auth modal > env modal > mounts modal > no modal.
-    if state.auth.modal.is_some() {
-        settings_auth_modal_footer_items(&state.auth)
-    } else if let Some(modal) = &state.env.modal {
-        settings_env_modal_footer_items(modal)
-    } else if let Some(modal) = &state.mounts.modal {
-        settings_mounts_modal_footer_items(modal)
-    } else {
-        footer_items(state, op_available)
-    }
 }
 
 fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
@@ -195,219 +174,6 @@ fn render_trust_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui:
         focused,
         None,
     );
-}
-
-fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
-    if state.tab_bar_focused {
-        // Tab bar has focus: show tab-navigation keys, then global actions.
-        let mut items = vec![
-            HintSpan::Key("\u{2190}\u{2192}"),
-            HintSpan::Text("switch tab"),
-            HintSpan::GroupSep,
-            HintSpan::Key("⇥/↓"),
-            HintSpan::Text("enter content"),
-        ];
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("S"),
-            HintSpan::Text("save settings"),
-        ]);
-        if state.is_dirty() {
-            items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
-        }
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text(if state.is_dirty() { "discard" } else { "back" }),
-        ]);
-        return items;
-    }
-
-    // Content area has focus.
-    let mut items = vec![
-        HintSpan::Key("\u{2191}\u{2193}"),
-        HintSpan::Text("navigate"),
-    ];
-
-    let row_items = contextual_row_items(state, op_available);
-    if !row_items.is_empty() {
-        items.push(HintSpan::GroupSep);
-        items.extend(row_items);
-    }
-
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("⇧Tab"),
-        HintSpan::Text("tab bar"),
-        HintSpan::GroupSep,
-    ]);
-    items.extend([HintSpan::Key("S"), HintSpan::Text("save settings")]);
-    if state.is_dirty() {
-        items.push(HintSpan::Dyn(format!("({} changes)", state.change_count())));
-    }
-    items.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
-        HintSpan::Text(if state.is_dirty() { "discard" } else { "back" }),
-    ]);
-    items
-}
-
-#[allow(clippy::too_many_lines)]
-fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
-    match state.active_tab {
-        SettingsTab::General => {
-            vec![
-                HintSpan::Key("\u{2191}\u{2193}"),
-                HintSpan::Text("navigate"),
-                HintSpan::Sep,
-                HintSpan::Key("␣"),
-                HintSpan::Text("toggle"),
-            ]
-        }
-        SettingsTab::Mounts => {
-            let cursor = state.mounts.selected;
-            let mount_count = state.mounts.pending.len();
-            if cursor == mount_count {
-                vec![HintSpan::Key("↵/A"), HintSpan::Text("add")]
-            } else {
-                let mut items = vec![
-                    HintSpan::Key("D"),
-                    HintSpan::Text("remove"),
-                    HintSpan::Sep,
-                    HintSpan::Key("A"),
-                    HintSpan::Text("add"),
-                ];
-                if state
-                    .mounts
-                    .pending
-                    .get(cursor)
-                    .and_then(|row| state.mounts.mount_info_cache.github_web_url(&row.mount.src))
-                    .is_some()
-                {
-                    items.push(HintSpan::Sep);
-                    items.push(HintSpan::Key("O"));
-                    items.push(HintSpan::Text("open in GitHub"));
-                }
-                items.extend([
-                    HintSpan::Sep,
-                    HintSpan::Key("R"),
-                    HintSpan::Text("toggle ro/rw"),
-                    HintSpan::Sep,
-                    HintSpan::Key("N"),
-                    HintSpan::Text("rename"),
-                    HintSpan::Sep,
-                    HintSpan::Key("1"),
-                    HintSpan::Text("edit source"),
-                    HintSpan::Sep,
-                    HintSpan::Key("2"),
-                    HintSpan::Text("edit dst"),
-                    HintSpan::Sep,
-                    HintSpan::Key("3"),
-                    HintSpan::Text("edit scope"),
-                    HintSpan::Sep,
-                    HintSpan::Key("H/L"),
-                    HintSpan::Text("scroll"),
-                ]);
-                items
-            }
-        }
-        SettingsTab::Environments => {
-            let rows = settings_env_flat_rows(state);
-            match rows.get(state.env.selected) {
-                Some(SettingsEnvRow::Key { scope, key })
-                    if settings_env_value_is_op_ref(state, scope, key) =>
-                {
-                    let mut items = vec![
-                        HintSpan::Key("↵"),
-                        HintSpan::Sep,
-                        HintSpan::Key("P"),
-                        HintSpan::Text("re-pick from 1Password"),
-                        HintSpan::Sep,
-                        HintSpan::Key("D"),
-                        HintSpan::Text("delete"),
-                        HintSpan::Sep,
-                        HintSpan::Key("A"),
-                        HintSpan::Text("add"),
-                    ];
-                    if op_available {
-                        // Enter/P both work; if 1Password is unavailable, hint is less useful.
-                    } else {
-                        // 1Password not available; remove the Enter/P hint.
-                        items.drain(..4);
-                    }
-                    items
-                }
-                Some(SettingsEnvRow::Key { .. }) => {
-                    let mut items = vec![
-                        HintSpan::Key("↵"),
-                        HintSpan::Text("edit"),
-                        HintSpan::Sep,
-                        HintSpan::Key("D"),
-                        HintSpan::Text("delete"),
-                        HintSpan::Sep,
-                        HintSpan::Key("A"),
-                        HintSpan::Text("add"),
-                        HintSpan::Sep,
-                        HintSpan::Key("M"),
-                        HintSpan::Text("mask/unmask"),
-                    ];
-                    if op_available {
-                        items.push(HintSpan::Sep);
-                        items.push(HintSpan::Key("P"));
-                        items.push(HintSpan::Text("1Password"));
-                    }
-                    items
-                }
-                Some(SettingsEnvRow::RoleHeader { .. }) => vec![
-                    HintSpan::Key("↵"),
-                    HintSpan::Text("expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("←/→"),
-                    HintSpan::Text("collapse/expand"),
-                    HintSpan::Sep,
-                    HintSpan::Key("A"),
-                    HintSpan::Text("add"),
-                ],
-                Some(SettingsEnvRow::GlobalAddSentinel | SettingsEnvRow::RoleAddSentinel(_)) => {
-                    let mut items = vec![HintSpan::Key("↵"), HintSpan::Text("add")];
-                    if op_available {
-                        items.extend([
-                            HintSpan::Sep,
-                            HintSpan::Key("P"),
-                            HintSpan::Text("1Password"),
-                        ]);
-                    }
-                    items
-                }
-                Some(SettingsEnvRow::SectionSpacer) | None => Vec::new(),
-            }
-        }
-        SettingsTab::Auth => {
-            if state.auth.selected_kind.is_none() {
-                vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")]
-            } else if state.auth.selected == 0 {
-                // Esc here pops back to the auth list; the global footer already
-                // shows Esc for the settings-level exit — omit it here to avoid duplication.
-                vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")]
-            } else {
-                vec![HintSpan::Key("↵"), HintSpan::Text("edit source")]
-            }
-        }
-        SettingsTab::Trust => {
-            if state.trust.pending.is_empty() {
-                Vec::new()
-            } else {
-                vec![
-                    HintSpan::Key("␣"),
-                    HintSpan::Text("trust/untrust"),
-                    HintSpan::Sep,
-                    HintSpan::Key("H/L"),
-                    HintSpan::Text("scroll"),
-                ]
-            }
-        }
-    }
 }
 
 fn global_mount_lines(
@@ -555,15 +321,6 @@ fn settings_env_value<'a>(
             .get(role)
             .and_then(|env| env.get(key)),
     }
-}
-
-fn settings_env_value_is_op_ref(
-    state: &SettingsState<'_>,
-    scope: &SettingsEnvScope,
-    key: &str,
-) -> bool {
-    settings_env_value(state, scope, key)
-        .is_some_and(|value| matches!(value, crate::operator_env::EnvValue::OpRef(_)))
 }
 
 fn auth_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
