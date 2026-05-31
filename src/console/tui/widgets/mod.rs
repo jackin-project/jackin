@@ -235,6 +235,21 @@ mod consistency_tests {
         (buf, area)
     }
 
+    fn row_text(buf: &Buffer, y: u16) -> String {
+        (buf.area.x..buf.area.x + buf.area.width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    fn button_row_y(buf: &Buffer, labels: &[&str]) -> u16 {
+        (buf.area.y..buf.area.y + buf.area.height)
+            .find(|y| {
+                let row = row_text(buf, *y);
+                labels.iter().all(|label| row.contains(label))
+            })
+            .expect("button row should be visible")
+    }
+
     /// Every choice/list modal's title must start AND end with a space so
     /// `┌ Title ...` renders with breathing room around the label.
     #[test]
@@ -280,6 +295,42 @@ mod consistency_tests {
             ("AgentChoice", render_agent_choice()),
         ] {
             assert_border_is_phosphor_green(&buf, area, name);
+        }
+    }
+
+    /// Every dialog with action buttons renders exactly one empty row above
+    /// that button row.
+    #[test]
+    fn dialog_button_rows_have_one_blank_row_above() {
+        for (name, (buf, _area), labels) in [
+            (
+                "SaveDiscardCancel",
+                render_save_discard(),
+                &["Save", "Discard", "Cancel"][..],
+            ),
+            ("Confirm", render_confirm(), &["Yes", "No"][..]),
+            (
+                "MountDstChoice",
+                render_mount_dst(),
+                &["Mount at same path", "Edit destination", "Cancel"][..],
+            ),
+            (
+                "ConfirmSave",
+                render_confirm_save(),
+                &["Save", "Cancel"][..],
+            ),
+        ] {
+            let button_y = button_row_y(&buf, labels);
+            assert!(
+                button_y > buf.area.y,
+                "{name} button row cannot be first row"
+            );
+            let before = row_text(&buf, button_y - 1);
+            let before_inner = before.trim_matches(['│', ' ']);
+            assert!(
+                before_inner.is_empty(),
+                "{name} must have one blank row above buttons; got {before:?}",
+            );
         }
     }
 
