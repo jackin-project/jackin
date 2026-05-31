@@ -1687,6 +1687,7 @@ dependencies = [
  "futures-util",
  "insta",
  "jackin-build-meta",
+ "jackin-console",
  "jackin-launch",
  "jackin-protocol",
  "jackin-tui",
@@ -1740,6 +1741,15 @@ dependencies = [
  "url",
  "vt100",
  "vte",
+]
+
+[[package]]
+name = "jackin-console"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "nix 0.31.3",
 ]
 
 [[package]]

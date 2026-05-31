@@ -1,0 +1,11 @@
+[package]
+name = "jackin-console"
+version = "0.6.0-dev"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+crossterm = "0.29"
+nix = { version = "0.31", features = ["term"] }

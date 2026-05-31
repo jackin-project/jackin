@@ -1018,7 +1018,7 @@ When all phases complete, every TUI surface lives in its own crate with explicit
 | `jackin-tui` | 0 — shared lib | — | — | `components/`, `theme.rs`, `scroll.rs`, `geometry.rs` | ✅ done |
 | `jackin-tui-lookbook` | 1 browser | `stories.rs` | `interactors.rs` | `main.rs` (terminal), `svg.rs` | ✅ done |
 | `jackin-capsule` | 1 multiplexer | `session.rs`, `mux_mode.rs` | `action.rs`, `input.rs`, `daemon/` | `tui/` (statusbar, chrome, dialog…) | ✅ done |
-| `jackin-console` | 3 screens | per-screen `state.rs` | per-screen `update.rs` | per-screen `tui/` | Phase 10 |
+| `jackin-console` | 3 screens | per-screen `state.rs` | per-screen `update.rs` | per-screen `tui/`, terminal lifecycle | Phase 10 partial |
 | `jackin-launch` | 1 cockpit | `state.rs` (LaunchView) | `update.rs` (stages, pickers) | `tui/` (rain, failure, build log, container info) | Phase 10 partial |
 | `jackin` binary | 0 | — | — | — routes CLI → crates | ongoing |
 
@@ -1037,6 +1037,7 @@ Split the console and launch surfaces into dedicated crates, each following the 
 ```
 crates/jackin-console/src/
 ├── lib.rs
+├── terminal.rs        ← terminal session, mouse capture, raw-mode lifecycle
 ├── run.rs              ← event loop (wiring only)
 ├── state.rs            ← ConsoleState (top-level model wrapping all screens)
 ├── workspaces/         ← workspace list screen
@@ -1052,6 +1053,8 @@ crates/jackin-console/src/
     ├── update.rs
     └── tui/
 ```
+
+Partial extraction is underway. The `jackin-console` crate now exists and owns the terminal-session lifecycle in <RepoFile path="crates/jackin-console/src/terminal.rs" /> behind a `ConsoleHostTerminal` adapter. The root bridge in <RepoFile path="src/console/tui/terminal.rs" /> supplies jackin'-specific debug-buffering and host-screen globals while preserving the old call sites. Remaining extraction work is the substantial part: moving the console event loop, screen model/update state, and view modules out of `src/console/`.
 
 **`jackin-launch`** — the launch progress cockpit (digital rain, stage rail, failure popup):
 

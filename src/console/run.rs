@@ -5,8 +5,8 @@ use super::prompts::{
 };
 use super::state::build_workspace_choice;
 use super::tui::terminal::{
-    MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, resume_console_terminal,
-    suspend_console_terminal,
+    MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
+    resume_console_terminal, suspend_console_terminal,
 };
 use super::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
@@ -181,7 +181,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     let owned_screen = if parent_session.is_some_and(TerminalSession::is_active) {
         None
     } else {
-        Some(TerminalSession::enter()?)
+        Some(TerminalSession::enter(host_console_terminal())?)
     };
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
