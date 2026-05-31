@@ -112,10 +112,12 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let mut preview_scroll: u16 = 0;
     let mut focus = Focus::Sidebar;
     let mut interactor: Box<dyn StoryInteraction> = stories[selected].make_interactor();
-    // Component rect and preview panel rect updated after every draw for mouse
-    // hit-testing. Clicking anywhere in the preview panel switches focus there.
+    // Rects updated after every draw for mouse hit-testing.
     let mut last_component_area = Rect::default();
     let mut last_preview_panel_area = Rect::default();
+    // Sidebar inner rect (inside the Panel border). Used to map click row
+    // → story index (each story occupies 2 rows: component name + id).
+    let mut last_sidebar_inner_area = Rect::default();
 
     loop {
         let story = stories[selected];
@@ -297,6 +299,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
             last_component_area = component_rect;
             last_preview_panel_area = preview_area;
+            last_sidebar_inner_area = sidebar_inner;
 
             // ── Hint bar ──────────────────────────────────────────────────────
             let hint = match focus {
@@ -315,12 +318,29 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
         match event::read()? {
             Event::Mouse(mouse) => {
                 use crossterm::event::MouseEventKind;
-                // Any click inside the preview panel area switches focus to Preview
-                // so the component becomes interactive. This mirrors how clicking a
-                // focused block in the jackin console transfers keyboard focus to it.
                 if matches!(mouse.kind, MouseEventKind::Down(_)) {
                     let col = mouse.column;
                     let row = mouse.row;
+
+                    // Click in sidebar: select the story at the clicked row and
+                    // focus the sidebar. Each story occupies 2 rows in the list
+                    // (component name line + id line). Per TUI design decisions:
+                    // clicking a focusable container transfers focus immediately.
+                    let s = last_sidebar_inner_area;
+                    if col >= s.x && col < s.x + s.width && row >= s.y && row < s.y + s.height {
+                        let row_in_inner = (row - s.y) as usize;
+                        let clicked_idx = row_in_inner / 2; // 2 rows per story
+                        let next = clicked_idx.min(stories.len().saturating_sub(1));
+                        if next != selected {
+                            preview_scroll = 0;
+                            interactor = stories[next].make_interactor();
+                            selected = next;
+                        }
+                        focus = Focus::Sidebar;
+                    }
+
+                    // Click in preview panel: transfer focus to preview so the
+                    // component becomes keyboard-interactive.
                     let p = last_preview_panel_area;
                     if col >= p.x && col < p.x + p.width && row >= p.y && row < p.y + p.height {
                         focus = Focus::Preview;
