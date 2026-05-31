@@ -48,6 +48,7 @@ title: "TUI architecture — Ratatui application patterns"
 - Launch footer hover state now routes through `LaunchMessage` instead of mutating the shared view directly from input.
 - Launch render-tick frame advancement and build-log scroll clamping now route through `LaunchMessage` instead of mutating the shared view directly from the render task.
 - Launch rich-dialog loops now share one pressed-key/Ctrl-C cancellation gate before the remaining forced-choice picker conversion.
+- Launch forced-choice picker key handling now runs through a local message/update helper with regression coverage for commit-vs-cancel behavior.
 - `LaunchProgress` no longer exposes a generic shared-view mutator; stage paths update the cockpit only by dispatching `LaunchMessage`.
 - Host instance refresh now exposes separate request/poll calls, making the run loop's worker subscription boundary explicit before promotion into the shared effect layer.
 

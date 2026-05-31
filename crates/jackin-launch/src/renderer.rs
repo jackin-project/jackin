@@ -45,6 +45,24 @@ fn read_pressed_key(context: &'static str) -> anyhow::Result<KeyEvent> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum SelectLoopMessage {
+    Key(KeyEvent),
+}
+
+fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) -> Option<usize> {
+    match msg {
+        SelectLoopMessage::Key(key) => {
+            // Esc reports Cancel; ignored here so the choice is forced.
+            if let ModalOutcome::Commit(index) = picker.handle_key(key) {
+                Some(index)
+            } else {
+                None
+            }
+        }
+    }
+}
+
 impl RichRenderer {
     fn enter_with_check(
         no_motion: bool,
@@ -214,9 +232,10 @@ impl RichRenderer {
             self.terminal
                 .draw(|frame| draw_select(frame, title, context, &picker))
                 .context("rendering launch picker")?;
-            let key = read_pressed_key("reading launch picker input")?;
-            // Esc reports Cancel; ignored here so the choice is forced.
-            if let ModalOutcome::Commit(index) = picker.handle_key(key) {
+            if let Some(index) = update_forced_select(
+                &mut picker,
+                SelectLoopMessage::Key(read_pressed_key("reading launch picker input")?),
+            ) {
                 return Ok(index);
             }
         }
@@ -361,4 +380,34 @@ fn require_rich_terminal() -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forced_select_message_commits_current_index() {
+        let mut picker = SelectListState::new(vec!["alpha".into(), "beta".into()]);
+        picker.select_index(1);
+
+        let result = update_forced_select(
+            &mut picker,
+            SelectLoopMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        );
+
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn forced_select_message_ignores_cancel() {
+        let mut picker = SelectListState::new(vec!["alpha".into(), "beta".into()]);
+
+        let result = update_forced_select(
+            &mut picker,
+            SelectLoopMessage::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        );
+
+        assert_eq!(result, None);
+    }
 }
