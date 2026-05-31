@@ -792,12 +792,11 @@ fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
     state.inline_role_picker = None;
     state.inline_agent_picker = None;
     state.inline_new_session_picker = None;
-    let last = state.row_count().saturating_sub(1);
-    let selected = if delta.is_negative() {
-        state.selected.saturating_sub(delta.unsigned_abs())
-    } else {
-        state.selected.saturating_add(delta as usize).min(last)
-    };
+    let selected = jackin_console::workspaces::update::moved_selection(
+        state.selected,
+        state.row_count(),
+        delta,
+    );
     if selected != state.selected {
         state.reset_list_scroll();
         state.selected = selected;
@@ -806,7 +805,7 @@ fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
 
 fn select_list_row(state: &mut ManagerState<'_>, selected: usize) {
     state.inline_role_picker = None;
-    let selected = selected.min(state.row_count().saturating_sub(1));
+    let selected = jackin_console::workspaces::update::selected_index(selected, state.row_count());
     if selected != state.selected {
         state.reset_list_scroll();
         state.selected = selected;
