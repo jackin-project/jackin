@@ -13,12 +13,12 @@ use jackin_tui::components::{
     render_text_input, required_height as error_dialog_required_height,
     status_footer_right_chip_rect, viewport_height, viewport_width,
 };
-use jackin_tui::theme::{
-    DANGER_RED, DIALOG_BACKDROP, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
-};
+#[cfg(test)]
+use jackin_tui::theme::DANGER_RED;
+use jackin_tui::theme::{DIALOG_BACKDROP, PHOSPHOR_DIM, WHITE};
 use jackin_tui::{HintSpan, ModalOutcome};
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
@@ -38,6 +38,12 @@ use jackin_launch::tui::failure::{
 #[cfg(test)]
 use jackin_launch::tui::failure::{
     failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
+};
+use jackin_launch::tui::progress::render_progress;
+#[cfg(test)]
+use jackin_launch::tui::progress::{
+    LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
+    display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
 };
 pub use jackin_launch::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
@@ -1083,17 +1089,6 @@ fn terminal_supports_rich_surface(require_stderr: bool) -> bool {
     crossterm::terminal::size().is_ok_and(|(cols, rows)| cols >= 80 && rows >= 24)
 }
 
-const STAGE_PULSE_PERIOD: usize = 12;
-const BLOCK_WIDTH: usize = 3;
-const BLOCK_GAP: usize = 1;
-const LABEL_GAP: usize = 4;
-const LABEL_SIDE_OVERHANG: usize = 12;
-const LABEL_EDGE_FADE_WIDTH: usize = 24;
-const LABEL_SLIDE_FRAMES: usize = 12;
-const PROGRESS_RAIL_WIDTH: usize =
-    LaunchStage::ALL.len() * BLOCK_WIDTH + (LaunchStage::ALL.len() - 1) * BLOCK_GAP;
-const LABEL_VIEW_WIDTH: usize = PROGRESS_RAIL_WIDTH + LABEL_SIDE_OVERHANG * 2;
-
 fn render_launch_frame(
     frame: &mut Frame<'_>,
     view: &LaunchView,
@@ -1329,203 +1324,6 @@ fn coalesce_cells(cells: impl IntoIterator<Item = (char, Style)>) -> Vec<Span<'s
         spans.push(Span::styled(buf, prev));
     }
     spans
-}
-
-fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, frozen: bool) {
-    let label_width = usize::from(area.width).min(LABEL_VIEW_WIDTH);
-    let lines = vec![
-        blocks_line(view, frozen),
-        labels_line(view, frozen, label_width),
-    ];
-    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
-}
-
-fn display_stage_statuses(view: &LaunchView) -> Vec<StageStatus> {
-    if view.stages.is_empty() {
-        return Vec::new();
-    }
-
-    let active = active_stage_index(view);
-    view.stages
-        .iter()
-        .enumerate()
-        .map(|(index, row)| match index.cmp(&active) {
-            std::cmp::Ordering::Less => {
-                if row.status == StageStatus::Failed {
-                    StageStatus::Failed
-                } else {
-                    StageStatus::Done
-                }
-            }
-            std::cmp::Ordering::Equal => row.status,
-            std::cmp::Ordering::Greater => StageStatus::Queued,
-        })
-        .collect()
-}
-
-/// One block per stage, filling gray (queued) -> green (done) so a glance
-/// reads as a percent-complete bar; all green means loaded.
-fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
-    let pulse = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
-    let display_statuses = display_stage_statuses(view);
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    for (i, status) in display_statuses.into_iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::raw(" ".repeat(BLOCK_GAP)));
-        }
-        // Thin horizontal segments (a slim progress bar), not tall full
-        // blocks: heavy `━` for reached/active stages, light `─` for queued.
-        let (glyph, color) = match status {
-            StageStatus::Done | StageStatus::Skipped => ('━', PHOSPHOR_GREEN),
-            StageStatus::Running => ('━', if pulse { WHITE } else { PHOSPHOR_GREEN }),
-            StageStatus::Failed => ('━', DANGER_RED),
-            StageStatus::Blocked => ('━', WHITE),
-            StageStatus::Queued => ('─', PHOSPHOR_DARK),
-        };
-        spans.push(Span::styled(
-            glyph.to_string().repeat(BLOCK_WIDTH),
-            Style::default().fg(color),
-        ));
-    }
-    Line::from(spans)
-}
-
-#[derive(Clone, Copy)]
-struct LabelCell {
-    ch: char,
-    style: Style,
-}
-
-fn labels_line(view: &LaunchView, frozen: bool, width: usize) -> Line<'static> {
-    if width == 0 || view.stages.is_empty() {
-        return Line::from(String::new());
-    }
-
-    let active = active_stage_index(view);
-    let bright = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
-    let display_statuses = display_stage_statuses(view);
-    let (strip, centers) = label_strip(view, active, bright, &display_statuses);
-    let active_center = centers.get(active).copied().unwrap_or(0);
-    let center = if frozen {
-        active_center
-    } else {
-        animated_label_center(view, &centers).unwrap_or(active_center)
-    };
-    let start = center as isize - (width / 2) as isize;
-    let cells = (0..width).map(|x| {
-        let index = start + x as isize;
-        let cell = if index >= 0 {
-            strip
-                .get(index as usize)
-                .copied()
-                .unwrap_or_else(blank_label_cell)
-        } else {
-            blank_label_cell()
-        };
-        faded_label_cell(cell, label_edge_fade_factor(x, width))
-    });
-    Line::from(coalesce_cells(cells.map(|cell| (cell.ch, cell.style))))
-}
-
-fn label_strip(
-    view: &LaunchView,
-    active: usize,
-    bright: bool,
-    display_statuses: &[StageStatus],
-) -> (Vec<LabelCell>, Vec<usize>) {
-    let mut cells = Vec::new();
-    let mut centers = Vec::with_capacity(view.stages.len());
-    for (index, row) in view.stages.iter().enumerate() {
-        if index > 0 {
-            cells.extend((0..LABEL_GAP).map(|_| blank_label_cell()));
-        }
-        let start = cells.len();
-        let style = label_style_for_stage(
-            display_statuses
-                .get(index)
-                .copied()
-                .unwrap_or(StageStatus::Queued),
-            index == active,
-            bright,
-        );
-        let label = row.stage.label();
-        cells.extend(label.chars().map(|ch| LabelCell { ch, style }));
-        centers.push(start + label.chars().count() / 2);
-    }
-    (cells, centers)
-}
-
-fn label_style_for_stage(status: StageStatus, active: bool, bright: bool) -> Style {
-    if active {
-        return match status {
-            StageStatus::Failed => Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
-            _ if bright => Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            _ => Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        };
-    }
-
-    match status {
-        StageStatus::Done | StageStatus::Skipped => Style::default().fg(PHOSPHOR_DIM),
-        StageStatus::Failed => Style::default().fg(DANGER_RED),
-        StageStatus::Running | StageStatus::Blocked => Style::default().fg(PHOSPHOR_GREEN),
-        StageStatus::Queued => Style::default().fg(PHOSPHOR_DARK),
-    }
-}
-
-fn blank_label_cell() -> LabelCell {
-    LabelCell {
-        ch: ' ',
-        style: Style::default(),
-    }
-}
-
-fn label_edge_fade_factor(index: usize, width: usize) -> f32 {
-    let fade_width = LABEL_EDGE_FADE_WIDTH.min(width / 2).max(1);
-    let edge_distance = index.min(width.saturating_sub(1).saturating_sub(index));
-    if edge_distance >= fade_width {
-        return 1.0;
-    }
-
-    let ratio = ((edge_distance + 1) as f32 / fade_width as f32).clamp(0.0, 1.0);
-    ratio * ratio * 2.0f32.mul_add(-ratio, 3.0)
-}
-
-fn faded_color(color: Color, factor: f32) -> Color {
-    match color {
-        Color::Rgb(r, g, b) => {
-            let factor = factor.clamp(0.0, 1.0);
-            let scale = |c: u8| (f32::from(c) * factor) as u8;
-            Color::Rgb(scale(r), scale(g), scale(b))
-        }
-        other => other,
-    }
-}
-
-fn faded_label_cell(cell: LabelCell, factor: f32) -> LabelCell {
-    let mut style = cell.style;
-    if let Some(fg) = style.fg {
-        style.fg = Some(faded_color(fg, factor));
-    }
-    LabelCell { style, ..cell }
-}
-
-fn animated_label_center(view: &LaunchView, centers: &[usize]) -> Option<usize> {
-    let transition = view.label_transition?;
-    if transition.from == transition.to {
-        return None;
-    }
-    let from = *centers.get(transition.from)?;
-    let to = *centers.get(transition.to)?;
-    let elapsed = view.frame.saturating_sub(transition.start_frame);
-    if elapsed >= LABEL_SLIDE_FRAMES {
-        return None;
-    }
-    let progress = elapsed as f32 / LABEL_SLIDE_FRAMES as f32;
-    let eased = 1.0 - (1.0 - progress).powi(3);
-    let center = (from as f32).mul_add(1.0 - eased, to as f32 * eased);
-    Some(center.round() as usize)
 }
 
 /// The status-bar activity text: the current step with an upper-cased first
