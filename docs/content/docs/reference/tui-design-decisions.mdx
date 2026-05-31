@@ -800,7 +800,7 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 1. **Every visual pattern that appears in more than one place must use one shared implementation.** A single widget, render function, or helper — not two near-copies. When the existing implementation cannot serve a new call site without modification, extend it (add a parameter, generalize a branch, add an enum variant) rather than forking it.
 
-2. **Components live in `src/console/tui/widgets/`.** Before writing any new TUI state machine or renderer, `grep` the directory. If a widget handles the same visual pattern (drill-down picker, text input box, 2-button choice, yes/no confirm, filter list), extend that widget rather than creating a parallel one.
+2. **Components live in `crates/jackin-console/src/widgets/` first, with temporary compatibility adapters in `src/console/tui/widgets/`.** Before writing any new TUI state machine or renderer, `grep` both directories. If a widget handles the same visual pattern (drill-down picker, text input box, 2-button choice, yes/no confirm, filter list), extend that widget rather than creating a parallel one.
 
 3. **A genuinely new component is only ever written once.** The first time a new UX pattern appears, it is acceptable to implement it in the most focused way that serves the immediate need. The second time the same pattern is needed somewhere else, the two implementations must be consolidated into one shared widget before the second PR lands — not "as a follow-up."
 
@@ -814,10 +814,10 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 Before adding any new TUI widget or state type:
 
-1. Run `grep -r 'struct.*State' src/console/tui/widgets/` and `ls src/console/tui/widgets/`. Read the matches. Is there a widget that already owns the pattern?
-2. Run `grep -r 'fn render_' src/console/tui/widgets/` for the render-level equivalent.
+1. Run `grep -r 'struct.*State' crates/jackin-console/src/widgets/ src/console/tui/widgets/` and `ls crates/jackin-console/src/widgets src/console/tui/widgets`. Read the matches. Is there a widget that already owns the pattern?
+2. Run `grep -r 'fn render_' crates/jackin-console/src/widgets/ src/console/tui/widgets/` for the render-level equivalent.
 3. If yes — extend the existing widget. Add a mode enum, a new bool flag, or a new variant. Do not create a second module.
-4. If no — propose the design first; get explicit approval; then implement. The first implementation goes into `src/console/tui/widgets/` so the next caller can find it.
+4. If no — propose the design first; get explicit approval; then implement. The first implementation goes into `crates/jackin-console/src/widgets/` so the next caller can find it.
 
 ### Why this rule exists — canonical lesson
 
@@ -834,14 +834,14 @@ Shared TUI widgets live in `crates/jackin-tui/src/components/`, `crates/jackin-c
 | Op picker (1Password drill-down) | <RepoFile path="src/console/tui/widgets/op_picker/mod.rs" /> | Account → Vault → Item → Field 4-stage drill-down with filter, R-key refresh, collapsible section headers, background loading, and `op://` reference commit. An opt-in `OpPickerMode::Create` adds `+ New item` / `+ New field` / `+ New section` creation sentinels and naming sub-stages, committing an `OpPickerSelection` enum | Any flow that needs to browse, pick, or create a 1Password field reference |
 | Role picker | <RepoFile path="crates/jackin-console/src/widgets/role_picker.rs" /> | Filter list of available roles with type-to-narrow and Enter commit | Any flow that needs to select a role from the known set |
 | Text input box | <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> | Single-line labelled input box (`TextInputState` + `render`) with validation, duplicate detection, forbidden-char rules. This is the **"Credential" dialog** the operator sees when typing any single value. | Any flow needing one line of free text — env value, item name, field label, section name, workspace name |
-| Scope picker | <RepoFile path="src/console/tui/widgets/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
-| Source picker | <RepoFile path="src/console/tui/widgets/source_picker.rs" /> | Two-button horizontal strip: `Plain text` / `1Password` | Choosing whether a value is literal or an `op://` reference |
+| Scope picker | <RepoFile path="crates/jackin-console/src/widgets/scope_picker.rs" /> | Two-button horizontal strip: `All roles` / `Specific role` | Any "apply to everything vs apply to one" choice |
+| Source picker | <RepoFile path="crates/jackin-console/src/widgets/source_picker.rs" /> | Two-button horizontal strip: `Plain text` / `1Password` | Choosing whether a value is literal or an `op://` reference |
 | Agent choice | <RepoFile path="crates/jackin-console/src/widgets/agent_choice.rs" /> | Two-button agent selector used in the Auth-tab `+ Add` flow | Picking one agent from a small fixed set |
-| Mount destination choice | <RepoFile path="src/console/tui/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
+| Mount destination choice | <RepoFile path="crates/jackin-console/src/widgets/mount_dst_choice.rs" /> | Two-button strip for mount destination choices | Mount configuration flows |
 | Confirm dialog | <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule) | Any destructive or irreversible action |
 | Save / discard strip | <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> | Save / Discard two-button strip, designed for form footers | Bottom of any editable form |
 | File browser | <RepoFile path="crates/jackin-console/src/widgets/file_browser/mod.rs" /> | Host filesystem navigation | Any flow needing to pick a local file or directory |
-| GitHub picker | <RepoFile path="src/console/tui/widgets/github_picker.rs" /> | GitHub org/repo drill-down | Any flow needing to select a GitHub repository |
+| GitHub picker | <RepoFile path="crates/jackin-console/src/widgets/github_picker.rs" /> | GitHub org/repo drill-down | Any flow needing to select a GitHub repository |
 | Error popup | <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" /> | Scrollable red-border error modal (see Error Surface rule) | All error display |
 | Panel rain | Background rain animation | Background decoration |
 
