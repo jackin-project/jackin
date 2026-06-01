@@ -19,6 +19,7 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::widgets::file_browser::FileBrowserState;
+use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     jackin_console::editor::update::secrets_flat_rows(
@@ -1793,12 +1794,10 @@ pub(in crate::console::manager) fn poll_role_load_completion(
     let Some(load) = editor.pending_role_load.as_mut() else {
         return None;
     };
-    let result = match load.rx.try_recv() {
-        Ok(result) => result,
-        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return None,
-        Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-            Err(anyhow::anyhow!("role loader worker disconnected"))
-        }
+    let result = match load.rx.poll_next() {
+        SubscriptionPoll::Ready(result) => result,
+        SubscriptionPoll::Pending => return None,
+        SubscriptionPoll::Closed => Err(anyhow::anyhow!("role loader worker disconnected")),
     };
     let load = editor
         .pending_role_load
