@@ -15,7 +15,6 @@ pub mod render;
 pub mod run;
 pub mod state;
 
-pub(crate) use crate::console::effects;
 pub use app::{
     ConsoleStage, ConsoleState, new_console_state, new_console_state_with_op_available,
 };

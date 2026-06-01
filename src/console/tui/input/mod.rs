@@ -29,7 +29,7 @@ pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
     jackin_protocol::Provider,
 >;
 
-pub(super) use super::effects::{
+pub(super) use crate::console::effects::{
     apply_file_browser_outcome,
     request_file_browser_git_url_resolution,
 };

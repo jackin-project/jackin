@@ -6,9 +6,9 @@
 
 use jackin_console::tui::auth::AuthKind;
 #[cfg(test)]
-pub(crate) use super::effects::ManagerBackgroundEvent;
+pub(crate) use crate::console::effects::ManagerBackgroundEvent;
 use super::effect::ManagerEffect;
-use super::effects::{poll_file_browser_git_urls, poll_picker_loads};
+use crate::console::effects::{poll_file_browser_git_urls, poll_picker_loads};
 use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerListRow,
     ManagerStage, ManagerState, MountScrollFocus, PendingMountInfoRefresh, SecretsScopeTag,

@@ -3,7 +3,7 @@
 use crossterm::event::KeyEvent;
 
 use super::super::effect::ManagerEffect;
-use super::super::effects::execute_manager_effect;
+use crate::console::effects::execute_manager_effect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use super::{InputOutcome, editor, global_mounts, list, prelude, save};
