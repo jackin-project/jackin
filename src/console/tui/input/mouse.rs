@@ -2,7 +2,7 @@
 //! click-to-select in the list pane, and `FileBrowser` URL-click fallthrough.
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 use crate::console::tui::render::list_geometry::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
@@ -27,6 +27,7 @@ use crate::console::tui::state::{
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
+    horizontal_split_pane_dims, split_pct_from_drag, split_seam_column,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
@@ -201,7 +202,7 @@ pub fn handle_mouse_with_config(
 
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => {
-            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            let seam_x = split_seam_column(state.list_split_pct, term_size.width);
             // Seam hit always wins — a click on the seam column starts a
             // drag, never a row select. Even if the seam happens to overlap
             // a valid row position, the resize affordance takes precedence.
@@ -225,7 +226,12 @@ pub fn handle_mouse_with_config(
         }
         MouseEventKind::Drag(MouseButton::Left) => {
             if let Some(anchor) = state.drag_state {
-                let new_pct = pct_from_drag(anchor, mouse.column, term_size.width);
+                let new_pct = split_pct_from_drag(
+                    anchor.anchor_pct,
+                    anchor.anchor_x,
+                    mouse.column,
+                    term_size.width,
+                );
                 dispatch_manager(state, ManagerMessage::SetListSplitPct(clamp_split(new_pct)));
             }
         }
@@ -277,7 +283,7 @@ pub fn clickable_at(
             settings_tab_at(mouse).is_some() || settings_trust_clickable(settings, mouse, term_size)
         }
         ManagerStage::List if state.list_modal.is_none() => {
-            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            let seam_x = split_seam_column(state.list_split_pct, term_size.width);
             if near_seam(mouse.column, seam_x) {
                 return false;
             }
@@ -380,7 +386,7 @@ fn file_browser_url_row_at(state: &ManagerState<'_>, mouse: MouseEvent, term_siz
 fn update_list_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
     state.hovered_list_row =
         if matches!(state.stage, ManagerStage::List) && state.list_modal.is_none() {
-            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            let seam_x = split_seam_column(state.list_split_pct, term_size.width);
             if near_seam(mouse.column, seam_x) {
                 None
             } else {
@@ -726,7 +732,7 @@ fn update_scroll_focus(
     match &mut state.stage {
         ManagerStage::List => {
             // Determine whether the click is in the left pane.
-            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            let seam_x = split_seam_column(state.list_split_pct, term_size.width);
             let left_pane_area = Rect {
                 x: 0,
                 y: LIST_HEADER_HEIGHT,
@@ -1010,7 +1016,8 @@ fn scroll_active_panel(
             }
             update_scroll_focus(state, mouse, term_size, config);
             if state.list_names_focused {
-                let (left_x, left_w) = left_pane_dims(state.list_split_pct, term_size.width);
+                let (left_x, left_w, _, _) =
+                    horizontal_split_pane_dims(state.list_split_pct, term_size.width);
                 let area = Rect {
                     x: left_x,
                     y: LIST_HEADER_HEIGHT,
@@ -1272,7 +1279,8 @@ fn list_scroll_areas(
     config: Option<&crate::config::AppConfig>,
 ) -> Option<SidebarScrollAreas> {
     let config = config?;
-    let (right_x, right_w) = right_pane_dims(state.list_split_pct, term_size.width);
+    let (_, _, right_x, right_w) =
+        horizontal_split_pane_dims(state.list_split_pct, term_size.width);
     let body_y = LIST_HEADER_HEIGHT;
     let pane_area = Rect {
         x: right_x,
@@ -1400,77 +1408,11 @@ fn list_content_row_index(
     state.row_at_visual_index(idx)
 }
 
-/// Compute the seam column (0-based) for a given split percentage and
-/// total terminal width. Mirrors ratatui's own `Layout::split` arithmetic
-/// closely enough for hit-testing purposes.
-const fn seam_column(pct: u16, width: u16) -> u16 {
-    // (width * pct) / 100 — saturating so a pathological width of 0 doesn't
-    // panic. Under MIN_DRAGGABLE_WIDTH this arithmetic is already gated off
-    // by the caller, but keep the helper safe for direct unit-testing.
-    width.saturating_mul(pct) / 100
-}
-
-/// Return `(right_x, right_w)` using ratatui's own `Layout::split` arithmetic
-/// so that scroll-offset clamping in mouse handlers uses the same viewport
-/// width as `render_scrollable_block`. Integer division in `seam_column`
-/// disagrees with ratatui's percentage rounding for some terminal widths,
-/// causing touchpad scroll to stop 1 column short of the keyboard-reachable max.
-fn right_pane_dims(pct: u16, total_width: u16) -> (u16, u16) {
-    let right_pct = 100u16.saturating_sub(pct);
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(pct),
-            Constraint::Percentage(right_pct),
-        ])
-        .split(Rect {
-            x: 0,
-            y: 0,
-            width: total_width,
-            height: 1,
-        });
-    (cols[1].x, cols[1].width)
-}
-
-fn left_pane_dims(pct: u16, total_width: u16) -> (u16, u16) {
-    let right_pct = 100u16.saturating_sub(pct);
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(pct),
-            Constraint::Percentage(right_pct),
-        ])
-        .split(Rect {
-            x: 0,
-            y: 0,
-            width: total_width,
-            height: 1,
-        });
-    (cols[0].x, cols[0].width)
-}
-
 /// `true` when `column` is within ±`SEAM_HIT_SLACK` of `seam_x`.
 const fn near_seam(column: u16, seam_x: u16) -> bool {
     let lo = seam_x.saturating_sub(SEAM_HIT_SLACK);
     let hi = seam_x.saturating_add(SEAM_HIT_SLACK);
     column >= lo && column <= hi
-}
-
-/// Derive the new split percentage from an active drag anchor and the
-/// current mouse column. Handles the signed delta safely (mouse can move
-/// either way along x) without underflow on u16.
-fn pct_from_drag(anchor: DragState, mouse_col: u16, width: u16) -> u16 {
-    // Signed delta in columns, scaled to a percentage of terminal width.
-    let delta_cols = i32::from(mouse_col) - i32::from(anchor.anchor_x);
-    let delta_pct = delta_cols * 100 / i32::from(width.max(1));
-    let candidate = i32::from(anchor.anchor_pct) + delta_pct;
-    // Clamp into [0, 100] before the narrower [MIN..=MAX] clamp so we can
-    // safely cast back to u16.
-    let bounded = candidate.clamp(0, 100);
-    // `as u16` is safe: bounded is in [0,100].
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    let narrowed = bounded as u16;
-    narrowed
 }
 
 #[cfg(test)]
