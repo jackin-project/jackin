@@ -286,7 +286,7 @@ Sidebar scroll-focus liveness now lives in <RepoFile path="crates/jackin-console
 
 Capsule initial attach-frame labels now live with attach-client effect vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/effect.rs" /> instead of daemon internals. The daemon still assembles and sends the actual protocol frames, but the visible first-attach burst names are owned by the TUI boundary.
 
-Op-picker account/vault/item/field display metadata now lives with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. Root `operator_env` keeps compatibility aliases while `op` CLI execution and cache invalidation remain in non-TUI service code.
+Op-picker account/vault/item/field display metadata and the session cache type now live with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />. Root `operator_env` keeps compatibility aliases while `op` CLI execution and cache invalidation remain in non-TUI service code.
 
 1. **Classify existing modules.** For each root-level file in the three surface crates, decide whether it is TUI, pure non-visual domain logic, or side-effect/service/runtime logic.
 2. **Capture the current behavior before moving code.** Identify the existing tests, snapshots, and manual-smoke checks that prove the affected workflow. Add focused coverage first if a workflow has no useful guard.

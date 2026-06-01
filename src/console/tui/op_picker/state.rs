@@ -12,9 +12,8 @@ use tui_widget_list::ListState;
 
 use super::{
     FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerAccount, OpPickerField,
-    OpPickerItem, OpPickerMode, OpPickerStage, OpPickerVault,
+    OpPickerItem, OpPickerMode, OpPickerStage, OpPickerVault, OpCache,
 };
-use crate::operator_env::OpCache;
 #[cfg(test)]
 use crate::operator_env::OpStructRunner;
 

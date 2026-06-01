@@ -182,6 +182,10 @@ pub struct OpPickerField {
     pub reference: String,
 }
 
+/// Session-scoped metadata cache for picker drill-down panes.
+pub type OpPickerCache =
+    crate::op_cache::OpCache<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
+
 /// A single row in the field-picker display list.
 #[derive(Debug, Clone)]
 pub enum FieldDisplayRow {

@@ -606,7 +606,7 @@ pub type OpItem = jackin_console::tui::components::op_picker::OpPickerItem;
 /// `/`, or whitespace).
 pub type OpField = jackin_console::tui::components::op_picker::OpPickerField;
 
-pub type OpCache = jackin_console::op_cache::OpCache<OpAccount, OpVault, OpItem, OpField>;
+pub type OpCache = jackin_console::tui::components::op_picker::OpPickerCache;
 
 // Accept either `id` or `account_uuid` so the probe works against
 // current and older op CLI shapes. `email` / `url` default to empty

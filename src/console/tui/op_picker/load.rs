@@ -11,11 +11,10 @@ use jackin_tui::components::TextInputState;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
 use super::{
-    FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerAccount, OpPickerError,
+    FieldLabelOrigin, LoadRequest, LoadResult, OpCache, OpLoadState, OpPickerAccount, OpPickerError,
     OpPickerFatalState, OpPickerMode, OpPickerStage, OpPickerState,
 };
 use super::state::OpPickerPendingLoad;
-use crate::operator_env::OpCache;
 #[cfg(test)]
 use crate::operator_env::OpStructRunner;
 

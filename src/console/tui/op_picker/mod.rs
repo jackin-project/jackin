@@ -28,11 +28,11 @@ pub(crate) use selection::build_op_ref_on_commit;
 pub use state::OpPickerState;
 
 pub use jackin_console::tui::components::op_picker::{
-    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerError,
-    OpPickerFatalState, OpPickerField, OpPickerFieldRef, OpPickerItem, OpPickerItemRef,
-    OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode, OpPickerStage, OpPickerVault,
-    OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref, create_field_display_rows,
-    matches_filter, section_choices_from_references,
+    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerCache,
+    OpPickerError, OpPickerFatalState, OpPickerField, OpPickerFieldRef, OpPickerItem,
+    OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode, OpPickerStage,
+    OpPickerVault, OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref,
+    create_field_display_rows, matches_filter, section_choices_from_references,
 };
 
 pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPickerSelection<
@@ -51,6 +51,7 @@ pub type OpAccount = OpPickerAccount;
 pub type OpVault = OpPickerVault;
 pub type OpItem = OpPickerItem;
 pub type OpField = OpPickerField;
+pub type OpCache = OpPickerCache;
 
 impl Default for OpPickerState {
     fn default() -> Self {
