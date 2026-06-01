@@ -2,22 +2,11 @@
 
 use crate::console::tui::state::MountInfoCache;
 
+use jackin_console::mount_display::MountDisplayInput;
 pub(crate) use jackin_console::mount_display::{MountDisplayRow, mount_path_width};
 pub(crate) use jackin_console::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
 };
-
-pub(crate) fn mount_display_paths(
-    mount: &crate::workspace::MountConfig,
-) -> (String, Option<String>) {
-    let src = crate::tui::shorten_home(&mount.src);
-    let dst = crate::tui::shorten_home(&mount.dst);
-    if mount.src == mount.dst {
-        (dst, None)
-    } else {
-        (dst, Some(format!("host: {src}")))
-    }
-}
 
 #[cfg(test)]
 pub(crate) fn format_mount_rows(mounts: &[crate::workspace::MountConfig]) -> Vec<MountDisplayRow> {
@@ -30,22 +19,16 @@ pub(crate) fn format_mount_rows_with_cache(
     mounts: &[crate::workspace::MountConfig],
     cache: &MountInfoCache,
 ) -> Vec<MountDisplayRow> {
-    mounts
-        .iter()
-        .map(|m| {
-            let (destination, host_source) = mount_display_paths(m);
-            let mode: &'static str = if m.readonly { "ro" } else { "rw" };
-            let isolation: &'static str = m.isolation.as_str();
-            let kind = cache.label(&m.src);
-            MountDisplayRow {
-                destination,
-                host_source,
-                mode,
-                isolation,
-                kind,
-            }
-        })
-        .collect()
+    jackin_console::mount_display::format_mount_rows(
+        mounts.iter().map(|m| MountDisplayInput {
+            src: &m.src,
+            dst: &m.dst,
+            readonly: m.readonly,
+            isolation: m.isolation.as_str(),
+            kind: cache.label(&m.src),
+        }),
+        crate::tui::shorten_home,
+    )
 }
 
 #[cfg(test)]
@@ -64,11 +47,9 @@ pub(crate) fn workspace_mounts_content_width_with_cache(
 }
 
 pub(crate) fn workspace_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
-    1 + mounts
-        .iter()
-        .map(|m| if m.src == m.dst { 1 } else { 2 })
-        .sum::<usize>()
-        .max(1)
+    jackin_console::mount_display::mounts_content_height(
+        mounts.iter().map(|m| m.src == m.dst),
+    )
 }
 
 #[cfg(test)]
@@ -98,12 +79,8 @@ pub(crate) fn settings_global_mounts_content_width_with_cache(
 pub(crate) fn settings_global_mounts_content_height(
     rows: &[crate::config::GlobalMountRow],
 ) -> usize {
-    if rows.is_empty() {
-        return 1;
-    }
-    let row_lines = rows
-        .iter()
-        .map(|row| if row.mount.src == row.mount.dst { 1 } else { 2 })
-        .sum::<usize>();
-    row_lines + 3
+    jackin_console::mount_display::settings_global_mounts_content_height(
+        rows.iter().map(|row| row.mount.src == row.mount.dst),
+        rows.is_empty(),
+    )
 }

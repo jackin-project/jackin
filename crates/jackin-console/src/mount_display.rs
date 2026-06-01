@@ -12,6 +12,47 @@ pub struct MountDisplayRow {
     pub kind: String,
 }
 
+pub struct MountDisplayInput<'a> {
+    pub src: &'a str,
+    pub dst: &'a str,
+    pub readonly: bool,
+    pub isolation: &'static str,
+    pub kind: String,
+}
+
+pub fn mount_display_paths(
+    src: &str,
+    dst: &str,
+    shorten: impl Fn(&str) -> String,
+) -> (String, Option<String>) {
+    let src_display = shorten(src);
+    let dst_display = shorten(dst);
+    if src == dst {
+        (dst_display, None)
+    } else {
+        (dst_display, Some(format!("host: {src_display}")))
+    }
+}
+
+pub fn format_mount_rows<'a>(
+    mounts: impl IntoIterator<Item = MountDisplayInput<'a>>,
+    shorten: impl Fn(&str) -> String + Copy,
+) -> Vec<MountDisplayRow> {
+    mounts
+        .into_iter()
+        .map(|mount| {
+            let (destination, host_source) = mount_display_paths(mount.src, mount.dst, shorten);
+            MountDisplayRow {
+                destination,
+                host_source,
+                mode: if mount.readonly { "ro" } else { "rw" },
+                isolation: mount.isolation,
+                kind: mount.kind,
+            }
+        })
+        .collect()
+}
+
 /// Width of the `Destination` column, sized to fit the widest path plus header.
 #[must_use]
 pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
@@ -67,6 +108,30 @@ pub fn settings_global_mounts_content_width(rows: &[MountDisplayRow]) -> usize {
         .chain((!rows.is_empty()).then_some(settings_global_mount_header_width(path_w)))
         .max()
         .unwrap_or(0)
+}
+
+#[must_use]
+pub fn mounts_content_height(same_path_rows: impl IntoIterator<Item = bool>) -> usize {
+    1 + same_path_rows
+        .into_iter()
+        .map(|same_path| if same_path { 1 } else { 2 })
+        .sum::<usize>()
+        .max(1)
+}
+
+#[must_use]
+pub fn settings_global_mounts_content_height(
+    same_path_rows: impl IntoIterator<Item = bool>,
+    is_empty: bool,
+) -> usize {
+    if is_empty {
+        return 1;
+    }
+    same_path_rows
+        .into_iter()
+        .map(|same_path| if same_path { 1 } else { 2 })
+        .sum::<usize>()
+        + 3
 }
 
 fn workspace_mount_header_width(path_w: usize) -> usize {
