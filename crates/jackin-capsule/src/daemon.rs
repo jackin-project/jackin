@@ -59,7 +59,6 @@ use crate::mouse_protocol::{
     encode_mouse_for_protocol, encode_wheel_cursor_fallback, is_wheel_button,
     mouse_event_encoding_for_session, pane_wheel_cursor_fallback_reason,
 };
-use crate::mux_mode::MuxMode;
 use crate::pr_context::gh_pull_request_info;
 use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
@@ -79,7 +78,7 @@ use crate::title::{
     append_osc_window_title, capitalize, compose_outer_terminal_title, display_title,
     session_agent_label,
 };
-use crate::tui::app::{DragState, HoverTarget, PointerShape, VisiblePane};
+use crate::tui::app::{DragState, HoverTarget, MuxMode, PointerShape, VisiblePane};
 use crate::tui::update::FullRedrawReason;
 
 mod compositor;
