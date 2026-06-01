@@ -26,14 +26,13 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
-    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
-    horizontal_split_pane_dims, split_pct_from_drag, split_seam_column,
+    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
+    horizontal_split_pane_dims, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
 use jackin_tui::components::scrollable_panel::{
-    apply_scroll_delta, horizontal_scrollbar_area, is_scrollable,
-    scrollbar_offset_for_track_position, vertical_scrollbar_area,
+    apply_scroll_delta, is_scrollable,
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
 
@@ -837,12 +836,6 @@ struct ScrollArea {
     content_width: usize,
 }
 
-#[derive(Clone, Copy)]
-enum ScrollbarAxis {
-    Horizontal,
-    Vertical,
-}
-
 fn drag_scrollbar_axis(
     axis: ScrollbarAxis,
     value: &mut u16,
@@ -850,35 +843,16 @@ fn drag_scrollbar_axis(
     area: Rect,
     content_len: usize,
 ) -> bool {
-    let (viewport, scrollbar, track_len, track_position) = match axis {
-        ScrollbarAxis::Horizontal => {
-            let scrollbar = horizontal_scrollbar_area(area);
-            (
-                scroll_viewport_width(area),
-                scrollbar,
-                scrollbar.width,
-                mouse.column.saturating_sub(scrollbar.x),
-            )
-        }
-        ScrollbarAxis::Vertical => {
-            let scrollbar = vertical_scrollbar_area(area);
-            (
-                scroll_viewport_height(area),
-                scrollbar,
-                scrollbar.height,
-                mouse.row.saturating_sub(scrollbar.y),
-            )
-        }
-    };
-    if !is_scrollable(content_len, viewport) || !point_in(mouse, scrollbar) {
-        return false;
-    }
-    *value = scrollbar_offset_for_track_position(
+    let Some(offset) = scrollbar_drag_offset(
+        axis,
+        area,
         content_len,
-        viewport,
-        usize::from(track_len),
-        usize::from(track_position),
-    );
+        mouse.column,
+        mouse.row,
+    ) else {
+        return false;
+    };
+    *value = offset;
     true
 }
 

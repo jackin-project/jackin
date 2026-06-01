@@ -3,6 +3,12 @@ pub const LIST_FOOTER_HEIGHT: u16 = 2;
 pub const SCREEN_HEADER_HEIGHT: u16 = 3;
 pub const TAB_STRIP_HEIGHT: u16 = 2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollbarAxis {
+    Horizontal,
+    Vertical,
+}
+
 /// Compute the seam column for a percentage split and total terminal width.
 #[must_use]
 pub const fn split_seam_column(pct: u16, width: u16) -> u16 {
@@ -42,6 +48,57 @@ pub fn split_pct_from_drag(anchor_pct: u16, anchor_x: u16, mouse_col: u16, width
     }
 }
 
+#[must_use]
+pub fn scrollbar_drag_offset(
+    axis: ScrollbarAxis,
+    area: ratatui::layout::Rect,
+    content_len: usize,
+    pointer_col: u16,
+    pointer_row: u16,
+) -> Option<u16> {
+    use jackin_tui::components::scrollable_panel::{
+        horizontal_scrollbar_area, is_scrollable, scrollbar_offset_for_track_position,
+        vertical_scrollbar_area, viewport_height, viewport_width,
+    };
+
+    let (viewport, scrollbar, track_len, track_position) = match axis {
+        ScrollbarAxis::Horizontal => {
+            let scrollbar = horizontal_scrollbar_area(area);
+            (
+                viewport_width(area),
+                scrollbar,
+                scrollbar.width,
+                pointer_col.saturating_sub(scrollbar.x),
+            )
+        }
+        ScrollbarAxis::Vertical => {
+            let scrollbar = vertical_scrollbar_area(area);
+            (
+                viewport_height(area),
+                scrollbar,
+                scrollbar.height,
+                pointer_row.saturating_sub(scrollbar.y),
+            )
+        }
+    };
+    if !is_scrollable(content_len, viewport) || !point_in(pointer_col, pointer_row, scrollbar) {
+        return None;
+    }
+    Some(scrollbar_offset_for_track_position(
+        content_len,
+        viewport,
+        usize::from(track_len),
+        usize::from(track_position),
+    ))
+}
+
+const fn point_in(col: u16, row: u16, area: ratatui::layout::Rect) -> bool {
+    col >= area.x
+        && col < area.x.saturating_add(area.width)
+        && row >= area.y
+        && row < area.y.saturating_add(area.height)
+}
+
 /// Like a centered percent-width rect, but takes a fixed row height.
 #[must_use]
 pub fn centered_rect_fixed(
@@ -61,7 +118,11 @@ pub fn centered_rect_fixed(
 
 #[cfg(test)]
 mod tests {
-    use super::{horizontal_split_pane_dims, split_pct_from_drag, split_seam_column};
+    use super::{
+        ScrollbarAxis, horizontal_split_pane_dims, scrollbar_drag_offset, split_pct_from_drag,
+        split_seam_column,
+    };
+    use ratatui::layout::Rect;
 
     #[test]
     fn split_seam_column_uses_saturating_percent_math() {
@@ -80,5 +141,27 @@ mod tests {
         assert_eq!(split_pct_from_drag(30, 30, 50, 100), 50);
         assert_eq!(split_pct_from_drag(30, 30, 0, 100), 0);
         assert_eq!(split_pct_from_drag(80, 80, 200, 100), 100);
+    }
+
+    #[test]
+    fn scrollbar_drag_offset_maps_pointer_to_scroll_offset() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 5,
+        };
+        assert_eq!(
+            scrollbar_drag_offset(ScrollbarAxis::Horizontal, area, 100, 10, 4),
+            Some(44)
+        );
+        assert_eq!(
+            scrollbar_drag_offset(ScrollbarAxis::Vertical, area, 100, 19, 2),
+            Some(48)
+        );
+        assert_eq!(
+            scrollbar_drag_offset(ScrollbarAxis::Horizontal, area, 10, 10, 4),
+            None
+        );
     }
 }
