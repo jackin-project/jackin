@@ -64,7 +64,7 @@ use crate::protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
 };
 use crate::protocol::control::{AgentState, SessionInfo};
-use crate::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode, fill_screen};
+use crate::tui::render::{PaneBodyCache, PaneBodyDim, PaneBodyRenderMode};
 use crate::tui::selection::{SelectionState, paint_selection_highlight, selection_text};
 use crate::session::{
     BranchName, GitContext, Oid, PullRequestInfo, PullRequestLookupOutcome,

@@ -236,6 +236,10 @@ pub(crate) fn render_capsule_raw_dialog_overlay(
     );
 }
 
+pub(crate) fn render_capsule_dialog_backdrop(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
+    fill_screen(buf, term_rows, term_cols, jackin_tui::DIALOG_BACKDROP);
+}
+
 pub(crate) struct CapsuleBottomChrome<'a> {
     pub(crate) term_rows: u16,
     pub(crate) term_cols: u16,

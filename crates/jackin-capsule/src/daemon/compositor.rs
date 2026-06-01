@@ -10,7 +10,8 @@ use crate::tui::view::{
     CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleDialogBottomChrome,
     CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar, draw_pane_chrome,
     pane_scrollbar, render_capsule_bottom_chrome, render_capsule_chrome_hover_frame,
-    render_capsule_dialog_bottom_chrome, render_capsule_raw_dialog_overlay,
+    render_capsule_dialog_backdrop, render_capsule_dialog_bottom_chrome,
+    render_capsule_raw_dialog_overlay,
     render_capsule_status_bar,
 };
 
@@ -191,12 +192,7 @@ impl Multiplexer {
                     },
                 );
             } else {
-                fill_screen(
-                    &mut buf,
-                    self.term_rows,
-                    self.term_cols,
-                    jackin_tui::DIALOG_BACKDROP,
-                );
+                render_capsule_dialog_backdrop(&mut buf, self.term_rows, self.term_cols);
             }
             crate::cdebug!(
                 "render: kind=dialog reason={} bytes={} duration_us={}",
