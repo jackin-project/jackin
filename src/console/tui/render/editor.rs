@@ -23,13 +23,14 @@ use crate::operator_env::EnvValue;
 use jackin_console::tui::components::editor_rows::{SecretValueDisplay, render_tab_strip};
 use jackin_console::tui::screens::editor::view::{
     EditorAuthLineRow, EditorAuthSourceDisplay, EditorRoleRow, auth_lines as editor_auth_lines,
-    general_lines as editor_general_lines, mount_lines as editor_mount_lines,
-    role_lines as editor_role_lines, secret_lines as editor_secret_lines, tab_labels,
+    editor_frame_areas, general_lines as editor_general_lines,
+    mount_lines as editor_mount_lines, role_lines as editor_role_lines,
+    secret_lines as editor_secret_lines, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     text::Line,
 };
 
@@ -45,38 +46,30 @@ pub(super) fn render_editor(
     let items =
         crate::console::tui::render::footer::editor::editor_footer_items(state, config, op_available);
     let footer_h = footer_height(&items, area.width).max(1);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(5),
-            Constraint::Length(footer_h),
-        ])
-        .split(area);
+    let areas = editor_frame_areas(area, footer_h);
 
     let title = match &state.mode {
         EditorMode::Edit { name } => format!("edit workspace · {name}"),
         EditorMode::Create => "create workspace".to_string(),
     };
-    render_header(frame, chunks[0], &title);
+    render_header(frame, areas.header, &title);
     render_editor_tab_strip(
         frame,
-        chunks[1],
+        areas.tabs,
         state.active_tab,
         state.tab_bar_focused,
         state.hovered_tab,
     );
 
     match state.active_tab {
-        EditorTab::General => render_general_tab(frame, chunks[2], state),
-        EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
-        EditorTab::Roles => render_roles_tab(frame, chunks[2], state, config),
-        EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
-        EditorTab::Auth => render_auth_tab(frame, chunks[2], state, config),
+        EditorTab::General => render_general_tab(frame, areas.body, state),
+        EditorTab::Mounts => render_mounts_tab(frame, areas.body, state),
+        EditorTab::Roles => render_roles_tab(frame, areas.body, state, config),
+        EditorTab::Secrets => render_secrets_tab(frame, areas.body, state, config),
+        EditorTab::Auth => render_auth_tab(frame, areas.body, state, config),
     }
 
-    render_footer(frame, chunks[3], &items);
+    render_footer(frame, areas.footer, &items);
 }
 
 fn render_editor_tab_strip(

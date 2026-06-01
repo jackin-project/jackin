@@ -49,6 +49,32 @@ pub struct EditorScrollGeometry {
     pub mounts_content_width: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorFrameAreas {
+    pub header: Rect,
+    pub tabs: Rect,
+    pub body: Rect,
+    pub footer: Rect,
+}
+
+pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(footer_h),
+        ])
+        .split(area);
+    EditorFrameAreas {
+        header: chunks[0],
+        tabs: chunks[1],
+        body: chunks[2],
+        footer: chunks[3],
+    }
+}
+
 pub fn clamp_editor_scroll_for_frame(
     body: Rect,
     geometry: EditorScrollGeometry,
@@ -79,16 +105,7 @@ pub fn clamp_editor_scroll_for_frame(
 }
 
 pub fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(5),
-            Constraint::Length(footer_h),
-        ])
-        .split(area);
-    chunks[2]
+    editor_frame_areas(area, footer_h).body
 }
 
 pub fn editor_row_width(label: &str, value: &str) -> usize {
@@ -561,6 +578,17 @@ mod tests {
         assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} Keep awake     ");
         assert_eq!(lines[2].spans[1].content.as_ref(), "enabled (macOS only)");
         assert_eq!(lines[3].spans[1].content.as_ref(), "disabled");
+    }
+
+    #[test]
+    fn editor_frame_areas_match_header_tabs_body_footer_contract() {
+        let areas = editor_frame_areas(Rect::new(0, 0, 80, 20), 2);
+
+        assert_eq!(areas.header, Rect::new(0, 0, 80, 3));
+        assert_eq!(areas.tabs, Rect::new(0, 3, 80, 2));
+        assert_eq!(areas.body, Rect::new(0, 5, 80, 13));
+        assert_eq!(areas.footer, Rect::new(0, 18, 80, 2));
+        assert_eq!(editor_body_area(Rect::new(0, 0, 80, 20), 2), areas.body);
     }
 
     #[test]
