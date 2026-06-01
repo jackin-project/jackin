@@ -20,8 +20,8 @@ impl Multiplexer {
             // SocketBackend::clear() deliberately does NOT emit \x1b[2J so this
             // reset is flicker-free — the next draw() sends every cell instead.
             let _ = self.ratatui_terminal.clear();
-            // Use the Ratatui compositor for all full frames — dialogs are
-            // now rendered via shared jackin-tui widgets inside compose_ratatui_frame.
+            // Use the Ratatui compositor for all full frames; visible widget
+            // rendering lives under the capsule TUI boundary.
             if let Some(ratatui_output) = self.compose_ratatui_frame() {
                 crate::cdebug!(
                     "render: kind=full reason={} via=ratatui bytes={}",
@@ -64,10 +64,8 @@ impl Multiplexer {
     /// the Ratatui terminal fails to draw (falls back to raw-ANSI).
     pub(super) fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
         use crate::title::display_title;
-        use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
-        use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
-        use crate::tui::components::pane::PaneBodyWidget;
-        use ratatui::layout::Rect as RatatuiRect;
+        use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
+        use crate::tui::view::{CapsuleRatatuiFrame, render_capsule_ratatui_frame};
 
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
@@ -113,102 +111,24 @@ impl Multiplexer {
             .is_some_and(|s| s.scrollback_offset != 0);
 
         let sessions = &self.sessions;
-        let status_bar = StatusBarWidget {
-            tabs,
-            active_tab,
-            cols: term_cols,
-        };
-
         let result = self.ratatui_terminal.draw(|frame| {
-            // Status bar: rows 0-1 (STATUS_BAR_ROWS = 2)
-            let status_area = RatatuiRect {
-                x: 0,
-                y: 0,
-                width: term_cols,
-                height: crate::statusbar::STATUS_BAR_ROWS,
-            };
-            frame.render_widget(status_bar, status_area);
-
-            if dialog_open {
-                // Backdrop fills the content area behind the dialog.
-                let content_area = RatatuiRect {
-                    x: 0,
-                    y: crate::statusbar::STATUS_BAR_ROWS,
-                    width: term_cols,
-                    height: term_rows.saturating_sub(crate::statusbar::STATUS_BAR_ROWS),
-                };
-                frame.render_widget(DialogBackdrop, content_area);
-                // Render dialog content via shared jackin-tui components.
-                if let Some((snapshot, rect)) = &dialog_snapshot {
-                    render_dialog_ratatui(frame, *rect, snapshot);
-                }
-                return;
-            }
-
-            // Hint bar: two rows above branch context bar with a blank separator row
-            // between them — consistent with console bottom chrome layout:
-            //   term_rows-1: branch context bar
-            //   term_rows-2: blank separator row
-            //   term_rows-3: hint bar
-            let hint_spans = crate::dialog::main_view_hint(scrollback_active);
-            let hint_area = RatatuiRect {
-                x: 0,
-                y: term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
-                width: term_cols,
-                height: 1,
-            };
-            jackin_tui::components::render_hint_bar(frame, hint_area, hint_spans);
-            // Separator row between hint bar and branch context bar.
-            let sep_area = RatatuiRect {
-                x: 0,
-                y: term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1),
-                width: term_cols,
-                height: 1,
-            };
-            frame.render_widget(ratatui::widgets::Block::default(), sep_area);
-
-            // Pane bodies + borders
-            for pane in &panes {
-                let title = pane_titles
-                    .iter()
-                    .find(|(id, _)| *id == pane.id)
-                    .map(|(_, t)| t.as_str())
-                    .unwrap_or("");
-
-                let focused = Some(pane.id) == focused_id;
-                // Always show the green focus border on the active pane —
-                // even in single-pane mode. The green border is the
-                // focus-visible indicator (WCAG 2.4.11); suppressing it in
-                // single-pane made tab switches invisible. Zoomed mode hides
-                // all chrome so there is nothing to highlight.
-                let highlight_focus = !zoomed;
-
-                // Pane border (outer rect)
-                let border_area = RatatuiRect {
-                    x: pane.outer.col,
-                    y: pane.outer.row,
-                    width: pane.outer.cols,
-                    height: pane.outer.rows,
-                };
-                frame.render_widget(
-                    PaneBorderWidget {
-                        title: title.to_string(),
-                        focused: focused && highlight_focus,
-                    },
-                    border_area,
-                );
-
-                // Pane body (inner rect)
-                if let Some(session) = sessions.get(&pane.id) {
-                    let body_area = RatatuiRect {
-                        x: pane.inner.col,
-                        y: pane.inner.row,
-                        width: pane.inner.cols,
-                        height: pane.inner.rows,
-                    };
-                    frame.render_widget(PaneBodyWidget::new(session.screen()), body_area);
-                }
-            }
+            render_capsule_ratatui_frame(
+                frame,
+                CapsuleRatatuiFrame {
+                    tabs,
+                    active_tab,
+                    term_cols,
+                    term_rows,
+                    panes: &panes,
+                    pane_titles: &pane_titles,
+                    focused_id,
+                    zoomed,
+                    dialog_open,
+                    dialog_snapshot: dialog_snapshot.as_ref(),
+                    scrollback_active,
+                    sessions,
+                },
+            );
         });
 
         match result {

@@ -1,11 +1,19 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
+use std::collections::HashMap;
+
 use crate::input::PrefixCommand;
+use crate::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
+use crate::layout::Tab;
 use crate::render::draw_scrollbar;
 use crate::session::Session;
 use crate::statusbar::draw_pane_box;
 use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
+use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
+use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
+use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::update::FullRedrawReason;
+use ratatui::{Frame, layout::Rect as RatatuiRect};
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
     match target {
@@ -144,6 +152,108 @@ pub(crate) fn draw_pane_chrome(
         scrollbar.filled,
         pane.focused && highlight_focus,
     );
+}
+
+pub(crate) struct CapsuleRatatuiFrame<'a> {
+    pub(crate) tabs: &'a [Tab],
+    pub(crate) active_tab: usize,
+    pub(crate) term_cols: u16,
+    pub(crate) term_rows: u16,
+    pub(crate) panes: &'a [VisiblePane],
+    pub(crate) pane_titles: &'a [(u64, String)],
+    pub(crate) focused_id: Option<u64>,
+    pub(crate) zoomed: bool,
+    pub(crate) dialog_open: bool,
+    pub(crate) dialog_snapshot: Option<&'a (DialogRatatuiSnapshot, (u16, u16, u16, u16))>,
+    pub(crate) scrollback_active: bool,
+    pub(crate) sessions: &'a HashMap<u64, Session>,
+}
+
+pub(crate) fn render_capsule_ratatui_frame(
+    frame: &mut Frame<'_>,
+    view: CapsuleRatatuiFrame<'_>,
+) {
+    let status_area = RatatuiRect {
+        x: 0,
+        y: 0,
+        width: view.term_cols,
+        height: crate::statusbar::STATUS_BAR_ROWS,
+    };
+    frame.render_widget(
+        StatusBarWidget {
+            tabs: view.tabs,
+            active_tab: view.active_tab,
+            cols: view.term_cols,
+        },
+        status_area,
+    );
+
+    if view.dialog_open {
+        let content_area = RatatuiRect {
+            x: 0,
+            y: crate::statusbar::STATUS_BAR_ROWS,
+            width: view.term_cols,
+            height: view
+                .term_rows
+                .saturating_sub(crate::statusbar::STATUS_BAR_ROWS),
+        };
+        frame.render_widget(DialogBackdrop, content_area);
+        if let Some((snapshot, rect)) = view.dialog_snapshot {
+            render_dialog_ratatui(frame, *rect, snapshot);
+        }
+        return;
+    }
+
+    let hint_spans = crate::dialog::main_view_hint(view.scrollback_active);
+    let hint_area = RatatuiRect {
+        x: 0,
+        y: view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
+        width: view.term_cols,
+        height: 1,
+    };
+    jackin_tui::components::render_hint_bar(frame, hint_area, hint_spans);
+
+    let sep_area = RatatuiRect {
+        x: 0,
+        y: view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1),
+        width: view.term_cols,
+        height: 1,
+    };
+    frame.render_widget(ratatui::widgets::Block::default(), sep_area);
+
+    for pane in view.panes {
+        let title = view
+            .pane_titles
+            .iter()
+            .find(|(id, _)| *id == pane.id)
+            .map(|(_, t)| t.as_str())
+            .unwrap_or("");
+
+        let focused = Some(pane.id) == view.focused_id;
+        let border_area = RatatuiRect {
+            x: pane.outer.col,
+            y: pane.outer.row,
+            width: pane.outer.cols,
+            height: pane.outer.rows,
+        };
+        frame.render_widget(
+            PaneBorderWidget {
+                title: title.to_string(),
+                focused: focused && !view.zoomed,
+            },
+            border_area,
+        );
+
+        if let Some(session) = view.sessions.get(&pane.id) {
+            let body_area = RatatuiRect {
+                x: pane.inner.col,
+                y: pane.inner.row,
+                width: pane.inner.cols,
+                height: pane.inner.rows,
+            };
+            frame.render_widget(PaneBodyWidget::new(session.screen()), body_area);
+        }
+    }
 }
 
 pub(crate) struct ScrollAffordanceMetrics {
