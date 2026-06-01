@@ -15,7 +15,9 @@ use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::update as settings_update;
-use jackin_console::tui::screens::settings::view::{env_forbidden_label, env_scope_label};
+use jackin_console::tui::screens::settings::view::{
+    env_forbidden_label, env_scope_label, global_mount_confirm_prompt,
+};
 use jackin_tui::components::{ConfirmState, TextInputState};
 
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
@@ -1922,15 +1924,9 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
 }
 
 fn confirm_modal(action: GlobalMountConfirm) -> GlobalMountModal<'static> {
-    let prompt = match action {
-        GlobalMountConfirm::Save => "Save settings to ~/.config/jackin/config.toml?",
-        GlobalMountConfirm::Sensitive => "Sensitive global mount path detected. Save anyway?",
-        GlobalMountConfirm::Remove => "Remove selected global mount?",
-        GlobalMountConfirm::Discard => "Discard unsaved global mount changes?",
-    };
     GlobalMountModal::Confirm {
         action,
-        state: ConfirmState::new(prompt),
+        state: ConfirmState::new(global_mount_confirm_prompt(action)),
     }
 }
 

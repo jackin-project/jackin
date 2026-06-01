@@ -1,5 +1,6 @@
 //! Settings screen view helpers.
 
+use super::model::GlobalMountConfirm;
 use super::model::SettingsAuthRow;
 use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
@@ -58,6 +59,16 @@ pub fn tab_labels(active: SettingsTab) -> Vec<(&'static str, bool)> {
         .iter()
         .map(|tab| (tab.label(), *tab == active))
         .collect()
+}
+
+#[must_use]
+pub const fn global_mount_confirm_prompt(action: GlobalMountConfirm) -> &'static str {
+    match action {
+        GlobalMountConfirm::Save => "Save settings to ~/.config/jackin/config.toml?",
+        GlobalMountConfirm::Sensitive => "Sensitive global mount path detected. Save anyway?",
+        GlobalMountConfirm::Remove => "Remove selected global mount?",
+        GlobalMountConfirm::Discard => "Discard unsaved global mount changes?",
+    }
 }
 
 #[must_use]
@@ -457,6 +468,18 @@ mod tests {
         assert_eq!(areas.tabs, Rect::new(0, 3, 80, 2));
         assert_eq!(areas.body, Rect::new(0, 5, 80, 13));
         assert_eq!(areas.footer, Rect::new(0, 18, 80, 2));
+    }
+
+    #[test]
+    fn global_mount_confirm_prompts_are_settings_owned() {
+        assert_eq!(
+            global_mount_confirm_prompt(GlobalMountConfirm::Remove),
+            "Remove selected global mount?"
+        );
+        assert_eq!(
+            global_mount_confirm_prompt(GlobalMountConfirm::Sensitive),
+            "Sensitive global mount path detected. Save anyway?"
+        );
     }
 
     #[test]
