@@ -274,6 +274,64 @@ pub(crate) fn resolve_launch_dispatch(
     }))
 }
 
+pub(crate) struct CommittedRoleLaunch {
+    pub(crate) input: LoadWorkspaceInput,
+    pub(crate) workspace: ResolvedWorkspace,
+}
+
+pub(crate) fn resolve_committed_role_launch(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    input: LoadWorkspaceInput,
+    role: &RoleSelector,
+) -> anyhow::Result<Option<CommittedRoleLaunch>> {
+    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    let workspace = crate::console::preview::resolve_selected_workspace(config, cwd, &choice, role)?;
+    Ok(Some(CommittedRoleLaunch { input, workspace }))
+}
+
+pub(crate) struct CommittedAgentLaunch {
+    pub(crate) input: LoadWorkspaceInput,
+    pub(crate) role: RoleSelector,
+    pub(crate) workspace: ResolvedWorkspace,
+    pub(crate) providers: Vec<jackin_protocol::Provider>,
+}
+
+pub(crate) fn resolve_committed_agent_launch(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    input: LoadWorkspaceInput,
+    role: RoleSelector,
+    agent: Agent,
+) -> anyhow::Result<Option<CommittedAgentLaunch>> {
+    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    let workspace =
+        crate::console::preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
+    let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
+    Ok(Some(CommittedAgentLaunch {
+        input,
+        role,
+        workspace,
+        providers,
+    }))
+}
+
+pub(crate) fn resolve_provider_launch_workspace(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    input: &LoadWorkspaceInput,
+    selector: &RoleSelector,
+) -> anyhow::Result<Option<ResolvedWorkspace>> {
+    let Some(choice) = build_workspace_choice(config, cwd, input)? else {
+        return Ok(None);
+    };
+    crate::console::preview::resolve_selected_workspace(config, cwd, &choice, selector).map(Some)
+}
+
 fn zai_key_present(config: &AppConfig, workspace_name: &str, role_selector: &str) -> bool {
     crate::operator_env::lookup_operator_env_raw(
         config,

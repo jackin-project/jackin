@@ -210,8 +210,11 @@ where
     B: ratatui::backend::Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
+    let Some(input) = state.pending_launch.take() else {
+        return Ok(None);
+    };
     let Some(resolved) =
-        crate::console::effects::resolve_committed_role_launch(state, config, cwd, &role)?
+        crate::console::domain::resolve_committed_role_launch(config, cwd, input, &role)?
     else {
         return Ok(None);
     };
@@ -243,8 +246,14 @@ pub(super) fn launch_with_committed_agent(
     cwd: &std::path::Path,
     agent: crate::agent::Agent,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
+    let (Some(input), Some(role)) = (
+        state.pending_launch.take(),
+        state.pending_launch_role.take(),
+    ) else {
+        return Ok(None);
+    };
     let Some(resolved) =
-        crate::console::effects::resolve_committed_agent_launch(state, config, cwd, agent)?
+        crate::console::domain::resolve_committed_agent_launch(config, cwd, input, role, agent)?
     else {
         return Ok(None);
     };

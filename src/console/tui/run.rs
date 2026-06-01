@@ -360,10 +360,15 @@ pub async fn run_console<H: InstanceActionHandler>(
                             agent,
                             provider,
                         } => {
-                            let workspace =
-                                crate::console::effects::resolve_pending_provider_launch(
-                                    &mut state, &config, cwd, &selector,
-                                )?;
+                            let Some(input) = state.pending_launch.take() else {
+                                break 'main Ok(None);
+                            };
+                            let workspace = crate::console::domain::resolve_provider_launch_workspace(
+                                &config,
+                                cwd,
+                                &input,
+                                &selector,
+                            )?;
                             let Some(workspace) = workspace else {
                                 break 'main Ok(None);
                             };
