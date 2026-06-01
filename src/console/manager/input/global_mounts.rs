@@ -253,7 +253,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         KeyCode::Char('o' | 'O') => {
             if let Some(row) = global.pending.get(global.selected) {
                 if let Some(web_url) = global.mount_info_cache.github_web_url(&row.mount.src) {
-                    if let Err(err) = open::that_detached(&web_url) {
+                    if let Err(err) = crate::console::services::browser::open_url(&web_url) {
                         global.error = Some(format!("failed to open URL: {err}"));
                     }
                 } else {

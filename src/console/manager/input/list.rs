@@ -506,7 +506,7 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
     match choices.len() {
         0 => {}
         1 => {
-            if let Err(e) = open::that_detached(&choices[0].url) {
+            if let Err(e) = crate::console::services::browser::open_url(&choices[0].url) {
                 dispatch_manager(
                     state,
                     ManagerMessage::OpenListErrorPopup {
@@ -538,7 +538,7 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
         Modal::GithubPicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(url) => {
                 dispatch_manager(state, ManagerMessage::DismissListModal);
-                if let Err(e) = open::that_detached(&url) {
+                if let Err(e) = crate::console::services::browser::open_url(&url) {
                     dispatch_manager(
                         state,
                         ManagerMessage::OpenListErrorPopup {

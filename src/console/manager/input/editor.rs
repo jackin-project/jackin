@@ -447,7 +447,7 @@ pub(super) fn handle_editor_key(
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get(n) {
                 if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
-                    if let Err(e) = open::that_detached(&web_url) {
+                    if let Err(e) = crate::console::services::browser::open_url(&web_url) {
                         editor.modal = Some(Modal::ErrorPopup {
                             state: jackin_tui::components::ErrorPopupState::new(
                                 "Failed to open URL",
