@@ -577,43 +577,20 @@ pub async fn run_console<H: InstanceActionHandler>(
                             }));
                         }
                         crate::console::tui::InputOutcome::OpenUrl(url) => {
-                            if let Err(e) = crate::console::services::browser::open_url(&url)
-                                && let ConsoleStage::Manager(ms) = &mut state.stage
-                            {
-                                report_open_url_error(ms, e);
-                                needs_redraw = true;
+                            if let ConsoleStage::Manager(ms) = &mut state.stage {
+                                needs_redraw |= crate::console::effects::execute_open_url(ms, &url);
                             }
                         }
                         crate::console::tui::InputOutcome::RemoveWorkspace(name) => {
-                            match crate::console::services::config::remove_workspace(
-                                &mut config,
-                                paths,
-                                &name,
-                            ) {
-                                Ok(()) => {
-                                    if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                        let _ = crate::console::tui::update_manager(
-                                            ms,
-                                            crate::console::tui::ManagerMessage::ReloadFromConfig {
-                                                config: Box::new(config.clone()),
-                                                cwd: cwd.to_path_buf(),
-                                            },
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                        let _ = crate::console::tui::update_manager(
-                                            ms,
-                                            crate::console::tui::ManagerMessage::OpenListErrorPopup {
-                                                title: "Delete failed".into(),
-                                                message: format!("{e:#}"),
-                                            },
-                                        );
-                                    }
-                                }
+                            if let ConsoleStage::Manager(ms) = &mut state.stage {
+                                needs_redraw |= crate::console::effects::execute_remove_workspace(
+                                    ms,
+                                    &mut config,
+                                    paths,
+                                    cwd,
+                                    &name,
+                                );
                             }
-                            needs_redraw = true;
                         }
                     }
                 }
@@ -669,10 +646,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                             Some(&config),
                         );
                         if let crate::console::tui::InputOutcome::OpenUrl(url) = outcome {
-                            if let Err(e) = crate::console::services::browser::open_url(&url) {
-                                report_open_url_error(ms, e);
-                                needs_redraw = true;
-                            }
+                            needs_redraw |= crate::console::effects::execute_open_url(ms, &url);
                         }
                         // Switch the terminal pointer to the hand shape over any
                         // clickable element (and back off it), per the clickable
@@ -702,35 +676,4 @@ pub async fn run_console<H: InstanceActionHandler>(
     // the console → loading transition stays on one alternate screen.
     drop(owned_screen);
     result
-}
-
-fn report_open_url_error(ms: &mut crate::console::tui::ManagerState<'_>, error: anyhow::Error) {
-    match &mut ms.stage {
-        crate::console::tui::ManagerStage::Editor(editor) => {
-            editor.modal = Some(crate::console::tui::state::Modal::ErrorPopup {
-                state: jackin_tui::components::ErrorPopupState::new(
-                    "Failed to open URL",
-                    error.to_string(),
-                ),
-            });
-        }
-        crate::console::tui::ManagerStage::Settings(_) => {
-            let _ = crate::console::tui::update_manager(
-                ms,
-                crate::console::tui::ManagerMessage::OpenSettingsErrorPopup {
-                    title: "Failed to open URL".into(),
-                    message: error.to_string(),
-                },
-            );
-        }
-        _ => {
-            let _ = crate::console::tui::update_manager(
-                ms,
-                crate::console::tui::ManagerMessage::OpenListErrorPopup {
-                    title: "Failed to open URL".into(),
-                    message: error.to_string(),
-                },
-            );
-        }
-    }
 }

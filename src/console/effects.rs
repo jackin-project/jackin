@@ -69,6 +69,77 @@ pub(crate) fn execute_manager_effect(
     }
 }
 
+pub(crate) fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
+    match crate::console::services::browser::open_url(url) {
+        Ok(()) => false,
+        Err(error) => {
+            report_open_url_error(state, error);
+            true
+        }
+    }
+}
+
+pub(crate) fn execute_remove_workspace(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    cwd: &std::path::Path,
+    name: &str,
+) -> bool {
+    match crate::console::services::config::remove_workspace(config, paths, name) {
+        Ok(()) => {
+            let _ = update_manager(
+                state,
+                ManagerMessage::ReloadFromConfig {
+                    config: Box::new(config.clone()),
+                    cwd: cwd.to_path_buf(),
+                },
+            );
+        }
+        Err(error) => {
+            let _ = update_manager(
+                state,
+                ManagerMessage::OpenListErrorPopup {
+                    title: "Delete failed".into(),
+                    message: format!("{error:#}"),
+                },
+            );
+        }
+    }
+    true
+}
+
+fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            editor.modal = Some(Modal::ErrorPopup {
+                state: jackin_tui::components::ErrorPopupState::new(
+                    "Failed to open URL",
+                    error.to_string(),
+                ),
+            });
+        }
+        ManagerStage::Settings(_) => {
+            let _ = update_manager(
+                state,
+                ManagerMessage::OpenSettingsErrorPopup {
+                    title: "Failed to open URL".into(),
+                    message: error.to_string(),
+                },
+            );
+        }
+        _ => {
+            let _ = update_manager(
+                state,
+                ManagerMessage::OpenListErrorPopup {
+                    title: "Failed to open URL".into(),
+                    message: error.to_string(),
+                },
+            );
+        }
+    }
+}
+
 fn execute_role_registration_start(
     state: &mut ManagerState<'_>,
     paths: &crate::paths::JackinPaths,
