@@ -11,9 +11,11 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use crate::mount_display::{MountDisplayRow, mount_path_width};
 use crate::tui::components::editor_rows::{
     SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
 };
+use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
 
 #[must_use]
 pub fn tab_labels(active: SettingsTab) -> Vec<(&'static str, bool)> {
@@ -188,6 +190,70 @@ pub fn env_lines<'a>(
     lines
 }
 
+#[must_use]
+pub fn global_mount_lines(
+    rows: &[MountDisplayRow],
+    selected: Option<usize>,
+    include_sentinel: bool,
+) -> Vec<Line<'static>> {
+    let path_w = mount_path_width(rows);
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if !rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {path:<path_w$}  {mode:<MOUNT_MODE_COL_WIDTH$}  Type",
+                path = "Destination",
+                mode = "Mode"
+            ),
+            Style::default().fg(jackin_tui::theme::WHITE),
+        )));
+    }
+    for (i, row) in rows.iter().enumerate() {
+        let is_selected = selected == Some(i);
+        let prefix = if is_selected { "\u{25b8} " } else { "  " };
+        let base_style = if is_selected {
+            Style::default()
+                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+        };
+        let dim_style = Style::default()
+            .fg(jackin_tui::theme::PHOSPHOR_DIM)
+            .add_modifier(Modifier::ITALIC);
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{prefix}{:<path_w$}  ", row.destination),
+                base_style,
+            ),
+            Span::styled(
+                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(row.kind.clone(), dim_style),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            )));
+        }
+    }
+    if include_sentinel {
+        let sentinel_selected = selected == Some(rows.len());
+        let sentinel_prefix = if sentinel_selected { "\u{25b8} " } else { "  " };
+        if !rows.is_empty() {
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            format!("{sentinel_prefix}+ Add mount"),
+            action_row_style(sentinel_selected),
+        )));
+    }
+    lines
+}
+
 fn truncate(value: &str, width: usize) -> String {
     let mut out: String = value.chars().take(width).collect();
     if value.chars().count() > width && width > 1 {
@@ -306,6 +372,24 @@ mod tests {
         assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} + Add environment variable");
         assert!(lines[2].spans[2].content.contains("Role: architect  (2 vars)"));
         assert_eq!(lines[3].spans[0].content.as_ref(), "  + Add architect environment variable");
+    }
+
+    #[test]
+    fn global_mount_lines_render_header_rows_and_sentinel() {
+        let rows = [MountDisplayRow {
+            destination: "/workspace".to_string(),
+            host_source: Some("host: ~/project".to_string()),
+            mode: "ro",
+            isolation: "shared",
+            kind: "bind".to_string(),
+        }];
+
+        let lines = global_mount_lines(&rows, Some(1), true);
+
+        assert_eq!(lines[0].spans[0].content.as_ref(), "  Destination      Mode  Type");
+        assert_eq!(lines[1].spans[0].content.as_ref(), "  /workspace       ");
+        assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
+        assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");
     }
 
     #[test]

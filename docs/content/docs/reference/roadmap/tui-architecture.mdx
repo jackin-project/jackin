@@ -278,7 +278,7 @@ Modal size and placement rules now flow through the surface-local rect-spec help
 
 Settings screen view geometry now owns the reusable global-mount scroll-frame calculation in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />; root settings geometry supplies only root mount rows and cache-derived content width.
 
-Settings General-tab, Environment-tab, and Trust-tab line composition now also live in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root rendering passes only selected/hovered row state, pending toggle values, pending environment/trust rows, root value lookup adapters, and focus visibility instead of owning the screen-specific row styling itself.
+Settings General-tab, Mounts-tab, Environment-tab, and Trust-tab line composition now also live in <RepoFile path="crates/jackin-console/src/tui/screens/settings/view.rs" />. Root rendering passes only selected/hovered row state, pending toggle values, formatted mount rows, pending environment/trust rows, root value lookup adapters, and focus visibility instead of owning the screen-specific row styling itself.
 
 Workspace-list row sizing now includes the generic list-name content-width fold in <RepoFile path="crates/jackin-console/src/tui/list_geometry.rs" />; root list geometry maps manager rows to widths and delegates the viewport floor calculation.
 

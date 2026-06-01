@@ -17,7 +17,7 @@ use crate::console::tui::render::modal_layout::{
     scope_picker_rect, source_picker_rect, text_input_rect,
 };
 use crate::console::tui::render::mount_display::{
-    MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
+    format_mount_rows_with_cache,
 };
 pub(crate) use crate::console::tui::state::SettingsEnvRow;
 use crate::console::tui::state::{
@@ -25,11 +25,10 @@ use crate::console::tui::state::{
     SettingsState, SettingsTab,
 };
 use crate::operator_env::EnvValue;
-use jackin_console::tui::components::editor_rows::{
-    SecretValueDisplay, action_row_style, render_tab_strip,
-};
+use jackin_console::tui::components::editor_rows::{SecretValueDisplay, render_tab_strip};
 use jackin_console::tui::screens::settings::view::{
     env_lines as settings_env_lines, general_lines as settings_general_lines, tab_labels,
+    global_mount_lines as settings_global_mount_lines,
     trust_lines as settings_trust_lines,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
@@ -157,62 +156,7 @@ fn global_mount_lines(
 ) -> Vec<Line<'static>> {
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_mount_rows_with_cache(&mounts, cache);
-    let path_w = mount_path_width(&display_rows);
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    if !display_rows.is_empty() {
-        lines.push(Line::from(Span::styled(
-            format!(
-                "  {path:<path_w$}  {mode:<MOUNT_MODE_COL_WIDTH$}  Type",
-                path = "Destination",
-                mode = "Mode"
-            ),
-            Style::default().fg(WHITE),
-        )));
-    }
-    for (i, row) in display_rows.iter().enumerate() {
-        let is_selected = selected == Some(i);
-        let prefix = if is_selected { "▸ " } else { "  " };
-        let base_style = if is_selected {
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(PHOSPHOR_GREEN)
-        };
-        let dim_style = Style::default()
-            .fg(PHOSPHOR_DIM)
-            .add_modifier(Modifier::ITALIC);
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{prefix}{:<path_w$}  ", row.destination),
-                base_style,
-            ),
-            Span::styled(
-                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                Style::default().fg(PHOSPHOR_DIM),
-            ),
-            Span::raw("  "),
-            Span::styled(row.kind.clone(), dim_style),
-        ]));
-        if let Some(host_source) = &row.host_source {
-            lines.push(Line::from(Span::styled(
-                format!("  {host_source:<path_w$}"),
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        }
-    }
-    if include_sentinel {
-        let sentinel_selected = selected == Some(rows.len());
-        let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
-        if !rows.is_empty() {
-            lines.push(Line::from(""));
-        }
-        lines.push(Line::from(Span::styled(
-            format!("{sentinel_prefix}+ Add mount"),
-            action_row_style(sentinel_selected),
-        )));
-    }
-    lines
+    settings_global_mount_lines(&display_rows, selected, include_sentinel)
 }
 
 fn env_lines(state: &SettingsState<'_>, area_width: u16) -> Vec<Line<'static>> {
