@@ -4,12 +4,10 @@
 //! (General / Mounts / Roles / Secrets), and the contextual footer
 //! composition that varies with the active tab + cursor.
 
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::config::AppConfig;
 use crate::console::domain::resolve_panel_mode;
-use crate::console::tui::render::mount_display::{
-    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
-};
+use crate::console::tui::render::mount_display::format_mount_rows_with_cache;
 pub use crate::console::tui::state::AuthRow;
 pub(crate) use crate::console::tui::state::SecretsRow;
 use crate::console::tui::state::{
@@ -27,9 +25,8 @@ use jackin_console::tui::components::editor_rows::{
     SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
     render_tab_strip,
 };
-use jackin_console::tui::components::mount_rows::render_mount_header;
 use jackin_console::tui::screens::editor::view::{
-    general_lines as editor_general_lines, tab_labels,
+    general_lines as editor_general_lines, mount_lines as editor_mount_lines, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use jackin_tui::theme::ACTION_ACCENT;
@@ -149,79 +146,8 @@ fn mounts_tab_lines(state: &EditorState<'_>) -> Vec<Line<'static>> {
     let FieldFocus::Row(cursor) = state.active_field;
     let show_cursor =
         !state.tab_bar_focused && state.workspace_mounts_scroll_focused && state.modal.is_none();
-
-    // Build aligned table rows for all mounts.
     let rows = format_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
-    let path_w = mount_path_width(&rows);
-
-    // Header row — shares path_w so the "mode" and "type" columns line up
-    // with data rows regardless of path width.
-    let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
-
-    for (i, row) in rows.iter().enumerate() {
-        let selected = show_cursor && (i == cursor);
-        // Hover lift: graphite background on the hovered (non-selected) mount
-        // row, matching the tab/list hover cue. Applied to every span (and the
-        // column gaps) so the row's background is contiguous.
-        let hovered = !selected && state.hovered_mount_row == Some(i);
-        let hb = |s: Style| {
-            if hovered {
-                s.bg(TAB_BG_INACTIVE_HOVER)
-            } else {
-                s
-            }
-        };
-        let prefix = if selected { "▸ " } else { "  " };
-        let base_style = if selected {
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(PHOSPHOR_GREEN)
-        };
-        let dim_style = Style::default()
-            .fg(PHOSPHOR_DIM)
-            .add_modifier(Modifier::ITALIC);
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{prefix}{:<path_w$}  ", row.destination),
-                hb(base_style),
-            ),
-            Span::styled(
-                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                hb(Style::default().fg(PHOSPHOR_DIM)),
-            ),
-            // Two-space gap before the iso column — matches the header.
-            Span::styled("  ", hb(Style::default())),
-            Span::styled(
-                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                hb(Style::default().fg(PHOSPHOR_DIM)),
-            ),
-            // Two-space gap before the type column — matches the header.
-            Span::styled("  ", hb(Style::default())),
-            Span::styled(row.kind.clone(), hb(dim_style)),
-        ]));
-        if let Some(host_source) = &row.host_source {
-            lines.push(Line::from(Span::styled(
-                format!("  {host_source:<path_w$}"),
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        }
-    }
-
-    // Sentinel row: + Add mount — selectable, styled distinctly from mounts.
-    let sentinel_idx = state.pending.mounts.len();
-    let sentinel_selected = show_cursor && (cursor == sentinel_idx);
-    let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
-    if !state.pending.mounts.is_empty() {
-        lines.push(Line::from(""));
-    }
-    lines.push(Line::from(Span::styled(
-        format!("{sentinel_prefix}+ Add mount"),
-        action_row_style(sentinel_selected),
-    )));
-
-    lines
+    editor_mount_lines(&rows, cursor, state.hovered_mount_row, show_cursor)
 }
 
 fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {

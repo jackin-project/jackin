@@ -1,6 +1,11 @@
 //! Editor screen view helpers.
 
 use super::model::{EditorTab, SecretsScopeTag};
+use crate::mount_display::{MountDisplayRow, mount_path_width};
+use crate::tui::components::editor_rows::action_row_style;
+use crate::tui::components::mount_rows::{
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
+};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -88,6 +93,80 @@ pub fn general_lines(
     ]
 }
 
+#[must_use]
+pub fn mount_lines(
+    rows: &[MountDisplayRow],
+    cursor: usize,
+    hovered_row: Option<usize>,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    let path_w = mount_path_width(rows);
+    let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
+
+    for (i, row) in rows.iter().enumerate() {
+        let selected = show_cursor && (i == cursor);
+        let hovered = !selected && hovered_row == Some(i);
+        let hb = |s: Style| {
+            if hovered {
+                s.bg(jackin_tui::theme::TAB_BG_INACTIVE_HOVER)
+            } else {
+                s
+            }
+        };
+        let prefix = if selected { "\u{25b8} " } else { "  " };
+        let base_style = if selected {
+            Style::default()
+                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+        };
+        let dim_style = Style::default()
+            .fg(jackin_tui::theme::PHOSPHOR_DIM)
+            .add_modifier(Modifier::ITALIC);
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{prefix}{:<path_w$}  ", row.destination),
+                hb(base_style),
+            ),
+            Span::styled(
+                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
+                hb(Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM)),
+            ),
+            Span::styled("  ", hb(Style::default())),
+            Span::styled(
+                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
+                hb(Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM)),
+            ),
+            Span::styled("  ", hb(Style::default())),
+            Span::styled(row.kind.clone(), hb(dim_style)),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            )));
+        }
+    }
+
+    let sentinel_idx = rows.len();
+    let sentinel_selected = show_cursor && (cursor == sentinel_idx);
+    let sentinel_prefix = if sentinel_selected {
+        "\u{25b8} "
+    } else {
+        "  "
+    };
+    if !rows.is_empty() {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(Span::styled(
+        format!("{sentinel_prefix}+ Add mount"),
+        action_row_style(sentinel_selected),
+    )));
+
+    lines
+}
+
 fn render_editor_row(
     row: usize,
     cursor: usize,
@@ -169,5 +248,23 @@ mod tests {
         assert_eq!(lines[2].spans[0].content.as_ref(), "\u{25b8} Keep awake     ");
         assert_eq!(lines[2].spans[1].content.as_ref(), "enabled (macOS only)");
         assert_eq!(lines[3].spans[1].content.as_ref(), "disabled");
+    }
+
+    #[test]
+    fn mount_lines_render_header_rows_and_sentinel() {
+        let rows = [MountDisplayRow {
+            destination: "/workspace".to_string(),
+            host_source: Some("host: ~/project".to_string()),
+            mode: "rw",
+            isolation: "shared",
+            kind: "bind".to_string(),
+        }];
+
+        let lines = mount_lines(&rows, 1, Some(0), true);
+
+        assert_eq!(lines[0].spans[0].content.as_ref(), "  Destination      Mode  Isolation  Type");
+        assert_eq!(lines[1].spans[0].content.as_ref(), "  /workspace       ");
+        assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
+        assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");
     }
 }
