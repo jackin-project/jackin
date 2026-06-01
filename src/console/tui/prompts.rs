@@ -172,7 +172,7 @@ where
     B::Error: std::error::Error + Send + Sync + 'static,
 {
     let Some((role, workspace, agent)) =
-        state.dispatch_launch_for_workspace(config, cwd, input.clone())?
+        crate::console::tui::launch::dispatch_launch_for_workspace(state, config, cwd, input.clone())?
     else {
         return Ok(None);
     };

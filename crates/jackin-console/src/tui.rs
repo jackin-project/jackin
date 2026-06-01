@@ -1,5 +1,6 @@
 //! Host console TUI-layer helpers.
 
+pub mod app;
 pub mod auth;
 pub mod components;
 pub mod effect;

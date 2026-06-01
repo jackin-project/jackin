@@ -47,7 +47,7 @@ mod quit_confirm_tests {
     fn fresh_state() -> ConsoleState {
         let cwd = std::env::temp_dir();
         let config = AppConfig::default();
-        ConsoleState::new(&config, &cwd).unwrap()
+        tui::new_console_state(&config, &cwd).unwrap()
     }
 
     fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
@@ -327,7 +327,7 @@ mod quit_confirm_tests {
         // Empty config → resolve_supported_agents_for_console errors on
         // the unregistered selector; helper routes that into Failed.
         let config = AppConfig::default();
-        let mut state = ConsoleState::new(&config, &cwd).unwrap();
+        let mut state = tui::new_console_state(&config, &cwd).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let workspace = unresolved_workspace();
         let mut runner = crate::runtime::FakeRunner::default();
@@ -362,7 +362,7 @@ mod quit_confirm_tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
         let config = AppConfig::default();
-        let mut state = ConsoleState::new(&config, &cwd).unwrap();
+        let mut state = tui::new_console_state(&config, &cwd).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut workspace = unresolved_workspace();
         workspace.default_agent = Some(crate::agent::Agent::Codex);

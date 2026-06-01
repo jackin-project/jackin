@@ -19,7 +19,9 @@ pub mod state;
 
 pub(crate) use crate::console::effects;
 pub(crate) use crate::console::services::file_browser;
-pub use app::{ConsoleStage, ConsoleState};
+pub use app::{
+    ConsoleStage, ConsoleState, new_console_state, new_console_state_with_op_available,
+};
 pub(crate) use input::{InputOutcome, handle_key};
 pub(crate) use message::{ManagerMessage, update_manager};
 pub use render::{prepare_for_render, render};
