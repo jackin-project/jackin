@@ -4,7 +4,8 @@ use jackin_console::layout::centered_rect_fixed;
 use ratatui::layout::Rect;
 
 use crate::console::manager::state::Modal;
-use crate::console::widgets::{auth_panel, confirm_save, role_picker};
+use crate::console::widgets::{auth_panel, role_picker};
+use jackin_console::widgets::confirm_save;
 
 pub(crate) fn text_input_rect(outer: Rect) -> Rect {
     centered_rect_fixed(outer, 60, 5)

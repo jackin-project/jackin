@@ -730,7 +730,7 @@ readonly = false
                 &config,
                 &cwd,
                 GlobalMountModal::PreviewSave {
-                    state: crate::console::widgets::confirm_save::ConfirmSaveState::new(vec![
+                    state: jackin_console::widgets::confirm_save::ConfirmSaveState::new(vec![
                         ratatui::text::Line::from("Add global mount /workspace"),
                     ]),
                 },

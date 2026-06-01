@@ -227,7 +227,7 @@ pub(super) fn begin_editor_save(
     };
 
     let lines = build_confirm_save_lines(editor, config, &collapse_lines);
-    let mut confirm_state = crate::console::widgets::confirm_save::ConfirmSaveState::new(lines);
+    let mut confirm_state = jackin_console::widgets::confirm_save::ConfirmSaveState::new(lines);
     confirm_state.effective_removals = effective_removals;
     confirm_state.final_mounts = final_mounts;
     confirm_state.has_collapses = has_collapses;

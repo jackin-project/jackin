@@ -14,7 +14,6 @@ pub(crate) const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", 
 
 pub mod agent_choice;
 pub mod auth_panel;
-pub mod confirm_save;
 pub(crate) mod editor_rows;
 pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
@@ -213,10 +212,10 @@ mod consistency_tests {
     }
 
     fn render_confirm_save() -> (Buffer, Rect) {
-        use super::confirm_save::{ConfirmSaveState, render};
+        use jackin_console::widgets::confirm_save::{ConfirmSaveState, render};
         use ratatui::text::Line;
         let area = Rect::new(0, 0, 70, 10);
-        let state = ConfirmSaveState::new(vec![
+        let state = ConfirmSaveState::<crate::workspace::MountConfig>::new(vec![
             Line::from("Create workspace: demo"),
             Line::from(""),
             Line::from("Working directory: /home/user/demo"),

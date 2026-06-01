@@ -13,9 +13,10 @@ use crate::console::op_cache::OpCache;
 use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{
-    auth_panel::AuthForm, confirm_save::ConfirmSaveState, op_picker::OpPickerState,
-    role_picker::RolePickerState, workdir_pick::WorkdirPickState,
+    auth_panel::AuthForm, op_picker::OpPickerState, role_picker::RolePickerState,
+    workdir_pick::WorkdirPickState,
 };
+use jackin_console::widgets::confirm_save::ConfirmSaveState;
 use jackin_console::widgets::file_browser::FileBrowserState;
 use jackin_console::widgets::github_picker::GithubPickerState;
 use jackin_console::widgets::mount_dst_choice::MountDstChoiceState;
@@ -383,7 +384,7 @@ pub enum GlobalMountModal<'a> {
     /// Reuses the `ConfirmSave` widget so the operator sees the same
     /// scrollable diff format as the workspace editor.
     PreviewSave {
-        state: crate::console::widgets::confirm_save::ConfirmSaveState,
+        state: ConfirmSaveState<crate::workspace::MountConfig>,
     },
 }
 
@@ -1215,7 +1216,7 @@ pub enum Modal<'a> {
         state: GithubPickerState,
     },
     ConfirmSave {
-        state: ConfirmSaveState,
+        state: ConfirmSaveState<crate::workspace::MountConfig>,
     },
     ErrorPopup {
         state: ErrorPopupState,
