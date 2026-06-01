@@ -45,49 +45,58 @@ Adopt **two tools**, both installed through `mise` (per the mise-only CI rule in
 
 `cargo-deny` is a superset of `cargo-audit`: its `advisories` check *is* the `RUSTSEC` database scan that `cargo-audit` performs, plus three more axes. Adopting `cargo-deny` alone — **not** both — avoids running the advisory scan twice and maintaining two tools.
 
-A first `deny.toml` (roughly 50 lines):
+A first `deny.toml`, written against the **current cargo-deny config schema** (verified against the upstream docs in June 2026 — see [Upstream verification](#upstream-verification) below). Note there is no longer a `version = 2` marker in any section: the `version` field is deprecated and ignored, and the modern template documents each field by its default instead.
 
 ```toml
 [advisories]
-# Pull the RustSec advisory DB; fail on any unfixed vulnerability.
-version = 2
-yanked = "deny"
-# ignore = ["RUSTSEC-XXXX-XXXX"]  # only with a written justification per entry
+# Pull the RustSec advisory DB. As of current cargo-deny, every vulnerability,
+# unsound, and notice advisory errors by default — the old `vulnerability` /
+# `unsound` / `notice` / `severity-threshold` lint-level fields were removed.
+# Suppress a specific advisory only here, with a written justification:
+# ignore = ["RUSTSEC-XXXX-XXXX"]
+yanked = "deny"                 # default is "warn"; tighten to fail on yanked crates
+unmaintained = "workspace"      # default "all"; scope to first-party + direct deps
 
 [licenses]
-version = 2
-# Permissive allow-list covering the current tree (see audit table above).
+# Closed allow-list, mirroring rust-lang/cargo's own deny.toml plus the extra
+# permissive identifiers present in jackin's tree. Any license NOT listed is
+# denied — GPL/AGPL/LGPL/SSPL/EUPL/CC-BY-SA fail by omission. The old
+# `copyleft` / `allow-osi-fsf-free` / `deny` / `default` toggles were removed,
+# so omission from `allow` is now the ONLY way to ban a license.
 allow = [
-  "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception",
+  "MIT", "MIT-0", "Apache-2.0", "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "0BSD",
   "Unicode-3.0", "Unicode-DFS-2016", "CDLA-Permissive-2.0",
   "CC0-1.0", "BSL-1.0", "Unlicense", "MPL-2.0",
 ]
-# Everything not in `allow` fails — GPL/AGPL/SSPL/EUPL/CC-BY-SA included
-# by omission. No explicit deny list needed; the allow-list is the gate.
 confidence-threshold = 0.9
+# Defaults worth knowing: include-dev = false (dev-deps are not license-checked,
+# since they are not in distributed binaries) and include-build = true.
 
 [[licenses.exceptions]]
 # WTFPL: decide allow-or-replace; pin the one crate that carries it here
 # rather than widening the global allow-list.
-# name = "<crate>"
+# crate = "<crate>"
 # allow = ["WTFPL"]
 
 [bans]
-multiple-versions = "warn"   # surface duplicate semver-incompatible copies
+multiple-versions = "warn"   # upstream + cargo's own default; surface duplicates without blocking
 wildcards = "deny"
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-[sources.allow-org]
-# none — list specific git deps explicitly instead
 [[sources.allow-git]]
 # vt100 fork until jackin-term retires it (see terminal-emulation-crate).
 # url = "https://github.com/donbeave/vt100-rust"
 ```
 
-The `licenses.allow` list is a closed allow-list: any license **not** named — every `GPL`/`AGPL` variant, `SSPL`, `EUPL`, `CC-BY-SA`, etc. — fails the build by omission. That is the operator's requested ban, expressed as the safer "allow-list, deny-by-default" shape rather than an open-ended deny list that misses new SPDX identifiers.
+The `licenses.allow` list is a closed allow-list: any license **not** named — every `GPL`/`AGPL`/`LGPL` variant, `SSPL`, `EUPL`, `CC-BY-SA`, etc. — fails the build by omission. That is the operator's requested ban, expressed as the safer "allow-list, deny-by-default" shape rather than an open-ended deny list that misses new SPDX identifiers. This is now the *only* mechanism: cargo-deny removed the dedicated `copyleft` and `allow-osi-fsf-free` toggles, so the allow-list is the license policy.
+
+Two upstream behaviours make the allow-list robust:
+
+- **OR-expressions pass if any operand is allowed.** A crate licensed `MIT OR Apache-2.0 OR LGPL-2.1-or-later` (jackin's `r-efi`, via `getrandom`) passes because `MIT`/`Apache-2.0` satisfy the expression — the `LGPL` arm never triggers. The check fails only when *no* allowed license can satisfy the expression.
+- **GNU licenses match pedantically (since cargo-deny 0.18.4).** Allowing `GPL-3.0-or-later` would *not* permit `GPL-3.0-only` — each variant is exact-match. Irrelevant while banning all GNU licenses, but it means the ban cannot be accidentally widened by a loose identifier.
 
 The `sources.allow-git` entry is what makes the `vt100` fork an explicit, reviewable decision instead of a silent exception; it is removed when `jackin-term` retires the fork.
 
@@ -97,16 +106,24 @@ The `sources.allow-git` entry is what makes the `vt100` fork an explicit, review
 
 ### Alternatives considered and not adopted
 
+These verdicts are reasoned from ecosystem norms and the verified cargo-deny facts; unlike the cargo-deny config details, they were **not** independently triple-verified in the June 2026 research pass (see [Upstream verification](#upstream-verification)). Re-confirm tool maintenance status at implementation time.
+
 | Tool | Decision | Reason |
 | --- | --- | --- |
-| `cargo-audit` | **Skip** | Subsumed by `cargo-deny`'s `advisories` check; running both duplicates the scan. |
-| `cargo-udeps` | **Skip** | Requires the **nightly** toolchain and a full build — friction against the `rust-toolchain.toml` stable pin, slow in CI. `cargo-machete` covers the 90% case (unused *direct* deps) on stable for near-zero cost. Revisit only if precise compile-graph analysis is ever needed. |
-| `cargo-vet` / `cargo-crev` | **Defer** | Human-audit-trail tooling whose value scales with reviewer count. A solo maintainer cannot sustain a meaningful per-crate audit ledger; revisit if the project gains contributors. |
+| `cargo-audit` | **Skip** | Its RustSec scan is the same DB cargo-deny's `advisories` check pulls (verified: same `RustSec/advisory-db`, same `P90D` staleness). Running both duplicates the scan and doubles maintenance. cargo-audit remains usable standalone, but for CI cargo-deny is the single gate. |
+| `cargo-udeps` | **Skip** | Requires the **nightly** toolchain and a full build — friction against the `rust-toolchain.toml` stable pin, slow in CI. `cargo-machete` covers the common case (unused *direct* deps) on stable for near-zero cost. Revisit only if precise compile-graph analysis is ever needed. |
+| `cargo-vet` / `cargo-crev` | **Defer** | Human-audit-trail tooling whose value scales with reviewer count, or with importing an external trusted-audit set (Mozilla/Google). A solo maintainer cannot sustain a meaningful per-crate audit ledger, and importing audits without local re-review adds little; revisit if the project gains contributors. |
 | `cargo-geiger` | **Defer** | `unsafe`-usage census is informative but not a pass/fail gate; produces a metric, not a policy. Out of scope for a CI gate. |
+| `OpenSSF Scorecard` / GitHub `dependency-review-action` | **Defer** | Repo-health and PR-dependency-diff signals that overlap cargo-deny's advisory/license coverage for a Rust project; reconsider if the project later wants a published security-posture score rather than a pass/fail gate. |
 
 ## CI wiring
 
-A new `deny` job in <RepoFile path=".github/workflows/ci.yml" />, mirroring the shape of the existing `check` / `msrv` jobs:
+There are two integration paths, and they pull in different directions:
+
+- **Upstream-canonical: `EmbarkStudios/cargo-deny-action@v2`.** This is the documented canonical CI integration — a single step after `actions/checkout`, with the binary bundled by the action (the `@v2` major line currently ships cargo-deny 0.19.x). Lowest friction, but it installs a tool *outside* `mise`.
+- **Project-consistent: install via `mise`, run the binary directly.** jackin's mise-only CI tool-install rule in <RepoFile path=".github/AGENTS.md" /> requires every CI tool to come from <RepoFile path="mise.toml" />, exactly like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
+
+**Recommendation: the mise path**, to honour the project's hard rule and keep one tool-install mechanism. The `cargo-deny-action` is noted here as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise` — that trade-off is the kind of deviation the rule exists to prevent. A new `deny` job in <RepoFile path=".github/workflows/ci.yml" />, mirroring the existing `check` / `msrv` jobs:
 
 ```yaml
   deny:
@@ -123,7 +140,7 @@ A new `deny` job in <RepoFile path=".github/workflows/ci.yml" />, mirroring the 
 Tool versions are pinned in <RepoFile path="mise.toml" /> alongside the existing `cargo:cargo-nextest` / `cargo:cargo-zigbuild` entries:
 
 ```toml
-"cargo:cargo-deny" = "<pinned>"
+"cargo:cargo-deny" = "<pinned>"      # e.g. the 0.19.x line current in mid-2026
 "cargo:cargo-machete" = "<pinned>"
 ```
 
@@ -131,7 +148,7 @@ The `deny` job is added to the `ci-required` aggregator's `needs` list so branch
 
 ### Advisory-freshness consideration
 
-The `RUSTSEC` database updates independently of the repo, so a green PR can turn red later when a new advisory lands against an existing dependency — with no code change. Two shapes resolve this:
+The `RUSTSEC` database updates independently of the repo, so a green PR can turn red later when a new advisory lands against an existing dependency — with no code change. (cargo-deny fetches the same `RustSec/advisory-db` that `cargo-audit` uses, caches it under `$CARGO_HOME/advisory-dbs`, and treats a DB older than `maximum-db-staleness`, default `P90D` / 90 days, as an error — so CI must refresh the DB rather than rely on a stale cache.) Two shapes resolve the green-turns-red problem:
 
 - **Blocking on every PR + a scheduled run.** Keep `advisories` in the per-PR gate (catches newly-introduced vulnerable deps immediately) **and** add a daily/weekly `schedule:`-triggered run so an advisory against the existing tree surfaces as its own failing run rather than blocking an unrelated PR author. This is the recommended shape.
 - **License + bans + sources block per-PR; advisories scheduled-only.** Lower friction, but a PR that introduces a known-vulnerable dependency would not be caught until the next scheduled run. Weaker; not recommended.
@@ -155,4 +172,16 @@ The `RUSTSEC` database updates independently of the repo, so a green PR can turn
 
 - `cargo-deny`'s `advisories` check needs network access in CI to fetch the `RUSTSEC` DB; the job must not run with networking disabled.
 - The `licenses.allow` list must be re-checked whenever a dependency bump introduces a new SPDX identifier — that is the intended friction (a new license is a decision, not a default).
-- `multiple-versions = "warn"` starts non-blocking; tighten to `"deny"` only after the existing duplicate-version backlog (if any) is cleared, to avoid blocking unrelated PRs on pre-existing duplication.
+- `multiple-versions = "warn"` starts non-blocking; tighten to `"deny"` (with a `[[bans.skip]]` list for the known-duplicate crates) only after the existing duplicate-version backlog is cleared, to avoid blocking unrelated PRs on pre-existing duplication.
+
+## Upstream verification
+
+The cargo-deny config schema, license model, and CI-integration claims in this item were verified against upstream sources in June 2026 (multi-source fan-out with adversarial claim verification). What was confirmed against primary sources:
+
+- **Config schema dropped the `version` marker.** The `version` field in `[advisories]` / `[licenses]` is deprecated and ignored; the modern `deny.template.toml` documents fields by default value instead. ([cargo-deny advisories cfg](https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html), [deny.template.toml](https://github.com/EmbarkStudios/cargo-deny/blob/main/deny.template.toml))
+- **`[advisories]` lint-level fields removed.** `vulnerability` / `unsound` / `notice` / `severity-threshold` are gone — all such advisories error by default; suppression is only via `ignore`. `yanked` defaults to `warn`; `unmaintained` is now an `all`/`workspace`/`transitive`/`none` enum (default `all`). ([cargo-deny advisories cfg](https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html))
+- **`[licenses]` consolidated on allow-list-only.** `copyleft` / `allow-osi-fsf-free` / `deny` / `default` / `unlicensed` removed; ban-by-omission is the only mechanism. `include-dev = false`, `include-build = true`. OR-expressions pass if any operand is allowed; GNU licenses match pedantically since 0.18.4. ([cargo-deny licenses cfg](https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html))
+- **Allow-list mirrors `rust-lang/cargo`'s own `deny.toml`** — MIT, MIT-0, Apache-2.0, BSD-2/3-Clause, MPL-2.0, Unicode-3.0, CC0-1.0, ISC, Zlib — with `Unicode-3.0` the current identifier replacing `Unicode-DFS-2016`. MPL-2.0 is file-level weak copyleft and safe to allow ([Mozilla MPL 2.0 FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/)). ([rust-lang/cargo deny.toml](https://github.com/rust-lang/cargo/blob/master/deny.toml))
+- **`EmbarkStudios/cargo-deny-action@v2` is the upstream-canonical CI integration**, and `multiple-versions = "warn"` is the upstream + cargo default. ([cargo-deny-action](https://github.com/EmbarkStudios/cargo-deny-action))
+
+What was **not** independently verified (reasoned synthesis only — re-confirm at implementation): standalone cargo-audit's 2026 maintenance status and RustSec's official CI recommendation; cargo-machete vs cargo-udeps maintenance and false-positive rates; cargo-vet/cargo-crev practicality for a solo maintainer; and whether OpenSSF Scorecard / `dependency-review-action` / cargo-geiger / cargo-acl add value alongside cargo-deny. Tool versions are time-sensitive — pin to a current release at implementation time and track the `@v2` major line if the action is ever chosen over the mise path.
