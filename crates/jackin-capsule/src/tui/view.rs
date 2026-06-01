@@ -1,7 +1,5 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
-use std::collections::HashMap;
-
 use crate::protocol::AgentState;
 use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
@@ -10,7 +8,7 @@ use crate::tui::layout::Tab;
 use crate::tui::render::{
     PaneBodyCache, PaneBodyRenderStats, RowSnapshot, draw_scrollbar, fill_screen,
 };
-use crate::session::{PullRequestInfo, Session};
+use crate::session::PullRequestInfo;
 use crate::tui::selection::{SelectionState, paint_selection_highlight};
 use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
 use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
@@ -105,10 +103,10 @@ pub(crate) fn render_capsule_pane_body_partial(
     buf: &mut Vec<u8>,
     cache: &mut PaneBodyCache,
     pane: &VisiblePane,
-    session: &Session,
+    screen: &vt100::Screen,
 ) -> PaneBodyRenderStats {
     cache.render_partial(
-        session.screen(),
+        screen,
         pane.inner.row,
         pane.inner.col,
         pane.inner.rows,
@@ -305,7 +303,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a (DialogRatatuiSnapshot, (u16, u16, u16, u16))>,
     pub(crate) scrollback_active: bool,
-    pub(crate) sessions: &'a HashMap<u64, Session>,
+    pub(crate) pane_screens: &'a [(u64, &'a vt100::Screen)],
 }
 
 pub(crate) fn render_capsule_ratatui_frame(
@@ -383,14 +381,18 @@ pub(crate) fn render_capsule_ratatui_frame(
             border_area,
         );
 
-        if let Some(session) = view.sessions.get(&pane.id) {
+        if let Some((_, screen)) = view
+            .pane_screens
+            .iter()
+            .find(|(session_id, _)| *session_id == pane.id)
+        {
             let body_area = RatatuiRect {
                 x: pane.inner.col,
                 y: pane.inner.row,
                 width: pane.inner.cols,
                 height: pane.inner.rows,
             };
-            frame.render_widget(PaneBodyWidget::new(session.screen()), body_area);
+            frame.render_widget(PaneBodyWidget::new(screen), body_area);
         }
     }
 }

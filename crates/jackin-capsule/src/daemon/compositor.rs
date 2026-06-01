@@ -155,6 +155,10 @@ impl Multiplexer {
                     .map(|s| (pane.id, display_title(s)))
             })
             .collect();
+        let pane_screens: Vec<(u64, &vt100::Screen)> = panes
+            .iter()
+            .filter_map(|pane| self.sessions.get(&pane.id).map(|s| (pane.id, s.screen())))
+            .collect();
 
         // Snapshot dialog state (fully owned) before the draw closure.
         let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> = if dialog_open
@@ -176,7 +180,6 @@ impl Multiplexer {
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
 
-        let sessions = &self.sessions;
         let result = self.ratatui_terminal.draw(|frame| {
             render_capsule_ratatui_frame(
                 frame,
@@ -192,7 +195,7 @@ impl Multiplexer {
                     dialog_open,
                     dialog_snapshot: dialog_snapshot.as_ref(),
                     scrollback_active,
-                    sessions,
+                    pane_screens: &pane_screens,
                 },
             );
         });
@@ -473,7 +476,8 @@ impl Multiplexer {
                 title = Some(display_title(session));
                 let before = buf.len();
                 let cache = self.pane_body_caches.entry(pane.id).or_default();
-                let stats = render_capsule_pane_body_partial(&mut buf, cache, pane, session);
+                let stats =
+                    render_capsule_pane_body_partial(&mut buf, cache, pane, session.screen());
                 if stats.mode == PaneBodyRenderMode::Full {
                     return self.compose_full_frame(FullRedrawReason::PaneCacheMiss);
                 }
