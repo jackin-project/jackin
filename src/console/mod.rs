@@ -21,12 +21,11 @@ use prompts::{prompt_agent_for_launch, providers_for_launch};
 pub(super) use run::consumes_letter_input;
 #[cfg(test)]
 use run::is_on_main_screen;
+pub use domain::{WorkspaceChoice, build_workspace_choice};
 pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
 pub use run::run_console;
 pub use state::ConsoleStage;
 pub use state::ConsoleState;
-pub use state::WorkspaceChoice;
-pub use state::build_workspace_choice;
 pub use tui::terminal::TerminalSession;
 pub use tui::widgets;
 
@@ -42,6 +41,9 @@ mod quit_confirm_tests {
     use crate::console::manager::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
+    use crate::config::AppConfig;
+    use crate::selector::RoleSelector;
+    use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
     use jackin_tui::ModalOutcome;
     use crate::paths::JackinPaths;
     use jackin_console::tui::components::file_browser::FileBrowserState;

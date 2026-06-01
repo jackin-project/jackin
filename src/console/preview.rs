@@ -1,4 +1,4 @@
-use super::state::WorkspaceChoice;
+use super::domain::WorkspaceChoice;
 use crate::config::AppConfig;
 use crate::selector::RoleSelector;
 use crate::workspace::ResolvedWorkspace;

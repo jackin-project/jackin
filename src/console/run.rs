@@ -3,7 +3,7 @@ use super::prompts::{
     console_location_debug, dispatch_and_prompt_launch, invalidate_op_cache_for_ref,
     key_debug_name, launch_with_committed_agent, prompt_committed_role,
 };
-use super::state::build_workspace_choice;
+use super::domain::build_workspace_choice;
 use super::tui::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
