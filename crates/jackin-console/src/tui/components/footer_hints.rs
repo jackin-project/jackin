@@ -143,6 +143,30 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
     }
 }
 
+#[must_use]
+pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Dyn("Create workspace — follow the prompts".to_string()),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text("cancel"),
+    ]
+}
+
+#[must_use]
+pub fn destructive_confirm_footer_items() -> Vec<HintSpan<'static>> {
+    vec![
+        HintSpan::Key("Y"),
+        HintSpan::Text("yes"),
+        HintSpan::Sep,
+        HintSpan::Key("N"),
+        HintSpan::Text("no"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
+        HintSpan::Text("cancel"),
+    ]
+}
+
 fn workspace_picker_footer_items(
     scroll_focused: bool,
     include_quit: bool,
@@ -664,6 +688,22 @@ mod tests {
                 "Q",
                 "quit",
             ]
+        );
+    }
+
+    #[test]
+    fn create_prelude_footer_names_prompt_flow() {
+        assert_eq!(
+            labels(create_prelude_footer_items()),
+            vec!["Create workspace — follow the prompts", "Esc", "cancel"]
+        );
+    }
+
+    #[test]
+    fn destructive_confirm_footer_keeps_escape_cancel() {
+        assert_eq!(
+            labels(destructive_confirm_footer_items()),
+            vec!["Y", "yes", "N", "no", "Esc", "cancel"]
         );
     }
 }

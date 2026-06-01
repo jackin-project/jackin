@@ -6,7 +6,8 @@ use ratatui::{
 use crate::config::AppConfig;
 use crate::console::tui::state::{ManagerListRow, ManagerStage, ManagerState};
 use jackin_console::tui::components::footer_hints::{
-    WorkspaceListFooterMode, workspace_list_footer_items,
+    WorkspaceListFooterMode, create_prelude_footer_items, destructive_confirm_footer_items,
+    workspace_list_footer_items,
 };
 use jackin_console::tui::view::{render_footer, render_header};
 use jackin_tui::HintSpan;
@@ -45,23 +46,9 @@ pub fn render(
             ManagerStage::List => {
                 workspace_list_footer_items(workspace_list_footer_mode(state, config))
             }
-            ManagerStage::CreatePrelude(_) => vec![
-                HintSpan::Dyn("Create workspace — follow the prompts".to_string()),
-                HintSpan::GroupSep,
-                HintSpan::Key("Esc"),
-                HintSpan::Text("cancel"),
-            ],
+            ManagerStage::CreatePrelude(_) => create_prelude_footer_items(),
             ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => {
-                vec![
-                    HintSpan::Key("Y"),
-                    HintSpan::Text("yes"),
-                    HintSpan::Sep,
-                    HintSpan::Key("N"),
-                    HintSpan::Text("no"),
-                    HintSpan::GroupSep,
-                    HintSpan::Key("Esc"),
-                    HintSpan::Text("cancel"),
-                ]
+                destructive_confirm_footer_items()
             }
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
             ManagerStage::Settings(_) => unreachable!("Settings has its own render path"),

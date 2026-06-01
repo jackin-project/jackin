@@ -324,7 +324,7 @@ Editor screen frame/body layout, General/Mounts/Roles/Secrets/Auth-tab line comp
 
 Workspace editor auth/secret and settings environment flat-row adapters now live in <RepoFile path="src/console/tui/state.rs" /> while generic row derivation stays in <RepoFile path="crates/jackin-console/src/tui/screens/editor/update.rs" /> and <RepoFile path="crates/jackin-console/src/tui/screens/settings/update.rs" />. Root input, geometry, render, and footer code share those adapters instead of carrying duplicate wrappers.
 
-Workspace-list footer hint composition, plus workspace and settings mount-row footer hint blocks, now live with console-local footer hint components in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer code derives row facts such as picker mode, instance snapshot availability, saved-workspace state, scroll focus, and GitHub URL availability, then delegates shared hint ordering and labels to component helpers.
+Workspace-list, create-prelude, destructive-confirm, and workspace/settings mount-row footer hint composition now live with console-local footer hint components in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer code derives row facts such as picker mode, instance snapshot availability, saved-workspace state, scroll focus, and GitHub URL availability, then delegates shared hint ordering and labels to component helpers.
 
 Workspace-secret and settings-environment footer hint fragments now also live in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />. Root footer code decides whether the focused row is plain, `op://`, add sentinel, or role header, then delegates the shared hint labels and ordering to crate-owned helpers.
 
