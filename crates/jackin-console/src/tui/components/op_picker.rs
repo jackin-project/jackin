@@ -3,11 +3,17 @@
 use std::collections::HashSet;
 
 use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
+    widgets::Paragraph,
 };
 
 pub use crate::tui::components::list_helpers::matches_filter;
+use crate::tui::components::spinner::SPINNER_FRAMES;
+use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
+use jackin_tui::components::{Panel, PanelFocus, TextInputState};
 use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 /// Browse-only vs. creation-enabled picker mode.
@@ -188,6 +194,177 @@ pub struct OpPickerFieldDisplayRef<'a> {
     pub label: &'a str,
     pub field_type: &'a str,
     pub concealed: bool,
+}
+
+pub trait OpPickerRenderState {
+    fn stage(&self) -> OpPickerStage;
+    fn load_state(&self) -> &OpLoadState;
+    fn filter_buffer(&self) -> &str;
+    fn account_count(&self) -> usize;
+    fn selected_account_email(&self) -> &str;
+    fn selected_vault_name(&self) -> &str;
+    fn selected_item_name(&self) -> &str;
+    fn selected_item_subtitle(&self) -> &str;
+    fn naming_stage_input(&self) -> Option<&TextInputState<'static>>;
+    fn account_lines(&self) -> Vec<Line<'static>>;
+    fn vault_lines(&self) -> Vec<Line<'static>>;
+    fn item_lines(&self) -> Vec<Line<'static>>;
+    fn section_lines(&self) -> Vec<Line<'static>>;
+    fn field_lines(&self) -> Vec<Line<'static>>;
+    fn selected_index(&self) -> Option<usize>;
+}
+
+pub fn render_picker(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
+    frame.render_widget(ratatui::widgets::Clear, area);
+    match state.load_state() {
+        OpLoadState::Error(OpPickerError::Fatal(fatal)) => render_fatal(frame, area, fatal),
+        OpLoadState::Loading { spinner_tick } => render_loading(frame, area, state, *spinner_tick),
+        OpLoadState::Idle
+        | OpLoadState::Ready
+        | OpLoadState::Error(OpPickerError::Recoverable { .. }) => {
+            render_pane(frame, area, state);
+        }
+    }
+}
+
+fn render_pane(frame: &mut Frame, area: Rect, state: &impl OpPickerRenderState) {
+    let multi_account = state.account_count() > 1;
+
+    if let Some(input) = state.naming_stage_input() {
+        jackin_tui::components::text_input::render_text_input(frame, area, input);
+        return;
+    }
+
+    let title = breadcrumb_title(
+        state.stage(),
+        multi_account,
+        state.selected_account_email(),
+        state.selected_vault_name(),
+        state.selected_item_name(),
+    );
+    let title_with_spaces = format!(" {title} ");
+    let block = Panel::new()
+        .title(&title_with_spaces)
+        .focus(PanelFocus::Focused)
+        .block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let banner_height: u16 = match state.load_state() {
+        OpLoadState::Error(OpPickerError::Recoverable { .. }) => 2,
+        _ => 0,
+    };
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(banner_height),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+
+    if banner_height > 0
+        && let OpLoadState::Error(OpPickerError::Recoverable { message }) = state.load_state()
+    {
+        let truncated: String = message.chars().take(120).collect();
+        let line = Line::from(vec![
+            Span::styled(
+                "Error: ",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(truncated, Style::default().fg(PHOSPHOR_DIM)),
+        ]);
+        frame.render_widget(Paragraph::new(line), rows[0]);
+    }
+
+    jackin_tui::components::render_filter_input(frame, rows[1], state.filter_buffer());
+
+    let list_lines = match state.stage() {
+        OpPickerStage::Account => state.account_lines(),
+        OpPickerStage::Vault => state.vault_lines(),
+        OpPickerStage::Item => state.item_lines(),
+        OpPickerStage::Section => state.section_lines(),
+        OpPickerStage::Field => state.field_lines(),
+        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName => {
+            Vec::new()
+        }
+    };
+    if list_lines.is_empty() {
+        let para = Paragraph::new(Line::from(Span::styled(
+            "(no matches)",
+            Style::default().fg(PHOSPHOR_DIM),
+        )))
+        .alignment(Alignment::Center);
+        frame.render_widget(para, rows[3]);
+    } else {
+        render_selected_lines_in_area(frame, rows[3], list_lines, state.selected_index());
+    }
+}
+
+fn render_loading(
+    frame: &mut Frame,
+    area: Rect,
+    state: &impl OpPickerRenderState,
+    tick: u8,
+) {
+    let multi_account = state.account_count() > 1;
+    let title = breadcrumb_title(
+        loading_title_stage(state.stage()),
+        multi_account,
+        state.selected_account_email(),
+        state.selected_vault_name(),
+        state.selected_item_name(),
+    );
+    let title_with_spaces = format!(" {title} ");
+    let block = Panel::new()
+        .title(&title_with_spaces)
+        .focus(PanelFocus::Focused)
+        .block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
+    let descriptor = loading_descriptor(
+        state.stage(),
+        multi_account,
+        state.selected_account_email(),
+        state.selected_vault_name(),
+        state.selected_item_name(),
+        state.selected_item_subtitle(),
+    );
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(inner);
+
+    let body = Line::from(vec![
+        Span::styled(glyph.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
+        Span::raw("  "),
+        Span::styled(descriptor, Style::default().fg(PHOSPHOR_DIM)),
+    ]);
+    frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
+}
+
+pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
+    let block = Panel::new()
+        .title(" 1Password ")
+        .focus(PanelFocus::Focused)
+        .block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(fatal_body_lines(fatal)).alignment(Alignment::Center),
+        rows[1],
+    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

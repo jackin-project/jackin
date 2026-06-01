@@ -1,272 +1,133 @@
-//! Render path for [`super::OpPickerState`].
+//! Render adapter for [`super::OpPickerState`].
 
-use ratatui::{
-    Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::Paragraph,
-};
+use ratatui::{Frame, layout::Rect, text::Line};
 
-use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
+use super::{OpLoadState, OpPickerStage, OpPickerState};
 use jackin_console::tui::components::op_picker::{
-    OpPickerAccountRef, OpPickerItemRef, OpPickerVaultRef, account_lines, breadcrumb_title,
-    fatal_body_lines, field_lines, item_choice_lines, loading_descriptor, loading_title_stage,
+    OpPickerAccountRef, OpPickerFieldDisplayRef, OpPickerItemRef, OpPickerRenderState,
+    OpPickerVaultRef, account_lines, field_lines, item_choice_lines, render_picker,
     section_lines, vault_lines,
 };
-use jackin_console::tui::components::spinner::SPINNER_FRAMES;
-use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
-use jackin_tui::components::{Panel, PanelFocus};
-use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::components::TextInputState;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
-    frame.render_widget(ratatui::widgets::Clear, area);
-    match &state.load_state {
-        OpLoadState::Error(OpPickerError::Fatal(fatal)) => render_fatal(frame, area, fatal),
-        OpLoadState::Loading { spinner_tick } => render_loading(frame, area, state, *spinner_tick),
-        OpLoadState::Idle
-        | OpLoadState::Ready
-        | OpLoadState::Error(OpPickerError::Recoverable { .. }) => {
-            render_pane(frame, area, state);
-        }
-    }
+    render_picker(frame, area, state);
 }
 
-#[allow(clippy::too_many_lines)]
-fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
-    let multi_account = state.accounts.len() > 1;
-    let account_email = state
-        .selected_account
-        .as_ref()
-        .map_or("", |a| a.email.as_str());
-    let v_name = state
-        .selected_vault
-        .as_ref()
-        .map_or("", |v| v.name.as_str());
-    let i_name = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
-
-    // Naming sub-stages are a plain labelled input box — the same shared
-    // dialog every "type one value" prompt uses. No breadcrumb frame.
-    if let Some(input) = state.naming_stage_input() {
-        jackin_tui::components::text_input::render_text_input(frame, area, input);
-        return;
+impl OpPickerRenderState for OpPickerState {
+    fn stage(&self) -> OpPickerStage {
+        self.stage
     }
 
-    let title = breadcrumb_title(state.stage, multi_account, account_email, v_name, i_name);
-    let title_with_spaces = format!(" {title} ");
-    let block = Panel::new()
-        .title(&title_with_spaces)
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let banner_height: u16 = match &state.load_state {
-        OpLoadState::Error(OpPickerError::Recoverable { .. }) => 2,
-        _ => 0,
-    };
-
-    let constraints = [
-        Constraint::Length(banner_height), // optional banner
-        Constraint::Length(1),             // filter row
-        Constraint::Length(1),             // spacer
-        Constraint::Min(1),                // list
-    ];
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(inner);
-
-    if banner_height > 0
-        && let OpLoadState::Error(OpPickerError::Recoverable { message }) = &state.load_state
-    {
-        let truncated: String = message.chars().take(120).collect();
-        let line = Line::from(vec![
-            Span::styled(
-                "Error: ",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(truncated, Style::default().fg(PHOSPHOR_DIM)),
-        ]);
-        frame.render_widget(Paragraph::new(line), rows[0]);
+    fn load_state(&self) -> &OpLoadState {
+        &self.load_state
     }
 
-    jackin_tui::components::render_filter_input(frame, rows[1], &state.filter_buf);
+    fn filter_buffer(&self) -> &str {
+        &self.filter_buf
+    }
 
-    // List rows. Naming sub-stages are handled above and never reach here.
-    let list_lines: Vec<Line<'static>> = match state.stage {
-        OpPickerStage::Account => render_account_lines(state),
-        OpPickerStage::Vault => render_vault_lines(state),
-        OpPickerStage::Item => render_item_lines(state),
-        OpPickerStage::Section => render_section_lines(state),
-        OpPickerStage::Field => render_field_lines(state),
-        OpPickerStage::NewItemName | OpPickerStage::FieldLabel | OpPickerStage::NewSectionName => {
-            Vec::new()
-        }
-    };
-    if list_lines.is_empty() {
-        let para = Paragraph::new(Line::from(Span::styled(
-            "(no matches)",
-            Style::default().fg(PHOSPHOR_DIM),
-        )))
-        .alignment(Alignment::Center);
-        frame.render_widget(para, rows[3]);
-    } else {
-        let selected = match state.stage {
-            OpPickerStage::Account => state.account_list_state.selected,
-            OpPickerStage::Vault => state.vault_list_state.selected,
-            OpPickerStage::Item => state.item_list_state.selected,
-            OpPickerStage::Section => state.section_list_state.selected,
-            OpPickerStage::Field => state.field_list_state.selected,
+    fn account_count(&self) -> usize {
+        self.accounts.len()
+    }
+
+    fn selected_account_email(&self) -> &str {
+        self.selected_account
+            .as_ref()
+            .map_or("", |account| account.email.as_str())
+    }
+
+    fn selected_vault_name(&self) -> &str {
+        self.selected_vault
+            .as_ref()
+            .map_or("", |vault| vault.name.as_str())
+    }
+
+    fn selected_item_name(&self) -> &str {
+        self.selected_item
+            .as_ref()
+            .map_or("", |item| item.name.as_str())
+    }
+
+    fn selected_item_subtitle(&self) -> &str {
+        self.selected_item
+            .as_ref()
+            .map_or("", |item| item.subtitle.as_str())
+    }
+
+    fn naming_stage_input(&self) -> Option<&TextInputState<'static>> {
+        OpPickerState::naming_stage_input(self)
+    }
+
+    fn account_lines(&self) -> Vec<Line<'static>> {
+        account_lines(
+            self.filtered_accounts()
+                .into_iter()
+                .map(|account| OpPickerAccountRef {
+                    email: &account.email,
+                    url: &account.url,
+                }),
+            self.account_list_state.selected,
+        )
+    }
+
+    fn vault_lines(&self) -> Vec<Line<'static>> {
+        vault_lines(
+            self.filtered_vaults()
+                .into_iter()
+                .map(|vault| OpPickerVaultRef {
+                    id: &vault.id,
+                    name: &vault.name,
+                }),
+            self.vault_list_state.selected,
+        )
+    }
+
+    fn item_lines(&self) -> Vec<Line<'static>> {
+        item_choice_lines(
+            self.filtered_item_choices().into_iter().map(|choice| {
+                choice.map(|item| OpPickerItemRef {
+                    id: &item.id,
+                    name: &item.name,
+                    subtitle: &item.subtitle,
+                })
+            }),
+            self.item_list_state.selected,
+        )
+    }
+
+    fn section_lines(&self) -> Vec<Line<'static>> {
+        section_lines(self.section_choices(), self.section_list_state.selected)
+    }
+
+    fn field_lines(&self) -> Vec<Line<'static>> {
+        field_lines(
+            self.build_field_display_rows(),
+            self.filtered_fields()
+                .into_iter()
+                .map(|field| OpPickerFieldDisplayRef {
+                    id: &field.id,
+                    label: &field.label,
+                    field_type: &field.field_type,
+                    concealed: field.concealed,
+                }),
+            &self.collapsed_sections,
+            self.field_list_state.selected,
+        )
+    }
+
+    fn selected_index(&self) -> Option<usize> {
+        match self.stage {
+            OpPickerStage::Account => self.account_list_state.selected,
+            OpPickerStage::Vault => self.vault_list_state.selected,
+            OpPickerStage::Item => self.item_list_state.selected,
+            OpPickerStage::Section => self.section_list_state.selected,
+            OpPickerStage::Field => self.field_list_state.selected,
             OpPickerStage::NewItemName
             | OpPickerStage::FieldLabel
             | OpPickerStage::NewSectionName => None,
-        };
-        render_selected_lines_in_area(frame, rows[3], list_lines, selected);
+        }
     }
-}
-
-fn render_account_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    // Server order — do not alphabetize. `op` lists accounts in
-    // sign-in order; preserve it.
-    // Pre-v2 op may omit email/url; render as empty rather than panicking.
-    account_lines(
-        state
-            .filtered_accounts()
-            .into_iter()
-            .map(|account| OpPickerAccountRef {
-                email: &account.email,
-                url: &account.url,
-            }),
-        state.account_list_state.selected,
-    )
-}
-
-fn render_vault_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    vault_lines(
-        state
-            .filtered_vaults()
-            .into_iter()
-            .map(|vault| OpPickerVaultRef {
-                id: &vault.id,
-                name: &vault.name,
-            }),
-        state.vault_list_state.selected,
-    )
-}
-
-fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    // Use the choice list so the trailing `+ New item` sentinel (Create
-    // mode) is rendered and selectable at the same index the handler uses.
-    item_choice_lines(
-        state.filtered_item_choices().into_iter().map(|choice| {
-            choice.map(|item| OpPickerItemRef {
-                id: &item.id,
-                name: &item.name,
-                subtitle: &item.subtitle,
-            })
-        }),
-        state.item_list_state.selected,
-    )
-}
-
-/// Section stage (Create mode): `(root)`, each named section, then a
-/// trailing `+ New section` sentinel — same selected/prefix styling as the
-/// vault/item lists.
-fn render_section_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    section_lines(state.section_choices(), state.section_list_state.selected)
-}
-
-fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    field_lines(
-        state.build_field_display_rows(),
-        state.filtered_fields().into_iter().map(|field| {
-            jackin_console::tui::components::op_picker::OpPickerFieldDisplayRef {
-                id: &field.id,
-                label: &field.label,
-                field_type: &field.field_type,
-                concealed: field.concealed,
-            }
-        }),
-        &state.collapsed_sections,
-        state.field_list_state.selected,
-    )
-}
-
-fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8) {
-    // Field-stage exception: the title shows the parent (account →
-    // vault) so the body can carry `loading <item>…` with the
-    // disambiguating subtitle. Title = where you are, body = what
-    // you're descending into.
-    let multi_account = state.accounts.len() > 1;
-    let account_email = state
-        .selected_account
-        .as_ref()
-        .map_or("", |a| a.email.as_str());
-    let v_name = state
-        .selected_vault
-        .as_ref()
-        .map_or("", |v| v.name.as_str());
-    let i_name = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
-    let i_subtitle = state
-        .selected_item
-        .as_ref()
-        .map_or("", |i| i.subtitle.as_str());
-    let title = breadcrumb_title(
-        loading_title_stage(state.stage),
-        multi_account,
-        account_email,
-        v_name,
-        i_name,
-    );
-    let title_with_spaces = format!(" {title} ");
-    let block = Panel::new()
-        .title(&title_with_spaces)
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
-    let descriptor = loading_descriptor(
-        state.stage,
-        multi_account,
-        account_email,
-        v_name,
-        i_name,
-        i_subtitle,
-    );
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
-        .split(inner);
-
-    let body = Line::from(vec![
-        Span::styled(glyph.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
-        Span::raw("  "),
-        Span::styled(descriptor, Style::default().fg(PHOSPHOR_DIM)),
-    ]);
-    frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
-}
-
-pub fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
-    let block = Panel::new()
-        .title(" 1Password ")
-        .focus(PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
-        .split(inner);
-
-    frame.render_widget(
-        Paragraph::new(fatal_body_lines(fatal)).alignment(Alignment::Center),
-        rows[1],
-    );
 }
 
 #[cfg(test)]
