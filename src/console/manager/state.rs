@@ -9,7 +9,10 @@ use anyhow::Context as _;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::manager::auth_kind::{AuthKind, AuthMode};
+use crate::console::manager::auth_kind::{
+    AuthKind, AuthMode, auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github,
+    auth_mode_to_auth_forward, auth_mode_to_github, role_override_present,
+};
 use crate::operator_env::OpCache;
 use crate::workspace::WorkspaceConfig;
 
@@ -347,7 +350,7 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
         &editor.pending.roles,
         editor.pending.allowed_roles.len(),
         &editor.auth_expanded,
-        |kind, role| kind.role_override_present(role),
+        |kind, role| role_override_present(*kind, role),
         |kind, role| effective_mode_needs_credential(&synthesized, &ws_name, role, *kind),
     )
 }
@@ -377,15 +380,15 @@ pub(crate) fn resolve_panel_mode(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode => {
-            let Some(agent) = kind.agent() else {
+            let Some(agent) = auth_kind_agent(kind) else {
                 return AuthMode::Ignore;
             };
             let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
-            AuthMode::from_auth_forward(mode)
+            auth_mode_from_auth_forward(mode)
         }
         AuthKind::Github => {
             let mode = crate::config::resolve_github_mode(cfg, workspace, role);
-            AuthMode::from_github(mode)
+            auth_mode_from_github(mode)
         }
         AuthKind::Zai => {
             let key_present = crate::operator_env::lookup_operator_env_raw(
@@ -1081,10 +1084,10 @@ impl SettingsState<'_> {
                 | crate::console::manager::auth_kind::AuthKind::Amp
                 | crate::console::manager::auth_kind::AuthKind::Kimi
                 | crate::console::manager::auth_kind::AuthKind::Opencode => {
-                    let Some(agent) = row.kind.agent() else {
+                    let Some(agent) = auth_kind_agent(row.kind) else {
                         continue;
                     };
-                    let Some(mode) = row.mode.to_auth_forward() else {
+                    let Some(mode) = auth_mode_to_auth_forward(row.mode) else {
                         anyhow::bail!(
                             "auth mode {} is not supported for {}",
                             row.mode.as_str(),
@@ -1094,7 +1097,7 @@ impl SettingsState<'_> {
                     editor.set_global_auth_forward(agent, mode);
                 }
                 crate::console::manager::auth_kind::AuthKind::Github => {
-                    let Some(mode) = row.mode.to_github() else {
+                    let Some(mode) = auth_mode_to_github(row.mode) else {
                         anyhow::bail!(
                             "auth mode {} is not supported for {}",
                             row.mode.as_str(),
@@ -1254,16 +1257,18 @@ impl SettingsAuthState {
                 | crate::console::manager::auth_kind::AuthKind::Codex
                 | crate::console::manager::auth_kind::AuthKind::Amp
                 | crate::console::manager::auth_kind::AuthKind::Kimi
-                | crate::console::manager::auth_kind::AuthKind::Opencode => kind.agent().map_or(
-                    crate::console::manager::auth_kind::AuthMode::Sync,
-                    |agent| {
-                        crate::console::manager::auth_kind::AuthMode::from_auth_forward(
+                | crate::console::manager::auth_kind::AuthKind::Opencode => {
+                    auth_kind_agent(kind).map_or(
+                        crate::console::manager::auth_kind::AuthMode::Sync,
+                        |agent| {
+                        crate::console::manager::auth_kind::auth_mode_from_auth_forward(
                             crate::config::resolve_mode(config, agent, "", ""),
                         )
-                    },
-                ),
+                        },
+                    )
+                }
                 crate::console::manager::auth_kind::AuthKind::Github => {
-                    crate::console::manager::auth_kind::AuthMode::from_github(
+                    crate::console::manager::auth_kind::auth_mode_from_github(
                         crate::config::resolve_github_mode(config, "", ""),
                     )
                 }

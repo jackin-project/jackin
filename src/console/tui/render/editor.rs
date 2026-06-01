@@ -707,38 +707,39 @@ fn render_auth_source_line(
     ratatui::text::Line::from(spans)
 }
 
-/// Explicit workspace-level mode for a kind, if any. Github uses its
-/// own mode enum and threads through [`AuthMode::from_github`].
+/// Explicit workspace-level mode for a kind, if any.
 fn explicit_workspace_mode(
     ws: &crate::workspace::WorkspaceConfig,
     kind: crate::console::manager::auth_kind::AuthKind,
 ) -> Option<crate::console::manager::auth_kind::AuthMode> {
-    use crate::console::manager::auth_kind::{AuthKind, AuthMode};
+    use crate::console::manager::auth_kind::{
+        AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,
+    };
     match kind {
         AuthKind::Claude => ws
             .claude
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+            .map(|c| auth_mode_from_auth_forward(c.auth_forward)),
         AuthKind::Codex => ws
             .codex
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
         AuthKind::Amp => ws
             .amp
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
         AuthKind::Kimi => ws
             .kimi
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
         AuthKind::Opencode => ws
             .opencode
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+            .map(|c| auth_mode_from_auth_forward(c.0.auth_forward)),
         AuthKind::Github => ws
             .github
             .as_ref()
-            .map(|g| AuthMode::from_github(g.auth_forward)),
+            .map(|g| auth_mode_from_github(g.auth_forward)),
         AuthKind::Zai => {
             if ws.env.contains_key("ZAI_API_KEY") {
                 Some(AuthMode::ApiKey)

@@ -14,7 +14,10 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
 use super::super::super::widgets::op_picker::OpPickerState;
-use super::super::auth_kind::{AuthKind, AuthMode};
+use super::super::auth_kind::{
+    AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,
+    auth_mode_to_auth_forward, auth_mode_to_github, role_override_present,
+};
 use super::super::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
     auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
@@ -81,7 +84,7 @@ pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppCo
         .pending
         .roles
         .iter()
-        .filter(|(_, ro)| kind.role_override_present(ro))
+        .filter(|(_, ro)| role_override_present(kind, ro))
         .map(|(name, _)| name.clone())
         .collect();
     let candidates: Vec<crate::selector::RoleSelector> = eligible
@@ -193,7 +196,7 @@ fn current_mode_and_credential(
                     .pending
                     .claude
                     .as_ref()
-                    .map(|c| AuthMode::from_auth_forward(c.auth_forward));
+                    .map(|c| auth_mode_from_auth_forward(c.auth_forward));
                 let env_var = mode.and_then(|m| kind.required_env_var(m));
                 let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
                 (mode, cred)
@@ -203,7 +206,7 @@ fn current_mode_and_credential(
                     .pending
                     .codex
                     .as_ref()
-                    .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
+                    .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
                 let env_var = mode.and_then(|m| kind.required_env_var(m));
                 let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
                 (mode, cred)
@@ -213,7 +216,7 @@ fn current_mode_and_credential(
                     .pending
                     .amp
                     .as_ref()
-                    .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
+                    .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
                 let env_var = mode.and_then(|m| kind.required_env_var(m));
                 let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
                 (mode, cred)
@@ -223,7 +226,7 @@ fn current_mode_and_credential(
                     .pending
                     .kimi
                     .as_ref()
-                    .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
+                    .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
                 let env_var = mode.and_then(|m| kind.required_env_var(m));
                 let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
                 (mode, cred)
@@ -233,7 +236,7 @@ fn current_mode_and_credential(
                     .pending
                     .opencode
                     .as_ref()
-                    .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
+                    .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
                 let env_var = mode.and_then(|m| kind.required_env_var(m));
                 let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
                 (mode, cred)
@@ -243,7 +246,7 @@ fn current_mode_and_credential(
                     .pending
                     .github
                     .as_ref()
-                    .map(|g| AuthMode::from_github(g.auth_forward));
+                    .map(|g| auth_mode_from_github(g.auth_forward));
                 let env_var = mode.and_then(|m| kind.required_env_var(m));
                 // GH_TOKEN lives on `[workspaces.<ws>.github.env]`,
                 // parallel to how the global `[github.env]` is laid out
@@ -269,7 +272,7 @@ fn current_mode_and_credential(
                 AuthKind::Claude => {
                     let mode = override_ref
                         .and_then(|ro| ro.claude.as_ref())
-                        .map(|c| AuthMode::from_auth_forward(c.auth_forward));
+                        .map(|c| auth_mode_from_auth_forward(c.auth_forward));
                     let env_var = mode.and_then(|m| kind.required_env_var(m));
                     let cred =
                         env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
@@ -278,7 +281,7 @@ fn current_mode_and_credential(
                 AuthKind::Codex => {
                     let mode = override_ref
                         .and_then(|ro| ro.codex.as_ref())
-                        .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
+                        .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
                     let env_var = mode.and_then(|m| kind.required_env_var(m));
                     let cred =
                         env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
@@ -287,7 +290,7 @@ fn current_mode_and_credential(
                 AuthKind::Amp => {
                     let mode = override_ref
                         .and_then(|ro| ro.amp.as_ref())
-                        .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
+                        .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
                     let env_var = mode.and_then(|m| kind.required_env_var(m));
                     let cred =
                         env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
@@ -296,7 +299,7 @@ fn current_mode_and_credential(
                 AuthKind::Kimi => {
                     let mode = override_ref
                         .and_then(|ro| ro.kimi.as_ref())
-                        .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
+                        .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
                     let env_var = mode.and_then(|m| kind.required_env_var(m));
                     let cred =
                         env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
@@ -305,7 +308,7 @@ fn current_mode_and_credential(
                 AuthKind::Opencode => {
                     let mode = override_ref
                         .and_then(|ro| ro.opencode.as_ref())
-                        .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
+                        .map(|c| auth_mode_from_auth_forward(c.0.auth_forward));
                     let env_var = mode.and_then(|m| kind.required_env_var(m));
                     let cred =
                         env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
@@ -314,7 +317,7 @@ fn current_mode_and_credential(
                 AuthKind::Github => {
                     let mode = override_ref
                         .and_then(|ro| ro.github.as_ref())
-                        .map(|g| AuthMode::from_github(g.auth_forward));
+                        .map(|g| auth_mode_from_github(g.auth_forward));
                     let env_var = mode.and_then(|m| kind.required_env_var(m));
                     let cred = env_var.and_then(|v| {
                         override_ref
@@ -1015,31 +1018,31 @@ fn set_workspace_mode(
     match kind {
         AuthKind::Claude => {
             ws.claude = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| AgentAuthConfig { auth_forward });
         }
         AuthKind::Codex => {
             ws.codex = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Amp => {
             ws.amp = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Kimi => {
             ws.kimi = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| KimiAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Opencode => {
             ws.opencode = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Github => {
-            ws.github = mode.and_then(AuthMode::to_github).map(|auth_forward| {
+            ws.github = mode.and_then(auth_mode_to_github).map(|auth_forward| {
                 // Preserve any existing env block on the workspace's
                 // [github] entry — the operator may have already set
                 // `GH_TOKEN` and we're only flipping the mode.
@@ -1061,31 +1064,31 @@ fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option
     match kind {
         AuthKind::Claude => {
             entry.claude = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| AgentAuthConfig { auth_forward });
         }
         AuthKind::Codex => {
             entry.codex = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Amp => {
             entry.amp = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Kimi => {
             entry.kimi = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| KimiAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Opencode => {
             entry.opencode = mode
-                .and_then(AuthMode::to_auth_forward)
+                .and_then(auth_mode_to_auth_forward)
                 .map(|auth_forward| OpencodeAuthConfig(AgentAuthConfig { auth_forward }));
         }
         AuthKind::Github => {
-            entry.github = mode.and_then(AuthMode::to_github).map(|auth_forward| {
+            entry.github = mode.and_then(auth_mode_to_github).map(|auth_forward| {
                 // Same env-preservation invariant as the workspace
                 // setter above: flipping the mode must not clobber a
                 // role-scoped GH_TOKEN the operator already provided.
