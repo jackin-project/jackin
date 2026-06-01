@@ -1,4 +1,3 @@
-use crate::console::domain::build_workspace_choice;
 use crate::console::tui::prompts::{
     dispatch_and_prompt_launch, launch_with_committed_agent, prompt_committed_role,
 };
@@ -361,24 +360,10 @@ pub async fn run_console<H: InstanceActionHandler>(
                             agent,
                             provider,
                         } => {
-                            // Propagate resolution errors rather than mapping
-                            // them to a silent no-op: an operator who confirmed
-                            // a provider must see why the launch could not
-                            // resolve. A genuinely absent pending input / choice
-                            // is the only Ok(None) path.
-                            let workspace = match state.pending_launch.take() {
-                                Some(input) => {
-                                    match build_workspace_choice(&config, cwd, &input)? {
-                                        Some(choice) => {
-                                            Some(crate::console::preview::resolve_selected_workspace(
-                                                &config, cwd, &choice, &selector,
-                                            )?)
-                                        }
-                                        None => None,
-                                    }
-                                }
-                                None => None,
-                            };
+                            let workspace =
+                                crate::console::effects::resolve_pending_provider_launch(
+                                    &mut state, &config, cwd, &selector,
+                                )?;
                             let Some(workspace) = workspace else {
                                 break 'main Ok(None);
                             };

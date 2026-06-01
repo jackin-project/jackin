@@ -259,6 +259,21 @@ pub(crate) fn execute_remove_workspace(
     true
 }
 
+pub(crate) fn resolve_pending_provider_launch(
+    state: &mut crate::console::ConsoleState,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    selector: &crate::selector::RoleSelector,
+) -> anyhow::Result<Option<crate::workspace::ResolvedWorkspace>> {
+    let Some(input) = state.pending_launch.take() else {
+        return Ok(None);
+    };
+    let Some(choice) = crate::console::domain::build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    crate::console::preview::resolve_selected_workspace(config, cwd, &choice, selector).map(Some)
+}
+
 pub(crate) fn apply_role_load_completion(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
