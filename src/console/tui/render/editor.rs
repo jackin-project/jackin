@@ -712,9 +712,8 @@ fn explicit_workspace_mode(
     ws: &crate::workspace::WorkspaceConfig,
     kind: crate::console::tui::auth_kind::AuthKind,
 ) -> Option<crate::console::tui::auth_kind::AuthMode> {
-    use crate::console::tui::auth_kind::{
-        AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,
-    };
+    use crate::console::domain::{auth_mode_from_auth_forward, auth_mode_from_github};
+    use crate::console::tui::auth_kind::{AuthKind, AuthMode};
     match kind {
         AuthKind::Claude => ws
             .claude

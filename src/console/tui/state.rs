@@ -8,11 +8,11 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::auth_kind::{
-    AuthKind, AuthMode, auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github,
-    role_override_present,
-};
 use crate::console::domain::InstanceRefreshSnapshot;
+use crate::console::domain::{
+    auth_kind_agent, auth_mode_from_auth_forward, auth_mode_from_github, role_override_present,
+};
+use crate::console::tui::auth_kind::{AuthKind, AuthMode};
 use crate::operator_env::OpCache;
 use crate::workspace::WorkspaceConfig;
 
@@ -1105,16 +1105,14 @@ impl SettingsAuthState {
                     auth_kind_agent(kind).map_or(
                         crate::console::tui::auth_kind::AuthMode::Sync,
                         |agent| {
-                        crate::console::tui::auth_kind::auth_mode_from_auth_forward(
-                            crate::config::resolve_mode(config, agent, "", ""),
-                        )
+                            auth_mode_from_auth_forward(crate::config::resolve_mode(
+                                config, agent, "", "",
+                            ))
                         },
                     )
                 }
                 crate::console::tui::auth_kind::AuthKind::Github => {
-                    crate::console::tui::auth_kind::auth_mode_from_github(
-                        crate::config::resolve_github_mode(config, "", ""),
-                    )
+                    auth_mode_from_github(crate::config::resolve_github_mode(config, "", ""))
                 }
                 crate::console::tui::auth_kind::AuthKind::Zai => {
                     if config.env.contains_key("ZAI_API_KEY") {

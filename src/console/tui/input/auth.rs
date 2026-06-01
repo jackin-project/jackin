@@ -12,16 +12,17 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
-use crate::console::tui::op_picker::OpPickerState;
-use crate::console::tui::auth_kind::{
-    AuthKind, AuthMode, auth_mode_from_auth_forward, auth_mode_from_github,
-    auth_mode_to_auth_forward, auth_mode_to_github, role_override_present,
+use crate::console::domain::{
+    auth_mode_from_auth_forward, auth_mode_from_github, auth_mode_to_auth_forward,
+    auth_mode_to_github, role_override_present,
 };
+use crate::console::tui::auth_kind::{AuthKind, AuthMode};
+use crate::console::tui::auth_panel::{AuthForm, CredentialInput};
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
     auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
 };
+use crate::console::tui::op_picker::OpPickerState;
 use crate::config::AppConfig;
 use crate::config::{
     AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
