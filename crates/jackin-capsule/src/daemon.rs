@@ -4142,4 +4142,32 @@ mod tests {
             "selection repaint frame should be emitted"
         );
     }
+
+    #[test]
+    fn apply_action_pane_button_motion_updates_selection() {
+        let mut mux = single_pane_tab_mux();
+        let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
+        mux.selection = Some(SelectionState {
+            session_id: 1,
+            inner,
+            anchor_row: 0,
+            anchor_col: 0,
+            end_row: 0,
+            end_col: 0,
+        });
+
+        let frame = mux
+            .apply_action(Action::PaneButtonMotion {
+                row: inner.row + 2,
+                col: inner.col + 3,
+            })
+            .expect("button motion should repaint active selection");
+
+        let selection = mux.selection.expect("selection should remain active");
+        assert_eq!((selection.end_row, selection.end_col), (2, 3));
+        assert!(
+            !frame.is_empty(),
+            "selection repaint frame should be emitted"
+        );
+    }
 }

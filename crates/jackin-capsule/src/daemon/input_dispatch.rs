@@ -365,6 +365,25 @@ impl Multiplexer {
                 });
                 focus_frame
             }
+            Action::PaneButtonMotion { row, col } => {
+                if self.drag.is_some() {
+                    return self.apply_action(Action::DragMotion { row, col });
+                }
+                if self.selection.is_some() {
+                    return self.apply_action(Action::SelectionMotion { row, col });
+                }
+                // No drag / selection in flight: motion events belong to the
+                // focused pane only if it asked for any-event tracking
+                // (`?1003h`) or button-motion tracking (`?1002h`). Forwarding
+                // them blindly would dump SGR bytes into shells that ignored
+                // mouse mode.
+                self.apply_action(Action::ForwardMouse {
+                    row,
+                    col,
+                    button: 32,
+                    press: true,
+                })
+            }
             Action::StatusBarClick { col } => {
                 // 1) Click on a tab cell switches active tab. A
                 //    second click on the same cell within the
@@ -564,24 +583,7 @@ impl Multiplexer {
                 // drag/selection update path; do not focus-switch or
                 // forward to PTY.
                 if button == 32 {
-                    if self.drag.is_some() {
-                        return self.apply_action(Action::DragMotion { row, col });
-                    }
-                    if self.selection.is_some() {
-                        return self.apply_action(Action::SelectionMotion { row, col });
-                    }
-                    // No drag / selection in flight: motion events
-                    // belong to the focused pane only if it asked
-                    // for any-event tracking (`?1003h`) or
-                    // button-motion tracking (`?1002h`). Forwarding
-                    // them blindly would dump SGR bytes into shells
-                    // that ignored mouse mode.
-                    return self.apply_action(Action::ForwardMouse {
-                        row,
-                        col,
-                        button,
-                        press: true,
-                    });
+                    return self.apply_action(Action::PaneButtonMotion { row, col });
                 }
                 if button == 0 {
                     return self.apply_action(Action::PanePrimaryPress { row, col });
