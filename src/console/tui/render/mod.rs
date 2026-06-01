@@ -7,6 +7,7 @@ use ratatui::{
 
 use crate::config::AppConfig;
 use crate::console::manager::state::{ManagerListRow, ManagerStage, ManagerState};
+use jackin_console::tui::view::{render_footer, render_header};
 use jackin_tui::HintSpan;
 
 pub mod editor;
@@ -30,26 +31,6 @@ pub(super) use jackin_tui::components::scrollable_panel::{
     render_scrollable_block_at, render_vertical_scrollbar,
 };
 pub(super) use jackin_tui::theme::{CYAN, CYAN_DIM};
-
-// ── Footer hints ───────────────────────────────────────────────────
-//
-// Footer hints use the shared `HintSpan` vocabulary (jackin-tui) and the
-// shared `jackin_tui::components` renderers, so the manager footer, the launch
-// cockpit, and the in-container multiplexer all read identically.
-// Call sites build `Vec<HintSpan<'static>>` directly so the grouping is
-// explicit, then hand it to `render_footer`. The manager footer can be long,
-// so it uses the wrapped (multi-row) variant of the shared renderer.
-
-/// How many rows the footer needs to display all `items` within `width`
-/// columns. Minimum 1. Callers use this to size the footer area before layout.
-#[must_use]
-pub(super) fn footer_height(items: &[HintSpan<'_>], width: u16) -> u16 {
-    jackin_tui::components::wrapped_height(items, width)
-}
-
-pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[HintSpan<'_>]) {
-    jackin_tui::components::render_wrapped_hint_bar(frame, area, items);
-}
 
 #[allow(clippy::too_many_lines)]
 pub fn render(
@@ -393,11 +374,6 @@ fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
         ManagerStage::CreatePrelude(prelude) => prelude.modal.is_some(),
         ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => true,
     }
-}
-
-#[allow(clippy::too_many_lines)]
-pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
-    jackin_tui::components::render_brand_header(frame, area, title);
 }
 
 #[cfg(test)]

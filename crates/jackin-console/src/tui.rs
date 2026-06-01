@@ -10,3 +10,4 @@ pub mod screens;
 pub mod sidebar_layout;
 pub mod terminal;
 pub mod update;
+pub mod view;

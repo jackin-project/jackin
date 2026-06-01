@@ -4,10 +4,7 @@
 //! (General / Mounts / Roles / Secrets), and the contextual footer
 //! composition that varies with the active tab + cursor.
 
-use super::{
-    PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE, footer_height, render_footer,
-    render_header,
-};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE};
 use crate::config::AppConfig;
 use crate::console::manager::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
@@ -30,6 +27,7 @@ use jackin_console::tui::components::editor_rows::{
     render_tab_strip,
 };
 use jackin_console::tui::components::mount_rows::render_mount_header;
+use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use jackin_tui::theme::ACTION_ACCENT;
 use ratatui::{
     Frame,

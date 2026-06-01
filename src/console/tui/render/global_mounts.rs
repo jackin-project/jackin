@@ -12,7 +12,7 @@ use ratatui::{
 };
 use std::collections::BTreeMap;
 
-use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header};
+use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::console::manager::auth_kind::AuthKind;
 use crate::console::manager::modal_layout::{
     auth_form_rect, confirm_rect, mount_choice_rect, op_picker_rect, role_picker_rect,
@@ -31,6 +31,7 @@ use jackin_console::tui::components::editor_rows::{
     SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
     render_tab_strip,
 };
+use jackin_console::tui::view::{footer_height, render_footer, render_header};
 
 pub(super) fn render_settings(
     frame: &mut Frame,
