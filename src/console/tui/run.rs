@@ -463,19 +463,6 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 );
                             }
                         }
-                        crate::console::tui::InputOutcome::RemoveWorkspace(name) => {
-                            if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                needs_redraw |= crate::console::effects::execute_manager_effect(
-                                    ms,
-                                    &mut config,
-                                    paths,
-                                    ManagerEffect::RemoveWorkspace {
-                                        name,
-                                        cwd: cwd.to_path_buf(),
-                                    },
-                                );
-                            }
-                        }
                     }
                 }
                 Event::Mouse(mouse) => {

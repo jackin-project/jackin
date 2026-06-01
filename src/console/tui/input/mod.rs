@@ -35,7 +35,6 @@ pub enum InputOutcome {
         action: crate::console::ConsoleInstanceAction,
     },
     OpenUrl(String),
-    RemoveWorkspace(String),
     NewSessionWithProvider {
         container: String,
         agent: crate::agent::Agent,

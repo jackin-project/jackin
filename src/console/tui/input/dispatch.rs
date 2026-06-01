@@ -303,7 +303,7 @@ pub fn handle_key(
             Ok(open_url.map_or(InputOutcome::Continue, InputOutcome::OpenUrl))
         }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
-        StageDis::ConfirmDelete => Ok(handle_confirm_delete_key(state, key)),
+        StageDis::ConfirmDelete => Ok(handle_confirm_delete_key(state, cwd, key)),
         StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
     }?;
     state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
@@ -339,6 +339,7 @@ fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent
 
 fn handle_confirm_delete_key(
     state: &mut ManagerState<'_>,
+    cwd: &std::path::Path,
     key: KeyEvent,
 ) -> InputOutcome {
     let ManagerStage::ConfirmDelete {
@@ -353,7 +354,11 @@ fn handle_confirm_delete_key(
     match outcome {
         ModalOutcome::Commit(true) => {
             let _ = update_manager(state, ManagerMessage::ReturnToList);
-            InputOutcome::RemoveWorkspace(ws_name)
+            state.request_effect(ManagerEffect::RemoveWorkspace {
+                name: ws_name,
+                cwd: cwd.to_path_buf(),
+            });
+            InputOutcome::Continue
         }
         ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
             let _ = update_manager(state, ManagerMessage::ReturnToList);
