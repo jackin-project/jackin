@@ -18,22 +18,22 @@ pub(crate) use jackin_console::tui::sidebar_layout::{
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     let visual_selected = state.visual_selected();
-    state
-        .visual_rows_vec()
-        .iter()
-        .enumerate()
-        .filter_map(|(visual_idx, row)| {
-            row.as_ref().and_then(|row| {
-                list_row_width(
-                    state,
-                    row,
-                    visual_idx == visual_selected && state.list_names_focused,
-                )
-            })
-        })
-        .max()
-        .unwrap_or(0)
-        .max(viewport)
+    jackin_console::tui::list_geometry::list_names_content_width(
+        state
+            .visual_rows_vec()
+            .iter()
+            .enumerate()
+            .filter_map(|(visual_idx, row)| {
+                row.as_ref().and_then(|row| {
+                    list_row_width(
+                        state,
+                        row,
+                        visual_idx == visual_selected && state.list_names_focused,
+                    )
+                })
+            }),
+        viewport,
+    )
 }
 
 pub(crate) fn clamp_list_scroll_for_area(
