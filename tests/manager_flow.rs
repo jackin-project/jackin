@@ -9,7 +9,7 @@ use jackin::{
     console::{
         ConsoleStage, ConsoleState,
         manager::{
-            ManagerStage, ManagerState,
+            InputOutcome, ManagerStage, ManagerState,
             auth_kind::AuthKind,
             handle_key,
             state::{
@@ -166,13 +166,22 @@ fn delete_workspace_via_manager() -> Result<()> {
     );
 
     // Press 'y' — commits the delete.
-    handle_key(
+    let outcome = handle_key(
         &mut state,
         &mut config,
         &paths,
         cwd,
         key(KeyCode::Char('y')),
     )?;
+    match outcome {
+        InputOutcome::RemoveWorkspace(name) => assert_eq!(name, "big-monorepo"),
+        other => panic!("expected RemoveWorkspace outcome, got {other:?}"),
+    }
+
+    config.workspaces.remove("big-monorepo");
+    let mut editor = ConfigEditor::open(&paths)?;
+    editor.remove_workspace("big-monorepo")?;
+    editor.save()?;
 
     // Config on disk should no longer have big-monorepo.
     let reloaded = AppConfig::load_or_init(&paths)?;
@@ -181,12 +190,9 @@ fn delete_workspace_via_manager() -> Result<()> {
         "workspace should be deleted from disk"
     );
 
-    // In-memory state: returned to List, empty workspace list.
+    // In-memory state: returned to List. The root run loop owns reloading
+    // manager state after it executes the typed remove-workspace outcome.
     assert!(matches!(state.stage, ManagerStage::List));
-    assert!(
-        state.workspaces.is_empty(),
-        "in-memory list should be empty"
-    );
 
     Ok(())
 }

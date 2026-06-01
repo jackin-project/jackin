@@ -352,7 +352,7 @@ pub fn handle_key(
             Ok(open_url.map_or(InputOutcome::Continue, InputOutcome::OpenUrl))
         }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
-        StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),
+        StageDis::ConfirmDelete => Ok(handle_confirm_delete_key(state, key)),
         StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
     };
     execute_manager_effect(
@@ -393,37 +393,27 @@ fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent
 
 fn handle_confirm_delete_key(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-    cwd: &std::path::Path,
     key: KeyEvent,
-) -> anyhow::Result<InputOutcome> {
+) -> InputOutcome {
     let ManagerStage::ConfirmDelete {
         name,
         state: confirm_state,
     } = &mut state.stage
     else {
-        return Ok(InputOutcome::Continue);
+        return InputOutcome::Continue;
     };
     let outcome = confirm_state.handle_key(key);
     let ws_name = name.clone();
     match outcome {
         ModalOutcome::Commit(true) => {
-            crate::console::services::config::remove_workspace(config, paths, &ws_name)?;
-            let _ = update_manager(
-                state,
-                ManagerMessage::ReloadFromConfig {
-                    config: Box::new(config.clone()),
-                    cwd: cwd.to_path_buf(),
-                },
-            );
-            Ok(InputOutcome::Continue)
+            let _ = update_manager(state, ManagerMessage::ReturnToList);
+            InputOutcome::RemoveWorkspace(ws_name)
         }
         ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
             let _ = update_manager(state, ManagerMessage::ReturnToList);
-            Ok(InputOutcome::Continue)
+            InputOutcome::Continue
         }
-        ModalOutcome::Continue => Ok(InputOutcome::Continue),
+        ModalOutcome::Continue => InputOutcome::Continue,
     }
 }
 

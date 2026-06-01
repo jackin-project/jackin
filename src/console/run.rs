@@ -581,6 +581,37 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 needs_redraw = true;
                             }
                         }
+                        manager::InputOutcome::RemoveWorkspace(name) => {
+                            match crate::console::services::config::remove_workspace(
+                                &mut config,
+                                paths,
+                                &name,
+                            ) {
+                                Ok(()) => {
+                                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                                        let _ = manager::update_manager(
+                                            ms,
+                                            manager::ManagerMessage::ReloadFromConfig {
+                                                config: Box::new(config.clone()),
+                                                cwd: cwd.to_path_buf(),
+                                            },
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                                        let _ = manager::update_manager(
+                                            ms,
+                                            manager::ManagerMessage::OpenListErrorPopup {
+                                                title: "Delete failed".into(),
+                                                message: format!("{e:#}"),
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                            needs_redraw = true;
+                        }
                     }
                 }
                 Event::Mouse(mouse) => {

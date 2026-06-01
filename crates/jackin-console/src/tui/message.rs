@@ -44,6 +44,9 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     /// Open an external URL. The root run loop executes this because browser
     /// launching is a host-side side effect, not input/update work.
     OpenUrl(String),
+    /// Remove a saved workspace. The root run loop executes config
+    /// persistence and then reloads visible state.
+    RemoveWorkspace(String),
     /// Operator selected an agent and provider for a new session.
     NewSessionWithProvider {
         container: String,
