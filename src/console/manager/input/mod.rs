@@ -18,6 +18,7 @@ use super::message::{ManagerEffect, ManagerMessage, execute_manager_effect, upda
 use super::state::{EditorSaveFlow, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::services::file_browser;
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
 
@@ -140,7 +141,7 @@ pub fn handle_key(
             state,
             config,
             paths,
-            ManagerEffect::RequestActiveMountInfoRefresh,
+            ConsoleEffect::RequestActiveMountInfoRefresh.into(),
         );
         if let Some(url) = open_url {
             return Ok(InputOutcome::OpenUrl(url));
@@ -227,7 +228,7 @@ pub fn handle_key(
             modal_outcome,
             global_mounts::SettingsModalOutcome::SaveSettings
         ) {
-            execute_manager_effect(state, config, paths, ManagerEffect::SaveSettings);
+            execute_manager_effect(state, config, paths, ConsoleEffect::SaveSettings.into());
         }
         global_mounts::after_settings_event(state);
         if let Some(url) = open_url {
@@ -245,7 +246,7 @@ pub fn handle_key(
     if let ManagerStage::Settings(settings) = &mut state.stage
         && settings.auth.modal.is_some()
     {
-        global_mounts::handle_settings_auth_modal(
+        let auth_outcome = global_mounts::handle_settings_auth_modal(
             &mut settings.auth,
             &mut settings.env,
             &mut settings.pending_token_generate,
@@ -253,6 +254,17 @@ pub fn handle_key(
             op_available,
             op_cache,
         );
+        if let global_mounts::SettingsAuthOutcome::ValidateOpRef(op_ref) = auth_outcome {
+            execute_manager_effect(
+                state,
+                config,
+                paths,
+                ManagerEffect::ValidateOpCommit {
+                    op_ref,
+                    is_settings: true,
+                },
+            );
+        }
         global_mounts::after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
@@ -366,7 +378,7 @@ pub fn handle_key(
         state,
         config,
         paths,
-        ManagerEffect::RequestActiveMountInfoRefresh,
+        ConsoleEffect::RequestActiveMountInfoRefresh.into(),
     );
     outcome
 }

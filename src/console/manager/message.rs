@@ -15,7 +15,7 @@ use crate::console::services::instances::{
     InstanceRefreshSnapshot, load_instance_refresh_snapshot,
 };
 use jackin_console::focus::moved_selection;
-pub(crate) use jackin_console::tui::effect::ConsoleEffect as ManagerEffect;
+use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::editor::update::{
     next_editor_tab, previous_editor_tab, set_role_expanded as set_editor_role_expanded,
     step_cursor_down, step_cursor_up, toggle_general_selected as toggle_editor_general_row,
@@ -32,6 +32,21 @@ use jackin_console::tui::screens::settings::update::{
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 use jackin_tui::runtime::spawn_blocking_subscription;
+
+#[derive(Debug)]
+pub(crate) enum ManagerEffect {
+    Console(ConsoleEffect),
+    ValidateOpCommit {
+        op_ref: crate::operator_env::OpRef,
+        is_settings: bool,
+    },
+}
+
+impl From<ConsoleEffect> for ManagerEffect {
+    fn from(effect: ConsoleEffect) -> Self {
+        Self::Console(effect)
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum ManagerMessage {
@@ -207,7 +222,7 @@ pub(crate) fn execute_manager_effect(
     effect: ManagerEffect,
 ) {
     match effect {
-        ManagerEffect::RequestActiveMountInfoRefresh => {
+        ManagerEffect::Console(ConsoleEffect::RequestActiveMountInfoRefresh) => {
             if state.mount_info_refresh_in_flight() {
                 return;
             }
@@ -231,7 +246,7 @@ pub(crate) fn execute_manager_effect(
             });
             state.begin_mount_info_refresh(rx);
         }
-        ManagerEffect::RequestInstanceRefresh => {
+        ManagerEffect::Console(ConsoleEffect::RequestInstanceRefresh) => {
             let Some(generation) = state.next_instance_refresh_generation_if_due() else {
                 return;
             };
@@ -242,7 +257,27 @@ pub(crate) fn execute_manager_effect(
             });
             state.begin_instance_refresh(rx);
         }
-        ManagerEffect::SaveSettings => execute_settings_save(state, config, paths),
+        ManagerEffect::Console(ConsoleEffect::SaveSettings) => execute_settings_save(state, config, paths),
+        ManagerEffect::ValidateOpCommit {
+            op_ref,
+            is_settings,
+        } => execute_op_commit_validation(state, op_ref, is_settings),
+    }
+}
+
+fn execute_op_commit_validation(
+    state: &mut ManagerState<'_>,
+    op_ref: crate::operator_env::OpRef,
+    is_settings: bool,
+) {
+    let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
+    if is_settings {
+        if let ManagerStage::Settings(settings) = &mut state.stage {
+            settings.auth.pending_op_commit =
+                Some(super::state::PendingOpCommit::new(op_ref, rx));
+        }
+    } else if let ManagerStage::Editor(editor) = &mut state.stage {
+        editor.pending_op_commit = Some(super::state::PendingOpCommit::new(op_ref, rx));
     }
 }
 
@@ -304,7 +339,7 @@ pub(crate) fn poll_background_messages(
         state,
         config,
         paths,
-        ManagerEffect::RequestActiveMountInfoRefresh,
+        ConsoleEffect::RequestActiveMountInfoRefresh.into(),
     );
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
@@ -316,7 +351,7 @@ pub(crate) fn poll_background_messages(
             ManagerMessage::InstancesRefreshed(result),
         ));
     }
-    execute_manager_effect(state, config, paths, ManagerEffect::RequestInstanceRefresh);
+    execute_manager_effect(state, config, paths, ConsoleEffect::RequestInstanceRefresh.into());
     if let Some((op_ref, result, is_settings)) = state.poll_pending_op_commit() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::OpCommitResolved {
@@ -1186,9 +1221,10 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
 #[cfg(test)]
 mod tests {
     use super::{
-        ManagerBackgroundEvent, ManagerEffect, ManagerMessage, execute_manager_effect,
+        ManagerBackgroundEvent, ManagerMessage, execute_manager_effect,
         poll_background_messages, update_manager,
     };
+    use jackin_console::tui::effect::ConsoleEffect;
     use crate::console::manager::auth_kind::AuthKind;
     use crate::console::manager::state::{
         AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
@@ -2187,7 +2223,7 @@ mod tests {
             &mut state,
             &mut config,
             &paths,
-            ManagerEffect::RequestInstanceRefresh,
+            ConsoleEffect::RequestInstanceRefresh.into(),
         );
 
         assert!(

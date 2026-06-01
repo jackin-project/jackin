@@ -34,6 +34,12 @@ pub(super) enum SettingsModalOutcome {
     SaveSettings,
 }
 
+#[derive(Debug)]
+pub(super) enum SettingsAuthOutcome {
+    Continue,
+    ValidateOpRef(crate::operator_env::OpRef),
+}
+
 #[cfg(test)]
 pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let mut open_url = None;
@@ -485,9 +491,9 @@ pub(super) fn handle_settings_auth_modal(
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
-) {
+) -> SettingsAuthOutcome {
     let Some(mut modal) = auth.modal.take() else {
-        return;
+        return SettingsAuthOutcome::Continue;
     };
     match &mut modal {
         SettingsAuthModal::AuthForm {
@@ -497,7 +503,7 @@ pub(super) fn handle_settings_auth_modal(
             literal_buffer: _,
         } => {
             if key.code == KeyCode::Esc {
-                return;
+                return SettingsAuthOutcome::Continue;
             }
             // `g`/`G` at any focus mints a global Claude OAuth token. It
             // opens the shared source picker (plain literal vs. 1Password)
@@ -522,7 +528,7 @@ pub(super) fn handle_settings_auth_modal(
                         op_available,
                     ),
                 });
-                return;
+                return SettingsAuthOutcome::Continue;
             }
             match *focus {
                 AuthFormFocus::Mode => match key.code {
@@ -547,7 +553,7 @@ pub(super) fn handle_settings_auth_modal(
                         let Some(env_var) = state.mode.and_then(|m| state.kind.required_env_var(m))
                         else {
                             auth.modal = Some(modal);
-                            return;
+                            return SettingsAuthOutcome::Continue;
                         };
                         auth.modal_parents.push(modal);
                         auth.modal = Some(SettingsAuthModal::SourcePicker {
@@ -556,7 +562,7 @@ pub(super) fn handle_settings_auth_modal(
                                 op_available,
                             ),
                         });
-                        return;
+                        return SettingsAuthOutcome::Continue;
                     }
                     // Down/j is a no-op at the bottom of the field area; Tab crosses to button area.
                     KeyCode::Tab => {
@@ -579,14 +585,14 @@ pub(super) fn handle_settings_auth_modal(
                     }
                     KeyCode::Enter if state.can_save() => {
                         persist_settings_auth_form(auth, env, state);
-                        return;
+                        return SettingsAuthOutcome::Continue;
                     }
                     _ => {}
                 },
                 AuthFormFocus::Cancel => match key.code {
                     KeyCode::Left | KeyCode::BackTab => *focus = AuthFormFocus::Save,
                     KeyCode::Right | KeyCode::Tab => *focus = AuthFormFocus::Reset,
-                    KeyCode::Enter => return,
+                    KeyCode::Enter => return SettingsAuthOutcome::Continue,
                     _ => {}
                 },
                 AuthFormFocus::Reset => match key.code {
@@ -595,7 +601,7 @@ pub(super) fn handle_settings_auth_modal(
                     KeyCode::Tab => *focus = AuthFormFocus::Mode,
                     KeyCode::Enter => {
                         clear_settings_auth_kind(auth, env, target);
-                        return;
+                        return SettingsAuthOutcome::Continue;
                     }
                     _ => {}
                 },
@@ -646,7 +652,7 @@ pub(super) fn handle_settings_auth_modal(
                     }
                     ModalOutcome::Continue => auth.modal = Some(modal),
                 }
-                return;
+                return SettingsAuthOutcome::Continue;
             }
             match outcome {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
@@ -691,7 +697,7 @@ pub(super) fn handle_settings_auth_modal(
             // variants are reachable only on this path.
             if auth.generating_token {
                 handle_settings_token_generate_pick(auth, pending_token_generate, outcome, modal);
-                return;
+                return SettingsAuthOutcome::Continue;
             }
             match outcome {
                 // Browse-mode caller: only `Existing` is reachable.
@@ -702,23 +708,17 @@ pub(super) fn handle_settings_auth_modal(
                 ModalOutcome::Commit(
                     crate::console::widgets::op_picker::OpPickerSelection::Existing(op_ref),
                 ) => {
-                    // Spawn the 1Password read on a blocking thread so Touch
-                    // ID / the 1Password desktop dialog don't freeze the TUI
-                    // reactor. The outer run_console loop polls the receiver
-                    // each tick and applies the result via _committed / _failed.
-                    let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
-                    auth.pending_op_commit = Some(
-                        crate::console::manager::state::PendingOpCommit::new(op_ref, rx),
-                    );
                     // Close the OpPicker — the auth form stays stashed on
                     // modal_parents so the _committed / _failed helpers find it.
                     auth.modal = None;
+                    return SettingsAuthOutcome::ValidateOpRef(op_ref);
                 }
                 ModalOutcome::Cancel => restore_settings_auth_form(auth),
                 ModalOutcome::Continue => auth.modal = Some(modal),
             }
         }
     }
+    SettingsAuthOutcome::Continue
 }
 
 /// Translate a Create-mode `OpPicker` commit into a global
