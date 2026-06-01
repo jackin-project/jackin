@@ -799,24 +799,7 @@ impl PendingIsolationCleanup {
         plan: PendingSaveCommit,
         exit_on_success: bool,
     ) -> Self {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result = async {
-                for rec in records {
-                    let container_dir = paths.data_dir.join(&rec.container_name);
-                    let mut runner = crate::docker::ShellRunner::default();
-                    crate::isolation::cleanup::force_cleanup_isolated(
-                        &rec,
-                        &container_dir,
-                        &mut runner,
-                    )
-                    .await?;
-                }
-                Ok(())
-            }
-            .await;
-            let _ = tx.send(result);
-        });
+        let rx = crate::console::services::workspace_save::start_isolation_cleanup(paths, records);
         Self {
             rx,
             plan,
@@ -842,22 +825,11 @@ impl PendingDriftCheck {
         plan: PendingSaveCommit,
         exit_on_success: bool,
     ) -> Self {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let worker_name = original_name.clone();
-        tokio::spawn(async move {
-            let result = async {
-                let docker = crate::docker_client::BollardDockerClient::connect()?;
-                crate::config::detect_workspace_edit_drift(
-                    &paths,
-                    &worker_name,
-                    &prospective_mounts,
-                    &docker,
-                )
-                .await
-            }
-            .await;
-            let _ = tx.send(result);
-        });
+        let rx = crate::console::services::workspace_save::start_drift_check(
+            paths,
+            original_name.clone(),
+            prospective_mounts,
+        );
         Self {
             rx,
             plan,

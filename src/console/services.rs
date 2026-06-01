@@ -5,3 +5,4 @@ pub mod browser;
 pub mod config;
 pub mod instances;
 pub mod op;
+pub mod workspace_save;
