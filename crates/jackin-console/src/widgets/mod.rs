@@ -6,5 +6,4 @@ pub use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 pub mod file_browser;
 pub mod github_picker;
 pub mod op_picker;
-pub mod role_picker;
 pub mod workdir_pick;

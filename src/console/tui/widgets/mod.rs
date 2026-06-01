@@ -181,7 +181,7 @@ mod consistency_tests {
     fn render_role_picker() -> (Buffer, Rect) {
         use crate::selector::RolePickerState;
         use crate::selector::RoleSelector;
-        use jackin_console::widgets::role_picker::render;
+        use jackin_console::tui::components::role_picker::render;
         let area = Rect::new(0, 0, 60, 10);
         let state = RolePickerState::new(vec![
             RoleSelector::parse("chainargos/agent-smith").unwrap(),

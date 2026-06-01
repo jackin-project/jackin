@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
-use super::ModalOutcome;
+use jackin_tui::ModalOutcome;
 
 pub trait RoleChoice: Clone {
     fn key(&self) -> String;
@@ -118,9 +118,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use super::{PHOSPHOR_GREEN, WHITE};
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus, render_filter_input};
+use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
 
 pub fn render<R: RoleChoice>(frame: &mut Frame, area: Rect, state: &RolePickerState<R>) {
     // Filter row stays out of the title — see RULES.md "TUI List

@@ -484,7 +484,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &GlobalMountMo
         }
         GlobalMountModal::RolePicker { state } => {
             let area = role_picker_rect(frame.area(), state);
-            jackin_console::widgets::role_picker::render(frame, area, state);
+            jackin_console::tui::components::role_picker::render(frame, area, state);
         }
         GlobalMountModal::Confirm { state, .. } => {
             let area = confirm_rect(frame.area(), state);
@@ -515,7 +515,7 @@ pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvMo
         }
         SettingsEnvModal::RolePicker { state } => {
             let area = role_picker_rect(frame.area(), state);
-            jackin_console::widgets::role_picker::render(frame, area, state);
+            jackin_console::tui::components::role_picker::render(frame, area, state);
         }
         SettingsEnvModal::ScopePicker { state } => {
             let area = scope_picker_rect(frame.area());
