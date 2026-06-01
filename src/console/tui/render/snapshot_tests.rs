@@ -515,8 +515,8 @@ readonly = false
                 &config,
                 &cwd,
                 Modal::GithubPicker {
-                    state: crate::console::widgets::github_picker::GithubPickerState::new(vec![
-                        crate::console::widgets::github_picker::GithubChoice {
+                    state: jackin_console::widgets::github_picker::GithubPickerState::new(vec![
+                        jackin_console::widgets::github_picker::GithubChoice {
                             src: "/workspace".into(),
                             branch: "main".into(),
                             url: "https://github.com/example/repo".into(),

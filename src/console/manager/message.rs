@@ -185,7 +185,7 @@ pub(crate) enum ManagerMessage {
         state: jackin_tui::components::ContainerInfoState,
     },
     OpenListGithubPicker {
-        state: crate::console::widgets::github_picker::GithubPickerState,
+        state: jackin_console::widgets::github_picker::GithubPickerState,
     },
     DismissListModal,
     DismissInlineSessionPicker,

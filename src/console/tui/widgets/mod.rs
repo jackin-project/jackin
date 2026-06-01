@@ -17,7 +17,6 @@ pub mod auth_panel;
 pub mod confirm_save;
 pub(crate) mod editor_rows;
 pub mod file_browser;
-pub mod github_picker;
 pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;
@@ -182,7 +181,7 @@ mod consistency_tests {
     }
 
     fn render_github_picker() -> (Buffer, Rect) {
-        use super::github_picker::{GithubChoice, GithubPickerState, render};
+        use jackin_console::widgets::github_picker::{GithubChoice, GithubPickerState, render};
         let area = Rect::new(0, 0, 60, 10);
         let state = GithubPickerState::new(vec![GithubChoice {
             src: "/home/user/app".into(),

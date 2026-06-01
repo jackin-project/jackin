@@ -521,7 +521,7 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
             dispatch_manager(
                 state,
                 ManagerMessage::OpenListGithubPicker {
-                    state: crate::console::widgets::github_picker::GithubPickerState::new(choices),
+                    state: jackin_console::widgets::github_picker::GithubPickerState::new(choices),
                 },
             );
         }
@@ -1675,7 +1675,7 @@ mod tests {
         // We can't assert `open::that_detached` ran, but we *can* pin that
         // the modal closes (no lingering state) and no ErrorPopup appears
         // when the underlying call path doesn't error out synchronously.
-        use crate::console::widgets::github_picker::{GithubChoice, GithubPickerState};
+        use jackin_console::widgets::github_picker::{GithubChoice, GithubPickerState};
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -1711,7 +1711,7 @@ mod tests {
 
     #[test]
     fn picker_esc_closes_without_opening_url() {
-        use crate::console::widgets::github_picker::{GithubChoice, GithubPickerState};
+        use jackin_console::widgets::github_picker::{GithubChoice, GithubPickerState};
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();

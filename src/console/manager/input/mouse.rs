@@ -1667,8 +1667,8 @@ mod mouse_drag_tests {
         // Ensure the helper signature compiles (guards against future refactors).
         let _ = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
         state.list_modal = Some(Modal::GithubPicker {
-            state: crate::console::widgets::github_picker::GithubPickerState::new(vec![
-                crate::console::widgets::github_picker::GithubChoice {
+            state: jackin_console::widgets::github_picker::GithubPickerState::new(vec![
+                jackin_console::widgets::github_picker::GithubChoice {
                     src: "/w".into(),
                     branch: "main".into(),
                     url: "https://github.com/o/r".into(),
@@ -2325,6 +2325,13 @@ mod mouse_drag_tests {
         .unwrap();
         let config = config_with_long_git_type_mount(&repo);
         let mut state = selected_demo_state(&config);
+        state.mount_info_cache.refresh_mounts(
+            &config
+                .workspaces
+                .get("demo")
+                .expect("demo workspace")
+                .mounts,
+        );
 
         for _ in 0..100 {
             handle_mouse_with_config(
