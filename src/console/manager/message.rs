@@ -63,6 +63,23 @@ pub(crate) enum WorkspaceSaveEffect {
     },
 }
 
+pub(crate) enum WorkspaceSaveWriteMode {
+    Edit {
+        original_name: String,
+        pending_name: Option<String>,
+        effective_removals: Vec<String>,
+    },
+    Create {
+        name: String,
+    },
+}
+
+pub(crate) struct WorkspaceSaveWriteInput<'a> {
+    pub(crate) mode: WorkspaceSaveWriteMode,
+    pub(crate) original: &'a crate::workspace::WorkspaceConfig,
+    pub(crate) pending: &'a crate::workspace::WorkspaceConfig,
+}
+
 impl From<ConsoleEffect> for ManagerEffect {
     fn from(effect: ConsoleEffect) -> Self {
         Self::Console(effect)
@@ -398,10 +415,29 @@ pub(crate) fn execute_workspace_save_write(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     cwd: &std::path::Path,
-    input: crate::console::services::config::WorkspaceSaveInput<'_>,
+    input: WorkspaceSaveWriteInput<'_>,
     exit_on_success: bool,
 ) {
-    match crate::console::services::config::save_workspace(paths, input) {
+    let mode = match input.mode {
+        WorkspaceSaveWriteMode::Edit {
+            original_name,
+            pending_name,
+            effective_removals,
+        } => crate::console::services::config::WorkspaceSaveMode::Edit {
+            original_name,
+            pending_name,
+            effective_removals,
+        },
+        WorkspaceSaveWriteMode::Create { name } => {
+            crate::console::services::config::WorkspaceSaveMode::Create { name }
+        }
+    };
+    let service_input = crate::console::services::config::WorkspaceSaveInput {
+        mode,
+        original: input.original,
+        pending: input.pending,
+    };
+    match crate::console::services::config::save_workspace(paths, service_input) {
         Ok(saved) => {
             *config = saved.config;
             if let ManagerStage::Editor(editor) = &mut state.stage {

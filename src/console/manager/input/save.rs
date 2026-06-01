@@ -3,7 +3,8 @@
 #![allow(clippy::items_after_test_module)]
 
 use super::super::message::{
-    WorkspaceSaveEffect, execute_workspace_save_effect, execute_workspace_save_write,
+    WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
+    execute_workspace_save_effect, execute_workspace_save_write,
 };
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
@@ -425,19 +426,17 @@ pub(super) fn commit_editor_save_with_runner(
     }
 
     let service_mode = match save_mode {
-        SaveMode::Edit { original_name } => {
-            crate::console::services::config::WorkspaceSaveMode::Edit {
-                original_name,
-                pending_name: editor.pending_name.clone(),
-                effective_removals: plan.effective_removals,
-            }
-        }
+        SaveMode::Edit { original_name } => WorkspaceSaveWriteMode::Edit {
+            original_name,
+            pending_name: editor.pending_name.clone(),
+            effective_removals: plan.effective_removals,
+        },
         SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
                 open_save_error_popup(editor, "missing workspace name");
                 return Ok(());
             };
-            crate::console::services::config::WorkspaceSaveMode::Create { name }
+            WorkspaceSaveWriteMode::Create { name }
         }
     };
 
@@ -448,7 +447,7 @@ pub(super) fn commit_editor_save_with_runner(
         config,
         paths,
         cwd,
-        crate::console::services::config::WorkspaceSaveInput {
+        WorkspaceSaveWriteInput {
             mode: service_mode,
             original: &original,
             pending: &pending,
