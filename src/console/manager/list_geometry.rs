@@ -12,7 +12,7 @@ use crate::console::manager::state::{
 };
 use crate::isolation::MountIsolation;
 use crate::workspace::MountConfig;
-pub(crate) use jackin_console::sidebar_layout::{
+pub(crate) use jackin_console::tui::sidebar_layout::{
     SidebarLayout, SidebarScrollArea, SidebarScrollAreas,
 };
 
@@ -147,15 +147,15 @@ pub(crate) fn current_dir_mount_config(cwd_str: &str) -> MountConfig {
 }
 
 fn clamp_scroll_area(area: SidebarScrollArea, value: &mut u16) {
-    jackin_console::sidebar_layout::clamp_scroll_area_x(area, value);
+    jackin_console::tui::sidebar_layout::clamp_scroll_area_x(area, value);
 }
 
 fn clamp_scroll_area_y(area: SidebarScrollArea, value: &mut u16) {
-    jackin_console::sidebar_layout::clamp_scroll_area_y(area, value);
+    jackin_console::tui::sidebar_layout::clamp_scroll_area_y(area, value);
 }
 
 fn scroll_area_scrollable(area: SidebarScrollArea) -> bool {
-    jackin_console::sidebar_layout::scroll_area_scrollable(area)
+    jackin_console::tui::sidebar_layout::scroll_area_scrollable(area)
 }
 
 fn focused_block_still_scrollable(
@@ -265,9 +265,9 @@ pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> 
     let show_role_global = !role_global_rows.is_empty();
     let show_roles = !inputs.inline_picker_active;
 
-    jackin_console::sidebar_layout::compute_sidebar_layout(
+    jackin_console::tui::sidebar_layout::compute_sidebar_layout(
         area,
-        jackin_console::sidebar_layout::SidebarLayoutMetrics {
+        jackin_console::tui::sidebar_layout::SidebarLayoutMetrics {
             instance_count: inputs.instance_count,
             workspace_mount_height: mount_block_height(inputs.mounts),
             global_mount_height: show_global.then(|| global_mount_rows_height(&global_rows)),
@@ -484,23 +484,23 @@ pub(crate) fn global_rows_for(
 pub(crate) fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
     let workspace_keys = ws.env.len();
     let agent_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
-    jackin_console::sidebar_layout::workspace_has_any_env(workspace_keys, agent_keys)
+    jackin_console::tui::sidebar_layout::workspace_has_any_env(workspace_keys, agent_keys)
 }
 
 pub(crate) fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
-    jackin_console::sidebar_layout::mount_block_height(
+    jackin_console::tui::sidebar_layout::mount_block_height(
         mounts.iter().map(|mount| mount.src == mount.dst),
     )
 }
 
 fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
-    jackin_console::sidebar_layout::global_mount_rows_height(
+    jackin_console::tui::sidebar_layout::global_mount_rows_height(
         rows.iter().map(|row| row.mount.src == row.mount.dst),
     )
 }
 
 pub(crate) fn global_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
-    jackin_console::sidebar_layout::global_mounts_content_height(
+    jackin_console::tui::sidebar_layout::global_mounts_content_height(
         mounts.iter().map(|mount| mount.src == mount.dst),
     )
 }
@@ -536,7 +536,7 @@ pub(crate) fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceCon
 
     let workspace_keys = ws.env.len();
     let agent_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
-    jackin_console::sidebar_layout::env_block_height(workspace_keys, agent_keys)
+    jackin_console::tui::sidebar_layout::env_block_height(workspace_keys, agent_keys)
 }
 
 pub(crate) fn agents_block_agent_count(
@@ -545,7 +545,7 @@ pub(crate) fn agents_block_agent_count(
 ) -> usize {
     let all_allowed = ws_config.is_none_or(jackin_console::workspace::allows_all_agents);
     let allowed_role_count = ws_config.map_or(0, |w| w.allowed_roles.len());
-    jackin_console::sidebar_layout::agents_block_agent_count(
+    jackin_console::tui::sidebar_layout::agents_block_agent_count(
         all_allowed,
         config.roles.len(),
         allowed_role_count,
@@ -556,7 +556,7 @@ pub(crate) fn agents_block_content_width(
     _ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
-    jackin_console::sidebar_layout::agents_block_content_width(
+    jackin_console::tui::sidebar_layout::agents_block_content_width(
         config.roles.keys().map(String::as_str),
     )
 }
