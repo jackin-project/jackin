@@ -236,10 +236,20 @@ impl Multiplexer {
                     None
                 }
             }
+            Action::StartDragResize { row, col } => {
+                self.drag = self.detect_drag_start(row, col);
+                None
+            }
             Action::DragMotion { row, col } => self.drag_motion(row, col),
             Action::EndDragResize => {
                 self.drag = None;
                 Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
+            }
+            Action::StartSelection { row, col } => {
+                self.selection = self.detect_selection_start(row, col);
+                self.selection
+                    .is_some()
+                    .then(|| self.compose_full_frame(FullRedrawReason::SelectionRepaint))
             }
             Action::SelectionMotion { row, col } => self.selection_motion(row, col),
             Action::FinalizeSelection => self.finalize_selection(),
@@ -487,8 +497,8 @@ impl Multiplexer {
                 if button == 0 {
                     // Press on a shared pane border starts a drag —
                     // skip focus switch and PTY forward in that case.
-                    if let Some(state) = self.detect_drag_start(row, col) {
-                        self.drag = Some(state);
+                    if self.detect_drag_start(row, col).is_some() {
+                        self.apply_action(Action::StartDragResize { row, col });
                         return None;
                     }
                     // Click on a pane other than the currently-focused
@@ -499,9 +509,8 @@ impl Multiplexer {
                     let switched_focus = self.focus_pane_at(row, col);
                     // Press inside a pane whose program never asked
                     // for a mouse protocol starts a text selection.
-                    if let Some(state) = self.detect_selection_start(row, col) {
-                        self.selection = Some(state);
-                        return Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint));
+                    if self.detect_selection_start(row, col).is_some() {
+                        return self.apply_action(Action::StartSelection { row, col });
                     }
                     self.forward_mouse_to_focused_pane(col, row, button);
                     return if switched_focus {

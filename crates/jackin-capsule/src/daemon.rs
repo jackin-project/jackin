@@ -3902,6 +3902,41 @@ mod tests {
     }
 
     #[test]
+    fn apply_action_start_drag_resize_sets_drag_state() {
+        let mut mux = split_tab_mux();
+        let (row, col) = (0..mux.term_rows)
+            .flat_map(|row| (0..mux.term_cols).map(move |col| (row, col)))
+            .find(|(row, col)| mux.detect_drag_start(*row, *col).is_some())
+            .expect("split tab should expose a draggable border");
+
+        let frame = mux.apply_action(Action::StartDragResize { row, col });
+
+        assert!(frame.is_none(), "drag start should not redraw yet");
+        assert!(mux.drag.is_some(), "drag state should be active");
+    }
+
+    #[test]
+    fn apply_action_start_selection_sets_selection_state() {
+        let mut mux = single_pane_tab_mux();
+        let (session, _input_rx) = test_shell_session(20, 78);
+        mux.sessions.insert(1, session);
+
+        let frame = mux
+            .apply_action(Action::StartSelection {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+            })
+            .expect("selection start should repaint");
+
+        let selection = mux.selection.expect("selection should be active");
+        assert_eq!((selection.anchor_row, selection.anchor_col), (0, 0));
+        assert!(
+            !frame.is_empty(),
+            "selection repaint frame should be emitted"
+        );
+    }
+
+    #[test]
     fn apply_action_selection_motion_updates_selection() {
         let mut mux = single_pane_tab_mux();
         let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
