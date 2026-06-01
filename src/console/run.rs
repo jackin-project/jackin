@@ -255,9 +255,7 @@ pub async fn run_console<H: InstanceActionHandler>(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let (messages, background_dirty) =
-                manager::poll_background_messages(ms, &mut config, paths);
-            needs_redraw |= background_dirty;
+            let messages = manager::poll_background_messages(ms, &mut config, paths);
             for message in messages {
                 match message {
                     manager::message::ManagerBackgroundEvent::Message(message) => {

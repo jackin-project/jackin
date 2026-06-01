@@ -63,6 +63,7 @@ title: "TUI architecture — Ratatui application patterns"
 - 1Password auth-form commit reads now spawn through one `PendingOpCommit::spawn` effect helper shared by workspace editor and settings auth flows.
 - Completed 1Password auth-form commit reads now return through `ManagerMessage::OpCommitResolved` instead of being applied inline in `run_console`.
 - Manager background completions for role loads, picker loads, file-browser GitHub URL workers, mount info, instance refresh, 1Password commits, drift checks, and isolated-state cleanup now collect through one `poll_background_messages` subscription helper before run-loop/update dispatch.
+- `poll_background_messages` now returns only typed background events; redraw decisions come from `ManagerMessage` update results or explicit continuation handling instead of a parallel dirty boolean.
 - 1Password picker keys no longer poll local worker channels inline; picker load completions are drained by the manager tick path, while tests drive the explicit poll helper.
 - 1Password picker account/vault/item/field loads now share one local channel/spawn helper; production misses run through `spawn_blocking`, narrowing the remaining lift to a shared typed subscription.
 - 1Password picker load polling now enters through `poll_background_messages` and `ManagerMessage::PollPickerLoads` instead of direct run-loop state mutation.

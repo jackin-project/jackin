@@ -217,8 +217,7 @@ pub(crate) fn poll_background_messages(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
-) -> (Vec<ManagerBackgroundEvent>, bool) {
-    let dirty = false;
+) -> Vec<ManagerBackgroundEvent> {
     let mut messages = vec![
         ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls),
         ManagerBackgroundEvent::Message(ManagerMessage::PollPickerLoads),
@@ -255,7 +254,7 @@ pub(crate) fn poll_background_messages(
     if let Some((cleanup, result)) = state.poll_pending_isolation_cleanup() {
         messages.push(ManagerBackgroundEvent::IsolationCleanupFinished { cleanup, result });
     }
-    (messages, dirty)
+    messages
 }
 
 fn poll_file_browser_git_urls(state: &mut ManagerState<'_>) -> bool {
@@ -2084,9 +2083,8 @@ mod tests {
         let mut config = crate::config::AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);
 
-        let (events, dirty) = poll_background_messages(&mut state, &mut config, &paths);
+        let events = poll_background_messages(&mut state, &mut config, &paths);
 
-        assert!(!dirty);
         assert!(events.iter().any(|event| matches!(
             event,
             ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls)
