@@ -533,7 +533,7 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuth
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
             let area = auth_form_rect(frame.area(), state);
-            crate::console::widgets::auth_panel::render::render_form(frame, area, state, *focus);
+            crate::console::widgets::auth_panel::render_form(frame, area, state, *focus);
         }
         SettingsAuthModal::SourcePicker { state } => {
             let area = source_picker_rect(frame.area());

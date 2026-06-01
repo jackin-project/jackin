@@ -1,6 +1,7 @@
 //! Console-local reusable TUI components.
 
 pub mod agent_choice;
+pub mod auth_panel;
 pub mod confirm_save;
 pub mod editor_rows;
 pub mod file_browser;

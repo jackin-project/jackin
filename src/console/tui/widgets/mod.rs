@@ -11,7 +11,7 @@ pub(crate) use jackin_tui::theme::{
     WHITE,
 };
 
-pub mod auth_panel;
+pub(crate) mod auth_panel;
 pub mod op_picker;
 
 #[cfg(test)]
