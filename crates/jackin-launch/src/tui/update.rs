@@ -3,7 +3,7 @@
 use jackin_tui::components::StatusFooterHover;
 use jackin_tui::runtime::{NoEffect, UpdateResult};
 
-use crate::state::{
+use crate::tui::app::{
     LaunchMessage, LaunchStage, LaunchView, StageLabelTransition, StageStatus, StageView,
 };
 

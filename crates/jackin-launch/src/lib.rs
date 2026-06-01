@@ -7,19 +7,15 @@
 use std::path::{Path, PathBuf};
 
 pub mod build_log;
-pub mod input;
 pub mod progress;
 pub mod renderer;
-pub mod state;
-pub mod terminal;
 pub mod tui;
-pub mod update;
 
-pub use state::{
+pub use tui::app::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, PromptResult, StageLabelTransition, StageStatus, StageView,
 };
-pub use update::{active_stage_index, initial_view, update_launch_view, update_stage};
+pub use tui::update::{active_stage_index, initial_view, update_launch_view, update_stage};
 
 pub trait LaunchDiagnostics: Send + Sync {
     fn run_id(&self) -> &str;

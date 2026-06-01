@@ -158,7 +158,7 @@ pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> 
 }
 
 pub(crate) fn rich_terminal_supported() -> bool {
-    jackin_launch::terminal::rich_terminal_supported()
+    jackin_launch::tui::terminal::rich_terminal_supported()
 }
 
 /// Bail with the canonical rich-terminal requirement message unless the

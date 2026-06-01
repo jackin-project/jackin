@@ -448,7 +448,7 @@ impl Drop for RichRenderer {
 }
 
 fn require_rich_terminal() -> anyhow::Result<()> {
-    if !crate::terminal::rich_terminal_supported() {
+    if !crate::tui::terminal::rich_terminal_supported() {
         anyhow::bail!(
             "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
         );

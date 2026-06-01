@@ -5,9 +5,9 @@ use jackin_tui::components::ConfirmState;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 
-use crate::input::{SharedView, handle_cockpit_input};
 use crate::renderer::RichRenderer;
 use crate::tui::build_log::build_log_scroll_filled;
+use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
 use crate::{
     LaunchDiagnostics, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchMessage,
     LaunchStage, PromptResult, StageStatus, initial_view, update_launch_view,
@@ -423,7 +423,7 @@ pub fn standalone_error_popup(
 /// and the pre-launch `prelaunch_select_choice` picker gate through this so
 /// the message cannot drift between them.
 pub fn require_rich_terminal() -> anyhow::Result<()> {
-    if !crate::terminal::rich_terminal_supported() {
+    if !crate::tui::terminal::rich_terminal_supported() {
         anyhow::bail!(
             "jackin load requires a rich terminal: stdin/stdout/stderr must be TTYs, TERM must not be dumb, CI must be unset, and the terminal must be at least 80x24"
         );
