@@ -31,6 +31,7 @@ use portable_pty::CommandBuilder;
 
 use crate::tui::message::{
     Action, InputDispatchContext, input_event_action, mouse_chrome_update_action,
+    prefix_command_action,
 };
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,

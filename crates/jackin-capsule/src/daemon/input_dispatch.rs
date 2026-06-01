@@ -586,23 +586,7 @@ impl Multiplexer {
         // includes any payload (`JumpTab(i)`, `MoveFocus(dir)`).
         crate::clog!("action: prefix={cmd:?}");
         let full_redraw_reason = prefix_full_redraw_reason(&cmd);
-        let action = match cmd {
-            PrefixCommand::NewTab => Some(Action::OpenAgentPicker(PickerIntent::NewTab)),
-            PrefixCommand::NextTab => Some(Action::NextTab),
-            PrefixCommand::PrevTab => Some(Action::PreviousTab),
-            PrefixCommand::JumpTab(i) => Some(Action::JumpTab(i)),
-            PrefixCommand::SplitTopBottom => Some(Action::SplitFocused(SplitDirection::Below)),
-            PrefixCommand::SplitSideBySide => Some(Action::SplitFocused(SplitDirection::Right)),
-            PrefixCommand::MoveFocus(dir) => Some(Action::MoveFocus(dir)),
-            PrefixCommand::ZoomToggle => Some(Action::ToggleZoom),
-            PrefixCommand::KillPane => Some(Action::CloseFocusedPane),
-            PrefixCommand::KillTab => Some(Action::CloseFocusedTab),
-            PrefixCommand::ClearPane => Some(Action::ClearFocusedPane),
-            PrefixCommand::Detach => Some(Action::Detach),
-            PrefixCommand::Palette => Some(Action::OpenPalette),
-            PrefixCommand::Redraw => None,
-        };
-        if let Some(action) = action
+        if let Some(action) = prefix_command_action(&cmd)
             && let Some(frame) = self.apply_action(action)
         {
             return Some(frame);

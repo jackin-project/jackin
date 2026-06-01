@@ -292,7 +292,7 @@ Capsule mux-mode priority, chrome-hover priority, pointer-shape priority, and dr
 
 Capsule split-spawn pane sizing now lives with visible pane geometry in <RepoFile path="crates/jackin-capsule/src/tui/layout.rs" />. The daemon still owns capacity checks, PTY/session spawn, and tab-tree mutation, but the future half-pane size calculation is a TUI layout helper.
 
-Capsule parsed-input to semantic-action mapping now lives with action vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/message.rs" />. The daemon still supplies live context such as dialog-captures-input and branch-bar hit-testing, then executes the returned action against PTY/session state.
+Capsule parsed-input and prefix-command to semantic-action mapping now lives with action vocabulary in <RepoFile path="crates/jackin-capsule/src/tui/message.rs" />. The daemon still supplies live context such as dialog-captures-input and branch-bar hit-testing, then executes the returned action against PTY/session state.
 
 Capsule input binding data and key-binding parsing now live with terminal input parsing in <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />. The environment/logging resolver for those TUI-owned binding definitions lives under the non-TUI services boundary in <RepoFile path="crates/jackin-capsule/src/services/input_bindings.rs" />.
 
