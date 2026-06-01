@@ -17,6 +17,81 @@ pub enum ModalRectSpec {
     Fixed { width_pct: u16, height: u16 },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModalRectMode {
+    TextInput,
+    SourcePicker,
+    ScopePicker,
+    OpPicker,
+    RolePicker { filtered_len: usize },
+    Confirm { width_pct: u16, height: u16 },
+    MountChoice,
+    AuthForm { required_height: u16 },
+    SaveDiscardCancel,
+    FileBrowser,
+    WorkdirPick,
+    GithubPicker { choice_len: usize },
+    ConfirmSave { required_height: u16 },
+    ErrorPopup { required_height: u16 },
+    ContainerInfo { required_height: u16 },
+    StatusPopup,
+}
+
+impl ModalRectMode {
+    fn spec(self, outer_height: u16) -> ModalRectSpec {
+        match self {
+            Self::TextInput => ModalRectSpec::TextInput,
+            Self::SourcePicker => ModalRectSpec::SourcePicker,
+            Self::ScopePicker => ModalRectSpec::ScopePicker,
+            Self::OpPicker => ModalRectSpec::OpPicker,
+            Self::RolePicker { filtered_len } => ModalRectSpec::RolePicker { filtered_len },
+            Self::Confirm { width_pct, height } => ModalRectSpec::Confirm { width_pct, height },
+            Self::MountChoice => ModalRectSpec::MountChoice,
+            Self::AuthForm { required_height } => ModalRectSpec::AuthForm { required_height },
+            Self::SaveDiscardCancel => ModalRectSpec::Fixed {
+                width_pct: 70,
+                height: 7,
+            },
+            Self::FileBrowser => ModalRectSpec::Fixed {
+                width_pct: 70,
+                height: 22,
+            },
+            Self::WorkdirPick => ModalRectSpec::Fixed {
+                width_pct: 60,
+                height: 12,
+            },
+            Self::GithubPicker { choice_len } => {
+                let rows = (choice_len as u16).saturating_add(5).min(15);
+                ModalRectSpec::Fixed {
+                    width_pct: 60,
+                    height: rows,
+                }
+            }
+            Self::ConfirmSave { required_height } => ModalRectSpec::Fixed {
+                width_pct: 80,
+                height: required_height.min(outer_height),
+            },
+            Self::ErrorPopup { required_height } => ModalRectSpec::Fixed {
+                width_pct: 60,
+                height: required_height,
+            },
+            Self::ContainerInfo { required_height } => ModalRectSpec::Fixed {
+                width_pct: 60,
+                height: required_height,
+            },
+            Self::StatusPopup => ModalRectSpec::Fixed {
+                width_pct: 50,
+                height: 7,
+            },
+        }
+    }
+}
+
+#[must_use]
+pub fn modal_rect_for_mode(outer: Rect, mode: ModalRectMode) -> Rect {
+    modal_rect(outer, mode.spec(outer.height))
+}
+
 #[must_use]
 pub fn modal_rect(outer: Rect, spec: ModalRectSpec) -> Rect {
     match spec {
