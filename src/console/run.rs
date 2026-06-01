@@ -577,13 +577,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                             if let Err(e) = crate::console::services::browser::open_url(&url)
                                 && let ConsoleStage::Manager(ms) = &mut state.stage
                             {
-                                let _ = manager::update_manager(
-                                    ms,
-                                    manager::ManagerMessage::OpenListErrorPopup {
-                                        title: "Failed to open URL".into(),
-                                        message: format!("{e}"),
-                                    },
-                                );
+                                report_open_url_error(ms, e);
                                 needs_redraw = true;
                             }
                         }
@@ -642,13 +636,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                         );
                         if let manager::InputOutcome::OpenUrl(url) = outcome {
                             if let Err(e) = crate::console::services::browser::open_url(&url) {
-                                let _ = manager::update_manager(
-                                    ms,
-                                    manager::ManagerMessage::OpenListErrorPopup {
-                                        title: "Failed to open URL".into(),
-                                        message: format!("{e}"),
-                                    },
-                                );
+                                report_open_url_error(ms, e);
                                 needs_redraw = true;
                             }
                         }
@@ -680,4 +668,35 @@ pub async fn run_console<H: InstanceActionHandler>(
     // the console → loading transition stays on one alternate screen.
     drop(owned_screen);
     result
+}
+
+fn report_open_url_error(ms: &mut manager::ManagerState<'_>, error: anyhow::Error) {
+    match &mut ms.stage {
+        manager::ManagerStage::Editor(editor) => {
+            editor.modal = Some(manager::state::Modal::ErrorPopup {
+                state: jackin_tui::components::ErrorPopupState::new(
+                    "Failed to open URL",
+                    error.to_string(),
+                ),
+            });
+        }
+        manager::ManagerStage::Settings(_) => {
+            let _ = manager::update_manager(
+                ms,
+                manager::ManagerMessage::OpenSettingsErrorPopup {
+                    title: "Failed to open URL".into(),
+                    message: error.to_string(),
+                },
+            );
+        }
+        _ => {
+            let _ = manager::update_manager(
+                ms,
+                manager::ManagerMessage::OpenListErrorPopup {
+                    title: "Failed to open URL".into(),
+                    message: error.to_string(),
+                },
+            );
+        }
+    }
 }

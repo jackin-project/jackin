@@ -346,9 +346,10 @@ pub fn handle_key(
         StageDis::List => list::handle_list_key(state, config, paths, cwd, key),
         StageDis::Editor => editor::handle_editor_key(state, config, paths, cwd, key),
         StageDis::Settings => {
-            global_mounts::handle_settings_key(state, key);
+            let mut open_url = None;
+            global_mounts::handle_settings_key_with_open_url(state, key, &mut open_url);
             global_mounts::after_settings_event(state);
-            Ok(InputOutcome::Continue)
+            Ok(open_url.map_or(InputOutcome::Continue, InputOutcome::OpenUrl))
         }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
         StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),

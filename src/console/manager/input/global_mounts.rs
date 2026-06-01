@@ -30,7 +30,17 @@ const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
 const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
 const ADD_DRAFT_LOST: &str = "Add-mount draft was lost; press 'a' to start over.";
 
+#[cfg(test)]
 pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
+    let mut open_url = None;
+    handle_settings_key_with_open_url(state, key, &mut open_url);
+}
+
+pub(super) fn handle_settings_key_with_open_url(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+    open_url: &mut Option<String>,
+) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
@@ -136,7 +146,7 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     }
     match settings.active_tab {
         SettingsTab::General => handle_general_key(state, key),
-        SettingsTab::Mounts => handle_global_mounts_key(state, key),
+        SettingsTab::Mounts => handle_global_mounts_key(state, key, open_url),
         SettingsTab::Environments => handle_env_key(state, key),
         SettingsTab::Auth => handle_auth_key(state, key),
         SettingsTab::Trust => handle_trust_key(state, key),
@@ -148,7 +158,11 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 }
 
 #[allow(clippy::too_many_lines)]
-fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
+fn handle_global_mounts_key(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+    open_url: &mut Option<String>,
+) {
     // S is handled here, before `global` borrows `settings.mounts`, so
     // `open_settings_save_preview` can receive all of `settings`.
     if matches!(key.code, KeyCode::Char('s' | 'S')) {
@@ -252,9 +266,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         KeyCode::Char('o' | 'O') => {
             if let Some(row) = global.pending.get(global.selected) {
                 if let Some(web_url) = global.mount_info_cache.github_web_url(&row.mount.src) {
-                    if let Err(err) = crate::console::services::browser::open_url(&web_url) {
-                        global.error = Some(format!("failed to open URL: {err}"));
-                    }
+                    *open_url = Some(web_url);
                 } else {
                     global.error = Some("no GitHub URL for this mount".into());
                 }
