@@ -1,14 +1,13 @@
-use super::{effects, tui};
-use super::prompts::{
+use crate::console::prompts::{
     console_location_debug, dispatch_and_prompt_launch, invalidate_op_cache_for_ref,
     key_debug_name, launch_with_committed_agent, prompt_committed_role,
 };
-use super::domain::build_workspace_choice;
-use super::terminal::{
+use crate::console::domain::build_workspace_choice;
+use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
 };
-use super::{
+use crate::console::{
     ConsoleInstanceAction, ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler,
 };
 use jackin_console::tui::run::{
@@ -77,7 +76,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     runner: &mut impl crate::docker::CommandRunner,
     // Outer session guard — draws into the inherited screen when `Some`,
     // or owns its own `TerminalSession` when `None` (standalone console).
-    parent_session: Option<&super::TerminalSession>,
+    parent_session: Option<&crate::console::TerminalSession>,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
@@ -229,9 +228,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                             // Settings surfaces errors through its top-level
                             // error popup slot (same widget as the editor).
                             ManagerStage::Settings(_) => {
-                                let _ = tui::update_manager(
+                                let _ = crate::console::tui::update_manager(
                                     ms,
-                                    tui::ManagerMessage::OpenSettingsErrorPopup {
+                                    crate::console::tui::ManagerMessage::OpenSettingsErrorPopup {
                                         title: "Token generation failed".into(),
                                         message: e.to_string(),
                                     },
@@ -248,14 +247,14 @@ pub async fn run_console<H: InstanceActionHandler>(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let messages = effects::poll_background_messages(ms, &mut config, paths);
+            let messages = crate::console::effects::poll_background_messages(ms, &mut config, paths);
             for message in messages {
                 match message {
                     crate::console::tui::message::ManagerBackgroundEvent::Message(message) => {
-                        needs_redraw |= tui::update_manager(ms, message).is_dirty();
+                        needs_redraw |= crate::console::tui::update_manager(ms, message).is_dirty();
                     }
                     crate::console::tui::message::ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
-                        if let tui::ManagerStage::Editor(editor) = &mut ms.stage {
+                        if let crate::console::tui::ManagerStage::Editor(editor) = &mut ms.stage {
                             crate::console::tui::input::editor::apply_role_load_completion(
                                 editor,
                                 &mut config,
@@ -304,10 +303,10 @@ pub async fn run_console<H: InstanceActionHandler>(
             let full_area: ratatui::layout::Rect = terminal.size()?.into();
             let (main_area, debug_bar_area) =
                 split_debug_area(full_area, crate::tui::is_debug_mode());
-            tui::prepare_for_render(ms, &config, cwd, main_area);
+            crate::console::tui::prepare_for_render(ms, &config, cwd, main_area);
             let confirm_state = state.quit_confirm.as_ref();
             terminal.draw(|frame| {
-                tui::render(frame, main_area, ms, &config, cwd);
+                crate::console::tui::render(frame, main_area, ms, &config, cwd);
                 if let Some(confirm) = confirm_state {
                     let area = quit_confirm_area(main_area, confirm);
                     jackin_tui::components::render_confirm_dialog(frame, area, confirm);
@@ -414,16 +413,16 @@ pub async fn run_console<H: InstanceActionHandler>(
                     }
 
                     let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        tui::handle_key(ms, &mut config, paths, cwd, key)?
+                        crate::console::tui::handle_key(ms, &mut config, paths, cwd, key)?
                     } else {
-                        tui::InputOutcome::Continue
+                        crate::console::tui::InputOutcome::Continue
                     };
                     match outcome {
-                        tui::InputOutcome::Continue => {}
-                        tui::InputOutcome::ExitJackin => {
+                        crate::console::tui::InputOutcome::Continue => {}
+                        crate::console::tui::InputOutcome::ExitJackin => {
                             break 'main Ok(None);
                         }
-                        tui::InputOutcome::LaunchNamed(name) => {
+                        crate::console::tui::InputOutcome::LaunchNamed(name) => {
                             if let Some(outcome) = dispatch_and_prompt_launch(
                                 &mut terminal,
                                 &mut state,
@@ -438,7 +437,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 break 'main Ok(Some(outcome));
                             }
                         }
-                        tui::InputOutcome::LaunchCurrentDir => {
+                        crate::console::tui::InputOutcome::LaunchCurrentDir => {
                             if let Some(outcome) = dispatch_and_prompt_launch(
                                 &mut terminal,
                                 &mut state,
@@ -453,7 +452,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 break 'main Ok(Some(outcome));
                             }
                         }
-                        tui::InputOutcome::LaunchWithAgent(role) => {
+                        crate::console::tui::InputOutcome::LaunchWithAgent(role) => {
                             if let Some(outcome) = prompt_committed_role(
                                 &mut terminal,
                                 &mut state,
@@ -468,14 +467,14 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 break 'main Ok(Some(outcome));
                             }
                         }
-                        tui::InputOutcome::LaunchWithRuntimeAgent(agent) => {
+                        crate::console::tui::InputOutcome::LaunchWithRuntimeAgent(agent) => {
                             if let Some(outcome) =
                                 launch_with_committed_agent(&mut state, &config, cwd, agent)?
                             {
                                 break 'main Ok(Some(outcome));
                             }
                         }
-                        tui::InputOutcome::NewSessionWithProvider {
+                        crate::console::tui::InputOutcome::NewSessionWithProvider {
                             container,
                             agent,
                             provider,
@@ -486,7 +485,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 provider,
                             }));
                         }
-                        tui::InputOutcome::LaunchWithProvider {
+                        crate::console::tui::InputOutcome::LaunchWithProvider {
                             selector,
                             agent,
                             provider,
@@ -500,7 +499,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 Some(input) => {
                                     match build_workspace_choice(&config, cwd, &input)? {
                                         Some(choice) => {
-                                            Some(super::preview::resolve_selected_workspace(
+                                            Some(crate::console::preview::resolve_selected_workspace(
                                                 &config, cwd, &choice, &selector,
                                             )?)
                                         }
@@ -519,7 +518,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 provider,
                             }));
                         }
-                        tui::InputOutcome::InstanceAction { container, action } => {
+                        crate::console::tui::InputOutcome::InstanceAction { container, action } => {
                             if action.runs_in_place() {
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
                                     let busy_title = match action {
@@ -528,9 +527,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                                         _ => "Working",
                                     };
                                     let busy_body = format!("{busy_title} {container}…");
-                                    let _ = tui::update_manager(
+                                    let _ = crate::console::tui::update_manager(
                                         ms,
-                                        tui::ManagerMessage::OpenStatusPopup {
+                                        crate::console::tui::ManagerMessage::OpenStatusPopup {
                                             title: busy_title.into(),
                                             message: busy_body,
                                         },
@@ -541,14 +540,14 @@ pub async fn run_console<H: InstanceActionHandler>(
                                             full_area,
                                             crate::tui::is_debug_mode(),
                                         );
-                                        tui::render(frame, main_area, ms, &config, cwd);
+                                        crate::console::tui::render(frame, main_area, ms, &config, cwd);
                                     })?;
                                 }
                                 let result = action_handler.run_in_place(&container, action).await;
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    let _ = tui::update_manager(
+                                    let _ = crate::console::tui::update_manager(
                                         ms,
-                                        tui::ManagerMessage::DismissStatusPopup,
+                                        crate::console::tui::ManagerMessage::DismissStatusPopup,
                                     );
                                     if let Err(error) = result {
                                         let err_title = match action {
@@ -556,9 +555,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                                             ConsoleInstanceAction::Purge => "Purge failed",
                                             _ => "Action failed",
                                         };
-                                        let _ = tui::update_manager(
+                                        let _ = crate::console::tui::update_manager(
                                             ms,
-                                            tui::ManagerMessage::OpenListErrorPopup {
+                                            crate::console::tui::ManagerMessage::OpenListErrorPopup {
                                                 title: err_title.into(),
                                                 message: format!("{error:#}"),
                                             },
@@ -574,7 +573,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 action,
                             }));
                         }
-                        tui::InputOutcome::OpenUrl(url) => {
+                        crate::console::tui::InputOutcome::OpenUrl(url) => {
                             if let Err(e) = crate::console::services::browser::open_url(&url)
                                 && let ConsoleStage::Manager(ms) = &mut state.stage
                             {
@@ -582,7 +581,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 needs_redraw = true;
                             }
                         }
-                        tui::InputOutcome::RemoveWorkspace(name) => {
+                        crate::console::tui::InputOutcome::RemoveWorkspace(name) => {
                             match crate::console::services::config::remove_workspace(
                                 &mut config,
                                 paths,
@@ -590,9 +589,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                             ) {
                                 Ok(()) => {
                                     if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                        let _ = tui::update_manager(
+                                        let _ = crate::console::tui::update_manager(
                                             ms,
-                                            tui::ManagerMessage::ReloadFromConfig {
+                                            crate::console::tui::ManagerMessage::ReloadFromConfig {
                                                 config: Box::new(config.clone()),
                                                 cwd: cwd.to_path_buf(),
                                             },
@@ -601,9 +600,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 }
                                 Err(e) => {
                                     if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                        let _ = tui::update_manager(
+                                        let _ = crate::console::tui::update_manager(
                                             ms,
-                                            tui::ManagerMessage::OpenListErrorPopup {
+                                            crate::console::tui::ManagerMessage::OpenListErrorPopup {
                                                 title: "Delete failed".into(),
                                                 message: format!("{e:#}"),
                                             },
@@ -637,9 +636,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                             && let ConsoleStage::Manager(ms) = &mut state.stage
                         {
                             let log_path = run.path().display().to_string();
-                            let _ = tui::update_manager(
+                            let _ = crate::console::tui::update_manager(
                                 ms,
-                                tui::ManagerMessage::OpenListContainerInfo {
+                                crate::console::tui::ManagerMessage::OpenListContainerInfo {
                                     state: jackin_tui::components::ContainerInfoState::new(
                                         "Container info",
                                         vec![
@@ -666,7 +665,7 @@ pub async fn run_console<H: InstanceActionHandler>(
                             term_size,
                             Some(&config),
                         );
-                        if let tui::InputOutcome::OpenUrl(url) = outcome {
+                        if let crate::console::tui::InputOutcome::OpenUrl(url) = outcome {
                             if let Err(e) = crate::console::services::browser::open_url(&url) {
                                 report_open_url_error(ms, e);
                                 needs_redraw = true;
@@ -702,9 +701,9 @@ pub async fn run_console<H: InstanceActionHandler>(
     result
 }
 
-fn report_open_url_error(ms: &mut tui::ManagerState<'_>, error: anyhow::Error) {
+fn report_open_url_error(ms: &mut crate::console::tui::ManagerState<'_>, error: anyhow::Error) {
     match &mut ms.stage {
-        tui::ManagerStage::Editor(editor) => {
+        crate::console::tui::ManagerStage::Editor(editor) => {
             editor.modal = Some(crate::console::tui::state::Modal::ErrorPopup {
                 state: jackin_tui::components::ErrorPopupState::new(
                     "Failed to open URL",
@@ -712,19 +711,19 @@ fn report_open_url_error(ms: &mut tui::ManagerState<'_>, error: anyhow::Error) {
                 ),
             });
         }
-        tui::ManagerStage::Settings(_) => {
-            let _ = tui::update_manager(
+        crate::console::tui::ManagerStage::Settings(_) => {
+            let _ = crate::console::tui::update_manager(
                 ms,
-                tui::ManagerMessage::OpenSettingsErrorPopup {
+                crate::console::tui::ManagerMessage::OpenSettingsErrorPopup {
                     title: "Failed to open URL".into(),
                     message: error.to_string(),
                 },
             );
         }
         _ => {
-            let _ = tui::update_manager(
+            let _ = crate::console::tui::update_manager(
                 ms,
-                tui::ManagerMessage::OpenListErrorPopup {
+                crate::console::tui::ManagerMessage::OpenListErrorPopup {
                     title: "Failed to open URL".into(),
                     message: error.to_string(),
                 },

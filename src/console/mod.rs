@@ -11,21 +11,19 @@ mod launch;
 mod outcome;
 mod preview;
 mod prompts;
-pub mod run;
 mod services;
 pub mod terminal;
 pub mod tui;
 
 #[cfg(test)]
 use prompts::{prompt_agent_for_launch, providers_for_launch};
-pub(super) use run::consumes_letter_input;
+pub(super) use tui::consumes_letter_input;
 #[cfg(test)]
-use run::is_on_main_screen;
+use tui::is_on_main_screen;
 pub use domain::{WorkspaceChoice, build_workspace_choice};
 pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
-pub use run::run_console;
 pub use terminal::TerminalSession;
-pub use tui::{ConsoleStage, ConsoleState};
+pub use tui::{ConsoleStage, ConsoleState, run_console};
 
 #[cfg(test)]
 mod quit_confirm_tests {
