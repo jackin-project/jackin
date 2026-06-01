@@ -53,6 +53,22 @@ pub trait Subscription {
     fn poll_next(&mut self) -> SubscriptionPoll<Self::Output>;
 }
 
+/// Spawn blocking work and expose its single result as a subscription.
+///
+/// This keeps the TUI-side contract consistent: callers start slow work as an
+/// effect, then poll the returned receiver without blocking the update loop.
+pub fn spawn_blocking_subscription<T, F>(worker: F) -> tokio::sync::oneshot::Receiver<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::task::spawn_blocking(move || {
+        let _ = tx.send(worker());
+    });
+    rx
+}
+
 impl<T> Subscription for tokio::sync::oneshot::Receiver<T> {
     type Output = T;
 
@@ -151,7 +167,7 @@ impl<E> UpdateResult<E> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Subscription, SubscriptionPoll};
+    use super::{Subscription, SubscriptionPoll, spawn_blocking_subscription};
 
     #[test]
     fn oneshot_subscription_reports_ready_value() {
@@ -212,5 +228,19 @@ mod tests {
         drop(tx);
 
         assert_eq!(rx.poll_next(), SubscriptionPoll::Closed);
+    }
+
+    #[test]
+    fn spawn_blocking_subscription_reports_worker_result() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+
+        runtime.block_on(async {
+            let rx = spawn_blocking_subscription(|| 7);
+
+            assert_eq!(rx.await.expect("worker should send result"), 7);
+        });
     }
 }

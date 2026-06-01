@@ -22,7 +22,7 @@ use jackin_console::widgets::github_picker::GithubPickerState;
 use jackin_console::widgets::mount_dst_choice::MountDstChoiceState;
 use jackin_console::widgets::{scope_picker::ScopePickerState, source_picker::SourcePickerState};
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
-use jackin_tui::runtime::{Subscription, SubscriptionPoll};
+use jackin_tui::runtime::{Subscription, SubscriptionPoll, spawn_blocking_subscription};
 
 pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_diffs};
 pub use crate::console::manager::mount_info_cache::MountInfoCache;
@@ -539,10 +539,8 @@ impl PendingOpCommit {
     pub fn spawn(op_ref: crate::operator_env::OpRef) -> Self {
         let runner = crate::operator_env::OpCli::new().with_account(op_ref.account.clone());
         let op = op_ref.op.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::task::spawn_blocking(move || {
-            let result = crate::operator_env::OpRunner::read(&runner, &op).map(|_| ());
-            let _ = tx.send(result);
+        let rx = spawn_blocking_subscription(move || {
+            crate::operator_env::OpRunner::read(&runner, &op).map(|_| ())
         });
         Self { op_ref, rx }
     }
@@ -1808,10 +1806,9 @@ impl ManagerState<'_> {
             let _ = self.apply_mount_info_refresh(PendingMountInfoRefresh { target, entries });
             return;
         }
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::task::spawn_blocking(move || {
+        let rx = spawn_blocking_subscription(move || {
             let entries = load_mount_info_entries(sources);
-            let _ = tx.send(PendingMountInfoRefresh { target, entries });
+            PendingMountInfoRefresh { target, entries }
         });
         self.mount_info_refresh_rx = Some(rx);
     }
@@ -2034,10 +2031,9 @@ impl ManagerState<'_> {
         self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
         let generation = self.instances_refresh_generation;
         let paths = paths.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::task::spawn_blocking(move || {
+        let rx = spawn_blocking_subscription(move || {
             let result = load_instance_refresh_snapshot(&paths);
-            let _ = tx.send((generation, result));
+            (generation, result)
         });
         self.instances_refresh_rx = Some(rx);
     }
