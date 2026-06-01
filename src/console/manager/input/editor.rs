@@ -1694,7 +1694,7 @@ fn apply_role_input(
     let result = (|| -> anyhow::Result<(
         String,
         crate::config::RoleSource,
-        tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
+        jackin_tui::runtime::BlockingSubscription<anyhow::Result<()>>,
     )> {
         let source = candidate_role_source(config, &selector)?;
         crate::debug_log!(

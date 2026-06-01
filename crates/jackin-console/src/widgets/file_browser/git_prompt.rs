@@ -57,21 +57,11 @@ impl FileBrowserState {
     }
 
     pub(super) fn open_git_prompt(&mut self, path: PathBuf) {
-        let (tx, rx) = std::sync::mpsc::channel();
         let worker_path = path.clone();
-        if std::thread::Builder::new()
-            .name("jackin-file-browser-git-url".to_string())
-            .spawn(move || {
-                let _ = tx.send(resolve_git_url(&worker_path));
-            })
-            .is_err()
-        {
-            self.pending_git_url = resolve_git_url(&path);
-            self.pending_git_url_rx = None;
-            self.pending_git_prompt = Some(path);
-            self.pending_git_focus = GitPromptFocus::MountHere;
-            return;
-        }
+        let rx = jackin_tui::runtime::spawn_named_blocking_subscription(
+            "jackin-file-browser-git-url",
+            move || resolve_git_url(&worker_path),
+        );
         self.pending_git_url = None;
         self.pending_git_url_rx = Some(rx);
         self.pending_git_prompt = Some(path);

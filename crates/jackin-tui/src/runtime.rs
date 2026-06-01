@@ -53,19 +53,43 @@ pub trait Subscription {
     fn poll_next(&mut self) -> SubscriptionPoll<Self::Output>;
 }
 
+pub type BlockingSubscription<T> = tokio::sync::oneshot::Receiver<T>;
+
 /// Spawn blocking work and expose its single result as a subscription.
 ///
 /// This keeps the TUI-side contract consistent: callers start slow work as an
 /// effect, then poll the returned receiver without blocking the update loop.
-pub fn spawn_blocking_subscription<T, F>(worker: F) -> tokio::sync::oneshot::Receiver<T>
+pub fn spawn_blocking_subscription<T, F>(worker: F) -> BlockingSubscription<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    spawn_named_blocking_subscription("jackin-tui-blocking-subscription", worker)
+}
+
+/// Spawn blocking work on Tokio when available, otherwise fall back to a named
+/// OS thread.
+///
+/// Some component tests and teardown helpers run outside a Tokio runtime. The
+/// fallback keeps those paths on the same subscription contract instead of
+/// reintroducing caller-owned channel/thread plumbing.
+pub fn spawn_named_blocking_subscription<T, F>(
+    name: impl Into<String>,
+    worker: F,
+) -> BlockingSubscription<T>
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    tokio::task::spawn_blocking(move || {
+    let run = move || {
         let _ = tx.send(worker());
-    });
+    };
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn_blocking(run);
+    } else {
+        let _ = std::thread::Builder::new().name(name.into()).spawn(run);
+    }
     rx
 }
 
@@ -167,7 +191,10 @@ impl<E> UpdateResult<E> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Subscription, SubscriptionPoll, spawn_blocking_subscription};
+    use super::{
+        Subscription, SubscriptionPoll, spawn_blocking_subscription,
+        spawn_named_blocking_subscription,
+    };
 
     #[test]
     fn oneshot_subscription_reports_ready_value() {
@@ -242,5 +269,25 @@ mod tests {
 
             assert_eq!(rx.await.expect("worker should send result"), 7);
         });
+    }
+
+    #[test]
+    fn named_blocking_subscription_reports_worker_result_without_runtime() {
+        let mut rx = spawn_named_blocking_subscription("jackin-tui-test-worker", || 7);
+
+        for _ in 0..100 {
+            match rx.poll_next() {
+                SubscriptionPoll::Ready(value) => {
+                    assert_eq!(value, 7);
+                    return;
+                }
+                SubscriptionPoll::Pending => {
+                    std::thread::sleep(std::time::Duration::from_millis(1))
+                }
+                SubscriptionPoll::Closed => panic!("worker closed before sending result"),
+            }
+        }
+
+        panic!("worker did not finish");
     }
 }

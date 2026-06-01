@@ -17,11 +17,11 @@
 //! yields. Probe / vault-list failures fork into four fatal panels
 //! (not installed, not signed in, no vaults, generic).
 
+use jackin_tui::runtime::BlockingSubscription;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
-use tokio::sync::oneshot;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -89,28 +89,16 @@ enum LoadResult {
     Fields(anyhow::Result<Vec<OpField>>),
 }
 
-fn ready_picker_load(result: LoadResult) -> oneshot::Receiver<LoadResult> {
-    let (tx, rx) = oneshot::channel();
+fn ready_picker_load(result: LoadResult) -> BlockingSubscription<LoadResult> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
     let _ = tx.send(result);
     rx
 }
 
-#[cfg(test)]
 fn spawn_picker_load(
     worker: impl FnOnce() -> LoadResult + Send + 'static,
-) -> oneshot::Receiver<LoadResult> {
-    let (tx, rx) = oneshot::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(worker());
-    });
-    rx
-}
-
-#[cfg(not(test))]
-fn spawn_picker_load(
-    worker: impl FnOnce() -> LoadResult + Send + 'static,
-) -> oneshot::Receiver<LoadResult> {
-    jackin_tui::runtime::spawn_blocking_subscription(worker)
+) -> BlockingSubscription<LoadResult> {
+    jackin_tui::runtime::spawn_named_blocking_subscription("jackin-op-picker-load", worker)
 }
 
 pub struct OpPickerState {
@@ -166,7 +154,7 @@ pub struct OpPickerState {
     /// `Arc` so spawned worker threads share the same trait object
     /// (test injectees included).
     runner: Arc<dyn OpStructRunner + Send + Sync>,
-    rx: Option<oneshot::Receiver<LoadResult>>,
+    rx: Option<BlockingSubscription<LoadResult>>,
     /// Session-scoped cache shared with `ConsoleState`; the default
     /// constructor allocates a fresh empty one for unit tests.
     op_cache: Rc<RefCell<OpCache>>,
@@ -1912,7 +1900,7 @@ mod tests {
         s.fields.clear();
         s.field_refresh_in_place = true;
         // Publish the reloaded fields through the same arm the worker uses.
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx) = tokio::sync::oneshot::channel();
         assert!(
             tx.send(LoadResult::Fields(Ok(vec![
                 field_with_reference("user", "op://Personal/login/user"),

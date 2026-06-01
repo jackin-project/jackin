@@ -22,7 +22,9 @@ use jackin_console::widgets::github_picker::GithubPickerState;
 use jackin_console::widgets::mount_dst_choice::MountDstChoiceState;
 use jackin_console::widgets::{scope_picker::ScopePickerState, source_picker::SourcePickerState};
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
-use jackin_tui::runtime::{Subscription, SubscriptionPoll, spawn_blocking_subscription};
+use jackin_tui::runtime::{
+    BlockingSubscription, Subscription, SubscriptionPoll, spawn_blocking_subscription,
+};
 
 pub(crate) use crate::console::manager::mount_diff::{MountDiff, classify_mount_diffs};
 pub use crate::console::manager::mount_info_cache::MountInfoCache;
@@ -121,8 +123,8 @@ pub struct ManagerState<'a> {
     instances_last_refresh: Option<std::time::Instant>,
     instances_refresh_generation: u64,
     instances_refresh_rx:
-        Option<tokio::sync::oneshot::Receiver<(u64, Result<InstanceRefreshSnapshot, String>)>>,
-    mount_info_refresh_rx: Option<tokio::sync::oneshot::Receiver<PendingMountInfoRefresh>>,
+        Option<BlockingSubscription<(u64, Result<InstanceRefreshSnapshot, String>)>>,
+    mount_info_refresh_rx: Option<BlockingSubscription<PendingMountInfoRefresh>>,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.
@@ -531,7 +533,7 @@ pub struct PendingOpCommit {
     /// helper can set it on the form after the read succeeds).
     pub op_ref: crate::operator_env::OpRef,
     /// Oneshot receiver for the `spawn_blocking` result.
-    pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
+    pub rx: BlockingSubscription<anyhow::Result<()>>,
 }
 
 impl PendingOpCommit {
@@ -581,14 +583,14 @@ impl std::fmt::Debug for PendingOpCommit {
 
 /// In-flight isolation-drift check for a save operation.
 pub struct PendingDriftCheck {
-    pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<crate::config::DriftDetection>>,
+    pub rx: BlockingSubscription<anyhow::Result<crate::config::DriftDetection>>,
     pub plan: PendingSaveCommit,
     pub exit_on_success: bool,
     pub original_name: String,
 }
 
 pub struct PendingIsolationCleanup {
-    pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
+    pub rx: BlockingSubscription<anyhow::Result<()>>,
     pub plan: PendingSaveCommit,
     pub exit_on_success: bool,
 }
@@ -682,7 +684,7 @@ pub struct PendingRoleLoad {
     pub raw: String,
     pub key: String,
     pub source: crate::config::RoleSource,
-    pub rx: tokio::sync::oneshot::Receiver<anyhow::Result<()>>,
+    pub rx: BlockingSubscription<anyhow::Result<()>>,
 }
 
 impl std::fmt::Debug for PendingRoleLoad {
