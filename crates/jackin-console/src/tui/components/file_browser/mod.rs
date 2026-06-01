@@ -29,5 +29,6 @@ pub(super) mod render;
 pub(super) mod state;
 
 pub use git_prompt::{GitPromptFocus, git_prompt_rect, git_prompt_url_row_rect};
+pub use input::FileBrowserOutcome;
 pub use render::{listing_rect, render};
 pub use state::FileBrowserState;

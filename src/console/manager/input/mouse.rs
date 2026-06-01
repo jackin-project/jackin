@@ -23,6 +23,7 @@ use super::super::state::{
     DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     SettingsTab, clamp_split,
 };
+use jackin_console::services::file_browser::open_git_url;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
@@ -1326,8 +1327,8 @@ fn global_mount_rows_content_width(
 
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`
 /// whose git-prompt is active with a resolved URL, and the click lands
-/// on the URL row, fire `open::that_detached` best-effort. Returns
-/// `true` iff the click was consumed (URL opened). Non-matching stages,
+/// on the URL row, request browser-open from the non-TUI service adapter.
+/// Returns `true` iff the click was consumed. Non-matching stages,
 /// non-click events, and clicks outside the URL row all return `false`
 /// and the caller falls through to the list-view handler.
 ///
@@ -1342,7 +1343,11 @@ fn try_open_file_browser_git_url(
         return false;
     };
     let modal_area = modal_outer_rect(modal, term_size);
-    fb_state.maybe_open_url_on_click(modal_area, mouse.column, mouse.row)
+    let Some(url) = fb_state.url_to_open_on_click(modal_area, mouse.column, mouse.row) else {
+        return false;
+    };
+    open_git_url(&url);
+    true
 }
 
 /// Return the logical list row the mouse is over, or `None` if the click

@@ -10,6 +10,8 @@ use super::super::state::{ManagerState, Modal};
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_console::services::file_browser::open_git_url;
+use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 
 pub(super) fn handle_prelude_key(
@@ -112,7 +114,7 @@ pub(super) fn handle_prelude_modal(
                     return;
                 };
             match outcome {
-                ModalOutcome::Commit(path) => {
+                FileBrowserOutcome::Commit(path) => {
                     prelude.modal = None;
                     prelude.last_browser_cwd = browser_cwd;
                     prelude.accept_mount_src(path);
@@ -130,14 +132,15 @@ pub(super) fn handle_prelude_modal(
                         ),
                     });
                 }
-                ModalOutcome::Cancel => {
+                FileBrowserOutcome::Cancel => {
                     // Step 1 of the wizard — no prior state to rewind to.
                     // Close the modal; the outer dispatcher treats
                     // `modal = None + pending_name = None` as "cancelled"
                     // and drops back to the workspace list.
                     prelude.modal = None;
                 }
-                ModalOutcome::Continue => {}
+                FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
+                FileBrowserOutcome::Continue => {}
             }
         }
         PreludeModalDis::MountDstChoice => {

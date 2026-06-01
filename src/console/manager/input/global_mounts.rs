@@ -15,7 +15,8 @@ use crate::paths::JackinPaths;
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
-use jackin_console::tui::components::file_browser::FileBrowserState;
+use jackin_console::services::file_browser::open_git_url;
+use jackin_console::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
 use jackin_tui::components::{ConfirmState, TextInputState};
 
 fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
@@ -1148,7 +1149,7 @@ pub(super) fn handle_settings_confirm_modal(
             }
         },
         GlobalMountModal::FileBrowser { mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(path) => {
+            FileBrowserOutcome::Commit(path) => {
                 let src = path.display().to_string();
                 if let Some(draft) = settings.mounts.add_draft.as_mut() {
                     draft.src.clone_from(&src);
@@ -1163,13 +1164,17 @@ pub(super) fn handle_settings_confirm_modal(
                         ),
                 });
             }
-            ModalOutcome::Cancel => {
+            FileBrowserOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
                 if settings.mounts.modal.is_none() {
                     settings.mounts.add_draft = None;
                 }
             }
-            ModalOutcome::Continue => {
+            FileBrowserOutcome::OpenGitUrl(url) => {
+                open_git_url(&url);
+                settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
+            }
+            FileBrowserOutcome::Continue => {
                 settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
             }
         },

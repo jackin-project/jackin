@@ -16,7 +16,8 @@ use super::super::state::{
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
-use jackin_console::tui::components::file_browser::FileBrowserState;
+use jackin_console::services::file_browser::open_git_url;
+use jackin_console::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
@@ -906,14 +907,15 @@ pub(super) fn handle_editor_modal(
             }
         }
         Modal::FileBrowser { target, state } => match state.handle_key(key) {
-            ModalOutcome::Commit(path) => {
+            FileBrowserOutcome::Commit(path) => {
                 let target = *target;
                 apply_file_browser_to_editor(target, editor, path);
             }
-            ModalOutcome::Cancel => {
+            FileBrowserOutcome::Cancel => {
                 editor.pop_modal_chain();
             }
-            ModalOutcome::Continue => {}
+            FileBrowserOutcome::OpenGitUrl(url) => open_git_url(&url),
+            FileBrowserOutcome::Continue => {}
         },
         Modal::WorkdirPick { state } => match state.handle_key(key) {
             ModalOutcome::Commit(workdir) => {

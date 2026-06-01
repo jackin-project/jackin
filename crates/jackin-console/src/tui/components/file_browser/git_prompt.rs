@@ -4,8 +4,9 @@
 //! we pause navigation and show a small modal asking what to do
 //! (mount / pick-subdir / cancel / open-in-browser). This module owns
 //! the focus enum, the per-prompt key handler, and the overlay
-//! rendering. Git-origin inspection and browser launching live in
-//! `services::file_browser`.
+//! rendering. Git-origin inspection lives in `services::file_browser`;
+//! browser launching is requested as an input outcome for the owning
+//! console input layer to execute.
 
 use std::path::PathBuf;
 
@@ -19,10 +20,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use super::input::FileBrowserOutcome;
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-use crate::services::file_browser::{open_git_url, resolve_git_url};
-use jackin_tui::ModalOutcome;
+use crate::services::file_browser::resolve_git_url;
 use jackin_tui::components::{Panel, PanelFocus};
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
@@ -77,9 +78,9 @@ impl FileBrowserState {
     }
 
     /// Key handler used while the git-repo prompt is active.
-    pub(super) fn handle_git_prompt_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
+    pub(super) fn handle_git_prompt_key(&mut self, key: KeyEvent) -> FileBrowserOutcome<PathBuf> {
         let Some(path) = self.pending_git_prompt.clone() else {
-            return ModalOutcome::Continue;
+            return FileBrowserOutcome::Continue;
         };
         match key.code {
             KeyCode::Char('m' | 'M') => {
@@ -91,7 +92,7 @@ impl FileBrowserState {
             KeyCode::Char('p' | 'P') => {
                 self.dismiss_git_prompt();
                 self.set_cwd(&path);
-                ModalOutcome::Continue
+                FileBrowserOutcome::Continue
             }
             // `o` for "open the repo's web URL in the browser" — best-effort.
             // No-op when `pending_git_url` is `None` (non-GitHub origin or
@@ -99,15 +100,14 @@ impl FileBrowserState {
             // `--debug` channel since `FileBrowserState` has no error surface.
             // The overlay drops the `· O open` hint segment in the None case
             // so the keystroke is only advertised when it actually does something.
-            KeyCode::Char('o' | 'O') => {
-                if let Some(url) = self.pending_git_url.as_deref() {
-                    open_git_url(url);
-                }
-                ModalOutcome::Continue
-            }
+            KeyCode::Char('o' | 'O') => self
+                .pending_git_url
+                .clone()
+                .map(FileBrowserOutcome::OpenGitUrl)
+                .unwrap_or(FileBrowserOutcome::Continue),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => {
                 self.dismiss_git_prompt();
-                ModalOutcome::Continue
+                FileBrowserOutcome::Continue
             }
             KeyCode::Enter => {
                 let focus = self.pending_git_focus;
@@ -116,9 +116,9 @@ impl FileBrowserState {
                     GitPromptFocus::MountHere => self.commit_or_reject(path),
                     GitPromptFocus::EnterIn => {
                         self.set_cwd(&path);
-                        ModalOutcome::Continue
+                        FileBrowserOutcome::Continue
                     }
-                    GitPromptFocus::Cancel => ModalOutcome::Continue,
+                    GitPromptFocus::Cancel => FileBrowserOutcome::Continue,
                 }
             }
             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
@@ -127,7 +127,7 @@ impl FileBrowserState {
                     GitPromptFocus::EnterIn => GitPromptFocus::Cancel,
                     GitPromptFocus::Cancel => GitPromptFocus::MountHere,
                 };
-                ModalOutcome::Continue
+                FileBrowserOutcome::Continue
             }
             KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.pending_git_focus = match self.pending_git_focus {
@@ -135,9 +135,9 @@ impl FileBrowserState {
                     GitPromptFocus::EnterIn => GitPromptFocus::MountHere,
                     GitPromptFocus::Cancel => GitPromptFocus::EnterIn,
                 };
-                ModalOutcome::Continue
+                FileBrowserOutcome::Continue
             }
-            _ => ModalOutcome::Continue,
+            _ => FileBrowserOutcome::Continue,
         }
     }
 }
@@ -350,7 +350,7 @@ mod tests {
         // Index 0 is `..`; advance to `repo`.
         state.handle_key(key(KeyCode::Down));
         let outcome = state.handle_key(key(KeyCode::Enter));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.pending_git_prompt.is_some());
         assert_eq!(state.pending_git_focus, GitPromptFocus::MountHere);
     }
@@ -428,7 +428,7 @@ mod tests {
         assert_eq!(state.pending_git_focus, GitPromptFocus::MountHere);
         let outcome = state.handle_key(key(KeyCode::Enter));
         match outcome {
-            ModalOutcome::Commit(p) => {
+            FileBrowserOutcome::Commit(p) => {
                 assert_eq!(p.canonicalize().unwrap(), repo.canonicalize().unwrap(),);
             }
             other => panic!("expected Commit, got {other:?}"),
@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(state.pending_git_focus, GitPromptFocus::EnterIn);
 
         let outcome = state.handle_key(key(KeyCode::Enter));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
         assert_eq!(
             state.cwd.canonicalize().unwrap(),
@@ -474,7 +474,7 @@ mod tests {
         assert_eq!(state.pending_git_focus, GitPromptFocus::Cancel);
 
         let outcome = state.handle_key(key(KeyCode::Enter));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
         assert_eq!(
             state.cwd.canonicalize().unwrap(),
@@ -494,7 +494,7 @@ mod tests {
         state.handle_key(key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
         let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
     }
 
@@ -511,7 +511,7 @@ mod tests {
         state.handle_key(key(KeyCode::Tab));
         let outcome = state.handle_key(key(KeyCode::Char('m')));
         match outcome {
-            ModalOutcome::Commit(p) => {
+            FileBrowserOutcome::Commit(p) => {
                 assert_eq!(p.canonicalize().unwrap(), repo.canonicalize().unwrap(),);
             }
             other => panic!("expected Commit, got {other:?}"),
@@ -540,18 +540,17 @@ mod tests {
         let focus_before = state.pending_git_focus;
 
         let outcome = state.handle_key(key(KeyCode::Char('o')));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         // Prompt still open, focus unchanged.
         assert!(state.pending_git_prompt.is_some());
         assert_eq!(state.pending_git_focus, focus_before);
     }
 
-    /// With `pending_git_url == Some(url)`, `O` still returns Continue
-    /// and keeps the prompt open (open-in-browser is best-effort and
-    /// doesn't dismiss). Hidden file:// URL so `open::that_detached` is
-    /// a silent no-op in CI even when a GUI isn't available.
+    /// With `pending_git_url == Some(url)`, `O` requests browser-open and
+    /// keeps the prompt open. The owning console input layer executes the
+    /// side effect.
     #[test]
-    fn o_shortcut_with_url_returns_continue_and_keeps_prompt_open() {
+    fn o_shortcut_with_url_returns_open_request_and_keeps_prompt_open() {
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let repo = parent.join("repo");
@@ -565,7 +564,10 @@ mod tests {
         state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
 
         let outcome = state.handle_key(key(KeyCode::Char('O')));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(
+            outcome,
+            FileBrowserOutcome::OpenGitUrl(url) if url == "file:///tmp/definitely-not-real"
+        ));
         assert!(state.pending_git_prompt.is_some());
         // URL stays on state — O doesn't dismiss the prompt.
         assert_eq!(

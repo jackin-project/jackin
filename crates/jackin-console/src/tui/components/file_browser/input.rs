@@ -7,13 +7,20 @@ use ratatui::layout::Rect;
 
 use super::git_prompt::git_prompt_url_row_rect;
 use super::state::FileBrowserState;
-use crate::services::file_browser::{
-    canonicalize_or_self, is_directory, is_within_root, open_git_url,
-};
-use jackin_tui::ModalOutcome;
+use crate::services::file_browser::{canonicalize_or_self, is_directory, is_within_root};
+
+/// Semantic result from file-browser input. External work such as opening
+/// URLs is requested here and executed by the owning console input layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileBrowserOutcome<T> {
+    Continue,
+    Commit(T),
+    Cancel,
+    OpenGitUrl(String),
+}
 
 impl FileBrowserState {
-    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> FileBrowserOutcome<PathBuf> {
         // Git-repo prompt has its own key map; delegate before clearing
         // any state the main handler would otherwise reset.
         if self.pending_git_prompt.is_some() {
@@ -26,15 +33,15 @@ impl FileBrowserState {
         match key.code {
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
                 self.select_prev();
-                ModalOutcome::Continue
+                FileBrowserOutcome::Continue
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
                 self.select_next();
-                ModalOutcome::Continue
+                FileBrowserOutcome::Continue
             }
             KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.navigate_up();
-                ModalOutcome::Continue
+                FileBrowserOutcome::Continue
             }
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l' | 'L') => self.handle_enter(),
             KeyCode::Char('s' | 'S') => {
@@ -53,29 +60,29 @@ impl FileBrowserState {
                 // the modal when already at root. `rejected_reason` was
                 // cleared above; preserve that in both branches.
                 if self.cwd == self.root {
-                    ModalOutcome::Cancel
+                    FileBrowserOutcome::Cancel
                 } else {
                     self.navigate_up();
-                    ModalOutcome::Continue
+                    FileBrowserOutcome::Continue
                 }
             }
-            _ => ModalOutcome::Continue,
+            _ => FileBrowserOutcome::Continue,
         }
     }
 
     /// Shared path for Enter / l / → on a highlighted entry: navigate
     /// into dirs, open the git-repo prompt on repo rows, up on the `..` row.
-    pub(super) fn handle_enter(&mut self) -> ModalOutcome<PathBuf> {
+    pub(super) fn handle_enter(&mut self) -> FileBrowserOutcome<PathBuf> {
         let Some(entry) = self.highlighted().cloned() else {
-            return ModalOutcome::Continue;
+            return FileBrowserOutcome::Continue;
         };
         if entry.is_parent {
             self.navigate_up();
-            return ModalOutcome::Continue;
+            return FileBrowserOutcome::Continue;
         }
         if entry.is_git {
             self.open_git_prompt(entry.path);
-            return ModalOutcome::Continue;
+            return FileBrowserOutcome::Continue;
         }
         // Plain folder — navigate in. Canonicalize so a legitimate
         // symlinked-dir-inside-root still resolves to its real path;
@@ -85,12 +92,12 @@ impl FileBrowserState {
             self.cwd = canonicalize_or_self(entry.path);
             self.reload();
         }
-        ModalOutcome::Continue
+        FileBrowserOutcome::Continue
     }
 
     /// Shared commit-or-reject logic used by `s` and the git-repo prompt's
     /// "Mount this repository" option. Enforces the same sandbox rules.
-    pub(super) fn commit_or_reject(&mut self, target: PathBuf) -> ModalOutcome<PathBuf> {
+    pub(super) fn commit_or_reject(&mut self, target: PathBuf) -> FileBrowserOutcome<PathBuf> {
         // Canonicalize once — every reserved-target check below uses the
         // canonical form so a symlink pointing to a reserved path cannot
         // bypass the rule just because its lexical path looks innocent.
@@ -102,13 +109,13 @@ impl FileBrowserState {
         // race between listing and commit could still slip one through.
         if !is_within_root(&canonical, &self.root) {
             self.rejected_reason = Some("Cannot commit a path outside $HOME.".into());
-            return ModalOutcome::Continue;
+            return FileBrowserOutcome::Continue;
         }
         // Reject root itself — user must navigate into a subfolder.
         if canonical == self.root {
             self.rejected_reason =
                 Some("Cannot use $HOME itself — navigate into a subfolder.".into());
-            return ModalOutcome::Continue;
+            return FileBrowserOutcome::Continue;
         }
         // Reject jackin's own data directory. Canonicalize the join so a
         // symlinked `.jackin` can't fool `starts_with` either.
@@ -116,32 +123,28 @@ impl FileBrowserState {
         if canonical.starts_with(&jackin_data) {
             self.rejected_reason =
                 Some("Cannot use ~/.jackin/* — those paths are reserved.".into());
-            return ModalOutcome::Continue;
+            return FileBrowserOutcome::Continue;
         }
         // Return the original (lexical) path — the UI displays it as the
         // operator typed/clicked it; canonicalization is purely a policy
         // check.
-        ModalOutcome::Commit(target)
+        FileBrowserOutcome::Commit(target)
     }
 
-    /// Handle a left-click at `(column, row)` in absolute terminal
-    /// coordinates while `modal_area` hosts this browser. Returns `true`
-    /// iff the click hit the git-prompt's URL row AND `pending_git_url`
-    /// is resolved. A `true` return doesn't dismiss the prompt, matching
-    /// the keyboard keypath.
-    pub fn maybe_open_url_on_click(&self, modal_area: Rect, column: u16, row: u16) -> bool {
+    /// Return the URL requested by a left-click at `(column, row)` in
+    /// absolute terminal coordinates while `modal_area` hosts this browser.
+    /// A matching click doesn't dismiss the prompt, matching the keyboard
+    /// keypath.
+    pub fn url_to_open_on_click(&self, modal_area: Rect, column: u16, row: u16) -> Option<String> {
         if !self.url_row_hit(modal_area, column, row) {
-            return false;
+            return None;
         }
-        if let Some(url) = self.pending_git_url.as_deref() {
-            open_git_url(url);
-        }
-        true
+        self.pending_git_url.clone()
     }
 
     /// Side-effect-free hit-test: whether `(column, row)` lands on the
     /// git-prompt's clickable URL row (prompt active and a URL resolved).
-    /// Separated from [`Self::maybe_open_url_on_click`] so the hover
+    /// Separated from [`Self::url_to_open_on_click`] so the hover
     /// hand-pointer cue can test the same geometry without opening the URL.
     #[must_use]
     pub fn url_row_hit(&self, modal_area: Rect, column: u16, row: u16) -> bool {
@@ -195,7 +198,7 @@ mod tests {
 
         let outcome = state.handle_key(key(KeyCode::Char('s')));
         match outcome {
-            ModalOutcome::Commit(path) => {
+            FileBrowserOutcome::Commit(path) => {
                 assert_eq!(path.canonicalize().unwrap(), child.canonicalize().unwrap(),);
             }
             other => panic!("expected Commit, got {other:?}"),
@@ -212,7 +215,7 @@ mod tests {
         // Empty except for `..` — `s` should commit cwd, not `..`.
         let outcome = state.handle_key(key(KeyCode::Char('s')));
         match outcome {
-            ModalOutcome::Commit(path) => {
+            FileBrowserOutcome::Commit(path) => {
                 assert_eq!(path.canonicalize().unwrap(), empty.canonicalize().unwrap(),);
             }
             other => panic!("expected Commit, got {other:?}"),
@@ -224,7 +227,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.rejected_reason.is_some());
     }
 
@@ -236,7 +239,7 @@ mod tests {
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), jackin);
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert!(state.rejected_reason.is_some());
     }
 
@@ -257,7 +260,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
         let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(matches!(outcome, ModalOutcome::Cancel));
+        assert!(matches!(outcome, FileBrowserOutcome::Cancel));
     }
 
     #[test]
@@ -268,7 +271,7 @@ mod tests {
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), sub);
         let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         assert_eq!(
             state.cwd.canonicalize().unwrap(),
             tmp.path().canonicalize().unwrap(),
@@ -297,7 +300,7 @@ mod tests {
         let mut state = make_state_at(tmp.path().to_path_buf());
         state.rejected_reason = Some("stale reason".into());
         let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(matches!(outcome, ModalOutcome::Cancel));
+        assert!(matches!(outcome, FileBrowserOutcome::Cancel));
         assert!(state.rejected_reason.is_none());
     }
 
@@ -404,9 +407,11 @@ mod tests {
         // Click at the URL row's rough centre — still false because no URL.
         let modal = manufactured_modal_area();
         let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
-        let opened =
-            state.maybe_open_url_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
-        assert!(!opened, "click should not open when no URL is resolved");
+        let opened = state.url_to_open_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
+        assert!(
+            opened.is_none(),
+            "click should not open when no URL is resolved"
+        );
     }
 
     #[test]
@@ -425,14 +430,14 @@ mod tests {
         let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
         // One row below the URL row — outside.
         let opened =
-            state.maybe_open_url_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y + 1);
-        assert!(!opened, "click outside URL row should not open");
+            state.url_to_open_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y + 1);
+        assert!(opened.is_none(), "click outside URL row should not open");
         // Column outside the URL row's x-range.
-        let opened = state.maybe_open_url_on_click(
+        let opened = state.url_to_open_on_click(
             modal, modal.x, // left border column
             url_rect.y,
         );
-        assert!(!opened, "click on left border should not open");
+        assert!(opened.is_none(), "click on left border should not open");
     }
 
     #[test]
@@ -449,9 +454,12 @@ mod tests {
 
         let modal = manufactured_modal_area();
         let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
-        let opened =
-            state.maybe_open_url_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
-        assert!(opened, "click on URL row with URL should return true");
+        let opened = state.url_to_open_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
+        assert_eq!(
+            opened.as_deref(),
+            Some("file:///tmp/definitely-not-real"),
+            "click on URL row with URL should return URL",
+        );
         // Click doesn't dismiss the prompt.
         assert!(state.pending_git_prompt.is_some());
     }
@@ -472,7 +480,7 @@ mod tests {
 
         let mut fb = FileBrowserState::new_at(root.clone(), root);
         let outcome = fb.commit_or_reject(outside);
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
             .rejected_reason
             .as_deref()
@@ -497,7 +505,7 @@ mod tests {
 
         let mut fb = FileBrowserState::new_at(root.clone(), root);
         let outcome = fb.commit_or_reject(link);
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
             .rejected_reason
             .as_deref()
@@ -523,7 +531,7 @@ mod tests {
 
         let mut fb = FileBrowserState::new_at(root.clone(), root);
         let outcome = fb.commit_or_reject(link);
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(matches!(outcome, FileBrowserOutcome::Continue));
         let reason = fb
             .rejected_reason
             .as_deref()
@@ -550,7 +558,7 @@ mod tests {
         let mut fb = FileBrowserState::new_at(root.clone(), root);
         let outcome = fb.commit_or_reject(link.clone());
         match outcome {
-            ModalOutcome::Commit(path) => {
+            FileBrowserOutcome::Commit(path) => {
                 // The lexical (returned) path is the symlink itself,
                 // preserving what the operator clicked/highlighted.
                 assert_eq!(path, link);
@@ -570,8 +578,10 @@ mod tests {
 
         let modal = manufactured_modal_area();
         let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
-        let opened =
-            state.maybe_open_url_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
-        assert!(!opened, "click without active git prompt should be inert");
+        let opened = state.url_to_open_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
+        assert!(
+            opened.is_none(),
+            "click without active git prompt should be inert"
+        );
     }
 }
