@@ -16,8 +16,8 @@ use super::super::state::{
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_console::widgets::file_browser::FileBrowserState;
-use jackin_console::widgets::workdir_pick::WorkdirPickState;
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {

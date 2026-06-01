@@ -136,7 +136,7 @@ impl jackin_console::workspace::WorkspaceRoleAccess for WorkspaceConfig {
     }
 }
 
-impl jackin_console::widgets::workdir_pick::WorkdirMount for MountConfig {
+impl jackin_console::tui::components::workdir_pick::WorkdirMount for MountConfig {
     fn dst(&self) -> &str {
         &self.dst
     }

@@ -20,7 +20,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             jackin_console::widgets::file_browser::render(frame, modal_area, state);
         }
         Modal::WorkdirPick { state } => {
-            jackin_console::widgets::workdir_pick::render(frame, modal_area, state);
+            jackin_console::tui::components::workdir_pick::render(frame, modal_area, state);
         }
         Modal::Confirm { state, .. } => {
             jackin_tui::components::render_confirm_dialog(frame, modal_area, state);

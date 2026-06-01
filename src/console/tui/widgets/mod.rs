@@ -144,7 +144,7 @@ mod consistency_tests {
 
     fn render_workdir_pick() -> (Buffer, Rect) {
         use crate::workspace::MountConfig;
-        use jackin_console::widgets::workdir_pick::{WorkdirPickState, render};
+        use jackin_console::tui::components::workdir_pick::{WorkdirPickState, render};
         let area = Rect::new(0, 0, 60, 12);
         let mounts = [MountConfig {
             src: "/home/user/app".into(),

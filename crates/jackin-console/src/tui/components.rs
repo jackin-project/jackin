@@ -13,3 +13,4 @@ pub mod role_picker;
 pub mod scope_picker;
 pub mod source_picker;
 pub mod spinner;
+pub mod workdir_pick;

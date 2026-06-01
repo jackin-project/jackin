@@ -10,7 +10,7 @@ use super::super::state::{ManagerState, Modal};
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
-use jackin_console::widgets::workdir_pick::WorkdirPickState;
+use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 
 pub(super) fn handle_prelude_key(
     state: &mut ManagerState<'_>,
@@ -471,7 +471,7 @@ mod tests {
         prelude.used_edit_dst = true;
         prelude.accept_mount_dst("/home/user/project".into(), false);
         prelude.modal = Some(Modal::WorkdirPick {
-            state: jackin_console::widgets::workdir_pick::WorkdirPickState::from_mounts(&[
+            state: jackin_console::tui::components::workdir_pick::WorkdirPickState::from_mounts(&[
                 crate::workspace::MountConfig {
                     src: "/home/user/project".into(),
                     dst: "/home/user/project".into(),
