@@ -1561,7 +1561,7 @@ fn commit_text(
                 global.error = Some(MOUNT_GONE.into());
                 return SettingsModalOutcome::Continue;
             };
-            row.scope = scope_value(trimmed);
+            row.scope = crate::console::domain::global_mount_scope_value(trimmed);
             global.clear_modal_chain();
         }
         GlobalMountTextTarget::Rename => {
@@ -1653,7 +1653,7 @@ fn commit_add_scope_text(
         global.error = Some(ADD_DRAFT_LOST.into());
         return SettingsModalOutcome::Continue;
     };
-    draft.scope = scope_value(value);
+    draft.scope = crate::console::domain::global_mount_scope_value(value);
     SettingsModalOutcome::OpenGlobalMountFileBrowser
 }
 
@@ -1712,7 +1712,11 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
         global.add_draft = Some(draft);
         return;
     }
-    draft.name = unique_global_mount_name(global, &draft);
+    draft.name = crate::console::domain::unique_global_mount_name(
+        &global.pending,
+        draft.scope.as_deref(),
+        &draft.dst,
+    );
     global.pending.push(crate::config::GlobalMountRow {
         scope: draft.scope,
         name: draft.name,
@@ -1720,45 +1724,6 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
     });
     global.selected = global.pending.len().saturating_sub(1);
     global.clear_modal_chain();
-}
-
-fn unique_global_mount_name(
-    global: &crate::console::tui::state::GlobalMountsState<'_>,
-    draft: &GlobalMountDraft,
-) -> String {
-    let basename = std::path::Path::new(&draft.dst)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or("mount");
-    let base = basename
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_string();
-    let base = if base.is_empty() {
-        "mount".to_string()
-    } else {
-        base
-    };
-    let mut candidate = base.clone();
-    let mut suffix = 2;
-    while global
-        .pending
-        .iter()
-        .any(|row| row.scope == draft.scope && row.name == candidate)
-    {
-        candidate = format!("{base}-{suffix}");
-        suffix += 1;
-    }
-    candidate
 }
 
 fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
@@ -2111,14 +2076,6 @@ fn env_text_modal(
     SettingsEnvModal::Text {
         target,
         state: Box::new(state),
-    }
-}
-
-fn scope_value(value: &str) -> Option<String> {
-    if value.is_empty() {
-        None
-    } else {
-        Some(value.to_string())
     }
 }
 
