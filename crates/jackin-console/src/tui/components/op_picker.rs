@@ -402,6 +402,41 @@ pub fn section_header_collapse_target(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldStageCommitPlan {
+    ToggleSection { name: String, collapsed: bool },
+    ExistingField { field_idx: usize },
+    NewField {
+        pending_section: Option<String>,
+        field_label_origin: FieldLabelOrigin,
+        stage: OpPickerStage,
+    },
+    NoSelection,
+}
+
+pub fn field_stage_commit_plan(
+    row: Option<&FieldDisplayRow>,
+    collapsed_sections: &HashSet<String>,
+    selected_section: Option<&str>,
+) -> FieldStageCommitPlan {
+    match row {
+        Some(FieldDisplayRow::SectionHeader { .. }) => {
+            section_header_collapse_target(row, collapsed_sections, SectionCollapseIntent::Toggle)
+                .map(|(name, collapsed)| FieldStageCommitPlan::ToggleSection { name, collapsed })
+                .unwrap_or(FieldStageCommitPlan::NoSelection)
+        }
+        Some(FieldDisplayRow::Field { field_idx }) => FieldStageCommitPlan::ExistingField {
+            field_idx: *field_idx,
+        },
+        Some(FieldDisplayRow::NewFieldSentinel) => FieldStageCommitPlan::NewField {
+            pending_section: selected_section.map(str::to_string),
+            field_label_origin: FieldLabelOrigin::NewField,
+            stage: OpPickerStage::FieldLabel,
+        },
+        Some(FieldDisplayRow::NewSectionSentinel) | None => FieldStageCommitPlan::NoSelection,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamingStagePlan {
     pub stage: OpPickerStage,
     pub field_label_origin: Option<FieldLabelOrigin>,
@@ -1526,6 +1561,43 @@ mod tests {
                 SectionCollapseIntent::Toggle,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn field_stage_commit_plan_routes_row_kinds() {
+        let row = FieldDisplayRow::SectionHeader {
+            name: "Auth".to_string(),
+            field_count: 2,
+        };
+        let collapsed = HashSet::new();
+        assert_eq!(
+            field_stage_commit_plan(Some(&row), &collapsed, Some("Auth")),
+            FieldStageCommitPlan::ToggleSection {
+                name: "Auth".to_string(),
+                collapsed: true,
+            }
+        );
+
+        assert_eq!(
+            field_stage_commit_plan(
+                Some(&FieldDisplayRow::Field { field_idx: 3 }),
+                &collapsed,
+                Some("Auth"),
+            ),
+            FieldStageCommitPlan::ExistingField { field_idx: 3 }
+        );
+        assert_eq!(
+            field_stage_commit_plan(Some(&FieldDisplayRow::NewFieldSentinel), &collapsed, None),
+            FieldStageCommitPlan::NewField {
+                pending_section: None,
+                field_label_origin: FieldLabelOrigin::NewField,
+                stage: OpPickerStage::FieldLabel,
+            }
+        );
+        assert_eq!(
+            field_stage_commit_plan(Some(&FieldDisplayRow::NewSectionSentinel), &collapsed, None),
+            FieldStageCommitPlan::NoSelection
         );
     }
 

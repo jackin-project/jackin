@@ -8,12 +8,12 @@ use jackin_tui::ModalOutcome;
 use jackin_tui::components::TextInputState;
 
 use super::{
-    FieldDisplayRow, FieldLabelOrigin, OpField, OpItem, OpLoadState, OpPickerError,
-    OpPickerSelection, OpPickerStage, OpPickerState, SectionCollapseIntent,
+    FieldStageCommitPlan, OpField, OpItem, OpLoadState, OpPickerError, OpPickerSelection,
+    OpPickerStage, OpPickerState, SectionCollapseIntent, SectionStageCommitPlan,
     build_op_ref_on_commit, field_label_cancel_plan, field_stage_back_plan,
-    filter_reset_selection_for_stage, new_item_name_commit_plan, new_section_name_commit_plan,
-    section_header_collapse_target, section_stage_back_plan, section_stage_commit_plan,
-    SectionStageCommitPlan,
+    field_stage_commit_plan, filter_reset_selection_for_stage, new_item_name_commit_plan,
+    new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
+    section_stage_commit_plan,
 };
 
 impl OpPickerState {
@@ -394,31 +394,29 @@ impl OpPickerState {
                 let visible = self.filtered_fields();
                 let cur = self.field_list_state.selected.unwrap_or(0);
                 let rows = self.build_field_display_rows();
-                match rows.get(cur) {
-                    Some(FieldDisplayRow::SectionHeader { .. }) => {
-                        if let Some((name, collapsed)) = section_header_collapse_target(
-                            rows.get(cur),
-                            &self.collapsed_sections,
-                            SectionCollapseIntent::Toggle,
-                        ) {
-                            self.set_section_collapsed(name, collapsed);
-                        }
+                match field_stage_commit_plan(
+                    rows.get(cur),
+                    &self.collapsed_sections,
+                    self.selected_section.as_deref(),
+                ) {
+                    FieldStageCommitPlan::ToggleSection { name, collapsed } => {
+                        self.set_section_collapsed(name, collapsed);
                     }
-                    Some(FieldDisplayRow::Field { field_idx }) => {
-                        if let Some(field) = visible.get(*field_idx) {
+                    FieldStageCommitPlan::ExistingField { field_idx } => {
+                        if let Some(field) = visible.get(field_idx) {
                             return ModalOutcome::Commit(self.commit_existing_field(field));
                         }
                     }
-                    Some(FieldDisplayRow::NewFieldSentinel) => {
-                        // The Field stage is scoped to the chosen section, so
-                        // the new field lands there too.
-                        self.pending_section = self.selected_section.clone();
-                        self.field_label_origin = FieldLabelOrigin::NewField;
-                        self.stage = OpPickerStage::FieldLabel;
+                    FieldStageCommitPlan::NewField {
+                        pending_section,
+                        field_label_origin,
+                        stage,
+                    } => {
+                        self.pending_section = pending_section;
+                        self.field_label_origin = field_label_origin;
+                        self.stage = stage;
                     }
-                    // Create mode no longer surfaces NewSectionSentinel on the
-                    // Field stage; section creation lives on the Section stage.
-                    Some(FieldDisplayRow::NewSectionSentinel) | None => {}
+                    FieldStageCommitPlan::NoSelection => {}
                 }
                 ModalOutcome::Continue
             }
