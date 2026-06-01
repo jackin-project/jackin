@@ -897,7 +897,7 @@ Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-
 | Workdir picker | <RepoFile path="crates/jackin-console/src/tui/components/workdir_pick.rs" /> | Filtered list of mounted workspace paths | Mount configuration flows that reuse an existing workspace path |
 | Confirm dialog | <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule) | Any destructive or irreversible action |
 | Save / discard strip | <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> | Save / Discard two-button strip, designed for form footers | Bottom of any editable form |
-| File browser | <RepoFile path="crates/jackin-console/src/tui/components/file_browser/mod.rs" /> + <RepoFile path="crates/jackin-console/src/services/file_browser.rs" /> | Host filesystem navigation UI plus non-TUI directory/sandbox/Git URL adapters | Any flow needing to pick a local file or directory |
+| File browser | <RepoFile path="crates/jackin-console/src/tui/components/file_browser/mod.rs" /> + <RepoFile path="crates/jackin-console/src/services/file_browser.rs" /> | Host filesystem navigation UI; Git URL lookup and browser-open leave as typed outcomes for non-TUI adapters | Any flow needing to pick a local file or directory |
 | GitHub picker | <RepoFile path="crates/jackin-console/src/tui/components/github_picker.rs" /> | GitHub org/repo drill-down | Any flow needing to select a GitHub repository |
 | Error popup | <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" /> | Scrollable red-border error modal (see Error Surface rule) | All error display |
 | Panel rain | Background rain animation | Background decoration |
