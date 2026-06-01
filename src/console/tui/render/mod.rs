@@ -2,6 +2,8 @@
 
 pub mod editor;
 mod frame;
+#[cfg(test)]
+mod frame_tests;
 pub(crate) mod global_mounts;
 pub(crate) mod list;
 pub(crate) mod modal;
