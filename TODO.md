@@ -55,7 +55,7 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
   2. Move launch update/model code (`LaunchView`, `LaunchMessage`, failure state, prompt result) into `jackin-launch`.
   3. Move launch view/event-loop code (`RichRenderer`, rain, failure/build-log dialogs) into `jackin-launch`, replacing root-only dependencies with explicit adapters for diagnostics, build-log snapshots, terminal globals, and ANSI span parsing.
   4. Extract `src/console/` into `crates/jackin-console/`, with per-screen state/update/tui modules and root `jackin` routing CLI/runtime integration into the crate.
-- **Last verified:** 2026-05-31 — `crates/jackin-launch` exists and owns the public launch model/stage vocabulary; root `runtime::progress` re-exports it for existing callers.
+- **Last verified:** 2026-06-01 — `crates/jackin-launch` owns the public launch model/stage vocabulary; `crates/jackin-console` owns the terminal shell helpers plus growing shared console models/widgets, including picker state, 1Password breadcrumb parsing/rendering, mount-row helpers, modal footer hints, and modal rect helpers. Root `src/console/` still contains the main manager event loop, root-specific screen state, and large render/input modules, so this remains incomplete.
 - **Done when:** `cargo build -p jackin-launch` and `cargo build -p jackin-console` compile the real launch/console implementations, `src/runtime/progress.rs` no longer contains the cockpit implementation, root `src/console/` is replaced by a thin integration facade or removed, and the roadmap's Phase 10 status can be marked complete.
 
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check
