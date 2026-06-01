@@ -7,7 +7,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEve
 use jackin_tui::components::StatusFooterHover;
 use ratatui::layout::Rect;
 
-use crate::tui::components::build_log_dialog::build_log_scroll_filled;
+use crate::tui::components::build_log_dialog::build_log_scroll_filled_for_lines;
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
 };
@@ -24,7 +24,7 @@ fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
     let _dirty = update_launch_view(
         view,
         LaunchMessage::BuildLogScrolled {
-            filled: build_log_scroll_filled(area),
+            filled: build_log_scroll_filled_for_lines(area, &view.build_log_lines),
             delta,
         },
     );
@@ -119,7 +119,7 @@ fn handle_cockpit_mouse_down(
     } else if hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode()) {
         let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoOpened);
         terminal.set_pointer_shape(false);
-    } else if crate::build_log::len() > 0 && hit_activity(v, col, row) {
+    } else if !v.build_log_lines.is_empty() && hit_activity(v, col, row) {
         let _dirty = update_launch_view(v, LaunchMessage::BuildLogOpened);
         terminal.set_pointer_shape(false);
     }
@@ -145,7 +145,7 @@ fn handle_cockpit_mouse_move(
         return;
     }
     let activity_hovering =
-        !v.build_log_open && crate::build_log::len() > 0 && hit_activity(v, col, row);
+        !v.build_log_open && !v.build_log_lines.is_empty() && hit_activity(v, col, row);
     let container_hovering =
         hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode());
     let hover = StatusFooterHover {

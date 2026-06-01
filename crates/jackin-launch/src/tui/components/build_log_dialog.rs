@@ -14,18 +14,17 @@ use crate::LaunchView;
 use crate::tui::components::dialog::dialog_backdrop;
 
 #[must_use]
-pub fn build_log_scroll_filled(area: Rect) -> usize {
+pub fn build_log_scroll_filled_for_lines(area: Rect, raw: &[String]) -> usize {
     let box_area = Rect {
         height: area.height.saturating_sub(1),
         ..area
     };
     let viewport_w = viewport_width(box_area);
     let viewport_h = viewport_height(box_area);
-    let raw = crate::build_log::snapshot();
     let line_count = if raw.is_empty() {
         1
     } else {
-        wrap_build_log_lines(raw, viewport_w).len()
+        wrap_build_log_lines(raw.to_vec(), viewport_w).len()
     };
     jackin_tui::scroll::max_offset(line_count, viewport_h)
 }
@@ -52,7 +51,7 @@ const BUILD_LOG_HINT: &[HintSpan<'static>] = &[
 pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
     let (box_area, hint_area) = dialog_backdrop(frame, area);
 
-    let title = if crate::build_log::is_active() {
+    let title = if view.build_log_active {
         " Docker build · building… "
     } else {
         " Docker build "
@@ -60,7 +59,7 @@ pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchV
     // The full output drives the shared scrollable block so its proportional
     // scrollbar is correct. Cloning the (capped) buffer is acceptable here: the
     // overlay is a transient, operator-opened modal, not the steady cockpit.
-    let raw = crate::build_log::snapshot();
+    let raw = view.build_log_lines.clone();
     let viewport_w = viewport_width(box_area);
     let lines: Vec<Line<'_>> = if raw.is_empty() {
         vec![Line::from(Span::styled(

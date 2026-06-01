@@ -27,6 +27,8 @@ pub fn initial_view() -> LaunchView {
         frame: 0,
         build_log_open: false,
         build_log_scroll: jackin_tui::scroll::TailScroll::default(),
+        build_log_lines: Vec::new(),
+        build_log_active: false,
         footer_hover: StatusFooterHover::default(),
         label_transition: None,
         failure_copy_hover: None,
@@ -94,10 +96,14 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         LaunchMessage::RenderTick {
             advance_frame,
             build_log_filled,
+            build_log_lines,
+            build_log_active,
         } => {
             if advance_frame {
                 view.frame = view.frame.wrapping_add(1);
             }
+            view.build_log_lines = build_log_lines;
+            view.build_log_active = build_log_active;
             if let Some(filled) = build_log_filled {
                 view.build_log_scroll.clamp(filled);
             }
@@ -288,11 +294,15 @@ mod tests {
             LaunchMessage::RenderTick {
                 advance_frame: true,
                 build_log_filled: Some(3),
+                build_log_lines: vec!["hello".to_string()],
+                build_log_active: true,
             },
         );
 
         assert_eq!(view.frame, 1);
         assert_eq!(view.build_log_scroll.offset(), 3);
+        assert_eq!(view.build_log_lines, vec!["hello"]);
+        assert!(view.build_log_active);
     }
 
     #[test]

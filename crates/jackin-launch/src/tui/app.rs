@@ -84,6 +84,10 @@ pub struct LaunchView {
     pub build_log_open: bool,
     /// Lines scrolled up from the tail of the build log (0 = follow newest).
     pub build_log_scroll: jackin_tui::scroll::TailScroll,
+    /// Render-safe snapshot of retained docker-build output.
+    pub build_log_lines: Vec<String>,
+    /// Whether docker-build capture is currently active.
+    pub build_log_active: bool,
     /// Pointer hover state for clickable footer spans.
     pub footer_hover: StatusFooterHover,
     pub label_transition: Option<StageLabelTransition>,

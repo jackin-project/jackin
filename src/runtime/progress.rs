@@ -20,10 +20,8 @@ pub use jackin_launch::progress::LaunchProgress;
 #[cfg(test)]
 use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
 #[cfg(test)]
-use jackin_launch::tui::components::build_log_dialog::build_log_scroll_filled;
-#[cfg(test)]
 use jackin_launch::tui::components::build_log_dialog::{
-    render_build_log_dialog, wrap_build_log_lines,
+    build_log_scroll_filled_for_lines, render_build_log_dialog, wrap_build_log_lines,
 };
 #[cfg(test)]
 use jackin_launch::tui::components::failure_dialog::failure_popup_hyperlink_overlay;
@@ -697,6 +695,8 @@ mod tests {
             frame: 0,
             build_log_open: true,
             build_log_scroll: jackin_tui::scroll::TailScroll::default(),
+            build_log_lines: jackin_launch::build_log::snapshot(),
+            build_log_active: jackin_launch::build_log::is_active(),
             footer_hover: StatusFooterHover::default(),
             label_transition: None,
             failure_copy_hover: None,
@@ -731,7 +731,8 @@ mod tests {
         jackin_launch::build_log::end();
 
         let area = Rect::new(0, 0, 40, 8);
-        let filled = build_log_scroll_filled(area);
+        let lines = jackin_launch::build_log::snapshot();
+        let filled = build_log_scroll_filled_for_lines(area, &lines);
         assert!(filled > 1);
         let mut view = LaunchView {
             identity: None,
@@ -742,6 +743,8 @@ mod tests {
             frame: 0,
             build_log_open: true,
             build_log_scroll: jackin_tui::scroll::TailScroll::new(usize::MAX),
+            build_log_lines: lines,
+            build_log_active: jackin_launch::build_log::is_active(),
             footer_hover: StatusFooterHover::default(),
             label_transition: None,
             failure_copy_hover: None,
@@ -792,6 +795,8 @@ mod tests {
             frame: 0,
             build_log_open: false,
             build_log_scroll: jackin_tui::scroll::TailScroll::default(),
+            build_log_lines: Vec::new(),
+            build_log_active: false,
             footer_hover: StatusFooterHover::default(),
             label_transition: None,
             failure_copy_hover: None,

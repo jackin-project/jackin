@@ -14,7 +14,7 @@ use ratatui::text::Line;
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
 };
-use crate::tui::components::build_log_dialog::build_log_scroll_filled;
+use crate::tui::components::build_log_dialog::build_log_scroll_filled_for_lines;
 use crate::tui::message::LaunchMessage;
 use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
 use crate::tui::update::update_launch_view;
@@ -73,12 +73,14 @@ impl RichDriver {
                     handle_cockpit_input(&view, &run_id, host, jackin_version);
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
+                            let build_log_lines = crate::build_log::snapshot();
+                            let build_log_active = crate::build_log::is_active();
                             let build_log_filled = if v.build_log_open {
                                 let area = crossterm::terminal::size()
                                     .ok()
                                     .map(|(width, height)| Rect::new(0, 0, width, height))
                                     .unwrap_or_default();
-                                Some(build_log_scroll_filled(area))
+                                Some(build_log_scroll_filled_for_lines(area, &build_log_lines))
                             } else {
                                 None
                             };
@@ -87,6 +89,8 @@ impl RichDriver {
                                 LaunchMessage::RenderTick {
                                     advance_frame: !rr.no_motion(),
                                     build_log_filled,
+                                    build_log_lines,
+                                    build_log_active,
                                 },
                             );
                             v.clone()

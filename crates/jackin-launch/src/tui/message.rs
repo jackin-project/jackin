@@ -28,6 +28,8 @@ pub enum LaunchMessage {
     RenderTick {
         advance_frame: bool,
         build_log_filled: Option<usize>,
+        build_log_lines: Vec<String>,
+        build_log_active: bool,
     },
     ContainerInfoOpened,
     ContainerInfoClosed,
