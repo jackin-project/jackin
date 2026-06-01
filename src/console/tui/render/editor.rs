@@ -26,14 +26,14 @@ use jackin_console::tui::components::editor_rows::{
     render_tab_strip,
 };
 use jackin_console::tui::screens::editor::view::{
-    general_lines as editor_general_lines, mount_lines as editor_mount_lines, tab_labels,
+    EditorRoleRow, general_lines as editor_general_lines, mount_lines as editor_mount_lines,
+    role_lines as editor_role_lines, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
-use jackin_tui::theme::ACTION_ACCENT;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 
@@ -170,77 +170,22 @@ fn roles_tab_lines(state: &EditorState<'_>, config: &AppConfig) -> Vec<Line<'sta
     let show_cursor =
         !state.tab_bar_focused && state.tab_content_scroll_focused && state.modal.is_none();
 
-    // Status line: "Allowed roles:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
     let is_all = jackin_console::workspace::allows_all_agents(&state.pending);
-    let total = config.roles.len();
     let allowed_count = state.pending.allowed_roles.len();
+    let rows: Vec<EditorRoleRow> = config
+        .roles
+        .keys()
+        .map(|role_name| EditorRoleRow {
+            name: role_name.clone(),
+            effectively_allowed: jackin_console::workspace::agent_is_effectively_allowed(
+                &state.pending,
+                role_name,
+            ),
+            is_default: state.pending.default_role.as_deref() == Some(role_name.as_str()),
+        })
+        .collect();
 
-    let badge_text = if is_all { "  all  " } else { "  custom  " };
-    let badge_bg = if is_all { PHOSPHOR_GREEN } else { WHITE };
-    let badge_style = Style::default()
-        .bg(badge_bg)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-
-    let mut status_spans = vec![
-        Span::styled(
-            "  Allowed roles:  ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(badge_text, badge_style),
-    ];
-    if !is_all {
-        status_spans.push(Span::styled(
-            format!("   ({allowed_count} of {total} allowed)"),
-            Style::default()
-                .fg(ACTION_ACCENT)
-                .add_modifier(Modifier::ITALIC),
-        ));
-    }
-    let status_line = Line::from(status_spans);
-
-    // Blank spacer between the status line and the role rows. The old
-    // `allowed?  ·  role` column header got dropped — the `[x]` / `[ ]`
-    // prefix on each row already signals the toggle semantics, so a
-    // dedicated header added noise without clarity.
-    let mut lines = vec![status_line, Line::from("")];
-
-    // Role rows. Cursor is 0-based into config.roles (no header offset).
-    //
-    // `[x]` reflects the *effectively allowed* state, not literal list
-    // membership. An empty `allowed_roles` list is the shorthand for
-    // "all roles allowed" (matches the `all` badge above) — in that
-    // mode every row renders `[x]`. Otherwise only roles named in the
-    // list render `[x]`.
-    for (i, (role_name, _)) in config.roles.iter().enumerate() {
-        let selected = show_cursor && (i == cursor);
-        let effectively_allowed =
-            jackin_console::workspace::agent_is_effectively_allowed(&state.pending, role_name);
-        let is_default = state.pending.default_role.as_deref() == Some(role_name.as_str());
-        let check = if effectively_allowed { "[x]" } else { "[ ]" };
-        let star = if is_default { "★" } else { " " };
-        let prefix = if selected { "▸ " } else { "  " };
-        let text = format!("{prefix}{check} {star} {role_name}");
-        let style = if selected {
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(PHOSPHOR_GREEN)
-        };
-        lines.push(Line::from(Span::styled(text, style)));
-    }
-    let sentinel_idx = config.roles.len();
-    let sentinel_selected = show_cursor && (cursor == sentinel_idx);
-    let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
-    if !config.roles.is_empty() {
-        lines.push(Line::from(""));
-    }
-    lines.push(Line::from(Span::styled(
-        format!("{sentinel_prefix}+ Load role"),
-        action_row_style(sentinel_selected),
-    )));
-    lines
+    editor_role_lines(&rows, allowed_count, is_all, cursor, show_cursor)
 }
 
 fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {

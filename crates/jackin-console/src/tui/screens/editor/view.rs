@@ -8,9 +8,16 @@ use crate::tui::components::mount_rows::{
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditorRoleRow {
+    pub name: String,
+    pub effectively_allowed: bool,
+    pub is_default: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorScrollGeometry {
@@ -167,6 +174,79 @@ pub fn mount_lines(
     lines
 }
 
+#[must_use]
+pub fn role_lines(
+    rows: &[EditorRoleRow],
+    allowed_count: usize,
+    is_all: bool,
+    cursor: usize,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    let badge_text = if is_all { "  all  " } else { "  custom  " };
+    let badge_bg = if is_all {
+        jackin_tui::theme::PHOSPHOR_GREEN
+    } else {
+        jackin_tui::theme::WHITE
+    };
+    let badge_style = Style::default()
+        .bg(badge_bg)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+
+    let mut status_spans = vec![
+        Span::styled(
+            "  Allowed roles:  ",
+            Style::default()
+                .fg(jackin_tui::theme::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(badge_text, badge_style),
+    ];
+    if !is_all {
+        status_spans.push(Span::styled(
+            format!("   ({allowed_count} of {} allowed)", rows.len()),
+            Style::default()
+                .fg(jackin_tui::theme::ACTION_ACCENT)
+                .add_modifier(Modifier::ITALIC),
+        ));
+    }
+
+    let mut lines = vec![Line::from(status_spans), Line::from("")];
+
+    for (i, row) in rows.iter().enumerate() {
+        let selected = show_cursor && (i == cursor);
+        let check = if row.effectively_allowed { "[x]" } else { "[ ]" };
+        let star = if row.is_default { "\u{2605}" } else { " " };
+        let prefix = if selected { "\u{25b8} " } else { "  " };
+        let text = format!("{prefix}{check} {star} {}", row.name);
+        let style = if selected {
+            Style::default()
+                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
+        };
+        lines.push(Line::from(Span::styled(text, style)));
+    }
+
+    let sentinel_idx = rows.len();
+    let sentinel_selected = show_cursor && (cursor == sentinel_idx);
+    let sentinel_prefix = if sentinel_selected {
+        "\u{25b8} "
+    } else {
+        "  "
+    };
+    if !rows.is_empty() {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(Span::styled(
+        format!("{sentinel_prefix}+ Load role"),
+        action_row_style(sentinel_selected),
+    )));
+
+    lines
+}
+
 fn render_editor_row(
     row: usize,
     cursor: usize,
@@ -266,5 +346,30 @@ mod tests {
         assert_eq!(lines[1].spans[0].content.as_ref(), "  /workspace       ");
         assert_eq!(lines[2].spans[0].content.as_ref(), "  host: ~/project");
         assert_eq!(lines[4].spans[0].content.as_ref(), "\u{25b8} + Add mount");
+    }
+
+    #[test]
+    fn role_lines_render_status_rows_roles_and_sentinel() {
+        let rows = vec![
+            EditorRoleRow {
+                name: "alpha".to_string(),
+                effectively_allowed: true,
+                is_default: false,
+            },
+            EditorRoleRow {
+                name: "beta".to_string(),
+                effectively_allowed: false,
+                is_default: true,
+            },
+        ];
+
+        let lines = role_lines(&rows, 1, false, 2, true);
+
+        assert_eq!(lines[0].spans[0].content.as_ref(), "  Allowed roles:  ");
+        assert_eq!(lines[0].spans[1].content.as_ref(), "  custom  ");
+        assert_eq!(lines[0].spans[2].content.as_ref(), "   (1 of 2 allowed)");
+        assert_eq!(lines[2].spans[0].content.as_ref(), "  [x]   alpha");
+        assert_eq!(lines[3].spans[0].content.as_ref(), "  [ ] \u{2605} beta");
+        assert_eq!(lines[5].spans[0].content.as_ref(), "\u{25b8} + Load role");
     }
 }
