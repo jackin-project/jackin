@@ -86,5 +86,5 @@ pub(crate) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
         Modal::ScopePicker { .. } => return scope_picker_rect(outer),
         Modal::AuthForm { state, .. } => return auth_form_rect(outer, state.as_ref()),
     };
-    jackin_console::layout::centered_rect_fixed(outer, pct_w, height_rows)
+    jackin_console::tui::layout::centered_rect_fixed(outer, pct_w, height_rows)
 }

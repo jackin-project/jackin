@@ -16,7 +16,7 @@ pub(crate) mod modal;
 #[cfg(test)]
 mod snapshot_tests;
 
-pub(super) use jackin_console::layout::centered_rect_fixed;
+pub(super) use jackin_console::tui::layout::centered_rect_fixed;
 
 pub(super) use crate::console::widgets::{
     PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER, WHITE,

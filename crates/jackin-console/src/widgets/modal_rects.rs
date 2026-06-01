@@ -2,7 +2,7 @@
 
 use ratatui::layout::Rect;
 
-use crate::layout::centered_rect_fixed;
+use crate::tui::layout::centered_rect_fixed;
 
 #[must_use]
 pub fn text_input_rect(outer: Rect) -> Rect {
