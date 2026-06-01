@@ -69,6 +69,19 @@ pub(crate) fn execute_manager_effect(
     }
 }
 
+pub(crate) fn detect_op_available() -> bool {
+    crate::console::services::op::cli_available()
+}
+
+pub(crate) async fn resolve_supported_agents_for_console(
+    paths: &crate::paths::JackinPaths,
+    config: &AppConfig,
+    role: &crate::selector::RoleSelector,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> anyhow::Result<Vec<crate::agent::Agent>> {
+    crate::console::services::agents::resolve_supported_for_console(paths, config, role, runner).await
+}
+
 pub(crate) fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
     match crate::console::services::browser::open_url(url) {
         Ok(()) => false,

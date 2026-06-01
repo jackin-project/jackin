@@ -17,7 +17,7 @@ pub(super) async fn open_inline_agent_picker(
     role: &RoleSelector,
 ) -> anyhow::Result<bool> {
     let agents =
-        crate::console::services::agents::resolve_supported_for_console(paths, config, role, runner)
+        crate::console::effects::resolve_supported_agents_for_console(paths, config, role, runner)
             .await?;
     if agents.len() < 2 {
         return Ok(false);
