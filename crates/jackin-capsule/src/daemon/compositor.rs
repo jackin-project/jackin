@@ -77,6 +77,10 @@ impl Multiplexer {
         let focused_id = self.active_focused_id();
         let zoomed = self.active_zoomed_id().is_some();
         let dialog_open = self.dialog_open();
+        let github_view_for_hint = self.github_context_view();
+        let dialog_hint_spans = self
+            .dialog_top()
+            .map(|dialog| dialog.footer_hint_spans(Some(&github_view_for_hint)));
 
         // Snapshot session display titles before the draw closure borrows self.
         let pane_titles: Vec<(u64, String)> = panes
@@ -208,7 +212,30 @@ impl Multiplexer {
         });
 
         match result {
-            Ok(_) => Some(self.ratatui_terminal.backend_mut().take_output()),
+            Ok(_) => {
+                let mut output = self.ratatui_terminal.backend_mut().take_output();
+                if dialog_open {
+                    render_branch_context_bar(
+                        &mut output,
+                        self.term_rows,
+                        self.term_cols,
+                        self.context_bar_branch(),
+                        self.pull_request_context.as_deref(),
+                        self.pull_request_context_loading(),
+                        self.status_bar.instance_id_label(),
+                        None,
+                    );
+                    if let Some(spans) = dialog_hint_spans {
+                        crate::dialog::render_hint_row(
+                            &mut output,
+                            self.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
+                            self.term_cols,
+                            spans,
+                        );
+                    }
+                }
+                Some(output)
+            }
             Err(e) => {
                 crate::clog!("compose_ratatui_frame: draw failed: {e}; falling back to raw ANSI");
                 None

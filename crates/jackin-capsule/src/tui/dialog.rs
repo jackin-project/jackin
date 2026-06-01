@@ -1153,7 +1153,7 @@ impl Dialog {
         render_hint_row(buf, term_rows - 1, term_cols, spans);
     }
 
-    fn footer_hint_spans(
+    pub(crate) fn footer_hint_spans(
         &self,
         github: Option<&GithubContextView<'_>>,
     ) -> &'static [HintSpan<'static>] {

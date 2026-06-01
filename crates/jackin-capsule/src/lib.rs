@@ -1,4 +1,3 @@
-pub mod action;
 /// Library target so integration tests under `tests/` can exercise
 /// the protocol, prefix-key parser, VT round-trips, and status bar
 /// without spawning a PTY.
@@ -28,11 +27,12 @@ pub mod tui;
 
 // Flat re-exports so existing `crate::dialog`, `crate::statusbar`, etc.
 // paths continue to resolve without changing every call site.
-pub use tui::branch_context_bar;
-pub use tui::chrome_widget;
+pub use tui::components::branch_context_bar;
+pub use tui::components::chrome as chrome_widget;
+pub use tui::components::dialog_widgets;
+pub use tui::components::pane as pane_widget;
+pub use tui::components::status_bar as statusbar;
 pub use tui::dialog;
-pub use tui::dialog_widgets;
-pub use tui::pane_widget;
+pub use tui::message as action;
 pub use tui::render;
 pub use tui::socket_backend;
-pub use tui::statusbar;

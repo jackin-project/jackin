@@ -5,7 +5,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::fs::symlink;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
@@ -18,6 +18,8 @@ const GIT_HOOK_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v3.don
 /// Cached DCO identity written at daemon startup so the hook never calls
 /// `git config` at commit time (avoids transient-empty-config silent skips).
 const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
+#[cfg(debug_assertions)]
+const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
 
 pub fn run() -> Result<()> {
     run_container_init_once()?;
@@ -427,22 +429,32 @@ fn cache_dco_identity_if_needed() {
         crate::clog!("dco identity cache skipped: user.name/user.email not configured at startup");
         return;
     };
-    if let Err(err) = fs::write(GIT_DCO_IDENTITY_CACHE, format!("{name}\n{email}\n")) {
+    let cache_path = git_dco_identity_cache_path();
+    if let Err(err) = fs::write(&cache_path, format!("{name}\n{email}\n")) {
         // A failed cache write means every commit shells out to live git
         // config — the exact failure this cache exists to prevent.
         crate::clog!(
-            "dco identity cache write to {GIT_DCO_IDENTITY_CACHE} failed: {err} (errno={:?})",
+            "dco identity cache write to {} failed: {err} (errno={:?})",
+            cache_path.display(),
             err.raw_os_error()
         );
     }
 }
 
 fn read_cached_dco_identity() -> Option<(String, String)> {
-    let content = fs::read_to_string(GIT_DCO_IDENTITY_CACHE).ok()?;
+    let content = fs::read_to_string(git_dco_identity_cache_path()).ok()?;
     let mut lines = content.lines();
     let name = lines.next().filter(|s| !s.is_empty())?.to_string();
     let email = lines.next().filter(|s| !s.is_empty())?.to_string();
     Some((name, email))
+}
+
+fn git_dco_identity_cache_path() -> PathBuf {
+    #[cfg(debug_assertions)]
+    if let Some(path) = std::env::var_os(GIT_DCO_IDENTITY_CACHE_ENV) {
+        return PathBuf::from(path);
+    }
+    PathBuf::from(GIT_DCO_IDENTITY_CACHE)
 }
 
 fn git_config_value(key: &str) -> Option<String> {
