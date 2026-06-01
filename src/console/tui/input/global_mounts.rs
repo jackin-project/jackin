@@ -20,10 +20,10 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     env_scope_label, global_mount_confirm_state, global_mount_scope_picker_state,
-    global_mount_text_input_state, settings_env_delete_confirm_prompt,
-    settings_env_key_input_state, settings_env_text_input_state,
+    global_mount_text_input_state, settings_env_delete_confirm_state,
+    settings_env_key_input_state, settings_env_scope_picker_state, settings_env_source_picker_state,
+    settings_env_text_input_state,
 };
-use jackin_tui::components::{ConfirmState, TextInputState};
 
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
 const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
@@ -1615,9 +1615,7 @@ fn commit_env_text(
             }
             env.pending_env_key = Some((scope.clone(), key.clone()));
             env.open_sub_modal(SettingsEnvModal::SourcePicker {
-                state: jackin_console::tui::components::source_picker::SourcePickerState::new(
-                    key, true,
-                ),
+                state: settings_env_source_picker_state(key),
             });
         }
         SettingsEnvTextTarget::EnvValue { scope, key } => {
@@ -1770,20 +1768,19 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
             let current = settings_update::settings_env_value(&settings.env.pending, &scope, &key)
                 .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
+            let target = SettingsEnvTextTarget::EnvValue {
+                scope,
+                key: key.clone(),
+            };
+            let state = settings_env_text_input_state(&target, format!("Edit {key}"), current);
             settings.env.modal = Some(SettingsEnvModal::Text {
-                target: SettingsEnvTextTarget::EnvValue {
-                    scope,
-                    key: key.clone(),
-                },
-                state: Box::new(TextInputState::new_allow_empty(
-                    format!("Edit {key}"),
-                    current,
-                )),
+                target,
+                state: Box::new(state),
             });
         }
         SettingsEnvEnterPlan::OpenScopePicker => {
             settings.env.modal = Some(SettingsEnvModal::ScopePicker {
-                state: jackin_console::tui::components::scope_picker::ScopePickerState::new(),
+                state: settings_env_scope_picker_state(),
             });
         }
         SettingsEnvEnterPlan::ExpandRole(role) => {
@@ -1821,7 +1818,7 @@ fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::S
     };
     settings.env.modal = Some(SettingsEnvModal::Confirm {
         action: SettingsEnvConfirm::Delete,
-        state: ConfirmState::new(settings_env_delete_confirm_prompt(&key)),
+        state: settings_env_delete_confirm_state(&key),
     });
 }
 

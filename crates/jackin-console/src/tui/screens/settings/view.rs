@@ -108,8 +108,25 @@ pub fn settings_env_text_input_state<'a>(
 }
 
 #[must_use]
+pub fn settings_env_source_picker_state(
+    key: impl Into<String>,
+) -> crate::tui::components::source_picker::SourcePickerState {
+    crate::tui::components::source_picker::SourcePickerState::new(key.into(), true)
+}
+
+#[must_use]
+pub fn settings_env_scope_picker_state() -> crate::tui::components::scope_picker::ScopePickerState {
+    crate::tui::components::scope_picker::ScopePickerState::new()
+}
+
+#[must_use]
 pub fn settings_env_delete_confirm_prompt(key: &str) -> String {
     format!("Delete environment variable {key}?")
+}
+
+#[must_use]
+pub fn settings_env_delete_confirm_state(key: &str) -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::new(settings_env_delete_confirm_prompt(key))
 }
 
 #[must_use]
@@ -566,6 +583,25 @@ mod tests {
 
         assert!(value_state.is_valid());
         assert!(!key_state.is_valid());
+    }
+
+    #[test]
+    fn settings_env_source_picker_state_names_key() {
+        let state = settings_env_source_picker_state("TOKEN");
+
+        assert_eq!(state.key, "TOKEN");
+        assert!(state.op_available);
+    }
+
+    #[test]
+    fn settings_env_delete_confirm_state_uses_key_prompt() {
+        let state = settings_env_delete_confirm_state("TOKEN");
+
+        let jackin_tui::components::ConfirmKind::Default { prompt } = state.kind()
+        else {
+            panic!("expected default confirm state");
+        };
+        assert_eq!(prompt, "Delete environment variable TOKEN?");
     }
 
     #[test]
