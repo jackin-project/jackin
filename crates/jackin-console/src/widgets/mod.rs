@@ -9,7 +9,6 @@ pub mod editor_rows;
 pub mod file_browser;
 pub mod footer_hints;
 pub mod github_picker;
-pub mod modal_rects;
 pub mod mount_dst_choice;
 pub mod op_breadcrumb;
 pub mod op_picker;
