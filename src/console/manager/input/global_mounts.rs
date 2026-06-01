@@ -1522,9 +1522,25 @@ fn commit_settings_save(
     config: &mut AppConfig,
     paths: &JackinPaths,
 ) {
-    match settings.save_to_config(paths) {
+    settings.remove_zai_key_when_auth_ignored();
+    match crate::console::services::config::save_settings(
+        paths,
+        crate::console::services::config::SettingsSaveInput {
+            mounts_original: &settings.mounts.original,
+            mounts_pending: &settings.mounts.pending,
+            env_original: &settings.env.original,
+            env_pending: &settings.env.pending,
+            auth_pending: &settings.auth.pending,
+            original_github_env: &settings.auth.original_github_env,
+            github_env: &settings.auth.github_env,
+            trust_pending: &settings.trust.pending,
+            git_coauthor_trailer: settings.general.pending_coauthor_trailer,
+            git_dco: settings.general.pending_dco,
+        },
+    ) {
         Ok(saved) => {
             *config = saved;
+            settings.mark_saved();
             settings.mounts.exit_requested = true;
         }
         Err(err) => settings.mounts.error = Some(err.to_string()),

@@ -897,18 +897,9 @@ impl GlobalMountsState<'_> {
         self.error = None;
     }
 
-    pub fn save_to_config(
-        &mut self,
-        paths: &crate::paths::JackinPaths,
-    ) -> anyhow::Result<AppConfig> {
-        let config = crate::console::services::config::save_global_mounts(
-            paths,
-            &self.original,
-            &self.pending,
-        )?;
+    pub fn mark_saved(&mut self) {
         self.original = self.pending.clone();
         self.mount_info_cache.clear();
-        Ok(config)
     }
 }
 
@@ -983,10 +974,7 @@ impl SettingsState<'_> {
         self.pending_token_generate = None;
     }
 
-    pub fn save_to_config(
-        &mut self,
-        paths: &crate::paths::JackinPaths,
-    ) -> anyhow::Result<AppConfig> {
+    pub fn remove_zai_key_when_auth_ignored(&mut self) {
         for row in &self.auth.pending {
             if row.kind == crate::console::manager::auth_kind::AuthKind::Zai
                 && row.mode == crate::console::manager::auth_kind::AuthMode::Ignore
@@ -994,28 +982,15 @@ impl SettingsState<'_> {
                 self.env.pending.env.remove("ZAI_API_KEY");
             }
         }
-        let config = crate::console::services::config::save_settings(
-            paths,
-            crate::console::services::config::SettingsSaveInput {
-                mounts_original: &self.mounts.original,
-                mounts_pending: &self.mounts.pending,
-                env_original: &self.env.original,
-                env_pending: &self.env.pending,
-                auth_pending: &self.auth.pending,
-                original_github_env: &self.auth.original_github_env,
-                github_env: &self.auth.github_env,
-                trust_pending: &self.trust.pending,
-                git_coauthor_trailer: self.general.pending_coauthor_trailer,
-                git_dco: self.general.pending_dco,
-            },
-        )?;
+    }
+
+    pub fn mark_saved(&mut self) {
         self.general.mark_clean();
         self.mounts.original = self.mounts.pending.clone();
         self.env.original = self.env.pending.clone();
         self.auth.original = self.auth.pending.clone();
         self.auth.original_github_env = self.auth.github_env.clone();
         self.trust.original = self.trust.pending.clone();
-        Ok(config)
     }
 }
 
@@ -3372,7 +3347,13 @@ mod tests {
                 isolation: crate::isolation::MountIsolation::Shared,
             },
         });
-        state.save_to_config(&paths).unwrap();
+        crate::console::services::config::save_global_mounts(
+            &paths,
+            &state.original,
+            &state.pending,
+        )
+        .unwrap();
+        state.mark_saved();
 
         state.pending[0].name = "cargo".into();
         state.pending[0].mount.src = source_b.display().to_string();
@@ -3390,7 +3371,13 @@ mod tests {
             },
         });
         state.pending.retain(|row| row.name != "remove-me");
-        let saved = state.save_to_config(&paths).unwrap();
+        let saved = crate::console::services::config::save_global_mounts(
+            &paths,
+            &state.original,
+            &state.pending,
+        )
+        .unwrap();
+        state.mark_saved();
 
         let rows = saved.list_mount_rows();
         assert_eq!(rows.len(), 1);
@@ -3425,7 +3412,24 @@ ZAI_API_KEY = "secret"
             .expect("settings auth rows include Z.AI");
         row.mode = crate::console::manager::auth_kind::AuthMode::Ignore;
 
-        let saved = state.save_to_config(&paths).unwrap();
+        state.remove_zai_key_when_auth_ignored();
+        let saved = crate::console::services::config::save_settings(
+            &paths,
+            crate::console::services::config::SettingsSaveInput {
+                mounts_original: &state.mounts.original,
+                mounts_pending: &state.mounts.pending,
+                env_original: &state.env.original,
+                env_pending: &state.env.pending,
+                auth_pending: &state.auth.pending,
+                original_github_env: &state.auth.original_github_env,
+                github_env: &state.auth.github_env,
+                trust_pending: &state.trust.pending,
+                git_coauthor_trailer: state.general.pending_coauthor_trailer,
+                git_dco: state.general.pending_dco,
+            },
+        )
+        .unwrap();
+        state.mark_saved();
 
         assert!(!saved.env.contains_key("ZAI_API_KEY"));
         let raw = std::fs::read_to_string(&paths.config_file).unwrap();

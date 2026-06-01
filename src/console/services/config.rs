@@ -37,6 +37,7 @@ pub fn remove_workspace(
 }
 
 /// Save the global mount table and return the reloaded config model.
+#[cfg(test)]
 pub fn save_global_mounts(
     paths: &JackinPaths,
     original: &[GlobalMountRow],
