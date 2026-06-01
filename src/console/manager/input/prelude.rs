@@ -279,8 +279,7 @@ fn reopen_file_browser_at_last_cwd(prelude: &mut super::super::state::CreatePrel
         return;
     };
     if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
-        let listing = jackin_console::services::file_browser::clamped_listing(&fb.root, cwd);
-        fb.apply_listing(listing);
+        super::clamp_file_browser_to_cwd(&mut fb, cwd);
     }
     prelude.modal = Some(Modal::FileBrowser {
         target: FileBrowserTarget::CreateFirstMountSrc,

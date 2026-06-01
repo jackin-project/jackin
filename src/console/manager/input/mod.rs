@@ -53,6 +53,11 @@ pub(super) fn new_file_browser_from_home() -> anyhow::Result<FileBrowserState> {
     ))
 }
 
+pub(super) fn clamp_file_browser_to_cwd(state: &mut FileBrowserState, cwd: &std::path::Path) {
+    let listing = file_browser::clamped_listing(&state.root, cwd);
+    state.apply_listing(listing);
+}
+
 pub(super) fn apply_file_browser_outcome(
     state: &mut FileBrowserState,
     outcome: FileBrowserOutcome<PathBuf>,
