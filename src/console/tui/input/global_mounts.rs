@@ -14,6 +14,7 @@ use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{env_forbidden_label, env_scope_label};
 use jackin_tui::components::{ConfirmState, TextInputState};
 
@@ -361,7 +362,7 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             let is_op_ref = matches!(
                 rows.get(settings.env.selected),
                 Some(SettingsEnvRow::Key { scope, key })
-                    if settings_env_value(&settings.env, scope, key)
+                    if settings_update::settings_env_value(&settings.env.pending, scope, key)
                         .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
             );
             if is_op_ref && op_available {
@@ -1758,12 +1759,12 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
     };
     match row {
         SettingsEnvRow::Key { scope, key } => {
-            if settings_env_value(&settings.env, &scope, &key)
+            if settings_update::settings_env_value(&settings.env.pending, &scope, &key)
                 .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
             {
                 return;
             }
-            let current = settings_env_value(&settings.env, &scope, &key)
+            let current = settings_update::settings_env_value(&settings.env.pending, &scope, &key)
                 .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
             settings.env.modal = Some(SettingsEnvModal::Text {
@@ -1848,7 +1849,7 @@ fn toggle_settings_env_mask(settings: &mut crate::console::tui::state::SettingsS
     let Some(SettingsEnvRow::Key { scope, key }) = rows.get(settings.env.selected).cloned() else {
         return;
     };
-    if settings_env_value(&settings.env, &scope, &key)
+    if settings_update::settings_env_value(&settings.env.pending, &scope, &key)
         .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
     {
         return;
@@ -1902,44 +1903,17 @@ fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEn
     }
 }
 
-fn settings_env_value<'a>(
-    env: &'a crate::console::tui::state::SettingsEnvState<'_>,
-    scope: &SettingsEnvScope,
-    key: &str,
-) -> Option<&'a crate::operator_env::EnvValue> {
-    match scope {
-        SettingsEnvScope::Global => env.pending.env.get(key),
-        SettingsEnvScope::Role(role) => env
-            .pending
-            .roles
-            .get(role)
-            .and_then(|role_env| role_env.get(key)),
-    }
-}
-
-fn forbidden_settings_env_keys(
-    env: &crate::console::tui::state::SettingsEnvState<'_>,
-    scope: &SettingsEnvScope,
-) -> Vec<String> {
-    match scope {
-        SettingsEnvScope::Global => env.pending.env.keys().cloned().collect(),
-        SettingsEnvScope::Role(role) => env
-            .pending
-            .roles
-            .get(role)
-            .map(|role_env| role_env.keys().cloned().collect())
-            .unwrap_or_default(),
-    }
-}
-
 fn settings_env_key_input_state<'a>(
     env: &crate::console::tui::state::SettingsEnvState<'_>,
     scope: &SettingsEnvScope,
     label: impl Into<String>,
     initial: impl Into<String>,
 ) -> TextInputState<'a> {
-    let mut state =
-        TextInputState::new_with_forbidden(label, initial, forbidden_settings_env_keys(env, scope));
+    let mut state = TextInputState::new_with_forbidden(
+        label,
+        initial,
+        settings_update::forbidden_settings_env_keys(&env.pending, scope),
+    );
     state.forbidden_label = env_forbidden_label(scope);
     state
 }
@@ -1950,19 +1924,13 @@ fn set_settings_env_value_typed(
     key: &str,
     value: crate::operator_env::EnvValue,
 ) {
-    match scope {
-        SettingsEnvScope::Global => {
-            env.pending.env.insert(key.to_string(), value);
-        }
-        SettingsEnvScope::Role(role) => {
-            env.pending
-                .roles
-                .entry(role.clone())
-                .or_default()
-                .insert(key.to_string(), value);
-            env.expanded.insert(role.clone());
-        }
-    }
+    settings_update::set_settings_env_value(
+        &mut env.pending,
+        &mut env.expanded,
+        scope,
+        key,
+        value,
+    );
 }
 
 /// Promote any pending error from a settings sub-tab to `settings.error_popup`,

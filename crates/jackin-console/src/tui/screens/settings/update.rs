@@ -125,6 +125,58 @@ pub fn settings_env_flat_row_count<V>(
 }
 
 #[must_use]
+pub fn settings_env_value<'a, V>(
+    pending: &'a SettingsEnvConfig<V>,
+    scope: &SettingsEnvScope,
+    key: &str,
+) -> Option<&'a V> {
+    match scope {
+        SettingsEnvScope::Global => pending.env.get(key),
+        SettingsEnvScope::Role(role) => pending
+            .roles
+            .get(role)
+            .and_then(|role_env| role_env.get(key)),
+    }
+}
+
+#[must_use]
+pub fn forbidden_settings_env_keys<V>(
+    pending: &SettingsEnvConfig<V>,
+    scope: &SettingsEnvScope,
+) -> Vec<String> {
+    match scope {
+        SettingsEnvScope::Global => pending.env.keys().cloned().collect(),
+        SettingsEnvScope::Role(role) => pending
+            .roles
+            .get(role)
+            .map(|role_env| role_env.keys().cloned().collect())
+            .unwrap_or_default(),
+    }
+}
+
+pub fn set_settings_env_value<V>(
+    pending: &mut SettingsEnvConfig<V>,
+    expanded_roles: &mut BTreeSet<String>,
+    scope: &SettingsEnvScope,
+    key: &str,
+    value: V,
+) {
+    match scope {
+        SettingsEnvScope::Global => {
+            pending.env.insert(key.to_string(), value);
+        }
+        SettingsEnvScope::Role(role) => {
+            pending
+                .roles
+                .entry(role.clone())
+                .or_default()
+                .insert(key.to_string(), value);
+            expanded_roles.insert(role.clone());
+        }
+    }
+}
+
+#[must_use]
 pub fn step_cursor_down_by<F>(candidate: usize, max: usize, mut is_skipped: F) -> usize
 where
     F: FnMut(usize) -> bool,
@@ -239,5 +291,46 @@ mod tests {
                 .iter()
                 .any(|row| matches!(row, SettingsEnvRow::RoleAddSentinel(role) if role == "alpha"))
         );
+    }
+
+    #[test]
+    fn settings_env_value_and_forbidden_keys_follow_scope() {
+        let pending = env_config();
+
+        assert_eq!(
+            settings_env_value(&pending, &SettingsEnvScope::Global, "GLOBAL"),
+            Some(&"x")
+        );
+        assert_eq!(
+            settings_env_value(&pending, &SettingsEnvScope::Role("alpha".into()), "ROLE_A"),
+            Some(&"x")
+        );
+        assert_eq!(
+            forbidden_settings_env_keys(&pending, &SettingsEnvScope::Role("alpha".into())),
+            vec!["ROLE_A".to_string(), "ROLE_B".to_string()]
+        );
+    }
+
+    #[test]
+    fn set_settings_env_value_expands_role_scope() {
+        let mut pending = SettingsEnvConfig {
+            env: BTreeMap::new(),
+            roles: BTreeMap::new(),
+        };
+        let mut expanded = BTreeSet::new();
+
+        set_settings_env_value(
+            &mut pending,
+            &mut expanded,
+            &SettingsEnvScope::Role("alpha".into()),
+            "TOKEN",
+            "secret",
+        );
+
+        assert_eq!(
+            settings_env_value(&pending, &SettingsEnvScope::Role("alpha".into()), "TOKEN"),
+            Some(&"secret")
+        );
+        assert!(expanded.contains("alpha"));
     }
 }
