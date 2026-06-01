@@ -28,6 +28,7 @@ use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
     horizontal_split_pane_dims, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
+    tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
@@ -813,14 +814,7 @@ const fn settings_content_area(
     settings: &crate::console::tui::state::SettingsState<'_>,
     term_size: Rect,
 ) -> Rect {
-    Rect {
-        x: 0,
-        y: SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT,
-        width: term_size.width,
-        height: term_size
-            .height
-            .saturating_sub(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT + settings.cached_footer_h),
-    }
+    tabbed_content_area(term_size, settings.cached_footer_h)
 }
 
 const fn point_in(mouse: MouseEvent, area: Rect) -> bool {
@@ -1277,14 +1271,7 @@ const fn editor_content_area(
     editor: &crate::console::tui::state::EditorState<'_>,
     term_size: Rect,
 ) -> Rect {
-    Rect {
-        x: 0,
-        y: SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT,
-        width: term_size.width,
-        height: term_size
-            .height
-            .saturating_sub(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT + editor.cached_footer_h),
-    }
+    tabbed_content_area(term_size, editor.cached_footer_h)
 }
 
 fn editor_scroll_area(

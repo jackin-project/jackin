@@ -92,6 +92,21 @@ pub fn scrollbar_drag_offset(
     ))
 }
 
+#[must_use]
+pub const fn tabbed_content_area(
+    term_size: ratatui::layout::Rect,
+    cached_footer_h: u16,
+) -> ratatui::layout::Rect {
+    ratatui::layout::Rect {
+        x: 0,
+        y: SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT,
+        width: term_size.width,
+        height: term_size
+            .height
+            .saturating_sub(SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT + cached_footer_h),
+    }
+}
+
 const fn point_in(col: u16, row: u16, area: ratatui::layout::Rect) -> bool {
     col >= area.x
         && col < area.x.saturating_add(area.width)
@@ -119,8 +134,8 @@ pub fn centered_rect_fixed(
 #[cfg(test)]
 mod tests {
     use super::{
-        ScrollbarAxis, horizontal_split_pane_dims, scrollbar_drag_offset, split_pct_from_drag,
-        split_seam_column,
+        SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, horizontal_split_pane_dims,
+        scrollbar_drag_offset, split_pct_from_drag, split_seam_column, tabbed_content_area,
     };
     use ratatui::layout::Rect;
 
@@ -162,6 +177,25 @@ mod tests {
         assert_eq!(
             scrollbar_drag_offset(ScrollbarAxis::Horizontal, area, 10, 10, 4),
             None
+        );
+    }
+
+    #[test]
+    fn tabbed_content_area_excludes_header_tabs_and_footer() {
+        let term = Rect {
+            x: 0,
+            y: 0,
+            width: 120,
+            height: 40,
+        };
+        assert_eq!(
+            tabbed_content_area(term, 3),
+            Rect {
+                x: 0,
+                y: SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT,
+                width: 120,
+                height: 32,
+            }
         );
     }
 }
