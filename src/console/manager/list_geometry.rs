@@ -220,27 +220,18 @@ fn list_row_width(
 }
 
 fn workspace_row_width(name: &str, has_instances: bool, selected_with_cursor: bool) -> usize {
-    let width = 3 + jackin_tui::display_cols(name);
-    let leading_padding = if selected_with_cursor {
-        0
-    } else if has_instances {
-        1
-    } else {
-        3
-    };
-    width + leading_padding
+    jackin_console::list_geometry::workspace_row_width(name, has_instances, selected_with_cursor)
 }
 
 fn instance_row_width(
     entry: &crate::instance::InstanceIndexEntry,
     selected_with_cursor: bool,
 ) -> usize {
-    let width = 5 + jackin_tui::display_cols(&format!("{}  {}", entry.instance_id, entry.role_key));
-    if selected_with_cursor {
-        width
-    } else {
-        width + 5
-    }
+    jackin_console::list_geometry::instance_row_width(
+        &entry.instance_id,
+        &entry.role_key,
+        selected_with_cursor,
+    )
 }
 
 /// Shared inputs for the right-pane sidebar. Saved-workspace rows and the
