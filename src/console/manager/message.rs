@@ -10,6 +10,7 @@ use super::state::{
     InstanceRefreshSnapshot, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
     PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, SecretsScopeTag,
     SettingsState, SettingsTab,
+    load_instance_refresh_snapshot,
 };
 use crate::config::AppConfig;
 use jackin_console::focus::moved_selection;
@@ -230,7 +231,15 @@ pub(crate) fn execute_manager_effect(
             state.begin_mount_info_refresh(rx);
         }
         ManagerEffect::RequestInstanceRefresh => {
-            state.request_instance_refresh(paths);
+            let Some(generation) = state.next_instance_refresh_generation_if_due() else {
+                return;
+            };
+            let paths = paths.clone();
+            let rx = spawn_blocking_subscription(move || {
+                let result = load_instance_refresh_snapshot(&paths);
+                (generation, result)
+            });
+            state.begin_instance_refresh(rx);
         }
     }
 }

@@ -25,9 +25,7 @@ use jackin_console::tui::components::scope_picker::ScopePickerState;
 use jackin_console::tui::components::source_picker::SourcePickerState;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
-use jackin_tui::runtime::{
-    BlockingSubscription, Subscription, SubscriptionPoll, spawn_blocking_subscription,
-};
+use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
 pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
 pub use jackin_console::mount_info_cache::MountInfoCache;
@@ -1846,19 +1844,38 @@ impl ManagerState<'_> {
         }
     }
 
-    pub(crate) fn request_instance_refresh(&mut self, paths: &crate::paths::JackinPaths) {
-        self.spawn_instance_refresh_if_due(paths);
-    }
-
     pub(crate) fn poll_instance_refresh(
         &mut self,
     ) -> Option<Result<InstanceRefreshSnapshot, String>> {
         self.drain_instance_refresh()
     }
 
+    pub(crate) fn next_instance_refresh_generation_if_due(&mut self) -> Option<u64> {
+        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+        if self.instances_refresh_rx.is_some() {
+            return None;
+        }
+        let now = std::time::Instant::now();
+        if let Some(last) = self.instances_last_refresh
+            && now.duration_since(last) < REFRESH_INTERVAL
+        {
+            return None;
+        }
+        self.instances_last_refresh = Some(now);
+        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        Some(self.instances_refresh_generation)
+    }
+
     #[cfg(test)]
     pub(crate) fn instance_refresh_in_flight(&self) -> bool {
         self.instances_refresh_rx.is_some()
+    }
+
+    pub(crate) fn begin_instance_refresh(
+        &mut self,
+        rx: BlockingSubscription<(u64, Result<InstanceRefreshSnapshot, String>)>,
+    ) {
+        self.instances_refresh_rx = Some(rx);
     }
 
     pub(crate) fn mount_info_refresh_in_flight(&self) -> bool {
@@ -2075,28 +2092,6 @@ impl ManagerState<'_> {
         None
     }
 
-    fn spawn_instance_refresh_if_due(&mut self, paths: &crate::paths::JackinPaths) {
-        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
-        if self.instances_refresh_rx.is_some() {
-            return;
-        }
-        let now = std::time::Instant::now();
-        if let Some(last) = self.instances_last_refresh
-            && now.duration_since(last) < REFRESH_INTERVAL
-        {
-            return;
-        }
-        self.instances_last_refresh = Some(now);
-        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
-        let generation = self.instances_refresh_generation;
-        let paths = paths.clone();
-        let rx = spawn_blocking_subscription(move || {
-            let result = load_instance_refresh_snapshot(&paths);
-            (generation, result)
-        });
-        self.instances_refresh_rx = Some(rx);
-    }
-
     fn drain_instance_refresh(&mut self) -> Option<Result<InstanceRefreshSnapshot, String>> {
         let rx = self.instances_refresh_rx.as_mut()?;
         match rx.poll_next() {
@@ -2250,7 +2245,7 @@ impl ManagerState<'_> {
     }
 }
 
-fn load_instance_refresh_snapshot(
+pub(crate) fn load_instance_refresh_snapshot(
     paths: &crate::paths::JackinPaths,
 ) -> Result<InstanceRefreshSnapshot, String> {
     let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
