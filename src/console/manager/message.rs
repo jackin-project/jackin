@@ -59,6 +59,7 @@ pub(crate) enum ManagerMessage {
         result: anyhow::Result<()>,
         is_settings: bool,
     },
+    PollFileBrowserGitUrls,
     PollPickerLoads,
     FocusEditorContent,
     FocusEditorTabBar,
@@ -214,13 +215,13 @@ pub(crate) fn poll_background_messages(
     paths: &crate::paths::JackinPaths,
 ) -> (Vec<ManagerBackgroundEvent>, bool) {
     let mut dirty = false;
-    let mut messages = vec![ManagerBackgroundEvent::Message(
-        ManagerMessage::PollPickerLoads,
-    )];
+    let mut messages = vec![
+        ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls),
+        ManagerBackgroundEvent::Message(ManagerMessage::PollPickerLoads),
+    ];
     if let ManagerStage::Editor(editor) = &mut state.stage {
         dirty |= super::input::editor::poll_role_load(editor, config, paths);
     }
-    dirty |= poll_file_browser_git_urls(state);
     state.request_active_mount_info_refresh(config);
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
@@ -336,6 +337,11 @@ pub(crate) fn update_manager(
         } => apply_op_commit_result(state, op_ref, result, is_settings),
         ManagerMessage::PollPickerLoads => {
             if state.poll_picker_loads() {
+                return ManagerUpdate::redraw();
+            }
+        }
+        ManagerMessage::PollFileBrowserGitUrls => {
+            if poll_file_browser_git_urls(state) {
                 return ManagerUpdate::redraw();
             }
         }
@@ -1093,7 +1099,7 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
 
 #[cfg(test)]
 mod tests {
-    use super::{ManagerMessage, update_manager};
+    use super::{ManagerBackgroundEvent, ManagerMessage, poll_background_messages, update_manager};
     use crate::console::manager::auth_kind::AuthKind;
     use crate::console::manager::state::{
         AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
@@ -2062,6 +2068,23 @@ mod tests {
 
         assert!(update_manager(&mut state, ManagerMessage::DismissStatusPopup).is_dirty());
         assert!(state.status_overlay.is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_background_messages_routes_file_browser_poll_through_message() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = crate::config::AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        let (events, dirty) = poll_background_messages(&mut state, &mut config, &paths);
+
+        assert!(!dirty);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls)
+        )));
     }
 
     #[test]
