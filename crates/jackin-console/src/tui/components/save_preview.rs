@@ -43,6 +43,20 @@ pub enum WorkspaceMountDiff {
     Unchanged,
 }
 
+#[must_use]
+pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'static>> {
+    let style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
+    collapses
+        .iter()
+        .map(|(child, parent)| {
+            Line::from(Span::styled(
+                format!("  {child} will be subsumed under {parent}"),
+                style,
+            ))
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsSavePreview {
     pub general: SettingsGeneralPreview,

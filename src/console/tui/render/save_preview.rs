@@ -145,20 +145,16 @@ pub(crate) fn append_env_map_diff_lines(
 pub(crate) fn collapse_section_lines(
     collapses: &[crate::workspace::Removal],
 ) -> Vec<ratatui::text::Line<'static>> {
-    use ratatui::style::Style;
-    use ratatui::text::{Line, Span};
-    let style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
-    collapses
+    let display_pairs: Vec<_> = collapses
         .iter()
         .map(|r| {
-            let child = crate::tui::shorten_home(&r.child.src);
-            let parent = crate::tui::shorten_home(&r.covered_by.src);
-            Line::from(Span::styled(
-                format!("  {child} will be subsumed under {parent}"),
-                style,
-            ))
+            (
+                crate::tui::shorten_home(&r.child.src),
+                crate::tui::shorten_home(&r.covered_by.src),
+            )
         })
-        .collect()
+        .collect();
+    jackin_console::tui::components::save_preview::collapse_section_lines(&display_pairs)
 }
 
 // ── Settings save preview ─────────────────────────────────────────────────────
