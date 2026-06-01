@@ -31,6 +31,13 @@ pub(in crate::console) use global_mounts::{
     apply_op_picker_to_settings_auth_form_committed, apply_plain_text_to_settings_auth_form,
 };
 
+pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
+    crate::selector::RoleSelector,
+    crate::agent::Agent,
+    crate::console::ConsoleInstanceAction,
+    jackin_protocol::Provider,
+>;
+
 pub(super) fn request_file_browser_git_url_resolution(
     state: &mut FileBrowserState,
     path: std::path::PathBuf,
@@ -75,47 +82,6 @@ pub(super) fn apply_file_browser_outcome(
         }
         other => other,
     }
-}
-
-#[derive(Debug)]
-pub enum InputOutcome {
-    /// Stay in the manager.
-    Continue,
-    /// Exit jackin entirely (Esc/q from the manager list).
-    ExitJackin,
-    /// Launch the named workspace — resolved by name in `run_console`.
-    LaunchNamed(String),
-    /// Launch against the synthetic "Current directory" choice. The
-    /// `run_console` dispatcher builds the choice on demand from
-    /// `current_dir_workspace(cwd)` via [`build_workspace_choice`], so
-    /// there's no startup snapshot to grow stale.
-    LaunchCurrentDir,
-    /// Operator just committed a choice in `Modal::RolePicker`. The
-    /// outer `run_console` loop rebuilds the workspace choice from the
-    /// `LoadWorkspaceInput` pinned on `ConsoleState.pending_launch` (set
-    /// when the picker opened), resolves it against this role, and
-    /// breaks with `Ok(Some((role, ws)))`.
-    LaunchWithAgent(crate::selector::RoleSelector),
-    /// Operator committed a runtime agent after choosing a role.
-    LaunchWithRuntimeAgent(crate::agent::Agent),
-    /// Run an instance recovery action selected from the console.
-    InstanceAction {
-        container: String,
-        action: crate::console::ConsoleInstanceAction,
-    },
-    /// Operator selected an agent AND provider in the inline provider picker.
-    /// Bypasses `ConsoleInstanceAction` (which is `Copy`).
-    NewSessionWithProvider {
-        container: String,
-        agent: crate::agent::Agent,
-        provider: jackin_protocol::Provider,
-    },
-    /// Operator selected a provider for the initial workspace launch.
-    LaunchWithProvider {
-        selector: crate::selector::RoleSelector,
-        agent: crate::agent::Agent,
-        provider: jackin_protocol::Provider,
-    },
 }
 
 #[allow(clippy::too_many_lines)]

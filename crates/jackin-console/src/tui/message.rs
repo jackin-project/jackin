@@ -21,3 +21,36 @@ pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationClean
         result: anyhow::Result<()>,
     },
 }
+
+#[derive(Debug)]
+pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
+    /// Stay in the manager.
+    Continue,
+    /// Exit jackin entirely from the manager list.
+    ExitJackin,
+    /// Launch the named workspace; resolved by name in the run loop.
+    LaunchNamed(String),
+    /// Launch against the synthetic current-directory choice.
+    LaunchCurrentDir,
+    /// Operator committed a role choice in the launch picker.
+    LaunchWithAgent(RoleSelector),
+    /// Operator committed a runtime agent after choosing a role.
+    LaunchWithRuntimeAgent(Agent),
+    /// Run an instance recovery action selected from the console.
+    InstanceAction {
+        container: String,
+        action: InstanceAction,
+    },
+    /// Operator selected an agent and provider for a new session.
+    NewSessionWithProvider {
+        container: String,
+        agent: Agent,
+        provider: Provider,
+    },
+    /// Operator selected a provider for the initial workspace launch.
+    LaunchWithProvider {
+        selector: RoleSelector,
+        agent: Agent,
+        provider: Provider,
+    },
+}
