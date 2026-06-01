@@ -1,6 +1,6 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
-use crate::protocol::AgentState;
+use crate::tui::app::{HoverTarget, PointerShape, VisibleAgentState, VisiblePane};
 use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
 };
@@ -11,7 +11,6 @@ use crate::tui::render::{
 use crate::pull_request::PullRequestInfo;
 use crate::tui::selection::{SelectionState, paint_selection_highlight};
 use crate::tui::components::status_bar::{StatusBar, draw_pane_box};
-use crate::tui::app::{HoverTarget, PointerShape, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog::{Dialog, GithubContextView};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
@@ -130,7 +129,7 @@ pub(crate) struct CapsuleChromeHoverFrame<'a> {
     pub(crate) term_cols: u16,
     pub(crate) tabs: &'a [Tab],
     pub(crate) active_tab: usize,
-    pub(crate) session_states: &'a [(u64, AgentState)],
+    pub(crate) session_states: &'a [(u64, VisibleAgentState)],
     pub(crate) branch: Option<&'a str>,
     pub(crate) pull_request: Option<&'a PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
@@ -169,7 +168,7 @@ pub(crate) struct CapsuleStatusBarFrame<'a> {
     pub(crate) term_cols: u16,
     pub(crate) tabs: &'a [Tab],
     pub(crate) active_tab: usize,
-    pub(crate) session_states: &'a [(u64, AgentState)],
+    pub(crate) session_states: &'a [(u64, VisibleAgentState)],
     pub(crate) hover_target: Option<HoverTarget>,
 }
 

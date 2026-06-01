@@ -39,6 +39,14 @@ pub(crate) enum HoverTarget {
     DialogCopyTarget,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum VisibleAgentState {
+    Idle,
+    Working,
+    Done,
+    Blocked,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VisiblePane {
     pub(crate) id: u64,

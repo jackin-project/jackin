@@ -6,6 +6,7 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
+use crate::tui::app::VisibleAgentState;
 use crate::tui::view::{
     CapsuleBottomChrome, CapsuleChromeHoverFrame, CapsuleDialogBottomChrome,
     CapsuleRawDialogOverlay, CapsuleStatusBarFrame, PaneScrollbar,
@@ -19,6 +20,15 @@ use crate::tui::view::{
 };
 
 use super::*;
+
+fn visible_agent_state(state: AgentState) -> VisibleAgentState {
+    match state {
+        AgentState::Idle => VisibleAgentState::Idle,
+        AgentState::Working => VisibleAgentState::Working,
+        AgentState::Done => VisibleAgentState::Done,
+        AgentState::Blocked => VisibleAgentState::Blocked,
+    }
+}
 
 fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16) -> PaneScrollbar {
     let debug_enabled = crate::logging::debug_enabled();
@@ -381,8 +391,11 @@ impl Multiplexer {
         self.compose_full_frame(reason)
     }
 
-    pub(super) fn snapshot_session_states(&self) -> Vec<(u64, AgentState)> {
-        self.sessions.iter().map(|(&id, s)| (id, s.state)).collect()
+    pub(super) fn snapshot_session_states(&self) -> Vec<(u64, VisibleAgentState)> {
+        self.sessions
+            .iter()
+            .map(|(&id, s)| (id, visible_agent_state(s.state)))
+            .collect()
     }
 
     pub(super) fn compose_chrome_hover_frame(&mut self) -> Vec<u8> {

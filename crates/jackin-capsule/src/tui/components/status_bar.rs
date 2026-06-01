@@ -27,6 +27,7 @@ use jackin_tui::{
 };
 
 use crate::container_context::StatusIdentity;
+use crate::tui::app::VisibleAgentState;
 use crate::tui::layout::Tab;
 
 /// Column width in terminal cells for a label, measured with
@@ -38,7 +39,6 @@ use crate::tui::layout::Tab;
 fn display_cols(s: &str) -> u16 {
     u16::try_from(jackin_tui::display_cols(s)).unwrap_or(u16::MAX)
 }
-use crate::protocol::AgentState;
 
 const BRAND_BG: &str = rgb_bg(PHOSPHOR_GREEN);
 const BRAND_FG: &str = rgb_fg(BLACK);
@@ -173,13 +173,13 @@ impl StatusBar {
 
     /// Render the status bar at rows 0–1 of the host terminal.
     #[allow(clippy::too_many_arguments)]
-    pub fn render(
+    pub(crate) fn render(
         &mut self,
         buf: &mut Vec<u8>,
         cols: u16,
         tabs: &[Tab],
         active_tab: usize,
-        sessions_state: &[(u64, AgentState)],
+        sessions_state: &[(u64, VisibleAgentState)],
         hovered_tab: Option<usize>,
         menu_hovered: bool,
     ) {
@@ -399,17 +399,17 @@ enum TabGlyph {
 /// the full display label by reserving the sep + glyph slots; the
 /// glyph is painted separately so its colour can differ from the
 /// surrounding tab foreground.
-fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
+fn tab_label(tab: &Tab, states: &[(u64, VisibleAgentState)]) -> (String, TabGlyph) {
     let ids = tab.tree.all_ids();
     let has_blocked = ids.iter().any(|id| {
         states
             .iter()
-            .any(|(sid, st)| sid == id && *st == AgentState::Blocked)
+            .any(|(sid, st)| sid == id && *st == VisibleAgentState::Blocked)
     });
     let has_done = ids.iter().any(|id| {
         states
             .iter()
-            .any(|(sid, st)| sid == id && *st == AgentState::Done)
+            .any(|(sid, st)| sid == id && *st == VisibleAgentState::Done)
     });
 
     let glyph = if has_blocked {
@@ -538,7 +538,7 @@ mod tests {
         let mut bar = StatusBar::new();
         let tab = Tab::new_single("Claude", 1);
         let tabs = vec![tab];
-        let states = vec![(1u64, AgentState::Blocked)];
+        let states = vec![(1u64, VisibleAgentState::Blocked)];
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &tabs, 0, &states, None, false);
         let (start, end) = bar.tab_regions[0];
