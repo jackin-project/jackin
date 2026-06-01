@@ -26,6 +26,32 @@ pub enum SettingsAuthLineRow {
     Spacer,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsFrameAreas {
+    pub header: Rect,
+    pub tabs: Rect,
+    pub body: Rect,
+    pub footer: Rect,
+}
+
+pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(footer_h),
+        ])
+        .split(area);
+    SettingsFrameAreas {
+        header: chunks[0],
+        tabs: chunks[1],
+        body: chunks[2],
+        footer: chunks[3],
+    }
+}
+
 #[must_use]
 pub fn tab_labels(active: SettingsTab) -> Vec<(&'static str, bool)> {
     SettingsTab::ALL
@@ -421,6 +447,16 @@ mod tests {
         assert_eq!(lines[0].spans[2].content.as_ref(), "enabled");
         assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} ");
         assert_eq!(lines[1].spans[2].content.as_ref(), "disabled");
+    }
+
+    #[test]
+    fn settings_frame_areas_match_header_tabs_body_footer_contract() {
+        let areas = settings_frame_areas(Rect::new(0, 0, 80, 20), 2);
+
+        assert_eq!(areas.header, Rect::new(0, 0, 80, 3));
+        assert_eq!(areas.tabs, Rect::new(0, 3, 80, 2));
+        assert_eq!(areas.body, Rect::new(0, 5, 80, 13));
+        assert_eq!(areas.footer, Rect::new(0, 18, 80, 2));
     }
 
     #[test]

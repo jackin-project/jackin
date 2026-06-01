@@ -6,7 +6,6 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    layout::{Constraint, Direction, Layout},
     text::Line,
 };
 use jackin_console::tui::auth::AuthKind;
@@ -29,7 +28,7 @@ use jackin_console::tui::components::editor_rows::{
 use jackin_console::tui::screens::settings::view::{
     SettingsAuthLineRow, auth_lines as settings_auth_lines, env_lines as settings_env_lines,
     general_lines as settings_general_lines, global_mount_lines as settings_global_mount_lines,
-    tab_labels,
+    settings_frame_areas, tab_labels,
     trust_lines as settings_trust_lines,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
@@ -43,33 +42,25 @@ pub(super) fn render_settings(
     let footer =
         crate::console::tui::render::footer::settings::settings_footer_items(state, op_available);
     let footer_h = footer_height(&footer, area.width).max(1);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(2),
-            Constraint::Min(5),
-            Constraint::Length(footer_h),
-        ])
-        .split(area);
-    render_header(frame, chunks[0], "settings");
+    let areas = settings_frame_areas(area, footer_h);
+    render_header(frame, areas.header, "settings");
     render_tab_strip(
         frame,
-        chunks[1],
+        areas.tabs,
         &tab_labels(state.active_tab),
         state.tab_bar_focused,
         state.hovered_tab,
     );
 
     match state.active_tab {
-        SettingsTab::General => render_general_tab(frame, state, chunks[2]),
-        SettingsTab::Mounts => render_mounts_tab(frame, state, chunks[2]),
-        SettingsTab::Environments => render_env_tab(frame, state, chunks[2]),
-        SettingsTab::Auth => render_auth_tab(frame, state, chunks[2]),
-        SettingsTab::Trust => render_trust_tab(frame, state, chunks[2]),
+        SettingsTab::General => render_general_tab(frame, state, areas.body),
+        SettingsTab::Mounts => render_mounts_tab(frame, state, areas.body),
+        SettingsTab::Environments => render_env_tab(frame, state, areas.body),
+        SettingsTab::Auth => render_auth_tab(frame, state, areas.body),
+        SettingsTab::Trust => render_trust_tab(frame, state, areas.body),
     }
 
-    render_footer(frame, chunks[3], &footer);
+    render_footer(frame, areas.footer, &footer);
 }
 
 fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
