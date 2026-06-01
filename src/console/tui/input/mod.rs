@@ -29,9 +29,9 @@ pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
     jackin_protocol::Provider,
 >;
 
-pub(super) use super::file_browser::{
-    apply_outcome as apply_file_browser_outcome,
-    request_git_url_resolution as request_file_browser_git_url_resolution,
+pub(super) use super::effects::{
+    apply_file_browser_outcome,
+    request_file_browser_git_url_resolution,
 };
 
 /// Cross-submodule helpers for the input/* test modules. Lifted out of

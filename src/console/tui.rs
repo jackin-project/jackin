@@ -16,7 +16,6 @@ pub mod run;
 pub mod state;
 
 pub(crate) use crate::console::effects;
-pub(crate) use crate::console::services::file_browser;
 pub use app::{
     ConsoleStage, ConsoleState, new_console_state, new_console_state_with_op_available,
 };

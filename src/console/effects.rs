@@ -14,6 +14,20 @@ use crate::console::tui::state::{
     PendingMountInfoRefresh, PendingRoleLoad,
 };
 
+pub(crate) fn request_file_browser_git_url_resolution(
+    state: &mut jackin_console::tui::components::file_browser::FileBrowserState,
+    path: std::path::PathBuf,
+) {
+    crate::console::services::file_browser::request_git_url_resolution(state, path);
+}
+
+pub(crate) fn apply_file_browser_outcome(
+    state: &mut jackin_console::tui::components::file_browser::FileBrowserState,
+    outcome: jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
+) -> jackin_console::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf> {
+    crate::console::services::file_browser::apply_outcome(state, outcome)
+}
+
 pub(crate) fn execute_manager_effect(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
