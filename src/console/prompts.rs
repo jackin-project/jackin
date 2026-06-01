@@ -1,6 +1,7 @@
 //! Agent and role prompting helpers for the workspace manager event loop.
 
 use crate::config::AppConfig;
+use crate::console::domain::providers_for_launch;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
@@ -58,23 +59,6 @@ where
     })?;
     ms.status_overlay = None;
     Ok(())
-}
-
-/// Drop the cached item list (and that item's field list) for the
-/// account/vault/item a freshly-minted op ref points at, so a picker
-/// reopened in the same session re-fetches and shows the new entry. The
-/// ref's `op` field is UUID-form `op://<vault>/<item>/[<section>/]<field>`.
-pub(super) fn invalidate_op_cache_for_ref(
-    op_cache: &std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
-    op_ref: &crate::operator_env::OpRef,
-) {
-    let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
-        return;
-    };
-    let account = op_ref.account.as_deref();
-    let mut cache = op_cache.borrow_mut();
-    cache.invalidate_items(account, &parts.vault);
-    cache.invalidate_fields(account, &parts.vault, &parts.item);
 }
 
 pub(super) fn show_role_resolution_error(
@@ -255,28 +239,6 @@ where
         }
         PromptOutcome::Defer => Ok(None),
     }
-}
-
-fn zai_key_present(config: &AppConfig, workspace_name: &str, role_selector: &str) -> bool {
-    crate::operator_env::lookup_operator_env_raw(
-        config,
-        Some(role_selector),
-        Some(workspace_name),
-        "ZAI_API_KEY",
-    )
-    .is_some()
-}
-
-pub(in crate::console) fn providers_for_launch(
-    config: &AppConfig,
-    workspace_name: &str,
-    role_selector: &str,
-    agent: crate::agent::Agent,
-) -> Vec<jackin_protocol::Provider> {
-    jackin_protocol::Provider::available_for(
-        agent.slug(),
-        zai_key_present(config, workspace_name, role_selector),
-    )
 }
 
 pub(super) fn launch_with_committed_agent(

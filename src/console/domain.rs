@@ -111,6 +111,28 @@ pub fn build_workspace_choice(
     }
 }
 
+fn zai_key_present(config: &AppConfig, workspace_name: &str, role_selector: &str) -> bool {
+    crate::operator_env::lookup_operator_env_raw(
+        config,
+        Some(role_selector),
+        Some(workspace_name),
+        "ZAI_API_KEY",
+    )
+    .is_some()
+}
+
+pub(in crate::console) fn providers_for_launch(
+    config: &AppConfig,
+    workspace_name: &str,
+    role_selector: &str,
+    agent: crate::agent::Agent,
+) -> Vec<jackin_protocol::Provider> {
+    jackin_protocol::Provider::available_for(
+        agent.slug(),
+        zai_key_present(config, workspace_name, role_selector),
+    )
+}
+
 fn configured_agents(config: &AppConfig) -> Vec<RoleSelector> {
     config
         .roles

@@ -1,7 +1,6 @@
 use crate::console::domain::build_workspace_choice;
 use crate::console::prompts::{
-    dispatch_and_prompt_launch, invalidate_op_cache_for_ref, launch_with_committed_agent,
-    prompt_committed_role,
+    dispatch_and_prompt_launch, launch_with_committed_agent, prompt_committed_role,
 };
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
@@ -176,7 +175,10 @@ pub async fn run_console<H: InstanceActionHandler>(
                         ConsoleStage::Manager(ms),
                     ) = (&env_value, &state.stage)
                     {
-                        invalidate_op_cache_for_ref(&ms.op_cache, op_ref);
+                        crate::console::services::op_picker::invalidate_cache_for_ref(
+                            &ms.op_cache,
+                            op_ref,
+                        );
                     }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         match &mut ms.stage {

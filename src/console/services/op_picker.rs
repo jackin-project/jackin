@@ -45,6 +45,21 @@ pub fn execute_load_request(
     }
 }
 
+/// Drop the cached item list and field list for the account/vault/item a freshly
+/// minted op ref points at, so a reopened picker re-fetches the new entry.
+pub(in crate::console) fn invalidate_cache_for_ref(
+    op_cache: &std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
+    op_ref: &crate::operator_env::OpRef,
+) {
+    let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
+        return;
+    };
+    let account = op_ref.account.as_deref();
+    let mut cache = op_cache.borrow_mut();
+    cache.invalidate_items(account, &parts.vault);
+    cache.invalidate_fields(account, &parts.vault, &parts.item);
+}
+
 fn ready_load(result: LoadResult) -> BlockingSubscription<LoadResult> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let _ = tx.send(result);

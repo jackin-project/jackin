@@ -16,7 +16,9 @@ pub mod terminal;
 pub mod tui;
 
 #[cfg(test)]
-use prompts::{prompt_agent_for_launch, providers_for_launch};
+use domain::providers_for_launch;
+#[cfg(test)]
+use prompts::prompt_agent_for_launch;
 #[cfg(test)]
 pub(super) use tui::consumes_letter_input;
 #[cfg(test)]
@@ -435,7 +437,7 @@ mod quit_confirm_tests {
 
 #[cfg(test)]
 mod op_cache_invalidation_tests {
-    use crate::console::prompts::invalidate_op_cache_for_ref;
+    use crate::console::services::op_picker::invalidate_cache_for_ref;
     use crate::operator_env::OpCache;
     use crate::operator_env::{OpField, OpItem, OpRef};
     use std::cell::RefCell;
@@ -467,7 +469,7 @@ mod op_cache_invalidation_tests {
             }],
         );
 
-        invalidate_op_cache_for_ref(
+        invalidate_cache_for_ref(
             &cache,
             &OpRef {
                 op: "op://v1/i1/f1".into(),
@@ -484,7 +486,7 @@ mod op_cache_invalidation_tests {
     fn invalidate_op_cache_for_ref_ignores_unparseable_ref() {
         let cache = Rc::new(RefCell::new(OpCache::default()));
         // A non-op:// literal must be a no-op, not a panic.
-        invalidate_op_cache_for_ref(
+        invalidate_cache_for_ref(
             &cache,
             &OpRef {
                 op: "not-a-ref".into(),
