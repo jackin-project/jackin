@@ -637,11 +637,7 @@ impl OpPickerState {
             OpPickerStage::NewItemName => Some(&self.item_name_input),
             OpPickerStage::FieldLabel => Some(&self.field_label_input),
             OpPickerStage::NewSectionName => Some(&self.section_name_input),
-            OpPickerStage::Account
-            | OpPickerStage::Vault
-            | OpPickerStage::Item
-            | OpPickerStage::Section
-            | OpPickerStage::Field => None,
+            _ => None,
         }
     }
 
@@ -1174,12 +1170,7 @@ impl OpPickerState {
                 let n = self.build_field_display_rows().len();
                 self.field_list_state.select(first_selection(n));
             }
-            // Section stage does not filter (selection reset on entry);
-            // naming sub-stages are text input — neither has a filterable list.
-            OpPickerStage::Section
-            | OpPickerStage::NewItemName
-            | OpPickerStage::FieldLabel
-            | OpPickerStage::NewSectionName => {}
+            _ => {}
         }
     }
 }

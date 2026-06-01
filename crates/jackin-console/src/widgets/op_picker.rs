@@ -39,6 +39,19 @@ pub enum OpPickerStage {
     NewSectionName,
 }
 
+impl OpPickerStage {
+    pub const fn is_naming(self) -> bool {
+        matches!(
+            self,
+            Self::NewItemName | Self::FieldLabel | Self::NewSectionName
+        )
+    }
+
+    pub const fn is_filterable(self) -> bool {
+        matches!(self, Self::Account | Self::Vault | Self::Item | Self::Field)
+    }
+}
+
 /// Which creation path entered the field-label sub-stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldLabelOrigin {
@@ -1088,5 +1101,17 @@ mod tests {
             FieldLabelOrigin::NewSection.cancel_stage(),
             OpPickerStage::NewSectionName
         );
+    }
+
+    #[test]
+    fn stage_classification_separates_naming_and_filterable_lists() {
+        assert!(OpPickerStage::FieldLabel.is_naming());
+        assert!(OpPickerStage::NewSectionName.is_naming());
+        assert!(!OpPickerStage::Field.is_naming());
+
+        assert!(OpPickerStage::Account.is_filterable());
+        assert!(OpPickerStage::Field.is_filterable());
+        assert!(!OpPickerStage::Section.is_filterable());
+        assert!(!OpPickerStage::FieldLabel.is_filterable());
     }
 }
