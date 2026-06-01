@@ -4,7 +4,7 @@
 //! host-console facades and still-local widgets while the architecture
 //! migration proceeds.
 
-pub(crate) use jackin_console::widgets::SPINNER_FRAMES;
+pub(crate) use jackin_console::tui::components::spinner::SPINNER_FRAMES;
 pub(crate) use jackin_tui::ModalOutcome;
 pub(crate) use jackin_tui::theme::{
     DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER,

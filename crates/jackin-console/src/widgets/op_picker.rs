@@ -7,8 +7,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
-pub use super::matches_filter;
 use super::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+pub use crate::tui::components::list_helpers::matches_filter;
 
 /// Browse-only vs. creation-enabled picker mode.
 #[derive(Debug, Clone)]

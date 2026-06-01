@@ -28,7 +28,7 @@ pub struct GithubPickerState {
 
 impl GithubPickerState {
     pub fn new(choices: Vec<GithubChoice>) -> Self {
-        let list_state = super::list_state_for_count(choices.len());
+        let list_state = crate::tui::components::list_helpers::list_state_for_count(choices.len());
         Self {
             choices,
             list_state,
@@ -38,15 +38,26 @@ impl GithubPickerState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                super::cycle_select(&mut self.list_state, self.choices.len(), -1);
+                crate::tui::components::list_helpers::cycle_select(
+                    &mut self.list_state,
+                    self.choices.len(),
+                    -1,
+                );
                 ModalOutcome::Continue
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                super::cycle_select(&mut self.list_state, self.choices.len(), 1);
+                crate::tui::components::list_helpers::cycle_select(
+                    &mut self.list_state,
+                    self.choices.len(),
+                    1,
+                );
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if let Some(c) = super::selected_choice(&self.choices, self.list_state.selected) {
+                if let Some(c) = crate::tui::components::list_helpers::selected_choice(
+                    &self.choices,
+                    self.list_state.selected,
+                ) {
                     return ModalOutcome::Commit(c.url.clone());
                 }
                 ModalOutcome::Continue

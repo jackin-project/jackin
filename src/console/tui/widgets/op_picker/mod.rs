@@ -30,7 +30,7 @@ use tui_widget_list::ListState;
 use crate::operator_env::{OpAccount, OpCache, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
 use super::ModalOutcome;
-use jackin_console::widgets::{
+use jackin_console::tui::components::list_helpers::{
     clamp_selection, cycle_select, first_selection, list_state_for_count, selected_choice,
 };
 use jackin_tui::components::TextInputState;

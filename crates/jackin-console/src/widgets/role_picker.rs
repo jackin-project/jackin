@@ -29,7 +29,7 @@ impl<R: RoleChoice> RolePickerState<R> {
     #[must_use]
     pub fn with_confirm_label(roles: Vec<R>, confirm_label: &str) -> Self {
         let filtered = roles.clone();
-        let list_state = super::list_state_for_count(filtered.len());
+        let list_state = crate::tui::components::list_helpers::list_state_for_count(filtered.len());
         Self {
             roles,
             list_state,
@@ -43,19 +43,34 @@ impl<R: RoleChoice> RolePickerState<R> {
         self.filtered = self
             .roles
             .iter()
-            .filter(|role| super::matches_filter(&self.filter, [role.key().as_str()]))
+            .filter(|role| {
+                crate::tui::components::list_helpers::matches_filter(
+                    &self.filter,
+                    [role.key().as_str()],
+                )
+            })
             .cloned()
             .collect();
         self.list_state
-            .select(super::first_selection(self.filtered.len()));
+            .select(crate::tui::components::list_helpers::first_selection(
+                self.filtered.len(),
+            ));
     }
 
     fn move_up(&mut self) {
-        super::cycle_select(&mut self.list_state, self.filtered.len(), -1);
+        crate::tui::components::list_helpers::cycle_select(
+            &mut self.list_state,
+            self.filtered.len(),
+            -1,
+        );
     }
 
     fn move_down(&mut self) {
-        super::cycle_select(&mut self.list_state, self.filtered.len(), 1);
+        crate::tui::components::list_helpers::cycle_select(
+            &mut self.list_state,
+            self.filtered.len(),
+            1,
+        );
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<R> {
@@ -75,8 +90,10 @@ impl<R: RoleChoice> RolePickerState<R> {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if let Some(role) = super::selected_choice(&self.filtered, self.list_state.selected)
-                {
+                if let Some(role) = crate::tui::components::list_helpers::selected_choice(
+                    &self.filtered,
+                    self.list_state.selected,
+                ) {
                     return ModalOutcome::Commit(role.clone());
                 }
                 ModalOutcome::Continue

@@ -13,7 +13,7 @@ use tui_widget_list::ListState;
 
 use super::EXCLUDED;
 use super::git_prompt::GitPromptFocus;
-use crate::widgets::{cycle_select, list_state_for_count, selected_choice};
+use crate::tui::components::list_helpers::{cycle_select, list_state_for_count, selected_choice};
 
 /// Does `path` contain a `.git` child? Dir (regular clone) OR file
 /// (submodule worktree, `.git` is a file pointing at the real gitdir).
