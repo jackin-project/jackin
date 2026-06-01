@@ -266,6 +266,15 @@ pub fn handle_key(
                 InputOutcome::Continue
             };
             if !matches!(outcome, InputOutcome::Continue) {
+                if matches!(outcome, InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd) {
+                    execute_manager_effect(
+                        state,
+                        config,
+                        paths,
+                        ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd,
+                    );
+                    return Ok(InputOutcome::Continue);
+                }
                 return Ok(outcome);
             }
             // After the modal handler runs, the prelude is in one of three states:
@@ -366,6 +375,15 @@ pub fn handle_key(
                 config,
                 paths,
                 ManagerEffect::OpenCreatePreludeFileBrowser,
+            );
+            InputOutcome::Continue
+        }
+        InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd => {
+            execute_manager_effect(
+                state,
+                config,
+                paths,
+                ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd,
             );
             InputOutcome::Continue
         }

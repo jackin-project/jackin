@@ -69,6 +69,9 @@ pub(crate) fn execute_manager_effect(
         ManagerEffect::OpenCreatePreludeFileBrowser => {
             execute_create_prelude_file_browser_open(state);
         }
+        ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd => {
+            execute_create_prelude_file_browser_reopen(state);
+        }
         ManagerEffect::OpenEditorAddMountFileBrowser => {
             execute_editor_add_mount_file_browser_open(state);
         }
@@ -138,6 +141,23 @@ fn execute_create_prelude_file_browser_open(state: &mut ManagerState<'_>) {
             );
         }
     }
+}
+
+fn execute_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) {
+    let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
+        return;
+    };
+    let Ok(mut file_browser) = crate::console::services::file_browser::from_home() else {
+        prelude.modal = None;
+        return;
+    };
+    if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
+        crate::console::services::file_browser::clamp_to_cwd(&mut file_browser, cwd);
+    }
+    prelude.modal = Some(Modal::FileBrowser {
+        target: FileBrowserTarget::CreateFirstMountSrc,
+        state: file_browser,
+    });
 }
 
 pub(crate) fn detect_op_available() -> bool {

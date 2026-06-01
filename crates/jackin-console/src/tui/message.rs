@@ -51,6 +51,8 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     /// The root input dispatcher executes the filesystem-backed listing through
     /// the file-browser service adapter.
     OpenCreatePreludeFileBrowser,
+    /// Reopen the create-workspace prelude file browser at its last cwd.
+    OpenCreatePreludeFileBrowserAtLastCwd,
     /// Open the workspace editor add-mount file browser through the root
     /// file-browser service adapter.
     OpenEditorAddMountFileBrowser,

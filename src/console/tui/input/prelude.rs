@@ -184,7 +184,7 @@ pub(super) fn handle_prelude_modal(
                     // browser cwd (captured when src was committed). The
                     // mount src field is left stashed so `default_mount_dst`
                     // keeps working if the operator re-commits the same path.
-                    reopen_file_browser_at_last_cwd(prelude);
+                    return InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd;
                 }
                 ModalOutcome::Continue => {}
             }
@@ -269,24 +269,6 @@ pub(super) fn handle_prelude_modal(
     InputOutcome::Continue
 }
 
-/// Reopen the `FileBrowserSrc` modal positioned at the last-seen cwd.
-/// Used by step-back navigation from `MountDstChoice`. Silently starts at
-/// `$HOME` when the browser fails to build or no cwd was recorded.
-fn reopen_file_browser_at_last_cwd(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
-    use crate::console::tui::state::FileBrowserTarget;
-    let Ok(mut fb) = super::new_file_browser_from_home() else {
-        prelude.modal = None;
-        return;
-    };
-    if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
-        super::clamp_file_browser_to_cwd(&mut fb, cwd);
-    }
-    prelude.modal = Some(Modal::FileBrowser {
-        target: FileBrowserTarget::CreateFirstMountSrc,
-        state: fb,
-    });
-}
-
 /// Reopen the `MountDstChoice` modal seeded from the stashed mount src.
 /// Used by step-back navigation from `TextInputDst` / `WorkdirPick`.
 fn reopen_mount_dst_choice(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
@@ -307,6 +289,7 @@ mod tests {
     //! Create-wizard tests: the prelude's multi-step modal sequence
     //! (`FileBrowserSrc` → `MountDstChoice` → `TextInputDst` → `WorkdirPick` →
     //! `TextInputName`) and its step-back / Esc semantics.
+    use super::InputOutcome;
     use crate::console::tui::state::{FileBrowserTarget, Modal};
     use super::super::test_support::key;
     use super::handle_prelude_modal;
@@ -327,6 +310,28 @@ mod tests {
             state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(src),
         });
         prelude
+    }
+
+    fn handle_prelude_modal_with_effects(
+        prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
+        key: crossterm::event::KeyEvent,
+    ) {
+        let outcome = handle_prelude_modal(prelude, key);
+        if !matches!(outcome, InputOutcome::OpenCreatePreludeFileBrowserAtLastCwd) {
+            return;
+        }
+
+        let Ok(mut file_browser) = crate::console::services::file_browser::from_home() else {
+            prelude.modal = None;
+            return;
+        };
+        if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
+            crate::console::services::file_browser::clamp_to_cwd(&mut file_browser, cwd);
+        }
+        prelude.modal = Some(Modal::FileBrowser {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            state: file_browser,
+        });
     }
 
     #[test]
@@ -389,7 +394,7 @@ mod tests {
         // step back to FileBrowserSrc so the operator can pick a
         // different source folder without losing state.
         let mut prelude = prelude_with_browser_committed("/home/user/project");
-        handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
+        handle_prelude_modal_with_effects(&mut prelude, key(KeyCode::Esc));
         assert!(
             matches!(prelude.modal, Some(Modal::FileBrowser { .. })),
             "Esc on MountDstChoice must reopen FileBrowser; got {:?}",
@@ -422,7 +427,7 @@ mod tests {
             ),
         });
 
-        handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
+        handle_prelude_modal_with_effects(&mut prelude, key(KeyCode::Esc));
 
         match &prelude.modal {
             Some(Modal::FileBrowser { state, .. }) => {

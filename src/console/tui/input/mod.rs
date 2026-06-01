@@ -30,8 +30,7 @@ pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
 >;
 
 pub(super) use super::file_browser::{
-    apply_outcome as apply_file_browser_outcome, clamp_to_cwd as clamp_file_browser_to_cwd,
-    from_home as new_file_browser_from_home,
+    apply_outcome as apply_file_browser_outcome,
     request_git_url_resolution as request_file_browser_git_url_resolution,
 };
 

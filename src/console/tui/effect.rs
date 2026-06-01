@@ -18,6 +18,7 @@ pub(crate) enum ManagerEffect {
         source: crate::config::RoleSource,
     },
     OpenCreatePreludeFileBrowser,
+    OpenCreatePreludeFileBrowserAtLastCwd,
     OpenEditorAddMountFileBrowser,
     OpenGlobalMountFileBrowser,
     ValidateOpCommit {
