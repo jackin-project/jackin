@@ -1,6 +1,5 @@
-use crate::app::context::preferred_agent_index;
 use crate::config::AppConfig;
-use crate::console::{domain::build_workspace_choice, preview};
+use crate::console::effects::LaunchDispatchResolution;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
@@ -15,48 +14,48 @@ pub(crate) fn dispatch_launch_for_workspace(
     cwd: &std::path::Path,
     input: LoadWorkspaceInput,
 ) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>)>> {
-    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+    let Some(resolution) = crate::console::effects::resolve_launch_dispatch(config, cwd, input)?
+    else {
         // Workspace was deleted between keypress and dispatch.
         return Ok(None);
     };
-    let roles = choice.allowed_roles.clone();
 
-    if roles.is_empty() {
+    match resolution {
         // Stay so the operator can fix `allowed_roles`
         // — a single Enter shouldn't terminate the TUI.
-        let name = choice.name;
-        if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let _ = crate::console::tui::update_manager(
-                ms,
-                crate::console::tui::ManagerMessage::OpenListErrorPopup {
-                    title: "No eligible roles".into(),
-                    message: format!(
-                        "Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
-                    ),
-                },
-            );
-        }
-        state.pending_launch = None;
-        state.pending_launch_role = None;
-    } else if roles.len() == 1 {
-        // Single role — skip picker and proceed directly to agent selection.
-        let role = roles.into_iter().next().unwrap();
-        return preview::resolve_selected_workspace(config, cwd, &choice, &role)
-            .map(|workspace| Some((role, workspace, None)));
-    } else {
-        let selected = preferred_agent_index(
-            &roles,
-            choice.last_role.as_deref(),
-            choice.default_role.as_deref(),
-        );
-        state.pending_launch = Some(input);
-        state.pending_launch_role = None;
-        if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let mut picker = crate::selector::RolePickerState::with_confirm_label(roles, "launch");
-            if let Some(selected) = selected {
-                picker.list_state.select(Some(selected));
+        LaunchDispatchResolution::NoEligibleRoles { name } => {
+            if let ConsoleStage::Manager(ms) = &mut state.stage {
+                let _ = crate::console::tui::update_manager(
+                    ms,
+                    crate::console::tui::ManagerMessage::OpenListErrorPopup {
+                        title: "No eligible roles".into(),
+                        message: format!(
+                            "Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
+                        ),
+                    },
+                );
             }
-            ms.inline_role_picker = Some(picker);
+            state.pending_launch = None;
+            state.pending_launch_role = None;
+        }
+        LaunchDispatchResolution::SingleRole { role, workspace } => {
+            return Ok(Some((role, workspace, None)));
+        }
+        LaunchDispatchResolution::RolePicker {
+            input,
+            roles,
+            selected,
+        } => {
+            state.pending_launch = Some(input);
+            state.pending_launch_role = None;
+            if let ConsoleStage::Manager(ms) = &mut state.stage {
+                let mut picker =
+                    crate::selector::RolePickerState::with_confirm_label(roles, "launch");
+                if let Some(selected) = selected {
+                    picker.list_state.select(Some(selected));
+                }
+                ms.inline_role_picker = Some(picker);
+            }
         }
     }
     Ok(None)
