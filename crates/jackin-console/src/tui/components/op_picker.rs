@@ -338,6 +338,23 @@ pub const fn field_stage_back_plan(mode: &OpPickerMode) -> FieldStageBackPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldStageRefreshPlan {
+    pub clear_fields: bool,
+    pub reset_field_list: bool,
+    pub clear_collapsed_sections: bool,
+    pub refresh_in_place: bool,
+}
+
+pub const fn field_stage_refresh_plan(mode: &OpPickerMode) -> FieldStageRefreshPlan {
+    FieldStageRefreshPlan {
+        clear_fields: true,
+        reset_field_list: true,
+        clear_collapsed_sections: true,
+        refresh_in_place: mode.is_create(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SectionStageBackPlan {
     pub stage: OpPickerStage,
     pub clear_fields: bool,
@@ -409,6 +426,19 @@ pub fn item_stage_commit_plan<Item>(picked: Option<Option<Item>>) -> ItemStageCo
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemStageRefreshPlan {
+    pub clear_items: bool,
+    pub reset_item_list: bool,
+}
+
+pub const fn item_stage_refresh_plan() -> ItemStageRefreshPlan {
+    ItemStageRefreshPlan {
+        clear_items: true,
+        reset_item_list: true,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VaultStageBackPlan {
     BackToAccount {
         stage: OpPickerStage,
@@ -444,6 +474,21 @@ pub fn vault_stage_commit_plan<Vault>(picked: Option<Vault>) -> VaultStageCommit
     picked
         .map(VaultStageCommitPlan::ExistingVault)
         .unwrap_or(VaultStageCommitPlan::NoSelection)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VaultStageRefreshPlan {
+    pub clear_vaults: bool,
+    pub reset_vault_list: bool,
+    pub clear_selected_vault: bool,
+}
+
+pub const fn vault_stage_refresh_plan() -> VaultStageRefreshPlan {
+    VaultStageRefreshPlan {
+        clear_vaults: true,
+        reset_vault_list: true,
+        clear_selected_vault: true,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1653,6 +1698,31 @@ mod tests {
     }
 
     #[test]
+    fn field_stage_refresh_plan_tracks_create_mode_in_place_reload() {
+        assert_eq!(
+            field_stage_refresh_plan(&OpPickerMode::Browse),
+            FieldStageRefreshPlan {
+                clear_fields: true,
+                reset_field_list: true,
+                clear_collapsed_sections: true,
+                refresh_in_place: false,
+            }
+        );
+        assert_eq!(
+            field_stage_refresh_plan(&OpPickerMode::Create {
+                item_name_default: String::new(),
+                field_label_default: String::new(),
+            }),
+            FieldStageRefreshPlan {
+                clear_fields: true,
+                reset_field_list: true,
+                clear_collapsed_sections: true,
+                refresh_in_place: true,
+            }
+        );
+    }
+
+    #[test]
     fn section_stage_back_plan_returns_to_item() {
         assert_eq!(
             section_stage_back_plan(),
@@ -1721,6 +1791,17 @@ mod tests {
     }
 
     #[test]
+    fn item_stage_refresh_plan_clears_loaded_state() {
+        assert_eq!(
+            item_stage_refresh_plan(),
+            ItemStageRefreshPlan {
+                clear_items: true,
+                reset_item_list: true,
+            }
+        );
+    }
+
+    #[test]
     fn vault_stage_back_plan_handles_single_and_multi_account() {
         assert_eq!(vault_stage_back_plan(1), VaultStageBackPlan::Cancel);
         assert_eq!(
@@ -1744,6 +1825,18 @@ mod tests {
         assert_eq!(
             vault_stage_commit_plan::<&str>(None),
             VaultStageCommitPlan::NoSelection
+        );
+    }
+
+    #[test]
+    fn vault_stage_refresh_plan_clears_loaded_state() {
+        assert_eq!(
+            vault_stage_refresh_plan(),
+            VaultStageRefreshPlan {
+                clear_vaults: true,
+                reset_vault_list: true,
+                clear_selected_vault: true,
+            }
         );
     }
 

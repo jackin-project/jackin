@@ -14,10 +14,11 @@ use super::{
     VaultStageBackPlan, VaultStageCommitPlan, account_stage_commit_plan,
     account_stage_refresh_plan, build_op_ref_on_commit, existing_field_commit_plan,
     field_label_cancel_plan, field_label_commit_plan, field_stage_back_plan,
-    field_stage_commit_plan, filter_reset_selection_for_stage, item_stage_back_plan,
-    item_stage_commit_plan, new_item_name_commit_plan, new_section_name_commit_plan,
-    section_header_collapse_target, section_stage_back_plan, section_stage_commit_plan,
-    vault_stage_back_plan, vault_stage_commit_plan,
+    field_stage_commit_plan, field_stage_refresh_plan, filter_reset_selection_for_stage,
+    item_stage_back_plan, item_stage_commit_plan, item_stage_refresh_plan, new_item_name_commit_plan,
+    new_section_name_commit_plan, section_header_collapse_target, section_stage_back_plan,
+    section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan,
+    vault_stage_refresh_plan,
 };
 
 impl OpPickerState {
@@ -120,12 +121,19 @@ impl OpPickerState {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
+                let plan = vault_stage_refresh_plan();
                 self.op_cache
                     .borrow_mut()
                     .invalidate_vaults(account_id.as_deref());
-                self.vaults.clear();
-                self.vault_list_state = list_state_for_count(0);
-                self.selected_vault = None;
+                if plan.clear_vaults {
+                    self.vaults.clear();
+                }
+                if plan.reset_vault_list {
+                    self.vault_list_state = list_state_for_count(0);
+                }
+                if plan.clear_selected_vault {
+                    self.selected_vault = None;
+                }
                 self.start_vault_load(account_id);
                 ModalOutcome::Continue
             }
@@ -205,8 +213,13 @@ impl OpPickerState {
                 self.op_cache
                     .borrow_mut()
                     .invalidate_items(account_id.as_deref(), &vault_id);
-                self.items.clear();
-                self.item_list_state = list_state_for_count(0);
+                let plan = item_stage_refresh_plan();
+                if plan.clear_items {
+                    self.items.clear();
+                }
+                if plan.reset_item_list {
+                    self.item_list_state = list_state_for_count(0);
+                }
                 self.start_item_load(vault_id, account_id);
                 ModalOutcome::Continue
             }
@@ -368,14 +381,17 @@ impl OpPickerState {
                     &vault_id,
                     &item_id,
                 );
-                self.fields.clear();
-                self.field_list_state = list_state_for_count(0);
-                self.collapsed_sections.clear();
-                // In-place refresh: the operator is already on the Field
-                // stage with a chosen section. Flag the reload so the
-                // Fields-loaded arm rebuilds the rows here instead of
-                // kicking back to Section (Create mode). No-op in Browse.
-                self.field_refresh_in_place = self.mode.is_create();
+                let plan = field_stage_refresh_plan(&self.mode);
+                if plan.clear_fields {
+                    self.fields.clear();
+                }
+                if plan.reset_field_list {
+                    self.field_list_state = list_state_for_count(0);
+                }
+                if plan.clear_collapsed_sections {
+                    self.collapsed_sections.clear();
+                }
+                self.field_refresh_in_place = plan.refresh_in_place;
                 self.start_field_load(item_id, vault_id, account_id);
                 ModalOutcome::Continue
             }
