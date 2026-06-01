@@ -36,9 +36,9 @@ use jackin_tui::components::TextInputState;
 pub mod render;
 
 pub use jackin_console::widgets::op_picker::{
-    FieldDisplayRow, OpLoadState, OpPickerError, OpPickerFatalState, OpPickerFieldRef,
-    OpPickerItemRef, OpPickerMode, OpPickerStage, OpPickerVaultRef, browse_field_display_rows,
-    build_op_picker_ref, create_field_display_rows, matches_filter,
+    FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerFatalState,
+    OpPickerFieldRef, OpPickerItemRef, OpPickerMode, OpPickerStage, OpPickerVaultRef,
+    browse_field_display_rows, build_op_picker_ref, create_field_display_rows, matches_filter,
     section_choices_from_references,
 };
 
@@ -66,21 +66,6 @@ pub enum OpPickerSelection {
         /// placement preserved) or a new field by label.
         field: crate::operator_env::FieldTarget,
     },
-}
-
-/// Which stage the operator was on when they entered the `FieldLabel`
-/// text-input sub-stage. Drives the `FieldLabel` Esc back-nav so it
-/// returns to the correct origin (Create mode has three).
-// The shared `New` prefix mirrors the three `+ New X` creation rows.
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FieldLabelOrigin {
-    /// `+ New item` → `NewItemName` → `FieldLabel`.
-    NewItem,
-    /// `+ New field` on the (section-scoped) `Field` stage → `FieldLabel`.
-    NewField,
-    /// `+ New section` on the `Section` stage → `NewSectionName` → `FieldLabel`.
-    NewSection,
 }
 
 /// Pane-specific so the async-result drainer can route to the right
@@ -1086,11 +1071,7 @@ impl OpPickerState {
     fn handle_field_label_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match self.field_label_input.handle_key(key) {
             ModalOutcome::Cancel => {
-                self.stage = match self.field_label_origin {
-                    FieldLabelOrigin::NewItem => OpPickerStage::NewItemName,
-                    FieldLabelOrigin::NewField => OpPickerStage::Field,
-                    FieldLabelOrigin::NewSection => OpPickerStage::NewSectionName,
-                };
+                self.stage = self.field_label_origin.cancel_stage();
                 // The section was staged immediately before this stage
                 // (new-section name or the drilled section for a new field);
                 // backing out discards that choice so it cannot leak into a

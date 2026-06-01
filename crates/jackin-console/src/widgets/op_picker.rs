@@ -39,6 +39,24 @@ pub enum OpPickerStage {
     NewSectionName,
 }
 
+/// Which creation path entered the field-label sub-stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldLabelOrigin {
+    NewItem,
+    NewField,
+    NewSection,
+}
+
+impl FieldLabelOrigin {
+    pub const fn cancel_stage(self) -> OpPickerStage {
+        match self {
+            Self::NewItem => OpPickerStage::NewItemName,
+            Self::NewField => OpPickerStage::Field,
+            Self::NewSection => OpPickerStage::NewSectionName,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum OpLoadState {
     Idle,
@@ -1054,5 +1072,21 @@ mod tests {
                 .iter()
                 .any(|span| span.content.contains("brew install"))
         }));
+    }
+
+    #[test]
+    fn field_label_origin_maps_to_cancel_stage() {
+        assert_eq!(
+            FieldLabelOrigin::NewItem.cancel_stage(),
+            OpPickerStage::NewItemName
+        );
+        assert_eq!(
+            FieldLabelOrigin::NewField.cancel_stage(),
+            OpPickerStage::Field
+        );
+        assert_eq!(
+            FieldLabelOrigin::NewSection.cancel_stage(),
+            OpPickerStage::NewSectionName
+        );
     }
 }
