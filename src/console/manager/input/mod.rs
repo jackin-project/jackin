@@ -387,9 +387,7 @@ fn handle_confirm_delete_key(
     let ws_name = name.clone();
     match outcome {
         ModalOutcome::Commit(true) => {
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
-            editor.remove_workspace(&ws_name)?;
-            *config = editor.save()?;
+            crate::console::services::config::remove_workspace(config, paths, &ws_name)?;
             let _ = update_manager(
                 state,
                 ManagerMessage::ReloadFromConfig {

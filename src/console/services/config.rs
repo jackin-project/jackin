@@ -15,3 +15,15 @@ pub fn upsert_role_source(
     *config = editor_doc.save()?;
     Ok(())
 }
+
+/// Remove one saved workspace from operator config and reload the saved model.
+pub fn remove_workspace(
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    name: &str,
+) -> anyhow::Result<()> {
+    let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
+    editor_doc.remove_workspace(name)?;
+    *config = editor_doc.save()?;
+    Ok(())
+}
