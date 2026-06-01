@@ -2,7 +2,7 @@
 //!
 //! The `jackin-console` file-browser component emits typed navigation,
 //! commit-validation, and git-url requests. This adapter executes those
-//! non-TUI service calls for the root manager.
+//! non-TUI service calls for the root console.
 
 use std::path::PathBuf;
 
