@@ -500,7 +500,7 @@ pub(super) fn handle_settings_auth_modal(
                 // push it directly to preserve the in-progress form state.
                 auth.modal_parents.push(modal);
                 auth.modal = Some(SettingsAuthModal::SourcePicker {
-                    state: crate::console::widgets::source_picker::SourcePickerState::new(
+                    state: jackin_console::widgets::source_picker::SourcePickerState::new(
                         "generated token".to_string(),
                         op_available,
                     ),
@@ -534,7 +534,7 @@ pub(super) fn handle_settings_auth_modal(
                         };
                         auth.modal_parents.push(modal);
                         auth.modal = Some(SettingsAuthModal::SourcePicker {
-                            state: crate::console::widgets::source_picker::SourcePickerState::new(
+                            state: jackin_console::widgets::source_picker::SourcePickerState::new(
                                 env_var.to_string(),
                                 op_available,
                             ),
@@ -586,7 +586,7 @@ pub(super) fn handle_settings_auth_modal(
             auth.modal = Some(modal);
         }
         SettingsAuthModal::SourcePicker { state } => {
-            use crate::console::widgets::source_picker::SourceChoice;
+            use jackin_console::widgets::source_picker::SourceChoice;
             let outcome = state.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token` (and stashes the form into
@@ -1295,7 +1295,7 @@ pub(super) fn handle_settings_env_modal(
             }
         },
         SettingsEnvModal::SourcePicker { state: mut source } => {
-            use crate::console::widgets::source_picker::SourceChoice;
+            use jackin_console::widgets::source_picker::SourceChoice;
             match source.handle_key(key) {
                 ModalOutcome::Commit(SourceChoice::Plain) => {
                     let Some((scope, key)) = env.pending_env_key.clone() else {
@@ -1586,7 +1586,7 @@ fn commit_env_text(
             }
             env.pending_env_key = Some((scope.clone(), key.clone()));
             env.open_sub_modal(SettingsEnvModal::SourcePicker {
-                state: crate::console::widgets::source_picker::SourcePickerState::new(key, true),
+                state: jackin_console::widgets::source_picker::SourcePickerState::new(key, true),
             });
         }
         SettingsEnvTextTarget::EnvValue { scope, key } => {

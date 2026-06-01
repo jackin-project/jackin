@@ -507,7 +507,7 @@ pub(super) fn render_settings_env_modal(frame: &mut Frame, modal: &SettingsEnvMo
         }
         SettingsEnvModal::SourcePicker { state } => {
             let area = source_picker_rect(frame.area());
-            crate::console::widgets::source_picker::render(frame, area, state);
+            jackin_console::widgets::source_picker::render(frame, area, state);
         }
         SettingsEnvModal::OpPicker { state } => {
             let area = op_picker_rect(frame.area());
@@ -536,7 +536,7 @@ pub(super) fn render_settings_auth_modal(frame: &mut Frame, modal: &SettingsAuth
         }
         SettingsAuthModal::SourcePicker { state } => {
             let area = source_picker_rect(frame.area());
-            crate::console::widgets::source_picker::render(frame, area, state);
+            jackin_console::widgets::source_picker::render(frame, area, state);
         }
         SettingsAuthModal::TextInput { state } => {
             let area = text_input_rect(frame.area());

@@ -23,7 +23,6 @@ pub(crate) mod mount_rows;
 pub(crate) mod op_breadcrumb;
 pub mod op_picker;
 pub mod role_picker;
-pub mod source_picker;
 pub mod workdir_pick;
 
 /// Wrap-around cursor move for any list-style picker. `delta` is `-1`

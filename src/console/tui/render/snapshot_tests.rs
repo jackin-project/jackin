@@ -546,7 +546,7 @@ readonly = false
                 &config,
                 &cwd,
                 Modal::SourcePicker {
-                    state: crate::console::widgets::source_picker::SourcePickerState::new(
+                    state: jackin_console::widgets::source_picker::SourcePickerState::new(
                         "TOKEN".into(),
                         true,
                     ),
@@ -628,7 +628,7 @@ readonly = false
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.tab_bar_focused = false;
         editor.modal = Some(Modal::AuthSourcePicker {
-            state: crate::console::widgets::source_picker::SourcePickerState::new(
+            state: jackin_console::widgets::source_picker::SourcePickerState::new(
                 "CLAUDE_CODE_OAUTH_TOKEN".into(),
                 true,
             ),
@@ -760,7 +760,7 @@ readonly = false
                 &config,
                 &cwd,
                 SettingsEnvModal::SourcePicker {
-                    state: crate::console::widgets::source_picker::SourcePickerState::new(
+                    state: jackin_console::widgets::source_picker::SourcePickerState::new(
                         "TOKEN".into(),
                         true,
                     ),
@@ -838,7 +838,7 @@ readonly = false
                 &config,
                 &cwd,
                 crate::console::manager::state::SettingsAuthModal::SourcePicker {
-                    state: crate::console::widgets::source_picker::SourcePickerState::new(
+                    state: jackin_console::widgets::source_picker::SourcePickerState::new(
                         "CLAUDE_CODE_OAUTH_TOKEN".into(),
                         true,
                     ),

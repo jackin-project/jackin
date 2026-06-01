@@ -5,7 +5,7 @@ use ratatui::Frame;
 
 use super::super::super::widgets::{
     auth_panel, confirm_save, file_browser, github_picker, mount_dst_choice, op_picker,
-    role_picker, source_picker, workdir_pick,
+    role_picker, workdir_pick,
 };
 use crate::console::manager::modal_layout::modal_outer_rect;
 use crate::console::manager::state::Modal;
@@ -50,7 +50,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             role_picker::render(frame, modal_area, state);
         }
         Modal::SourcePicker { state, .. } | Modal::AuthSourcePicker { state } => {
-            source_picker::render(frame, modal_area, state);
+            jackin_console::widgets::source_picker::render(frame, modal_area, state);
         }
         Modal::ScopePicker { state } => {
             jackin_console::widgets::scope_picker::render(frame, modal_area, state);

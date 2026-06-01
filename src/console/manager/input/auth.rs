@@ -473,7 +473,7 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
         literal_buffer,
     });
     editor.modal = Some(Modal::AuthSourcePicker {
-        state: crate::console::widgets::source_picker::SourcePickerState::new(
+        state: jackin_console::widgets::source_picker::SourcePickerState::new(
             "generated token".to_string(),
             op_available,
         ),
@@ -547,7 +547,7 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
         literal_buffer,
     });
     editor.modal = Some(Modal::AuthSourcePicker {
-        state: crate::console::widgets::source_picker::SourcePickerState::new(
+        state: jackin_console::widgets::source_picker::SourcePickerState::new(
             env_var.to_string(),
             op_available,
         ),
