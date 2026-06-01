@@ -11,6 +11,7 @@ use ratatui::{
 };
 
 pub use crate::tui::components::list_helpers::matches_filter;
+use crate::tui::components::list_helpers::first_selection;
 use crate::tui::components::spinner::SPINNER_FRAMES;
 use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
 use jackin_tui::components::{Panel, PanelFocus, TextInputState};
@@ -282,6 +283,25 @@ pub const fn naming_stage_input_for_stage<'a>(
         OpPickerStage::FieldLabel => Some(field_label),
         OpPickerStage::NewSectionName => Some(section_name),
         _ => None,
+    }
+}
+
+pub const fn filter_reset_selection_for_stage(
+    stage: OpPickerStage,
+    account_count: usize,
+    vault_count: usize,
+    item_count: usize,
+    field_count: usize,
+) -> Option<Option<usize>> {
+    match stage {
+        OpPickerStage::Account => Some(first_selection(account_count)),
+        OpPickerStage::Vault => Some(first_selection(vault_count)),
+        OpPickerStage::Item => Some(first_selection(item_count)),
+        OpPickerStage::Field => Some(first_selection(field_count)),
+        OpPickerStage::Section
+        | OpPickerStage::NewItemName
+        | OpPickerStage::FieldLabel
+        | OpPickerStage::NewSectionName => None,
     }
 }
 
@@ -1246,6 +1266,26 @@ mod tests {
         );
         assert!(
             naming_stage_input_for_stage(OpPickerStage::Field, &item, &field, &section).is_none()
+        );
+    }
+
+    #[test]
+    fn filter_reset_selection_routes_only_filterable_stages() {
+        assert_eq!(
+            filter_reset_selection_for_stage(OpPickerStage::Account, 2, 3, 4, 5),
+            Some(Some(0))
+        );
+        assert_eq!(
+            filter_reset_selection_for_stage(OpPickerStage::Item, 2, 3, 0, 5),
+            Some(None)
+        );
+        assert_eq!(
+            filter_reset_selection_for_stage(OpPickerStage::Section, 2, 3, 4, 5),
+            None
+        );
+        assert_eq!(
+            filter_reset_selection_for_stage(OpPickerStage::FieldLabel, 2, 3, 4, 5),
+            None
         );
     }
 

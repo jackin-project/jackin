@@ -10,6 +10,7 @@ use jackin_tui::components::TextInputState;
 use super::{
     FieldDisplayRow, FieldLabelOrigin, OpField, OpItem, OpLoadState, OpPickerError,
     OpPickerSelection, OpPickerStage, OpPickerState, build_op_ref_on_commit,
+    filter_reset_selection_for_stage,
 };
 
 impl OpPickerState {
@@ -523,23 +524,20 @@ impl OpPickerState {
     }
 
     fn reset_selection_for_filter(&mut self, stage: OpPickerStage) {
+        let Some(selection) = filter_reset_selection_for_stage(
+            stage,
+            self.filtered_accounts().len(),
+            self.filtered_vaults().len(),
+            self.filtered_item_choices().len(),
+            self.build_field_display_rows().len(),
+        ) else {
+            return;
+        };
         match stage {
-            OpPickerStage::Account => {
-                let n = self.filtered_accounts().len();
-                self.account_list_state.select(first_selection(n));
-            }
-            OpPickerStage::Vault => {
-                let n = self.filtered_vaults().len();
-                self.vault_list_state.select(first_selection(n));
-            }
-            OpPickerStage::Item => {
-                let n = self.filtered_item_choices().len();
-                self.item_list_state.select(first_selection(n));
-            }
-            OpPickerStage::Field => {
-                let n = self.build_field_display_rows().len();
-                self.field_list_state.select(first_selection(n));
-            }
+            OpPickerStage::Account => self.account_list_state.select(selection),
+            OpPickerStage::Vault => self.vault_list_state.select(selection),
+            OpPickerStage::Item => self.item_list_state.select(selection),
+            OpPickerStage::Field => self.field_list_state.select(selection),
             _ => {}
         }
     }
