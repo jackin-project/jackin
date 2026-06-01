@@ -2154,32 +2154,6 @@ impl ManagerState<'_> {
         self.instances_refresh_rx = None;
     }
 
-    /// Drained from the outer event loop every tick so picker results
-    /// land without keystroke pumping. Idempotent on empty channels.
-    /// Covers both modal anchors (`list_modal` and `editor.modal`).
-    pub fn poll_picker_loads(&mut self) -> bool {
-        let mut dirty = false;
-        if let Some(Modal::OpPicker { state }) = self.list_modal.as_mut() {
-            dirty |= poll_op_picker_load(state);
-        }
-        if let ManagerStage::Editor(editor) = &mut self.stage
-            && let Some(Modal::OpPicker { state }) = editor.modal.as_mut()
-        {
-            dirty |= poll_op_picker_load(state);
-        }
-        if let ManagerStage::Settings(settings) = &mut self.stage
-            && let Some(SettingsEnvModal::OpPicker { state }) = settings.env.modal.as_mut()
-        {
-            dirty |= poll_op_picker_load(state);
-        }
-        if let ManagerStage::Settings(settings) = &mut self.stage
-            && let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal.as_mut()
-        {
-            dirty |= poll_op_picker_load(state);
-        }
-        dirty
-    }
-
     pub(crate) fn tick_active_animation(&mut self) -> bool {
         let mut dirty = false;
         if let Some(Modal::OpPicker { state }) = self.list_modal.as_mut() {
@@ -2206,26 +2180,6 @@ impl ManagerState<'_> {
         }
         dirty
     }
-}
-
-fn poll_op_picker_load(state: &mut OpPickerState) -> bool {
-    let mut dirty = execute_op_picker_pending_load(state);
-    dirty |= state.poll_load();
-    dirty |= execute_op_picker_pending_load(state);
-    dirty
-}
-
-fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
-    let Some(pending) = state.take_pending_load() else {
-        return false;
-    };
-    let rx = crate::console::services::op_picker::start_load(
-        pending.cached,
-        pending.request,
-        pending.runner,
-    );
-    state.attach_load_receiver(rx);
-    true
 }
 
 impl<'a> EditorState<'a> {

@@ -13,6 +13,7 @@ use super::state::{
 };
 use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
+use crate::console::op_picker::OpPickerState;
 use crate::console::services::instances::load_instance_refresh_snapshot;
 use jackin_console::focus::moved_selection;
 use jackin_console::tui::effect::ConsoleEffect;
@@ -585,6 +586,54 @@ pub(crate) fn poll_background_messages(
     messages
 }
 
+/// Drained from the outer event loop every tick so picker results land without
+/// keystroke pumping. This executor starts non-TUI load services for pending
+/// picker requests, then routes completed subscriptions back into picker state.
+fn poll_picker_loads(state: &mut ManagerState<'_>) -> bool {
+    let mut dirty = false;
+    if let Some(Modal::OpPicker { state }) = state.list_modal.as_mut() {
+        dirty |= poll_op_picker_load(state);
+    }
+    if let ManagerStage::Editor(editor) = &mut state.stage
+        && let Some(Modal::OpPicker { state }) = editor.modal.as_mut()
+    {
+        dirty |= poll_op_picker_load(state);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && let Some(super::state::SettingsEnvModal::OpPicker { state }) =
+            settings.env.modal.as_mut()
+    {
+        dirty |= poll_op_picker_load(state);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && let Some(super::state::SettingsAuthModal::OpPicker { state }) =
+            settings.auth.modal.as_mut()
+    {
+        dirty |= poll_op_picker_load(state);
+    }
+    dirty
+}
+
+fn poll_op_picker_load(state: &mut OpPickerState) -> bool {
+    let mut dirty = execute_op_picker_pending_load(state);
+    dirty |= state.poll_load();
+    dirty |= execute_op_picker_pending_load(state);
+    dirty
+}
+
+fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
+    let Some(pending) = state.take_pending_load() else {
+        return false;
+    };
+    let rx = crate::console::services::op_picker::start_load(
+        pending.cached,
+        pending.request,
+        pending.runner,
+    );
+    state.attach_load_receiver(rx);
+    true
+}
+
 fn poll_file_browser_git_urls(state: &mut ManagerState<'_>) -> bool {
     let mut dirty = false;
     if let Some(modal) = state.list_modal.as_mut() {
@@ -669,7 +718,7 @@ pub(crate) fn update_manager(
             is_settings,
         } => apply_op_commit_result(state, op_ref, result, is_settings),
         ManagerMessage::PollPickerLoads => {
-            if state.poll_picker_loads() {
+            if poll_picker_loads(state) {
                 return ManagerUpdate::redraw();
             }
         }
