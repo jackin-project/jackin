@@ -2,10 +2,12 @@
 
 use super::model::GlobalMountConfirm;
 use super::model::SettingsAuthRow;
+use super::model::SettingsEnvConfig;
 use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
 use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
+use super::update::forbidden_settings_env_keys;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -90,6 +92,22 @@ pub fn env_forbidden_label(scope: &SettingsEnvScope) -> String {
         SettingsEnvScope::Global => "global env".to_string(),
         SettingsEnvScope::Role(role) => format!("role {role}"),
     }
+}
+
+#[must_use]
+pub fn settings_env_key_input_state<'a, V>(
+    pending: &SettingsEnvConfig<V>,
+    scope: &SettingsEnvScope,
+    label: impl Into<String>,
+    initial: impl Into<String>,
+) -> jackin_tui::components::TextInputState<'a> {
+    let mut state = jackin_tui::components::TextInputState::new_with_forbidden(
+        label,
+        initial,
+        forbidden_settings_env_keys(pending, scope),
+    );
+    state.forbidden_label = env_forbidden_label(scope);
+    state
 }
 
 #[must_use]
@@ -493,6 +511,39 @@ mod tests {
             settings_env_delete_confirm_prompt("TOKEN"),
             "Delete environment variable TOKEN?"
         );
+    }
+
+    #[test]
+    fn settings_env_key_input_state_marks_scope_duplicates() {
+        let mut pending = SettingsEnvConfig {
+            env: std::collections::BTreeMap::new(),
+            roles: std::collections::BTreeMap::new(),
+        };
+        pending.env.insert("GLOBAL".to_string(), "1".to_string());
+        pending
+            .roles
+            .entry("alpha".to_string())
+            .or_default()
+            .insert("ROLE_TOKEN".to_string(), "2".to_string());
+
+        let state = settings_env_key_input_state(
+            &pending,
+            &SettingsEnvScope::Role("alpha".to_string()),
+            "New alpha environment key",
+            "",
+        );
+
+        assert_eq!(state.label, "New alpha environment key");
+        assert_eq!(state.forbidden_label, "role alpha");
+        assert!(!state.is_duplicate());
+
+        let duplicate = settings_env_key_input_state(
+            &pending,
+            &SettingsEnvScope::Role("alpha".to_string()),
+            "New alpha environment key",
+            "ROLE_TOKEN",
+        );
+        assert!(duplicate.is_duplicate());
     }
 
     #[test]

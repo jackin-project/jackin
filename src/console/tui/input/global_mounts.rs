@@ -16,8 +16,8 @@ use crate::workspace::resolve_path;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
-    env_forbidden_label, env_scope_label, global_mount_confirm_prompt,
-    settings_env_delete_confirm_prompt,
+    env_scope_label, global_mount_confirm_prompt, settings_env_delete_confirm_prompt,
+    settings_env_key_input_state,
 };
 use jackin_tui::components::{ConfirmState, TextInputState};
 
@@ -1396,7 +1396,7 @@ pub(super) fn handle_settings_env_modal(
                         env.pending_picker_value =
                             Some(crate::operator_env::EnvValue::OpRef(op_ref));
                         let label = format!("New environment key for {}", env_scope_label(&scope));
-                        let state = settings_env_key_input_state(env, &scope, label, "");
+                        let state = settings_env_key_input_state(&env.pending, &scope, label, "");
                         env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
                         env.open_sub_modal(SettingsEnvModal::Text {
                             target: SettingsEnvTextTarget::EnvKey { scope },
@@ -1420,7 +1420,7 @@ pub(super) fn handle_settings_env_modal(
                 let role_key = role.key();
                 let scope = SettingsEnvScope::Role(role_key.clone());
                 let state = settings_env_key_input_state(
-                    env,
+                    &env.pending,
                     &scope,
                     format!("New {role_key} environment key"),
                     "",
@@ -1445,8 +1445,12 @@ pub(super) fn handle_settings_env_modal(
             ModalOutcome::Commit(choice) => match choice {
                 jackin_console::tui::components::scope_picker::ScopeChoice::AllAgents => {
                     let scope = SettingsEnvScope::Global;
-                    let input_state =
-                        settings_env_key_input_state(env, &scope, "New global environment key", "");
+                    let input_state = settings_env_key_input_state(
+                        &env.pending,
+                        &scope,
+                        "New global environment key",
+                        "",
+                    );
                     // Don't stash the just-committed ScopePicker as
                     // the Text modal's parent — Esc on Text would
                     // pop back into a consumed picker. Start the
@@ -1594,7 +1598,8 @@ fn commit_env_text(
         SettingsEnvTextTarget::EnvKey { scope } => {
             if trimmed.is_empty() {
                 env.error = Some("Env key cannot be empty.".into());
-                let state = settings_env_key_input_state(env, scope, "Key cannot be empty", "");
+                let state =
+                    settings_env_key_input_state(&env.pending, scope, "Key cannot be empty", "");
                 env.modal = Some(SettingsEnvModal::Text {
                     target: SettingsEnvTextTarget::EnvKey {
                         scope: scope.clone(),
@@ -1787,7 +1792,7 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
             settings.env.expanded.insert(role);
         }
         SettingsEnvEnterPlan::AddRoleKey { scope, label } => {
-            let state = settings_env_key_input_state(&settings.env, &scope, label, "");
+            let state = settings_env_key_input_state(&settings.env.pending, &scope, label, "");
             settings.env.modal = Some(SettingsEnvModal::Text {
                 target: SettingsEnvTextTarget::EnvKey { scope },
                 state: Box::new(state),
@@ -1804,7 +1809,7 @@ fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::Settin
     else {
         return;
     };
-    let state = settings_env_key_input_state(&settings.env, &scope, label, "");
+    let state = settings_env_key_input_state(&settings.env.pending, &scope, label, "");
     settings.env.modal = Some(SettingsEnvModal::Text {
         target: SettingsEnvTextTarget::EnvKey { scope },
         state: Box::new(state),
@@ -1859,21 +1864,6 @@ fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEn
         &mut env.selected,
         rows.get(selected),
     );
-}
-
-fn settings_env_key_input_state<'a>(
-    env: &crate::console::tui::state::SettingsEnvState<'_>,
-    scope: &SettingsEnvScope,
-    label: impl Into<String>,
-    initial: impl Into<String>,
-) -> TextInputState<'a> {
-    let mut state = TextInputState::new_with_forbidden(
-        label,
-        initial,
-        settings_update::forbidden_settings_env_keys(&env.pending, scope),
-    );
-    state.forbidden_label = env_forbidden_label(scope);
-    state
 }
 
 fn set_settings_env_value_typed(
