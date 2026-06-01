@@ -37,14 +37,14 @@ pub struct ConfirmState {
 }
 
 /// Discriminated payload for the Confirm modal.
-///
-/// `Default` carries a free-form prompt string; `RoleTrust` carries the
-/// role key and repository URL as separate fields so the renderer can lay
-/// them out without parsing them back out of a newline-delimited blob.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmKind {
     Default { prompt: String },
-    RoleTrust { role: String, repository: String },
+    Details {
+        prompt: String,
+        rows: Vec<(String, String)>,
+        notes: Vec<String>,
+    },
 }
 
 impl ConfirmState {
@@ -62,13 +62,19 @@ impl ConfirmState {
     }
 
     #[must_use]
-    pub fn role_trust(role: impl Into<String>, repository: impl Into<String>) -> Self {
+    pub fn details(
+        title: impl Into<String>,
+        prompt: impl Into<String>,
+        rows: Vec<(String, String)>,
+        notes: Vec<String>,
+    ) -> Self {
         Self {
             focus: ConfirmFocus::No,
-            title: "Trust role source".into(),
-            kind: ConfirmKind::RoleTrust {
-                role: role.into(),
-                repository: repository.into(),
+            title: title.into(),
+            kind: ConfirmKind::Details {
+                prompt: prompt.into(),
+                rows,
+                notes,
             },
         }
     }
@@ -131,7 +137,16 @@ impl ConfirmState {
 #[must_use]
 pub fn required_height(state: &ConfirmState) -> u16 {
     match &state.kind {
-        ConfirmKind::RoleTrust { .. } => 11,
+        ConfirmKind::Details { rows, notes, .. } => {
+            let content_rows = 1usize
+                .saturating_add(1)
+                .saturating_add(rows.len())
+                .saturating_add(1)
+                .saturating_add(notes.len())
+                .saturating_add(1)
+                .saturating_add(1);
+            u16::try_from(content_rows.saturating_add(2)).unwrap_or(u16::MAX)
+        }
         ConfirmKind::Default { prompt } => {
             let prompt_lines = prompt.lines().count().max(1) as u16;
             prompt_lines + 4
@@ -143,7 +158,7 @@ pub fn required_height(state: &ConfirmState) -> u16 {
 pub const fn width_pct(state: &ConfirmState) -> u16 {
     match &state.kind {
         ConfirmKind::Default { .. } => 60,
-        ConfirmKind::RoleTrust { .. } => 70,
+        ConfirmKind::Details { .. } => 70,
     }
 }
 
@@ -158,8 +173,12 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
     frame.render_widget(block, area);
 
     let prompt = match &state.kind {
-        ConfirmKind::RoleTrust { role, repository } => {
-            render_role_trust(frame, inner, state, role, repository);
+        ConfirmKind::Details {
+            prompt,
+            rows,
+            notes,
+        } => {
+            render_details(frame, inner, state, prompt, rows, notes);
             return;
         }
         ConfirmKind::Default { prompt } => prompt.as_str(),
@@ -192,24 +211,26 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
     render_buttons(frame, chunks[2], state);
 }
 
-fn render_role_trust(
+fn render_details(
     frame: &mut Frame<'_>,
     inner: Rect,
     state: &ConfirmState,
-    role: &str,
-    repository: &str,
+    prompt: &str,
+    details: &[(String, String)],
+    notes: &[String],
 ) {
+    let detail_rows = u16::try_from(details.len()).unwrap_or(u16::MAX);
+    let note_rows = u16::try_from(notes.len()).unwrap_or(u16::MAX);
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // rows[0]: role label
+            Constraint::Length(1), // rows[0]: prompt
             Constraint::Length(1), // rows[1]: separator
-            Constraint::Length(1), // rows[2]: repository line
-            Constraint::Length(1), // rows[3]: role line
-            Constraint::Length(1), // rows[4]: separator
-            Constraint::Length(2), // rows[5]: warning text (2 lines)
-            Constraint::Length(1), // rows[6]: empty row before buttons
-            Constraint::Length(1), // rows[7]: buttons
+            Constraint::Length(detail_rows), // rows[2]: detail rows
+            Constraint::Length(1), // rows[3]: separator
+            Constraint::Length(note_rows), // rows[4]: note rows
+            Constraint::Length(1), // rows[5]: empty row before buttons
+            Constraint::Length(1), // rows[6]: buttons
         ])
         .split(inner);
 
@@ -221,53 +242,41 @@ fn render_role_trust(
 
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "Trust this role source?",
+            prompt.to_owned(),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        )))
-        .alignment(Alignment::Left),
+        ))),
         inset(rows[0], 3),
     );
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("Role: ", key),
-            Span::styled(role.to_owned(), value),
-        ])),
-        inset(rows[2], 3),
-    );
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("Repository: ", key),
-            Span::styled(repository.to_owned(), value),
-        ])),
-        inset(rows[3], 3),
-    );
-    frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(vec![
-                Span::styled(
-                    "!",
-                    Style::default()
-                        .fg(WARNING_YELLOW)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" "),
-                Span::styled("Dockerfile can run during image builds.", note),
-            ]),
-            Line::from(vec![
-                Span::styled(
-                    "!",
-                    Style::default()
-                        .fg(WARNING_YELLOW)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" "),
-                Span::styled("The role can access mounted workspace files.", note),
-            ]),
-        ]),
-        inset(rows[5], 3),
-    );
 
-    render_buttons(frame, rows[7], state);
+    let detail_lines = details
+        .iter()
+        .map(|(label, value_text)| {
+            Line::from(vec![
+                Span::styled(format!("{label}: "), key),
+                Span::styled(value_text.clone(), value),
+            ])
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(detail_lines), inset(rows[2], 3));
+
+    let note_lines = notes
+        .iter()
+        .map(|message| {
+            Line::from(vec![
+                Span::styled(
+                    "!",
+                    Style::default()
+                        .fg(WARNING_YELLOW)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled(message.clone(), note),
+            ])
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(note_lines), inset(rows[4], 3));
+
+    render_buttons(frame, rows[6], state);
 }
 
 const fn inset(area: Rect, x: u16) -> Rect {
@@ -391,12 +400,23 @@ mod tests {
     }
 
     #[test]
-    fn role_trust_prompt_renders_readable_source_details() {
+    fn details_prompt_renders_readable_source_details() {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
-        let s = ConfirmState::role_trust(
-            "acme/agent-jones",
-            "https://github.com/acme/jackin-agent-jones.git",
+        let s = ConfirmState::details(
+            "Trust role source",
+            "Trust this role source?",
+            vec![
+                ("Role".into(), "acme/agent-jones".into()),
+                (
+                    "Repository".into(),
+                    "https://github.com/acme/jackin-agent-jones.git".into(),
+                ),
+            ],
+            vec![
+                "Dockerfile can run during image builds.".into(),
+                "The role can access mounted workspace files.".into(),
+            ],
         );
         let area = Rect::new(0, 0, 100, required_height(&s));
         let backend = TestBackend::new(area.width, area.height);

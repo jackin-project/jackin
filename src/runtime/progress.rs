@@ -341,9 +341,20 @@ mod tests {
     fn confirm_dialog_renders_role_trust_details() {
         let backend = TestBackend::new(100, 26);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        let state = ConfirmState::role_trust(
-            "acme/agent-jones",
-            "https://github.com/acme/jackin-agent-jones.git",
+        let state = ConfirmState::details(
+            "Trust role source",
+            "Trust this role source?",
+            vec![
+                ("Role".into(), "acme/agent-jones".into()),
+                (
+                    "Repository".into(),
+                    "https://github.com/acme/jackin-agent-jones.git".into(),
+                ),
+            ],
+            vec![
+                "Dockerfile can run during image builds.".into(),
+                "The role can access mounted workspace files.".into(),
+            ],
         );
 
         terminal.draw(|frame| draw_confirm(frame, &state)).unwrap();

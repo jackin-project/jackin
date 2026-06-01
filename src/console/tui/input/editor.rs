@@ -1932,11 +1932,23 @@ pub(crate) fn open_role_trust_confirm(
     key: String,
     source: crate::config::RoleSource,
 ) {
-    let state = jackin_tui::components::ConfirmState::role_trust(key.clone(), source.git.clone());
+    let state = role_trust_confirm_state(key.clone(), source.git.clone());
     editor.modal = Some(Modal::Confirm {
         target: ConfirmTarget::TrustRoleSource { key, source },
         state,
     });
+}
+
+fn role_trust_confirm_state(role: String, repository: String) -> jackin_tui::components::ConfirmState {
+    jackin_tui::components::ConfirmState::details(
+        "Trust role source",
+        "Trust this role source?",
+        vec![("Role".into(), role), ("Repository".into(), repository)],
+        vec![
+            "Dockerfile can run during image builds.".into(),
+            "The role can access mounted workspace files.".into(),
+        ],
+    )
 }
 
 pub(crate) fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig, key: &str) {
@@ -2765,16 +2777,20 @@ plugins = []
         match &editor.modal {
             Some(Modal::Confirm { target, state }) => {
                 assert_eq!(state.title(), "Trust role source");
-                let jackin_tui::components::ConfirmKind::RoleTrust { role, repository } =
-                    state.kind()
+                let jackin_tui::components::ConfirmKind::Details { rows, notes, .. } = state.kind()
                 else {
-                    panic!("expected RoleTrust kind, got {:?}", state.kind());
+                    panic!("expected Details kind, got {:?}", state.kind());
                 };
-                assert_eq!(role, "chainargos/agent-brown");
-                assert_eq!(
-                    repository, "https://github.com/chainargos/jackin-agent-brown.git",
-                    "trust prompt should show the repository URL"
+                assert!(
+                    rows.iter().any(|(label, value)| label == "Role"
+                        && value == "chainargos/agent-brown")
                 );
+                assert!(
+                    rows.iter().any(|(label, value)| label == "Repository"
+                        && value == "https://github.com/chainargos/jackin-agent-brown.git"),
+                    "trust prompt should show the repository URL",
+                );
+                assert!(notes.iter().any(|note| note == "Dockerfile can run during image builds."));
                 match target {
                     ConfirmTarget::TrustRoleSource { key, source } => {
                         assert_eq!(key, "chainargos/agent-brown");

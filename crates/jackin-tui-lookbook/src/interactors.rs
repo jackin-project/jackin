@@ -321,9 +321,24 @@ impl ConfirmInteractor {
 
     pub(crate) fn role_trust_story() -> Self {
         Self {
-            state: ConfirmState::role_trust("rust", "https://github.com/jackin-project/roles"),
+            state: role_trust_confirm_state(),
         }
     }
+}
+
+fn role_trust_confirm_state() -> ConfirmState {
+    ConfirmState::details(
+        "Trust role source",
+        "Trust this role source?",
+        vec![
+            ("Role".into(), "rust".into()),
+            ("Repository".into(), "https://github.com/jackin-project/roles".into()),
+        ],
+        vec![
+            "Dockerfile can run during image builds.".into(),
+            "The role can access mounted workspace files.".into(),
+        ],
+    )
 }
 
 impl StoryInteraction for ConfirmInteractor {

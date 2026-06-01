@@ -265,7 +265,7 @@ impl LaunchProgress {
         repository: impl Into<String>,
     ) -> anyhow::Result<bool> {
         self.with_rich_renderer("role trust prompt", |renderer| {
-            renderer.confirm(ConfirmState::role_trust(role, repository))
+            renderer.confirm(role_trust_confirm_state(role.into(), repository.into()))
         })
     }
 
@@ -278,6 +278,18 @@ impl LaunchProgress {
         // awaited work no longer needs to interleave a draw — just await it.
         future.await
     }
+}
+
+fn role_trust_confirm_state(role: String, repository: String) -> ConfirmState {
+    ConfirmState::details(
+        "Trust role source",
+        "Trust this role source?",
+        vec![("Role".into(), role), ("Repository".into(), repository)],
+        vec![
+            "Dockerfile can run during image builds.".into(),
+            "The role can access mounted workspace files.".into(),
+        ],
+    )
 }
 
 impl Drop for LaunchProgress {

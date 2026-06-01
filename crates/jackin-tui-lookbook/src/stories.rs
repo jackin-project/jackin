@@ -320,7 +320,18 @@ fn story_confirm_default(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_confirm_role_trust(frame: &mut Frame<'_>, area: Rect) {
-    let state = ConfirmState::role_trust("rust", "https://github.com/jackin-project/roles");
+    let state = ConfirmState::details(
+        "Trust role source",
+        "Trust this role source?",
+        vec![
+            ("Role".into(), "rust".into()),
+            ("Repository".into(), "https://github.com/jackin-project/roles".into()),
+        ],
+        vec![
+            "Dockerfile can run during image builds.".into(),
+            "The role can access mounted workspace files.".into(),
+        ],
+    );
     render_confirm_dialog(frame, area, &state);
 }
 
