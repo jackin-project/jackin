@@ -49,6 +49,7 @@ use crate::console::manager::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
 use jackin_console::tui::components::mount_rows::render_mount_header;
+use jackin_console::tui::screens::workspaces::view::Disclosure;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn render_list_body(
@@ -381,8 +382,8 @@ fn push_tree_workspace_line(
     let cursor = if selected && show_cursor { "▸" } else { " " };
     // Build line as separate spans so line_width measures display columns
     // correctly for the ▶/▼ glyphs (same approach as the editor render).
-    let line = if has_instances {
-        let arrow = if expanded { "▼" } else { "▶" };
+    let disclosure = Disclosure::for_instances(has_instances, expanded);
+    let line = if let Some(arrow) = disclosure.glyph() {
         let text_w = 1 + 1 + 1 + jackin_tui::display_cols(name);
         *max_w = (*max_w).max(text_w);
         if selected {
