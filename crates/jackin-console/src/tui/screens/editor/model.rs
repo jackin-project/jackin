@@ -63,6 +63,21 @@ pub enum SecretsRow {
     SectionSpacer,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecretsEnterPlan {
+    EditValue {
+        scope: SecretsScopeTag,
+        key: String,
+    },
+    OpenScopePicker,
+    ExpandRole(String),
+    AddRoleKey {
+        scope: SecretsScopeTag,
+        label: String,
+    },
+    Noop,
+}
+
 /// Row-shape model for the Auth tab.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthRow<K> {

@@ -296,7 +296,7 @@ pub struct SettingsState<'a> {
 
 pub use jackin_console::tui::screens::editor::model::{
     AuthRow as GenericAuthRow, CreateStep, EditorMode, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, SecretsRow, SecretsScopeTag, TextInputTarget,
+    FileBrowserTarget, SecretsEnterPlan, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
 pub use jackin_console::tui::screens::settings::model::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::model::{AuthRow, EditorTab, SecretsRow, SecretsScopeTag};
+use super::model::{AuthRow, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag};
 
 #[must_use]
 pub const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
@@ -141,6 +141,97 @@ pub fn toggle_secret_mask(
     let entry = (scope, key);
     if !unmasked_rows.remove(&entry) {
         unmasked_rows.insert(entry);
+    }
+}
+
+#[must_use]
+pub fn secret_delete_target_for_row(
+    row: Option<&SecretsRow>,
+) -> Option<(SecretsScopeTag, String)> {
+    match row? {
+        SecretsRow::WorkspaceKeyRow(key) => Some((SecretsScopeTag::Workspace, key.clone())),
+        SecretsRow::RoleKeyRow { role, key } => {
+            Some((SecretsScopeTag::Role(role.clone()), key.clone()))
+        }
+        SecretsRow::WorkspaceAddSentinel
+        | SecretsRow::RoleHeader { .. }
+        | SecretsRow::RoleAddSentinel(_)
+        | SecretsRow::SectionSpacer => None,
+    }
+}
+
+#[must_use]
+pub fn secret_add_target_for_row(row: Option<&SecretsRow>) -> Option<(SecretsScopeTag, String)> {
+    match row? {
+        SecretsRow::WorkspaceKeyRow(_) | SecretsRow::WorkspaceAddSentinel => Some((
+            SecretsScopeTag::Workspace,
+            "New workspace environment key".to_string(),
+        )),
+        SecretsRow::RoleHeader { role, .. }
+        | SecretsRow::RoleKeyRow { role, .. }
+        | SecretsRow::RoleAddSentinel(role) => Some((
+            SecretsScopeTag::Role(role.clone()),
+            format!("New {role} environment key"),
+        )),
+        SecretsRow::SectionSpacer => None,
+    }
+}
+
+#[must_use]
+pub fn secret_picker_target_for_row(
+    row: Option<&SecretsRow>,
+) -> Option<(SecretsScopeTag, Option<String>)> {
+    match row? {
+        SecretsRow::WorkspaceKeyRow(key) => Some((SecretsScopeTag::Workspace, Some(key.clone()))),
+        SecretsRow::RoleKeyRow { role, key } => {
+            Some((SecretsScopeTag::Role(role.clone()), Some(key.clone())))
+        }
+        SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
+        SecretsRow::RoleAddSentinel(role) => Some((SecretsScopeTag::Role(role.clone()), None)),
+        SecretsRow::RoleHeader { .. } | SecretsRow::SectionSpacer => None,
+    }
+}
+
+#[must_use]
+pub fn secret_enter_plan_for_row(
+    row: Option<&SecretsRow>,
+    can_edit_key: impl Fn(&SecretsScopeTag, &str) -> bool,
+) -> SecretsEnterPlan {
+    match row {
+        Some(SecretsRow::WorkspaceKeyRow(key)) => {
+            let scope = SecretsScopeTag::Workspace;
+            if can_edit_key(&scope, key) {
+                SecretsEnterPlan::EditValue {
+                    scope,
+                    key: key.clone(),
+                }
+            } else {
+                SecretsEnterPlan::Noop
+            }
+        }
+        Some(SecretsRow::WorkspaceAddSentinel) => SecretsEnterPlan::OpenScopePicker,
+        Some(SecretsRow::RoleHeader {
+            role,
+            expanded: false,
+        }) => SecretsEnterPlan::ExpandRole(role.clone()),
+        Some(SecretsRow::RoleKeyRow { role, key }) => {
+            let scope = SecretsScopeTag::Role(role.clone());
+            if can_edit_key(&scope, key) {
+                SecretsEnterPlan::EditValue {
+                    scope,
+                    key: key.clone(),
+                }
+            } else {
+                SecretsEnterPlan::Noop
+            }
+        }
+        Some(SecretsRow::RoleAddSentinel(role)) => SecretsEnterPlan::AddRoleKey {
+            scope: SecretsScopeTag::Role(role.clone()),
+            label: format!("New {role} environment key"),
+        },
+        Some(SecretsRow::RoleHeader { .. } | SecretsRow::SectionSpacer) | None => {
+            SecretsEnterPlan::Noop
+        }
     }
 }
 
@@ -387,6 +478,64 @@ mod tests {
 
         assert_eq!(roles["alpha"].env.get("TOKEN"), Some(&"secret"));
         assert!(expanded.contains("alpha"));
+    }
+
+    #[test]
+    fn secret_row_targets_follow_scope() {
+        let workspace = SecretsRow::WorkspaceKeyRow("TOKEN".to_string());
+        let role = SecretsRow::RoleAddSentinel("alpha".to_string());
+
+        assert_eq!(
+            secret_delete_target_for_row(Some(&workspace)),
+            Some((SecretsScopeTag::Workspace, "TOKEN".to_string()))
+        );
+        assert_eq!(
+            secret_add_target_for_row(Some(&role)),
+            Some((
+                SecretsScopeTag::Role("alpha".to_string()),
+                "New alpha environment key".to_string()
+            ))
+        );
+        assert_eq!(
+            secret_picker_target_for_row(Some(&role)),
+            Some((SecretsScopeTag::Role("alpha".to_string()), None))
+        );
+    }
+
+    #[test]
+    fn secret_enter_plan_handles_values_and_headers() {
+        let key = SecretsRow::RoleKeyRow {
+            role: "alpha".to_string(),
+            key: "TOKEN".to_string(),
+        };
+        let collapsed = SecretsRow::RoleHeader {
+            role: "alpha".to_string(),
+            expanded: false,
+        };
+        let expanded = SecretsRow::RoleHeader {
+            role: "alpha".to_string(),
+            expanded: true,
+        };
+
+        assert_eq!(
+            secret_enter_plan_for_row(Some(&key), |_, _| true),
+            SecretsEnterPlan::EditValue {
+                scope: SecretsScopeTag::Role("alpha".to_string()),
+                key: "TOKEN".to_string()
+            }
+        );
+        assert_eq!(
+            secret_enter_plan_for_row(Some(&key), |_, _| false),
+            SecretsEnterPlan::Noop
+        );
+        assert_eq!(
+            secret_enter_plan_for_row(Some(&collapsed), |_, _| true),
+            SecretsEnterPlan::ExpandRole("alpha".to_string())
+        );
+        assert_eq!(
+            secret_enter_plan_for_row(Some(&expanded), |_, _| true),
+            SecretsEnterPlan::Noop
+        );
     }
 
     #[test]

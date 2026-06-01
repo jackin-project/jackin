@@ -9,8 +9,8 @@ use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::render::mount_display::workspace_mounts_content_width_with_cache;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
-    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
-    TextInputTarget,
+    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsEnterPlan,
+    SecretsRow, SecretsScopeTag, TextInputTarget,
     auth_flat_rows, secrets_flat_rows,
 };
 #[cfg(test)]
@@ -504,6 +504,26 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     let _dirty = update_manager(state, message);
 }
 
+fn secret_value<'a>(
+    editor: &'a EditorState<'_>,
+    scope: &SecretsScopeTag,
+    key: &str,
+) -> Option<&'a crate::operator_env::EnvValue> {
+    match scope {
+        SecretsScopeTag::Workspace => editor.pending.env.get(key),
+        SecretsScopeTag::Role(role) => editor
+            .pending
+            .roles
+            .get(role)
+            .and_then(|role_override| role_override.env.get(key)),
+    }
+}
+
+fn secret_is_text_editable(editor: &EditorState<'_>, scope: &SecretsScopeTag, key: &str) -> bool {
+    !secret_value(editor, scope, key)
+        .is_some_and(|value| matches!(value, crate::operator_env::EnvValue::OpRef(_)))
+}
+
 /// No-op on header/sentinel/op:// rows.
 fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, String)> {
     let FieldFocus::Row(n) = editor.active_field;
@@ -512,24 +532,13 @@ fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, Stri
     let key = match row {
         SecretsRow::WorkspaceKeyRow(key) => {
             // OpRef rows render as breadcrumbs and ignore mask state.
-            if editor
-                .pending
-                .env
-                .get(&key)
-                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
-            {
+            if !secret_is_text_editable(editor, &SecretsScopeTag::Workspace, &key) {
                 return None;
             }
             (SecretsScopeTag::Workspace, key)
         }
         SecretsRow::RoleKeyRow { role, key } => {
-            if editor
-                .pending
-                .roles
-                .get(&role)
-                .and_then(|o| o.env.get(&key))
-                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
-            {
+            if !secret_is_text_editable(editor, &SecretsScopeTag::Role(role.clone()), &key) {
                 return None;
             }
             (SecretsScopeTag::Role(role), key)
@@ -570,36 +579,23 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     use jackin_tui::components::TextInputState;
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
-    let Some(row) = rows.get(n).cloned() else {
-        return;
-    };
-    match row {
-        SecretsRow::WorkspaceKeyRow(key) => {
-            // OpRef rows are not text-editable — operator deletes via
-            // D and re-adds via the source picker.
-            if editor
-                .pending
-                .env
-                .get(&key)
-                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
-            {
-                return;
-            }
-            let current = editor
-                .pending
-                .env
-                .get(&key)
+    let plan = editor_update::secret_enter_plan_for_row(rows.get(n), |scope, key| {
+        secret_is_text_editable(editor, scope, key)
+    });
+    match plan {
+        SecretsEnterPlan::EditValue { scope, key } => {
+            let current = secret_value(editor, &scope, &key)
                 .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
-                    scope: SecretsScopeTag::Workspace,
+                    scope,
                     key: key.clone(),
                 },
                 state: TextInputState::new_allow_empty(format!("Edit {key}"), current),
             });
         }
-        SecretsRow::WorkspaceAddSentinel => {
+        SecretsEnterPlan::OpenScopePicker => {
             // Workspace sentinel asks the scope question first; the
             // per-role sentinel fast-path stays direct.
             use jackin_console::tui::components::scope_picker::ScopePickerState;
@@ -607,50 +603,19 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
                 state: ScopePickerState::new(),
             });
         }
-        SecretsRow::RoleHeader { role, expanded } => {
-            if !expanded {
-                editor.secrets_expanded.insert(role);
-            }
+        SecretsEnterPlan::ExpandRole(role) => {
+            editor.secrets_expanded.insert(role);
         }
-        SecretsRow::RoleKeyRow { role, key } => {
-            if editor
-                .pending
-                .roles
-                .get(&role)
-                .and_then(|o| o.env.get(&key))
-                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
-            {
-                return;
-            }
-            let current = editor
-                .pending
-                .roles
-                .get(&role)
-                .and_then(|o| o.env.get(&key))
-                .map(|v| v.as_persisted_str().to_string())
-                .unwrap_or_default();
-            let label = format!("Edit {key}");
-            editor.modal = Some(Modal::TextInput {
-                target: TextInputTarget::EnvValue {
-                    scope: SecretsScopeTag::Role(role),
-                    key,
-                },
-                state: TextInputState::new_allow_empty(label, current),
-            });
-        }
-        SecretsRow::RoleAddSentinel(role) => {
+        SecretsEnterPlan::AddRoleKey { scope, label } => {
             // In-section fast-path — already viewing the role, don't
             // re-ask the scope question.
-            let label = format!("New {role} environment key");
-            let scope = SecretsScopeTag::Role(role);
             let state = env_key_input_state(editor, &scope, label, String::new());
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvKey { scope },
                 state,
             });
         }
-        // Spacer rows are skipped on `↑`/`↓`; defensive no-op.
-        SecretsRow::SectionSpacer => {}
+        SecretsEnterPlan::Noop => {}
     }
 }
 
@@ -700,13 +665,8 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
     use jackin_tui::components::ConfirmState;
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
-    let Some(row) = rows.get(n).cloned() else {
+    let Some((scope, key)) = editor_update::secret_delete_target_for_row(rows.get(n)) else {
         return;
-    };
-    let (scope, key) = match row {
-        SecretsRow::WorkspaceKeyRow(key) => (SecretsScopeTag::Workspace, key),
-        SecretsRow::RoleKeyRow { role, key } => (SecretsScopeTag::Role(role), key),
-        _ => return,
     };
     let prompt = format!("Delete environment variable {key}?");
     editor.modal = Some(Modal::Confirm {
@@ -722,24 +682,8 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
 fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
-    let Some(row) = rows.get(n).cloned() else {
+    let Some((scope, label)) = editor_update::secret_add_target_for_row(rows.get(n)) else {
         return;
-    };
-    let (scope, label) = match row {
-        SecretsRow::WorkspaceKeyRow(_) | SecretsRow::WorkspaceAddSentinel => (
-            SecretsScopeTag::Workspace,
-            "New workspace environment key".to_string(),
-        ),
-        SecretsRow::RoleHeader { role, .. }
-        | SecretsRow::RoleKeyRow { role, .. }
-        | SecretsRow::RoleAddSentinel(role) => (
-            SecretsScopeTag::Role(role.clone()),
-            format!("New {role} environment key"),
-        ),
-        // Cursor never lands on `SectionSpacer` (skipped on `↑`/`↓`),
-        // but keep the match exhaustive — silently no-op on the
-        // pathological case.
-        SecretsRow::SectionSpacer => return,
     };
     let state = env_key_input_state(editor, &scope, label, String::new());
     editor.modal = Some(Modal::TextInput {
@@ -1303,17 +1247,7 @@ fn open_secrets_picker_modal(
 ) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
-    let Some(row) = rows.get(n).cloned() else {
-        return;
-    };
-    let target = match row {
-        SecretsRow::WorkspaceKeyRow(key) => Some((SecretsScopeTag::Workspace, Some(key))),
-        SecretsRow::RoleKeyRow { role, key } => Some((SecretsScopeTag::Role(role), Some(key))),
-        SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
-        SecretsRow::RoleAddSentinel(role) => Some((SecretsScopeTag::Role(role), None)),
-        SecretsRow::RoleHeader { .. } | SecretsRow::SectionSpacer => None,
-    };
-    let Some(target) = target else {
+    let Some(target) = editor_update::secret_picker_target_for_row(rows.get(n)) else {
         return;
     };
     editor.pending_picker_target = Some(target);
