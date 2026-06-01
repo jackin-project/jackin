@@ -8,6 +8,7 @@ pub mod confirm_save;
 pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;
+pub mod mount_rows;
 pub mod op_breadcrumb;
 pub mod op_picker;
 pub mod role_picker;

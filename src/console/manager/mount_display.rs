@@ -2,6 +2,10 @@
 
 use crate::console::manager::state::MountInfoCache;
 
+pub(crate) use jackin_console::widgets::mount_rows::{
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
+};
+
 /// Pre-formatted mount row. `host_source` is `Some` only when src != dst.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MountDisplayRow {
@@ -52,12 +56,6 @@ pub(crate) fn format_mount_rows_with_cache(
         })
         .collect()
 }
-
-/// "Mode" header is 4 chars; pad row values so the Type column stays aligned.
-pub(crate) const MOUNT_MODE_COL_WIDTH: usize = 4;
-
-/// Width of the `Isolation` column, pinned to the widest known value/header.
-pub(crate) const MOUNT_ISOLATION_COL_WIDTH: usize = 9;
 
 /// Width of the `Destination` column, sized to fit the widest path plus header.
 pub(crate) fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
