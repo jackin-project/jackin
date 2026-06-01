@@ -124,6 +124,46 @@ pub fn secrets_flat_rows<R, V>(
 }
 
 #[must_use]
+pub fn forbidden_secret_keys<R, V>(
+    workspace_env: &BTreeMap<String, V>,
+    roles: &BTreeMap<String, R>,
+    scope: &SecretsScopeTag,
+    role_env: impl Fn(&R) -> &BTreeMap<String, V>,
+) -> Vec<String> {
+    match scope {
+        SecretsScopeTag::Workspace => workspace_env.keys().cloned().collect(),
+        SecretsScopeTag::Role(role) => roles
+            .get(role)
+            .map(|role_override| role_env(role_override).keys().cloned().collect())
+            .unwrap_or_default(),
+    }
+}
+
+pub fn set_secret_value<R, V>(
+    workspace_env: &mut BTreeMap<String, V>,
+    roles: &mut BTreeMap<String, R>,
+    expanded_roles: &mut BTreeSet<String>,
+    scope: &SecretsScopeTag,
+    key: &str,
+    value: V,
+    mut ensure_role: impl FnMut(&mut BTreeMap<String, R>, &str),
+    mut role_env_mut: impl FnMut(&mut R) -> &mut BTreeMap<String, V>,
+) {
+    match scope {
+        SecretsScopeTag::Workspace => {
+            workspace_env.insert(key.to_string(), value);
+        }
+        SecretsScopeTag::Role(role) => {
+            ensure_role(roles, role);
+            if let Some(role_override) = roles.get_mut(role) {
+                role_env_mut(role_override).insert(key.to_string(), value);
+                expanded_roles.insert(role.clone());
+            }
+        }
+    }
+}
+
+#[must_use]
 pub fn auth_flat_rows<K, R>(
     selected_kind: Option<K>,
     root_kinds: impl IntoIterator<Item = K>,
@@ -240,6 +280,56 @@ mod tests {
         assert!(!rows.iter().any(
             |row| matches!(row, SecretsRow::RoleKeyRow { role, key } if role == "alpha" && key == "ROLE_KEY")
         ));
+    }
+
+    #[test]
+    fn forbidden_secret_keys_follow_scope() {
+        let workspace_env = BTreeMap::from([("GLOBAL".to_string(), "x")]);
+        let roles = BTreeMap::from([(
+            "alpha".to_string(),
+            RoleEnv {
+                env: BTreeMap::from([("ROLE_KEY".to_string(), "x")]),
+            },
+        )]);
+
+        assert_eq!(
+            forbidden_secret_keys(&workspace_env, &roles, &SecretsScopeTag::Workspace, |role| {
+                &role.env
+            }),
+            vec!["GLOBAL".to_string()]
+        );
+        assert_eq!(
+            forbidden_secret_keys(
+                &workspace_env,
+                &roles,
+                &SecretsScopeTag::Role("alpha".into()),
+                |role| &role.env
+            ),
+            vec!["ROLE_KEY".to_string()]
+        );
+    }
+
+    #[test]
+    fn set_secret_value_creates_and_expands_role_scope() {
+        let mut workspace_env = BTreeMap::new();
+        let mut roles = BTreeMap::<String, RoleEnv>::new();
+        let mut expanded = BTreeSet::new();
+
+        set_secret_value(
+            &mut workspace_env,
+            &mut roles,
+            &mut expanded,
+            &SecretsScopeTag::Role("alpha".into()),
+            "TOKEN",
+            "secret",
+            |roles, role| {
+                roles.entry(role.to_string()).or_default();
+            },
+            |role| &mut role.env,
+        );
+
+        assert_eq!(roles["alpha"].env.get("TOKEN"), Some(&"secret"));
+        assert!(expanded.contains("alpha"));
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

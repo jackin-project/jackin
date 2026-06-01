@@ -20,6 +20,7 @@ use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::workdir_pick::WorkdirPickState;
+use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{secrets_forbidden_label, secrets_scope_label};
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -1503,15 +1504,9 @@ fn handle_token_generate_pick(
 /// From `editor.pending` (not on-disk config) so a same-session
 /// add blocks a follow-up duplicate.
 fn forbidden_keys_for_scope(editor: &EditorState<'_>, scope: &SecretsScopeTag) -> Vec<String> {
-    match scope {
-        SecretsScopeTag::Workspace => editor.pending.env.keys().cloned().collect(),
-        SecretsScopeTag::Role(role) => editor
-            .pending
-            .roles
-            .get(role)
-            .map(|o| o.env.keys().cloned().collect())
-            .unwrap_or_default(),
-    }
+    editor_update::forbidden_secret_keys(&editor.pending.env, &editor.pending.roles, scope, |role| {
+        &role.env
+    })
 }
 
 /// Centralises `EnvKey` construction so every opener (Enter on
@@ -1540,22 +1535,12 @@ fn set_pending_env_value(
     key: &str,
     value: &str,
 ) {
-    match scope {
-        SecretsScopeTag::Workspace => {
-            editor.pending.env.insert(
-                key.to_string(),
-                crate::operator_env::EnvValue::Plain(value.to_string()),
-            );
-        }
-        SecretsScopeTag::Role(role) => {
-            let entry = editor.pending.roles.entry(role.clone()).or_default();
-            entry.env.insert(
-                key.to_string(),
-                crate::operator_env::EnvValue::Plain(value.to_string()),
-            );
-            editor.secrets_expanded.insert(role.clone());
-        }
-    }
+    set_pending_env_value_typed(
+        editor,
+        scope,
+        key,
+        crate::operator_env::EnvValue::Plain(value.to_string()),
+    );
 }
 
 /// Write an `OpRef` (picker commit result) into the pending env map.
@@ -1565,22 +1550,7 @@ fn set_pending_env_op_ref(
     key: &str,
     op_ref: crate::operator_env::OpRef,
 ) {
-    match scope {
-        SecretsScopeTag::Workspace => {
-            editor.pending.env.insert(
-                key.to_string(),
-                crate::operator_env::EnvValue::OpRef(op_ref),
-            );
-        }
-        SecretsScopeTag::Role(role) => {
-            let entry = editor.pending.roles.entry(role.clone()).or_default();
-            entry.env.insert(
-                key.to_string(),
-                crate::operator_env::EnvValue::OpRef(op_ref),
-            );
-            editor.secrets_expanded.insert(role.clone());
-        }
-    }
+    set_pending_env_value_typed(editor, scope, key, crate::operator_env::EnvValue::OpRef(op_ref));
 }
 
 /// Write an already-typed `EnvValue` into the pending env map.
@@ -1592,16 +1562,18 @@ fn set_pending_env_value_typed(
     key: &str,
     value: crate::operator_env::EnvValue,
 ) {
-    match scope {
-        SecretsScopeTag::Workspace => {
-            editor.pending.env.insert(key.to_string(), value);
-        }
-        SecretsScopeTag::Role(role) => {
-            let entry = editor.pending.roles.entry(role.clone()).or_default();
-            entry.env.insert(key.to_string(), value);
-            editor.secrets_expanded.insert(role.clone());
-        }
-    }
+    editor_update::set_secret_value(
+        &mut editor.pending.env,
+        &mut editor.pending.roles,
+        &mut editor.secrets_expanded,
+        scope,
+        key,
+        value,
+        |roles, role| {
+            roles.entry(role.to_string()).or_default();
+        },
+        |role| &mut role.env,
+    );
 }
 
 pub(super) fn apply_text_input_to_pending(
