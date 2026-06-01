@@ -176,6 +176,53 @@ pub fn set_settings_env_value<V>(
     }
 }
 
+pub fn toggle_settings_env_mask_for_row<V>(
+    unmasked_rows: &mut BTreeSet<(SettingsEnvScope, String)>,
+    pending: &SettingsEnvConfig<V>,
+    row: Option<&SettingsEnvRow>,
+    is_maskable: impl FnOnce(&V) -> bool,
+) -> bool {
+    let Some(SettingsEnvRow::Key { scope, key }) = row else {
+        return false;
+    };
+    let Some(value) = settings_env_value(pending, scope, key) else {
+        return false;
+    };
+    if !is_maskable(value) {
+        return false;
+    }
+
+    let tag = (scope.clone(), key.clone());
+    if !unmasked_rows.remove(&tag) {
+        unmasked_rows.insert(tag);
+    }
+    true
+}
+
+pub fn remove_settings_env_row<V>(
+    pending: &mut SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: &mut usize,
+    row: Option<&SettingsEnvRow>,
+) -> bool {
+    let Some(SettingsEnvRow::Key { scope, key }) = row else {
+        return false;
+    };
+    match scope {
+        SettingsEnvScope::Global => {
+            pending.env.remove(key);
+        }
+        SettingsEnvScope::Role(role) => {
+            if let Some(role_env) = pending.roles.get_mut(role) {
+                role_env.remove(key);
+            }
+        }
+    }
+    let row_count = settings_env_flat_row_count(pending, expanded_roles);
+    *selected = (*selected).min(row_count.saturating_sub(1));
+    true
+}
+
 #[must_use]
 pub fn step_cursor_down_by<F>(candidate: usize, max: usize, mut is_skipped: F) -> usize
 where
@@ -332,5 +379,52 @@ mod tests {
             Some(&"secret")
         );
         assert!(expanded.contains("alpha"));
+    }
+
+    #[test]
+    fn toggle_settings_env_mask_for_row_skips_unmaskable_values() {
+        let pending = env_config();
+        let mut unmasked = BTreeSet::new();
+        let row = SettingsEnvRow::Key {
+            scope: SettingsEnvScope::Global,
+            key: "GLOBAL".to_string(),
+        };
+
+        assert!(!toggle_settings_env_mask_for_row(
+            &mut unmasked,
+            &pending,
+            Some(&row),
+            |_| false
+        ));
+        assert!(unmasked.is_empty());
+
+        assert!(toggle_settings_env_mask_for_row(
+            &mut unmasked,
+            &pending,
+            Some(&row),
+            |_| true
+        ));
+        assert!(unmasked.contains(&(SettingsEnvScope::Global, "GLOBAL".to_string())));
+    }
+
+    #[test]
+    fn remove_settings_env_row_deletes_key_and_clamps_selection() {
+        let mut pending = env_config();
+        let expanded = BTreeSet::from(["alpha".to_string()]);
+        let mut selected = 99;
+        let row = SettingsEnvRow::Key {
+            scope: SettingsEnvScope::Role("alpha".to_string()),
+            key: "ROLE_B".to_string(),
+        };
+
+        assert!(remove_settings_env_row(
+            &mut pending,
+            &expanded,
+            &mut selected,
+            Some(&row),
+        ));
+
+        assert!(!pending.roles["alpha"].contains_key("ROLE_B"));
+        assert_eq!(selected, settings_env_flat_row_count(&pending, &expanded) - 1);
     }
 }

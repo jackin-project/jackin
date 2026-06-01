@@ -1846,18 +1846,12 @@ fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::S
 
 fn toggle_settings_env_mask(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings_env_flat_rows(settings);
-    let Some(SettingsEnvRow::Key { scope, key }) = rows.get(settings.env.selected).cloned() else {
-        return;
-    };
-    if settings_update::settings_env_value(&settings.env.pending, &scope, &key)
-        .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
-    {
-        return;
-    }
-    let tag = (scope, key);
-    if !settings.env.unmasked_rows.remove(&tag) {
-        settings.env.unmasked_rows.insert(tag);
-    }
+    settings_update::toggle_settings_env_mask_for_row(
+        &mut settings.env.unmasked_rows,
+        &settings.env.pending,
+        rows.get(settings.env.selected),
+        |value| !matches!(value, crate::operator_env::EnvValue::OpRef(_)),
+    );
 }
 
 fn open_settings_env_picker_modal(
@@ -1887,20 +1881,13 @@ fn open_settings_env_picker_modal(
 
 fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
     let rows = settings_env_state_flat_rows(env);
-    if let Some(SettingsEnvRow::Key { scope, key }) = rows.get(env.selected).cloned() {
-        match scope {
-            SettingsEnvScope::Global => {
-                env.pending.env.remove(&key);
-            }
-            SettingsEnvScope::Role(role) => {
-                if let Some(role_env) = env.pending.roles.get_mut(&role) {
-                    role_env.remove(&key);
-                }
-            }
-        }
-        let row_count = settings_env_state_flat_rows(env).len();
-        env.selected = env.selected.min(row_count.saturating_sub(1));
-    }
+    let selected = env.selected;
+    settings_update::remove_settings_env_row(
+        &mut env.pending,
+        &env.expanded,
+        &mut env.selected,
+        rows.get(selected),
+    );
 }
 
 fn settings_env_key_input_state<'a>(
