@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
+#[cfg(test)]
 use std::sync::Arc;
 
 use jackin_console::tui::components::list_helpers::{first_selection, list_state_for_count};
@@ -14,53 +15,43 @@ use super::{
     OpPickerMode, OpPickerStage, OpPickerState,
 };
 use super::state::OpPickerPendingLoad;
-use crate::operator_env::{OpAccount, OpCache, OpStructRunner, default_op_struct_runner};
+use crate::operator_env::{OpAccount, OpCache};
+#[cfg(test)]
+use crate::operator_env::OpStructRunner;
+
+#[cfg(test)]
+type PickerRunner = Arc<dyn OpStructRunner + Send + Sync>;
+#[cfg(not(test))]
+type PickerRunner = ();
 
 impl OpPickerState {
     pub fn new() -> Self {
-        Self::new_with_runner_and_cache(
-            default_op_struct_runner(),
-            Rc::new(RefCell::new(OpCache::default())),
-        )
+        Self::new_with_cache(Rc::new(RefCell::new(OpCache::default())))
     }
 
     pub fn new_with_cache(op_cache: Rc<RefCell<OpCache>>) -> Self {
-        Self::new_with_runner_and_cache(default_op_struct_runner(), op_cache)
+        Self::new_with_mode(op_cache, OpPickerMode::Browse)
     }
 
-    pub fn new_with_runner(runner: Arc<dyn OpStructRunner + Send + Sync>) -> Self {
+    #[cfg(test)]
+    pub fn new_with_runner(runner: PickerRunner) -> Self {
         Self::new_with_runner_and_cache(runner, Rc::new(RefCell::new(OpCache::default())))
     }
 
+    #[cfg(test)]
     pub fn new_with_runner_and_cache(
-        runner: Arc<dyn OpStructRunner + Send + Sync>,
+        runner: PickerRunner,
         op_cache: Rc<RefCell<OpCache>>,
     ) -> Self {
-        Self::new_with_mode(runner, op_cache, OpPickerMode::Browse)
+        Self::new_with_mode_and_runner(op_cache, OpPickerMode::Browse, runner)
     }
 
-    /// Create-mode picker built against the production `OpCli` runner.
     pub fn new_create_with_cache(
         op_cache: Rc<RefCell<OpCache>>,
         item_name_default: impl Into<String>,
         field_label_default: impl Into<String>,
     ) -> Self {
-        Self::new_create_with_runner_and_cache(
-            default_op_struct_runner(),
-            op_cache,
-            item_name_default,
-            field_label_default,
-        )
-    }
-
-    pub fn new_create_with_runner_and_cache(
-        runner: Arc<dyn OpStructRunner + Send + Sync>,
-        op_cache: Rc<RefCell<OpCache>>,
-        item_name_default: impl Into<String>,
-        field_label_default: impl Into<String>,
-    ) -> Self {
         Self::new_with_mode(
-            runner,
             op_cache,
             OpPickerMode::Create {
                 item_name_default: item_name_default.into(),
@@ -69,10 +60,47 @@ impl OpPickerState {
         )
     }
 
+    #[cfg(test)]
+    pub fn new_create_with_runner_and_cache(
+        runner: PickerRunner,
+        op_cache: Rc<RefCell<OpCache>>,
+        item_name_default: impl Into<String>,
+        field_label_default: impl Into<String>,
+    ) -> Self {
+        Self::new_with_mode_and_runner(
+            op_cache,
+            OpPickerMode::Create {
+                item_name_default: item_name_default.into(),
+                field_label_default: field_label_default.into(),
+            },
+            runner,
+        )
+    }
+
     fn new_with_mode(
-        runner: Arc<dyn OpStructRunner + Send + Sync>,
         op_cache: Rc<RefCell<OpCache>>,
         mode: OpPickerMode,
+    ) -> Self {
+        #[cfg(test)]
+        let runner = crate::operator_env::default_op_struct_runner();
+        #[cfg(not(test))]
+        let runner = ();
+        Self::build(op_cache, mode, runner)
+    }
+
+    #[cfg(test)]
+    fn new_with_mode_and_runner(
+        op_cache: Rc<RefCell<OpCache>>,
+        mode: OpPickerMode,
+        runner: PickerRunner,
+    ) -> Self {
+        Self::build(op_cache, mode, runner)
+    }
+
+    fn build(
+        op_cache: Rc<RefCell<OpCache>>,
+        mode: OpPickerMode,
+        #[cfg_attr(not(test), allow(unused_variables))] runner: PickerRunner,
     ) -> Self {
         let (item_default, field_default) = match &mode {
             OpPickerMode::Browse => (String::new(), String::new()),
@@ -109,6 +137,7 @@ impl OpPickerState {
             pending_section: None,
             field_label_origin: FieldLabelOrigin::NewItem,
             field_refresh_in_place: false,
+            #[cfg(test)]
             runner,
             rx: None,
             pending_load: None,
@@ -218,6 +247,7 @@ impl OpPickerState {
         self.pending_load = Some(OpPickerPendingLoad {
             cached,
             request,
+            #[cfg(test)]
             runner: self.runner_clone_for_worker(),
         });
     }
@@ -246,8 +276,7 @@ impl OpPickerState {
             .map(|account| account.id.as_str())
     }
 
-    /// Clone the `Arc` so spawned workers share the same trait object
-    /// (test-injected stubs included).
+    #[cfg(test)]
     fn runner_clone_for_worker(&self) -> Arc<dyn OpStructRunner + Send + Sync> {
         Arc::clone(&self.runner)
     }

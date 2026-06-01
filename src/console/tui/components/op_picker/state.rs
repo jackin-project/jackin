@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
+#[cfg(test)]
 use std::sync::Arc;
 
 use jackin_tui::components::TextInputState;
@@ -10,7 +11,9 @@ use jackin_tui::runtime::BlockingSubscription;
 use tui_widget_list::ListState;
 
 use super::{FieldLabelOrigin, LoadRequest, LoadResult, OpLoadState, OpPickerMode, OpPickerStage};
-use crate::operator_env::{OpAccount, OpCache, OpField, OpItem, OpStructRunner, OpVault};
+use crate::operator_env::{OpAccount, OpCache, OpField, OpItem, OpVault};
+#[cfg(test)]
+use crate::operator_env::OpStructRunner;
 
 pub struct OpPickerState {
     pub stage: OpPickerStage,
@@ -62,8 +65,9 @@ pub struct OpPickerState {
     /// as usual. Cleared the moment the refreshed fields arrive.
     pub(super) field_refresh_in_place: bool,
 
-    /// `Arc` so spawned worker threads share the same trait object
-    /// (test injectees included).
+    /// Test-only injected runner. Production chooses its service runner outside
+    /// TUI state when executing the pending typed load request.
+    #[cfg(test)]
     pub(super) runner: Arc<dyn OpStructRunner + Send + Sync>,
     pub(super) rx: Option<BlockingSubscription<LoadResult>>,
     pub(super) pending_load: Option<OpPickerPendingLoad>,
@@ -75,10 +79,11 @@ pub struct OpPickerState {
 pub(in crate::console) struct OpPickerPendingLoad {
     pub cached: Option<LoadResult>,
     pub request: LoadRequest,
+    #[cfg(test)]
     pub runner: Arc<dyn OpStructRunner + Send + Sync>,
 }
 
-// runner / rx aren't Debug; skipped fields are plumbing only.
+// rx and test runner aren't Debug; skipped fields are plumbing only.
 #[allow(clippy::missing_fields_in_debug)]
 impl std::fmt::Debug for OpPickerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

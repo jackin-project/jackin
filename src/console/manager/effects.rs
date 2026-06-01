@@ -439,7 +439,7 @@ fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
     let rx = crate::console::services::op_picker::start_load(
         pending.cached,
         pending.request,
-        pending.runner,
+        crate::operator_env::default_op_struct_runner(),
     );
     state.attach_load_receiver(rx);
     true
