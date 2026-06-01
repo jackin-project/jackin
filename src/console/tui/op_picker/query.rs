@@ -2,60 +2,31 @@
 
 use super::{
     FieldDisplayRow, OpPickerAccount, OpPickerField, OpPickerItem, OpPickerStage, OpPickerState,
-    OpPickerVault, browse_field_display_rows, create_field_display_rows, matches_filter,
-    section_choices_from_references,
+    OpPickerVault, field_display_rows_for_picker, filtered_accounts, filtered_fields,
+    filtered_item_choices, filtered_items, filtered_vaults, section_choices_from_references,
 };
 
 impl OpPickerState {
     pub fn filtered_accounts(&self) -> Vec<&OpPickerAccount> {
-        self.accounts
-            .iter()
-            .filter(|account| {
-                matches_filter(
-                    &self.filter_buf,
-                    [account.email.as_str(), account.url.as_str()],
-                )
-            })
-            .collect()
+        filtered_accounts(&self.filter_buf, &self.accounts)
     }
 
     pub fn filtered_vaults(&self) -> Vec<&OpPickerVault> {
-        self.vaults
-            .iter()
-            .filter(|vault| matches_filter(&self.filter_buf, [vault.name.as_str()]))
-            .collect()
+        filtered_vaults(&self.filter_buf, &self.vaults)
     }
 
     pub fn filtered_items(&self) -> Vec<&OpPickerItem> {
-        self.items
-            .iter()
-            .filter(|item| {
-                matches_filter(
-                    &self.filter_buf,
-                    [item.name.as_str(), item.subtitle.as_str()],
-                )
-            })
-            .collect()
+        filtered_items(&self.filter_buf, &self.items)
     }
 
     /// Filtered items, followed by a trailing `None` sentinel (the
     /// `+ New item` row) in Create mode. Browse mode emits no sentinel.
     pub fn filtered_item_choices(&self) -> Vec<Option<&OpPickerItem>> {
-        let mut out: Vec<Option<&OpPickerItem>> =
-            self.filtered_items().into_iter().map(Some).collect();
-        if self.mode.is_create() {
-            out.push(None);
-        }
-        out
+        filtered_item_choices(&self.filter_buf, &self.items, &self.mode)
     }
 
     pub fn filtered_fields(&self) -> Vec<&OpPickerField> {
-        self.fields
-            .iter()
-            .filter(|field| {
-                matches_filter(&self.filter_buf, [field.label.as_str(), field.id.as_str()])
-            })
-            .collect()
+        filtered_fields(&self.filter_buf, &self.fields)
     }
 
     /// Distinct sections present in the loaded fields, in first-appearance
@@ -74,21 +45,12 @@ impl OpPickerState {
     /// Create mode: the Field stage is already scoped to `selected_section`,
     /// so rows are just that section's fields followed by `+ New field`.
     pub fn build_field_display_rows(&self) -> Vec<FieldDisplayRow> {
-        if self.mode.is_create() {
-            return self.build_create_field_rows();
-        }
-        let visible = self.filtered_fields();
-        browse_field_display_rows(
-            visible.iter().map(|field| field.reference.as_str()),
-            &self.collapsed_sections,
-        )
-    }
-
-    fn build_create_field_rows(&self) -> Vec<FieldDisplayRow> {
-        let visible = self.filtered_fields();
-        create_field_display_rows(
-            visible.iter().map(|field| field.reference.as_str()),
+        field_display_rows_for_picker(
+            &self.mode,
+            &self.filter_buf,
+            &self.fields,
             self.selected_section.as_deref(),
+            &self.collapsed_sections,
         )
     }
 

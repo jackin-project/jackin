@@ -551,6 +551,74 @@ pub fn create_field_display_rows<'a>(
     rows
 }
 
+pub fn filtered_accounts<'a>(
+    filter: &str,
+    accounts: &'a [OpPickerAccount],
+) -> Vec<&'a OpPickerAccount> {
+    accounts
+        .iter()
+        .filter(|account| matches_filter(filter, [account.email.as_str(), account.url.as_str()]))
+        .collect()
+}
+
+pub fn filtered_vaults<'a>(
+    filter: &str,
+    vaults: &'a [OpPickerVault],
+) -> Vec<&'a OpPickerVault> {
+    vaults
+        .iter()
+        .filter(|vault| matches_filter(filter, [vault.name.as_str()]))
+        .collect()
+}
+
+pub fn filtered_items<'a>(filter: &str, items: &'a [OpPickerItem]) -> Vec<&'a OpPickerItem> {
+    items
+        .iter()
+        .filter(|item| matches_filter(filter, [item.name.as_str(), item.subtitle.as_str()]))
+        .collect()
+}
+
+pub fn filtered_item_choices<'a>(
+    filter: &str,
+    items: &'a [OpPickerItem],
+    mode: &OpPickerMode,
+) -> Vec<Option<&'a OpPickerItem>> {
+    let mut out: Vec<Option<&OpPickerItem>> =
+        filtered_items(filter, items).into_iter().map(Some).collect();
+    if mode.is_create() {
+        out.push(None);
+    }
+    out
+}
+
+pub fn filtered_fields<'a>(filter: &str, fields: &'a [OpPickerField]) -> Vec<&'a OpPickerField> {
+    fields
+        .iter()
+        .filter(|field| matches_filter(filter, [field.label.as_str(), field.id.as_str()]))
+        .collect()
+}
+
+pub fn field_display_rows_for_picker(
+    mode: &OpPickerMode,
+    filter: &str,
+    fields: &[OpPickerField],
+    selected_section: Option<&str>,
+    collapsed_sections: &HashSet<String>,
+) -> Vec<FieldDisplayRow> {
+    let visible = filtered_fields(filter, fields);
+    if mode.is_create() {
+        create_field_display_rows(
+            visible.iter().map(|field| field.reference.as_str()),
+            selected_section,
+        )
+    } else {
+        browse_field_display_rows(
+            visible.iter().map(|field| field.reference.as_str()),
+            collapsed_sections,
+        )
+    }
+}
+
 /// Build the committed `op://` value and display path from the picker
 /// cache values. UUID-form `op` segments are paired with human-readable
 /// path segments, preserving a section segment from the field reference

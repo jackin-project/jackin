@@ -32,7 +32,9 @@ pub use jackin_console::tui::components::op_picker::{
     OpPickerError, OpPickerFatalState, OpPickerField, OpPickerFieldRef, OpPickerItem,
     OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode, OpPickerStage,
     OpPickerVault, OpPickerVaultRef, browse_field_display_rows, build_op_picker_ref,
-    create_field_display_rows, matches_filter, section_choices_from_references,
+    create_field_display_rows, field_display_rows_for_picker, filtered_accounts, filtered_fields,
+    filtered_item_choices, filtered_items, filtered_vaults, matches_filter,
+    section_choices_from_references,
 };
 
 pub type OpPickerSelection = jackin_console::tui::components::op_picker::OpPickerSelection<
