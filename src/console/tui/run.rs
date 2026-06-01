@@ -83,7 +83,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
     use futures_util::{FutureExt as _, StreamExt as _};
 
-    use crate::console::tui::state::{ManagerStage, Modal};
+    use crate::console::tui::state::ManagerStage;
 
     let op_available = crate::console::services::op::cli_available();
     let mut state = ConsoleState::new_with_op_available(&config, cwd, op_available)?;
@@ -115,12 +115,11 @@ pub async fn run_console<H: InstanceActionHandler>(
     let mut last_debug_chip_area: Option<ratatui::layout::Rect> = None;
 
     let result = 'main: loop {
-        // Drain a pending token-generate request before render: suspend
-        // the TUI, run the interactive `claude setup-token` mint + the
-        // 1Password write, then resume. Done at the top of the loop (no
-        // live `&mut state.stage` borrow, `config`/`paths`/`terminal` all
-        // in scope) so a request set by the previous iteration's input is
-        // handled before the next frame.
+        // Drain a pending token-generate request before render: suspend the
+        // TUI, let the non-TUI effect executor run the interactive mint/write,
+        // then resume. Done at the top of the loop (no live `&mut state.stage`
+        // borrow, `config`/`paths`/`terminal` all in scope) so a request set by
+        // the previous iteration's input is handled before the next frame.
         let pending = if let ConsoleStage::Manager(ms) = &mut state.stage {
             match &mut ms.stage {
                 ManagerStage::Editor(ed) => ed.pending_token_generate.take(),
@@ -131,29 +130,14 @@ pub async fn run_console<H: InstanceActionHandler>(
             None
         };
         if let Some(req) = pending {
-            use crate::workspace::token_setup::TokenSetupScope;
             let mut out = std::io::stdout();
             suspend_console_terminal(&mut out);
-            let label = match &req.scope {
-                TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
-                TokenSetupScope::WorkspaceRole { workspace, role } => {
-                    format!("workspace {workspace:?} role {role:?}")
-                }
-                TokenSetupScope::Global => "global config".to_string(),
-            };
+            let label = crate::console::effects::token_generate_label(&req);
             println!(
                 "\nGenerating Claude OAuth token for {label} — complete the browser \
                  sign-in, then paste the code below.\n",
             );
-            // Mint without persisting: the op item is created / the
-            // literal is captured and validated, but jackin config is NOT
-            // written here. The minted value is staged into the stashed
-            // auth form (re-mounted below) and persisted only when the
-            // operator Saves — mirroring the provide path's "pick a value
-            // → form re-mounts with the credential, focus Save → Save".
-            let mint = crate::console::services::token_setup::mint_token_value(
-                paths, &config, &req.scope, &req.args,
-            );
+            let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
             let _ = resume_console_terminal(&mut out);
             // Force a full repaint next frame so leftover child output is
             // overwritten. terminal.resize() resets Ratatui's internal diff
@@ -165,84 +149,8 @@ pub async fn run_console<H: InstanceActionHandler>(
                 let _ = terminal.resize(rect);
             }
             needs_redraw = true;
-            match mint {
-                Ok(env_value) => {
-                    // A successful op mint created or edited an item/field;
-                    // drop the stale cached item/field lists so a reopened
-                    // picker shows the new entry without a manual refresh.
-                    if let (
-                        crate::operator_env::EnvValue::OpRef(op_ref),
-                        ConsoleStage::Manager(ms),
-                    ) = (&env_value, &state.stage)
-                    {
-                        crate::console::services::op_picker::invalidate_cache_for_ref(
-                            &ms.op_cache,
-                            op_ref,
-                        );
-                    }
-                    if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        match &mut ms.stage {
-                            // Re-mount the stashed auth form with the minted
-                            // credential applied (op vs. plain), focus Save —
-                            // the same helpers the provide path uses. The
-                            // operator's Save then runs the normal
-                            // persist_form → editor save that writes config.
-                            ManagerStage::Editor(ed) => match env_value {
-                                crate::operator_env::EnvValue::OpRef(op_ref) => {
-                                    crate::console::tui::input::auth::apply_op_picker_to_auth_form_committed(
-                                        ed, op_ref,
-                                    );
-                                }
-                                crate::operator_env::EnvValue::Plain(value) => {
-                                    crate::console::tui::input::auth::apply_plain_text_to_auth_form(
-                                        ed, &value,
-                                    );
-                                }
-                            },
-                            // Settings (global Claude) re-mounts via its own
-                            // equivalents on the stashed settings auth form.
-                            ManagerStage::Settings(s) => match env_value {
-                                crate::operator_env::EnvValue::OpRef(op_ref) => {
-                                    crate::console::tui::input::apply_op_picker_to_settings_auth_form_committed(
-                                        &mut s.auth, op_ref,
-                                    );
-                                }
-                                crate::operator_env::EnvValue::Plain(value) => {
-                                    crate::console::tui::input::apply_plain_text_to_settings_auth_form(
-                                        &mut s.auth, &value,
-                                    );
-                                }
-                            },
-                            _ => {}
-                        }
-                    }
-                }
-                Err(e) => {
-                    if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        match &mut ms.stage {
-                            ManagerStage::Editor(ed) => {
-                                ed.modal = Some(Modal::ErrorPopup {
-                                    state: jackin_tui::components::ErrorPopupState::new(
-                                        "Token generation failed",
-                                        e.to_string(),
-                                    ),
-                                });
-                            }
-                            // Settings surfaces errors through its top-level
-                            // error popup slot (same widget as the editor).
-                            ManagerStage::Settings(_) => {
-                                let _ = crate::console::tui::update_manager(
-                                    ms,
-                                    crate::console::tui::ManagerMessage::OpenSettingsErrorPopup {
-                                        title: "Token generation failed".into(),
-                                        message: e.to_string(),
-                                    },
-                                );
-                            }
-                            _ => {}
-                        }
-                    }
-                }
+            if let ConsoleStage::Manager(ms) = &mut state.stage {
+                crate::console::effects::apply_token_generate_result(ms, mint);
             }
             continue;
         }

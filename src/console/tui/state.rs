@@ -598,9 +598,9 @@ pub enum GlobalMountModal<'a> {
 /// A request to mint a Claude OAuth token and write it to the chosen
 /// 1Password location.
 ///
-/// Bubbled from the auth-form generate action up to the `run_console`
-/// loop, which owns `paths`, `config`, and the terminal needed to run
-/// `claude setup-token`.
+/// Bubbled from the auth-form generate action up to the run loop, which
+/// temporarily suspends the terminal while the non-TUI effect executor mints
+/// the token and stages the result back into the visible form.
 #[derive(Debug, Clone)]
 pub struct PendingTokenGenerate {
     pub scope: crate::workspace::token_setup::TokenSetupScope,

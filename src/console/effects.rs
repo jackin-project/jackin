@@ -109,6 +109,102 @@ pub(crate) fn execute_remove_workspace(
     true
 }
 
+pub(crate) fn token_generate_label(req: &crate::console::tui::state::PendingTokenGenerate) -> String {
+    use crate::workspace::token_setup::TokenSetupScope;
+
+    match &req.scope {
+        TokenSetupScope::Workspace(name) => format!("workspace {name:?}"),
+        TokenSetupScope::WorkspaceRole { workspace, role } => {
+            format!("workspace {workspace:?} role {role:?}")
+        }
+        TokenSetupScope::Global => "global config".to_string(),
+    }
+}
+
+pub(crate) fn execute_token_generate(
+    paths: &crate::paths::JackinPaths,
+    config: &AppConfig,
+    req: &crate::console::tui::state::PendingTokenGenerate,
+) -> anyhow::Result<crate::operator_env::EnvValue> {
+    crate::console::services::token_setup::mint_token_value(
+        paths,
+        config,
+        &req.scope,
+        &req.args,
+    )
+}
+
+pub(crate) fn apply_token_generate_result(
+    state: &mut ManagerState<'_>,
+    result: anyhow::Result<crate::operator_env::EnvValue>,
+) {
+    match result {
+        Ok(env_value) => apply_generated_token(state, env_value),
+        Err(error) => report_token_generate_error(state, error),
+    }
+}
+
+fn apply_generated_token(
+    state: &mut ManagerState<'_>,
+    env_value: crate::operator_env::EnvValue,
+) {
+    if let crate::operator_env::EnvValue::OpRef(op_ref) = &env_value {
+        crate::console::services::op_picker::invalidate_cache_for_ref(&state.op_cache, op_ref);
+    }
+
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => match env_value {
+            crate::operator_env::EnvValue::OpRef(op_ref) => {
+                crate::console::tui::input::auth::apply_op_picker_to_auth_form_committed(
+                    editor,
+                    op_ref,
+                );
+            }
+            crate::operator_env::EnvValue::Plain(value) => {
+                crate::console::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
+            }
+        },
+        ManagerStage::Settings(settings) => match env_value {
+            crate::operator_env::EnvValue::OpRef(op_ref) => {
+                crate::console::tui::input::apply_op_picker_to_settings_auth_form_committed(
+                    &mut settings.auth,
+                    op_ref,
+                );
+            }
+            crate::operator_env::EnvValue::Plain(value) => {
+                crate::console::tui::input::apply_plain_text_to_settings_auth_form(
+                    &mut settings.auth,
+                    &value,
+                );
+            }
+        },
+        _ => {}
+    }
+}
+
+fn report_token_generate_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            editor.modal = Some(Modal::ErrorPopup {
+                state: jackin_tui::components::ErrorPopupState::new(
+                    "Token generation failed",
+                    error.to_string(),
+                ),
+            });
+        }
+        ManagerStage::Settings(_) => {
+            let _ = update_manager(
+                state,
+                ManagerMessage::OpenSettingsErrorPopup {
+                    title: "Token generation failed".into(),
+                    message: error.to_string(),
+                },
+            );
+        }
+        _ => {}
+    }
+}
+
 fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
