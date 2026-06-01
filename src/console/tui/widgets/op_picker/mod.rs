@@ -56,21 +56,6 @@ type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
 
 type LoadRequest = OpPickerLoadRequest;
 
-fn ready_picker_load(result: LoadResult) -> BlockingSubscription<LoadResult> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let _ = tx.send(result);
-    rx
-}
-
-fn spawn_picker_load(
-    request: LoadRequest,
-    runner: Arc<dyn OpStructRunner + Send + Sync>,
-) -> BlockingSubscription<LoadResult> {
-    jackin_tui::runtime::spawn_named_blocking_subscription("jackin-op-picker-load", move || {
-        crate::console::services::op_picker::execute_load_request(runner, request)
-    })
-}
-
 pub struct OpPickerState {
     pub stage: OpPickerStage,
     pub filter_buf: String,
@@ -358,10 +343,11 @@ impl OpPickerState {
         cached: Option<LoadResult>,
         request: LoadRequest,
     ) {
-        self.rx = Some(match cached {
-            Some(cached) => ready_picker_load(cached),
-            None => spawn_picker_load(request, self.runner_clone_for_worker()),
-        });
+        self.rx = Some(crate::console::services::op_picker::start_load(
+            cached,
+            request,
+            self.runner_clone_for_worker(),
+        ));
     }
 
     fn selected_account_id(&self) -> Option<String> {
