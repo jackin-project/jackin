@@ -81,7 +81,9 @@ pub fn scrollbar_drag_offset(
             )
         }
     };
-    if !is_scrollable(content_len, viewport) || !point_in(pointer_col, pointer_row, scrollbar) {
+    if !is_scrollable(content_len, viewport)
+        || !point_in_rect(pointer_col, pointer_row, scrollbar)
+    {
         return None;
     }
     Some(scrollbar_offset_for_track_position(
@@ -117,7 +119,8 @@ pub fn tab_cell_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize
     jackin_tui::tab_at_column(&laid, col)
 }
 
-const fn point_in(col: u16, row: u16, area: ratatui::layout::Rect) -> bool {
+#[must_use]
+pub const fn point_in_rect(col: u16, row: u16, area: ratatui::layout::Rect) -> bool {
     col >= area.x
         && col < area.x.saturating_add(area.width)
         && row >= area.y
@@ -145,8 +148,8 @@ pub fn centered_rect_fixed(
 mod tests {
     use super::{
         SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, horizontal_split_pane_dims,
-        scrollbar_drag_offset, split_pct_from_drag, split_seam_column, tab_cell_at_position,
-        tabbed_content_area,
+        point_in_rect, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
+        tab_cell_at_position, tabbed_content_area,
     };
     use ratatui::layout::Rect;
 
@@ -189,6 +192,21 @@ mod tests {
             scrollbar_drag_offset(ScrollbarAxis::Horizontal, area, 10, 10, 4),
             None
         );
+    }
+
+    #[test]
+    fn point_in_rect_uses_half_open_edges() {
+        let area = Rect {
+            x: 2,
+            y: 3,
+            width: 5,
+            height: 4,
+        };
+
+        assert!(point_in_rect(2, 3, area));
+        assert!(point_in_rect(6, 6, area));
+        assert!(!point_in_rect(7, 3, area));
+        assert!(!point_in_rect(2, 7, area));
     }
 
     #[test]

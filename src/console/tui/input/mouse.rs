@@ -27,8 +27,8 @@ use crate::console::tui::state::{
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
-    horizontal_split_pane_dims, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
-    tab_cell_at_position, tabbed_content_area,
+    horizontal_split_pane_dims, point_in_rect, scrollbar_drag_offset, split_pct_from_drag,
+    split_seam_column, tab_cell_at_position, tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
@@ -811,10 +811,7 @@ const fn settings_content_area(
 }
 
 const fn point_in(mouse: MouseEvent, area: Rect) -> bool {
-    mouse.column >= area.x
-        && mouse.column < area.x.saturating_add(area.width)
-        && mouse.row >= area.y
-        && mouse.row < area.y.saturating_add(area.height)
+    point_in_rect(mouse.column, mouse.row, area)
 }
 
 #[derive(Clone, Copy)]
