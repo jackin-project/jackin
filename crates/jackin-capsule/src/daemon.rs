@@ -223,12 +223,10 @@ pub struct Multiplexer {
     workdir_context: WorkdirContext,
     /// Ratatui terminal backed by [`SocketBackend`].
     ///
-    /// Chrome widgets (status bar, pane boxes, dialogs) will progressively
-    /// migrate from raw ANSI to this terminal so they can use shared
-    /// `jackin-tui` components. For now it is initialized alongside the
-    /// daemon and kept in sync with resize events but not yet used for
-    /// frame output — the raw ANSI path in `compose_full_frame` /
-    /// `compose_partial_frame` still owns all rendering.
+    /// Chrome widgets (status bar, pane boxes, dialogs) render through this
+    /// terminal for full-frame draws so they can use shared `jackin-tui`
+    /// components. The raw ANSI compositor remains as the fallback and partial
+    /// update path while the remaining render migration proceeds.
     ratatui_terminal: ratatui::Terminal<crate::socket_backend::SocketBackend>,
 }
 

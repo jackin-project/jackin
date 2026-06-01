@@ -26,9 +26,6 @@ pub mod tui;
 // Flat re-exports so existing `crate::dialog`, `crate::statusbar`, etc.
 // paths continue to resolve without changing every call site.
 pub use tui::components::branch_context_bar;
-pub use tui::components::chrome as chrome_widget;
-pub use tui::components::dialog_widgets;
-pub use tui::components::pane as pane_widget;
 pub use tui::components::status_bar as statusbar;
 pub use tui::dialog;
 pub use tui::input;

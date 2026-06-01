@@ -63,10 +63,10 @@ impl Multiplexer {
     /// Returns the ANSI output to send to the attach client, or `None` if
     /// the Ratatui terminal fails to draw (falls back to raw-ANSI).
     pub(super) fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
-        use crate::chrome_widget::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
-        use crate::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
-        use crate::pane_widget::PaneBodyWidget;
         use crate::title::display_title;
+        use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
+        use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
+        use crate::tui::components::pane::PaneBodyWidget;
         use ratatui::layout::Rect as RatatuiRect;
 
         let term_rows = self.term_rows;
