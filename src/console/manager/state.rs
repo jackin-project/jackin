@@ -1791,22 +1791,6 @@ impl ManagerState<'_> {
         }
     }
 
-    #[cfg(test)]
-    pub fn refresh_instances(&mut self, paths: &crate::paths::JackinPaths) {
-        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
-        let now = std::time::Instant::now();
-        if let Some(last) = self.instances_last_refresh
-            && now.duration_since(last) < REFRESH_INTERVAL
-        {
-            return;
-        }
-        self.instances_last_refresh = Some(now);
-        match crate::console::services::instances::load_instance_refresh_snapshot(paths) {
-            Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
-            Err(error) => self.apply_instance_refresh_error(&error),
-        }
-    }
-
     pub(crate) fn poll_instance_refresh(
         &mut self,
     ) -> Option<Result<InstanceRefreshSnapshot, String>> {
@@ -2437,8 +2421,24 @@ impl CreatePreludeState<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::console::services::instances::load_instance_refresh_snapshot;
     use crate::console::services::instances::overlay_running_instances;
     use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
+
+    fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinPaths) {
+        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+        let now = std::time::Instant::now();
+        if let Some(last) = state.instances_last_refresh
+            && now.duration_since(last) < REFRESH_INTERVAL
+        {
+            return;
+        }
+        state.instances_last_refresh = Some(now);
+        match load_instance_refresh_snapshot(paths) {
+            Ok(snapshot) => state.apply_instance_refresh_snapshot(snapshot),
+            Err(error) => state.apply_instance_refresh_error(&error),
+        }
+    }
 
     fn empty_ws(workdir: &str) -> WorkspaceConfig {
         WorkspaceConfig {
@@ -2521,7 +2521,7 @@ mod tests {
 
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.refresh_instances(&paths);
+        refresh_instances(&mut state, &paths);
 
         assert_eq!(state.instances.len(), 1);
         assert_eq!(state.instances[0].instance_id, "k7p9m2xq");
@@ -2654,7 +2654,7 @@ mod tests {
 
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.refresh_instances(&paths);
+        refresh_instances(&mut state, &paths);
         assert_eq!(state.instances.len(), 1);
         assert_eq!(
             state.instances[0].status,
@@ -2670,7 +2670,7 @@ mod tests {
         crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
         state.instances_last_refresh = Some(std::time::Instant::now());
-        state.refresh_instances(&paths);
+        refresh_instances(&mut state, &paths);
         assert_eq!(
             state.instances[0].status,
             crate::instance::InstanceStatus::Active,
@@ -2679,7 +2679,7 @@ mod tests {
 
         // Bypass the throttle — disk state is now observable.
         state.force_refresh_instances_for_test();
-        state.refresh_instances(&paths);
+        refresh_instances(&mut state, &paths);
         assert_eq!(
             state.instances[0].status,
             crate::instance::InstanceStatus::Crashed,
@@ -2698,7 +2698,7 @@ mod tests {
 
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.refresh_instances(&paths);
+        refresh_instances(&mut state, &paths);
 
         assert!(state.instances.is_empty());
     }
