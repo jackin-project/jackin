@@ -9,13 +9,6 @@ use super::{
     render_header,
 };
 use crate::config::AppConfig;
-pub(crate) use crate::console::manager::auth_rows::{
-    auth_flat_rows, resolve_panel_mode, synthesize_appconfig_for_auth, workspace_name_for_panel,
-};
-#[cfg(test)]
-pub(crate) use crate::console::manager::auth_rows::{
-    eligible_agents_for_override, resolve_auth_row_target,
-};
 use crate::console::manager::mount_display::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows_with_cache, mount_path_width,
 };
@@ -23,6 +16,13 @@ pub use crate::console::manager::state::AuthRow;
 pub(crate) use crate::console::manager::state::SecretsRow;
 use crate::console::manager::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag,
+};
+pub(crate) use crate::console::manager::state::{
+    auth_flat_rows, resolve_panel_mode, synthesize_appconfig_for_auth, workspace_name_for_panel,
+};
+#[cfg(test)]
+pub(crate) use crate::console::manager::state::{
+    eligible_agents_for_override, resolve_auth_row_target,
 };
 use crate::console::widgets::editor_rows::{
     action_row_style, disclosure_style, render_secret_key_line, render_tab_strip,

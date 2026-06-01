@@ -15,11 +15,9 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
 use super::super::super::widgets::op_picker::OpPickerState;
 use super::super::auth_kind::{AuthKind, AuthMode};
-use super::super::auth_rows::{
-    auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
-};
 use super::super::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, Modal, TextInputTarget,
+    auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
 };
 use crate::config::AppConfig;
 use crate::config::{
@@ -1110,8 +1108,8 @@ mod tests {
     use super::*;
     use crate::config::{AppConfig, AuthForwardMode, GithubAuthMode};
     use crate::console::manager::auth_kind::AuthKind;
-    use crate::console::manager::auth_rows::auth_flat_rows;
     use crate::console::manager::state::AuthRow;
+    use crate::console::manager::state::auth_flat_rows;
     use crate::console::manager::state::{
         AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
     };

@@ -3,10 +3,10 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use crate::config::AppConfig;
-use crate::console::manager::auth_rows::auth_flat_rows;
 use crate::console::manager::mount_display::{
     workspace_mounts_content_height, workspace_mounts_content_width_with_cache,
 };
+use crate::console::manager::state::auth_flat_rows;
 use crate::console::manager::state::{
     AuthRow, EditorMode, EditorState, EditorTab, SecretsRow, SecretsScopeTag,
 };
@@ -285,15 +285,10 @@ fn auth_source_width(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> usize {
-    let synthesized =
-        crate::console::manager::auth_rows::synthesize_appconfig_for_auth(state, config);
-    let workspace_name = crate::console::manager::auth_rows::workspace_name_for_panel(state);
-    let mode = crate::console::manager::auth_rows::resolve_panel_mode(
-        &synthesized,
-        kind,
-        &workspace_name,
-        "",
-    );
+    let synthesized = crate::console::manager::state::synthesize_appconfig_for_auth(state, config);
+    let workspace_name = crate::console::manager::state::workspace_name_for_panel(state);
+    let mode =
+        crate::console::manager::state::resolve_panel_mode(&synthesized, kind, &workspace_name, "");
     let label_width = if indent == 0 { 14 } else { 12 };
     let prefix = indent + text_width(&format!("{label:<label_width$}"));
     let value_width = match kind.required_env_var(mode) {

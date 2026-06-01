@@ -11,9 +11,10 @@ use jackin::{
         manager::{
             ManagerStage, ManagerState,
             auth_kind::AuthKind,
-            auth_rows::auth_flat_rows,
             handle_key,
-            state::{AuthRow, EditorState, EditorTab, FieldFocus, Modal, TextInputTarget},
+            state::{
+                AuthRow, EditorState, EditorTab, FieldFocus, Modal, TextInputTarget, auth_flat_rows,
+            },
         },
     },
     paths::JackinPaths,

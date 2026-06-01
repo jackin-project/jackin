@@ -5,9 +5,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures_util::FutureExt as _;
 
 use super::super::super::widgets::{ModalOutcome, op_picker::OpPickerState};
-use super::super::auth_rows::auth_flat_rows;
 use super::super::message::{ManagerMessage, update_manager};
 use super::super::mount_display::workspace_mounts_content_width_with_cache;
+use super::super::state::auth_flat_rows;
 use super::super::state::{
     AuthRow, ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow,
@@ -669,7 +669,7 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
     use crate::selector::RolePickerState;
     use crate::selector::RoleSelector;
     let eligible: Vec<RoleSelector> =
-        super::super::auth_rows::eligible_agents_for_override(editor, config)
+        super::super::state::eligible_agents_for_override(editor, config)
             .into_iter()
             .filter_map(|name| RoleSelector::parse(&name).ok())
             .collect();
