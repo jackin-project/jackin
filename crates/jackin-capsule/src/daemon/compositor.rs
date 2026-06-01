@@ -6,6 +6,8 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
+use crate::tui::components::branch_context_bar::render_branch_context_bar;
+
 use super::*;
 
 impl Multiplexer {

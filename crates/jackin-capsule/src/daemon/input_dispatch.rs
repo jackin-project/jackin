@@ -1,5 +1,9 @@
 //! Input dispatch methods for the Multiplexer.
 
+use crate::tui::components::branch_context_bar::{
+    BranchContextBarHit, branch_context_bar_hit,
+};
+
 use super::*;
 
 impl Multiplexer {
