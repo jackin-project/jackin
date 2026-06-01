@@ -7,6 +7,7 @@ use crate::agent::Agent;
 use crate::config::{
     AppConfig, AuthForwardMode, GithubAuthMode, MountEntry, RoleSource, WorkspaceRoleOverride,
 };
+use crate::isolation::MountIsolation;
 use crate::selector::RoleSelector;
 use crate::workspace::{
     LoadWorkspaceInput, MountConfig, ResolvedWorkspace, WorkspaceConfig, WorkspaceEdit,
@@ -223,6 +224,16 @@ pub(crate) fn resolve_role_input_source(
         selector,
         source,
     })
+}
+
+#[must_use]
+pub(crate) fn current_dir_mount_config(cwd_str: &str) -> MountConfig {
+    MountConfig {
+        src: cwd_str.to_string(),
+        dst: cwd_str.to_string(),
+        readonly: false,
+        isolation: MountIsolation::Shared,
+    }
 }
 
 /// `Ok(None)` when a saved name went missing between keypress and

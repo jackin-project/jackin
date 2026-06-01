@@ -10,8 +10,6 @@ use crate::console::tui::render::mount_display::{
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
-use crate::isolation::MountIsolation;
-use crate::workspace::MountConfig;
 pub(crate) use jackin_console::tui::sidebar_layout::{
     SidebarLayout, SidebarScrollArea, SidebarScrollAreas, SidebarScrollFocus,
 };
@@ -109,7 +107,7 @@ pub(crate) fn selected_sidebar_scroll_areas(
     match state.selected_row() {
         ManagerListRow::CurrentDirectory => {
             let cwd_str = cwd.display().to_string();
-            let mounts = [current_dir_mount_config(&cwd_str)];
+            let mounts = [crate::console::domain::current_dir_mount_config(&cwd_str)];
             let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
             Some(compute_sidebar_scroll_areas(right_pane, &inputs, config))
         }
@@ -122,15 +120,6 @@ pub(crate) fn selected_sidebar_scroll_areas(
         ManagerListRow::NewWorkspace
         | ManagerListRow::WorkspaceInstance(_, _)
         | ManagerListRow::CurrentDirectoryInstance(_) => None,
-    }
-}
-
-pub(crate) fn current_dir_mount_config(cwd_str: &str) -> MountConfig {
-    MountConfig {
-        src: cwd_str.to_string(),
-        dst: cwd_str.to_string(),
-        readonly: false,
-        isolation: MountIsolation::Shared,
     }
 }
 
