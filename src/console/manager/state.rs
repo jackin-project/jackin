@@ -17,10 +17,11 @@ use crate::console::widgets::{auth_panel::AuthForm, op_picker::OpPickerState};
 use crate::selector::RolePickerState;
 use jackin_console::tui::components::confirm_save::ConfirmSaveState;
 use jackin_console::tui::components::mount_dst_choice::MountDstChoiceState;
+use jackin_console::tui::components::scope_picker::ScopePickerState;
 use jackin_console::widgets::file_browser::FileBrowserState;
 use jackin_console::widgets::github_picker::GithubPickerState;
+use jackin_console::widgets::source_picker::SourcePickerState;
 use jackin_console::widgets::workdir_pick::WorkdirPickState;
-use jackin_console::widgets::{scope_picker::ScopePickerState, source_picker::SourcePickerState};
 use jackin_tui::components::{ConfirmState, ContainerInfoState, ErrorPopupState, TextInputState};
 use jackin_tui::runtime::{
     BlockingSubscription, Subscription, SubscriptionPoll, spawn_blocking_subscription,

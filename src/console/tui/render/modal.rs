@@ -58,7 +58,7 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             jackin_console::widgets::source_picker::render(frame, modal_area, state);
         }
         Modal::ScopePicker { state } => {
-            jackin_console::widgets::scope_picker::render(frame, modal_area, state);
+            jackin_console::tui::components::scope_picker::render(frame, modal_area, state);
         }
         Modal::AuthForm { state, focus, .. } => {
             auth_panel::render_form(frame, modal_area, state.as_ref(), *focus);

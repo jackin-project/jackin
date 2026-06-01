@@ -8,3 +8,4 @@ pub mod modal_rects;
 pub mod mount_dst_choice;
 pub mod mount_rows;
 pub mod op_breadcrumb;
+pub mod scope_picker;
